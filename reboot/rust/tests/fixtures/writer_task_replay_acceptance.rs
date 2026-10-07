@@ -1,6 +1,9 @@
 use super::*;
 include!("writer_task_authority_acceptance.rs");
 include!("writer_task_process_acceptance.rs");
+include!("task_declared_result_acceptance.rs");
+include!("task_declared_negative_acceptance.rs");
+include!("task_declared_custom_acceptance.rs");
 
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
@@ -342,7 +345,13 @@ fn generated_writer_task_pre_store_exclusive_and_uncertain_ack_restart() {
             .success()
     );
     let binary = generated_host_binary(&fixture);
-    for vector in ["pre-store", "store-ack", "complete-ack", "handler-status"] {
+    for vector in [
+        "pre-store",
+        "store-ack",
+        "complete-ack",
+        "handler-status",
+        "declared-ack",
+    ] {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let mut db = CxxDatabase::start(std::env::var("REBOOT_NATIVE2PC_CXX_DATABASE").unwrap());
         let reference = reboot_rust_schema::state_ref::StateRef::from_id(
@@ -388,6 +397,11 @@ fn generated_writer_task_pre_store_exclusive_and_uncertain_ack_restart() {
                     .env("REBOOT_TEST_WRITER_AFTER_STORE", &boundary)
                     .env("REBOOT_TEST_WRITER_LOST_STORE_ACK", "1");
             }
+            "declared-ack" => {
+                command
+                    .args(["--task-vector", "declared"])
+                    .env("REBOOT_TEST_WRITER_AFTER_COMPLETE", &boundary);
+            }
             "complete-ack" => {
                 command.env("REBOOT_TEST_WRITER_AFTER_COMPLETE", &boundary);
             }
@@ -398,11 +412,11 @@ fn generated_writer_task_pre_store_exclusive_and_uncertain_ack_restart() {
         }
         let mut host = WaitHostGuard(command.spawn().unwrap());
         task_vertical_acceptance::await_marker(&handler, &mut host);
-        if matches!(vector, "store-ack" | "complete-ack") {
+        if matches!(vector, "store-ack" | "complete-ack" | "declared-ack") {
             task_vertical_acceptance::await_marker(&boundary, &mut host);
         }
         let pending = runtime.block_on(task_vertical_acceptance::pending_tasks(&db.endpoint()));
-        if vector == "complete-ack" {
+        if matches!(vector, "complete-ack" | "declared-ack") {
             assert!(pending.is_empty());
         } else {
             assert_eq!(pending.len(), 1);
@@ -417,7 +431,7 @@ fn generated_writer_task_pre_store_exclusive_and_uncertain_ack_restart() {
             &db.endpoint(),
             id.clone(),
         ));
-        let expected = if matches!(vector, "pre-store" | "handler-status") {
+        let expected = if matches!(vector, "pre-store" | "handler-status" | "declared-ack") {
             12
         } else {
             15
@@ -502,22 +516,43 @@ fn generated_writer_task_pre_store_exclusive_and_uncertain_ack_restart() {
             endpoint: &db.endpoint(),
             ..options()
         });
-        command.args(["--writer-wait", &uuid]);
+        command.args([
+            if vector == "declared-ack" {
+                "--declared-wait"
+            } else {
+                "--writer-wait"
+            },
+            &uuid,
+        ]);
         let mut host = WaitHostGuard(command.spawn().unwrap());
         if ack.exists() {
             std::fs::remove_file(&ack).unwrap();
         }
         task_vertical_acceptance::await_marker(&ack, &mut host);
-        assert_eq!(std::fs::read_to_string(&ack).unwrap(), "15");
+        assert_eq!(
+            std::fs::read_to_string(&ack).unwrap(),
+            if vector == "declared-ack" {
+                "4242"
+            } else {
+                "15"
+            }
+        );
         assert_eq!(
             runtime.block_on(load_state(&db.endpoint(), &reference)),
-            Some(TaskCounter { value: 15 }.encode_to_vec())
+            Some(
+                TaskCounter {
+                    value: if vector == "declared-ack" { 12 } else { 15 }
+                }
+                .encode_to_vec()
+            )
         );
         let calls =
             std::fs::read_to_string(format!("{}.writer-invocations", handler.display())).unwrap();
         assert_eq!(
             calls.lines().count(),
-            if matches!(vector, "pre-store" | "handler-status") {
+            if vector == "handler-status" {
+                4
+            } else if vector == "pre-store" {
                 2
             } else {
                 1

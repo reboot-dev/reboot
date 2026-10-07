@@ -1,3 +1,63 @@
+## Verified bounded slice: method-declared one-shot task results (2026-10-07)
+
+This verified slice extends the historical response-only task slices below;
+those older sections retain their original acceptance scope, not a current exclusion
+of declared task errors. **Overall Python/Rust task and transaction parity remains
+partial.** See `TASK-DECLARED-RESULT-CANDIDATE.md` for current-source evidence.
+
+- Generated existing-actor unary readers and ordinary non-constructor writers can
+  persist method-declared `Any<google.rpc.Status>` results and use typed canonical
+  `Tasks.Wait`. Workflows and transactional task targets remain excluded.
+- A registration-time immutable method table binds full RPC identity, Rust state
+  declaration, request and response types, persisted request decoding, response URL,
+  declared error URLs and payload decoders. Generated owners install this table;
+  overridable custom binding validators cannot grant extra declared authority.
+  Legacy `OneShotTasks::new` remains response-only. `new_with_declarations` is an
+  **explicit trusted application registration API**, not proof that a declaration
+  originated in protoc and not a sandbox against malicious host registration.
+- Generated waiters set the full expected method on the canonical Wait RPC; the
+  server checks the stored task's actual method and validates its terminal before
+  returning it. Same-response/same-error cross-method TaskIds are rejected.
+  Rich RPC failures stay `Grpc`; only a validated stored error becomes a declared
+  typed result. This is a same-framework canonical-service contract, not an
+  authenticated result certificate for an arbitrary third-party Tasks server.
+- Writer failure discards private mutated state before Store. Only runtime-produced
+  pre-Store handler failure receipts receive three bounded host-owned attempts,
+  reloading and readmitting the original task without rewriting its schedule.
+  **Reader escaped failures are not retried in this slice.** Store/Load/checkpoint
+  and completion uncertainty, cancellation and transport failures are not retried.
+- Declared receipts keep fail-before-exclusive-release protection across custom
+  binding awaits and completion CAS. Lost completion ACK is one attempt, sticky
+  failed readiness and restart recovery. Before completion CAS a declared handler
+  return is explicitly at least once; no error checkpoint or exactly-once handler
+  guarantee is claimed.
+- Participant-local declared-capable A→B→C tasks remain invisible before Commit;
+  Abort discards staging. Equal CAS error winners are accepted only after canonical
+  reload and exact terminal comparison; conflicting winners fail closed.
+
+## Next vertical: recoverable declared-error rollback of a first-touch leaf
+
+**Missing; not implemented or certified.** Target A→B with existing distinct actors:
+B mutates private state and returns a method-declared error; A catches it and
+commits. B must discard its mutation/effects yet retain shared/read-only ownership
+until root Prepare, preserving state inferred from the error.
+
+Python sources: `aio/contexts.py:202–215`, `aio/state_managers.py:892–947,
+966–984,1044–1108,1179–1216`, `aio/stubs.py:716–755`. Rust currently dooms
+supervised error calls (`src/codegen.rs:1575`) and marks incomplete outbound scopes
+uncertain (`src/runtime.rs:200–209`). Existing atomic lease downgrade
+(`runtime.rs:1470–1491`) and read-only-aware Prepare release
+(`durable_participant.rs:1336–1345`) are foundations, not proof of rollback.
+
+Required evidence: exact-incarnation rollback and atomic downgrade unit tests;
+generated adapter/client error-path read-only membership tests; real independent
+CXX/RocksDB A/B catch-and-Commit/restart, reader admission with writer blocked until
+Prepare, root failure/deadline cleanup, and malformed/missing/transport-error
+fail-closed negatives. Causal REDs must detect omitted read-only membership, early
+release and leaked mutation. Only first-touch exclusive non-factory/non-idempotent
+remote leaves; no descendant rollback, reentry, fanout, retry, constructors or
+ancestor/sibling prior effects. No general RelinquishOwnership claim.
+
 ## Verified participant-local reader and writer tasks in supervised trees
 
 This **verified bounded vertical, not full Python SDK parity**, extends
@@ -799,7 +859,7 @@ real-sidecar evidence is recorded in the individual capability rows.
 
 | Capability | Python reference | Rust status and reference | Evidence / remaining work |
 |---|---|---|---|
-| Tasks, task workflows, responses, dispatch and recovery | `aio/state_managers.py:4743-5009,5431-5438,6408-6416,6586-6593,6848-6867`; generated ownership `templates/reboot.py.j2:420-467,858-1028,2350-2475` | **Partial: bounded generated reader-only one-shot vertical.** `src/codegen.rs` supplies typed immediate/absolute-UTC same-actor unary reader scheduling without declared errors; `src/one_shot_tasks.rs` supplies host-owned serial recovery/dispatch and actor-locked CompleteTask. Fresh exclusive non-factory roots retain consuming local cancellation ownership until coordinator handoff, then a non-cloneable uncertainty guard fails the supervised host on errors/drop without releasing or aborting uncertain participants. | Real C++ Database/RocksDB tests exercise denial, commit/pending, restart/redelivery, terminal response, no redispatch and lost-notification discovery; `generated_task_cancellation_and_lost_commit_ack_fail_host_then_restart_completes` exercises pre-durable handler cancellation followed by new-root admission, genuine durable Commit ACK loss, supervised host failure and task completion after restart with legacy coordinator recovery registered. Real Tonic deadlines additionally exercise cancellation during generated task admission and after durable participant Commit; unchanged pre-durable sidecar records and post-durable supervised restart completion are asserted. Failed readiness revokes already-admitted unary work; the competing-request real-C++ regression proves bounded host termination and restart without cancelling the client. Recovery capacity at 1024/1025 is exercised against real RocksDB with whole-batch rejection and unchanged records across restart. Real live admission additionally exercises 1023+1 commit and 1024+1 rejection, same-host admission release, absent rejected task, and unchanged pending records across restart. Canonical public Tasks.Wait and generated typed wait helpers now exercise routed-header agreement, deadlines that preserve pending records, typed completion/retrieval, and fail-closed response decoding against real C++ Database. The separate bounded direct-root remote exclusive-leaf acceptance also proves target-owned reader staging, no inbound predecision hints, canonical delivery after terminal ACK, prepared restart/redelivery, precise rejection, live exclusive readmission, retained lost-ACK supervision and no completed-task replay against independent sidecars. Earlier durable RPC cancellation windows need dedicated coverage. Writer tasks, workflows, distributed fencing, task auth and task cancellation APIs remain missing; no exactly-once handler-effects claim. |
+| Tasks, task workflows, responses, dispatch and recovery | `aio/state_managers.py:4743–5009,5431–5438,6408–6416,6586–6593,6848–6867`; `aio/internals/tasks_dispatcher.py:225–305`; generated ownership `templates/reboot.py.j2:420–467,858–1028,2350–2475` | **Partial: generated existing-actor unary reader and ordinary-writer one-shot tasks, including method-declared terminal errors.** `src/codegen.rs` supplies typed immediate/absolute-UTC scheduling and method-bound canonical Wait; `src/one_shot_tasks.rs` owns durable rescan/dispatch, immutable trusted-host method registration, terminal validation and completion CAS; `src/runtime.rs` seals admitted writer outcomes, discards failed private state and checkpoints successful writers for replay. Participant-local supervised-tree task staging is coupled to Commit/Abort. | Real CXX/RocksDB matrix: 92 cases, including declared reader/writer restart, public Wait malformed/stored-method/cross-method negatives, cancellation-before-readmission, lost completion ACK, equal/conflicting CAS winners and A→B→C Commit/Abort. Native2pc8 is separate regression evidence. Three restored causal REDs cover cancellation, full-method association and rich RPC classification; additional declared-specific mutation controls remain follow-up work. Writer handler-only pre-Store failures have three bounded attempts; reader escaped failures are not retried. Workflow iterations, task authorization, task cancellation/list APIs, distributed fencing and atomic Store+CompleteTask remain missing. Application registration is trusted, not nonforgeable generated-origin authority. No exactly-once handler/external-effects or full SDK parity claim. |
 | Colocated collections / SortedMap range | `aio/state_managers.py:3739-3816,6721-6820`; `std/collections/v1/sorted_map.py` | **Missing.** Only FakeDatabase test stubs exist. | Requires collection effect model, sidecar range bindings, transaction visibility, and generated collection API. |
 | Streaming and reactive readers | `aio/state_managers.py:4350-4613,6554-6699` | **Missing.** Runtime reader is unary; successful trailers are transport plumbing, not state subscriptions. | Requires lifecycle/backpressure/reconnect/visibility contract and subscription runtime before any generated API. |
 

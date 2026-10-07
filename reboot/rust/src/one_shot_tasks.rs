@@ -1,7 +1,9 @@
-//! Bounded generated same-local-actor unary reader tasks. No retries, writer
-//! effects, workflow iterations, or task cancellation API. Absolute UTC schedules
-//! are durable; the host rescans without spawning a sleeping child per task.
-//! Handler failures and host cancellation leave durable tasks pending.
+//! Bounded generated same-local-actor reader and ordinary-writer tasks.
+//! Declared terminals persist canonical method-typed errors; writer handler failures
+//! proven before Store receive at most three host-owned attempts. Reader failures,
+//! workflows, transport/ACK uncertainty and cancellation are not retried.
+//! Absolute UTC schedules are durable, with no sleeping child per task.
+//! Declared returns before completion CAS remain explicitly at least once.
 use crate::{
     application_host::{HostRecovery, RecoveryCancellation},
     database_proto as db,
@@ -21,6 +23,24 @@ use tonic::Status;
 pub trait ReaderTaskBinding: Send + Sync + 'static {
     fn validate(&self, task: &db::Task) -> Result<(), Status>;
     async fn execute(&self, task: &db::Task) -> Result<prost_types::Any, Status>;
+    async fn execute_terminal(&self, task: &db::Task) -> Result<db::task::ResponseOrError, Status> {
+        self.execute(task)
+            .await
+            .map(db::task::ResponseOrError::Response)
+    }
+    fn validate_error(&self, _task: &db::Task, _error: &prost_types::Any) -> Result<(), Status> {
+        Err(Status::data_loss("task method does not declare errors"))
+    }
+    fn validate_terminal(
+        &self,
+        task: &db::Task,
+        terminal: &db::task::ResponseOrError,
+    ) -> Result<(), Status> {
+        match terminal {
+            db::task::ResponseOrError::Response(response) => self.validate_response(task, response),
+            db::task::ResponseOrError::Error(error) => self.validate_error(task, error),
+        }
+    }
     /// Reader-only owners and shared recovery remain the default.
     fn validate_response(
         &self,
@@ -61,7 +81,7 @@ pub struct AdmittedWriterTask<'a> {
     pub(crate) response_type: &'static str,
     pub(crate) started: &'a std::sync::atomic::AtomicBool,
     cancel: &'a RecoveryCancellation,
-    tasks: &'a OneShotTasks,
+    pub(crate) tasks: &'a OneShotTasks,
 }
 impl AdmittedWriterTask<'_> {
     pub fn task(&self) -> &db::Task {
@@ -94,7 +114,25 @@ impl AdmittedWriterTask<'_> {
 /// ```
 pub struct WriterTaskReceipt {
     pub(crate) task: db::Task,
-    pub(crate) response: prost_types::Any,
+    pub(crate) outcome: WriterTaskOutcome,
+}
+/// Handler disposition is accepted only inside the admitted executor, before Store.
+/// It does not itself confer durable completion or retry authority.
+pub enum TaskHandlerError {
+    Declared(prost_types::Any),
+    Failed(Status),
+}
+impl TaskHandlerError {
+    pub fn declared(status: Status) -> Self {
+        Self::Declared(prost_types::Any {
+            type_url: "type.googleapis.com/google.rpc.Status".to_owned(),
+            value: status.details().to_vec(),
+        })
+    }
+}
+pub(crate) enum WriterTaskOutcome {
+    Terminal(db::task::ResponseOrError),
+    PreStoreFailure(Status),
 }
 // Declaration order at call sites matters: this guard drops BEFORE the lease.
 // Arm synchronously before the first potentially durable await; no cancellation gap.
@@ -146,16 +184,95 @@ impl Drop for DurableTaskOperation<'_> {
 pub struct OneShotTasks {
     inner: Arc<Inner>,
 }
+/// Immutable registration-time method contract. Registration is application-owned;
+/// a binding's overridable validators cannot extend this declaration afterwards.
+pub struct TaskMethodDeclaration {
+    method: &'static str,
+    state_type: &'static str,
+    declaration: std::any::TypeId,
+    request: std::any::TypeId,
+    response: std::any::TypeId,
+    response_type: &'static str,
+    decode_request: fn(&[u8]) -> Result<(), Status>,
+    decode_response: fn(&[u8]) -> Result<(), Status>,
+    errors: Vec<DeclaredTaskError>,
+}
+pub struct DeclaredTaskError {
+    type_url: &'static str,
+    decode: fn(&[u8]) -> Result<(), Status>,
+}
+fn decode_declared_message<M: prost::Message + Default>(bytes: &[u8]) -> Result<(), Status> {
+    M::decode(bytes)
+        .map(|_| ())
+        .map_err(|_| Status::data_loss("malformed registered task payload"))
+}
+impl DeclaredTaskError {
+    pub fn new<M: prost::Message + Default>(type_url: &'static str) -> Self {
+        Self {
+            type_url,
+            decode: decode_declared_message::<M>,
+        }
+    }
+}
+impl TaskMethodDeclaration {
+    pub fn new<D, Q, R>(
+        method: &'static str,
+        response_type: &'static str,
+        errors: Vec<DeclaredTaskError>,
+    ) -> Self
+    where
+        D: crate::runtime::DurableStateDeclaration + 'static,
+        Q: prost::Message + Default + 'static,
+        R: prost::Message + Default + 'static,
+    {
+        Self {
+            method,
+            state_type: D::STATE_TYPE,
+            declaration: std::any::TypeId::of::<D>(),
+            request: std::any::TypeId::of::<Q>(),
+            response: std::any::TypeId::of::<R>(),
+            response_type,
+            decode_request: decode_declared_message::<Q>,
+            decode_response: decode_declared_message::<R>,
+            errors,
+        }
+    }
+    fn validate_terminal(&self, terminal: &db::task::ResponseOrError) -> Result<(), Status> {
+        match terminal {
+            db::task::ResponseOrError::Response(response) => {
+                if response.type_url != self.response_type {
+                    return Err(Status::data_loss("registered task response type mismatch"));
+                }
+                (self.decode_response)(&response.value)
+            }
+            db::task::ResponseOrError::Error(error) => {
+                let rich = decode_task_error(error)?;
+                let detail = &rich.details[0];
+                let declared = self
+                    .errors
+                    .iter()
+                    .find(|declared| declared.type_url == detail.type_url)
+                    .ok_or_else(|| {
+                        Status::data_loss("task error not declared by registered method")
+                    })?;
+                (declared.decode)(&detail.value)
+            }
+        }
+    }
+}
 struct Inner {
     store: DatabaseActorStore,
     state_type: String,
     state_ref: String,
     binding: Arc<dyn ReaderTaskBinding>,
+    declarations: Vec<TaskMethodDeclaration>,
     sender: mpsc::Sender<()>,
     receiver: Mutex<Option<mpsc::Receiver<()>>>,
     active: std::sync::atomic::AtomicBool,
     recovery_request: Mutex<Option<db::RecoverRequest>>,
     uncertain: tokio::sync::watch::Sender<bool>,
+    #[cfg(feature = "test-support")]
+    completed_operations: std::sync::atomic::AtomicUsize,
 }
 impl OneShotTasks {
     pub fn new(
@@ -164,6 +281,27 @@ impl OneShotTasks {
         state_ref: String,
         binding: impl ReaderTaskBinding,
     ) -> Result<Self, Status> {
+        Self::new_with_declarations(store, state_type, state_ref, binding, vec![])
+    }
+    /// Register immutable generated method contracts independently of custom binding hooks.
+    /// Empty legacy registrations remain response-only and cannot mint declared receipts.
+    pub fn new_with_declarations(
+        store: DatabaseActorStore,
+        state_type: String,
+        state_ref: String,
+        binding: impl ReaderTaskBinding,
+        declarations: Vec<TaskMethodDeclaration>,
+    ) -> Result<Self, Status> {
+        let mut methods = HashSet::new();
+        for declaration in &declarations {
+            if declaration.state_type != state_type
+                || !methods.insert(declaration.method.rsplit('.').next())
+            {
+                return Err(Status::invalid_argument(
+                    "ambiguous or wrong-state task declaration",
+                ));
+            }
+        }
         if state_type.is_empty() || state_ref.is_empty() {
             return Err(Status::invalid_argument(
                 "task actor identity must be explicit",
@@ -176,13 +314,80 @@ impl OneShotTasks {
                 state_type,
                 state_ref,
                 binding: Arc::new(binding),
+                declarations,
                 sender,
                 receiver: Mutex::new(Some(receiver)),
                 active: false.into(),
                 recovery_request: Mutex::new(None),
                 uncertain: tokio::sync::watch::channel(false).0,
+                #[cfg(feature = "test-support")]
+                completed_operations: 0.into(),
             }),
         })
+    }
+    #[cfg(feature = "test-support")]
+    pub fn completed_operations(&self) -> usize {
+        self.inner
+            .completed_operations
+            .load(std::sync::atomic::Ordering::Acquire)
+    }
+    #[cfg(feature = "test-support")]
+    pub fn has_uncertain_operation(&self) -> bool {
+        *self.inner.uncertain.borrow()
+    }
+    fn declaration(&self, task: &db::Task) -> Option<&TaskMethodDeclaration> {
+        self.inner
+            .declarations
+            .iter()
+            .find(|declaration| declaration.method.rsplit('.').next() == Some(task.method.as_str()))
+    }
+    pub(crate) fn validate_executor<D: 'static, Q: 'static, R: 'static>(
+        &self,
+        task: &db::Task,
+        method: &str,
+        response_type: &str,
+    ) -> Result<(), Status> {
+        if let Some(declaration) = self.declaration(task) {
+            if declaration.method != method
+                || declaration.response_type != response_type
+                || declaration.declaration != std::any::TypeId::of::<D>()
+                || declaration.request != std::any::TypeId::of::<Q>()
+                || declaration.response != std::any::TypeId::of::<R>()
+            {
+                return Err(Status::failed_precondition(
+                    "registered task executor association mismatch",
+                ));
+            }
+            (declaration.decode_request)(&task.request)?;
+        }
+        Ok(())
+    }
+    pub(crate) fn validate_declared(
+        &self,
+        task: &db::Task,
+        error: &prost_types::Any,
+    ) -> Result<(), Status> {
+        self.declaration(task)
+            .ok_or_else(|| {
+                Status::failed_precondition(
+                    "declared terminal requires registered method authority",
+                )
+            })?
+            .validate_terminal(&db::task::ResponseOrError::Error(error.clone()))
+    }
+    fn validate_terminal(
+        &self,
+        task: &db::Task,
+        terminal: &db::task::ResponseOrError,
+    ) -> Result<(), Status> {
+        if let Some(declaration) = self.declaration(task) {
+            declaration.validate_terminal(terminal)?;
+        } else if matches!(terminal, db::task::ResponseOrError::Error(_)) {
+            return Err(Status::failed_precondition(
+                "unregistered declared task terminal",
+            ));
+        }
+        self.inner.binding.validate_terminal(task, terminal)
     }
     #[doc(hidden)]
     pub(crate) async fn validate_guard_execution<
@@ -392,11 +597,25 @@ impl OneShotTasks {
         self.validate(&pending)?;
         Ok(pending)
     }
-    async fn execute(
+    async fn execute(&self, task: db::Task, cancel: &RecoveryCancellation) -> Result<(), Status> {
+        // Framework-owned bounded retry, only for runtime-sealed pre-Store failure.
+        // Each attempt reloads and readmits the same durable identity and schedule.
+        for attempt in 0..3u32 {
+            match self.execute_once(task.clone(), cancel).await? {
+                None => return Ok(()),
+                Some(error) if attempt == 2 => return Err(error),
+                Some(_) => {
+                    tokio::time::sleep(std::time::Duration::from_millis(25 << attempt)).await
+                }
+            }
+        }
+        unreachable!("bounded task retry")
+    }
+    async fn execute_once(
         &self,
         mut task: db::Task,
         cancel: &RecoveryCancellation,
-    ) -> Result<(), Status> {
+    ) -> Result<Option<Status>, Status> {
         let id = task.task_id.clone().expect("validated task identity");
         let gate = self.inner.store.actor_gate(&id.state_type, &id.state_ref);
         if self.inner.binding.is_writer(&task) {
@@ -420,12 +639,14 @@ impl OneShotTasks {
             let canonical = &loaded.tasks[0];
             if canonical.status == db::task::Status::Completed as i32 {
                 validate_completed(&task, canonical, None)?;
-                if let Some(db::task::ResponseOrError::Response(response)) =
-                    &canonical.response_or_error
-                {
-                    self.inner.binding.validate_response(canonical, response)?;
-                }
-                return Ok(());
+                self.validate_terminal(
+                    canonical,
+                    canonical
+                        .response_or_error
+                        .as_ref()
+                        .expect("validated terminal"),
+                )?;
+                return Ok(None);
             }
             if canonical != &task {
                 return Err(Status::failed_precondition(
@@ -433,7 +654,7 @@ impl OneShotTasks {
                 ));
             }
             if !schedule_due(canonical)? {
-                return Ok(());
+                return Ok(None);
             }
             let started = std::sync::atomic::AtomicBool::new(false);
             let mut whole_execution = DurableTaskOperation {
@@ -472,10 +693,22 @@ impl OneShotTasks {
                     "durable receipt task identity mismatch",
                 ));
             }
-            let response = receipt.response;
-            self.inner.binding.validate_response(&task, &response)?;
+            let terminal = match receipt.outcome {
+                WriterTaskOutcome::Terminal(terminal) => terminal,
+                WriterTaskOutcome::PreStoreFailure(error) => {
+                    whole_execution.acknowledged();
+                    return Ok(Some(error));
+                }
+            };
+            self.validate_terminal(&task, &terminal)?;
+            #[cfg(feature = "test-support")]
+            if let Some(path) = std::env::var_os("REBOOT_TEST_TASK_BEFORE_COMPLETE") {
+                std::fs::write(path, b"handler returned; before completion CAS")
+                    .map_err(|error| Status::internal(error.to_string()))?;
+                std::future::pending::<()>().await;
+            }
             task.status = db::task::Status::Completed as i32;
-            task.response_or_error = Some(db::task::ResponseOrError::Response(response.clone()));
+            task.response_or_error = Some(terminal.clone());
             let mut operation = DurableTaskOperation {
                 cancel,
                 tasks: self,
@@ -519,14 +752,19 @@ impl OneShotTasks {
                         "losing completion has no canonical result",
                     ));
                 }
-                validate_completed(&task, &loaded.tasks[0], Some(&response))?;
-                self.inner
-                    .binding
-                    .validate_response(&loaded.tasks[0], &response)?;
+                validate_completed(&task, &loaded.tasks[0], None)?;
+                if loaded.tasks[0].response_or_error.as_ref() != Some(&terminal) {
+                    return Err(Status::failed_precondition("conflicting completion winner"));
+                }
+                self.validate_terminal(&loaded.tasks[0], &terminal)?;
             }
             operation.acknowledged();
             whole_execution.acknowledged();
-            return Ok(());
+            #[cfg(feature = "test-support")]
+            self.inner
+                .completed_operations
+                .fetch_add(1, std::sync::atomic::Ordering::Release);
+            return Ok(None);
         }
 
         let response = {
@@ -535,7 +773,7 @@ impl OneShotTasks {
             // Actor admission may have waited while the wall clock moved back.
             // Recheck before user code, leaving the durable record pending.
             if !schedule_due(&task)? {
-                return Ok(());
+                return Ok(None);
             }
             // Do not re-deliver already completed records queued by a duplicate.
             let loaded = self
@@ -551,8 +789,21 @@ impl OneShotTasks {
             let Some(pending) = loaded.tasks.first() else {
                 return Err(Status::not_found("committed task is missing"));
             };
+            if loaded.tasks.len() != 1 {
+                return Err(Status::failed_precondition(
+                    "ambiguous committed reader task",
+                ));
+            }
             if pending.status == db::task::Status::Completed as i32 {
-                return Ok(());
+                validate_completed(&task, pending, None)?;
+                self.validate_terminal(
+                    pending,
+                    pending
+                        .response_or_error
+                        .as_ref()
+                        .expect("validated terminal"),
+                )?;
+                return Ok(None);
             }
             if pending != &task {
                 return Err(Status::failed_precondition(
@@ -560,22 +811,56 @@ impl OneShotTasks {
                 ));
             }
             if !schedule_due(&task)? {
-                return Ok(());
+                return Ok(None);
             }
-            self.inner.binding.execute(&task).await?
+            self.inner.binding.execute_terminal(&task).await?
         };
         let _lease = gate.exclusive().await;
+        cancel.public_ready().await?;
+        self.validate_terminal(&task, &response)?;
         task.status = db::task::Status::Completed as i32;
-        task.response_or_error = Some(db::task::ResponseOrError::Response(response));
-        self.inner
+        task.response_or_error = Some(response.clone());
+        let mut operation = DurableTaskOperation {
+            cancel,
+            tasks: self,
+            acknowledged: false,
+            started: None,
+        };
+        let completed = self
+            .inner
             .store
             .task_database()
             .complete_task(db::CompleteTaskRequest {
-                task: Some(task),
+                task: Some(task.clone()),
                 sync: true,
             })
-            .await?;
-        Ok(())
+            .await?
+            .into_inner()
+            .completed;
+        if !completed {
+            let loaded = self
+                .inner
+                .store
+                .task_database()
+                .load(db::LoadRequest {
+                    actors: vec![],
+                    task_ids: vec![id],
+                })
+                .await?
+                .into_inner();
+            if loaded.tasks.len() != 1 {
+                return Err(Status::failed_precondition(
+                    "losing completion has no canonical result",
+                ));
+            }
+            validate_completed(&task, &loaded.tasks[0], None)?;
+            if loaded.tasks[0].response_or_error.as_ref() != Some(&response) {
+                return Err(Status::failed_precondition("conflicting completion winner"));
+            }
+            self.validate_terminal(&loaded.tasks[0], &response)?;
+        }
+        operation.acknowledged();
+        Ok(None)
     }
 }
 
@@ -599,12 +884,35 @@ fn validate_completed(
         {
             Ok(())
         }
+        Some(db::task::ResponseOrError::Error(error)) if response.is_none() => {
+            decode_task_error(error)?;
+            Ok(())
+        }
         _ => Err(Status::failed_precondition(
             "canonical completion response mismatch",
         )),
     }
 }
 
+/// Decode the complete canonical google.rpc.Status, not a bare payload or tonic code.
+pub fn decode_task_error(
+    error: &prost_types::Any,
+) -> Result<googleapis_tonic_google_rpc::google::rpc::Status, Status> {
+    use prost::Message;
+    if error.type_url != "type.googleapis.com/google.rpc.Status" {
+        return Err(Status::data_loss(
+            "task error is not canonical google.rpc.Status",
+        ));
+    }
+    let status = googleapis_tonic_google_rpc::google::rpc::Status::decode(error.value.as_slice())
+        .map_err(|_| Status::data_loss("malformed task error status"))?;
+    if !(1..=16).contains(&status.code) || status.details.len() != 1 {
+        return Err(Status::data_loss(
+            "task error must contain one declared detail and a non-OK code",
+        ));
+    }
+    Ok(status)
+}
 /// Non-cloneable ownership of a generated scheduling root durable handoff.
 pub struct SchedulingRootHandoff {
     tasks: OneShotTasks,
@@ -1020,6 +1328,12 @@ impl db::tasks_server::Tasks for ReaderTaskWaitService {
     ) -> Result<tonic::Response<db::WaitResponse>, Status> {
         let headers = crate::RebootHeaders::from_request(&request)
             .map_err(|error| Status::invalid_argument(error.to_string()))?;
+        let expected_method = request
+            .metadata()
+            .get("x-reboot-task-method")
+            .map(|value| value.to_str().map(str::to_owned))
+            .transpose()
+            .map_err(|_| Status::invalid_argument("invalid expected task method"))?;
         let id = request
             .into_inner()
             .task_id
@@ -1048,6 +1362,28 @@ impl db::tasks_server::Tasks for ReaderTaskWaitService {
                 .load(std::sync::atomic::Ordering::Acquire)
             {
                 return Err(Status::unavailable("task dispatcher is not active"));
+            }
+            #[cfg(feature = "test-support")]
+            if std::env::var_os("REBOOT_TEST_TASK_WAIT_RPC_ERROR").is_some() {
+                use prost::Message;
+                let rich = googleapis_tonic_google_rpc::google::rpc::Status {
+                    code: tonic::Code::Unknown as i32,
+                    message: "RPC failure, not a durable terminal".to_owned(),
+                    details: vec![
+                        prost_types::Any {
+                            type_url:
+                                "type.googleapis.com/tests.reboot.protoc.TransactionLimitExceeded"
+                                    .to_owned(),
+                            value: crate::proto::Counter { value: 9 }.encode_to_vec()
+                        };
+                        2
+                    ],
+                };
+                return Err(Status::with_details(
+                    tonic::Code::Unknown,
+                    rich.message.clone(),
+                    rich.encode_to_vec().into(),
+                ));
             }
             let loaded = tasks
                 .inner
@@ -1094,6 +1430,16 @@ impl db::tasks_server::Tasks for ReaderTaskWaitService {
                 ));
             }
             let task = &loaded.tasks[0];
+            if expected_method.as_ref().is_some_and(|expected| {
+                tasks
+                    .declaration(task)
+                    .map(|declaration| declaration.method)
+                    != Some(expected.as_str())
+            }) {
+                return Err(Status::failed_precondition(
+                    "task belongs to another generated method",
+                ));
+            }
             if task.iteration != 0 {
                 return Err(Status::failed_precondition(
                     "task iterations are unsupported",
@@ -1104,6 +1450,12 @@ impl db::tasks_server::Tasks for ReaderTaskWaitService {
             match db::task::Status::try_from(task.status) {
                 Ok(db::task::Status::Pending) => tasks.validate(std::slice::from_ref(task))?,
                 Ok(db::task::Status::Completed) => {
+                    tasks.validate_terminal(
+                        task,
+                        task.response_or_error
+                            .as_ref()
+                            .ok_or_else(|| Status::data_loss("completed task has no result"))?,
+                    )?;
                     let result = match task.response_or_error.clone() {
                         Some(db::task::ResponseOrError::Response(response)) => {
                             db::task_response_or_error::ResponseOrError::Response(response)

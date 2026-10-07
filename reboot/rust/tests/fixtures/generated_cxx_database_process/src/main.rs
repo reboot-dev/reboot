@@ -54,43 +54,101 @@ impl InboundTransactionStartFactory for Starts {
 
 enum Handler {
     Target,
-    Tasks { state_ref: String, marker: String, block: bool, vector: String },
+    Tasks {
+        state_ref: String,
+        marker: String,
+        block: bool,
+        vector: String,
+    },
     Root(Root),
 }
 #[tonic::async_trait]
 impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
+    async fn query_declared(
+        &self,
+        state: &proto::TransactionCounter,
+        request: proto::TransactionIncrementRequest,
+    ) -> Result<
+        proto::TransactionCounterValue,
+        generated::TransactionCounterWritesMethodsQueryDeclaredError,
+    > {
+        self.query(state, request)
+            .await
+            .map_err(generated::TransactionCounterWritesMethodsQueryDeclaredError::Grpc)?;
+        Err(
+            generated::TransactionCounterWritesMethodsQueryDeclaredError::TransactionLimitExceeded(
+                proto::TransactionLimitExceeded { limit: 4242 },
+            ),
+        )
+    }
+    async fn apply_declared(
+        &self,
+        state: &mut proto::TransactionCounter,
+        request: proto::TransactionIncrementRequest,
+    ) -> Result<
+        proto::TransactionCounterValue,
+        generated::TransactionCounterWritesMethodsApplyDeclaredError,
+    > {
+        self.apply(state, request)
+            .await
+            .map_err(generated::TransactionCounterWritesMethodsApplyDeclaredError::Grpc)?;
+        state.value += 1000; // private failed mutation must never be stored
+        Err(
+            generated::TransactionCounterWritesMethodsApplyDeclaredError::TransactionLimitExceeded(
+                proto::TransactionLimitExceeded { limit: 4242 },
+            ),
+        )
+    }
     async fn query(
         &self,
         state: &proto::TransactionCounter,
         request: proto::TransactionIncrementRequest,
     ) -> Result<proto::TransactionCounterValue, tonic::Status> {
         let tree_marker = optional_arg("--tree-local-tasks");
-        let reader = if let Some(marker) = &tree_marker { Some((marker, has("--block-task"))) } else { match self {
-            Self::Tasks { marker, block, .. } => Some((marker, *block)),
-            Self::Root(root) => root
-                .task_marker
-                .as_ref()
-                .map(|marker| (marker, root.block_task)),
-            Self::Target => None,
-        } };
+        let reader = if let Some(marker) = &tree_marker {
+            Some((marker, has("--block-task")))
+        } else {
+            match self {
+                Self::Tasks { marker, block, .. } => Some((marker, *block)),
+                Self::Root(root) => root
+                    .task_marker
+                    .as_ref()
+                    .map(|marker| (marker, root.block_task)),
+                Self::Target => None,
+            }
+        };
         if let Some((marker, block)) = reader {
             if request.amount == 9000 {
                 // Append per invocation: an identical overwritten result cannot
                 // hide replay across Wait calls or host recovery.
                 {
                     use std::io::Write;
-                    let mut calls = std::fs::OpenOptions::new().create(true).append(true)
-                        .open(format!("{marker}.invocations")).unwrap();
+                    let mut calls = std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(format!("{marker}.invocations"))
+                        .unwrap();
                     writeln!(calls, "query").unwrap();
                 }
-                std::fs::write(format!("{marker}.started-at"), std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos().to_string()).unwrap();
+                std::fs::write(
+                    format!("{marker}.started-at"),
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_nanos()
+                        .to_string(),
+                )
+                .unwrap();
                 std::fs::write(marker, state.value.to_string()).unwrap();
                 if block {
                     struct ReaderDrop(String);
                     impl Drop for ReaderDrop {
                         fn drop(&mut self) {
-                            std::fs::write(format!("{}.reader-dropped", self.0), "actual reader future dropped").unwrap();
+                            std::fs::write(
+                                format!("{}.reader-dropped", self.0),
+                                "actual reader future dropped",
+                            )
+                            .unwrap();
                         }
                     }
                     let _drop = ReaderDrop(marker.clone());
@@ -109,15 +167,49 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
         if has("--writer-tasks") && request.amount == 3 {
             use std::io::Write;
             let marker = arg("--task-marker");
-            let mut log = std::fs::OpenOptions::new().create(true).append(true).open(format!("{marker}.writer-invocations")).unwrap();
+            let mut log = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(format!("{marker}.writer-invocations"))
+                .unwrap();
             writeln!(log, "apply {}", request.amount).unwrap();
-            std::fs::write(format!("{marker}.started-at"), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos().to_string()).unwrap();
+            std::fs::write(
+                format!("{marker}.started-at"),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+                    .to_string(),
+            )
+            .unwrap();
             std::fs::write(&marker, "writer handler entered").unwrap();
-            if has("--writer-handler-error") { return Err(tonic::Status::invalid_argument("writer task handler failed")); }
-            if has("--block-task") { std::future::pending::<()>().await; }
+            if has("--writer-handler-error") {
+                return Err(tonic::Status::invalid_argument(
+                    "writer task handler failed",
+                ));
+            }
+            if has("--writer-handler-retry")
+                && std::fs::read_to_string(format!("{marker}.writer-invocations"))
+                    .unwrap()
+                    .lines()
+                    .count()
+                    < 3
+            {
+                state.value += 1000;
+                return Err(tonic::Status::unavailable(
+                    "controlled pre-Store handler failure",
+                ));
+            }
+            if has("--block-task") {
+                std::future::pending::<()>().await;
+            }
         }
         if has("--writer-tasks") && request.amount == 100 {
-            std::fs::write(format!("{}.ordinary-entered", arg("--task-marker")), b"ordinary exclusive writer admitted").unwrap();
+            std::fs::write(
+                format!("{}.ordinary-entered", arg("--task-marker")),
+                b"ordinary exclusive writer admitted",
+            )
+            .unwrap();
         }
         state.value += request.amount;
         Ok(proto::TransactionCounterValue { value: state.value })
@@ -131,50 +223,116 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
     ) -> Result<TransactionExecution<proto::TransactionCounterValue>, tonic::Status> {
         if request.amount == -9000 {
             if let Self::Tasks { marker, .. } = self {
-                std::fs::write(format!("{marker}.cancel"), "handler entered before durable handoff").unwrap();
+                std::fs::write(
+                    format!("{marker}.cancel"),
+                    "handler entered before durable handoff",
+                )
+                .unwrap();
                 std::future::pending::<()>().await;
             }
         }
         state.value += request.amount;
-        if context.supervised_tree_execution() && let Some(path) = optional_arg("--tree-path-marker") {
-            std::fs::write(path, context.transaction_ids().iter().map(ToString::to_string).collect::<Vec<_>>().join("\n")).unwrap();
+        if context.supervised_tree_execution()
+            && let Some(path) = optional_arg("--tree-path-marker")
+        {
+            std::fs::write(
+                path,
+                context
+                    .transaction_ids()
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            )
+            .unwrap();
         }
         if let Some(path) = std::env::var_os("REBOOT_TEST_TARGET_UNFINISHED_OUTBOUND") {
             std::fs::write(&path, b"target admitted, no successful trailers").unwrap();
             struct HandlerDrop(std::path::PathBuf);
-            impl Drop for HandlerDrop { fn drop(&mut self) { std::fs::write(self.0.with_extension("handler-dropped"), b"actual target handler future ended").unwrap(); } }
+            impl Drop for HandlerDrop {
+                fn drop(&mut self) {
+                    std::fs::write(
+                        self.0.with_extension("handler-dropped"),
+                        b"actual target handler future ended",
+                    )
+                    .unwrap();
+                }
+            }
             let path = std::path::PathBuf::from(path);
             let _drop = HandlerDrop(path.clone());
-            if has("--unfinished-outbound-error") { return Err(tonic::Status::unavailable("unfinished outbound transport outcome")); }
+            if has("--unfinished-outbound-error") {
+                return Err(tonic::Status::unavailable(
+                    "unfinished outbound transport outcome",
+                ));
+            }
             if has("--release-parked-target") {
-                while !path.with_extension("release").exists() { tokio::time::sleep(std::time::Duration::from_millis(10)).await; }
-            } else { std::future::pending::<()>().await; }
+                while !path.with_extension("release").exists() {
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+            } else {
+                std::future::pending::<()>().await;
+            }
         }
         if let Self::Root(root) = self {
             // The ordinary legacy recovery acceptance uses the first target.
             // This branch deliberately enlists two independently routed remote
             // actors so the root coordinator's concurrent Prepare fan-out and
             // post-decision recovery retain the whole durable participant set.
-            let tree_next = if has("--tree-reentrant-root") { Some("root".to_owned()) } else { optional_arg("--tree-next") };
+            let tree_next = if has("--tree-reentrant-root") {
+                Some("root".to_owned())
+            } else {
+                optional_arg("--tree-next")
+            };
             let tree_targets: Vec<&str> = tree_next.as_deref().into_iter().collect();
-            let targets: &[&str] = if tree_next.is_some() { &tree_targets } else if root.multi_participant {
+            let targets: &[&str] = if tree_next.is_some() {
+                &tree_targets
+            } else if root.multi_participant {
                 &["target-a", "target-b"]
             } else {
                 &["target"]
             };
             if has("--tree-active-child") {
-                let client = root.client.clone(); let context = context.clone(); let request = request.clone();
-                let child = targets[0].to_owned(); let marker = arg("--tree-active-marker"); let child_marker = marker.clone();
+                let client = root.client.clone();
+                let context = context.clone();
+                let request = request.clone();
+                let child = targets[0].to_owned();
+                let marker = arg("--tree-active-marker");
+                let child_marker = marker.clone();
                 tokio::spawn(async move {
-                    let result = client.increment(&context, &generated::TransactionCounterWritesMethodsTarget::new(child), request.clone()).await;
-                    std::fs::write(format!("{child_marker}.child-ended"), format!("{result:?}")).unwrap();
-                    let error = client.increment(&context, &generated::TransactionCounterWritesMethodsTarget::new("unregistered-post-close"), request).await.unwrap_err();
-                    assert!(matches!(error, generated::TransactionCounterWritesMethodsIncrementError::Grpc(ref status) if status.code() == tonic::Code::FailedPrecondition));
-                    std::fs::write(format!("{child_marker}.clone-denied"), b"closed clone denied generated call before resolution").unwrap();
+                    let result = client
+                        .increment(
+                            &context,
+                            &generated::TransactionCounterWritesMethodsTarget::new(child),
+                            request.clone(),
+                        )
+                        .await;
+                    std::fs::write(format!("{child_marker}.child-ended"), format!("{result:?}"))
+                        .unwrap();
+                    let error = client
+                        .increment(
+                            &context,
+                            &generated::TransactionCounterWritesMethodsTarget::new(
+                                "unregistered-post-close",
+                            ),
+                            request,
+                        )
+                        .await
+                        .unwrap_err();
+                    assert!(
+                        matches!(error, generated::TransactionCounterWritesMethodsIncrementError::Grpc(ref status) if status.code() == tonic::Code::FailedPrecondition)
+                    );
+                    std::fs::write(
+                        format!("{child_marker}.clone-denied"),
+                        b"closed clone denied generated call before resolution",
+                    )
+                    .unwrap();
                 });
-                while !std::path::Path::new(&marker).exists() { tokio::time::sleep(std::time::Duration::from_millis(5)).await; }
-            } else { for target in targets {
-                match root.client
+                while !std::path::Path::new(&marker).exists() {
+                    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                }
+            } else {
+                for target in targets {
+                    match root.client
                     .increment(
                         context,
                         &generated::TransactionCounterWritesMethodsTarget::new(*target),
@@ -191,44 +349,120 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                         std::fs::write(arg("--outbound-error-marker"), b"caught uncertain generated outbound, empty membership").unwrap();
                     },
                 }
-            } }
+                }
+            }
         }
         if context.supervised_tree_execution() {
             if let Some(path) = optional_arg("--tree-members-marker") {
-                let members: Vec<_> = context.returned_participants_snapshot().into_iter().map(|p| p.target.state_ref).collect();
+                let members: Vec<_> = context
+                    .returned_participants_snapshot()
+                    .into_iter()
+                    .map(|p| p.target.state_ref)
+                    .collect();
                 std::fs::write(path, members.join("\n")).unwrap();
             }
-            if has("--tree-handler-error") { return Err(tonic::Status::invalid_argument("tree handler rejected after descendant success")); }
+            if has("--tree-handler-error") {
+                return Err(tonic::Status::invalid_argument(
+                    "tree handler rejected after descendant success",
+                ));
+            }
         }
-        if matches!(self, Self::Root(_)) && let Some(path) = std::env::var_os("REBOOT_TEST_ROOT_AFTER_REMOTE") {
+        if matches!(self, Self::Root(_))
+            && let Some(path) = std::env::var_os("REBOOT_TEST_ROOT_AFTER_REMOTE")
+        {
             let path = std::path::PathBuf::from(path);
-            std::fs::write(&path, b"actual remote successful trailers received; no Prepare").unwrap();
+            std::fs::write(
+                &path,
+                b"actual remote successful trailers received; no Prepare",
+            )
+            .unwrap();
             while !path.with_extension("release").exists() {
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;
             }
         }
-        if let Self::Tasks { state_ref, vector, marker, .. } = self {
+        if let Self::Tasks {
+            state_ref,
+            vector,
+            marker,
+            ..
+        } = self
+        {
             if vector == "descendant" {
                 let (placement, _) = crate::placement();
-                let client = generated::TransactionCounterWritesMethodsClient::new(LegacyApplicationResolver::new(LegacyApplicationId::new("generated-cxx-database-process").unwrap(), placement));
-                let error = client.increment(context, &generated::TransactionCounterWritesMethodsTarget::new("root"), request.clone()).await.unwrap_err();
-                assert!(matches!(error, generated::TransactionCounterWritesMethodsIncrementError::Grpc(ref error) if error.code() == tonic::Code::FailedPrecondition && error.message() == "live inbound leaf cannot call descendants"));
-                std::fs::write(format!("{marker}.descendant-caught"), "actual generated descendant rejected and caught before resolver").unwrap();
+                let client = generated::TransactionCounterWritesMethodsClient::new(
+                    LegacyApplicationResolver::new(
+                        LegacyApplicationId::new("generated-cxx-database-process").unwrap(),
+                        placement,
+                    ),
+                );
+                let error = client
+                    .increment(
+                        context,
+                        &generated::TransactionCounterWritesMethodsTarget::new("root"),
+                        request.clone(),
+                    )
+                    .await
+                    .unwrap_err();
+                assert!(
+                    matches!(error, generated::TransactionCounterWritesMethodsIncrementError::Grpc(ref error) if error.code() == tonic::Code::FailedPrecondition && error.message() == "live inbound leaf cannot call descendants")
+                );
+                std::fs::write(
+                    format!("{marker}.descendant-caught"),
+                    "actual generated descendant rejected and caught before resolver",
+                )
+                .unwrap();
             }
-            let mut execution = TransactionExecution::new(proto::TransactionCounterValue { value: state.value });
-            let mut task = generated::TransactionCounterWritesMethodsTasks::query(state_ref, &proto::TransactionIncrementRequest { amount: 9000 });
+            let mut execution =
+                TransactionExecution::new(proto::TransactionCounterValue { value: state.value });
+            let mut task = generated::TransactionCounterWritesMethodsTasks::query(
+                state_ref,
+                &proto::TransactionIncrementRequest { amount: 9000 },
+            );
             if has("--writer-tasks") {
-                task = generated::TransactionCounterWritesMethodsTasks::apply(state_ref, &proto::TransactionIncrementRequest { amount: 3 });
+                task = generated::TransactionCounterWritesMethodsTasks::apply(
+                    state_ref,
+                    &proto::TransactionIncrementRequest { amount: 3 },
+                );
                 if let Some(seconds) = vector.strip_prefix("delayed:") {
-                    task = generated::TransactionCounterWritesMethodsTasksAt::apply(state_ref, &proto::TransactionIncrementRequest { amount: 3 }, prost_types::Timestamp { seconds: seconds.parse().unwrap(), nanos: 0 });
+                    task = generated::TransactionCounterWritesMethodsTasksAt::apply(
+                        state_ref,
+                        &proto::TransactionIncrementRequest { amount: 3 },
+                        prost_types::Timestamp {
+                            seconds: seconds.parse().unwrap(),
+                            nanos: 0,
+                        },
+                    );
                 }
             }
-            if !has("--writer-tasks") && let Some(seconds) = vector.strip_prefix("delayed:") {
-                task = generated::TransactionCounterWritesMethodsTasksAt::query(state_ref,
+            if !has("--writer-tasks")
+                && let Some(seconds) = vector.strip_prefix("delayed:")
+            {
+                task = generated::TransactionCounterWritesMethodsTasksAt::query(
+                    state_ref,
                     &proto::TransactionIncrementRequest { amount: 9000 },
-                    prost_types::Timestamp { seconds: seconds.parse().unwrap(), nanos: 0 });
+                    prost_types::Timestamp {
+                        seconds: seconds.parse().unwrap(),
+                        nanos: 0,
+                    },
+                );
             }
-            if let Some(id) = vector.strip_prefix("reuse:") { task.task_id.as_mut().unwrap().task_uuid = uuid::Uuid::parse_str(id).unwrap().as_bytes().to_vec(); }
+            if vector == "declared" {
+                task = if has("--writer-tasks") && !has("--declared-reader") {
+                    generated::TransactionCounterWritesMethodsTasks::apply_declared(
+                        state_ref,
+                        &proto::TransactionIncrementRequest { amount: 3 },
+                    )
+                } else {
+                    generated::TransactionCounterWritesMethodsTasks::query_declared(
+                        state_ref,
+                        &proto::TransactionIncrementRequest { amount: 9000 },
+                    )
+                };
+            }
+            if let Some(id) = vector.strip_prefix("reuse:") {
+                task.task_id.as_mut().unwrap().task_uuid =
+                    uuid::Uuid::parse_str(id).unwrap().as_bytes().to_vec();
+            }
             match vector.as_str() {
                 "unknown" => task.method = "Missing".into(),
                 "writer" => task.method = "Apply".into(),
@@ -259,7 +493,17 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                             &proto::TransactionIncrementRequest { amount: 9000 },
                         );
                         if has("--remote-reader-task") {
-                            task.timestamp = Some(prost_types::Timestamp { seconds: i64::try_from(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()).unwrap() + 3600, nanos: 0 });
+                            task.timestamp = Some(prost_types::Timestamp {
+                                seconds: i64::try_from(
+                                    std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .unwrap()
+                                        .as_secs(),
+                                )
+                                .unwrap()
+                                    + 3600,
+                                nanos: 0,
+                            });
                         }
                         task
                     })
@@ -279,13 +523,32 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                     .await?;
                 if let Self::Tasks { marker, .. } = self {
                     if has("--remote-reader-task") {
-                        std::fs::write(format!("{marker}.seeded-records"), reboot::database_proto::LoadResponse { actors: vec![], tasks: pending, ..Default::default() }.encode_to_vec()).unwrap();
+                        std::fs::write(
+                            format!("{marker}.seeded-records"),
+                            reboot::database_proto::LoadResponse {
+                                actors: vec![],
+                                tasks: pending,
+                                ..Default::default()
+                            }
+                            .encode_to_vec(),
+                        )
+                        .unwrap();
                     }
-                    std::fs::write(format!("{marker}.staged"), Uuid::from_slice(&task.task_id.as_ref().unwrap().task_uuid).unwrap().to_string()).unwrap();
+                    std::fs::write(
+                        format!("{marker}.staged"),
+                        Uuid::from_slice(&task.task_id.as_ref().unwrap().task_uuid)
+                            .unwrap()
+                            .to_string(),
+                    )
+                    .unwrap();
                 }
             }
-            if vector == "duplicate" { execution.task_upserts.push(task.clone()); }
-            if vector == "capacity" { execution.task_upserts = vec![task.clone(); 1024]; }
+            if vector == "duplicate" {
+                execution.task_upserts.push(task.clone());
+            }
+            if vector == "capacity" {
+                execution.task_upserts = vec![task.clone(); 1024];
+            }
             if let Self::Tasks { marker, .. } = self
                 && let Ok(id) = Uuid::from_slice(&task.task_id.as_ref().unwrap().task_uuid)
             {
@@ -311,17 +574,30 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                 }
                 let vector = optional_arg("--task-vector").unwrap_or_default();
                 if let Some(seconds) = vector.strip_prefix("delayed:") {
-                    task.timestamp = Some(prost_types::Timestamp { seconds: seconds.parse().unwrap(), nanos: 0 });
+                    task.timestamp = Some(prost_types::Timestamp {
+                        seconds: seconds.parse().unwrap(),
+                        nanos: 0,
+                    });
                 }
                 if let Some(id) = vector.strip_prefix("reuse:") {
-                    task.task_id.as_mut().unwrap().task_uuid = Uuid::parse_str(id).unwrap().as_bytes().to_vec();
+                    task.task_id.as_mut().unwrap().task_uuid =
+                        Uuid::parse_str(id).unwrap().as_bytes().to_vec();
                 }
                 match vector.as_str() {
                     "malformed" => task.request = vec![0xff],
                     "identity" => task.task_id.as_mut().unwrap().state_ref = "target".into(),
                     "duplicate" => execution.task_upserts.push(task.clone()),
-                    "capacity" => execution.task_upserts = (0..1024).map(|_| generated::TransactionCounterWritesMethodsTasks::query(&context.headers().state_ref, &proto::TransactionIncrementRequest { amount: 9000 })).collect(),
-                    _ => {},
+                    "capacity" => {
+                        execution.task_upserts = (0..1024)
+                            .map(|_| {
+                                generated::TransactionCounterWritesMethodsTasks::query(
+                                    &context.headers().state_ref,
+                                    &proto::TransactionIncrementRequest { amount: 9000 },
+                                )
+                            })
+                            .collect()
+                    }
+                    _ => {}
                 }
                 std::fs::write(
                     format!("{}.task-id", root.task_marker.as_ref().unwrap()),
@@ -333,7 +609,13 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                 if let Some(path) = std::env::var_os("REBOOT_TEST_ROOT_HANDLER_PARK") {
                     struct HandlerDrop(std::path::PathBuf);
                     impl Drop for HandlerDrop {
-                        fn drop(&mut self) { std::fs::write(self.0.with_extension("handler-dropped"), b"handler future dropped").unwrap(); }
+                        fn drop(&mut self) {
+                            std::fs::write(
+                                self.0.with_extension("handler-dropped"),
+                                b"handler future dropped",
+                            )
+                            .unwrap();
+                        }
                     }
                     let path = std::path::PathBuf::from(path);
                     std::fs::write(&path, b"confirmed remote successful enlistment").unwrap();
@@ -348,28 +630,77 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                 execution.task_upserts.push(task);
             }
         }
-        if context.headers().state_ref != "watch-capacity" && let Some(marker) = optional_arg("--tree-local-tasks") {
+        if context.headers().state_ref != "watch-capacity"
+            && let Some(marker) = optional_arg("--tree-local-tasks")
+        {
             let actor = &context.headers().state_ref;
             let request = proto::TransactionIncrementRequest { amount: 9000 };
             let writer = proto::TransactionIncrementRequest { amount: 3 };
-            let at = prost_types::Timestamp { seconds: arg("--tree-tasks-at").parse().unwrap(), nanos: 0 };
+            let at = prost_types::Timestamp {
+                seconds: arg("--tree-tasks-at").parse().unwrap(),
+                nanos: 0,
+            };
             execution.task_upserts.extend([
                 generated::TransactionCounterWritesMethodsTasks::query(actor, &request),
                 generated::TransactionCounterWritesMethodsTasks::apply(actor, &writer),
                 generated::TransactionCounterWritesMethodsTasksAt::query(actor, &request, at),
                 generated::TransactionCounterWritesMethodsTasksAt::apply(actor, &writer, at),
             ]);
+            if has("--tree-declared-tasks") {
+                execution.task_upserts = vec![
+                    generated::TransactionCounterWritesMethodsTasks::query_declared(
+                        actor, &request,
+                    ),
+                    generated::TransactionCounterWritesMethodsTasks::apply_declared(actor, &writer),
+                ];
+            }
             match optional_arg("--tree-task-vector").as_deref() {
-                Some("foreign-actor") => execution.task_upserts[0].task_id.as_mut().unwrap().state_ref = arg("--tree-task-foreign-ref"),
-                Some("duplicate-staged") => execution.task_upserts.push(execution.task_upserts[0].clone()),
-                Some("reuse") => execution.task_upserts[0].task_id.as_mut().unwrap().task_uuid = Uuid::parse_str(&arg("--tree-task-reuse-uuid")).unwrap().as_bytes().to_vec(),
+                Some("foreign-actor") => {
+                    execution.task_upserts[0]
+                        .task_id
+                        .as_mut()
+                        .unwrap()
+                        .state_ref = arg("--tree-task-foreign-ref")
+                }
+                Some("duplicate-staged") => execution
+                    .task_upserts
+                    .push(execution.task_upserts[0].clone()),
+                Some("reuse") => {
+                    execution.task_upserts[0]
+                        .task_id
+                        .as_mut()
+                        .unwrap()
+                        .task_uuid = Uuid::parse_str(&arg("--tree-task-reuse-uuid"))
+                        .unwrap()
+                        .as_bytes()
+                        .to_vec()
+                }
                 _ => {}
             }
-            std::fs::write(format!("{marker}.records"), reboot::database_proto::LoadResponse { tasks: execution.task_upserts.clone(), ..Default::default() }.encode_to_vec()).unwrap();
+            std::fs::write(
+                format!("{marker}.records"),
+                reboot::database_proto::LoadResponse {
+                    tasks: execution.task_upserts.clone(),
+                    ..Default::default()
+                }
+                .encode_to_vec(),
+            )
+            .unwrap();
         }
-        if (matches!(self, Self::Target) || has("--supervised-tree")) && has("--negative-task-shape") {
-            execution.task_upserts.push(generated::TransactionCounterWritesMethodsTasks::query(&context.headers().state_ref, &proto::TransactionIncrementRequest { amount: 9000 }));
-            std::fs::write(arg("--negative-shape-marker"), b"actual inbound handler returned task").unwrap();
+        if (matches!(self, Self::Target) || has("--supervised-tree"))
+            && has("--negative-task-shape")
+        {
+            execution
+                .task_upserts
+                .push(generated::TransactionCounterWritesMethodsTasks::query(
+                    &context.headers().state_ref,
+                    &proto::TransactionIncrementRequest { amount: 9000 },
+                ));
+            std::fs::write(
+                arg("--negative-shape-marker"),
+                b"actual inbound handler returned task",
+            )
+            .unwrap();
         }
         Ok(execution)
     }
@@ -386,17 +717,29 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
             return Err(generated::TransactionCounterWritesMethodsFactoryIncrementError::TransactionLimitExceeded(proto::TransactionLimitExceeded { limit: request.amount }));
         }
         if request.amount < 0 {
-            return Err(generated::TransactionCounterWritesMethodsFactoryIncrementError::Grpc(tonic::Status::invalid_argument(
-                "factory handler rejected request",
-            )));
+            return Err(
+                generated::TransactionCounterWritesMethodsFactoryIncrementError::Grpc(
+                    tonic::Status::invalid_argument("factory handler rejected request"),
+                ),
+            );
         }
         state.value += request.amount;
         // Deliberately leave final_state unset: the generated factory adapter
         // must durably materialize the state it gave the handler.
-        let mut execution = TransactionExecution::new(proto::TransactionCounterValue { value: state.value });
+        let mut execution =
+            TransactionExecution::new(proto::TransactionCounterValue { value: state.value });
         if has("--negative-task-shape") {
-            execution.task_upserts.push(generated::TransactionCounterWritesMethodsTasks::query(&arg("--state-ref"), &proto::TransactionIncrementRequest { amount: 9000 }));
-            std::fs::write(arg("--negative-shape-marker"), b"actual factory handler returned task").unwrap();
+            execution
+                .task_upserts
+                .push(generated::TransactionCounterWritesMethodsTasks::query(
+                    &arg("--state-ref"),
+                    &proto::TransactionIncrementRequest { amount: 9000 },
+                ));
+            std::fs::write(
+                arg("--negative-shape-marker"),
+                b"actual factory handler returned task",
+            )
+            .unwrap();
         }
         Ok(execution)
     }
@@ -438,10 +781,20 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
         _: proto::TransactionIncrementRequest,
     ) -> Result<TransactionExecution<proto::TransactionCounterValue>, tonic::Status> {
         shared_barrier(context.transaction_root_id()).await?;
-        let mut execution = TransactionExecution::new(proto::TransactionCounterValue { value: state.value });
+        let mut execution =
+            TransactionExecution::new(proto::TransactionCounterValue { value: state.value });
         if has("--negative-task-shape") {
-            execution.task_upserts.push(generated::TransactionCounterWritesMethodsTasks::query(&context.headers().state_ref, &proto::TransactionIncrementRequest { amount: 9000 }));
-            std::fs::write(arg("--negative-shape-marker"), b"actual shared inbound handler returned task").unwrap();
+            execution
+                .task_upserts
+                .push(generated::TransactionCounterWritesMethodsTasks::query(
+                    &context.headers().state_ref,
+                    &proto::TransactionIncrementRequest { amount: 9000 },
+                ));
+            std::fs::write(
+                arg("--negative-shape-marker"),
+                b"actual shared inbound handler returned task",
+            )
+            .unwrap();
         }
         Ok(execution)
     }
@@ -465,40 +818,81 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
         Ok(proto::TransactionCounterValue { value: state.value })
     }
 }
-struct FullWatchProof(tokio::sync::Mutex<Option<std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), tonic::Status>> + Send>>>>);
+struct FullWatchProof(
+    tokio::sync::Mutex<
+        Option<
+            std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), tonic::Status>> + Send>>,
+        >,
+    >,
+);
 #[tonic::async_trait]
 impl reboot::application_host::HostRecovery for FullWatchProof {
-    async fn start(&self, _: &mut tokio::task::JoinSet<Result<(), tonic::Status>>, _: reboot::application_host::RecoveryCancellation) -> Result<(), tonic::Status> {
+    async fn start(
+        &self,
+        _: &mut tokio::task::JoinSet<Result<(), tonic::Status>>,
+        _: reboot::application_host::RecoveryCancellation,
+    ) -> Result<(), tonic::Status> {
         self.0.lock().await.take().unwrap().await
     }
 }
 struct FullRootProof {
-    work: tokio::sync::Mutex<Option<std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), tonic::Status>> + Send>>>>,
+    work: tokio::sync::Mutex<
+        Option<
+            std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), tonic::Status>> + Send>>,
+        >,
+    >,
     marker: String,
 }
 #[tonic::async_trait]
 impl reboot::application_host::HostRecovery for FullRootProof {
-    async fn start(&self, workers: &mut tokio::task::JoinSet<Result<(), tonic::Status>>, _: reboot::application_host::RecoveryCancellation) -> Result<(), tonic::Status> {
+    async fn start(
+        &self,
+        workers: &mut tokio::task::JoinSet<Result<(), tonic::Status>>,
+        _: reboot::application_host::RecoveryCancellation,
+    ) -> Result<(), tonic::Status> {
         workers.spawn(self.work.lock().await.take().unwrap());
         tokio::time::timeout(std::time::Duration::from_secs(3), async {
-            while !std::path::Path::new(&format!("{}.cancel", self.marker)).exists() { tokio::time::sleep(std::time::Duration::from_millis(5)).await; }
-        }).await.map_err(|_| tonic::Status::deadline_exceeded("auxiliary root did not hold real owner capacity"))?;
+            while !std::path::Path::new(&format!("{}.cancel", self.marker)).exists() {
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .map_err(|_| {
+            tonic::Status::deadline_exceeded("auxiliary root did not hold real owner capacity")
+        })?;
         Ok(())
     }
 }
-struct GaugeTaskHandler { marker: String }
+struct GaugeTaskHandler {
+    marker: String,
+}
 #[tonic::async_trait]
 impl generated::RegistryGaugeMethodsTransactionHandler for GaugeTaskHandler {
-    async fn query(&self, state: &proto::RegistryGauge, _: proto::TransactionIncrementRequest) -> Result<proto::RegistryGaugeValue, tonic::Status> {
+    async fn query(
+        &self,
+        state: &proto::RegistryGauge,
+        _: proto::TransactionIncrementRequest,
+    ) -> Result<proto::RegistryGaugeValue, tonic::Status> {
         use std::io::Write;
-        let mut calls = std::fs::OpenOptions::new().create(true).append(true).open(format!("{}.invocations", self.marker)).unwrap();
+        let mut calls = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(format!("{}.invocations", self.marker))
+            .unwrap();
         writeln!(calls, "query").unwrap();
         let reading = format!("gauge:{}", state.value);
         std::fs::write(&self.marker, &reading).unwrap();
         Ok(proto::RegistryGaugeValue { reading })
     }
-    async fn increment(&self, _: &TransactionContext, _: &mut proto::RegistryGauge, _: proto::TransactionIncrementRequest) -> Result<TransactionExecution<proto::RegistryGaugeValue>, tonic::Status> {
-        Err(tonic::Status::unimplemented("seeded reader-only registry fixture"))
+    async fn increment(
+        &self,
+        _: &TransactionContext,
+        _: &mut proto::RegistryGauge,
+        _: proto::TransactionIncrementRequest,
+    ) -> Result<TransactionExecution<proto::RegistryGaugeValue>, tonic::Status> {
+        Err(tonic::Status::unimplemented(
+            "seeded reader-only registry fixture",
+        ))
     }
 }
 
@@ -567,6 +961,19 @@ struct TransactionRichErrorService;
 impl proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods
     for TransactionRichErrorService
 {
+    async fn query_declared(
+        &self,
+        _: tonic::Request<proto::TransactionIncrementRequest>,
+    ) -> Result<tonic::Response<proto::TransactionCounterValue>, tonic::Status> {
+        Err(tonic::Status::unimplemented("fixture"))
+    }
+    async fn apply_declared(
+        &self,
+        _: tonic::Request<proto::TransactionIncrementRequest>,
+    ) -> Result<tonic::Response<proto::TransactionCounterValue>, tonic::Status> {
+        Err(tonic::Status::unimplemented("fixture"))
+    }
+
     async fn query(
         &self,
         _: tonic::Request<proto::TransactionIncrementRequest>,
@@ -732,45 +1139,107 @@ async fn main() {
     let listen = arg("--listen");
     if role == "wait-result" {
         let id = reboot::database_proto::TaskId {
-            state_type: optional_arg("--wait-state-type").unwrap_or_else(|| "tests.reboot.protoc.TransactionCounter".into()),
+            state_type: optional_arg("--wait-state-type")
+                .unwrap_or_else(|| "tests.reboot.protoc.TransactionCounter".into()),
             state_ref: arg("--state-ref"),
-            task_uuid: uuid::Uuid::parse_str(&arg("--task-uuid")).unwrap().as_bytes().to_vec(),
+            task_uuid: uuid::Uuid::parse_str(&arg("--task-uuid"))
+                .unwrap()
+                .as_bytes()
+                .to_vec(),
         };
         let mut request = tonic::Request::new(id.clone());
-        request.set_timeout(std::time::Duration::from_millis(optional_arg("--wait-timeout-ms").map(|value| value.parse().unwrap()).unwrap_or(8000)));
+        request.set_timeout(std::time::Duration::from_millis(
+            optional_arg("--wait-timeout-ms")
+                .map(|value| value.parse().unwrap())
+                .unwrap_or(8000),
+        ));
         let result = if let Some(endpoint) = optional_arg("--wait-planner") {
             let placement = PlanOnlyLegacyPlacement::new();
             let client = generated::TransactionCounterWritesMethodsTasksWaitRouted::new(
                 LegacyApplicationResolver::new(
-                    LegacyApplicationId::new("generated-cxx-database-process").unwrap(), placement.clone()));
-            assert_eq!(client.query(tonic::Request::new(id.clone())).await.unwrap_err().code(), tonic::Code::Unavailable);
-            let mut wrong = id.clone(); wrong.state_type = "example.Wrong".into();
-            assert_eq!(client.query(tonic::Request::new(wrong)).await.unwrap_err().code(), tonic::Code::InvalidArgument);
-            let mut planner = reboot::placement_proto::placement_planner_client::PlacementPlannerClient::connect(endpoint).await.unwrap();
-            let mut stream = planner.listen_for_plan(reboot::placement_proto::ListenForPlanRequest {}).await.unwrap().into_inner();
-            let first = tokio::time::timeout(std::time::Duration::from_secs(3), stream.message()).await.unwrap().unwrap().unwrap();
+                    LegacyApplicationId::new("generated-cxx-database-process").unwrap(),
+                    placement.clone(),
+                ),
+            );
+            assert_eq!(
+                client
+                    .query(tonic::Request::new(id.clone()))
+                    .await
+                    .unwrap_err()
+                    .code(),
+                tonic::Code::Unavailable
+            );
+            let mut wrong = id.clone();
+            wrong.state_type = "example.Wrong".into();
+            assert_eq!(
+                client
+                    .query(tonic::Request::new(wrong))
+                    .await
+                    .unwrap_err()
+                    .code(),
+                tonic::Code::InvalidArgument
+            );
+            let mut planner =
+                reboot::placement_proto::placement_planner_client::PlacementPlannerClient::connect(
+                    endpoint,
+                )
+                .await
+                .unwrap();
+            let mut stream = planner
+                .listen_for_plan(reboot::placement_proto::ListenForPlanRequest {})
+                .await
+                .unwrap()
+                .into_inner();
+            let first = tokio::time::timeout(std::time::Duration::from_secs(3), stream.message())
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
             placement.install(first).unwrap();
             if has("--prove-route-refresh") {
-                request.metadata_mut().insert("x-wait-route-proof", "preserved".parse().unwrap());
+                request
+                    .metadata_mut()
+                    .insert("x-wait-route-proof", "preserved".parse().unwrap());
                 assert_eq!(client.query(request).await.unwrap().value, 12);
                 std::fs::write(format!("{}.first", arg("--result-marker")), "first route").unwrap();
-                let next = tokio::time::timeout(std::time::Duration::from_secs(3), stream.message()).await.unwrap().unwrap().unwrap();
+                let next =
+                    tokio::time::timeout(std::time::Duration::from_secs(3), stream.message())
+                        .await
+                        .unwrap()
+                        .unwrap()
+                        .unwrap();
                 placement.install(next).unwrap();
                 let mut request = tonic::Request::new(id);
                 request.set_timeout(std::time::Duration::from_secs(2));
-                request.metadata_mut().insert("x-wait-route-proof", "preserved".parse().unwrap());
+                request
+                    .metadata_mut()
+                    .insert("x-wait-route-proof", "preserved".parse().unwrap());
                 client.query(request).await
-            } else { client.query(request).await }
+            } else {
+                client.query(request).await
+            }
         } else {
-            let channel = tonic::transport::Endpoint::from_shared(format!("http://{listen}")).unwrap().connect().await.unwrap();
+            let channel = tonic::transport::Endpoint::from_shared(format!("http://{listen}"))
+                .unwrap()
+                .connect()
+                .await
+                .unwrap();
             generated::TransactionCounterWritesMethodsTasksWait::query(channel, request).await
         };
         let output = if let Some(expected) = optional_arg("--expect-wait-error") {
             let error = result.unwrap_err();
-            if expected == "Deadline" { assert!(matches!(error.code(), tonic::Code::Cancelled | tonic::Code::DeadlineExceeded)); }
-            else { assert_eq!(format!("{:?}", error.code()), expected); }
+            if expected == "Deadline" {
+                assert!(matches!(
+                    error.code(),
+                    tonic::Code::Cancelled | tonic::Code::DeadlineExceeded
+                ));
+            } else {
+                assert_eq!(format!("{:?}", error.code()), expected);
+            }
             expected
-        } else { result.unwrap().value.to_string() };
+        } else {
+            result.unwrap().value.to_string()
+        };
         std::fs::write(arg("--result-marker"), output).unwrap();
         return;
     }
@@ -789,7 +1258,9 @@ async fn main() {
     if role == "external-constructor" {
         let database_endpoint = arg("--database");
         let state_ref = optional_arg("--state-ref").unwrap_or_else(|| role.clone());
-        let store = DatabaseActorStore::connect(&database_endpoint).await.unwrap();
+        let store = DatabaseActorStore::connect(&database_endpoint)
+            .await
+            .unwrap();
         let adapter = generated::ExternalConstructorMethodsDatabaseAdapter::new(
             store,
             ExternalConstructorHandler,
@@ -823,7 +1294,8 @@ async fn main() {
                     Err(_) => tokio::time::sleep(std::time::Duration::from_millis(10)).await,
                 }
             };
-            let mut client = generated::ExternalConstructorMethodsExternalClient::new(channel, context);
+            let mut client =
+                generated::ExternalConstructorMethodsExternalClient::new(channel, context);
             let amount = optional_arg("--amount")
                 .map(|amount| amount.parse().expect("--amount must be i64"))
                 .unwrap_or(7);
@@ -876,7 +1348,10 @@ async fn main() {
     );
     let coordinator = reboot::durable_coordinator::DurableRootCoordinator::new(
         Arc::clone(&coordinator_sidecar),
-        Arc::new(LegacyApplicationParticipantResolver::new(application.clone(), placement.clone())),
+        Arc::new(LegacyApplicationParticipantResolver::new(
+            application.clone(),
+            placement.clone(),
+        )),
     );
     // Any recovered participant can host the legacy Coordinator route for this
     // configured coordinator identity. The decision itself is read from the
@@ -888,10 +1363,17 @@ async fn main() {
 
     let starts = Starts {
         root: root_id,
-        child: optional_arg("--tree-child").map(|value| Uuid::parse_str(&value).unwrap()).unwrap_or_else(|| Uuid::from_u128(2)),
+        child: optional_arg("--tree-child")
+            .map(|value| Uuid::parse_str(&value).unwrap())
+            .unwrap_or_else(|| Uuid::from_u128(2)),
     };
     let handler = if role == "tasks" || has("--remote-reader-task") {
-        Handler::Tasks { state_ref: state_ref.clone(), marker: arg("--task-marker"), block: has("--block-task"), vector: optional_arg("--task-vector").unwrap_or_default() }
+        Handler::Tasks {
+            state_ref: state_ref.clone(),
+            marker: arg("--task-marker"),
+            block: has("--block-task"),
+            vector: optional_arg("--task-vector").unwrap_or_default(),
+        }
     } else if role == "root" || role == "multi-root" || role == "tree-branch" {
         Handler::Root(Root {
             client: generated::TransactionCounterWritesMethodsClient::new(
@@ -908,17 +1390,43 @@ async fn main() {
         .await
         .unwrap();
     if has("--prove-task-composition") {
-        let gate_mismatch = participant.validate_task_owner(&store, "tests.reboot.protoc.TransactionCounter", &state_ref).unwrap_err();
+        let gate_mismatch = participant
+            .validate_task_owner(&store, "tests.reboot.protoc.TransactionCounter", &state_ref)
+            .unwrap_err();
         assert_eq!(gate_mismatch.code(), tonic::Code::FailedPrecondition);
         let matched = participant.clone().with_database_actor_gate(&store);
-        matched.validate_task_owner(&store, "tests.reboot.protoc.TransactionCounter", &state_ref).unwrap();
-        let foreign = DatabaseActorStore::connect(arg("--task-foreign-database")).await.unwrap();
-        let store_mismatch = matched.validate_task_owner(&foreign, "tests.reboot.protoc.TransactionCounter", &state_ref).unwrap_err();
+        matched
+            .validate_task_owner(&store, "tests.reboot.protoc.TransactionCounter", &state_ref)
+            .unwrap();
+        let foreign = DatabaseActorStore::connect(arg("--task-foreign-database"))
+            .await
+            .unwrap();
+        let store_mismatch = matched
+            .validate_task_owner(
+                &foreign,
+                "tests.reboot.protoc.TransactionCounter",
+                &state_ref,
+            )
+            .unwrap_err();
         assert_eq!(store_mismatch.code(), tonic::Code::FailedPrecondition);
         // Isolate endpoint mismatch from gate mismatch by binding the foreign gate.
         let endpoint_only = participant.clone().with_database_actor_gate(&foreign);
-        assert_eq!(endpoint_only.validate_task_owner(&foreign, "tests.reboot.protoc.TransactionCounter", &state_ref).unwrap_err().code(), tonic::Code::FailedPrecondition);
-        std::fs::write(arg("--task-composition-marker"), b"matching accepted; independent gate and store rejected").unwrap();
+        assert_eq!(
+            endpoint_only
+                .validate_task_owner(
+                    &foreign,
+                    "tests.reboot.protoc.TransactionCounter",
+                    &state_ref
+                )
+                .unwrap_err()
+                .code(),
+            tonic::Code::FailedPrecondition
+        );
+        std::fs::write(
+            arg("--task-composition-marker"),
+            b"matching accepted; independent gate and store rejected",
+        )
+        .unwrap();
         return;
     }
     let adapter = generated::TransactionCounterWritesMethodsTransactionAdapter::new(
@@ -928,31 +1436,73 @@ async fn main() {
         starts,
         handler,
     );
-    let (adapter, tasks) =
-        if (role == "tasks" || has("--root-reader-task") || has("--remote-reader-task") || has("--tree-task-owner")) && !has("--no-task-owner") {
-            let (adapter, tasks) = if has("--writer-tasks") {
-                adapter.with_one_shot_writer_tasks(&state_ref).unwrap()
-            } else { adapter.with_one_shot_reader_tasks(&state_ref).unwrap() };
-            (adapter, Some(tasks))
+    let (adapter, tasks) = if (role == "tasks"
+        || has("--root-reader-task")
+        || has("--remote-reader-task")
+        || has("--tree-task-owner"))
+        && !has("--no-task-owner")
+    {
+        let (adapter, tasks) = if has("--writer-tasks") {
+            adapter.with_one_shot_writer_tasks(&state_ref).unwrap()
         } else {
-            (adapter, None)
+            adapter.with_one_shot_reader_tasks(&state_ref).unwrap()
         };
+        (adapter, Some(tasks))
+    } else {
+        (adapter, None)
+    };
     let root_owner = reboot::explicit_abort::ExplicitAbortOwner::new(1).unwrap();
     let adapter = if has("--owned-explicit-abort") && !has("--no-root-owner") {
         adapter.with_explicit_abort_owner(root_owner.clone())
-    } else { adapter };
+    } else {
+        adapter
+    };
     let live_owner = if has("--live-watch") && !has("--no-live-owner") {
-        Some(reboot::live_participant::LiveParticipantOwner::new(if has("--full-live-owner") { 1 } else { 8 },
-            reboot::durable_coordinator::ParticipantTarget { state_type: "tests.reboot.protoc.TransactionCounter".into(), state_ref: watch_coordinator_state_ref.clone() },
-            Arc::new(LegacyApplicationCoordinatorWatchEndpoint::new(application.clone(), placement.clone(), watch_coordinator_state_ref.clone()).unwrap())).unwrap())
-    } else { None };
-    let adapter = if let Some(owner) = &live_owner { adapter.with_live_participant_owner(owner.clone()) } else { adapter };
-    let adapter = if has("--supervised-tree") { adapter.with_supervised_transaction_tree() } else { adapter };
+        Some(
+            reboot::live_participant::LiveParticipantOwner::new(
+                if has("--full-live-owner") { 1 } else { 8 },
+                reboot::durable_coordinator::ParticipantTarget {
+                    state_type: "tests.reboot.protoc.TransactionCounter".into(),
+                    state_ref: watch_coordinator_state_ref.clone(),
+                },
+                Arc::new(
+                    LegacyApplicationCoordinatorWatchEndpoint::new(
+                        application.clone(),
+                        placement.clone(),
+                        watch_coordinator_state_ref.clone(),
+                    )
+                    .unwrap(),
+                ),
+            )
+            .unwrap(),
+        )
+    } else {
+        None
+    };
+    let adapter = if let Some(owner) = &live_owner {
+        adapter.with_live_participant_owner(owner.clone())
+    } else {
+        adapter
+    };
+    let adapter = if has("--supervised-tree") {
+        adapter.with_supervised_transaction_tree()
+    } else {
+        adapter
+    };
     if has("--prove-cancel-before-durable") {
         use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
         let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: -9000 });
-        *request.metadata_mut() = reboot::RebootHeaders::new(&state_ref).to_metadata().unwrap();
-        assert!(tokio::time::timeout(std::time::Duration::from_secs(1), adapter.increment(request)).await.is_err());
+        *request.metadata_mut() = reboot::RebootHeaders::new(&state_ref)
+            .to_metadata()
+            .unwrap();
+        assert!(
+            tokio::time::timeout(
+                std::time::Duration::from_secs(1),
+                adapter.increment(request)
+            )
+            .await
+            .is_err()
+        );
         assert!(std::path::Path::new(&format!("{}.cancel", arg("--task-marker"))).exists());
         // The next ordinary public root below must admit and commit against the
         // same participant, not a reconstructed or manually released actor.
@@ -969,15 +1519,59 @@ async fn main() {
     if let Some(planner_recovery) = planner_recovery {
         host = host.with_host_recovery(planner_recovery);
     }
-    if has("--owned-explicit-abort") && !has("--no-root-owner") && !has("--inactive-root-owner") { host = host.with_host_recovery(adapter.explicit_abort_recovery_registration().unwrap()); }
-    if live_owner.is_some() && !has("--inactive-live-owner") { host = host.with_host_recovery(adapter.live_participant_recovery_registration().unwrap()); }
+    if has("--owned-explicit-abort") && !has("--no-root-owner") && !has("--inactive-root-owner") {
+        host = host.with_host_recovery(adapter.explicit_abort_recovery_registration().unwrap());
+    }
+    if live_owner.is_some() && !has("--inactive-live-owner") {
+        host = host.with_host_recovery(adapter.live_participant_recovery_registration().unwrap());
+    }
     if has("--full-root-owner") {
         let auxiliary = "root-capacity";
         let marker = format!("{}.root-capacity", arg("--task-marker"));
-        let mut db = reboot::database_proto::database_client::DatabaseClient::connect(database_endpoint.clone()).await.unwrap();
-        db.store(reboot::database_proto::StoreRequest { actor_upserts: vec![reboot::database_proto::Actor { state_type: "tests.reboot.protoc.TransactionCounter".into(), state_ref: auxiliary.into(), state: Some(proto::TransactionCounter { value: 20 }.encode_to_vec()), ..Default::default() }], sync: true, ..Default::default() }).await.unwrap();
-        let auxiliary_participant = DurableActorParticipant::new(Arc::new(TonicParticipantSidecar::connect(&database_endpoint).await.unwrap()), "tests.reboot.protoc.TransactionCounter", auxiliary);
-        let auxiliary_adapter = generated::TransactionCounterWritesMethodsTransactionAdapter::new(DatabaseActorStore::connect(&database_endpoint).await.unwrap(), auxiliary_participant, coordinator.clone(), Starts { root: Uuid::new_v4(), child: Uuid::new_v4() }, Handler::Tasks { state_ref: auxiliary.into(), marker: marker.clone(), block: false, vector: String::new() }).with_explicit_abort_owner(root_owner);
+        let mut db = reboot::database_proto::database_client::DatabaseClient::connect(
+            database_endpoint.clone(),
+        )
+        .await
+        .unwrap();
+        db.store(reboot::database_proto::StoreRequest {
+            actor_upserts: vec![reboot::database_proto::Actor {
+                state_type: "tests.reboot.protoc.TransactionCounter".into(),
+                state_ref: auxiliary.into(),
+                state: Some(proto::TransactionCounter { value: 20 }.encode_to_vec()),
+                ..Default::default()
+            }],
+            sync: true,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+        let auxiliary_participant = DurableActorParticipant::new(
+            Arc::new(
+                TonicParticipantSidecar::connect(&database_endpoint)
+                    .await
+                    .unwrap(),
+            ),
+            "tests.reboot.protoc.TransactionCounter",
+            auxiliary,
+        );
+        let auxiliary_adapter = generated::TransactionCounterWritesMethodsTransactionAdapter::new(
+            DatabaseActorStore::connect(&database_endpoint)
+                .await
+                .unwrap(),
+            auxiliary_participant,
+            coordinator.clone(),
+            Starts {
+                root: Uuid::new_v4(),
+                child: Uuid::new_v4(),
+            },
+            Handler::Tasks {
+                state_ref: auxiliary.into(),
+                marker: marker.clone(),
+                block: false,
+                vector: String::new(),
+            },
+        )
+        .with_explicit_abort_owner(root_owner);
         host = host.with_host_recovery(FullRootProof { marker, work: tokio::sync::Mutex::new(Some(Box::pin(async move {
             use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
             let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: -9000 });
@@ -989,10 +1583,45 @@ async fn main() {
     if has("--full-live-owner") {
         let full_watch_coordinator = watch_coordinator_state_ref.clone();
         let auxiliary = "watch-capacity";
-        let mut db = reboot::database_proto::database_client::DatabaseClient::connect(database_endpoint.clone()).await.unwrap();
-        db.store(reboot::database_proto::StoreRequest { actor_upserts: vec![reboot::database_proto::Actor { state_type: "tests.reboot.protoc.TransactionCounter".into(), state_ref: auxiliary.into(), state: Some(proto::TransactionCounter { value: 20 }.encode_to_vec()), ..Default::default() }], sync: true, ..Default::default() }).await.unwrap();
-        let auxiliary_participant = DurableActorParticipant::new(Arc::new(TonicParticipantSidecar::connect(&database_endpoint).await.unwrap()), "tests.reboot.protoc.TransactionCounter", auxiliary);
-        let auxiliary_adapter = generated::TransactionCounterWritesMethodsTransactionAdapter::new(DatabaseActorStore::connect(&database_endpoint).await.unwrap(), auxiliary_participant, coordinator.clone(), Starts { root: root_id, child: Uuid::from_u128(3) }, Handler::Target).with_live_participant_owner(live_owner.clone().unwrap());
+        let mut db = reboot::database_proto::database_client::DatabaseClient::connect(
+            database_endpoint.clone(),
+        )
+        .await
+        .unwrap();
+        db.store(reboot::database_proto::StoreRequest {
+            actor_upserts: vec![reboot::database_proto::Actor {
+                state_type: "tests.reboot.protoc.TransactionCounter".into(),
+                state_ref: auxiliary.into(),
+                state: Some(proto::TransactionCounter { value: 20 }.encode_to_vec()),
+                ..Default::default()
+            }],
+            sync: true,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+        let auxiliary_participant = DurableActorParticipant::new(
+            Arc::new(
+                TonicParticipantSidecar::connect(&database_endpoint)
+                    .await
+                    .unwrap(),
+            ),
+            "tests.reboot.protoc.TransactionCounter",
+            auxiliary,
+        );
+        let auxiliary_adapter = generated::TransactionCounterWritesMethodsTransactionAdapter::new(
+            DatabaseActorStore::connect(&database_endpoint)
+                .await
+                .unwrap(),
+            auxiliary_participant,
+            coordinator.clone(),
+            Starts {
+                root: root_id,
+                child: Uuid::from_u128(3),
+            },
+            Handler::Target,
+        )
+        .with_live_participant_owner(live_owner.clone().unwrap());
         host = host.with_host_recovery(FullWatchProof(tokio::sync::Mutex::new(Some(Box::pin(async move {
             use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
             let mut headers = reboot::RebootHeaders::new(auxiliary);
@@ -1034,19 +1663,36 @@ async fn main() {
         host = host.with_host_recovery(recovery);
     }
     if let Some(task_uuid) = optional_arg("--transition-task-uuid") {
-        let owner = tasks.as_ref().expect("transition requires generated task owner");
+        let owner = tasks
+            .as_ref()
+            .expect("transition requires generated task owner");
         let (prime_placement, prime_planner) = crate::placement();
         let prime = ApplicationHost::new("generated-cxx-database-process")
             .with_legacy_placement_readiness(prime_placement.clone())
             .with_host_recovery(prime_planner.expect("transition requires live planner"))
-            .with_host_recovery(owner.recovery(reboot::database_proto::RecoverRequest {
-                state_tags_by_state_type: [("tests.reboot.protoc.TransactionCounter".into(), "TransactionCounter".into())].into(),
-                shard_ids: vec!["s000000000".into()], skip_idempotent_mutations: true,
-            }))
-            .add_public_service(owner.wait_service(application.clone(), "server-0", prime_placement));
+            .with_host_recovery(
+                owner.recovery(reboot::database_proto::RecoverRequest {
+                    state_tags_by_state_type: [(
+                        "tests.reboot.protoc.TransactionCounter".into(),
+                        "TransactionCounter".into(),
+                    )]
+                    .into(),
+                    shard_ids: vec!["s000000000".into()],
+                    skip_idempotent_mutations: true,
+                }),
+            )
+            .add_public_service(owner.wait_service(
+                application.clone(),
+                "server-0",
+                prime_placement,
+            ));
         let (shutdown, stopped) = tokio::sync::oneshot::channel();
-        let singleton = tokio::spawn(prime.serve_with_shutdown(address, async { let _ = stopped.await; }));
-        let channel = tonic::transport::Endpoint::from_shared(format!("http://{listen}")).unwrap().connect_lazy();
+        let singleton = tokio::spawn(prime.serve_with_shutdown(address, async {
+            let _ = stopped.await;
+        }));
+        let channel = tonic::transport::Endpoint::from_shared(format!("http://{listen}"))
+            .unwrap()
+            .connect_lazy();
         let mut client = reboot::database_proto::tasks_client::TasksClient::new(channel);
         tokio::time::timeout(std::time::Duration::from_secs(5), async {
             loop {
@@ -1072,14 +1718,24 @@ async fn main() {
             }
         }).await.expect("singleton task did not complete");
         shutdown.send(()).unwrap();
-        tokio::time::timeout(std::time::Duration::from_secs(5), singleton).await.unwrap().unwrap().unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(5), singleton)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
         let marker = arg("--invoke-marker");
-        std::fs::write(format!("{marker}.singleton-stopped"), "real singleton host returned and joined").unwrap();
+        std::fs::write(
+            format!("{marker}.singleton-stopped"),
+            "real singleton host returned and joined",
+        )
+        .unwrap();
         tokio::time::timeout(std::time::Duration::from_secs(10), async {
             while !std::path::Path::new(&format!("{marker}.shared-release")).exists() {
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;
             }
-        }).await.expect("shared transition release absent");
+        })
+        .await
+        .expect("shared transition release absent");
         // Reuse the exact owner from above, including its consumed singleton
         // notification receiver. Shared recovery owns its own serial rescan.
     }
@@ -1089,73 +1745,161 @@ async fn main() {
         // shard stream or a second registration of the primary owner.
         let second_participant = DurableActorParticipant::new(
             Arc::new(TonicParticipantSidecar::connect(&endpoint).await.unwrap()),
-            "tests.reboot.protoc.TransactionCounter", "second",
+            "tests.reboot.protoc.TransactionCounter",
+            "second",
         );
         let second_coordinator = reboot::durable_coordinator::DurableRootCoordinator::new(
             Arc::new(TonicCoordinatorSidecar::connect(&endpoint).await.unwrap()),
-            Arc::new(LegacyApplicationParticipantResolver::new(application.clone(), placement.clone())),
+            Arc::new(LegacyApplicationParticipantResolver::new(
+                application.clone(),
+                placement.clone(),
+            )),
         );
         let second_adapter = generated::TransactionCounterWritesMethodsTransactionAdapter::new(
-            DatabaseActorStore::connect(&endpoint).await.unwrap(), second_participant,
-            second_coordinator, Starts { root: Uuid::new_v4(), child: Uuid::new_v4() },
-            Handler::Tasks { state_ref: "second".into(), marker: arg("--second-task-marker"), block: has("--block-task"), vector: String::new() },
+            DatabaseActorStore::connect(&endpoint).await.unwrap(),
+            second_participant,
+            second_coordinator,
+            Starts {
+                root: Uuid::new_v4(),
+                child: Uuid::new_v4(),
+            },
+            Handler::Tasks {
+                state_ref: "second".into(),
+                marker: arg("--second-task-marker"),
+                block: has("--block-task"),
+                vector: String::new(),
+            },
         );
         let (_, second) = second_adapter.with_one_shot_reader_tasks("second").unwrap();
-        if !has("--shared-task-recovery") { host = host.with_host_recovery(second.recovery(reboot::database_proto::RecoverRequest {
-            state_tags_by_state_type: [("tests.reboot.protoc.TransactionCounter".into(), "TransactionCounter".into())].into(),
-            shard_ids: vec!["s000000000".into()], skip_idempotent_mutations: true,
-        }));
+        if !has("--shared-task-recovery") {
+            host = host.with_host_recovery(
+                second.recovery(reboot::database_proto::RecoverRequest {
+                    state_tags_by_state_type: [(
+                        "tests.reboot.protoc.TransactionCounter".into(),
+                        "TransactionCounter".into(),
+                    )]
+                    .into(),
+                    shard_ids: vec!["s000000000".into()],
+                    skip_idempotent_mutations: true,
+                }),
+            );
         }
         wait_owners.push(second);
     }
     if let Some(endpoint) = optional_arg("--gauge-task-database") {
         let participant = DurableActorParticipant::new(
             Arc::new(TonicParticipantSidecar::connect(&endpoint).await.unwrap()),
-            "tests.reboot.protoc.RegistryGauge", "root",
+            "tests.reboot.protoc.RegistryGauge",
+            "root",
         );
         let coordinator = reboot::durable_coordinator::DurableRootCoordinator::new(
             Arc::new(TonicCoordinatorSidecar::connect(&endpoint).await.unwrap()),
-            Arc::new(LegacyApplicationParticipantResolver::new(application.clone(), placement.clone())),
+            Arc::new(LegacyApplicationParticipantResolver::new(
+                application.clone(),
+                placement.clone(),
+            )),
         );
         let adapter = generated::RegistryGaugeMethodsTransactionAdapter::new(
-            DatabaseActorStore::connect(&endpoint).await.unwrap(), participant,
-            coordinator, Starts { root: Uuid::new_v4(), child: Uuid::new_v4() },
-            GaugeTaskHandler { marker: arg("--second-task-marker") },
+            DatabaseActorStore::connect(&endpoint).await.unwrap(),
+            participant,
+            coordinator,
+            Starts {
+                root: Uuid::new_v4(),
+                child: Uuid::new_v4(),
+            },
+            GaugeTaskHandler {
+                marker: arg("--second-task-marker"),
+            },
         );
         let (_, gauge) = adapter.with_one_shot_reader_tasks("root").unwrap();
-        if !has("--shared-task-recovery") { host = host.with_host_recovery(gauge.recovery(reboot::database_proto::RecoverRequest {
-            state_tags_by_state_type: [("tests.reboot.protoc.RegistryGauge".into(), "RegistryGauge".into())].into(),
-            shard_ids: vec!["s000000000".into()], skip_idempotent_mutations: true,
-        }));
+        if !has("--shared-task-recovery") {
+            host = host.with_host_recovery(
+                gauge.recovery(reboot::database_proto::RecoverRequest {
+                    state_tags_by_state_type: [(
+                        "tests.reboot.protoc.RegistryGauge".into(),
+                        "RegistryGauge".into(),
+                    )]
+                    .into(),
+                    shard_ids: vec!["s000000000".into()],
+                    skip_idempotent_mutations: true,
+                }),
+            );
         }
         wait_owners.push(gauge);
     }
     if has("--shared-task-recovery") {
         let tags = if has("--gauge-task-database") {
-            vec![("tests.reboot.protoc.TransactionCounter".into(), "TransactionCounter".into()), ("tests.reboot.protoc.RegistryGauge".into(), "RegistryGauge".into())]
-        } else { vec![("tests.reboot.protoc.TransactionCounter".into(), "TransactionCounter".into())] };
-        host = host.with_host_recovery(reboot::one_shot_tasks::ReaderTaskRecoveryRegistry::new(
-            wait_owners.clone(), reboot::database_proto::RecoverRequest {
-                state_tags_by_state_type: tags.into_iter().collect(),
-                shard_ids: vec!["s000000000".into()], skip_idempotent_mutations: true,
-            }).unwrap());
+            vec![
+                (
+                    "tests.reboot.protoc.TransactionCounter".into(),
+                    "TransactionCounter".into(),
+                ),
+                (
+                    "tests.reboot.protoc.RegistryGauge".into(),
+                    "RegistryGauge".into(),
+                ),
+            ]
+        } else {
+            vec![(
+                "tests.reboot.protoc.TransactionCounter".into(),
+                "TransactionCounter".into(),
+            )]
+        };
+        host = host.with_host_recovery(
+            reboot::one_shot_tasks::ReaderTaskRecoveryRegistry::new(
+                wait_owners.clone(),
+                reboot::database_proto::RecoverRequest {
+                    state_tags_by_state_type: tags.into_iter().collect(),
+                    shard_ids: vec!["s000000000".into()],
+                    skip_idempotent_mutations: true,
+                },
+            )
+            .unwrap(),
+        );
     }
-    let wait_service = if wait_owners.is_empty() { None } else { Some(
-        reboot::database_proto::tasks_server::TasksServer::new(
-            reboot::one_shot_tasks::ReaderTaskWaitService::new(wait_owners,
-                application.clone(), optional_arg("--server-id").unwrap_or_else(|| "server-0".into()),
-                placement.clone()).unwrap())) };
+    let wait_service = if wait_owners.is_empty() {
+        None
+    } else {
+        Some(reboot::database_proto::tasks_server::TasksServer::new(
+            reboot::one_shot_tasks::ReaderTaskWaitService::new(
+                wait_owners,
+                application.clone(),
+                optional_arg("--server-id").unwrap_or_else(|| "server-0".into()),
+                placement.clone(),
+            )
+            .unwrap(),
+        ))
+    };
     if has("--duplicate-task-registration") {
-        host = host.with_host_recovery(tasks.as_ref().unwrap().recovery(reboot::database_proto::RecoverRequest {
-            state_tags_by_state_type: [("tests.reboot.protoc.TransactionCounter".into(), "TransactionCounter".into())].into(),
-            shard_ids: vec!["s000000000".into()], skip_idempotent_mutations: true,
-        }));
+        host = host.with_host_recovery(
+            tasks
+                .as_ref()
+                .unwrap()
+                .recovery(reboot::database_proto::RecoverRequest {
+                    state_tags_by_state_type: [(
+                        "tests.reboot.protoc.TransactionCounter".into(),
+                        "TransactionCounter".into(),
+                    )]
+                    .into(),
+                    shard_ids: vec!["s000000000".into()],
+                    skip_idempotent_mutations: true,
+                }),
+        );
     }
-    if let Some(tasks) = tasks.filter(|_| !has("--shared-task-recovery") && !has("--inactive-task-owner")) {
-        host = host.with_host_recovery(tasks.recovery(reboot::database_proto::RecoverRequest {
-            state_tags_by_state_type: [("tests.reboot.protoc.TransactionCounter".into(), "TransactionCounter".into())].into(),
-            shard_ids: vec!["s000000000".into()], skip_idempotent_mutations: true,
-        }));
+    if let Some(tasks) =
+        tasks.filter(|_| !has("--shared-task-recovery") && !has("--inactive-task-owner"))
+    {
+        host = host.with_host_recovery(
+            tasks.recovery(reboot::database_proto::RecoverRequest {
+                state_tags_by_state_type: [(
+                    "tests.reboot.protoc.TransactionCounter".into(),
+                    "TransactionCounter".into(),
+                )]
+                .into(),
+                shard_ids: vec!["s000000000".into()],
+                skip_idempotent_mutations: true,
+            }),
+        );
     }
     let server = tokio::spawn(async move {
         let host = host.add_legacy_control_service(adapter.legacy_participant_control_service())
@@ -1189,8 +1933,15 @@ async fn main() {
             })
             .await;
         if let Some(marker) = std::env::var_os("REBOOT_TEST_COMPETING_ADMISSION") {
-            assert!(matches!(result, Err(reboot::application_host::ApplicationHostError::RecoveryTask(_))));
-            std::fs::write(format!("{}.host-returned", marker.to_string_lossy()), "supervised host failure returned with open competing client").unwrap();
+            assert!(matches!(
+                result,
+                Err(reboot::application_host::ApplicationHostError::RecoveryTask(_))
+            ));
+            std::fs::write(
+                format!("{}.host-returned", marker.to_string_lossy()),
+                "supervised host failure returned with open competing client",
+            )
+            .unwrap();
             return;
         }
         result.unwrap();
@@ -1234,21 +1985,34 @@ async fn main() {
         if has("--writer-tasks") {
             tokio::time::timeout(std::time::Duration::from_secs(5), async {
                 loop {
-                    let mut probe = tonic::Request::new(proto::TransactionIncrementRequest { amount: 0 });
-                    *probe.metadata_mut() = reboot::RebootHeaders::new(&state_ref).to_metadata().unwrap();
+                    let mut probe =
+                        tonic::Request::new(proto::TransactionIncrementRequest { amount: 0 });
+                    *probe.metadata_mut() = reboot::RebootHeaders::new(&state_ref)
+                        .to_metadata()
+                        .unwrap();
                     match client.query(probe).await {
                         Ok(_) => break,
-                        Err(status) if status.code() == tonic::Code::Unavailable => tokio::time::sleep(std::time::Duration::from_millis(10)).await,
+                        Err(status) if status.code() == tonic::Code::Unavailable => {
+                            tokio::time::sleep(std::time::Duration::from_millis(10)).await
+                        }
                         Err(status) => panic!("writer readiness probe: {status}"),
                     }
                 }
-            }).await.expect("writer host readiness");
+            })
+            .await
+            .expect("writer host readiness");
             let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount });
-            *request.metadata_mut() = reboot::RebootHeaders::new(&state_ref).to_metadata().unwrap();
+            *request.metadata_mut() = reboot::RebootHeaders::new(&state_ref)
+                .to_metadata()
+                .unwrap();
             let result = client.increment(request).await;
             if has("--expect-task-error") {
                 let error = result.unwrap_err();
-                let expected = if has("--inactive-task-owner") || has("--no-task-owner") { tonic::Code::FailedPrecondition } else { tonic::Code::InvalidArgument };
+                let expected = if has("--inactive-task-owner") || has("--no-task-owner") {
+                    tonic::Code::FailedPrecondition
+                } else {
+                    tonic::Code::InvalidArgument
+                };
                 assert_eq!(error.code(), expected, "writer scheduling denial");
             } else {
                 result.expect("one writer scheduling mutation");
@@ -1261,7 +2025,8 @@ async fn main() {
             headers.idempotency_key = idempotency_key;
             *request.metadata_mut() = headers.to_metadata().unwrap();
             if let Some(marker) = std::env::var_os("REBOOT_TEST_TASK_ADMISSION_CANCEL") {
-                if !std::path::Path::new(&format!("{}.cancelled", marker.to_string_lossy())).exists()
+                if !std::path::Path::new(&format!("{}.cancelled", marker.to_string_lossy()))
+                    .exists()
                     || std::env::var_os("REBOOT_TEST_CANCEL_PARTICIPANT_COMMIT_ACK").is_some()
                 {
                     request.set_timeout(std::time::Duration::from_millis(350));
@@ -1292,32 +2057,72 @@ async fn main() {
                 }
                 Ok(response) => {
                     assert!(!has("--expect-task-error"));
-                    if let Some(marker) = optional_arg("--invoke-marker") { std::fs::write(marker, "acknowledged").unwrap(); }
+                    if let Some(marker) = optional_arg("--invoke-marker") {
+                        std::fs::write(marker, "acknowledged").unwrap();
+                    }
                     if let Some(expected) = expected_response {
                         assert_eq!(response.into_inner().value, expected);
                     }
                     break;
                 }
-                Err(status) if std::env::var_os("REBOOT_TEST_TASK_ADMISSION_CANCEL").is_some_and(|marker| {
-                    std::path::Path::new(&marker).exists() && !std::path::Path::new(&format!("{}.cancelled", marker.to_string_lossy())).exists()
-                }) => {
-                    assert!(matches!(status.code(), tonic::Code::Cancelled | tonic::Code::DeadlineExceeded), "admission should timeout, not fail: {status}");
-                    let mut database = reboot::database_proto::database_client::DatabaseClient::connect(database_endpoint.clone()).await.unwrap();
-                    let loaded = database.load(reboot::database_proto::LoadRequest {
-                        actors: vec![reboot::database_proto::Actor { state_type: "tests.reboot.protoc.TransactionCounter".into(), state_ref: state_ref.clone(), state: None }],
-                        task_ids: vec![],
-                    }).await.unwrap().into_inner();
+                Err(status)
+                    if std::env::var_os("REBOOT_TEST_TASK_ADMISSION_CANCEL").is_some_and(
+                        |marker| {
+                            std::path::Path::new(&marker).exists()
+                                && !std::path::Path::new(&format!(
+                                    "{}.cancelled",
+                                    marker.to_string_lossy()
+                                ))
+                                .exists()
+                        },
+                    ) =>
+                {
+                    assert!(
+                        matches!(
+                            status.code(),
+                            tonic::Code::Cancelled | tonic::Code::DeadlineExceeded
+                        ),
+                        "admission should timeout, not fail: {status}"
+                    );
+                    let mut database =
+                        reboot::database_proto::database_client::DatabaseClient::connect(
+                            database_endpoint.clone(),
+                        )
+                        .await
+                        .unwrap();
+                    let loaded = database
+                        .load(reboot::database_proto::LoadRequest {
+                            actors: vec![reboot::database_proto::Actor {
+                                state_type: "tests.reboot.protoc.TransactionCounter".into(),
+                                state_ref: state_ref.clone(),
+                                state: None,
+                            }],
+                            task_ids: vec![],
+                        })
+                        .await
+                        .unwrap()
+                        .into_inner();
                     assert_eq!(loaded.actors[0].state, Some(vec![0x08, 5]));
-                    let mut recovery = database.recover(reboot::database_proto::RecoverRequest {
-                        shard_ids: vec!["s000000000".into()], skip_idempotent_mutations: true, ..Default::default()
-                    }).await.unwrap().into_inner();
+                    let mut recovery = database
+                        .recover(reboot::database_proto::RecoverRequest {
+                            shard_ids: vec!["s000000000".into()],
+                            skip_idempotent_mutations: true,
+                            ..Default::default()
+                        })
+                        .await
+                        .unwrap()
+                        .into_inner();
                     while let Some(batch) = recovery.message().await.unwrap() {
                         assert!(batch.pending_tasks.is_empty());
                         assert!(batch.participant_transactions.is_empty());
                         assert!(batch.transaction_coordinators.is_empty());
                     }
                     let marker = std::env::var_os("REBOOT_TEST_TASK_ADMISSION_CANCEL").unwrap();
-                    std::fs::write(format!("{}.cancelled", marker.to_string_lossy()), "real sidecar unchanged; cancelled before stage/prepare").unwrap();
+                    std::fs::write(
+                        format!("{}.cancelled", marker.to_string_lossy()),
+                        "real sidecar unchanged; cancelled before stage/prepare",
+                    )
+                    .unwrap();
                     // Retry through the same generated participant and host. No reset.
                 }
                 Err(status)
@@ -1330,20 +2135,39 @@ async fn main() {
                 }
                 Err(status) if has("--expect-task-error") => {
                     let vector = arg("--task-vector");
-                    let expected = if matches!(vector.as_str(), "capacity" | "saturation") { tonic::Code::ResourceExhausted } else if vector.starts_with("reuse:") { tonic::Code::AlreadyExists } else if matches!(vector.as_str(), "no-owner" | "writer") { tonic::Code::FailedPrecondition } else { tonic::Code::InvalidArgument };
+                    let expected = if matches!(vector.as_str(), "capacity" | "saturation") {
+                        tonic::Code::ResourceExhausted
+                    } else if vector.starts_with("reuse:") {
+                        tonic::Code::AlreadyExists
+                    } else if matches!(vector.as_str(), "no-owner" | "writer") {
+                        tonic::Code::FailedPrecondition
+                    } else {
+                        tonic::Code::InvalidArgument
+                    };
                     assert_eq!(status.code(), expected, "denial vector {vector}: {status}");
                     if has("--shared-task-recovery") {
                         assert_eq!(status.message(), "no task recovery owner");
-                        std::fs::write(arg("--invoke-marker"), "shared reader recovery refuses scheduling").unwrap();
+                        std::fs::write(
+                            arg("--invoke-marker"),
+                            "shared reader recovery refuses scheduling",
+                        )
+                        .unwrap();
                     }
                     if vector == "saturation" {
                         // Probe the same actor in the same live host: a retained
                         // exclusive admission would make this reader time out.
-                        let mut probe = tonic::Request::new(proto::TransactionIncrementRequest { amount: 0 });
-                        *probe.metadata_mut() = reboot::RebootHeaders::new(&state_ref).to_metadata().unwrap();
+                        let mut probe =
+                            tonic::Request::new(proto::TransactionIncrementRequest { amount: 0 });
+                        *probe.metadata_mut() = reboot::RebootHeaders::new(&state_ref)
+                            .to_metadata()
+                            .unwrap();
                         probe.set_timeout(std::time::Duration::from_millis(500));
                         assert_eq!(client.query(probe).await.unwrap().into_inner().value, 5);
-                        std::fs::write(arg("--invoke-marker"), "saturation rejected; admission released").unwrap();
+                        std::fs::write(
+                            arg("--invoke-marker"),
+                            "saturation rejected; admission released",
+                        )
+                        .unwrap();
                     }
                     break;
                 }
@@ -1357,8 +2181,10 @@ async fn main() {
                         "type.googleapis.com/tests.reboot.protoc.TransactionLimitExceeded"
                     );
                     assert_eq!(
-                        proto::TransactionLimitExceeded::decode(details.details[0].value.as_slice())
-                            .unwrap(),
+                        proto::TransactionLimitExceeded::decode(
+                            details.details[0].value.as_slice()
+                        )
+                        .unwrap(),
                         proto::TransactionLimitExceeded { limit: 13 }
                     );
                     break;
@@ -1370,19 +2196,77 @@ async fn main() {
             return;
         }
     }
-    if let Some(task_uuid) = optional_arg("--writer-wait") {
-        let channel = tonic::transport::Endpoint::from_shared(format!("http://{listen}")).unwrap().connect_lazy();
-        let id = reboot::database_proto::TaskId { state_type: "tests.reboot.protoc.TransactionCounter".into(), state_ref: state_ref.clone(), task_uuid: Uuid::parse_str(&task_uuid).unwrap().as_bytes().to_vec() };
-        let result = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+    if let Some(task_uuid) = optional_arg("--declared-wait") {
+        let channel = tonic::transport::Endpoint::from_shared(format!("http://{listen}"))
+            .unwrap()
+            .connect_lazy();
+        let id = reboot::database_proto::TaskId {
+            state_type: "tests.reboot.protoc.TransactionCounter".into(),
+            state_ref: state_ref.clone(),
+            task_uuid: Uuid::parse_str(&task_uuid).unwrap().as_bytes().to_vec(),
+        };
+        let limit = tokio::time::timeout(std::time::Duration::from_secs(5), async {
             loop {
                 let mut request = tonic::Request::new(id.clone()); request.set_timeout(std::time::Duration::from_secs(2));
-                match generated::TransactionCounterWritesMethodsTasksWait::apply(channel.clone(), request).await {
+                let result = if has("--declared-reader") {
+                    match generated::TransactionCounterWritesMethodsTasksWait::query_declared(channel.clone(), request).await {
+                        Err(generated::TransactionCounterWritesMethodsQueryDeclaredError::TransactionLimitExceeded(error)) => Ok(error.limit),
+                        Err(generated::TransactionCounterWritesMethodsQueryDeclaredError::Grpc(status)) => Err(status),
+                        other => panic!("unexpected typed reader terminal: {other:?}"),
+                    }
+                } else {
+                    match generated::TransactionCounterWritesMethodsTasksWait::apply_declared(channel.clone(), request).await {
+                        Err(generated::TransactionCounterWritesMethodsApplyDeclaredError::TransactionLimitExceeded(error)) => Ok(error.limit),
+                        Err(generated::TransactionCounterWritesMethodsApplyDeclaredError::Grpc(status)) => Err(status),
+                        other => panic!("unexpected typed writer terminal: {other:?}"),
+                    }
+                };
+                match result { Ok(limit) => break limit, Err(status) if has("--expect-declared-rpc-failure") && status.code() == tonic::Code::Unknown => { assert!(!status.details().is_empty()); break -2; }, Err(status) if has("--expect-declared-wrong-method") && status.code() == tonic::Code::FailedPrecondition => break -3, Err(status) if has("--expect-declared-malformed") && status.code() == tonic::Code::DataLoss => break -1, Err(status) if status.code() == tonic::Code::Unavailable => tokio::time::sleep(std::time::Duration::from_millis(10)).await, Err(status) => panic!("declared Wait failed: {status}") }
+            }
+        }).await.expect("declared typed Wait timeout");
+        assert_eq!(
+            limit,
+            if has("--expect-declared-rpc-failure") {
+                -2
+            } else if has("--expect-declared-wrong-method") {
+                -3
+            } else if has("--expect-declared-malformed") {
+                -1
+            } else {
+                4242
+            }
+        );
+        std::fs::write(arg("--invoke-marker"), limit.to_string()).unwrap();
+    }
+    if let Some(task_uuid) = optional_arg("--writer-wait") {
+        let channel = tonic::transport::Endpoint::from_shared(format!("http://{listen}"))
+            .unwrap()
+            .connect_lazy();
+        let id = reboot::database_proto::TaskId {
+            state_type: "tests.reboot.protoc.TransactionCounter".into(),
+            state_ref: state_ref.clone(),
+            task_uuid: Uuid::parse_str(&task_uuid).unwrap().as_bytes().to_vec(),
+        };
+        let result = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                let mut request = tonic::Request::new(id.clone());
+                request.set_timeout(std::time::Duration::from_secs(2));
+                match generated::TransactionCounterWritesMethodsTasksWait::apply(
+                    channel.clone(),
+                    request,
+                )
+                .await
+                {
                     Ok(response) => break response,
-                    Err(status) if status.code() == tonic::Code::Unavailable => tokio::time::sleep(std::time::Duration::from_millis(10)).await,
+                    Err(status) if status.code() == tonic::Code::Unavailable => {
+                        tokio::time::sleep(std::time::Duration::from_millis(10)).await
+                    }
                     Err(status) => panic!("generated writer typed Wait: {status}"),
                 }
             }
-        }).await.expect("typed writer Wait timed out");
+        })
+        .await
+        .expect("typed writer Wait timed out");
         std::fs::write(arg("--invoke-marker"), result.value.to_string()).unwrap();
     }
     if has("--tree-typed-wait") {
@@ -1395,6 +2279,20 @@ async fn main() {
             for task in tasks {
                 loop {
                     let mut request = tonic::Request::new(task.task_id.clone().unwrap()); request.set_timeout(std::time::Duration::from_secs(15));
+                    if task.method == "QueryDeclared" {
+                        match generated::TransactionCounterWritesMethodsTasksWait::query_declared(channel.clone(), request).await {
+                            Err(generated::TransactionCounterWritesMethodsQueryDeclaredError::TransactionLimitExceeded(error)) => { assert_eq!(error.limit, 4242); values.push(error.limit.to_string()); break; },
+                            Err(generated::TransactionCounterWritesMethodsQueryDeclaredError::Grpc(status)) if status.code() == tonic::Code::Unavailable => { tokio::time::sleep(std::time::Duration::from_millis(10)).await; continue; },
+                            other => panic!("tree declared reader result: {other:?}"),
+                        }
+                    }
+                    if task.method == "ApplyDeclared" {
+                        match generated::TransactionCounterWritesMethodsTasksWait::apply_declared(channel.clone(), request).await {
+                            Err(generated::TransactionCounterWritesMethodsApplyDeclaredError::TransactionLimitExceeded(error)) => { assert_eq!(error.limit, 4242); values.push(error.limit.to_string()); break; },
+                            Err(generated::TransactionCounterWritesMethodsApplyDeclaredError::Grpc(status)) if status.code() == tonic::Code::Unavailable => { tokio::time::sleep(std::time::Duration::from_millis(10)).await; continue; },
+                            other => panic!("tree declared writer result: {other:?}"),
+                        }
+                    }
                     let result = if task.method == "Apply" { generated::TransactionCounterWritesMethodsTasksWait::apply(channel.clone(), request).await }
                         else { generated::TransactionCounterWritesMethodsTasksWait::query(channel.clone(), request).await };
                     match result { Ok(value) => { values.push(value.value.to_string()); break; }, Err(status) if status.code() == tonic::Code::Unavailable => tokio::time::sleep(std::time::Duration::from_millis(10)).await, Err(status) => panic!("tree typed Wait: {status}") }
@@ -1407,7 +2305,9 @@ async fn main() {
     if let Some(competing) = competing {
         competing.await.unwrap();
         let marker = std::env::var_os("REBOOT_TEST_COMPETING_ADMISSION").unwrap();
-        assert!(std::path::Path::new(&format!("{}.host-returned", marker.to_string_lossy())).exists());
+        assert!(
+            std::path::Path::new(&format!("{}.host-returned", marker.to_string_lossy())).exists()
+        );
         panic!("expected supervised host failure returned after cancelling competing admission");
     }
 }

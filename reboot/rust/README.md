@@ -1,3 +1,40 @@
+## Verified bounded slice: method-declared one-shot task results (2026-10-07)
+
+This verified slice extends the historical response-only task slices below;
+those older sections retain their original acceptance scope, not a current exclusion
+of declared task errors. **Overall Python/Rust task and transaction parity remains
+partial.** See `TASK-DECLARED-RESULT-CANDIDATE.md` for current-source evidence.
+
+- Generated existing-actor unary readers and ordinary non-constructor writers can
+  persist method-declared `Any<google.rpc.Status>` results and use typed canonical
+  `Tasks.Wait`. Workflows and transactional task targets remain excluded.
+- A registration-time immutable method table binds full RPC identity, Rust state
+  declaration, request and response types, persisted request decoding, response URL,
+  declared error URLs and payload decoders. Generated owners install this table;
+  overridable custom binding validators cannot grant extra declared authority.
+  Legacy `OneShotTasks::new` remains response-only. `new_with_declarations` is an
+  **explicit trusted application registration API**, not proof that a declaration
+  originated in protoc and not a sandbox against malicious host registration.
+- Generated waiters set the full expected method on the canonical Wait RPC; the
+  server checks the stored task's actual method and validates its terminal before
+  returning it. Same-response/same-error cross-method TaskIds are rejected.
+  Rich RPC failures stay `Grpc`; only a validated stored error becomes a declared
+  typed result. This is a same-framework canonical-service contract, not an
+  authenticated result certificate for an arbitrary third-party Tasks server.
+- Writer failure discards private mutated state before Store. Only runtime-produced
+  pre-Store handler failure receipts receive three bounded host-owned attempts,
+  reloading and readmitting the original task without rewriting its schedule.
+  **Reader escaped failures are not retried in this slice.** Store/Load/checkpoint
+  and completion uncertainty, cancellation and transport failures are not retried.
+- Declared receipts keep fail-before-exclusive-release protection across custom
+  binding awaits and completion CAS. Lost completion ACK is one attempt, sticky
+  failed readiness and restart recovery. Before completion CAS a declared handler
+  return is explicitly at least once; no error checkpoint or exactly-once handler
+  guarantee is claimed.
+- Participant-local declared-capable A→B→C tasks remain invisible before Commit;
+  Abort discards staging. Equal CAS error winners are accepted only after canonical
+  reload and exact terminal comparison; conflicting winners fail closed.
+
 # Rust Reboot SDK
 
 ## Verified participant-local reader and writer tasks in supervised trees

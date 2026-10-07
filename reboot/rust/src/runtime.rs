@@ -1928,7 +1928,7 @@ impl crate::one_shot_tasks::AdmittedWriterTask<'_> {
         invoke: F,
     ) -> Result<crate::one_shot_tasks::WriterTaskReceipt, Status>
     where
-        Declaration: DurableStateDeclaration,
+        Declaration: DurableStateDeclaration + 'static,
         RequestBody: Message + Default + Send + 'static,
         ResponseBody: Message + Default + Clone + Send + 'static,
         F: for<'a> FnOnce(
@@ -1936,6 +1936,39 @@ impl crate::one_shot_tasks::AdmittedWriterTask<'_> {
             RequestBody,
         ) -> Pin<
             Box<dyn Future<Output = Result<ResponseBody, Status>> + Send + 'a>,
+        >,
+    {
+        self.execute_outcome::<Declaration, RequestBody, ResponseBody, _>(move |state, request| {
+            let future = invoke(state, request);
+            Box::pin(async move {
+                future
+                    .await
+                    .map_err(crate::one_shot_tasks::TaskHandlerError::Failed)
+            })
+        })
+        .await
+    }
+
+    /// The runtime seals only handler-returned dispositions, before any Store.
+    /// Failed private state is dropped, never checkpointed. Transport uncertainty
+    /// from Load, replay, Store or completion is not a handler disposition.
+    pub async fn execute_outcome<Declaration, RequestBody, ResponseBody, F>(
+        self,
+        invoke: F,
+    ) -> Result<crate::one_shot_tasks::WriterTaskReceipt, Status>
+    where
+        Declaration: DurableStateDeclaration + 'static,
+        RequestBody: Message + Default + Send + 'static,
+        ResponseBody: Message + Default + Clone + Send + 'static,
+        F: for<'a> FnOnce(
+            &'a mut Declaration::State,
+            RequestBody,
+        ) -> Pin<
+            Box<
+                dyn Future<Output = Result<ResponseBody, crate::one_shot_tasks::TaskHandlerError>>
+                    + Send
+                    + 'a,
+            >,
         >,
     {
         let id = self
@@ -1950,6 +1983,12 @@ impl crate::one_shot_tasks::AdmittedWriterTask<'_> {
                 "admitted task method/state identity mismatch",
             ));
         }
+        self.tasks
+            .validate_executor::<Declaration, RequestBody, ResponseBody>(
+                self.task,
+                self.method,
+                self.response_type,
+            )?;
         let request = RequestBody::decode(self.task.request.as_slice())
             .map_err(|_| Status::invalid_argument("malformed canonical writer task request"))?;
         let key = writer_task_key(id, self.method)?;
@@ -1968,10 +2007,12 @@ impl crate::one_shot_tasks::AdmittedWriterTask<'_> {
                 .store(true, std::sync::atomic::Ordering::Release);
             return Ok(crate::one_shot_tasks::WriterTaskReceipt {
                 task: self.task.clone(),
-                response: prost_types::Any {
-                    type_url: self.response_type.to_owned(),
-                    value: response.encode_to_vec(),
-                },
+                outcome: crate::one_shot_tasks::WriterTaskOutcome::Terminal(
+                    database::task::ResponseOrError::Response(prost_types::Any {
+                        type_url: self.response_type.to_owned(),
+                        value: response.encode_to_vec(),
+                    }),
+                ),
             });
         }
         let mut state = self
@@ -1979,7 +2020,29 @@ impl crate::one_shot_tasks::AdmittedWriterTask<'_> {
             .load_for_declaration::<Declaration>(&id.state_ref)
             .await?
             .ok_or_else(|| Status::failed_precondition("writer task requires existing actor"))?;
-        let response = invoke(&mut state, request).await?;
+        let response = match invoke(&mut state, request).await {
+            Ok(response) => response,
+            Err(error) => {
+                // No durable operation has started; this private state is discarded.
+                let outcome = match error {
+                    crate::one_shot_tasks::TaskHandlerError::Declared(error) => {
+                        self.tasks.validate_declared(self.task, &error)?;
+                        self.started
+                            .store(true, std::sync::atomic::Ordering::Release);
+                        crate::one_shot_tasks::WriterTaskOutcome::Terminal(
+                            database::task::ResponseOrError::Error(error),
+                        )
+                    }
+                    crate::one_shot_tasks::TaskHandlerError::Failed(error) => {
+                        crate::one_shot_tasks::WriterTaskOutcome::PreStoreFailure(error)
+                    }
+                };
+                return Ok(crate::one_shot_tasks::WriterTaskReceipt {
+                    task: self.task.clone(),
+                    outcome,
+                });
+            }
+        };
         let mut operation = self.durable();
         self.store
             .store_type(
@@ -2006,10 +2069,12 @@ impl crate::one_shot_tasks::AdmittedWriterTask<'_> {
         operation.acknowledged();
         Ok(crate::one_shot_tasks::WriterTaskReceipt {
             task: self.task.clone(),
-            response: prost_types::Any {
-                type_url: self.response_type.to_owned(),
-                value: response.encode_to_vec(),
-            },
+            outcome: crate::one_shot_tasks::WriterTaskOutcome::Terminal(
+                database::task::ResponseOrError::Response(prost_types::Any {
+                    type_url: self.response_type.to_owned(),
+                    value: response.encode_to_vec(),
+                }),
+            ),
         })
     }
 }

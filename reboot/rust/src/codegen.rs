@@ -1320,6 +1320,22 @@ fn emit_durable(
         }
         output.push_str("}\n\n");
     }
+    if has_transactions {
+        for (kind, method, _, _, method_identity) in &database_methods {
+            let errors = declared_database_errors(annotation, kind, method_identity);
+            if !errors.is_empty() {
+                emit_declared_error_enum(
+                    output,
+                    service_name,
+                    method,
+                    package,
+                    errors,
+                    runtime_module,
+                    true,
+                );
+            }
+        }
+    }
     for (kind, method, _, _, method_identity) in &methods {
         let declared_errors = declared_transactional_errors(annotation, kind, method_identity);
         if !declared_errors.is_empty() {
@@ -1475,7 +1491,13 @@ fn emit_declared_error_enum(
     if include_system_aborts {
         output.push_str(&format!("            match {runtime_module}::system_aborted_from_detail(&detail) {{ Ok(Some(error)) => return Self::System({runtime_module}::SystemAbort {{ error, message }}), Ok(None) => {{}}, Err(_) => return Self::Grpc(status), }}\n"));
     }
-    output.push_str("        }\n        Self::Grpc(status)\n    }\n}\n\n");
+    output.push_str("        }\n        Self::Grpc(status)\n    }\n");
+    output.push_str(&format!("    fn into_task_handler_error(self) -> {runtime_module}::one_shot_tasks::TaskHandlerError {{ match self {{\n"));
+    for error in declared_errors {
+        let variant = error.to_upper_camel_case();
+        output.push_str(&format!("        Self::{variant}(error) => {{ let status = {runtime_module}::declared_error_status(tonic::Code::Unknown, \"declared error\", \"type.googleapis.com/{package}.{error}\", &error); {runtime_module}::one_shot_tasks::TaskHandlerError::declared(status) }},\n"));
+    }
+    output.push_str(&format!("        other => {runtime_module}::one_shot_tasks::TaskHandlerError::Failed(other.into_status()),\n    }} }}\n}}\nimpl From<tonic::Status> for {error_type} {{ fn from(status: tonic::Status) -> Self {{ Self::Grpc(status) }} }}\n\n"));
 }
 
 fn emit_external_client(
@@ -1750,6 +1772,25 @@ fn emit_transaction_flow(output: &mut String, flow: TransactionFlow<'_>) {
     output.push_str(&format!("{prefix}let mut response = tonic::Response::new(execution.response);\n{prefix}// Consuming guard seals and hands off before any potentially durable RPC.\n{prefix}let mut uncertainty = if ({task_scope}) && !{read_only} && !{factory} && context.transaction_ids().len() == 1 {{ self.tasks.as_ref().map(|tasks| tasks.own_root_handoff()) }} else {{ None }};\n{prefix}{completion}\n{prefix}if let Some(owner) = &mut uncertainty {{ owner.completed(); }}\n{prefix}// Inbound success only stages effects; canonical host scans own remote delivery after terminal ACK.\n{prefix}if {task_scope} {{ if let Some(tasks) = &self.tasks {{ tasks.dispatch_committed(execution.task_upserts); }} }}\n{prefix}Ok(response)\n"));
 }
 
+fn task_error_validation(
+    annotation: &DurableService,
+    name: &str,
+    package: &str,
+    runtime_module: &str,
+) -> String {
+    let mut code = format!(
+        "let rich = {runtime_module}::one_shot_tasks::decode_task_error(error)?; match rich.details[0].type_url.as_str() {{"
+    );
+    for error in annotation.declared_errors.get(name).into_iter().flatten() {
+        let variant = error.to_upper_camel_case();
+        code.push_str(&format!("\"type.googleapis.com/{package}.{error}\" => {{ <proto::{variant} as prost::Message>::decode(rich.details[0].value.as_slice()).map_err(|_| tonic::Status::data_loss(\"malformed declared task error payload\"))?; }},"));
+    }
+    code.push_str(
+        "_ => return Err(tonic::Status::data_loss(\"task error not declared by method\").into()), } ",
+    );
+    code
+}
+
 fn emit_reader_tasks(
     output: &mut String,
     service: &ServiceDescriptorProto,
@@ -1771,11 +1812,7 @@ fn emit_reader_tasks(
         if !matches!(
             annotation.methods.get(name),
             Some(DurableKind::Reader | DurableKind::Writer(WriterMetadata { constructor: false }))
-        ) || annotation
-            .declared_errors
-            .get(name)
-            .is_some_and(|errors| !errors.is_empty())
-        {
+        ) {
             continue;
         }
         let rust_name = snake_case(name);
@@ -1799,8 +1836,37 @@ fn emit_reader_tasks(
             .next()
             .unwrap()
             .to_upper_camel_case();
-        wait_methods.push_str(&format!("    /// Wait via the canonical public Tasks RPC. Request metadata/deadline is preserved.\n    pub async fn {rust_name}(channel: tonic::transport::Channel, mut request: tonic::Request<{runtime_module}::database_proto::TaskId>) -> Result<proto::{response}, tonic::Status> {{ if request.get_ref().state_type != <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE {{ return Err(tonic::Status::invalid_argument(\"task state type does not match generated method\")); }} if request.metadata().get(\"x-reboot-state-ref\").is_none() {{ let state_ref = request.get_ref().state_ref.parse().map_err(|_| tonic::Status::invalid_argument(\"invalid routed task state ref\"))?; request.metadata_mut().insert(\"x-reboot-state-ref\", state_ref); }} let result = {runtime_module}::database_proto::tasks_client::TasksClient::new(channel).wait(request.map(|task_id| {runtime_module}::database_proto::WaitRequest {{ task_id: Some(task_id) }})).await?.into_inner(); match result.response_or_error.and_then(|result| result.response_or_error) {{ Some({runtime_module}::database_proto::task_response_or_error::ResponseOrError::Response(response)) if response.type_url == \"type.googleapis.com/{response_full}\" => <proto::{response} as prost::Message>::decode(response.value.as_slice()).map_err(|_| tonic::Status::data_loss(\"malformed typed task response\")), Some({runtime_module}::database_proto::task_response_or_error::ResponseOrError::Error(_)) => Err(tonic::Status::unimplemented(\"typed task errors are outside this slice\")), _ => Err(tonic::Status::data_loss(\"missing or mismatched typed task response\")) }} }}\n"));
-        routed_wait_methods.push_str(&format!("    /// Resolve each task-result call afresh; no channel cache or RPC retries.\n    pub async fn {rust_name}(&self, request: tonic::Request<{runtime_module}::database_proto::TaskId>) -> Result<proto::{response}, tonic::Status> {{ if request.get_ref().state_type != <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE {{ return Err(tonic::Status::invalid_argument(\"task state type does not match generated method\")); }} let id = request.get_ref(); let channel = self.resolver.resolve(&id.state_type, &id.state_ref).await?; {scheduler}Wait::{rust_name}(channel, request).await }}\n"));
+        let errors = annotation
+            .declared_errors
+            .get(name)
+            .is_some_and(|errors| !errors.is_empty());
+        let wait_error = if errors {
+            declared_error_type(service_name, &rust_name)
+        } else {
+            "tonic::Status".to_owned()
+        };
+        let rpc_error_map = if errors {
+            format!(".map_err({wait_error}::Grpc)")
+        } else {
+            String::new()
+        };
+        let route_error_map = if errors {
+            format!(".map_err({wait_error}::Grpc)")
+        } else {
+            String::new()
+        };
+        let error_validation = task_error_validation(annotation, name, package, runtime_module);
+        let error_arm = if errors {
+            format!(
+                "Some({runtime_module}::database_proto::task_response_or_error::ResponseOrError::Error(error)) => {{ let error = &error; {error_validation} Err({wait_error}::from_status(tonic::Status::with_details(tonic::Code::from_i32(rich.code), rich.message, error.value.clone().into()))) }}"
+            )
+        } else {
+            format!(
+                "Some({runtime_module}::database_proto::task_response_or_error::ResponseOrError::Error(_)) => Err(tonic::Status::data_loss(\"task method does not declare errors\"))"
+            )
+        };
+        wait_methods.push_str(&format!("    /// Wait via the canonical public Tasks RPC. Request metadata/deadline is preserved.\n    pub async fn {rust_name}(channel: tonic::transport::Channel, mut request: tonic::Request<{runtime_module}::database_proto::TaskId>) -> Result<proto::{response}, {wait_error}> {{  if request.get_ref().state_type != <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE {{ return Err(tonic::Status::invalid_argument(\"task state type does not match generated method\").into()); }} if request.metadata().get(\"x-reboot-state-ref\").is_none() {{ let state_ref = request.get_ref().state_ref.parse().map_err(|_| tonic::Status::invalid_argument(\"invalid routed task state ref\"))?; request.metadata_mut().insert(\"x-reboot-state-ref\", state_ref); }} request.metadata_mut().insert(\"x-reboot-task-method\", \"{package}.{service_name}.{name}\".parse().unwrap()); let result = {runtime_module}::database_proto::tasks_client::TasksClient::new(channel).wait(request.map(|task_id| {runtime_module}::database_proto::WaitRequest {{ task_id: Some(task_id) }})).await{rpc_error_map}?.into_inner(); match result.response_or_error.and_then(|result| result.response_or_error) {{ Some({runtime_module}::database_proto::task_response_or_error::ResponseOrError::Response(response)) if response.type_url == \"type.googleapis.com/{response_full}\" => <proto::{response} as prost::Message>::decode(response.value.as_slice()).map_err(|_| tonic::Status::data_loss(\"malformed typed task response\").into()), {error_arm}, _ => Err(tonic::Status::data_loss(\"missing or mismatched typed task response\").into()) }}  }}\n"));
+        routed_wait_methods.push_str(&format!("    /// Resolve each task-result call afresh; no channel cache or RPC retries.\n    pub async fn {rust_name}(&self, request: tonic::Request<{runtime_module}::database_proto::TaskId>) -> Result<proto::{response}, {wait_error}> {{ if request.get_ref().state_type != <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE {{ return Err(tonic::Status::invalid_argument(\"task state type does not match generated method\").into()); }} let id = request.get_ref(); let channel = self.resolver.resolve(&id.state_type, &id.state_ref).await{route_error_map}?; {scheduler}Wait::{rust_name}(channel, request).await }}\n"));
     }
     output.push_str("}\n");
     output.push_str(&format!(
@@ -1816,11 +1882,7 @@ fn emit_reader_tasks(
         if !matches!(
             annotation.methods.get(name),
             Some(DurableKind::Reader | DurableKind::Writer(WriterMetadata { constructor: false }))
-        ) || annotation
-            .declared_errors
-            .get(name)
-            .is_some_and(|errors| !errors.is_empty())
-        {
+        ) {
             continue;
         }
         let request = method
@@ -1844,15 +1906,12 @@ fn emit_reader_tasks(
         output.push_str(&format!("        \"{name}\" => {{ {writer_validation}<proto::{request} as prost::Message>::decode(task.request.as_slice()).map_err(|_| tonic::Status::invalid_argument(\"malformed task request\"))?; Ok(()) }},\n"));
     }
     output.push_str("        _ => Err(tonic::Status::invalid_argument(\"unknown or unsupported reader task method\")),\n    } }\n");
-    output.push_str(&format!("    async fn execute(&self, task: &{runtime_module}::database_proto::Task) -> Result<prost_types::Any, tonic::Status> {{ let id = task.task_id.as_ref().ok_or_else(|| tonic::Status::invalid_argument(\"missing task identity\"))?; let state = self.store.load_for_declaration::<{state}DurableState>(&id.state_ref).await?.ok_or_else(|| tonic::Status::failed_precondition(\"reader task requires existing actor\"))?; match task.method.as_str() {{\n"));
+    output.push_str("    async fn execute(&self, _: &");
+    output.push_str(&format!("{runtime_module}::database_proto::Task) -> Result<prost_types::Any, tonic::Status> {{ Err(tonic::Status::failed_precondition(\"use terminal execution\")) }}\n"));
+    output.push_str(&format!("    async fn execute_terminal(&self, task: &{runtime_module}::database_proto::Task) -> Result<{runtime_module}::database_proto::task::ResponseOrError, tonic::Status> {{ let id = task.task_id.as_ref().ok_or_else(|| tonic::Status::invalid_argument(\"missing task identity\"))?; let state = self.store.load_for_declaration::<{state}DurableState>(&id.state_ref).await?.ok_or_else(|| tonic::Status::failed_precondition(\"reader task requires existing actor\"))?; match task.method.as_str() {{\n"));
     for method in &service.method {
         let name = method.name.as_deref().unwrap();
-        if !matches!(annotation.methods.get(name), Some(DurableKind::Reader))
-            || annotation
-                .declared_errors
-                .get(name)
-                .is_some_and(|errors| !errors.is_empty())
-        {
+        if !matches!(annotation.methods.get(name), Some(DurableKind::Reader)) {
             continue;
         }
         let rust_name = snake_case(name);
@@ -1873,7 +1932,23 @@ fn emit_reader_tasks(
             .unwrap()
             .to_upper_camel_case();
         let response_name = method.output_type.as_ref().unwrap().trim_start_matches('.');
-        output.push_str(&format!("        \"{name}\" => {{ let request = <proto::{request} as prost::Message>::decode(task.request.as_slice()).map_err(|_| tonic::Status::invalid_argument(\"malformed task request\"))?; let response = self.handler.{rust_name}(&state, request).await?; Ok(prost_types::Any {{ type_url: \"type.googleapis.com/{response_name}\".to_owned(), value: <proto::{response} as prost::Message>::encode_to_vec(&response) }}) }},\n"));
+        let error_map = if annotation
+            .declared_errors
+            .get(name)
+            .is_some_and(|e| !e.is_empty())
+        {
+            ".map_err(|error| error.into_task_handler_error())"
+        } else {
+            ".map_err("
+        };
+        let invoke = if error_map == ".map_err(" {
+            format!(
+                "self.handler.{rust_name}(&state, request).await.map_err({runtime_module}::one_shot_tasks::TaskHandlerError::Failed)"
+            )
+        } else {
+            format!("self.handler.{rust_name}(&state, request).await{error_map}")
+        };
+        output.push_str(&format!("        \"{name}\" => {{ let request = <proto::{request} as prost::Message>::decode(task.request.as_slice()).map_err(|_| tonic::Status::invalid_argument(\"malformed task request\"))?; let response = match {invoke} {{ Ok(response) => response, Err({runtime_module}::one_shot_tasks::TaskHandlerError::Declared(error)) => return Ok({runtime_module}::database_proto::task::ResponseOrError::Error(error)), Err({runtime_module}::one_shot_tasks::TaskHandlerError::Failed(error)) => return Err(error), }}; Ok({runtime_module}::database_proto::task::ResponseOrError::Response(prost_types::Any {{ type_url: \"type.googleapis.com/{response_name}\".to_owned(), value: <proto::{response} as prost::Message>::encode_to_vec(&response) }})) }},\n"));
     }
     output.push_str(
         "        _ => Err(tonic::Status::invalid_argument(\"unknown reader task\")),\n    } }\n",
@@ -1884,11 +1959,7 @@ fn emit_reader_tasks(
         if !matches!(
             annotation.methods.get(name),
             Some(DurableKind::Reader | DurableKind::Writer(WriterMetadata { constructor: false }))
-        ) || annotation
-            .declared_errors
-            .get(name)
-            .is_some_and(|errors| !errors.is_empty())
-        {
+        ) {
             continue;
         }
         let full = method.output_type.as_ref().unwrap().trim_start_matches('.');
@@ -1896,6 +1967,30 @@ fn emit_reader_tasks(
         output.push_str(&format!("        \"{name}\" => {{ if response.type_url != \"type.googleapis.com/{full}\" {{ return Err(tonic::Status::data_loss(\"mismatched typed writer task response\")); }} <proto::{response} as prost::Message>::decode(response.value.as_slice()).map_err(|_| tonic::Status::data_loss(\"malformed typed writer task response\"))?; Ok(()) }},\n"));
     }
     output.push_str("        _ => Err(tonic::Status::failed_precondition(\"unsupported completed task method\")), } }\n");
+    output.push_str(&format!("    fn validate_error(&self, task: &{runtime_module}::database_proto::Task, error: &prost_types::Any) -> Result<(), tonic::Status> {{ let _ = error; match task.method.as_str() {{\n"));
+    for method in &service.method {
+        let name = method.name.as_deref().unwrap();
+        if annotation
+            .declared_errors
+            .get(name)
+            .is_some_and(|errors| !errors.is_empty())
+            && matches!(
+                annotation.methods.get(name),
+                Some(
+                    DurableKind::Reader
+                        | DurableKind::Writer(WriterMetadata { constructor: false })
+                )
+            )
+        {
+            let validation = task_error_validation(annotation, name, package, runtime_module);
+            output.push_str(&format!(
+                "        \"{name}\" => {{ {validation} Ok(()) }},\n"
+            ));
+        }
+    }
+    output.push_str(
+        "        _ => Err(tonic::Status::data_loss(\"unsupported task error method\")), } }\n",
+    );
     output.push_str(
         "    fn writer_capable(&self) -> bool { self.writers }\n    fn is_writer(&self, task: &",
     );
@@ -1907,11 +2002,7 @@ fn emit_reader_tasks(
         if matches!(
             annotation.methods.get(name),
             Some(DurableKind::Writer(WriterMetadata { constructor: false }))
-        ) && annotation
-            .declared_errors
-            .get(name)
-            .is_none_or(|errors| errors.is_empty())
-        {
+        ) {
             output.push_str(&format!("        \"{name}\" => true,\n"));
         }
     }
@@ -1922,11 +2013,7 @@ fn emit_reader_tasks(
         if matches!(
             annotation.methods.get(name),
             Some(DurableKind::Writer(WriterMetadata { constructor: false }))
-        ) && annotation
-            .declared_errors
-            .get(name)
-            .is_none_or(|errors| errors.is_empty())
-        {
+        ) {
             output.push_str(&format!(
                 "        \"{name}\" => Some(\"{package}.{service_name}.{name}\"),\n"
             ));
@@ -1939,11 +2026,7 @@ fn emit_reader_tasks(
         if matches!(
             annotation.methods.get(name),
             Some(DurableKind::Writer(WriterMetadata { constructor: false }))
-        ) && annotation
-            .declared_errors
-            .get(name)
-            .is_none_or(|errors| errors.is_empty())
-        {
+        ) {
             let response = method.output_type.as_ref().unwrap().trim_start_matches('.');
             output.push_str(&format!(
                 "        \"{name}\" => Some(\"type.googleapis.com/{response}\"),\n"
@@ -1958,11 +2041,7 @@ fn emit_reader_tasks(
         if !matches!(
             annotation.methods.get(name),
             Some(DurableKind::Writer(WriterMetadata { constructor: false }))
-        ) || annotation
-            .declared_errors
-            .get(name)
-            .is_some_and(|errors| !errors.is_empty())
-        {
+        ) {
             continue;
         }
         let rust_name = snake_case(name);
@@ -1982,12 +2061,56 @@ fn emit_reader_tasks(
             .next()
             .unwrap()
             .to_upper_camel_case();
-        output.push_str(&format!("        \"{name}\" => {{ let handler = self.handler.clone(); admitted.execute::<{state}DurableState, proto::{request}, proto::{response}, _>(move |state, request| {{ Box::pin(async move {{ handler.{rust_name}(state, request).await }}) }}).await }},\n"));
+        let error_map = if annotation
+            .declared_errors
+            .get(name)
+            .is_some_and(|errors| !errors.is_empty())
+        {
+            ".map_err(|error| error.into_task_handler_error())".to_owned()
+        } else {
+            format!(".map_err({runtime_module}::one_shot_tasks::TaskHandlerError::Failed)")
+        };
+        output.push_str(&format!("        \"{name}\" => {{ let handler = self.handler.clone(); admitted.execute_outcome::<{state}DurableState, proto::{request}, proto::{response}, _>(move |state, request| {{ Box::pin(async move {{ handler.{rust_name}(state, request).await{error_map} }}) }}).await }},\n"));
     }
     output.push_str(
         "        _ => Err(tonic::Status::invalid_argument(\"unsupported writer task\")), } }\n}\n",
     );
-    output.push_str(&format!("impl<H, P, C, R, F> {service_name}TransactionAdapter<H, P, C, R, F> where H: {handler}, P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{\n    pub fn with_one_shot_reader_tasks(mut self, state_ref: &str) -> Result<(Self, {runtime_module}::one_shot_tasks::OneShotTasks), tonic::Status> {{ self.participant.validate_task_owner(&self.store, <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, state_ref)?; let tasks = {runtime_module}::one_shot_tasks::OneShotTasks::new(self.store.clone(), <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref.to_owned(), {binding} {{ handler: self.handler.clone(), store: self.store.clone(), writers: false }})?; self.tasks = Some(tasks.clone()); Ok((self, tasks)) }}\n    pub fn with_one_shot_writer_tasks(mut self, state_ref: &str) -> Result<(Self, {runtime_module}::one_shot_tasks::OneShotTasks), tonic::Status> {{ self.participant.validate_task_owner(&self.store, <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, state_ref)?; let tasks = {runtime_module}::one_shot_tasks::OneShotTasks::new(self.store.clone(), <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref.to_owned(), {binding} {{ handler: self.handler.clone(), store: self.store.clone(), writers: true }})?; self.tasks = Some(tasks.clone()); Ok((self, tasks)) }}\n}}\n"));
+    let mut declarations = String::from("vec![");
+    for method in &service.method {
+        let name = method.name.as_deref().unwrap();
+        if !matches!(
+            annotation.methods.get(name),
+            Some(DurableKind::Reader | DurableKind::Writer(WriterMetadata { constructor: false }))
+        ) {
+            continue;
+        }
+        let request = method
+            .input_type
+            .as_ref()
+            .unwrap()
+            .rsplit('.')
+            .next()
+            .unwrap()
+            .to_upper_camel_case();
+        let response = method
+            .output_type
+            .as_ref()
+            .unwrap()
+            .rsplit('.')
+            .next()
+            .unwrap()
+            .to_upper_camel_case();
+        let response_full = method.output_type.as_ref().unwrap().trim_start_matches('.');
+        let mut errors = String::from("vec![");
+        for error in annotation.declared_errors.get(name).into_iter().flatten() {
+            let error_type = error.to_upper_camel_case();
+            errors.push_str(&format!("{runtime_module}::one_shot_tasks::DeclaredTaskError::new::<proto::{error_type}>(\"type.googleapis.com/{package}.{error}\"),"));
+        }
+        errors.push(']');
+        declarations.push_str(&format!("{runtime_module}::one_shot_tasks::TaskMethodDeclaration::new::<{state}DurableState, proto::{request}, proto::{response}>(\"{package}.{service_name}.{name}\", \"type.googleapis.com/{response_full}\", {errors}),"));
+    }
+    declarations.push(']');
+    output.push_str(&format!("impl<H, P, C, R, F> {service_name}TransactionAdapter<H, P, C, R, F> where H: {handler}, P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{\n    pub fn with_one_shot_reader_tasks(mut self, state_ref: &str) -> Result<(Self, {runtime_module}::one_shot_tasks::OneShotTasks), tonic::Status> {{ self.participant.validate_task_owner(&self.store, <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, state_ref)?; let tasks = {runtime_module}::one_shot_tasks::OneShotTasks::new_with_declarations(self.store.clone(), <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref.to_owned(), {binding} {{ handler: self.handler.clone(), store: self.store.clone(), writers: false }}, {declarations})?; self.tasks = Some(tasks.clone()); Ok((self, tasks)) }}\n    pub fn with_one_shot_writer_tasks(mut self, state_ref: &str) -> Result<(Self, {runtime_module}::one_shot_tasks::OneShotTasks), tonic::Status> {{ self.participant.validate_task_owner(&self.store, <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, state_ref)?; let tasks = {runtime_module}::one_shot_tasks::OneShotTasks::new_with_declarations(self.store.clone(), <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref.to_owned(), {binding} {{ handler: self.handler.clone(), store: self.store.clone(), writers: true }}, {declarations})?; self.tasks = Some(tasks.clone()); Ok((self, tasks)) }}\n}}\n"));
 }
 
 fn emit_transactions(
@@ -2012,8 +2135,13 @@ fn emit_transactions(
     let server = format!("{}_server", snake_case(service_name));
     output.push_str("#[tonic::async_trait]\n");
     output.push_str(&format!("pub trait {handler}: Send + Sync + 'static {{\n"));
-    for (kind, method, request, response, _) in database_methods {
-        output.push_str(&format!("    async fn {method}(&self, state: {}proto::{state}, request: proto::{request}) -> Result<proto::{response}, tonic::Status>;\n", if matches!(**kind, DurableKind::Writer(_)) { "&mut " } else { "&" }));
+    for (kind, method, request, response, identity) in database_methods {
+        let error = if declared_database_errors(annotation, kind, identity).is_empty() {
+            "tonic::Status".to_owned()
+        } else {
+            declared_error_type(service_name, method)
+        };
+        output.push_str(&format!("    async fn {method}(&self, state: {}proto::{state}, request: proto::{request}) -> Result<proto::{response}, {error}>;\n", if matches!(**kind, DurableKind::Writer(_)) { "&mut " } else { "&" }));
     }
     for (kind, method, request, response, method_identity) in &transactions {
         let metadata = match kind {
@@ -2100,7 +2228,12 @@ fn emit_transactions(
             ),
             DurableKind::Transaction(_) => unreachable!("transactions are filtered above"),
         };
-        output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n        let handler = self.handler.clone();\n        self.store.{envelope}::<{declaration}, _, _, _>(\n            {prefix}request, move |state, request| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ handler.{method}(state, request).await }})\n            }},\n        ).await\n    }}\n"));
+        let error_map = if declared_database_errors(annotation, kind, method_identity).is_empty() {
+            ""
+        } else {
+            ".map_err(|error| error.into_status())"
+        };
+        output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n        let handler = self.handler.clone();\n        self.store.{envelope}::<{declaration}, _, _, _>(\n            {prefix}request, move |state, request| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ handler.{method}(state, request).await{error_map} }})\n            }},\n        ).await\n    }}\n"));
     }
     for (kind, method, request, response, method_identity) in transactions {
         let metadata = match kind {
@@ -2343,7 +2476,7 @@ mod tests {
     use super::*;
     use prost_types::{FileDescriptorProto, MethodDescriptorProto, ServiceDescriptorProto};
     #[test]
-    fn reader_task_generation_excludes_declared_error_targets_at_every_surface() {
+    fn reader_task_generation_includes_typed_declared_error_targets_at_every_surface() {
         let method = |name: &str| MethodDescriptorProto {
             name: Some(name.into()),
             input_type: Some(".example.QueryRequest".into()),
@@ -2381,7 +2514,7 @@ mod tests {
         assert!(output.contains("pub struct ActorMethodsTasksWait;"));
         assert!(output.contains("pub struct ActorMethodsTasksWaitRouted<R>"));
         assert!(output.contains("self.resolver.resolve(&id.state_type, &id.state_ref).await?"));
-        assert!(!output.contains("pub async fn query_error("));
+        assert!(output.contains("pub async fn query_error("));
         assert!(output.contains("request.map(|task_id|"));
         assert_eq!(
             output.matches("\"Query\" =>").count(),
@@ -2389,9 +2522,9 @@ mod tests {
             "ordinary reader must have validation, response validation and execution arms"
         );
         assert!(output.contains("self.handler.query(&state, request)"));
-        assert!(!output.contains("pub fn query_error("));
-        assert!(!output.contains("\"QueryError\" =>"));
-        assert!(!output.contains("self.handler.query_error("));
+        assert!(output.contains("pub fn query_error("));
+        assert!(output.contains("\"QueryError\" =>"));
+        assert!(output.contains("self.handler.query_error("));
         assert!(output.contains("unknown or unsupported reader task method"));
     }
 

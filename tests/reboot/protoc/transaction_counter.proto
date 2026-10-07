@@ -55,6 +55,13 @@ service TransactionCounterWritesMethods {
     option (rbt.v1alpha1.method).writer = {};
   }
 
+  rpc QueryDeclared(TransactionIncrementRequest) returns (TransactionCounterValue) {
+    option (rbt.v1alpha1.method) = { reader: {} errors: ".tests.reboot.protoc.TransactionLimitExceeded" };
+  }
+  rpc ApplyDeclared(TransactionIncrementRequest) returns (TransactionCounterValue) {
+    option (rbt.v1alpha1.method) = { writer: {} errors: ".tests.reboot.protoc.TransactionLimitExceeded" };
+  }
+
   rpc Increment(TransactionIncrementRequest) returns (TransactionCounterValue) {
     option (rbt.v1alpha1.method) = {
       transaction: { exclusive: {} }

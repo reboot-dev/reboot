@@ -476,6 +476,13 @@ struct TransactionCounter {
 
 #[tonic::async_trait]
 impl transaction_generated::TransactionCounterWritesMethodsTransactionHandler for TransactionCounter {
+    async fn query_declared(&self, _: &proto::TransactionCounter, _: proto::TransactionIncrementRequest) -> Result<proto::TransactionCounterValue, transaction_generated::TransactionCounterWritesMethodsQueryDeclaredError> {
+        Err(transaction_generated::TransactionCounterWritesMethodsQueryDeclaredError::TransactionLimitExceeded(proto::TransactionLimitExceeded { limit: 4242 }))
+    }
+    async fn apply_declared(&self, state: &mut proto::TransactionCounter, _: proto::TransactionIncrementRequest) -> Result<proto::TransactionCounterValue, transaction_generated::TransactionCounterWritesMethodsApplyDeclaredError> {
+        state.value += 1000;
+        Err(transaction_generated::TransactionCounterWritesMethodsApplyDeclaredError::TransactionLimitExceeded(proto::TransactionLimitExceeded { limit: 4242 }))
+    }
     async fn query(
         &self,
         state: &proto::TransactionCounter,
@@ -642,6 +649,9 @@ struct TransactionRichErrorService;
 
 #[tonic::async_trait]
 impl proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods for TransactionRichErrorService {
+    async fn query_declared(&self, _: tonic::Request<proto::TransactionIncrementRequest>) -> Result<tonic::Response<proto::TransactionCounterValue>, tonic::Status> { Err(tonic::Status::unimplemented("fixture")) }
+    async fn apply_declared(&self, _: tonic::Request<proto::TransactionIncrementRequest>) -> Result<tonic::Response<proto::TransactionCounterValue>, tonic::Status> { Err(tonic::Status::unimplemented("fixture")) }
+
     async fn query(&self, _: tonic::Request<proto::TransactionIncrementRequest>) -> Result<tonic::Response<proto::TransactionCounterValue>, tonic::Status> { Err(tonic::Status::unimplemented("fixture")) }
     async fn apply(&self, _: tonic::Request<proto::TransactionIncrementRequest>) -> Result<tonic::Response<proto::TransactionCounterValue>, tonic::Status> { Err(tonic::Status::unimplemented("fixture")) }
     async fn increment(&self, request: tonic::Request<proto::TransactionIncrementRequest>) -> Result<tonic::Response<proto::TransactionCounterValue>, tonic::Status> {
@@ -2592,6 +2602,9 @@ async fn generated_transaction_client_reroutes_through_legacy_application_placem
 
     #[tonic::async_trait]
     impl proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods for Endpoint {
+    async fn query_declared(&self, _: tonic::Request<proto::TransactionIncrementRequest>) -> Result<tonic::Response<proto::TransactionCounterValue>, tonic::Status> { Err(tonic::Status::unimplemented("fixture")) }
+    async fn apply_declared(&self, _: tonic::Request<proto::TransactionIncrementRequest>) -> Result<tonic::Response<proto::TransactionCounterValue>, tonic::Status> { Err(tonic::Status::unimplemented("fixture")) }
+
         async fn query(&self, _: tonic::Request<proto::TransactionIncrementRequest>) -> Result<tonic::Response<proto::TransactionCounterValue>, tonic::Status> { Err(tonic::Status::unimplemented("query")) }
         async fn apply(&self, _: tonic::Request<proto::TransactionIncrementRequest>) -> Result<tonic::Response<proto::TransactionCounterValue>, tonic::Status> { Err(tonic::Status::unimplemented("apply")) }
         async fn increment(&self, request: tonic::Request<proto::TransactionIncrementRequest>) -> Result<tonic::Response<proto::TransactionCounterValue>, tonic::Status> {
