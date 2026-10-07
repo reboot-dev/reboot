@@ -1,3 +1,51 @@
+## Verified participant-local reader and writer tasks in supervised trees
+
+This **verified bounded vertical, not full Python SDK parity**, extends
+explicit `with_supervised_transaction_tree()` to unary immediate/absolute-UTC
+reader and ordinary-writer tasks for each participant's own existing actor.
+The root needs its actual registered cleanup/execution reservation; inbound B/C
+need an active reserved Watch and the exact admitted live incarnation. An open,
+quiescent, non-doomed exclusive non-factory/non-idempotent branch and a registered
+singleton dispatcher sharing the participant's actor, Database endpoint **and
+actor gate** are required. Builder attachment alone is not authority.
+
+Tasks remain local participant effects carried by Prepare. Successful inbound
+trailers, a root decision alone, and queue hints are not publication authority.
+Canonical committed Pending records become runnable only after immutable root
+Commit and local terminalization; the retained exclusive lease blocks dispatch
+when terminal ACK is uncertain. One terminal attempt is retained and the host
+fails rather than blindly retrying. Prepared recovery uses durable decisions;
+unknown C observes root Abort through its own reserved Watch, never presumed
+absence. The writer executor retains acknowledged state+saved-response Store
+followed by separate completion CAS, replaying the saved response without
+remutating even after an intervening ordinary writer.
+
+Source comparison: Python `aio/state_managers.py` task validation/staging/Commit
+and `aio/contexts.py`, `aio/stubs.py` transaction membership; Rust
+`src/{codegen,explicit_abort,durable_participant,one_shot_tasks,runtime}.rs` and
+`tests/fixtures/tree_participant_task_acceptance.rs`. Real-process acceptance
+uses three independent canonical C++ Database/RocksDB sidecars and generated
+A→B→C hosts, not a synthetic store. Final restored-source verification passed **88 real CXX/RocksDB process cases**
+(baseline78 plus10 tree-task cases), **8 Native2pc cases**, locked all-features/
+all-targets tests (**255 library**, **26 generated downstream** vectors), strict
+Clippy (`-D warnings`), formatting and **3 compile-fail doctests**. Full-record
+negative matrices cover all three actors and preserve seeded Pending/Completed
+records across RocksDB restart. The C-only no-Watch causal mutation failed at
+C exclusive readmission after actual A→B→C paths and successful A/B readmission;
+source was restored with an equal complete inventory. Earlier old-gate,
+premature-hint, no-canonical-scan and no-terminal-retention controls are separately
+checkpointed. Independent read-only bounded source review found no new blocker;
+it did not rerun acceptance. Logs are `/tmp/tree-tasks-final-{full-cxx,native,
+alltargets,clippy,fmt,doctests}.log`; exact source/log identities and ownership
+handoff are in `/tmp/tree-participant-tasks-checkpoint.md`. This is a self-contained verified delivery, not a full-parity release.
+
+Unsupported: arbitrary cross-actor task upserts, shared/factory/idempotent tree
+scheduling, sibling fanout, nested rollback/retry or catch-and-Commit after
+uncertainty, general pre-Prepare coordinator-death resolution, migration,
+endpoint-alias/cross-process fencing, task declared-error retry policies,
+workflows and exactly-once external effects. This does not establish atomic
+Store+CompleteTask or the full Python task/runtime contract.
+
 ## Supervised successful-return descendant trees
 
 Explicit generated `with_supervised_transaction_tree()` is separate from default
@@ -24,8 +72,9 @@ Only the root publishes immutable Abort; unknown descendants self-Watch.
 Sources: Python `aio/contexts.py:111-235`, `aio/stubs.py:685-755`,
 `aio/state_managers.py:892-1041`; Rust `runtime.rs`, `explicit_abort.rs`,
 `codegen.rs`, `successful_trailers.rs`. Child-specific relinquish/rollback is
-still unavailable. No sibling/reentrant/shared/factory/idempotent trees, subtree
-tasks, retry/recoverable-error Commit, migration or pre-Prepare crash guarantee.
+still unavailable. No sibling/reentrant/shared/factory/idempotent trees, arbitrary
+cross-actor tasks, retry/recoverable-error Commit, migration or pre-Prepare crash guarantee.
+The candidate participant-local task extension above is separate from this delivered checkpoint.
 Actor-only lost terminal ACKs retain ownership and fail supervision without retry.
 
 New real canonical C++/RocksDB fixture uses three independent sidecars/hosts;
@@ -33,7 +82,7 @@ B actually calls C. Focused evidence covers actual paths, transitive durable roo
 membership, Commit/restart, confirmed root failure/deadline, B lost upstream
 trailers with C self-Watch, target-Watch-ready-before-root recovery, active child
 Prepare/terminal exclusion, closed clones, missing/inactive/full Watch owners,
-all-actor task denial and C ACK-held competitor admission/one attempt/restart.
+all-actor missing-task-owner denial and C ACK-held competitor admission/one attempt/restart.
 The same-revision nine-case tree matrix also exercises the actual B handler catch
 of uncertain C staging, distinct positive path IDs, duplicate/depth overflow,
 shared/factory/idempotent rejection and generated self/root reentrant child calls.

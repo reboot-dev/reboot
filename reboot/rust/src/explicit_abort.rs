@@ -423,6 +423,67 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
         }
         Ok(true)
     }
+    /// Tree task authority is the exact registered root or reserved inbound
+    /// execution, composed with the actual dispatcher store and actor gate.
+    #[doc(hidden)]
+    pub async fn validate_tree_tasks(
+        &self,
+        tasks: &crate::one_shot_tasks::OneShotTasks,
+    ) -> Result<(), Status> {
+        if !self.context.tree_owned() {
+            return Err(Status::failed_precondition("tree task authority missing"));
+        }
+        self.context.validate_open_task_branch()?;
+        if self.context.is_fresh_root() {
+            let token = self
+                .registration
+                .as_ref()
+                .ok_or_else(|| Status::failed_precondition("tree tasks require registered root"))?;
+            if self.reservation.is_none() {
+                return Err(Status::failed_precondition("tree task reservation missing"));
+            }
+            let state = token.owner.state.lock().unwrap();
+            if !state.active
+                || token.owner.failure.borrow().is_some()
+                || !state
+                    .registered_roots
+                    .contains(&self.context.transaction_root_id())
+            {
+                return Err(Status::unavailable("tree task root owner stopped"));
+            }
+        } else {
+            let (reservation, _) = self
+                .inbound
+                .as_ref()
+                .ok_or_else(|| Status::failed_precondition("tree tasks require reserved Watch"))?;
+            reservation.validate_active()?;
+        }
+        tasks
+            .validate_guard_execution(
+                self.local
+                    .as_ref()
+                    .ok_or_else(|| Status::failed_precondition("tree execution closed"))?,
+                &self.context,
+            )
+            .await?;
+        // Recheck host authority after the incarnation mutex await.
+        if let Some((reservation, _)) = &self.inbound {
+            reservation.validate_active()?;
+        }
+        if let Some(token) = &self.registration {
+            let state = token.owner.state.lock().unwrap();
+            if !state.active
+                || token.owner.failure.borrow().is_some()
+                || !state
+                    .registered_roots
+                    .contains(&self.context.transaction_root_id())
+            {
+                return Err(Status::unavailable("tree task root owner stopped"));
+            }
+        }
+        self.context.validate_open_task_branch()
+    }
+
     /// Successful completion must also prove quiescence and known membership.
     /// The caller immediately performs synchronous durable handoff afterwards.
     pub(crate) fn seal_for_handoff(

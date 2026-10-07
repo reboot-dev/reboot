@@ -601,6 +601,40 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
         })
     }
 
+    /// Scheduling authority remains tied to this admitted incarnation and lease.
+    pub(crate) async fn validate_task_execution(
+        &self,
+        context: &crate::runtime::TransactionContext,
+        store: &crate::runtime::DatabaseActorStore,
+        state_type: &str,
+        state_ref: &str,
+    ) -> Result<(), Status> {
+        self.participant
+            .validate_task_owner(store, state_type, state_ref)?;
+        let pending = self.participant.pending.lock().await;
+        if self.handed_off
+            || context.mode() != TransactionMode::Exclusive
+            || context.headers().idempotency_key.is_some()
+            || !pending.as_ref().is_some_and(|current| {
+                current.root_id == self.transaction_id
+                    && current.local_owner == Some(self.local_owner)
+                    && current.transaction_ids == context.transaction_ids()
+                    && current.coordinator_state_type
+                        == context.transaction_coordinator_state_type()
+                    && current.coordinator_state_ref == context.transaction_coordinator_state_ref()
+                    && current.execution_active
+                    && current.disposition == PendingDisposition::Commit
+                    && !current.prepared
+                    && !current.terminal_attempted
+            })
+        {
+            return Err(Status::failed_precondition(
+                "tasks require live exclusive execution incarnation",
+            ));
+        }
+        Ok(())
+    }
+
     pub(crate) async fn end_execution(&self) -> Result<(), Status> {
         let mut pending = self.participant.pending.lock().await;
         let current = pending
@@ -895,6 +929,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         if self.state_type != state_type
             || self.state_ref != state_ref
             || self.sidecar.database_endpoint() != Some(store.database_endpoint())
+            || !store.owns_actor_gate(&self.lock, state_type, state_ref)
         {
             return Err(Status::failed_precondition(
                 "task owner must share participant actor and Database endpoint",

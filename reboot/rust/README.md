@@ -1,5 +1,53 @@
 # Rust Reboot SDK
 
+## Verified participant-local reader and writer tasks in supervised trees
+
+This **verified bounded vertical, not full Python SDK parity**, extends
+explicit `with_supervised_transaction_tree()` to unary immediate/absolute-UTC
+reader and ordinary-writer tasks for each participant's own existing actor.
+The root needs its actual registered cleanup/execution reservation; inbound B/C
+need an active reserved Watch and the exact admitted live incarnation. An open,
+quiescent, non-doomed exclusive non-factory/non-idempotent branch and a registered
+singleton dispatcher sharing the participant's actor, Database endpoint **and
+actor gate** are required. Builder attachment alone is not authority.
+
+Tasks remain local participant effects carried by Prepare. Successful inbound
+trailers, a root decision alone, and queue hints are not publication authority.
+Canonical committed Pending records become runnable only after immutable root
+Commit and local terminalization; the retained exclusive lease blocks dispatch
+when terminal ACK is uncertain. One terminal attempt is retained and the host
+fails rather than blindly retrying. Prepared recovery uses durable decisions;
+unknown C observes root Abort through its own reserved Watch, never presumed
+absence. The writer executor retains acknowledged state+saved-response Store
+followed by separate completion CAS, replaying the saved response without
+remutating even after an intervening ordinary writer.
+
+Source comparison: Python `aio/state_managers.py` task validation/staging/Commit
+and `aio/contexts.py`, `aio/stubs.py` transaction membership; Rust
+`src/{codegen,explicit_abort,durable_participant,one_shot_tasks,runtime}.rs` and
+`tests/fixtures/tree_participant_task_acceptance.rs`. Real-process acceptance
+uses three independent canonical C++ Database/RocksDB sidecars and generated
+A→B→C hosts, not a synthetic store. Final restored-source verification passed **88 real CXX/RocksDB process cases**
+(baseline78 plus10 tree-task cases), **8 Native2pc cases**, locked all-features/
+all-targets tests (**255 library**, **26 generated downstream** vectors), strict
+Clippy (`-D warnings`), formatting and **3 compile-fail doctests**. Full-record
+negative matrices cover all three actors and preserve seeded Pending/Completed
+records across RocksDB restart. The C-only no-Watch causal mutation failed at
+C exclusive readmission after actual A→B→C paths and successful A/B readmission;
+source was restored with an equal complete inventory. Earlier old-gate,
+premature-hint, no-canonical-scan and no-terminal-retention controls are separately
+checkpointed. Independent read-only bounded source review found no new blocker;
+it did not rerun acceptance. Logs are `/tmp/tree-tasks-final-{full-cxx,native,
+alltargets,clippy,fmt,doctests}.log`; exact source/log identities and ownership
+handoff are in `/tmp/tree-participant-tasks-checkpoint.md`. This is a self-contained verified delivery, not a full-parity release.
+
+Unsupported: arbitrary cross-actor task upserts, shared/factory/idempotent tree
+scheduling, sibling fanout, nested rollback/retry or catch-and-Commit after
+uncertainty, general pre-Prepare coordinator-death resolution, migration,
+endpoint-alias/cross-process fencing, task declared-error retry policies,
+workflows and exactly-once external effects. This does not establish atomic
+Store+CompleteTask or the full Python task/runtime contract.
+
 Generated adapters can opt into bounded host-owned root handler cancellation;
 see [scope, registration, safety limits and executed evidence](PARITY-MAP.md#bounded-generated-root-handler-cancellation).
 Root-local readers can be staged by
@@ -14,8 +62,8 @@ For the narrower explicit-error cleanup contract, see the canonical
 ## Supervised successful-return descendant trees
 
 Generated adapters explicitly opt in with `with_supervised_transaction_tree()`.
-This is a separate bounded transaction path, not a relaxation of reader-task
-eligibility: fixed hosts, existing distinct actors, exclusive non-factory and
+This is a separate bounded transaction path, extended only by the candidate
+participant-local reader/writer task authority above: fixed hosts, existing distinct actors, exclusive non-factory and
 non-idempotent methods, one child per branch, at most 32 transaction IDs and
 1024 transitive participants. The root requires its actual active registered
 execution/cleanup reservation; each inbound actor requires an active reserved
@@ -34,7 +82,7 @@ Three independent generated hosts and canonical C++ Database/RocksDB sidecars
 exercise A -> B -> C Commit/restart, complete durable membership before fanout,
 confirmed root error/deadline cleanup, lost B trailers with unknown C self-Watch,
 target-first prepared recovery, active-child Prepare/terminal exclusion,
-missing/inactive/full Watch owners, task denial at all three actors, and lost C
+missing/inactive/full Watch owners, missing-task-owner denial at all three actors, and lost C
 terminal ACK with retained exclusive admission, one attempt and restart. Explicit
 scope vectors exercise duplicate IDs, depth overflow, shared/factory/idempotent
 rejection and self/root reentrant child rejection; caught B -> C uncertainty is
@@ -43,7 +91,7 @@ ledger/helper ownership and inbound root-drive rejection. Final verification and
 remaining scope are recorded in
 [the parity map](PARITY-MAP.md#candidate-supervised-successful-return-descendant-trees-not-yet-delivered).
 
-No subtree tasks, sibling fanout, child rollback/retry, arbitrary ancestor actor
+No general cross-actor task trees, sibling fanout, child rollback/retry, arbitrary ancestor actor
 routing validation, pre-Prepare coordinator-crash recovery, migration/fencing or
 exactly-once effects are established. Actors must be distinct by host composition;
 the outbound seam rejects the current actor and root coordinator explicitly.
@@ -79,7 +127,7 @@ adapter's `with_live_participant_owner(...)` and the same owner's
 the matching singleton task owner/recovery registration. Builder attachment is
 not active ownership. Shared/factory/idempotent/deeper/descendant **task-producing**
 shapes and shared-registry scheduling remain rejected. Explicit supervised
-transaction-tree opt-in above permits bounded descendant state mutations only. Inbound success stages effects only:
+transaction-tree opt-in also permits the bounded candidate participant-local tasks above. Inbound success stages effects only:
 no predecision dispatch hint is emitted; canonical host scans admit/reload the
 durable task after participant terminal ACK. Independent C++ sidecar acceptance
 exercises target-local Commit/Wait, prepared restart/redelivery, no completed

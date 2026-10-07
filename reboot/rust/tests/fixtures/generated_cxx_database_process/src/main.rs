@@ -64,14 +64,15 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
         state: &proto::TransactionCounter,
         request: proto::TransactionIncrementRequest,
     ) -> Result<proto::TransactionCounterValue, tonic::Status> {
-        let reader = match self {
+        let tree_marker = optional_arg("--tree-local-tasks");
+        let reader = if let Some(marker) = &tree_marker { Some((marker, has("--block-task"))) } else { match self {
             Self::Tasks { marker, block, .. } => Some((marker, *block)),
             Self::Root(root) => root
                 .task_marker
                 .as_ref()
                 .map(|marker| (marker, root.block_task)),
             Self::Target => None,
-        };
+        } };
         if let Some((marker, block)) = reader {
             if request.amount == 9000 {
                 // Append per invocation: an identical overwritten result cannot
@@ -347,6 +348,25 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                 execution.task_upserts.push(task);
             }
         }
+        if context.headers().state_ref != "watch-capacity" && let Some(marker) = optional_arg("--tree-local-tasks") {
+            let actor = &context.headers().state_ref;
+            let request = proto::TransactionIncrementRequest { amount: 9000 };
+            let writer = proto::TransactionIncrementRequest { amount: 3 };
+            let at = prost_types::Timestamp { seconds: arg("--tree-tasks-at").parse().unwrap(), nanos: 0 };
+            execution.task_upserts.extend([
+                generated::TransactionCounterWritesMethodsTasks::query(actor, &request),
+                generated::TransactionCounterWritesMethodsTasks::apply(actor, &writer),
+                generated::TransactionCounterWritesMethodsTasksAt::query(actor, &request, at),
+                generated::TransactionCounterWritesMethodsTasksAt::apply(actor, &writer, at),
+            ]);
+            match optional_arg("--tree-task-vector").as_deref() {
+                Some("foreign-actor") => execution.task_upserts[0].task_id.as_mut().unwrap().state_ref = arg("--tree-task-foreign-ref"),
+                Some("duplicate-staged") => execution.task_upserts.push(execution.task_upserts[0].clone()),
+                Some("reuse") => execution.task_upserts[0].task_id.as_mut().unwrap().task_uuid = Uuid::parse_str(&arg("--tree-task-reuse-uuid")).unwrap().as_bytes().to_vec(),
+                _ => {}
+            }
+            std::fs::write(format!("{marker}.records"), reboot::database_proto::LoadResponse { tasks: execution.task_upserts.clone(), ..Default::default() }.encode_to_vec()).unwrap();
+        }
         if (matches!(self, Self::Target) || has("--supervised-tree")) && has("--negative-task-shape") {
             execution.task_upserts.push(generated::TransactionCounterWritesMethodsTasks::query(&context.headers().state_ref, &proto::TransactionIncrementRequest { amount: 9000 }));
             std::fs::write(arg("--negative-shape-marker"), b"actual inbound handler returned task").unwrap();
@@ -450,6 +470,20 @@ struct FullWatchProof(tokio::sync::Mutex<Option<std::pin::Pin<Box<dyn std::futur
 impl reboot::application_host::HostRecovery for FullWatchProof {
     async fn start(&self, _: &mut tokio::task::JoinSet<Result<(), tonic::Status>>, _: reboot::application_host::RecoveryCancellation) -> Result<(), tonic::Status> {
         self.0.lock().await.take().unwrap().await
+    }
+}
+struct FullRootProof {
+    work: tokio::sync::Mutex<Option<std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), tonic::Status>> + Send>>>>,
+    marker: String,
+}
+#[tonic::async_trait]
+impl reboot::application_host::HostRecovery for FullRootProof {
+    async fn start(&self, workers: &mut tokio::task::JoinSet<Result<(), tonic::Status>>, _: reboot::application_host::RecoveryCancellation) -> Result<(), tonic::Status> {
+        workers.spawn(self.work.lock().await.take().unwrap());
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            while !std::path::Path::new(&format!("{}.cancel", self.marker)).exists() { tokio::time::sleep(std::time::Duration::from_millis(5)).await; }
+        }).await.map_err(|_| tonic::Status::deadline_exceeded("auxiliary root did not hold real owner capacity"))?;
+        Ok(())
     }
 }
 struct GaugeTaskHandler { marker: String }
@@ -873,6 +907,20 @@ async fn main() {
     let store = DatabaseActorStore::connect(&database_endpoint)
         .await
         .unwrap();
+    if has("--prove-task-composition") {
+        let gate_mismatch = participant.validate_task_owner(&store, "tests.reboot.protoc.TransactionCounter", &state_ref).unwrap_err();
+        assert_eq!(gate_mismatch.code(), tonic::Code::FailedPrecondition);
+        let matched = participant.clone().with_database_actor_gate(&store);
+        matched.validate_task_owner(&store, "tests.reboot.protoc.TransactionCounter", &state_ref).unwrap();
+        let foreign = DatabaseActorStore::connect(arg("--task-foreign-database")).await.unwrap();
+        let store_mismatch = matched.validate_task_owner(&foreign, "tests.reboot.protoc.TransactionCounter", &state_ref).unwrap_err();
+        assert_eq!(store_mismatch.code(), tonic::Code::FailedPrecondition);
+        // Isolate endpoint mismatch from gate mismatch by binding the foreign gate.
+        let endpoint_only = participant.clone().with_database_actor_gate(&foreign);
+        assert_eq!(endpoint_only.validate_task_owner(&foreign, "tests.reboot.protoc.TransactionCounter", &state_ref).unwrap_err().code(), tonic::Code::FailedPrecondition);
+        std::fs::write(arg("--task-composition-marker"), b"matching accepted; independent gate and store rejected").unwrap();
+        return;
+    }
     let adapter = generated::TransactionCounterWritesMethodsTransactionAdapter::new(
         store,
         participant.clone(),
@@ -889,8 +937,9 @@ async fn main() {
         } else {
             (adapter, None)
         };
-    let adapter = if has("--owned-explicit-abort") {
-        adapter.with_explicit_abort_owner(reboot::explicit_abort::ExplicitAbortOwner::new(1).unwrap())
+    let root_owner = reboot::explicit_abort::ExplicitAbortOwner::new(1).unwrap();
+    let adapter = if has("--owned-explicit-abort") && !has("--no-root-owner") {
+        adapter.with_explicit_abort_owner(root_owner.clone())
     } else { adapter };
     let live_owner = if has("--live-watch") && !has("--no-live-owner") {
         Some(reboot::live_participant::LiveParticipantOwner::new(if has("--full-live-owner") { 1 } else { 8 },
@@ -920,9 +969,25 @@ async fn main() {
     if let Some(planner_recovery) = planner_recovery {
         host = host.with_host_recovery(planner_recovery);
     }
-    if has("--owned-explicit-abort") { host = host.with_host_recovery(adapter.explicit_abort_recovery_registration().unwrap()); }
+    if has("--owned-explicit-abort") && !has("--no-root-owner") && !has("--inactive-root-owner") { host = host.with_host_recovery(adapter.explicit_abort_recovery_registration().unwrap()); }
     if live_owner.is_some() && !has("--inactive-live-owner") { host = host.with_host_recovery(adapter.live_participant_recovery_registration().unwrap()); }
+    if has("--full-root-owner") {
+        let auxiliary = "root-capacity";
+        let marker = format!("{}.root-capacity", arg("--task-marker"));
+        let mut db = reboot::database_proto::database_client::DatabaseClient::connect(database_endpoint.clone()).await.unwrap();
+        db.store(reboot::database_proto::StoreRequest { actor_upserts: vec![reboot::database_proto::Actor { state_type: "tests.reboot.protoc.TransactionCounter".into(), state_ref: auxiliary.into(), state: Some(proto::TransactionCounter { value: 20 }.encode_to_vec()), ..Default::default() }], sync: true, ..Default::default() }).await.unwrap();
+        let auxiliary_participant = DurableActorParticipant::new(Arc::new(TonicParticipantSidecar::connect(&database_endpoint).await.unwrap()), "tests.reboot.protoc.TransactionCounter", auxiliary);
+        let auxiliary_adapter = generated::TransactionCounterWritesMethodsTransactionAdapter::new(DatabaseActorStore::connect(&database_endpoint).await.unwrap(), auxiliary_participant, coordinator.clone(), Starts { root: Uuid::new_v4(), child: Uuid::new_v4() }, Handler::Tasks { state_ref: auxiliary.into(), marker: marker.clone(), block: false, vector: String::new() }).with_explicit_abort_owner(root_owner);
+        host = host.with_host_recovery(FullRootProof { marker, work: tokio::sync::Mutex::new(Some(Box::pin(async move {
+            use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
+            let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: -9000 });
+            *request.metadata_mut() = reboot::RebootHeaders::new(auxiliary).to_metadata().unwrap();
+            auxiliary_adapter.increment(request).await?;
+            Err(tonic::Status::internal("held auxiliary root unexpectedly returned"))
+        }))) });
+    }
     if has("--full-live-owner") {
+        let full_watch_coordinator = watch_coordinator_state_ref.clone();
         let auxiliary = "watch-capacity";
         let mut db = reboot::database_proto::database_client::DatabaseClient::connect(database_endpoint.clone()).await.unwrap();
         db.store(reboot::database_proto::StoreRequest { actor_upserts: vec![reboot::database_proto::Actor { state_type: "tests.reboot.protoc.TransactionCounter".into(), state_ref: auxiliary.into(), state: Some(proto::TransactionCounter { value: 20 }.encode_to_vec()), ..Default::default() }], sync: true, ..Default::default() }).await.unwrap();
@@ -933,7 +998,7 @@ async fn main() {
             let mut headers = reboot::RebootHeaders::new(auxiliary);
             headers.transaction_ids = Some(vec![root_id]);
             headers.transaction_coordinator_state_type = Some("tests.reboot.protoc.TransactionCounter".into());
-            headers.transaction_coordinator_state_ref = Some("root".into());
+            headers.transaction_coordinator_state_ref = Some(full_watch_coordinator);
             let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 0 });
             *request.metadata_mut() = headers.to_metadata().unwrap();
             auxiliary_adapter.increment(request).await?;
@@ -1080,6 +1145,12 @@ async fn main() {
             reboot::one_shot_tasks::ReaderTaskWaitService::new(wait_owners,
                 application.clone(), optional_arg("--server-id").unwrap_or_else(|| "server-0".into()),
                 placement.clone()).unwrap())) };
+    if has("--duplicate-task-registration") {
+        host = host.with_host_recovery(tasks.as_ref().unwrap().recovery(reboot::database_proto::RecoverRequest {
+            state_tags_by_state_type: [("tests.reboot.protoc.TransactionCounter".into(), "TransactionCounter".into())].into(),
+            shard_ids: vec!["s000000000".into()], skip_idempotent_mutations: true,
+        }));
+    }
     if let Some(tasks) = tasks.filter(|_| !has("--shared-task-recovery") && !has("--inactive-task-owner")) {
         host = host.with_host_recovery(tasks.recovery(reboot::database_proto::RecoverRequest {
             state_tags_by_state_type: [("tests.reboot.protoc.TransactionCounter".into(), "TransactionCounter".into())].into(),
@@ -1313,6 +1384,24 @@ async fn main() {
             }
         }).await.expect("typed writer Wait timed out");
         std::fs::write(arg("--invoke-marker"), result.value.to_string()).unwrap();
+    }
+    if has("--tree-typed-wait") {
+        let marker = arg("--tree-local-tasks");
+        tokio::time::timeout(std::time::Duration::from_secs(20), async {
+            while !std::path::Path::new(&format!("{marker}.wait-ready")).exists() { tokio::time::sleep(std::time::Duration::from_millis(5)).await; }
+            let tasks = reboot::database_proto::LoadResponse::decode(std::fs::read(format!("{marker}.records")).unwrap().as_slice()).unwrap().tasks;
+            let channel = tonic::transport::Endpoint::from_shared(format!("http://{listen}")).unwrap().connect_lazy();
+            let mut values = Vec::new();
+            for task in tasks {
+                loop {
+                    let mut request = tonic::Request::new(task.task_id.clone().unwrap()); request.set_timeout(std::time::Duration::from_secs(15));
+                    let result = if task.method == "Apply" { generated::TransactionCounterWritesMethodsTasksWait::apply(channel.clone(), request).await }
+                        else { generated::TransactionCounterWritesMethodsTasksWait::query(channel.clone(), request).await };
+                    match result { Ok(value) => { values.push(value.value.to_string()); break; }, Err(status) if status.code() == tonic::Code::Unavailable => tokio::time::sleep(std::time::Duration::from_millis(10)).await, Err(status) => panic!("tree typed Wait: {status}") }
+                }
+            }
+            std::fs::write(format!("{marker}.typed-wait"), values.join("\n")).unwrap();
+        }).await.expect("tree typed Wait bounded completion");
     }
     server.await.unwrap();
     if let Some(competing) = competing {

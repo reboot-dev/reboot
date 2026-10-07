@@ -519,6 +519,26 @@ impl TransactionContext {
         self.supervised_tree
     }
 
+    pub(crate) fn validate_open_task_branch(&self) -> Result<(), Status> {
+        self.validate_tree_scope()?;
+        if let Some(error) = self.doomed_status() {
+            return Err(error);
+        }
+        let collection = self
+            .returned_participants
+            .as_ref()
+            .ok_or_else(|| Status::failed_precondition("tree task branch missing"))?;
+        let branch = collection
+            .lock()
+            .expect("returned participant mutex poisoned");
+        if branch.sealed || branch.active != 0 {
+            return Err(Status::failed_precondition(
+                "tree tasks require open quiescent branch",
+            ));
+        }
+        Ok(())
+    }
+
     pub(crate) fn close_branch(&self) {
         if self.supervised_tree
             && let Some(collection) = &self.returned_participants
@@ -2074,6 +2094,15 @@ impl DatabaseActorStore {
     /// same gate so an exclusive transaction cannot race a normal method.
     pub fn actor_gate(&self, state_type: &str, state_ref: &str) -> ActorGate {
         self.lock_for_type(state_type, state_ref)
+    }
+
+    pub(crate) fn owns_actor_gate(
+        &self,
+        gate: &ActorGate,
+        state_type: &str,
+        state_ref: &str,
+    ) -> bool {
+        Arc::ptr_eq(&gate.inner, &self.actor_gate(state_type, state_ref).inner)
     }
 
     pub fn database_endpoint(&self) -> &str {

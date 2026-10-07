@@ -184,7 +184,25 @@ impl OneShotTasks {
             }),
         })
     }
-    /// Used by generated staging to retain root-local-only writer eligibility.
+    #[doc(hidden)]
+    pub(crate) async fn validate_guard_execution<
+        P: crate::durable_participant::ParticipantSidecar,
+    >(
+        &self,
+        local: &crate::durable_participant::StartedLocalTransaction<P>,
+        context: &crate::runtime::TransactionContext,
+    ) -> Result<(), Status> {
+        local
+            .validate_task_execution(
+                context,
+                &self.inner.store,
+                &self.inner.state_type,
+                &self.inner.state_ref,
+            )
+            .await
+    }
+
+    /// Whether the validated batch contains an ordinary writer target.
     pub fn contains_writer(&self, tasks: &[db::Task]) -> bool {
         tasks.iter().any(|task| self.inner.binding.is_writer(task))
     }

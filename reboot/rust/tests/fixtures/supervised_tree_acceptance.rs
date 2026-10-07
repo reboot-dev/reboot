@@ -8,10 +8,12 @@ struct SupervisedTree {
     markers: tempfile::TempDir,
     root: Uuid,
     children: [Uuid; 2],
+    refs: [String; 3],
 }
 impl SupervisedTree {
     const REFS: [&'static str; 3] = ["root", "target", "tip"];
-    fn new() -> Self {
+    fn new() -> Self { Self::with_refs(Self::REFS.map(str::to_owned)) }
+    fn with_refs(refs: [String; 3]) -> Self {
         let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests/fixtures/generated_cxx_database_process");
         assert!(
@@ -28,15 +30,15 @@ impl SupervisedTree {
         let ports = std::array::from_fn(|_| port());
         let runtime = tokio::runtime::Runtime::new().unwrap();
         for (i, db) in databases.iter().enumerate() {
-            runtime.block_on(store_counter(&db.endpoint(), Self::REFS[i], [5, 20, 40][i]));
+            runtime.block_on(store_counter(&db.endpoint(), &refs[i], [5, 20, 40][i]));
         }
         let plan = placement_proto::ListenForPlanResponse::decode(
             URL_SAFE_NO_PAD
                 .decode(legacy_plan_for(
-                    &Self::REFS
+                    &refs
                         .iter()
                         .zip(ports)
-                        .map(|(r, p)| (*r, p))
+                        .map(|(r, p)| (r.as_str(), p))
                         .collect::<Vec<_>>(),
                 ))
                 .unwrap()
@@ -53,6 +55,7 @@ impl SupervisedTree {
             markers: tempfile::tempdir().unwrap(),
             root: Uuid::new_v4(),
             children: [Uuid::new_v4(), Uuid::new_v4()],
+            refs,
         }
     }
     fn marker(&self, actor: usize, name: &str) -> std::path::PathBuf {
@@ -72,9 +75,9 @@ impl SupervisedTree {
             "--root-id",
             &self.root.to_string(),
             "--state-ref",
-            Self::REFS[actor],
+            &self.refs[actor],
             "--coordinator-state-ref",
-            Self::REFS[actor],
+            &self.refs[actor],
             "--supervised-tree",
             "--tree-path-marker",
             self.marker(actor, "path").to_str().unwrap(),
@@ -87,7 +90,7 @@ impl SupervisedTree {
             c.args([
                 "--live-watch",
                 "--watch-coordinator-state-ref",
-                "root",
+                &self.refs[0],
                 "--tree-child",
                 &self.children[actor - 1].to_string(),
             ]);
@@ -97,7 +100,7 @@ impl SupervisedTree {
             );
         }
         if actor < 2 {
-            c.args(["--tree-next", Self::REFS[actor + 1]]);
+            c.args(["--tree-next", &self.refs[actor + 1]]);
         }
         c
     }
@@ -156,7 +159,7 @@ impl SupervisedTree {
                 let mut request = tonic::Request::new(TaskQueryRequest { amount });
                 request
                     .metadata_mut()
-                    .insert("x-reboot-state-ref", Self::REFS[actor].parse().unwrap());
+                    .insert("x-reboot-state-ref", self.refs[actor].parse().unwrap());
                 if method == "Apply" {
                     request.metadata_mut().insert(
                         "x-reboot-idempotency-key",
@@ -190,7 +193,7 @@ impl SupervisedTree {
         }
         assert_eq!(
             std::fs::read_to_string(self.marker(1, "members")).unwrap(),
-            "tip",
+            self.refs[2],
             "B actually called C"
         );
     }
@@ -205,9 +208,9 @@ impl SupervisedTree {
             assert_eq!(
                 self.runtime.block_on(load_state(
                     &self.databases[actor].endpoint(),
-                    Self::REFS[actor]
+                    &self.refs[actor]
                 )),
-                Some(vec![8, value]),
+                Some(TaskQueryResponse { value: i64::from(value) }.encode_to_vec()),
                 "actor {actor}"
             );
             assert!(
@@ -226,7 +229,7 @@ impl SupervisedTree {
             c.transaction_coordinator_decision_get(
                 database::TransactionCoordinatorDecisionGetRequest {
                     root_transaction_id: self.root.as_bytes().to_vec(),
-                    coordinator_state_ref: "root".into(),
+                    coordinator_state_ref: self.refs[0].clone(),
                 },
             )
             .await
@@ -569,7 +572,7 @@ fn supervised_tree_active_child_blocks_prepare_terminal_and_closed_clone() {
 }
 #[test]
 #[ignore = "requires real C++ Database/RocksDB"]
-fn supervised_tree_real_owner_missing_inactive_full_and_all_actor_task_denial() {
+fn supervised_tree_real_owner_missing_inactive_full_and_all_actor_missing_task_owner() {
     for vector in [
         "missing",
         "inactive",
@@ -606,6 +609,7 @@ fn supervised_tree_real_owner_missing_inactive_full_and_all_actor_task_denial() 
         if let Some(actor) = task_actor {
             commands[actor].args([
                 "--tree-task-owner",
+                "--no-task-owner",
                 "--negative-task-shape",
                 "--negative-shape-marker",
                 tree.marker(actor, "task-denied").to_str().unwrap(),
