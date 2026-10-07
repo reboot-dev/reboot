@@ -74,6 +74,7 @@ def _recording(directory: Path, relative: str) -> Path:
 def application() -> Application:
     """The dashboard application, with its page mounted."""
     application = Application(
+        experimental_mcp_app_bridge=True,
         servicers=[
             DashboardServicer,
             PreferencesServicer,

@@ -1,0 +1,2 @@
+# Marks this directory as the root that the paths of the `Dashboard`
+# state type's `uis` resolve against; see `dashboard.proto`.

@@ -84,3 +84,46 @@ js_reboot_react_library(
     ],
     visibility = ["//visibility:public"],
 )
+
+# The dashboard's page built into one file: an MCP host is given the
+# page as a single resource, with no address to fetch a script or a
+# stylesheet from. The page's two stylesheets and its bundle are
+# written into it in place of the tags that load them. Built here,
+# apart from the page's sources in `//reboot/dashboard/web`, because
+# the `Dashboard` state type's `uis` name it by a path relative to
+# this directory; see `dashboard.proto`.
+genrule(
+    name = "ui_dist",
+    srcs = [
+        "//:node_modules/@xyflow/react/dir",
+        "//reboot/dashboard/web:dashboard.css",
+        "//reboot/dashboard/web:dashboard_bundle_minified.js",
+        "//reboot/dashboard/web:index.html",
+    ],
+    outs = ["ui/index.html"],
+    cmd = "sed -e '/rel=\"stylesheet\"/d' -e '/rel=\"icon\"/d' " +
+          "$(location //reboot/dashboard/web:index.html) " +
+          "> $(@D)/index.template.html && " +
+          "cat $(location //:node_modules/@xyflow/react/dir)/dist/style.css " +
+          "$(location //reboot/dashboard/web:dashboard.css) " +
+          "> $(@D)/index.css && " +
+          "$(location //reboot/ping:inline_bundle) " +
+          "$(@D)/index.template.html " +
+          "$(location //reboot/dashboard/web:dashboard_bundle_minified.js) " +
+          "$@ " +
+          "--css $(@D)/index.css " +
+          "--marker '<script type=\"module\" src=\"./src/main.tsx\"></script>' && " +
+          "rm $(@D)/index.template.html $(@D)/index.css",
+    tools = ["//reboot/ping:inline_bundle"],
+)
+
+# What reading the `Dashboard` state type's `uis` takes at runtime:
+# the root marker and the page.
+filegroup(
+    name = "ui",
+    srcs = [
+        ".rbtrc",
+        ":ui_dist",
+    ],
+    visibility = ["//reboot/dashboard/backend:__pkg__"],
+)
