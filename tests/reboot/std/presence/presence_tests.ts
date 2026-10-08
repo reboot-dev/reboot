@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import { Application, Reboot } from "@reboot-dev/reboot";
-import presence, { Presence } from "@reboot-dev/reboot-std/presence/v1";
+import { Presence, presenceLibrary } from "@reboot-dev/reboot-std/presence/v1";
 import { MousePosition } from "@reboot-dev/reboot-std/presence/mouse_tracker/v1";
 import { Subscriber } from "@reboot-dev/reboot-std/presence/subscriber/v1";
 import { strict as assert } from "node:assert";
@@ -14,7 +14,7 @@ test("Use Presence Servicers", async (t) => {
   t.before(async () => {
     rbt = new Reboot();
     await rbt.start();
-    await rbt.up(new Application({ servicers: presence.servicers() }));
+    await rbt.up(new Application({ libraries: [presenceLibrary()] }));
   });
 
   t.after(async () => {
@@ -22,7 +22,7 @@ test("Use Presence Servicers", async (t) => {
   });
 
   await t.test("Create Subscriber", async (t) => {
-    const context = rbt.createExternalContext("test");
+    const context = rbt.createExternalContext("test", { appInternal: true });
 
     const subscriber = Subscriber.ref("test-id");
 
@@ -32,7 +32,7 @@ test("Use Presence Servicers", async (t) => {
   });
 
   await t.test("Subscribe", async (t) => {
-    const context = rbt.createExternalContext("test");
+    const context = rbt.createExternalContext("test", { appInternal: true });
 
     const subscriber = Subscriber.ref("test");
     const presence = Presence.ref("presence-test-id");
@@ -59,7 +59,7 @@ test("Use Presence Servicers", async (t) => {
   });
 
   await t.test("Update Mouse Position", async (t) => {
-    const context = rbt.createExternalContext("test");
+    const context = rbt.createExternalContext("test", { appInternal: true });
 
     const mousePosition = MousePosition.ref("mouse-position-test-id");
 
