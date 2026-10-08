@@ -119,6 +119,7 @@ py_library(
         "//reboot:settings_py",
         "//reboot/aio:http_py",
         "//reboot/crypto:root_keys_py",
+        "//reboot/routing:cors_settings_py",
         "@com_github_reboot_dev_reboot//rbt/std/oauth/v1:oauth_py_reboot",
         requirement("jinja2"),
         requirement("pyjwt"),
