@@ -4,7 +4,10 @@ import {
   usePreferences,
 } from "../../../../rbt/dashboard/v1/dashboard_rbt_react";
 import { useOrderedMap } from "@reboot-dev/reboot-std-api/collections/ordered_map/v1/ordered_map_rbt_react";
-import { RebootClientProvider } from "@reboot-dev/reboot-react";
+import {
+  RebootClientProvider,
+  useRebootClient,
+} from "@reboot-dev/reboot-react";
 import { Presence } from "@reboot-dev/reboot-std-react/presence";
 import {
   type CSSProperties,
@@ -64,7 +67,7 @@ import {
   linkOfCodeSpan,
   linkOfMethod,
   printBuiltInSyntax,
-  recordingUrl,
+  recordingPath,
   type FeatureFilter,
   BLOCKED_TAG,
   WIP_TAG,
@@ -635,6 +638,58 @@ const Checks: FC<{
     <CheckLine what="code" check={response?.codeCheck} />
   </div>
 );
+
+// A recording's object URL, fetched with the page's token, since an
+// `<img>` or an `<a>` can carry none; `undefined` until it has
+// arrived, and revoked when the element that showed it goes.
+const useRecording = (path: string): string | undefined => {
+  const client = useRebootClient();
+  const [url, setUrl] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl: string | undefined = undefined;
+    void (async () => {
+      try {
+        const response = await fetch(
+          new URL(recordingPath(path), client.url).toString(),
+          {
+            headers:
+              client.bearerToken === undefined
+                ? {}
+                : { Authorization: `Bearer ${client.bearerToken}` },
+          }
+        );
+        if (!response.ok || cancelled) {
+          return;
+        }
+        objectUrl = URL.createObjectURL(await response.blob());
+        if (cancelled) {
+          URL.revokeObjectURL(objectUrl);
+          return;
+        }
+        setUrl(objectUrl);
+      } catch {
+        // Shown as missing.
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (objectUrl !== undefined) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [client, path]);
+  return url;
+};
+
+// Renders `children` with a recording's URL once it has arrived.
+const Recording: FC<{
+  path: string;
+  children: (url: string) => ReactNode;
+}> = ({ path, children }) => {
+  const url = useRecording(path);
+  return url === undefined ? null : <>{children(url)}</>;
+};
 
 const RebootBrand: FC<{ live: boolean }> = ({ live }) => (
   <div className="brand">
@@ -1364,13 +1419,15 @@ const MethodPane: FC<{
 };
 
 // Whether the CLI just opened this page by itself, said by the
-// query parameter it opens the page with. Read once and stripped,
-// so a reload or a copied URL says nothing.
-const openedAutomatically = ((): boolean => {
+// query parameter it opens the page with. Read once here and
+// stripped by `App` once the page shows, so a reload or a copied URL
+// says nothing; stripped no earlier, so that signing in, which comes
+// back to the page's URL, keeps it.
+const openedAutomatically =
+  new URLSearchParams(window.location.search).get("opened") === "automatically";
+
+const stripOpenedAutomatically = (): void => {
   const params = new URLSearchParams(window.location.search);
-  if (params.get("opened") !== "automatically") {
-    return false;
-  }
   params.delete("opened");
   const search = params.toString();
   window.history.replaceState(
@@ -1380,8 +1437,7 @@ const openedAutomatically = ((): boolean => {
       window.location.hash
     }`
   );
-  return true;
-})();
+};
 
 // Says the CLI opened this page by itself, and offers not to be
 // reopened; either button dismisses it.
@@ -2152,15 +2208,19 @@ const StepRow: FC<{
       </span>
       <div className="step-text">
         {step.screenshot !== undefined && (
-          <a
-            className="step-screenshot"
-            href={recordingUrl(step.screenshot)}
-            target="_blank"
-            rel="noreferrer"
-            title="The browser after this step, in the scenario's last run"
-          >
-            <img src={recordingUrl(step.screenshot)} alt="" />
-          </a>
+          <Recording path={step.screenshot}>
+            {(url) => (
+              <a
+                className="step-screenshot"
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                title="The browser after this step, in the scenario's last run"
+              >
+                <img src={url} alt="" />
+              </a>
+            )}
+          </Recording>
         )}
         {step.builtIn !== undefined ? (
           <BuiltInStep syntax={step.builtIn} links={links} related={related} />
@@ -2335,21 +2395,29 @@ const ScenarioRow: FC<{
         <span className="scenario-name">{name}</span>
         {name !== undefined && <CopyScenarioName name={name} />}
         {videos.map((video) => (
-          <a
-            className="scenario-video"
-            href={recordingUrl(video.path)}
-            target="_blank"
-            rel="noreferrer"
-            title={`"${video.user}"'s browser in the scenario's last run`}
-            // A click here opens the video, not the scenario.
-            onClick={(event) => event.stopPropagation()}
-            key={video.user}
-          >
-            <svg viewBox="0 0 10 10" width="8" height="8" aria-hidden="true">
-              <path d="M1.5 1 L9 5 L1.5 9 Z" fill="currentColor" />
-            </svg>
-            {videos.length > 1 ? `video · ${video.user}` : "video"}
-          </a>
+          <Recording path={video.path} key={video.user}>
+            {(url) => (
+              <a
+                className="scenario-video"
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                title={`"${video.user}"'s browser in the scenario's last run`}
+                // A click here opens the video, not the scenario.
+                onClick={(event) => event.stopPropagation()}
+              >
+                <svg
+                  viewBox="0 0 10 10"
+                  width="8"
+                  height="8"
+                  aria-hidden="true"
+                >
+                  <path d="M1.5 1 L9 5 L1.5 9 Z" fill="currentColor" />
+                </svg>
+                {videos.length > 1 ? `video · ${video.user}` : "video"}
+              </a>
+            )}
+          </Recording>
         ))}
         {recordingsStale && (
           <span
@@ -3194,7 +3262,9 @@ const FeatureGallery: FC<{ filename: string; feature: feature_pb.Feature }> = ({
           to={pathOfTypeOnPage("features", filename)}
           key={scenario.line}
         >
-          <img src={recordingUrl(screenshot)} alt="" />
+          <Recording path={screenshot}>
+            {(url) => <img src={url} alt="" />}
+          </Recording>
           <span>{scenario.name}</span>
         </PageLink>
       ))}
@@ -4150,6 +4220,11 @@ const App: FC = () => {
   );
 
   const [openedNotice, setOpenedNotice] = useState(openedAutomatically);
+  useEffect(() => {
+    if (openedAutomatically) {
+      stripOpenedAutomatically();
+    }
+  }, []);
 
   const navWidth = response?.navWidth ?? NAV_WIDTH.default;
   const resizing = useRef(navWidth);
@@ -4245,8 +4320,10 @@ if (root !== null) {
       {/* No `url`: in a browser the application that serves this page
           also serves its RPCs, so the client defaults to this page's
           origin; in an MCP host the application writes the URL into
-          the page, which the client finds the same way. */}
-      <RebootClientProvider offlineCacheEnabled={true}>
+          the page, which the client finds the same way. The
+          dashboard's sign-in asks nothing of the developer, so the
+          page signs them in itself. */}
+      <RebootClientProvider offlineCacheEnabled={true} requireSignIn>
         <Presence id={PRESENCE_ID} subscriberId={SUBSCRIBER_ID}>
           <App />
         </Presence>

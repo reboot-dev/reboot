@@ -263,7 +263,9 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         """
         polls = 0
         while True:
-            context = self.rbt.create_external_context(name=self.id())
+            context = self.rbt.create_external_context(
+                name=self.id(), app_internal=True
+            )
             # A reference binds to the first context that uses it, so
             # each context needs its own.
             presence = Presence.ref(PRESENCE_ID)
@@ -298,7 +300,9 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         renders whatever the application's state contains. Reading
         files is covered by `api_reader_tests` and `api_watcher_tests`.
         """
-        context = self.rbt.create_external_context(name=self.id())
+        context = self.rbt.create_external_context(
+            name=self.id(), app_internal=True
+        )
         await Dashboard.ref(DASHBOARD_ID).UpdateApi(
             context,
             api_directory='api',
@@ -334,7 +338,9 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             )
             return driver.page_source
 
-        context = self.rbt.create_external_context(name=self.id())
+        context = self.rbt.create_external_context(
+            name=self.id(), app_internal=True
+        )
         await Dashboard.ref(DASHBOARD_ID).UpdateApi(
             context,
             api_directory='api',
@@ -391,7 +397,9 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         """Returns once the preference reads `expected`: the notice's
         write is what the page sends after the click, so seeing it is
         how the test knows the choice reached the application."""
-        context = self.rbt.create_external_context(name=self.id())
+        context = self.rbt.create_external_context(
+            name=self.id(), app_internal=True
+        )
         async for response, aborted in Preferences.ref(
             PREFERENCES_ID
         ).reactively().Get(context):
@@ -558,7 +566,9 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
                 'url_after_click': driver.current_url,
             }
 
-        context = self.rbt.create_external_context(name=self.id())
+        context = self.rbt.create_external_context(
+            name=self.id(), app_internal=True
+        )
         await Dashboard.ref(DASHBOARD_ID).UpdateApi(
             context,
             api_directory='api',

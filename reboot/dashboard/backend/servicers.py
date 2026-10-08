@@ -29,7 +29,11 @@ from rbt.dashboard.v1.dashboard_pb2 import (
 )
 from rbt.dashboard.v1.dashboard_rbt import Dashboard, Preferences
 from rbt.std.collections.ordered_map.v1.ordered_map_rbt import OrderedMap
-from reboot.aio.auth.authorizers import allow
+from reboot.aio.auth.authorizers import (
+    allow_if,
+    has_verified_token,
+    is_app_internal,
+)
 from reboot.aio.contexts import (
     ReaderContext,
     TransactionContext,
@@ -58,10 +62,9 @@ class DashboardServicer(Dashboard.Servicer):
     """Holds the shape the developer's API files declare."""
 
     def authorizer(self):
-        # Anyone who can reach this can already read the files it
-        # describes: it holds nothing but the shape of the developer's
-        # own API files, and only ever runs under `rbt dashboard`.
-        return allow()
+        # The developer, signed in, and the dashboard's own watchers,
+        # which write what it holds; see `auth.py`.
+        return allow_if(any=[is_app_internal, has_verified_token])
 
     async def Get(
         self,
@@ -277,10 +280,9 @@ class PreferencesServicer(Preferences.Servicer):
     """
 
     def authorizer(self):
-        # Nothing here is worth keeping from anyone who can reach it:
-        # it holds what this machine's own browser was told about
-        # opening dashboards, and only ever runs under `rbt dashboard`.
-        return allow()
+        # The developer, signed in, and the dashboard's `initialize`,
+        # which writes the default; see `auth.py`.
+        return allow_if(any=[is_app_internal, has_verified_token])
 
     async def Get(
         self,
