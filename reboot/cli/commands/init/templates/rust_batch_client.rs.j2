@@ -1,5 +1,19 @@
 use {{ name }}::{generated, proto};
 use std::time::Duration;
+fn work_reader_status(error: generated::LedgerWorkMethodsObserveBatchError) -> tonic::Status {
+    match error {
+        generated::LedgerWorkMethodsObserveBatchError::BatchMismatch(error) => {
+            reboot::declared_error_status(
+                tonic::Code::Unknown,
+                "declared error",
+                "type.googleapis.com/{{ name }}.v1.BatchMismatch",
+                &error,
+            )
+        }
+        generated::LedgerWorkMethodsObserveBatchError::Grpc(error) => error,
+    }
+}
+
 fn index_status(error: generated::LedgerIndexMethodsApprovalSnapshotError) -> tonic::Status {
     match error {
         generated::LedgerIndexMethodsApprovalSnapshotError::BatchMismatch(error) => {
@@ -403,6 +417,111 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     "quit" => break,
                     _ => return Err("expected next, reconnect, disconnect, or quit".into()),
+                }
+            }
+        }
+        "watch-work-reconnect" => {
+            use std::io::BufRead;
+            let mut client = generated::LedgerWorkMethodsReactiveClient::new(channel, context);
+            let mut stream = client
+                .observe_batch_with_timeout(
+                    proto::Batch {
+                        batch: String::new(),
+                    },
+                    Duration::from_millis(
+                        args.get(1)
+                            .map(|s| s.parse())
+                            .transpose()?
+                            .unwrap_or(600_000),
+                    ),
+                )
+                .await
+                .map_err(work_reader_status)?;
+            println!("CONNECTED");
+            if let Some(state) = stream.message().await.map_err(work_reader_status)? {
+                show(state);
+            }
+            // Explicit commands, not an automatic status-based reconnect loop.
+            for line in std::io::stdin().lock().lines() {
+                match line?.trim() {
+                    "reconnect" => match stream.reconnect().await {
+                        Ok(()) => {
+                            println!("CONNECTED");
+                            match stream.message().await {
+                                Ok(Some(state)) => show(state),
+                                Ok(None) => println!("CLOSED"),
+                                Err(error) => {
+                                    println!("DISCONNECTED {:?}", work_reader_status(error).code())
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            println!("DISCONNECTED {:?}", work_reader_status(error).code())
+                        }
+                    },
+                    "next" => match stream.message().await {
+                        Ok(Some(state)) => show(state),
+                        Ok(None) => println!("CLOSED"),
+                        Err(error) => {
+                            println!("DISCONNECTED {:?}", work_reader_status(error).code())
+                        }
+                    },
+                    "disconnect" => {
+                        stream.disconnect();
+                        println!("DISCONNECTED");
+                    }
+                    "quit" => break,
+                    _ => return Err("expected next, reconnect, disconnect, or quit".into()),
+                }
+            }
+        }
+        "work-read" | "work-mismatch" => {
+            let mut client = generated::LedgerWorkMethodsReactiveClient::new(channel, context);
+            let error = match client
+                .observe_batch_with_timeout(proto::Batch { batch: arg(1)? }, Duration::from_secs(3))
+                .await
+            {
+                Err(error) => Some(error),
+                Ok(mut stream) => match stream.message().await {
+                    Ok(Some(state)) => {
+                        show(state);
+                        None
+                    }
+                    Ok(None) => return Err("workflow snapshot closed without response".into()),
+                    Err(error) => Some(error),
+                },
+            };
+            match error {
+                Some(generated::LedgerWorkMethodsObserveBatchError::BatchMismatch(error)) => {
+                    println!("MISMATCH {} {}", error.expected, error.actual)
+                }
+                Some(generated::LedgerWorkMethodsObserveBatchError::Grpc(error)) => {
+                    return Err(error.into());
+                }
+                None if command == "work-mismatch" => {
+                    return Err("expected declared workflow reader error".into());
+                }
+                None => {}
+            }
+        }
+        "work-unary" => {
+            use prost::Message;
+            let mut work = proto::ledger_work_methods_client::LedgerWorkMethodsClient::new(channel);
+            let request = context.reader(proto::Batch { batch: arg(1)? })?;
+            match work.observe_batch(request).await {
+                Ok(response) => show(response.into_inner()),
+                Err(error) => {
+                    let rich =
+                        reboot::declared_error_details(&error)?.ok_or_else(|| error.clone())?;
+                    if error.code() != tonic::Code::Unknown
+                        || rich.details.len() != 1
+                        || rich.details[0].type_url
+                            != "type.googleapis.com/{{ name }}.v1.BatchMismatch"
+                    {
+                        return Err(error.into());
+                    }
+                    let detail = proto::BatchMismatch::decode(rich.details[0].value.as_slice())?;
+                    println!("MISMATCH {} {}", detail.expected, detail.actual);
                 }
             }
         }

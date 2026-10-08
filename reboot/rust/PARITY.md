@@ -147,9 +147,11 @@ reader state is not ordinary unary state; canonical map and standalone workflow
 services use specifically supported generator paths, not a blanket exception
 for arbitrary trusted effects. Request/state/declared-error protobuf shapes are
 bounded to supported same-package top-level models. Declared errors are supported
-for ordinary unary readers/writers, exclusive transactions and standalone workflow
-terminals, not shared transactions or declared reader/writer step errors in
-workflow services. Metadata/StateRef helpers also remain a
+for ordinary unary readers/writers, exclusive transactions, standalone workflow
+terminals and ordinary unary readers on workflow-bearing services. Workflow
+reader errors remain fatal framework step failures, not durable catchable error
+decisions. Shared transactions and workflow-service writer/constructor errors
+remain unsupported. Metadata/StateRef helpers also remain a
 subset: the StateRef codec is not automatic migration of opaque durable keys;
 full per-call Options/context merge, timezone/DST parsing and cross-application
 service discovery are not supplied.
@@ -537,6 +539,12 @@ attempts, with 25/50ms backoff, run without restarting the host. Actual transpor
 `Internal` (e.g. BrokenPipe) is not local-body provenance. Load/recovery, step/
 Store uncertainty, completion failures and cancellation do not request retry.
 Swallowing/dropping a failed framework operation cannot erase its fence.
+Successful finish checks attempt cleanliness before minting its own operation;
+receipt acceptance and canonical completion under the actor gate independently
+reject unclean attempts. Native caught-reader acceptance proves fail-closed host
+supervision and an unset Pending terminal across restart, not recoverable
+reader-error replay. Changing saved-step method/request identity requires an
+explicit migration; incompatible persisted replay fails closed.
 
 One dispatcher owns at most 1024 live bodies by default, equal to the durable
 Pending admission bound (configurable 1..1024 before recovery via
@@ -646,7 +654,7 @@ bounded corrections; terminal execution/hash/cleanup audit is separate evidence.
 
 **Missing:** Python unbounded cursor/GC and arbitrary durable Break semantics,
 remote/cross-actor steps, nested transactions, mixed transaction/workflow services,
-declared reader/writer step errors in workflow services and full alias/seed semantics. No arbitrary external
+durably catchable declared reader/writer step errors and full alias/seed semantics. No arbitrary external
 side-effect exactly-once claim. New retry proof does not inject Store/CompleteTask
 lost ACK; existing uncertainty tests/source guards are separate evidence.
 
@@ -708,10 +716,15 @@ Remote cursor destruction is asynchronous, not an acknowledged teardown barrier.
 Standalone workflow-bearing adapters now expose the same bounded ordinary unary
 reader companions. Their manual Clone shares the existing store/handler/auth/task
 owner rather than constructing another dispatcher. The generated batch app uses
-Work.Observe for both private saved waits and public observation; there is no
-separate View schema/handler/placement entry. Only declared ordinary readers enter
+Work.Observe and typed Work.ObserveBatch for public observation; saved approval
+waits now use ObserveBatch. There is no separate View schema/handler/placement
+entry. Only declared ordinary readers enter
 the subscription dispatcher, never workflow bodies, constructors or scheduling
-writers. Declared reader/writer errors in workflow services remain unsupported.
+writers. Declared ordinary-reader errors use the existing method-specific rich
+status enum for unary RPCs and subscriptions. Internal waits convert them to
+framework Status and taint the attempt before any saved decision; catching a
+failed reader cannot authorize successful terminal completion. Declared
+workflow-service writer/constructor errors remain unsupported.
 The shared generator rejects collisions among each reader's base, `_with_timeout`
 and `_connect` methods and constructor `new` before companion emission; caller
 errors propagate to the public code-generation response without files.
@@ -831,6 +844,63 @@ parent/key bounds, unprepared recovery and lost-ACK retention. Unit coverage:
 [ownership tests](src/sorted_map_ownership_tests.rs).
 
 ## Verification
+
+### Workflow-service declared readers and clean completion (2026-10-08)
+
+Implemented on baseline `5335e9c61dbffe43c5f9ffce14c4906364f5a3e6`:
+ordinary unary readers on workflow-bearing services may declare method-specific
+errors. The public batch app adds `Work.ObserveBatch` with `BatchMismatch`,
+`work-unary`/`work-read`/`work-mismatch` and `watch-work-reconnect`. Unary and
+shared reactive paths preserve the typed rich-error payload. Internal reader
+waits use framework Status and retain empty task-business-error descriptors;
+this grants neither new task terminal authority nor durable catchable reader
+failure decisions. Ordinary writer/constructor declarations remain rejected.
+
+A native negative probe exposed a pre-existing safety defect: catching a failed
+reader observation and returning success could persist an empty successful task
+terminal. Successful `finish` now rejects failed/dropped/live work before minting
+its operation. Receipt acceptance and authoritative completion under actor
+admission independently reject unclean attempts. Original generation, pending,
+readiness, cancellation, canonical terminal and durable uncertainty fences remain.
+
+**Fresh executed evidence (immutable runs, source_unchanged):**
+
+- `/tmp/reboot-rust-batch-ledger-acceptance-1791481089906270585`: generated-handler
+  fault overlay catches an actual declared reader failure and returns success.
+  The actual supervised host fails with unclean-attempt FailedPrecondition.
+  Canonical recovery after RocksDB restart has one Pending task with no terminal
+  and no saved decision; ledger/maps are unchanged. Public approve/Wait then
+  completes the restored task. Overlay hash is recorded; production SDK/source
+  are frozen and both sessions' process groups are reaped.
+- `/tmp/reboot-rust-batch-ledger-acceptance-1791481339355527946`: public
+  init/Cargo/rbt/CXX/RocksDB acceptance passes ordinary unary success/rich mismatch,
+  typed subscription success/mismatch, unchanged raw actor/maps/task/replay on
+  errors, and actual committed checkpoint updates. Three retained typed clients
+  explicitly reconnect through regeneration and full restart with cleanup.
+  Prior batch/map/archive/task-list/stream/cancellation gates remain green.
+  Generated consumer strict all-target Clippy/fmt and **six library tests** pass.
+- `/tmp/reboot-rust-batch-ledger-final-gates-1791482036728123360`: strict SDK
+  all-target Clippy; **401 passed, 0 failed, 128 ignored**, including the new
+  failed/dropped/live success fence and writer/constructor denial controls.
+  Public default greeting native persistence/replay/restart, host/Database
+  failure supervision and failed-live-rebuild cleanup pass.
+- `/tmp/reboot-rust-workflow-reader-no-business-errors-1791482553479487000`:
+  separate generated workflow-service and transaction-service ordinary readers
+  without declared business errors pass strict consumer Clippy and **six library
+  tests**. This variant is compiler/consumer evidence, not native persistence.
+
+**Limits:** same local actor/owner, ordinary unary readers and existing bounded
+shared reactive machinery. No remote/cross-actor invalidation, streaming-reader
+parity, automatic status retry, durable error decisions or workflow-service writer
+error expansion. The failure probe covers caught reader error, not new Store/CAS
+lost-ACK injection. Saved-step method/request changes require explicit migration;
+incompatible old replay fails closed, never silently reinterprets its meaning.
+Full Rust parity and production readiness remain unclaimed.
+
+**Sources:** [generation](src/workflow_codegen.rs),
+[attempt and completion fences](src/workflow_context.rs),
+[public schema](../cli/commands/init/templates/rust_batch.proto.j2),
+[native acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
 
 ### Public serial distinct-map transfer (2026-10-08)
 
@@ -1299,7 +1369,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: b4ccc85370cd0a0b866eafa20a6a0a7608e9d4cd0e6268a7b6eeb382a88b46dd -->
+<!-- parity-source-sha256: a43e6ac6318c158dc32d44b8aa5575b2f30feee6f77d6acd0a5efc4e8ec86446 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

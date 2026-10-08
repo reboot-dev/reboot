@@ -84,6 +84,22 @@ root idempotency remains disabled for direct-map calls; duplicate transfer
 returns source-absent rejection. No status retries or external exactly-once
 claim. This acceptance is not a new multi-map lost-ACK/crash-at-Prepare proof.
 
+## Typed workflow-service reader
+
+`work-read batch-001` subscribes once to `Work.ObserveBatch`; `work-unary batch-001`
+uses the ordinary reader RPC. `work-mismatch other` returns method-declared
+`BatchMismatch` rather than treating a business error as a transport failure.
+`watch-work-reconnect` keeps one typed reader client across explicit reconnect,
+regeneration and restart; no automatic status retry or durable resume is implied.
+
+The workflow's saved approval observation uses `observe_batch_until`; successful
+observations retain existing named replay semantics. A failed observation still
+fails/fences the workflow attempt: this is not a saved catchable error decision,
+writer-step business-error support or broader workflow error recovery. Changing
+saved-step method/request identity for an existing workflow requires a separate
+migration; incompatible persisted replay fails closed rather than silently changing
+its meaning.
+
 ## Inspect pending tasks
 
 Listing is disabled unless the host receives a nonempty

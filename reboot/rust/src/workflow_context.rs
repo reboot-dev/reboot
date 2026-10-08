@@ -59,6 +59,58 @@ mod workflow_admission_tests {
         assert!(!attempt.clean());
     }
     #[tokio::test]
+    async fn successful_finish_rejects_failed_dropped_and_live_framework_work_before_load() {
+        let tasks = OneShotTasks::new(
+            DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(),
+            D::STATE_TYPE.into(),
+            "actor".into(),
+            Binding(true),
+        )
+        .unwrap();
+        for mode in 0..3 {
+            let attempt = WorkflowAttempt::default();
+            let work = attempt.operation();
+            let live = match mode {
+                0 => {
+                    work.acknowledged();
+                    attempt
+                        .failed
+                        .store(true, std::sync::atomic::Ordering::Release);
+                    None
+                }
+                1 => {
+                    drop(work);
+                    None
+                }
+                _ => Some(work),
+            };
+            let task = db::Task::default();
+            let cancel = RecoveryCancellation::new();
+            let context = WorkflowContext {
+                tasks: &tasks,
+                task: &task,
+                cancel: &cancel,
+                generation: Arc::new(()),
+                attempt: &attempt,
+                iteration: None,
+            };
+            let error = context
+                .finish::<D, crate::proto::Counter, crate::proto::Counter>(
+                    "type.googleapis.com/Counter",
+                    crate::proto::Counter::default(),
+                )
+                .await
+                .err()
+                .expect("tainted success rejected");
+            assert_eq!(error.code(), tonic::Code::FailedPrecondition);
+            assert_eq!(
+                error.message(),
+                "unclean workflow attempt cannot complete successfully"
+            );
+            drop(live);
+        }
+    }
+    #[tokio::test]
     async fn finite_checkpoint_namespaces_are_disjoint_and_iteration_errors_fence_retry() {
         let store = DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap();
         let tasks =
@@ -321,20 +373,17 @@ mod workflow_admission_tests {
             )],
         )
         .unwrap();
-        assert!(
-            legacy_reader
-                .validate_workflow_writer::<D, crate::proto::Counter, crate::proto::Counter>(
-                    "tests.Service.Apply"
-                )
-                .is_err()
-        );
+        assert!(legacy_reader
+            .validate_workflow_writer::<D, crate::proto::Counter, crate::proto::Counter>(
+                "tests.Service.Apply"
+            )
+            .is_err());
         assert!(rw.workflow_running_admission().is_err());
-        assert!(
-            rw.validate_workflow_writer::<D, crate::proto::Counter, crate::proto::Counter>(
+        assert!(rw
+            .validate_workflow_writer::<D, crate::proto::Counter, crate::proto::Counter>(
                 "tests.Service.Run"
             )
-            .is_err()
-        );
+            .is_err());
     }
 }
 
@@ -711,21 +760,21 @@ impl<'a> WorkflowContext<'a> {
         {
             let _owner = admission.lock()?;
         }
-        let loaded =
-            self.tasks
-                .inner
-                .store
-                .task_database()
-                .load(db::LoadRequest {
-                    actors: vec![],
-                    task_ids: vec![
-                        self.task.task_id.clone().ok_or_else(|| {
-                            Status::failed_precondition("missing workflow identity")
-                        })?,
-                    ],
-                })
-                .await?
-                .into_inner();
+        let loaded = self
+            .tasks
+            .inner
+            .store
+            .task_database()
+            .load(db::LoadRequest {
+                actors: vec![],
+                task_ids: vec![self
+                    .task
+                    .task_id
+                    .clone()
+                    .ok_or_else(|| Status::failed_precondition("missing workflow identity"))?],
+            })
+            .await?
+            .into_inner();
         {
             let _owner = admission.lock()?;
         }
@@ -875,6 +924,11 @@ impl<'a> WorkflowContext<'a> {
         Q: prost::Message + Default + 'static,
         R: prost::Message + Default + 'static,
     {
+        if !self.attempt.clean() {
+            return Err(Status::failed_precondition(
+                "unclean workflow attempt cannot complete successfully",
+            ));
+        }
         let operation = self.attempt.operation();
         if self.iteration.is_some() {
             return Err(Status::failed_precondition(
@@ -1060,7 +1114,14 @@ impl OneShotTasks {
                 }
                 return Ok(Some(error));
             }
-            WorkflowOutcome::Terminal(terminal) => terminal,
+            WorkflowOutcome::Terminal(terminal) => {
+                if !attempt.clean() {
+                    return Err(Status::failed_precondition(
+                        "unclean workflow receipt cannot complete",
+                    ));
+                }
+                terminal
+            }
         };
         let id = task.task_id.clone().expect("validated workflow ID");
         let gate = self.inner.store.actor_gate(&id.state_type, &id.state_ref);
@@ -1075,6 +1136,11 @@ impl OneShotTasks {
         }
         .validate_scope()
         .await?;
+        if !attempt.clean() {
+            return Err(Status::failed_precondition(
+                "unclean workflow receipt cannot complete",
+            ));
+        }
         self.validate_terminal(&task, &terminal)?;
         task.status = db::task::Status::Completed as i32;
         task.response_or_error = Some(terminal);

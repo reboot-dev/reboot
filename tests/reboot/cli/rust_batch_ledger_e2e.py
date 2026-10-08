@@ -177,10 +177,10 @@ class Watch:
 
 
 class ReconnectingWatch:
-    def __init__(self, index=False):
-        self.log = STAGE / ('index-reconnecting-watch.log' if index else 'reconnecting-watch.log')
+    def __init__(self, index=False, work=False):
+        self.log = STAGE / ('work-reconnecting-watch.log' if work else 'index-reconnecting-watch.log' if index else 'reconnecting-watch.log')
         self.out = self.log.open('w')
-        self.proc = subprocess.Popen([str(TARGET / 'debug/client'), 'watch-index-reconnect' if index else 'watch-reconnect', '600000'], cwd=APP, env=ENV,
+        self.proc = subprocess.Popen([str(TARGET / 'debug/client'), 'watch-work-reconnect' if work else 'watch-index-reconnect' if index else 'watch-reconnect', '600000'], cwd=APP, env=ENV,
             stdin=subprocess.PIPE, stdout=self.out, stderr=subprocess.STDOUT, text=True, start_new_session=True)
         evidence['live_handles'].append({'kind': 'reconnecting-watch', 'pid': self.proc.pid, 'log': str(self.log)})
         checkpoint()
@@ -352,11 +352,32 @@ def rebuild(session, text):
 current = None
 reconnecting = None
 index_watch = None
+work_watch = None
 watch = None
 task_watch = None
 try:
     command([RBT, 'init', '--backend=rust', '--frontend=none', '--application-name=batch_ledger', '--rust-sdk=' + str(ROOT / 'reboot/rust'), '--rust-example=batch-ledger'])
-    check('workflow reader composition removes duplicate view schema', 'LedgerViewMethods' not in (APP / 'api/batch_ledger/v1/batch.proto').read_text())
+    if os.environ.get('RUST_BATCH_CAUGHT_READER_ONLY'):
+        # A real generated application handler deliberately catches a failed
+        # framework reader observation. No private state/task seeding.
+        lib = APP / 'backend/src/lib.rs'
+        text = lib.read_text()
+        needle = '        event(&format!("body-{}", request.batch));'
+        overlay = '''        if std::env::var_os("RBT_RUST_CAUGHT_READER_PROBE").is_some() {
+            let failed = generated::LedgerWorkMethodsWorkflowSteps::observe_batch_until(
+                context, Arc::new(self.clone()), "caught-probe", "caught-probe.v1",
+                proto::Batch { batch: "other".into() }, |_| true,
+            ).await;
+            assert!(failed.is_err());
+            event("caught-reader-failure");
+            return Ok(proto::Ledger::default());
+        }
+'''
+        assert needle in text
+        lib.write_text(text.replace(needle, overlay + needle))
+        command(['cargo', 'fmt', '--manifest-path', 'backend/Cargo.toml'])
+        evidence['caught_handler_sha256'] = hashlib.sha256(lib.read_bytes()).hexdigest()
+    check('workflow reader composition removes duplicate view schema' , 'LedgerViewMethods' not in (APP / 'api/batch_ledger/v1/batch.proto').read_text())
     command(['cargo', 'clippy', '--manifest-path', 'backend/Cargo.toml', '--all-targets', '--', '-D', 'warnings'])
     command(['cargo', 'fmt', '--manifest-path', 'backend/Cargo.toml', '--', '--check'])
     tests, _ = command(['cargo', 'test', '--manifest-path', 'backend/Cargo.toml', '--all-targets'])
@@ -375,6 +396,58 @@ try:
     reference = str(StateRef.from_id('batch_ledger.v1.Ledger', 'ledger'))
     map_ref = str(StateRef.from_id('rbt.std.collections.v1.SortedMap', 'approvals'))
     archive_ref = str(StateRef.from_id('rbt.std.collections.v1.SortedMap', 'archived-approvals'))
+    if os.environ.get('RUST_BATCH_CAUGHT_READER_ONLY'):
+        ENV['RBT_RUST_CAUGHT_READER_PROBE'] = '1'
+        current = Session('caught-reader-failure')
+        until(lambda: 'actor state must be constructed' in client('work-unary', 'caught-probe', ok=False)[0], 'read-only ordinary RPC observes published admission before create')
+        client('create')
+        submitted, code = client('submit', 'caught-probe', '1', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', ok=False)
+        # The commit may precede failed-readiness revocation of the submit RPC;
+        # never retry the mutation or invent an observed handle on a lost reply.
+        until(lambda: 'caught-reader-failure' in '\n'.join(events(current)), 'actual generated handler caught failed observation')
+        end = time.monotonic() + 15
+        observed_completed = False
+        while current.process.poll() is None and time.monotonic() < end:
+            time.sleep(.05)
+            try:
+                with grpc.insecure_channel(f'127.0.0.1:{current.data["database_port"]}') as channel:
+                    records = db_grpc.DatabaseStub(channel).Recover(db.RecoverRequest(shard_ids=['s000000000'],skip_idempotent_mutations=True),timeout=1)
+                    # Pending-only Recover cannot prove success. Use observed handle
+                    # when submit delivered it; a Completed lookup exposes original RED.
+                    list(records)
+                if submitted and code == 0:
+                    _,_,record,_ = native(current, submitted)
+                    if record.status == db.Task.COMPLETED:
+                        observed_completed = True
+                        break
+            except grpc.RpcError:
+                pass
+        failed = current.process.poll() is not None and current.process.returncode != 0
+        if not failed:
+            if not observed_completed:
+                timeout_seen = True
+                raise TimeoutError("caught reader probe outcome unknown; preserve exact session handles")
+            current.close(); current = None
+            raise AssertionError('caught framework reader failure became successful workflow terminal / serving host')
+        current.close(); current = None
+        check('caught reader failure fails actual supervised host before successful terminal')
+        ENV.pop('RBT_RUST_CAUGHT_READER_PROBE')
+        current = Session('caught-reader-restored')
+        until(lambda: client('work-unary', 'caught-probe', ok=False)[1] == 0, 'restored reader owner is published')
+        with grpc.insecure_channel(f'127.0.0.1:{current.data["database_port"]}') as channel:
+            stub = db_grpc.DatabaseStub(channel)
+            pending = [task for batch in stub.Recover(db.RecoverRequest(shard_ids=['s000000000'],skip_idempotent_mutations=True),timeout=3) for task in batch.pending_tasks]
+        check('caught-reader canonical pending survives RocksDB restart', len(pending)==1 and pending[0].status==db.Task.PENDING and pending[0].WhichOneof('response_or_error') is None)
+        probe_uuid = str(__import__('uuid').UUID(bytes=pending[0].task_id.task_uuid))
+        ledger, entries, record, checkpoints = native(current, probe_uuid)
+        check('caught reader no fake success or saved decision', ledger.batch=='caught-probe' and ledger.approved==ledger.completed==0 and not entries.keys and not archive_rows(current).keys and not checkpoints and record.status==db.Task.PENDING)
+        client('approve','caught-probe','0')
+        client('wait',probe_uuid,'5000')
+        final = native(current,probe_uuid)
+        check('restored workflow completes through actual approval checkpoint',final[2].status==db.Task.COMPLETED and final[0].approved==final[0].completed==1)
+        current.close(); current=None
+        evidence['accepted']=True
+        raise SystemExit(0)
     current = Session('admin-disabled', admin=False)
     list_denied(grpc.StatusCode.PERMISSION_DENIED, token=ENV['RBT_RUST_TASK_ADMIN_TOKEN'])
     cancel_denied(grpc.StatusCode.PERMISSION_DENIED, token=ENV['RBT_RUST_TASK_ADMIN_TOKEN'])
@@ -405,8 +478,18 @@ try:
     watch = Watch('initial')
     reconnecting = ReconnectingWatch()
     index_watch = ReconnectingWatch(index=True)
+    work_watch = ReconnectingWatch(work=True)
     check('transaction reader initial snapshot', client('index-read', 'batch-001')[0] == 'batch-001 3 0 0 1')
     check('transaction reader typed declared mismatch', client('index-mismatch', 'other')[0] == 'MISMATCH other batch-001')
+    work_before = native(current, uuid)
+    work_bytes = (evidence['durable'][-1]['state_hex'], [item.SerializeToString() if hasattr(item, 'SerializeToString') else [entry.SerializeToString() for entry in item] for item in work_before[1:]], archive_rows(current).SerializeToString())
+    check('workflow reader unary success', client('work-unary', 'batch-001')[0] == 'batch-001 3 0 0 1')
+    check('workflow reader unary declared rich mismatch', client('work-unary', 'other')[0] == 'MISMATCH other batch-001')
+    check('workflow reader typed subscription success', client('work-read', 'batch-001')[0] == 'batch-001 3 0 0 1')
+    for _ in range(3):
+        check('workflow reader typed subscription declared mismatch', client('work-mismatch', 'other')[0] == 'MISMATCH other batch-001')
+    work_after = native(current, uuid)
+    check('workflow reader errors preserve raw actor maps task replay', work_bytes == (evidence['durable'][-1]['state_hex'], [item.SerializeToString() if hasattr(item, 'SerializeToString') else [entry.SerializeToString() for entry in item] for item in work_after[1:]], archive_rows(current).SerializeToString()))
     check('index zero not implicitly approved', read()[2:4] == ['0', '0'])
     pending, status = client('wait', uuid, '150', ok=False)
     check('typed pending Wait preserves deadline', status != 0 and ('DeadlineExceeded' in pending or 'Cancelled' in pending))
@@ -456,8 +539,14 @@ try:
         if 'batch-001 3 1 1 1' in observed: break
     else: raise AssertionError('transaction companion missed acknowledged app/map commit')
     check('transaction companion observes actual committed approval')
+    for _ in range(4):
+        observed = work_watch.send('next', 'batch-001')
+        if 'batch-001 3 1 1 1' in observed: break
+    else: raise AssertionError('workflow typed-error reader missed committed checkpoint')
+    check('workflow typed-error companion observes acknowledged checkpoint')
     reconnecting.send('reconnect', 'batch-001 3 1 1 1')
     index_watch.send('reconnect', 'batch-001 3 1 1 1')
+    work_watch.send('reconnect', 'batch-001 3 1 1 1')
     before = events(current)
     check('one checkpoint before restart', sum('checkpoint-batch-001-0' in line for line in before) == 1)
     path = APP / 'api/batch_ledger/v1/batch.proto'
@@ -472,22 +561,28 @@ try:
     watch.close(); watch = None
     reconnecting.send('reconnect', 'batch-001 3 1 1 1')
     index_watch.send('reconnect', 'batch-001 3 1 1 1')
+    work_watch.send('reconnect', 'batch-001 3 1 1 1')
     reconnecting.send('disconnect', 'DISCONNECTED')
     index_watch.send('disconnect', 'DISCONNECTED')
+    work_watch.send('disconnect', 'DISCONNECTED')
     reader_zero(current)
     rebuild(current, original)
     wait_state(1, 1)
     check('watch preserves pending workflow checkpoint', native(current, uuid)[0].completed == 1)
     reconnecting.send('reconnect', 'batch-001 3 1 1 1')
     index_watch.send('reconnect', 'batch-001 3 1 1 1')
+    work_watch.send('reconnect', 'batch-001 3 1 1 1')
     current.close(); current = None
     reconnecting.send('reconnect', 'DISCONNECTED Unavailable')
     index_watch.send('reconnect', 'DISCONNECTED Unavailable')
+    work_watch.send('reconnect', 'DISCONNECTED Unavailable')
     current = Session('parked-restart')
     reconnecting.send('reconnect', 'batch-001 3 1 1 1')
     index_watch.send('reconnect', 'batch-001 3 1 1 1')
+    work_watch.send('reconnect', 'batch-001 3 1 1 1')
     reconnecting.close(); reconnecting = None
     index_watch.close(); index_watch = None
+    work_watch.close(); work_watch = None
     reader_zero(current)
     wait_state(1, 1)
     check('same pending UUID survives full RocksDB restart', native(current, uuid)[2].status == db.Task.PENDING)
@@ -701,6 +796,8 @@ finally:
             reconnecting.close(expect_success=False)
         if index_watch is not None:
             index_watch.close(expect_success=False)
+        if work_watch is not None:
+            work_watch.close(expect_success=False)
         if task_watch is not None:
             task_watch.close()
         if watch is not None:

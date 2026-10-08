@@ -28,6 +28,7 @@ service LedgerWorkMethods {
  rpc Create(Empty) returns (Empty) { option (rbt.v1alpha1.method).writer = { constructor: {} }; }
  rpc SubmitBatch(Submit) returns (Handle) { option (rbt.v1alpha1.method).writer = {}; }
  rpc Observe(Empty) returns (Ledger) { option (rbt.v1alpha1.method).reader = {}; }
+ rpc ObserveBatch(Batch) returns (Ledger) { option (rbt.v1alpha1.method) = { reader: {} errors: ["BatchMismatch"] }; }
  rpc Checkpoint(Step) returns (Ledger) { option (rbt.v1alpha1.method).writer = {}; }
  rpc RunBatch(Submit) returns (Ledger) { option (rbt.v1alpha1.method) = { workflow: {} errors: ["BatchRejected"] }; }
 }

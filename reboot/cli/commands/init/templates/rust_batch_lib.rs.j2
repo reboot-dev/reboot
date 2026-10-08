@@ -103,6 +103,24 @@ impl generated::LedgerWorkMethodsDatabaseHandler for Ledger {
         execution.task_upserts.push(task);
         Ok(execution)
     }
+    async fn observe_batch(
+        &self,
+        state: &proto::Ledger,
+        request: proto::Batch,
+    ) -> Result<proto::Ledger, generated::LedgerWorkMethodsObserveBatchError> {
+        if !request.batch.is_empty() && request.batch != state.batch {
+            return Err(
+                generated::LedgerWorkMethodsObserveBatchError::BatchMismatch(
+                    proto::BatchMismatch {
+                        expected: request.batch,
+                        actual: state.batch.clone(),
+                    },
+                ),
+            );
+        }
+        Ok(state.clone())
+    }
+
     async fn checkpoint(
         &self,
         state: &mut proto::Ledger,
@@ -149,13 +167,13 @@ impl generated::LedgerWorkMethodsDatabaseHandler for Ledger {
             let iteration =
                 context.iteration("batch-v1", u64::from(index), u64::from(request.count))?;
             let batch = request.batch.clone();
-            generated::LedgerWorkMethodsWorkflowSteps::observe_until(
+            generated::LedgerWorkMethodsWorkflowSteps::observe_batch_until(
                 &iteration,
                 Arc::new(self.clone()),
                 "approval",
                 "approved-through-index.v1",
-                proto::Empty {},
-                move |state| state.batch == batch && state.approved > index,
+                proto::Batch { batch },
+                move |state| state.approved > index,
             )
             .await?;
             result = generated::LedgerWorkMethodsWorkflowSteps::checkpoint(
