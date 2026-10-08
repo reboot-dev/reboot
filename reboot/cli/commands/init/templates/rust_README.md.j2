@@ -1,0 +1,40 @@
+# {{ name }}
+
+Experimental Rust Reboot app. The local SDK is a path dependency because
+`reboot-rust-schema` is not yet published. Requires Rust edition 2024 and a
+compatible canonical C++ `reboot/server/database` executable.
+
+SECURITY: the current raw C++ Database listens on `0.0.0.0` without
+authentication. Use only an isolated/trusted development network. The CLI
+fails closed unless you pass `--rust-allow-insecure-database`; this opt-in is
+not stored in `.rbtrc`. Only the Rust public gRPC host binds loopback.
+Do not use this mode in production or expose the sidecar to an untrusted network.
+
+```sh
+export RBT_RUST_DATABASE_BINARY=/absolute/path/to/reboot/server/database
+rbt dev run --rust-allow-insecure-database
+# Another terminal, from this project:
+cargo run --manifest-path backend/Cargo.toml --bin client -- create
+cargo run --manifest-path backend/Cargo.toml --bin client -- greet
+cargo run --manifest-path backend/Cargo.toml --bin client -- read
+```
+
+Cargo `build.rs` compiles `api/{{ name }}/v1/hello_world.proto` and emits both
+Tonic bindings and Reboot Database adapters/external typed clients in `OUT_DIR`.
+The app mounts the generated service through `ApplicationHost`; constructor,
+writer and reader use `DatabaseActorStore`. Re-running Create on an existing
+actor is an error; use a stable idempotency key to replay one logical write:
+`client greet hello 11111111-1111-4111-8111-111111111111`.
+
+`rbt dev run --rust-allow-insecure-database` owns one Database process and one Rust host. Source/proto
+changes rebuild/restart the host while retaining the sidecar; restarting the
+command reopens `.rbt/dev/{{ name }}/rust/rocksdb`. Ctrl-C reaps owned children.
+Set `RBT_RUST_URL` on the client when overriding `--port`. Logs are in the same
+Rust state directory. `--terminate-after-health-check` performs an actual gRPC
+health RPC then stops both processes. Run `rbt dev run --rust-allow-insecure-database --terminate-after-health-check` for a CLI startup smoke test.
+
+This is direct local gRPC, not Envoy/HTTP/React, cloud deployment, multi-server
+placement, cross-actor transactions, workflows or reactive-reader parity.
+Distributed placement is deliberately absent: all local actors use one shard.
+Python dev runtime switches are rejected, not silently ignored. Rust state is
+compatible with `rbt dev expunge --application-name={{ name }}`.

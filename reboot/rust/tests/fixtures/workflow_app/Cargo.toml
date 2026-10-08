@@ -1,0 +1,14 @@
+[package]
+name = "generated-workflow-app"
+version = "0.0.0"
+edition = "2024"
+publish = false
+[build-dependencies]
+reboot = { package = "reboot-rust-schema", path = "../../../", features = ["build", "test-support"] }
+[dependencies]
+reboot = { package = "reboot-rust-schema", path = "../../../", features = ["build", "test-support"] }
+prost = "0.13"
+prost-types = "0.13"
+tonic = "0.12"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "signal"] }
+uuid = "1"

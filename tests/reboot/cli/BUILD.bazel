@@ -1,4 +1,5 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@rbt_pypi//:requirements.bzl", "requirement")
 
 py_library(
     name = "mock_exit_py",
@@ -170,5 +171,27 @@ py_test(
         "//reboot/cli/commands/cloud:secrets_py",
         "//reboot/cli/common:cli_py",
         "//reboot/cli/common:rc_py",
+    ],
+)
+
+py_test(
+    name = "rust_app_dx_tests_py",
+    srcs = ["rust_app_dx_test.py"],
+    main = "rust_app_dx_test.py",
+    data = [
+        "//reboot/cli:rbt",
+        "//reboot/rust:scaffold_sdk_sources",
+        "//reboot/rust:Cargo.toml",
+        "//rbt/v1alpha1:protos",
+    ],
+    env = {
+        "RUST_DX_RBT": "$(rootpath //reboot/cli:rbt)",
+        "RUST_DX_SDK": "$(rootpath //reboot/rust:Cargo.toml)",
+    },
+    deps = [
+        "//reboot/cli/commands:rust_dev_py",
+        "//reboot/cli/commands/init:init_py",
+        requirement("tomli"),
+        requirement("pyprctl"),
     ],
 )

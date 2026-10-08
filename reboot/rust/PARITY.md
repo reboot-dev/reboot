@@ -1,3 +1,17 @@
+## Durable named workflows v1 (bounded local capability)
+
+Annotated standalone workflow services now emit typed handlers, private context,
+ordinary-writer scheduling hooks, explicit named writer steps and typed durable
+results. The runnable generated application exercises canonical CXX/RocksDB
+future scheduling, first-step process interruption/recovery, exact effect counts,
+scheduling replay, collision rejection, terminal restart and graceful cancellation.
+See [WORKFLOWS.md](WORKFLOWS.md) for the API and executable proof.
+This is not loop/iteration, until/subscribe, distributed, external-effects or full
+Python workflow parity; explicit clean local body failures now resume in up to
+three host-owned attempts. Other failures/exhaustion retain supervised restart
+recovery (see WORKFLOWS.md for exact fences). Existing one-shot
+iteration-zero and private writer receipt paths retain their restrictions.
+
 ## Bounded descendant first-touch rollback (review candidate)
 
 Supervised exclusive non-idempotent **A→B→C**, distinct existing actors, now
@@ -641,3 +655,29 @@ exactly-once external/handler effects are claimed. A pre-Store crash can rerun
 user code. Final restored verification passed: 255 library tests, 26 generated
 downstream vectors, 78 real CXX/RocksDB cases, 8 Native2pc cases, 3 compile-fail
 doctests, formatting and strict Clippy. Independent delta review is source-clean.
+
+
+### Sequential distinct root-star (bounded host policy)
+
+`with_sequential_root_star()` selects a separate host policy, installed by the
+actual registered root or reserved live participant guard, not transaction
+headers. Existing actors only; exclusive non-factory/non-idempotent execution.
+The root may call distinct writer leaves sequentially (A→B, then A→C); all inbound
+executions under this policy reject descendants before routing. The legacy
+one-child chain and direct/descendant first-touch rollback remain separate.
+Generated calls bind full ownership context, canonical method and exact type+ref
+target, serialize unresolved scopes, reject repeated confirmed/attempted actors,
+and require exact singleton classified writer-leaf success before another call.
+After successful B, any failed C dooms the root even if caught. Unknown C is not
+invented into membership: confirmed B cleanup and C's actual original-A Watch
+retain ownership until acknowledged Abort. Actor-owned tasks remain private until
+local terminal ACK, then dispatch under each original registered owner.
+
+This is not Python's general sibling/reentrant ownership/snapshot engine. Trusted
+routing must install this policy on the actual leaves. Host factories must supply
+fresh child IDs; fixture-fixed distinct IDs are not production freshness proof.
+No parallel/reentrant/intersecting subtrees, second-sibling recoverable error,
+retry, migration/fencing, pre-Prepare crash recovery, or exactly-once external
+effects claim. The focused three-process CXX acceptance is in
+`tests/fixtures/sequential_star_acceptance.rs`; broader release gates and independent
+review must be source-matched before delivery.

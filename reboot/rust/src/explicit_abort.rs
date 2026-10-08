@@ -77,6 +77,19 @@ impl ExplicitAbortOwner {
             .send_replace(Some(Status::unavailable("test sticky owner failure")));
     }
 
+    pub(crate) fn validate_builtin_root(&self, root: uuid::Uuid) -> Result<(), Status> {
+        let state = self.state.lock().unwrap();
+        if !state.active
+            || self.failure.borrow().is_some()
+            || !state.registered_roots.contains(&root)
+        {
+            return Err(Status::failed_precondition(
+                "builtin root owner stopped or root unregistered",
+            ));
+        }
+        Ok(())
+    }
+
     pub fn recovery_registration(&self) -> ExplicitAbortRecovery {
         ExplicitAbortRecovery {
             owner: self.clone(),
@@ -239,6 +252,8 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> RegisteredRoot<C, R> {
             reservation: self.reservation.take(),
             registration: self.token.take(),
             inbound: None,
+            task_dispatcher: std::sync::Mutex::new(None),
+            builtin_map_active: None,
         })
     }
 }
@@ -252,6 +267,8 @@ pub struct RootHandlerGuard<P: ParticipantSidecar, C: CoordinatorSidecar, R: Par
     coordinator: DurableRootCoordinator<C, R>,
     reservation: Option<(ExplicitAbortOwner, OwnedSemaphorePermit)>,
     registration: Option<RootRegistrationToken>,
+    task_dispatcher: std::sync::Mutex<Option<crate::one_shot_tasks::OneShotTasks>>,
+    builtin_map_active: Option<Arc<std::sync::atomic::AtomicBool>>,
     inbound: Option<(
         crate::live_participant::Reservation,
         crate::durable_participant::LiveExecution<P>,
@@ -302,8 +319,52 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
             reservation,
             registration: None,
             inbound: None,
+            task_dispatcher: std::sync::Mutex::new(None),
+            builtin_map_active: None,
         })
     }
+    /// Installs host-only builtin authority after real root/cancellation admission.
+    /// No inbound or public metadata can enable this capability.
+    #[doc(hidden)]
+    pub fn with_builtin_map_context(
+        mut self,
+        context: &mut TransactionContext,
+    ) -> Result<Self, Status> {
+        if context.is_fresh_root()
+            && !context.supervised_tree_execution()
+            && let Some(token) = self.registration.as_ref()
+            && self.reservation.is_some()
+        {
+            if !context.same_ownership_context(&self.context) {
+                return Err(Status::failed_precondition(
+                    "builtin context differs from admitted guard",
+                ));
+            }
+            let state = token.owner.state.lock().unwrap();
+            if !state.active
+                || token.owner.failure.borrow().is_some()
+                || !state
+                    .registered_roots
+                    .contains(&context.transaction_root_id())
+            {
+                return Err(Status::failed_precondition(
+                    "builtin requires active root owner",
+                ));
+            }
+            if let Some(endpoint) = self.local.as_ref().unwrap().database_endpoint() {
+                let active = Arc::new(std::sync::atomic::AtomicBool::new(true));
+                context.install_builtin_map_admission(
+                    endpoint,
+                    active.clone(),
+                    token.owner.clone(),
+                );
+                self.builtin_map_active = Some(active);
+                self.context = context.clone();
+            }
+        }
+        Ok(self)
+    }
+
     #[doc(hidden)]
     pub async fn with_live_inbound(
         mut self,
@@ -376,11 +437,59 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
             self.inbound.as_ref().unwrap().0.validate_active()?;
         }
         context.enable_supervised_tree()?;
+        let local = self.local.as_ref().unwrap();
+        context.install_actor_authority(
+            crate::durable_coordinator::ParticipantTarget {
+                state_type: local.actor_state_type().to_owned(),
+                state_ref: local.actor_state_ref().to_owned(),
+            },
+            false,
+        )?;
         if self.inbound.is_some() {
             context.mark_supervised_inbound();
         }
         self.context = context.clone();
         Ok(self)
+    }
+
+    /// Host-selected root-star: installed only after registered root or live
+    /// participant admission. Every inbound execution is a direct-root leaf.
+    #[doc(hidden)]
+    pub async fn with_sequential_root_star(
+        self,
+        context: &mut TransactionContext,
+        owner: Option<&crate::live_participant::LiveParticipantOwner>,
+    ) -> Result<Self, Status> {
+        let mut guard = self.with_supervised_tree(context, owner).await?;
+        let local = guard.local.as_ref().unwrap();
+        if local.state().is_none() {
+            return Err(Status::failed_precondition(
+                "root-star requires existing actor",
+            ));
+        }
+        context.install_actor_authority(
+            crate::durable_coordinator::ParticipantTarget {
+                state_type: local.actor_state_type().to_owned(),
+                state_ref: local.actor_state_ref().to_owned(),
+            },
+            true,
+        )?;
+        guard.context = context.clone();
+        Ok(guard)
+    }
+
+    /// Opt-in existing-actor sequential siblings. Admission still requires an
+    /// actual registered root/live participant owner, never just this flag.
+    #[doc(hidden)]
+    pub async fn with_sequential_reusable_participants(
+        self,
+        context: &mut TransactionContext,
+        owner: Option<&crate::live_participant::LiveParticipantOwner>,
+    ) -> Result<Self, Status> {
+        let mut guard = self.with_sequential_root_star(context, owner).await?;
+        context.install_reusable_policy()?;
+        guard.context = context.clone();
+        Ok(guard)
     }
 
     /// Seal descendants and encode the local plus transitive participant union.
@@ -421,11 +530,19 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
             true,
         )
         .map_err(|error| Status::failed_precondition(error.to_string()))?;
-        self.local
-            .as_ref()
-            .unwrap()
-            .rollback_declared_leaf(&self.context)
-            .await?;
+        if self.context.reusable_participants() {
+            self.local
+                .as_ref()
+                .unwrap()
+                .relinquish_call(&self.context, true)
+                .await?;
+        } else {
+            self.local
+                .as_ref()
+                .unwrap()
+                .rollback_declared_leaf(&self.context)
+                .await?;
+        }
         reservation.validate_active()?;
         metadata.attach_to_status(&mut status);
         #[cfg(feature = "test-support")]
@@ -735,6 +852,127 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
         Ok(())
     }
 
+    #[doc(hidden)]
+    pub async fn stage_effects(
+        &self,
+        effects: crate::durable_participant::PendingActorEffects,
+    ) -> Result<Option<crate::durable_participant::SharedPromotion>, Status> {
+        let local = self
+            .local
+            .as_ref()
+            .ok_or_else(|| Status::failed_precondition("execution closed"))?;
+        if self.context.reusable_participants() {
+            // Fresh registered roots have no inbound Watch. Retained leaves
+            // must still prove their reserved live execution on every stage.
+            if let Some((inbound, _)) = &self.inbound {
+                inbound.validate_active()?;
+            } else if !self.context.is_fresh_root()
+                || self.registration.is_none()
+                || self.reservation.is_none()
+            {
+                return Err(Status::failed_precondition(
+                    "reusable execution requires live guard",
+                ));
+            }
+            self.context.validate_open_task_branch()?;
+            if !effects.task_upserts.is_empty() {
+                let tasks = self
+                    .task_dispatcher
+                    .lock()
+                    .unwrap()
+                    .clone()
+                    .ok_or_else(|| {
+                        Status::failed_precondition(
+                            "reusable tasks require guarded dispatcher binding",
+                        )
+                    })?;
+                self.validate_tree_tasks(&tasks).await?;
+                let result = local
+                    .stage_validated_tasks(effects, &tasks, &self.context)
+                    .await;
+                if let Some((inbound, _)) = &self.inbound {
+                    inbound.validate_active()?;
+                }
+                self.validate_tree_tasks(&tasks).await?;
+                return result;
+            }
+        }
+        local.stage(effects).await
+    }
+
+    /// Complete exactly this admitted call before successful trailers authorize
+    /// the next sibling. Drop retains the stable root Watch reservation.
+    #[doc(hidden)]
+    pub async fn finish_generated_inbound(self) -> Result<(), Status> {
+        if self.context.reusable_participants() {
+            self.inbound
+                .as_ref()
+                .ok_or_else(|| Status::failed_precondition("reusable Watch missing"))?
+                .0
+                .validate_active()?;
+            self.local
+                .as_ref()
+                .unwrap()
+                .relinquish_call(&self.context, false)
+                .await?;
+        }
+        self.finish_inbound()
+    }
+
+    #[doc(hidden)]
+    pub async fn validate_staged_tasks(
+        &self,
+        tasks: &crate::one_shot_tasks::OneShotTasks,
+        staged: &[crate::database_proto::Task],
+    ) -> Result<(), Status> {
+        let all = if self.context.reusable_participants() {
+            self.local.as_ref().unwrap().retained_tasks(staged).await?
+        } else {
+            staged.to_vec()
+        };
+        if self.context.reusable_participants() {
+            self.validate_tree_tasks(tasks).await?;
+        }
+        #[cfg(feature = "test-support")]
+        if self.context.reusable_participants()
+            && let Some(uuid) = std::env::var_os("REBOOT_TEST_GUARD_COMPLETED_UUID")
+            && staged.iter().any(|task| {
+                task.task_id.as_ref().is_some_and(|id| {
+                    uuid::Uuid::from_slice(&id.task_uuid)
+                        .is_ok_and(|id| id.to_string() == uuid.to_string_lossy())
+                })
+            })
+        {
+            // Bind a genuinely active actor dispatcher on the retained N1 batch,
+            // then exercise the exported staging operation with a different batch.
+            let retained = self.local.as_ref().unwrap().retained_tasks(&[]).await?;
+            tasks.validate_staged(&retained).await?;
+            *self.task_dispatcher.lock().unwrap() = Some(tasks.clone());
+            let result = self
+                .stage_effects(crate::durable_participant::PendingActorEffects {
+                    task_upserts: staged.to_vec(),
+                    ..Default::default()
+                })
+                .await;
+            if let Some(marker) = std::env::var_os("REBOOT_TEST_GUARD_COMPLETED_MARKER") {
+                std::fs::write(
+                    marker,
+                    match &result {
+                        Ok(_) => "ACCEPTED".to_owned(),
+                        Err(status) => format!("{:?}", status.code()),
+                    },
+                )
+                .map_err(|error| Status::internal(error.to_string()))?;
+            }
+            return result
+                .map(|_| ())
+                .and_then(|_| Err(Status::internal("uncertified Completed task accepted")));
+        }
+        tasks.validate_staged(&all).await?;
+        *self.task_dispatcher.lock().unwrap() = Some(tasks.clone());
+        Ok(())
+    }
+
     /// Legacy unsupported/inbound paths cannot discard a supported root's owner.
     pub fn finish_inbound(mut self) -> Result<(), Status> {
         if self.reservation.is_some() {
@@ -803,6 +1041,9 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver> Drop
     for RootHandlerGuard<P, C, R>
 {
     fn drop(&mut self) {
+        if let Some(active) = &self.builtin_map_active {
+            active.store(false, std::sync::atomic::Ordering::Release);
+        }
         if let Some((reservation, execution)) = self.inbound.take() {
             self.context.close_branch();
             let context = self.context.clone();

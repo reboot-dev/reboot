@@ -1,4 +1,4 @@
-//! Bounded external HTTP registration owned by [`ApplicationHost`].
+//! Bounded external HTTP registration owned by [`ApplicationHost`](crate::application_host::ApplicationHost).
 //!
 //! This is intentionally a small external-only surface: GET/POST/OPTIONS
 //! handlers receive server-owned application identity and an untrusted

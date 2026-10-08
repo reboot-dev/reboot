@@ -120,12 +120,17 @@ impl Health for HostHealth {
 struct LegacyPlacementGate {
     state: tokio::sync::watch::Receiver<bool>,
     sender: tokio::sync::watch::Sender<bool>,
+    revocations: tokio::sync::watch::Sender<u64>,
 }
 
 impl LegacyPlacementGate {
     fn new() -> Self {
         let (sender, state) = tokio::sync::watch::channel(true);
-        Self { state, sender }
+        Self {
+            state,
+            sender,
+            revocations: tokio::sync::watch::channel(0).0,
+        }
     }
 
     fn ready(&self) -> bool {
@@ -133,11 +138,14 @@ impl LegacyPlacementGate {
     }
 
     fn require_placement(&self) {
-        self.sender.send_replace(false);
+        self.set_ready(false);
     }
 
     fn set_ready(&self, ready: bool) {
-        self.sender.send_replace(ready);
+        if self.sender.send_replace(ready) && !ready {
+            self.revocations
+                .send_modify(|epoch| *epoch = epoch.wrapping_add(1));
+        }
     }
 }
 
@@ -153,8 +161,11 @@ pub struct RecoveryCancellation {
     state: Arc<tokio::sync::watch::Sender<bool>>,
     readiness: Option<tokio::sync::watch::Receiver<RecoveryState>>,
     placement: Option<tokio::sync::watch::Receiver<bool>>,
+    placement_revocations: Option<tokio::sync::watch::Receiver<u64>>,
     failure: Option<tokio::sync::watch::Sender<RecoveryState>>,
     failure_latched: Arc<std::sync::atomic::AtomicBool>,
+    #[cfg(test)]
+    test_placement_sender: Option<tokio::sync::watch::Sender<bool>>,
 }
 impl RecoveryCancellation {
     pub(crate) fn new() -> Self {
@@ -163,8 +174,11 @@ impl RecoveryCancellation {
             state: Arc::new(state),
             readiness: None,
             placement: None,
+            placement_revocations: None,
             failure: None,
             failure_latched: Arc::new(false.into()),
+            #[cfg(test)]
+            test_placement_sender: None,
         }
     }
     /// Wait for both durable recovery and required placement completeness.
@@ -179,6 +193,11 @@ impl RecoveryCancellation {
         loop {
             if *readiness.borrow() == RecoveryState::Failed {
                 return Err(tonic::Status::unavailable("application host failed"));
+            }
+            if *self.state.borrow() {
+                return Err(tonic::Status::cancelled(
+                    "host stopped before task readiness",
+                ));
             }
             if *readiness.borrow() == RecoveryState::Ready && *placement.borrow() {
                 return Ok(());
@@ -196,7 +215,9 @@ impl RecoveryCancellation {
         let mut cancel = Self::new();
         cancel.failure = Some(sender);
         cancel.readiness = Some(receiver.clone());
-        cancel.placement = Some(tokio::sync::watch::channel(true).1);
+        let (sender, placement_receiver) = tokio::sync::watch::channel(true);
+        cancel.placement = Some(placement_receiver);
+        cancel.test_placement_sender = Some(sender);
         (cancel, receiver)
     }
     // Only ApplicationHost installs this authority. No public readiness setter.
@@ -207,6 +228,37 @@ impl RecoveryCancellation {
             failure.send_replace(RecoveryState::Failed);
         }
     }
+    #[allow(clippy::result_large_err)]
+    pub(crate) fn check_reader_admission(&self) -> Result<(), tonic::Status> {
+        if self.is_cancelled() {
+            return Err(tonic::Status::cancelled("reader host stopped"));
+        }
+        if self
+            .readiness
+            .as_ref()
+            .is_none_or(|s| *s.borrow() != RecoveryState::Ready)
+            || self.placement.as_ref().is_none_or(|s| !*s.borrow())
+        {
+            return Err(tonic::Status::unavailable("reader host authority revoked"));
+        }
+        Ok(())
+    }
+    pub(crate) fn reader_revocations(&self) -> Option<tokio::sync::watch::Receiver<u64>> {
+        self.placement_revocations.clone()
+    }
+    pub(crate) async fn reader_revoked(&self) {
+        let mut readiness = self.readiness.clone().expect("host-owned reader readiness");
+        let mut placement = self.placement.clone().expect("host-owned reader placement");
+        loop {
+            if self.check_reader_admission().is_err() {
+                return;
+            }
+            tokio::select! { _ = self.cancelled() => return, result = readiness.changed() => if result.is_err() { return; }, result = placement.changed() => if result.is_err() { return; }, }
+        }
+    }
+    pub(crate) fn is_cancelled(&self) -> bool {
+        *self.state.borrow()
+    }
     pub fn cancel(&self) {
         self.state.send_replace(true);
     }
@@ -215,6 +267,21 @@ impl RecoveryCancellation {
         while !*receiver.borrow() {
             let _ = receiver.changed().await;
         }
+    }
+}
+
+#[cfg(test)]
+mod cancellation_ready_regression {
+    use super::*;
+    #[tokio::test]
+    async fn ready_fast_path_checks_cancel_before_any_user_or_database_work() {
+        let (cancel, _readiness) = RecoveryCancellation::test_host();
+        assert!(cancel.public_ready().await.is_ok());
+        cancel.cancel();
+        assert_eq!(
+            cancel.public_ready().await.unwrap_err().code(),
+            tonic::Code::Cancelled
+        );
     }
 }
 
@@ -867,6 +934,11 @@ impl ApplicationHost {
             + 'static,
         S::Future: Send + 'static,
     {
+        assert_ne!(
+            S::NAME,
+            "reboot.rust.reactive.v1.LocalReaders",
+            "reserved local reader route: use try_add_local_readers (one actor per host)"
+        );
         let mut public_services = BTreeSet::new();
         public_services.insert(S::NAME.to_owned());
         RunningApplicationHost {
@@ -905,6 +977,11 @@ impl ApplicationHost {
             + 'static,
         S::Future: Send + 'static,
     {
+        assert_ne!(
+            S::NAME,
+            "reboot.rust.reactive.v1.LocalReaders",
+            "reserved local reader route: use try_add_local_readers (one actor per host)"
+        );
         let mut public_services = BTreeSet::new();
         if !is_legacy_control_service(S::NAME) {
             public_services.insert(S::NAME.to_owned());
@@ -937,6 +1014,25 @@ pub struct RunningApplicationHost {
 }
 
 impl RunningApplicationHost {
+    /// One actor per host. This reserved route can only be installed through
+    /// this typed API; duplicate companions return an explicit bounded error.
+    #[allow(clippy::result_large_err)]
+    pub fn try_add_local_readers<B: crate::reactive::ReaderBinding>(
+        mut self,
+        service: crate::reactive::LocalReaderService<B>,
+    ) -> Result<Self, tonic::Status> {
+        const NAME: &str = "reboot.rust.reactive.v1.LocalReaders";
+        if !self.public_services.insert(NAME.to_owned()) {
+            return Err(tonic::Status::failed_precondition(
+                "only one local reactive actor per host",
+            ));
+        }
+        self.router = self.router.add_service(
+            crate::reactive::wire::local_readers_server::LocalReadersServer::new(service),
+        );
+        Ok(self)
+    }
+
     /// The immutable application identity used by this server.
     pub fn application_id(&self) -> &str {
         &self.application_id
@@ -952,6 +1048,11 @@ impl RunningApplicationHost {
             + 'static,
         S::Future: Send + 'static,
     {
+        assert_ne!(
+            S::NAME,
+            "reboot.rust.reactive.v1.LocalReaders",
+            "reserved local reader route: use try_add_local_readers (one actor per host)"
+        );
         self.public_services.insert(S::NAME.to_owned());
         Self {
             application_id: self.application_id,
@@ -988,6 +1089,11 @@ impl RunningApplicationHost {
         S::Future: Send + 'static,
     {
         if !is_legacy_control_service(S::NAME) {
+            assert_ne!(
+                S::NAME,
+                "reboot.rust.reactive.v1.LocalReaders",
+                "reserved local reader route: use try_add_local_readers (one actor per host)"
+            );
             self.public_services.insert(S::NAME.to_owned());
         }
         Self {
@@ -1061,6 +1167,7 @@ impl RunningApplicationHost {
         cancel.readiness = Some(readiness.subscribe());
         cancel.failure = Some(readiness.clone());
         cancel.placement = Some(placement_gate.state.clone());
+        cancel.placement_revocations = Some(placement_gate.revocations.subscribe());
         let serving_cancel = cancel.clone();
         // Poll the fixed router before recovery. Control services were part of
         // that router at construction; public routes remain gated below.

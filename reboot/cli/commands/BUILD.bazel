@@ -24,6 +24,12 @@ py_library(
 )
 
 py_library(
+    name = "rust_dev_py",
+    srcs = ["rust_dev.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "dev_py",
     srcs = ["dev.py"],
     srcs_version = "PY3",
@@ -33,6 +39,7 @@ py_library(
         requirement("pyprctl"),
         requirement("cryptography"),
         requirement("python-dotenv"),
+        ":rust_dev_py",
         ":generate_py",
         "//rbt/dashboard/v1:dashboard_py_reboot",
         "//rbt/std/presence/v1:presence_py_reboot",

@@ -1,0 +1,24 @@
+[package]
+name = "{{ name }}"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "app"
+path = "src/main.rs"
+
+[[bin]]
+name = "client"
+path = "src/bin/client.rs"
+
+[dependencies]
+reboot = { package = "reboot-rust-schema", path = {{ sdk_path }} }
+prost = "0.13"
+prost-types = "0.13"
+tonic = "0.12"
+tonic-health = "0.12"
+uuid = { version = "1", features = ["v4"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
+
+[build-dependencies]
+reboot = { package = "reboot-rust-schema", path = {{ sdk_path }}, features = ["build"] }

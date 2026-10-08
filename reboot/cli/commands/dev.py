@@ -179,7 +179,15 @@ def _register_dev_run(parser: ArgumentParser):
     add_working_directory_options(parser.subcommand('dev run'))
 
     add_application_options(parser.subcommand('dev run'))
+    parser.subcommand('dev run').add_argument(
+        '--rust', type=bool, default=False,
+        help='experimental Cargo-native single-host direct gRPC mode; owns a C++ Database',
+    )
 
+    parser.subcommand('dev run').add_argument(
+        '--rust-allow-insecure-database', type=bool, default=False,
+        help='explicitly allow the unauthenticated C++ Database listener on all interfaces; isolated trusted dev networks only',
+    )
     parser.subcommand('dev run').add_argument(
         '--env-file',
         type=str,
@@ -1173,6 +1181,33 @@ async def dev_run(
     parser_factory: ArgumentParserFactory,
 ) -> int:
     """Implementation of the 'dev run' subcommand."""
+
+    if getattr(args, 'rust', False):
+        from reboot.cli.commands.rust_dev import RustDevError, run_rust_dev, validate_rust_args
+        try:
+            validate_rust_args(args)
+            with use_working_directory(args, parser, verbose=True):
+                try_and_become_child_subreaper_on_linux()
+                if not args.application_name:
+                    raise RustDevError('--rust requires --application-name')
+                environment = os.environ.copy()
+                if args.env_file:
+                    environment.update(_load_env_file(args.env_file))
+                environment.update(dict(args.env or []))
+                binary = environment.get('RBT_RUST_DATABASE_BINARY')
+                if not binary:
+                    raise RustDevError('Set RBT_RUST_DATABASE_BINARY to the compatible C++ Database executable')
+                return await run_rust_dev(
+                    manifest=Path(args.application), database_binary=Path(binary),
+                    state=dot_rbt_dev_directory(args, parser) / args.application_name / 'rust',
+                    application_name=args.application_name, port=args.port if args.port is not None else 9990,
+                    watch=args.watch, env=environment,
+                    allow_insecure_database=args.rust_allow_insecure_database,
+                    terminate_after_health_check=args.terminate_after_health_check is True,
+                    report=terminal.info,
+                )
+        except (RustDevError, OSError) as error:
+            terminal.fail(str(error))
 
     _check_common_args(args)
 

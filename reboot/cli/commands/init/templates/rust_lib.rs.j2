@@ -1,0 +1,50 @@
+pub mod proto {
+    tonic::include_proto!("{{ name }}.v1");
+}
+
+pub mod generated {
+    include!(concat!(
+        env!("OUT_DIR"),
+        "/{{ name }}/v1/hello_world.reboot.rs"
+    ));
+}
+
+pub struct HelloWorld;
+
+#[tonic::async_trait]
+impl generated::HelloWorldMethodsDatabaseHandler for HelloWorld {
+    async fn create(
+        &self,
+        state: &mut proto::HelloWorld,
+        _: proto::CreateRequest,
+    ) -> Result<proto::NumGreetingsResponse, tonic::Status> {
+        state.number_of_greetings = 0;
+        Ok(proto::NumGreetingsResponse {
+            number_of_greetings: 0,
+        })
+    }
+
+    async fn greet(
+        &self,
+        state: &mut proto::HelloWorld,
+        _: proto::GreetRequest,
+    ) -> Result<proto::GreetResponse, tonic::Status> {
+        state.number_of_greetings = state
+            .number_of_greetings
+            .checked_add(1)
+            .ok_or_else(|| tonic::Status::out_of_range("greeting count overflow"))?;
+        Ok(proto::GreetResponse {
+            number_of_greetings: state.number_of_greetings,
+        })
+    }
+
+    async fn num_greetings(
+        &self,
+        state: &proto::HelloWorld,
+        _: proto::NumGreetingsRequest,
+    ) -> Result<proto::NumGreetingsResponse, tonic::Status> {
+        Ok(proto::NumGreetingsResponse {
+            number_of_greetings: state.number_of_greetings,
+        })
+    }
+}

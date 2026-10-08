@@ -1,3 +1,17 @@
+## Durable named workflows v1 (bounded local capability)
+
+Annotated standalone workflow services now emit typed handlers, private context,
+ordinary-writer scheduling hooks, explicit named writer steps and typed durable
+results. The runnable generated application exercises canonical CXX/RocksDB
+future scheduling, first-step process interruption/recovery, exact effect counts,
+scheduling replay, collision rejection, terminal restart and graceful cancellation.
+See [WORKFLOWS.md](WORKFLOWS.md) for the API and executable proof.
+This is not loop/iteration, until/subscribe, distributed, external-effects or full
+Python workflow parity; explicit clean local body failures now resume in up to
+three host-owned attempts. Other failures/exhaustion retain supervised restart
+recovery (see WORKFLOWS.md for exact fences). Existing one-shot
+iteration-zero and private writer receipt paths retain their restrictions.
+
 ## Bounded descendant first-touch rollback (review candidate)
 
 Supervised exclusive non-idempotent **A→B→C**, distinct existing actors, now
@@ -725,3 +739,68 @@ Streaming methods, unsupported Reboot method kinds, missing annotated state,
 cross-package message types, and nested types are rejected rather than guessed.
 This remains concrete per-service code: there is no dynamic dispatcher, macro
 system, or generic domain mutation.
+
+
+### Sequential distinct root-star (bounded host policy)
+
+`with_sequential_root_star()` selects a separate host policy, installed by the
+actual registered root or reserved live participant guard, not transaction
+headers. Existing actors only; exclusive non-factory/non-idempotent execution.
+The root may call distinct writer leaves sequentially (A→B, then A→C); all inbound
+executions under this policy reject descendants before routing. The legacy
+one-child chain and direct/descendant first-touch rollback remain separate.
+Generated calls bind full ownership context, canonical method and exact type+ref
+target, serialize unresolved scopes, reject repeated confirmed/attempted actors,
+and require exact singleton classified writer-leaf success before another call.
+The runtime consumes the non-cloneable scope and performs the actual Tonic unary
+RPC itself, including terminal membership/error disposition; generated typed and
+Status-only clients delegate to this path, including separate Cargo crates.
+There is no public completed setter, caller-created terminal receipt, or
+caller-supplied RPC future/closure certifier. Raw scoped request helpers and
+caller-created response/membership wrappers remain data plumbing: they cannot
+settle a scope, and even unissued scopes retain uncertainty when dropped.
+Supervised recoverable errors require exactly one method-declared, successfully
+Prost-decoded rich detail plus exact singleton read-only leaf membership and an
+empty confirmed ledger. Default unsupervised declared/system recoverability is
+retained. Resolver registration and generated error schemas are trusted host
+composition inputs, not authenticated against malicious host re-declarations.
+After successful B, any failed C dooms the root even if caught. Unknown C is not
+invented into membership: confirmed B cleanup and C's actual original-A Watch
+retain ownership until acknowledged Abort. Actor-owned tasks remain private until
+local terminal ACK, then dispatch under each original registered owner.
+
+This is not Python's general sibling/reentrant ownership/snapshot engine. Trusted
+routing must install this policy on the actual leaves. Host factories must supply
+fresh child IDs; fixture-fixed distinct IDs are not production freshness proof.
+No parallel/reentrant/intersecting subtrees, second-sibling recoverable error,
+retry, migration/fencing, pre-Prepare crash recovery, or exactly-once external
+effects claim. The focused three-process CXX acceptance is in
+`tests/fixtures/sequential_star_acceptance.rs`; broader release gates and independent
+review must be source-matched before delivery.
+
+## Canonical SortedMap (bounded same-host library)
+
+Generate the canonical `rbt/std/collections/v1/sorted_map.proto` using
+`module=reboot::sorted_map_proto,runtime_module=reboot`. A fixed builtin wrapper
+provides `SortedMap::create(&library, state_ref, idempotency_key)` and
+`map.in_transaction(context)`; the session exposes typed Insert/Remove/Get/Range
+and ReverseRange with native read-own-writes. The host owns
+`sorted_map::SortedMapLibrary`, registers the returned map participant's control
+route, and runs the app's explicit Abort recovery owner through `ApplicationHost`.
+
+Sessions/call futures must remain serial and handler-awaited; escaping or
+detached calls are unsupported (no active root reservation across await).
+Constructor crash/lost-ACK/restart replay is not established by this proof.
+
+This requires a same-endpoint admitted fresh exclusive app root without an
+automatic root idempotency header. Construction creates EMPTY canonical state
+and the entry CF, uses native uniqueness and durable constructor replay, and
+does not seed actor state from fixture Store. A caught map error dooms the root,
+so app/map writes abort atomically. Private active root provenance is required;
+public internal/transaction headers are never trusted authority.
+
+This is an explicit host constructor + direct serial session, not an implicit
+Python singleton or public network inbound child/sibling adapter. See
+[SORTED-MAP-PREREQUISITE.md](SORTED-MAP-PREREQUISITE.md) for exact acceptance and
+remaining fences. The mixed generated native fixture lives in
+`tests/fixtures/sorted_map_app`.

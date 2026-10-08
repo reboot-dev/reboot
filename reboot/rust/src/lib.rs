@@ -33,8 +33,14 @@ pub mod placement;
 pub mod placement_proto {
     include!(concat!(env!("OUT_DIR"), "/placement_proto/rbt.v1alpha1.rs"));
 }
+pub mod reactive;
 pub mod runtime;
 pub mod state_ref;
+/// Canonical SortedMap wire DTOs and Tonic bindings. No builtin Reboot host adapter
+/// or public constructor is established by these transport bindings alone.
+pub mod sorted_map_proto {
+    tonic::include_proto!("rbt.std.collections.v1");
+}
 pub mod successful_trailers;
 
 use chrono::{DateTime, FixedOffset, Utc};
@@ -4110,3 +4116,6 @@ mod tests {
         );
     }
 }
+
+/// Canonical same-host SortedMap construction and admitted root sessions.
+pub mod sorted_map;

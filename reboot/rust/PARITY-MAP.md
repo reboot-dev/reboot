@@ -1,3 +1,17 @@
+## Durable named workflows v1 (bounded local capability)
+
+Annotated standalone workflow services now emit typed handlers, private context,
+ordinary-writer scheduling hooks, explicit named writer steps and typed durable
+results. The runnable generated application exercises canonical CXX/RocksDB
+future scheduling, first-step process interruption/recovery, exact effect counts,
+scheduling replay, collision rejection, terminal restart and graceful cancellation.
+See [WORKFLOWS.md](WORKFLOWS.md) for the API and executable proof.
+This is not loop/iteration, until/subscribe, distributed, external-effects or full
+Python workflow parity; explicit clean local body failures now resume in up to
+three host-owned attempts. Other failures/exhaustion retain supervised restart
+recovery (see WORKFLOWS.md for exact fences). Existing one-shot
+iteration-zero and private writer receipt paths retain their restrictions.
+
 ## Bounded descendant first-touch rollback (review candidate)
 
 Supervised exclusive non-idempotent **A→B→C**, distinct existing actors, now
@@ -1046,3 +1060,29 @@ A test-only bounded destructor barrier parks the actual Store guard after synchr
 Final restored verification passed on 2026-10-07: 255 library tests, 26 generated downstream vectors, 78/78 real CXX/RocksDB process cases, 8/8 Native2pc, 3/3 compile-fail doctests, formatting and strict locked all-features/all-targets Clippy. Independent safety delta review found no new blocker; its remaining regression gate was satisfied by the final restored runs. Runtime validation errors now retain their precise Status rather than being masked as shutdown uncertainty; otherwise successful exits check sticky failure after child destruction on shutdown, interrupted startup and early router exit. See `/tmp/writer-task-replay-checkpoint.md` and separate GREEN/RED logs for exact execution inventory.
 
 Excluded: retries (including mutation Unavailable), terminal task errors/declared errors, workflows/iterations, task auth, transactional targets/constructors, nested scheduling, tree tasks, migration/fencing, overlapping hosts, global first-result-wins across legacy Store/import/transaction writers, checkpoint deletion, and exactly-once handler/external effects. A pre-checkpoint crash can rerun user code. CAS false rereads exact canonical identity/scheduling and typed response; a different winner response is treated as a collision/failure, preserved unchanged, never advertised as the losing candidate.
+
+
+### Sequential distinct root-star (bounded host policy)
+
+`with_sequential_root_star()` selects a separate host policy, installed by the
+actual registered root or reserved live participant guard, not transaction
+headers. Existing actors only; exclusive non-factory/non-idempotent execution.
+The root may call distinct writer leaves sequentially (A→B, then A→C); all inbound
+executions under this policy reject descendants before routing. The legacy
+one-child chain and direct/descendant first-touch rollback remain separate.
+Generated calls bind full ownership context, canonical method and exact type+ref
+target, serialize unresolved scopes, reject repeated confirmed/attempted actors,
+and require exact singleton classified writer-leaf success before another call.
+After successful B, any failed C dooms the root even if caught. Unknown C is not
+invented into membership: confirmed B cleanup and C's actual original-A Watch
+retain ownership until acknowledged Abort. Actor-owned tasks remain private until
+local terminal ACK, then dispatch under each original registered owner.
+
+This is not Python's general sibling/reentrant ownership/snapshot engine. Trusted
+routing must install this policy on the actual leaves. Host factories must supply
+fresh child IDs; fixture-fixed distinct IDs are not production freshness proof.
+No parallel/reentrant/intersecting subtrees, second-sibling recoverable error,
+retry, migration/fencing, pre-Prepare crash recovery, or exactly-once external
+effects claim. The focused three-process CXX acceptance is in
+`tests/fixtures/sequential_star_acceptance.rs`; broader release gates and independent
+review must be source-matched before delivery.

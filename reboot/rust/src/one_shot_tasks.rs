@@ -1,8 +1,11 @@
 //! Bounded generated same-local-actor reader and ordinary-writer tasks.
 //! Declared terminals persist canonical method-typed errors; writer handler failures
 //! proven before Store receive at most three host-owned attempts. Reader failures,
-//! workflows, transport/ACK uncertainty and cancellation are not retried.
+//! transport/ACK uncertainty and cancellation are not retried.
 //! Absolute UTC schedules are durable, with no sleeping child per task.
+//! Explicit named workflows have separate immutable admission/execution and
+//! per-step leases; explicit clean local body failures receive three host-owned
+//! attempts, replaying acknowledged named checkpoints. Other failures fail closed.
 //! Declared returns before completion CAS remain explicitly at least once.
 use crate::{
     application_host::{HostRecovery, RecoveryCancellation},
@@ -13,6 +16,7 @@ use std::{
     collections::HashSet,
     sync::{Arc, Mutex},
 };
+include!("workflow_context.rs");
 const MAX_TASKS: usize = 1024;
 use tokio::{sync::mpsc, task::JoinSet};
 use tonic::Status;
@@ -59,6 +63,13 @@ pub trait ReaderTaskBinding: Send + Sync + 'static {
     }
     fn writer_capable(&self) -> bool {
         false
+    }
+    /// Workflow execution is distinct from reader or one-shot writer execution.
+    async fn execute_workflow(
+        &self,
+        _context: WorkflowContext<'_>,
+    ) -> Result<WorkflowReceipt, Status> {
+        Err(Status::failed_precondition("no workflow executor"))
     }
     fn is_writer(&self, _task: &db::Task) -> bool {
         false
@@ -196,6 +207,8 @@ pub struct TaskMethodDeclaration {
     decode_request: fn(&[u8]) -> Result<(), Status>,
     decode_response: fn(&[u8]) -> Result<(), Status>,
     errors: Vec<DeclaredTaskError>,
+    workflow: bool,
+    workflow_writer_step: bool,
 }
 pub struct DeclaredTaskError {
     type_url: &'static str,
@@ -235,7 +248,21 @@ impl TaskMethodDeclaration {
             decode_request: decode_declared_message::<Q>,
             decode_response: decode_declared_message::<R>,
             errors,
+            workflow: false,
+            workflow_writer_step: false,
         }
+    }
+    /// Immutable explicit workflow kind; never inferred from a reader binding.
+    pub fn workflow(mut self) -> Self {
+        self.workflow = true;
+        self.workflow_writer_step = false;
+        self
+    }
+    /// Immutable named workflow writer-step contract, distinct from reader bindings.
+    pub fn workflow_writer_step(mut self) -> Self {
+        self.workflow = false;
+        self.workflow_writer_step = true;
+        self
     }
     fn validate_terminal(&self, terminal: &db::task::ResponseOrError) -> Result<(), Status> {
         match terminal {
@@ -270,6 +297,7 @@ struct Inner {
     receiver: Mutex<Option<mpsc::Receiver<()>>>,
     active: std::sync::atomic::AtomicBool,
     recovery_request: Mutex<Option<db::RecoverRequest>>,
+    running_owner: Mutex<Option<Arc<()>>>,
     uncertain: tokio::sync::watch::Sender<bool>,
     #[cfg(feature = "test-support")]
     completed_operations: std::sync::atomic::AtomicUsize,
@@ -319,6 +347,7 @@ impl OneShotTasks {
                 receiver: Mutex::new(Some(receiver)),
                 active: false.into(),
                 recovery_request: Mutex::new(None),
+                running_owner: Mutex::new(None),
                 uncertain: tokio::sync::watch::channel(false).0,
                 #[cfg(feature = "test-support")]
                 completed_operations: 0.into(),
@@ -407,9 +436,129 @@ impl OneShotTasks {
             .await
     }
 
+    pub(crate) fn workflow_writer_response_type(
+        &self,
+        method: &str,
+    ) -> Result<&'static str, Status> {
+        self.inner
+            .declarations
+            .iter()
+            .find(|d| d.method == method && !d.workflow)
+            .map(|d| d.response_type)
+            .ok_or_else(|| {
+                Status::failed_precondition("missing scheduling writer result declaration")
+            })
+    }
+    pub(crate) fn validate_scheduling_replay(
+        &self,
+        expected: &[db::Task],
+        loaded: &[db::Task],
+    ) -> Result<(), Status> {
+        self.validate(expected)?;
+        if loaded.len() != expected.len() {
+            return Err(Status::failed_precondition(
+                "scheduling replay task set mismatch",
+            ));
+        }
+        for task in expected {
+            let matches: Vec<_> = loaded
+                .iter()
+                .filter(|t| t.task_id == task.task_id)
+                .collect();
+            if matches.len() != 1 || !self.is_workflow(task) {
+                return Err(Status::failed_precondition(
+                    "scheduling replay task authority mismatch",
+                ));
+            }
+            let canonical = matches[0];
+            if canonical.status == db::task::Status::Completed as i32 {
+                validate_completed(task, canonical, None)?;
+                self.validate_terminal(
+                    canonical,
+                    canonical
+                        .response_or_error
+                        .as_ref()
+                        .expect("validated terminal"),
+                )?;
+            } else if canonical != task {
+                return Err(Status::failed_precondition(
+                    "scheduling replay pending method/payload mismatch",
+                ));
+            }
+        }
+        Ok(())
+    }
+    pub(crate) fn workflow_running_admission(&self) -> Result<RunningTaskAdmission, Status> {
+        let generation = self
+            .inner
+            .running_owner
+            .lock()
+            .expect("task owner mutex poisoned")
+            .clone()
+            .ok_or_else(|| Status::failed_precondition("workflow owner not running"))?;
+        let admission = RunningTaskAdmission {
+            tasks: self.clone(),
+            generation,
+        };
+        {
+            let _owner = admission.lock()?;
+        }
+        Ok(admission)
+    }
+    pub(crate) fn validate_workflow_writer<
+        D: crate::runtime::DurableStateDeclaration + 'static,
+        Q: 'static,
+        R: 'static,
+    >(
+        &self,
+        method: &str,
+    ) -> Result<(), Status> {
+        let declaration = self
+            .inner
+            .declarations
+            .iter()
+            .find(|d| d.method == method)
+            .ok_or_else(|| Status::failed_precondition("unregistered scheduling writer"))?;
+        if declaration.workflow
+            || !declaration.workflow_writer_step
+            || declaration.declaration != std::any::TypeId::of::<D>()
+            || declaration.request != std::any::TypeId::of::<Q>()
+            || declaration.response != std::any::TypeId::of::<R>()
+        {
+            return Err(Status::failed_precondition(
+                "scheduling writer descriptor mismatch",
+            ));
+        }
+        let probe = db::Task {
+            method: method.rsplit('.').next().unwrap_or("").to_owned(),
+            ..Default::default()
+        };
+        if !self.inner.binding.is_writer(&probe) {
+            return Err(Status::failed_precondition("not ordinary writer"));
+        }
+        Ok(())
+    }
+    pub(crate) fn validate_scheduling_store(
+        &self,
+        store: &DatabaseActorStore,
+        state_type: &str,
+        state_ref: &str,
+    ) -> Result<(), Status> {
+        if self.inner.store.database_endpoint() != store.database_endpoint()
+            || self.inner.state_type != state_type
+            || self.inner.state_ref != state_ref
+        {
+            return Err(Status::failed_precondition(
+                "workflow scheduling owner/store mismatch",
+            ));
+        }
+        Ok(())
+    }
     /// Whether the validated batch contains an ordinary writer target.
     pub fn contains_writer(&self, tasks: &[db::Task]) -> bool {
-        tasks.iter().any(|task| self.inner.binding.is_writer(task))
+        tasks
+            .iter()
+            .any(|task| self.inner.binding.is_writer(task) || self.is_workflow(task))
     }
     /// Validate the whole staged set before the participant stages any data.
     pub fn validate(&self, tasks: &[db::Task]) -> Result<(), Status> {
@@ -446,6 +595,17 @@ impl OneShotTasks {
                 return Err(Status::invalid_argument("duplicate task UUID"));
             }
             scheduled_at(task)?;
+            if self.is_workflow(task) {
+                if !self.inner.binding.writer_capable() {
+                    return Err(Status::failed_precondition(
+                        "reader-only owner cannot admit workflow",
+                    ));
+                }
+                (self
+                    .declaration(task)
+                    .expect("registered workflow")
+                    .decode_request)(&task.request)?;
+            }
             self.inner.binding.validate(task)?;
         }
         Ok(())
@@ -486,12 +646,34 @@ impl OneShotTasks {
     }
     /// Scheduling is usable only after host registration has taken ownership.
     pub async fn validate_staged(&self, tasks: &[db::Task]) -> Result<(), Status> {
+        self.validate_staged_admission(tasks).await.map(|_| ())
+    }
+
+    pub(crate) async fn validate_staged_admission(
+        &self,
+        tasks: &[db::Task],
+    ) -> Result<RunningTaskAdmission, Status> {
+        // Preserve the public denial order: stopped owner, malformed batch,
+        // then absent scheduling recovery owner. Reader-only registries have
+        // an active dispatcher claim but deliberately no Recover request.
         if !self.inner.active.load(std::sync::atomic::Ordering::Acquire) {
             return Err(Status::failed_precondition(
                 "task dispatcher has no running host owner",
             ));
         }
         self.validate(tasks)?;
+        let admission = RunningTaskAdmission {
+            tasks: self.clone(),
+            generation: self
+                .inner
+                .running_owner
+                .lock()
+                .expect("task owner mutex poisoned")
+                .clone()
+                .ok_or_else(|| {
+                    Status::failed_precondition("task dispatcher has no running host owner")
+                })?,
+        };
         let request = self
             .inner
             .recovery_request
@@ -499,7 +681,15 @@ impl OneShotTasks {
             .expect("task recovery mutex poisoned")
             .clone()
             .ok_or_else(|| Status::failed_precondition("no task recovery owner"))?;
+        {
+            // A snapshot is not authority: reject shutdown/restart before
+            // Recover, after each await, and again at effect publication.
+            let _owner = admission.lock()?;
+        }
         let pending = self.pending(request).await?;
+        {
+            let _owner = admission.lock()?;
+        }
         #[cfg(feature = "test-support")]
         if let Some(marker) = std::env::var_os("REBOOT_TEST_TASK_ADMISSION_CANCEL") {
             let marker = std::path::Path::new(&marker);
@@ -544,7 +734,10 @@ impl OneShotTasks {
         if !existing.tasks.is_empty() {
             return Err(Status::already_exists("task UUID already persisted"));
         }
-        Ok(())
+        {
+            let _owner = admission.lock()?;
+        }
+        Ok(admission)
     }
 
     /// Transfers a scheduling root to host-owned failure supervision before
@@ -598,6 +791,9 @@ impl OneShotTasks {
         Ok(pending)
     }
     async fn execute(&self, task: db::Task, cancel: &RecoveryCancellation) -> Result<(), Status> {
+        if self.is_workflow(&task) {
+            return self.execute_workflow_task(task, cancel).await;
+        }
         // Framework-owned bounded retry, only for runtime-sealed pre-Store failure.
         // Each attempt reloads and readmits the same durable identity and schedule.
         for attempt in 0..3u32 {
@@ -931,6 +1127,49 @@ impl Drop for SchedulingRootHandoff {
     }
 }
 
+// Private, non-cloneable capability. Arc identity cannot ABA while this
+// capability retains the old allocation; no public validation receipt exists.
+pub(crate) struct RunningTaskAdmission {
+    tasks: OneShotTasks,
+    generation: Arc<()>,
+}
+impl RunningTaskAdmission {
+    pub(crate) fn lock(&self) -> Result<std::sync::MutexGuard<'_, Option<Arc<()>>>, Status> {
+        let owner = self
+            .tasks
+            .inner
+            .running_owner
+            .lock()
+            .expect("task owner mutex poisoned");
+        if *self.tasks.inner.uncertain.borrow() {
+            return Err(Status::unavailable(
+                "durable task outcome uncertain; restart required",
+            ));
+        }
+        if !owner
+            .as_ref()
+            .is_some_and(|current| Arc::ptr_eq(current, &self.generation))
+            || !self
+                .tasks
+                .inner
+                .active
+                .load(std::sync::atomic::Ordering::Acquire)
+            || self
+                .tasks
+                .inner
+                .recovery_request
+                .lock()
+                .expect("task recovery mutex poisoned")
+                .is_none()
+        {
+            return Err(Status::failed_precondition(
+                "task dispatcher running owner changed during admission",
+            ));
+        }
+        Ok(owner)
+    }
+}
+
 type OwnerKey = (String, String, String);
 fn owners() -> &'static Mutex<HashSet<OwnerKey>> {
     static OWNERS: std::sync::OnceLock<Mutex<HashSet<OwnerKey>>> = std::sync::OnceLock::new();
@@ -956,11 +1195,25 @@ impl DispatchOwner {
                 "local actor task dispatcher already owned",
             ));
         }
+        *tasks
+            .inner
+            .running_owner
+            .lock()
+            .expect("task owner mutex poisoned") = Some(Arc::new(()));
         Ok(Self { tasks, key })
     }
 }
 impl Drop for DispatchOwner {
     fn drop(&mut self) {
+        // Same mutex as final staging consumption: shutdown either precedes
+        // admission (rejected) or follows the synchronous effect publication.
+        let mut owner = self
+            .tasks
+            .inner
+            .running_owner
+            .lock()
+            .expect("task owner mutex poisoned");
+        *owner = None;
         self.tasks
             .inner
             .active
@@ -1062,7 +1315,8 @@ impl HostRecovery for OneShotTaskRecovery {
                 _ = cancel.cancelled() => Ok(()),
                 result = work => result,
             };
-            tasks.inner.active.store(false, std::sync::atomic::Ordering::Release);
+            // DispatchOwner Drop revokes active/generation together under the
+            // synchronous publication mutex; do not split that linearization.
             if *tasks.inner.uncertain.borrow() {
                 cancel.fail();
                 if result.is_ok() {
@@ -1636,6 +1890,219 @@ mod tests {
             );
         }
     }
+
+    #[tokio::test]
+    async fn reader_registry_admission_preserves_shape_and_missing_owner_precedence() {
+        // A registry owns a real dispatcher claim but intentionally grants no
+        // scheduling Recover request. An unreachable endpoint also ensures
+        // every denial happens before any Database Recover/Load is attempted.
+        let tasks = OneShotTasks::new(
+            DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(),
+            "test.ReaderRegistryPrecedence".into(),
+            "actor".into(),
+            Binding,
+        )
+        .unwrap();
+        let malformed = db::Task::default();
+        let inactive = tasks
+            .validate_staged(std::slice::from_ref(&malformed))
+            .await
+            .unwrap_err();
+        assert_eq!(inactive.code(), tonic::Code::FailedPrecondition);
+        assert_eq!(
+            inactive.message(),
+            "task dispatcher has no running host owner"
+        );
+
+        let owner = DispatchOwner::claim(tasks.clone()).unwrap();
+        tasks.activate_reader_only();
+        let valid = db::Task {
+            task_id: Some(db::TaskId {
+                state_type: "test.ReaderRegistryPrecedence".into(),
+                state_ref: "actor".into(),
+                task_uuid: uuid::Uuid::new_v4().as_bytes().to_vec(),
+            }),
+            status: db::task::Status::Pending as i32,
+            ..Default::default()
+        };
+        // This is the exact valid-batch denial exercised by the native shared
+        // reader recovery/restart fixtures, including its stable diagnostic.
+        let denied = tasks
+            .validate_staged(std::slice::from_ref(&valid))
+            .await
+            .unwrap_err();
+        assert_eq!(denied.code(), tonic::Code::FailedPrecondition);
+        assert_eq!(denied.message(), "no task recovery owner");
+        let mut wrong_actor = valid.clone();
+        wrong_actor.task_id.as_mut().unwrap().state_ref = "foreign".into();
+        let mut completed = valid.clone();
+        completed.status = db::task::Status::Completed as i32;
+        let mut invalid_schedule = valid.clone();
+        invalid_schedule.timestamp = Some(prost_types::Timestamp {
+            seconds: 0,
+            nanos: -1,
+        });
+        for batch in [
+            vec![malformed],
+            vec![wrong_actor],
+            vec![completed],
+            vec![invalid_schedule],
+            vec![valid.clone(), valid.clone()],
+        ] {
+            assert_eq!(
+                tasks.validate_staged(&batch).await.unwrap_err().code(),
+                tonic::Code::InvalidArgument,
+                "active reader-only registry must validate shape before scheduling authority"
+            );
+        }
+        drop(owner);
+        let stopped = tasks
+            .validate_staged(std::slice::from_ref(&valid))
+            .await
+            .unwrap_err();
+        assert_eq!(stopped.code(), tonic::Code::FailedPrecondition);
+        assert_eq!(
+            stopped.message(),
+            "task dispatcher has no running host owner"
+        );
+    }
+
+    #[tokio::test]
+    async fn reusable_running_admission_rejects_recover_aba_before_exact_id_load() {
+        let (endpoint, database, server) = crate::runtime::test_support::start_database().await;
+        let tasks = OneShotTasks::new(
+            DatabaseActorStore::connect_lazy(&endpoint).unwrap(),
+            "test.RecoverABA".into(),
+            "actor".into(),
+            Binding,
+        )
+        .unwrap();
+        let owner = DispatchOwner::claim(tasks.clone()).unwrap();
+        *tasks.inner.recovery_request.lock().unwrap() = Some(db::RecoverRequest::default());
+        tasks
+            .inner
+            .active
+            .store(true, std::sync::atomic::Ordering::Release);
+        let task = db::Task {
+            task_id: Some(db::TaskId {
+                state_type: "test.RecoverABA".into(),
+                state_ref: "actor".into(),
+                task_uuid: uuid::Uuid::new_v4().as_bytes().to_vec(),
+            }),
+            status: db::task::Status::Pending as i32,
+            ..Default::default()
+        };
+        let (entered, release) = database.park_task_recover();
+        let (mut load_entered, load_release) = database.park_task_load();
+        let mut admission = Box::pin(tasks.validate_staged_admission(std::slice::from_ref(&task)));
+        tokio::select! {
+            result = &mut admission => panic!("unexpected early admission {}", result.is_ok()),
+            result = entered => result.unwrap(),
+        }
+        drop(owner);
+        let replacement = DispatchOwner::claim(tasks.clone()).unwrap();
+        *tasks.inner.recovery_request.lock().unwrap() = Some(db::RecoverRequest::default());
+        tasks
+            .inner
+            .active
+            .store(true, std::sync::atomic::Ordering::Release);
+        release.send(()).unwrap();
+        let error = match admission.await {
+            Err(error) => error,
+            Ok(_) => panic!("Recover from old generation authorized restarted dispatcher"),
+        };
+        assert_eq!(error.code(), tonic::Code::FailedPrecondition);
+        assert_eq!(
+            error.message(),
+            "task dispatcher running owner changed during admission"
+        );
+        assert!(
+            matches!(
+                load_entered.try_recv(),
+                Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+            ),
+            "stale Recover must reject before issuing exact-ID Load"
+        );
+        drop(load_release);
+        drop(replacement);
+        server.abort();
+        let _ = server.await;
+    }
+
+    #[tokio::test]
+    async fn reusable_running_admission_rejects_aba_and_cancelled_load_can_retry() {
+        let (endpoint, database, server) = crate::runtime::test_support::start_database().await;
+        let tasks = OneShotTasks::new(
+            DatabaseActorStore::connect_lazy(&endpoint).unwrap(),
+            "test.ABA".into(),
+            "actor".into(),
+            Binding,
+        )
+        .unwrap();
+        let owner = DispatchOwner::claim(tasks.clone()).unwrap();
+        *tasks.inner.recovery_request.lock().unwrap() = Some(db::RecoverRequest::default());
+        tasks
+            .inner
+            .active
+            .store(true, std::sync::atomic::Ordering::Release);
+        let task = db::Task {
+            task_id: Some(db::TaskId {
+                state_type: "test.ABA".into(),
+                state_ref: "actor".into(),
+                task_uuid: uuid::Uuid::new_v4().as_bytes().to_vec(),
+            }),
+            status: db::task::Status::Pending as i32,
+            ..Default::default()
+        };
+        let (entered, release) = database.park_task_load();
+        let mut admission = Box::pin(tasks.validate_staged_admission(std::slice::from_ref(&task)));
+        tokio::select! { result=&mut admission=>panic!("unexpected early admission {}",result.is_ok()),result=entered=>result.unwrap() }
+        drop(owner);
+        let replacement = DispatchOwner::claim(tasks.clone()).unwrap();
+        *tasks.inner.recovery_request.lock().unwrap() = Some(db::RecoverRequest::default());
+        tasks
+            .inner
+            .active
+            .store(true, std::sync::atomic::Ordering::Release);
+        release.send(()).unwrap();
+        assert!(
+            matches!(admission.await,Err(error) if error.code()==tonic::Code::FailedPrecondition),
+            "active=true restart must not accept old generation"
+        );
+        let admitted = tasks
+            .validate_staged_admission(std::slice::from_ref(&task))
+            .await
+            .unwrap();
+        drop(replacement);
+        let replacement = DispatchOwner::claim(tasks.clone()).unwrap();
+        *tasks.inner.recovery_request.lock().unwrap() = Some(db::RecoverRequest::default());
+        tasks
+            .inner
+            .active
+            .store(true, std::sync::atomic::Ordering::Release);
+        assert!(
+            admitted.lock().is_err(),
+            "post-validation/pre-consumption ABA must reject"
+        );
+        let (entered, release) = database.park_task_load();
+        let mut admission = Box::pin(tasks.validate_staged_admission(std::slice::from_ref(&task)));
+        tokio::select! { result=&mut admission=>panic!("unexpected early admission {}",result.is_ok()),result=entered=>result.unwrap() }
+        drop(admission);
+        release.send(()).unwrap();
+        assert!(
+            tasks
+                .validate_staged_admission(std::slice::from_ref(&task))
+                .await
+                .unwrap()
+                .lock()
+                .is_ok(),
+            "cancelled Load must not strand admission"
+        );
+        drop(replacement);
+        server.abort();
+        let _ = server.await;
+    }
+
     struct Binding;
     #[tonic::async_trait]
     impl ReaderTaskBinding for Binding {

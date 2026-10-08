@@ -46,6 +46,33 @@ pub trait ParticipantSidecar: Send + Sync + 'static {
         None
     }
     fn load(&self, request: database::LoadRequest) -> SidecarFuture<'_, database::LoadResponse>;
+    /// Early native visibility is opt-in; older/test boundaries fail closed.
+    fn store(
+        &self,
+        _request: database::StoreRequest,
+    ) -> SidecarFuture<'_, database::StoreResponse> {
+        Box::pin(async {
+            Err(Status::unimplemented(
+                "early transactional Store unsupported",
+            ))
+        })
+    }
+    fn colocated_range(
+        &self,
+        _request: database::ColocatedRangeRequest,
+    ) -> SidecarFuture<'_, database::ColocatedRangeResponse> {
+        Box::pin(async { Err(Status::unimplemented("transactional range unsupported")) })
+    }
+    fn colocated_reverse_range(
+        &self,
+        _request: database::ColocatedReverseRangeRequest,
+    ) -> SidecarFuture<'_, database::ColocatedReverseRangeResponse> {
+        Box::pin(async {
+            Err(Status::unimplemented(
+                "transactional reverse range unsupported",
+            ))
+        })
+    }
     fn prepare(
         &self,
         request: database::TransactionParticipantPrepareRequest,
@@ -106,6 +133,42 @@ impl ParticipantSidecar for TonicParticipantSidecar {
         })
     }
 
+    fn store(&self, request: database::StoreRequest) -> SidecarFuture<'_, database::StoreResponse> {
+        Box::pin(async move {
+            self.client
+                .lock()
+                .await
+                .store(request)
+                .await
+                .map(Response::into_inner)
+        })
+    }
+    fn colocated_range(
+        &self,
+        request: database::ColocatedRangeRequest,
+    ) -> SidecarFuture<'_, database::ColocatedRangeResponse> {
+        Box::pin(async move {
+            self.client
+                .lock()
+                .await
+                .colocated_range(request)
+                .await
+                .map(Response::into_inner)
+        })
+    }
+    fn colocated_reverse_range(
+        &self,
+        request: database::ColocatedReverseRangeRequest,
+    ) -> SidecarFuture<'_, database::ColocatedReverseRangeResponse> {
+        Box::pin(async move {
+            self.client
+                .lock()
+                .await
+                .colocated_reverse_range(request)
+                .await
+                .map(Response::into_inner)
+        })
+    }
     fn prepare(
         &self,
         request: database::TransactionParticipantPrepareRequest,
@@ -125,6 +188,10 @@ impl ParticipantSidecar for TonicParticipantSidecar {
         request: database::TransactionParticipantCommitRequest,
     ) -> SidecarFuture<'_, database::TransactionParticipantCommitResponse> {
         Box::pin(async move {
+            // Park the actual Database Commit, not coordinator fan-out or a
+            // task scan. Remote Watch recovery may terminalize independently.
+            #[cfg(feature = "test-support")]
+            let commit_probe = test_support::park_database_commit(&request).await?;
             #[cfg(feature = "test-support")]
             if let Some(marker) = std::env::var_os("REBOOT_TEST_LOST_PARTICIPANT_COMMIT_ACK") {
                 use std::io::Write;
@@ -142,6 +209,11 @@ impl ParticipantSidecar for TonicParticipantSidecar {
                 .transaction_participant_commit(request)
                 .await?
                 .into_inner();
+            #[cfg(feature = "test-support")]
+            if let Some((marker, request_bytes)) = commit_probe {
+                std::fs::write(marker.with_extension("ack"), request_bytes)
+                    .map_err(|error| Status::internal(error.to_string()))?;
+            }
             #[cfg(feature = "test-support")]
             if let Some(marker) = std::env::var_os("REBOOT_TEST_LOST_PARTICIPANT_COMMIT_ACK") {
                 std::fs::write(marker, "durably committed; ACK lost")
@@ -351,7 +423,20 @@ enum PendingDisposition {
     Commit,
 }
 
+// In-memory only: crash before Prepare never resumes a nested call.
+struct ReusableCalls {
+    root_owner: Uuid,
+    watch_claimed: bool,
+    admitting: bool,
+    snapshot: PendingActorEffects,
+    snapshot_staged: bool,
+    snapshot_disposition: PendingDisposition,
+    call_staged: bool,
+    completed: std::collections::BTreeMap<Uuid, bool>,
+}
+
 struct Pending {
+    reusable: Option<ReusableCalls>,
     execution_active: bool,
     terminal_attempted: bool,
     no_terminal_retry: bool,
@@ -364,9 +449,23 @@ struct Pending {
     loaded_state: Option<Vec<u8>>,
     staged: bool,
     prepared: bool,
+    // Set BEFORE an early Store is sent. Cancellation/error retains ownership.
+    native_started: bool,
+    native_uncertain: bool,
+    factory: bool,
     disposition: PendingDisposition,
     // Kept until a terminal sidecar response is acknowledged.
     lock: PendingLock,
+}
+
+impl Pending {
+    fn matches_live_owner(&self, owner: Uuid) -> bool {
+        self.reusable
+            .as_ref()
+            .map_or(self.local_owner == Some(owner), |calls| {
+                calls.root_owner == owner
+            })
+    }
 }
 
 /// Cancellation-safe lifetime for local handler execution. Dropping it before
@@ -388,6 +487,10 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
         &self.participant.state_type
     }
 
+    pub(crate) fn actor_state_ref(&self) -> &str {
+        &self.participant.state_ref
+    }
+
     pub fn state(&self) -> Option<&[u8]> {
         self.state.as_deref()
     }
@@ -400,7 +503,56 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
         &self,
         effects: PendingActorEffects,
     ) -> Result<Option<SharedPromotion>, Status> {
-        self.participant.stage(self.transaction_id, effects).await
+        self.participant
+            .stage_owned(self.transaction_id, effects, Some(self.local_owner), None)
+            .await
+    }
+
+    #[cfg(test)]
+    async fn stage_mock_validated(
+        &self,
+        effects: PendingActorEffects,
+    ) -> Result<Option<SharedPromotion>, Status> {
+        let receipt = ValidatedTaskBatch {
+            root: self.transaction_id,
+            owner: self.local_owner,
+            tasks: effects.task_upserts.clone(),
+            running: None,
+        };
+        self.participant
+            .stage_owned(
+                self.transaction_id,
+                effects,
+                Some(self.local_owner),
+                Some(receipt),
+            )
+            .await
+    }
+
+    pub(crate) async fn stage_validated_tasks(
+        &self,
+        effects: PendingActorEffects,
+        tasks: &crate::one_shot_tasks::OneShotTasks,
+        context: &crate::runtime::TransactionContext,
+    ) -> Result<Option<SharedPromotion>, Status> {
+        tasks.validate_guard_execution(self, context).await?;
+        let all = self.retained_tasks(&effects.task_upserts).await?;
+        let running = tasks.validate_staged_admission(&all).await?;
+        tasks.validate_guard_execution(self, context).await?;
+        let receipt = ValidatedTaskBatch {
+            root: self.transaction_id,
+            owner: self.local_owner,
+            tasks: effects.task_upserts.clone(),
+            running: Some(running),
+        };
+        self.participant
+            .stage_owned(
+                self.transaction_id,
+                effects,
+                Some(self.local_owner),
+                Some(receipt),
+            )
+            .await
     }
 
     /// Consumes this started transaction into the one-shot direct-local
@@ -588,7 +740,11 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
             || current.disposition == PendingDisposition::ReadOnly
             || current.root_id != self.transaction_id
             || current.prepared
-            || current.execution_active
+            || (current.execution_active
+                && !current
+                    .reusable
+                    .as_ref()
+                    .is_some_and(|calls| calls.admitting))
             || current.terminal_attempted
         {
             return Err(Status::failed_precondition(
@@ -598,10 +754,20 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
         current.execution_active = true;
         current.no_terminal_retry = true;
         self.armed = false;
+        let (owner, watch_new) = if let Some(calls) = current.reusable.as_mut() {
+            let new = !calls.watch_claimed;
+            calls.watch_claimed = true;
+            calls.admitting = false;
+            (calls.root_owner, new)
+        } else {
+            (self.local_owner, true)
+        };
         Ok(LiveExecution {
             participant: self.participant.clone(),
             root: self.transaction_id,
-            owner: self.local_owner,
+            owner,
+            call_owner: self.local_owner,
+            watch_new,
         })
     }
 
@@ -689,6 +855,53 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
         Ok(())
     }
 
+    pub(crate) async fn retained_tasks(
+        &self,
+        tasks: &[database::Task],
+    ) -> Result<Vec<database::Task>, Status> {
+        let pending = self.participant.pending.lock().await;
+        let current = pending
+            .as_ref()
+            .ok_or_else(|| Status::failed_precondition("participant missing"))?;
+        if current.root_id != self.transaction_id
+            || current.local_owner != Some(self.local_owner)
+            || !current.execution_active
+        {
+            return Err(Status::failed_precondition("task call incarnation differs"));
+        }
+        let mut all = if current.reusable.is_some() {
+            current.effects.task_upserts.clone()
+        } else {
+            Vec::new()
+        };
+        all.extend_from_slice(tasks);
+        Ok(all)
+    }
+
+    pub(crate) async fn relinquish_call(
+        &self,
+        context: &crate::runtime::TransactionContext,
+        aborted: bool,
+    ) -> Result<(), Status> {
+        if context.transaction_ids().len() != 2
+            || context.transaction_root_id() != self.transaction_id
+            || context.doomed_status().is_some()
+            || !context.reusable_participants()
+        {
+            return Err(Status::failed_precondition(
+                "relinquishment requires exact supported call",
+            ));
+        }
+        self.participant
+            .relinquish(
+                context.transaction_root_id(),
+                context.transaction_ids()[1],
+                aborted,
+                Some(self.local_owner),
+            )
+            .await
+    }
+
     pub(crate) async fn end_execution(&self) -> Result<(), Status> {
         let mut pending = self.participant.pending.lock().await;
         let current = pending
@@ -735,10 +948,19 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
     }
 }
 
+struct ValidatedTaskBatch {
+    root: Uuid,
+    owner: Uuid,
+    tasks: Vec<database::Task>,
+    running: Option<crate::one_shot_tasks::RunningTaskAdmission>,
+}
+
 pub(crate) struct LiveExecution<C: ParticipantSidecar> {
     participant: DurableActorParticipant<C>,
     root: Uuid,
     owner: Uuid,
+    call_owner: Uuid,
+    watch_new: bool,
 }
 impl<C: ParticipantSidecar> LiveExecution<C> {
     pub(crate) async fn watch(
@@ -760,11 +982,17 @@ impl<C: ParticipantSidecar> LiveExecution<C> {
             let Some(current) = pending.as_mut() else {
                 return Ok(());
             };
-            if current.root_id != self.root || current.local_owner != Some(self.owner) {
+            if current.root_id != self.root || !current.matches_live_owner(self.owner) {
                 return Ok(());
             }
-            current.execution_active = false;
-            participant.changed.notify_waiters();
+            // Old N1 transfer/drop must never end N2's handler execution.
+            if current.local_owner == Some(self.call_owner) {
+                current.execution_active = false;
+                participant.changed.notify_waiters();
+            }
+        }
+        if !self.watch_new {
+            return Ok(());
         }
         #[cfg(feature = "test-support")]
         if let Some(path) = std::env::var_os("REBOOT_TEST_LIVE_WATCH_BEFORE_LOOKUP") {
@@ -787,7 +1015,7 @@ impl<C: ParticipantSidecar> LiveExecution<C> {
             {
                 let pending = participant.pending.lock().await;
                 let Some(current) = pending.as_ref().filter(|current| {
-                    current.root_id == self.root && current.local_owner == Some(self.owner)
+                    current.root_id == self.root && current.matches_live_owner(self.owner)
                 }) else {
                     return Ok(());
                 };
@@ -895,6 +1123,30 @@ impl<C: ParticipantSidecar> SharedLocalPromotion<C> {
 impl<C: ParticipantSidecar> Drop for StartedLocalTransaction<C> {
     fn drop(&mut self) {
         if !self.armed {
+            let participant = self.participant.clone();
+            let root = self.transaction_id;
+            let owner = self.local_owner;
+            tokio::spawn(async move {
+                let mut pending = participant.pending.lock().await;
+                if let Some(current) = pending
+                    .as_mut()
+                    .filter(|p| p.root_id == root && p.local_owner == Some(owner))
+                    && current
+                        .reusable
+                        .as_ref()
+                        .is_some_and(|calls| calls.admitting)
+                {
+                    let calls = current.reusable.as_mut().unwrap();
+                    current.effects = calls.snapshot.clone();
+                    current.staged = calls.snapshot_staged;
+                    current.disposition = calls.snapshot_disposition;
+                    calls.admitting = false;
+                    calls.call_staged = false;
+                    current.transaction_ids.truncate(1);
+                    current.execution_active = false;
+                    participant.changed.notify_waiters();
+                }
+            });
             return;
         }
         let participant = self.participant.clone();
@@ -908,6 +1160,8 @@ impl<C: ParticipantSidecar> Drop for StartedLocalTransaction<C> {
     }
 }
 
+include!("sorted_map_participant.rs");
+
 /// Only actor-local conflicts are definitive Prepare outcomes. A sidecar RPC
 /// failure stays an error because the request may have reached durable storage.
 #[derive(Debug)]
@@ -918,11 +1172,31 @@ enum PrepareOutcome {
 
 /// Actor-local durable transaction participant. Clones address the same actor
 /// and pending transaction.
+type AdmissionRoots = Arc<std::sync::Mutex<std::collections::HashMap<Uuid, (usize, bool)>>>;
+
+// Reservation precedes both the asynchronous pending mutex and the actor gate.
+// Drop removes only this root's reservation; unrelated roots retain normal gate ordering.
+struct AdmissionReservation {
+    roots: AdmissionRoots,
+    root: Uuid,
+}
+impl Drop for AdmissionReservation {
+    fn drop(&mut self) {
+        let mut roots = self.roots.lock().unwrap();
+        let entry = roots.get_mut(&self.root).unwrap();
+        entry.0 -= 1;
+        if entry.0 == 0 {
+            roots.remove(&self.root);
+        }
+    }
+}
+
 pub struct DurableActorParticipant<C: ParticipantSidecar> {
     sidecar: Arc<C>,
     state_type: String,
     state_ref: String,
     lock: ActorGate,
+    admissions: AdmissionRoots,
     pending: Arc<tokio::sync::Mutex<Option<Pending>>>,
     changed: Arc<tokio::sync::Notify>,
 }
@@ -934,6 +1208,7 @@ impl<C: ParticipantSidecar> Clone for DurableActorParticipant<C> {
             state_type: self.state_type.clone(),
             state_ref: self.state_ref.clone(),
             lock: self.lock.clone(),
+            admissions: self.admissions.clone(),
             pending: Arc::clone(&self.pending),
             changed: self.changed.clone(),
         }
@@ -956,6 +1231,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             lock: ActorGate::new(),
             state_type,
             state_ref,
+            admissions: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             pending: Arc::new(tokio::sync::Mutex::new(None)),
             changed: Arc::new(tokio::sync::Notify::new()),
         }
@@ -1026,6 +1302,51 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         local_owner: Option<Uuid>,
     ) -> Result<Option<Vec<u8>>, Status> {
         self.validate_start_with_mode(&start, mode)?;
+        let _admission = self.reserve_admission(start.transaction_ids[0], false)?;
+        {
+            let pending = self.pending.lock().await;
+            if pending
+                .as_ref()
+                .is_some_and(|p| p.root_id == start.transaction_ids[0] && p.reusable.is_some())
+            {
+                return Err(Status::failed_precondition(
+                    "same-root retained reusable participant requires reusable admission",
+                ));
+            }
+        }
+        self.start_owned_reserved(start, mode, local_owner, false)
+            .await
+    }
+
+    fn reserve_admission(
+        &self,
+        root: Uuid,
+        reusable: bool,
+    ) -> Result<AdmissionReservation, Status> {
+        let mut roots = self.admissions.lock().unwrap();
+        if roots
+            .get(&root)
+            .is_some_and(|(_, existing)| reusable || *existing)
+        {
+            return Err(Status::failed_precondition(
+                "same-root reusable admission already in progress",
+            ));
+        }
+        let entry = roots.entry(root).or_insert((0, reusable));
+        entry.0 += 1;
+        Ok(AdmissionReservation {
+            roots: self.admissions.clone(),
+            root,
+        })
+    }
+
+    async fn start_owned_reserved(
+        &self,
+        start: ActorTransactionStart,
+        mode: ParticipantStartMode,
+        local_owner: Option<Uuid>,
+        reusable: bool,
+    ) -> Result<Option<Vec<u8>>, Status> {
         #[cfg(feature = "test-support")]
         if self
             .pending
@@ -1086,8 +1407,23 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             .into_iter()
             .next()
             .and_then(|actor| actor.state);
+        if reusable && state.is_none() {
+            return Err(Status::failed_precondition(
+                "reusable leaf requires existing actor",
+            ));
+        }
         *pending = Some(Pending {
-            execution_active: false,
+            reusable: reusable.then(|| ReusableCalls {
+                root_owner: local_owner.expect("reusable admission owns an incarnation"),
+                watch_claimed: false,
+                admitting: true,
+                snapshot: PendingActorEffects::default(),
+                snapshot_staged: false,
+                snapshot_disposition: PendingDisposition::Commit,
+                call_staged: false,
+                completed: std::collections::BTreeMap::new(),
+            }),
+            execution_active: reusable,
             terminal_attempted: false,
             no_terminal_retry: false,
             local_owner,
@@ -1099,6 +1435,9 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             loaded_state: state.clone(),
             staged: false,
             prepared: false,
+            native_started: false,
+            native_uncertain: false,
+            factory: start.factory,
             disposition: if start.read_only {
                 PendingDisposition::ReadOnly
             } else {
@@ -1107,6 +1446,171 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             lock,
         });
         Ok(state)
+    }
+
+    async fn relinquish(
+        &self,
+        root: Uuid,
+        nested: Uuid,
+        aborted: bool,
+        owner: Option<Uuid>,
+    ) -> Result<(), Status> {
+        if root == nested || root.is_nil() || nested.is_nil() {
+            return Err(Status::invalid_argument(
+                "relinquishment requires non-root nested UUID",
+            ));
+        }
+        let mut pending = self.pending.lock().await;
+        let current = pending
+            .as_mut()
+            .filter(|p| p.root_id == root)
+            .ok_or_else(|| Status::failed_precondition("relinquishment root missing"))?;
+        let calls = current
+            .reusable
+            .as_mut()
+            .ok_or_else(|| Status::failed_precondition("reusable policy not admitted"))?;
+        if let Some(previous) = calls.completed.get(&nested) {
+            return if *previous == aborted {
+                Ok(())
+            } else {
+                Err(Status::failed_precondition(
+                    "conflicting relinquishment replay",
+                ))
+            };
+        }
+        if current.prepared
+            || current.terminal_attempted
+            || current.transaction_ids != [root, nested]
+            || owner.is_some_and(|token| current.local_owner != Some(token))
+            || (owner.is_none() && current.execution_active)
+        {
+            return Err(Status::failed_precondition(
+                "relinquishment call is active, stale or sealed",
+            ));
+        }
+        if aborted {
+            current.effects = calls.snapshot.clone();
+            current.staged = calls.snapshot_staged;
+            current.disposition = calls.snapshot_disposition;
+            if !current.staged {
+                current.disposition = PendingDisposition::ReadOnly;
+                // Retain first-touch observation isolation, as legacy rollback does.
+                let old = pending.take().unwrap();
+                let PendingLock::Exclusive(lease) = old.lock else {
+                    unreachable!()
+                };
+                let mut old = Pending {
+                    lock: PendingLock::Shared(lease.downgrade()),
+                    ..old
+                };
+                old.execution_active = false;
+                old.transaction_ids.truncate(1);
+                old.reusable
+                    .as_mut()
+                    .unwrap()
+                    .completed
+                    .insert(nested, aborted);
+                *pending = Some(old);
+                self.changed.notify_waiters();
+                return Ok(());
+            }
+        }
+        current.execution_active = false;
+        current.transaction_ids.truncate(1);
+        calls.completed.insert(nested, aborted);
+        self.changed.notify_waiters();
+        Ok(())
+    }
+
+    /// Explicit generated policy. A retained same-root participant is inspected
+    /// before gate acquisition, and only a fresh direct sibling can reuse it.
+    #[doc(hidden)]
+    pub async fn start_local_reusable(
+        &self,
+        start: ActorTransactionStart,
+        mode: ParticipantStartMode,
+        reuse: bool,
+    ) -> Result<StartedLocalTransaction<C>, Status> {
+        if !reuse || start.transaction_ids.len() == 1 {
+            return self.start_local(start, mode).await;
+        }
+        self.validate_start_with_mode(&start, mode)?;
+        if mode != ParticipantStartMode::Exclusive
+            || start.mode != TransactionMode::Exclusive
+            || start.read_only
+            || start.factory
+            || start.transaction_ids.len() != 2
+            || (start.coordinator_state_type == self.state_type
+                && start.coordinator_state_ref == self.state_ref)
+            || start.transaction_ids[0] == start.transaction_ids[1]
+        {
+            return Err(Status::failed_precondition(
+                "reusable policy requires direct existing exclusive leaf",
+            ));
+        }
+        let root = start.transaction_ids[0];
+        let nested = start.transaction_ids[1];
+        let owner = Uuid::new_v4();
+        let _admission = self.reserve_admission(root, true)?;
+        {
+            let mut pending = self.pending.lock().await;
+            if let Some(current) = pending.as_mut().filter(|p| p.root_id == root) {
+                let calls = current.reusable.as_mut().ok_or_else(|| {
+                    Status::failed_precondition("retained participant policy differs")
+                })?;
+                if current.execution_active
+                    || current.prepared
+                    || current.terminal_attempted
+                    || current.coordinator_state_type != start.coordinator_state_type
+                    || current.coordinator_state_ref != start.coordinator_state_ref
+                    || current.transaction_ids.len() != 1
+                    || calls.completed.contains_key(&nested)
+                    || calls.completed.len() >= 1024
+                    || current.lock.is_shared()
+                    || current.disposition != PendingDisposition::Commit
+                {
+                    return Err(Status::failed_precondition(
+                        "retained participant not available for fresh sibling",
+                    ));
+                }
+                calls.snapshot = current.effects.clone();
+                calls.snapshot_staged = current.staged;
+                calls.snapshot_disposition = current.disposition;
+                calls.call_staged = false;
+                calls.admitting = true;
+                current.execution_active = true;
+                current.local_owner = Some(owner);
+                current.transaction_ids = start.transaction_ids;
+                let state = current
+                    .effects
+                    .state
+                    .clone()
+                    .or_else(|| current.loaded_state.clone());
+                return Ok(StartedLocalTransaction {
+                    participant: self.clone(),
+                    transaction_id: root,
+                    state,
+                    local_owner: owner,
+                    admitted_explicit_root_scope: false,
+                    armed: false,
+                    cancellation_authority: false,
+                    handed_off: false,
+                });
+            }
+        }
+        let state = self
+            .start_owned_reserved(start, mode, Some(owner), true)
+            .await?;
+        Ok(StartedLocalTransaction {
+            participant: self.clone(),
+            transaction_id: root,
+            state,
+            local_owner: owner,
+            admitted_explicit_root_scope: false,
+            armed: true,
+            cancellation_authority: false,
+            handed_off: false,
+        })
     }
 
     #[cfg(test)]
@@ -1162,6 +1666,16 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         transaction_id: Uuid,
         effects: PendingActorEffects,
     ) -> Result<Option<SharedPromotion>, Status> {
+        self.stage_owned(transaction_id, effects, None, None).await
+    }
+
+    async fn stage_owned(
+        &self,
+        transaction_id: Uuid,
+        effects: PendingActorEffects,
+        owner: Option<Uuid>,
+        receipt: Option<ValidatedTaskBatch>,
+    ) -> Result<Option<SharedPromotion>, Status> {
         #[cfg(feature = "test-support")]
         if !effects.task_upserts.is_empty()
             && let Some(path) = std::env::var_os("REBOOT_TEST_TASK_STAGING_CANCEL")
@@ -1190,10 +1704,84 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 "pending transaction ID differs",
             ));
         }
-        if current.terminal_attempted || current.prepared {
+        if current.terminal_attempted || current.prepared || current.native_uncertain {
             return Err(Status::failed_precondition(
-                "staging after terminal uncertainty or Prepare is forbidden",
+                "staging after native uncertainty or Prepare is forbidden",
             ));
+        }
+        if current.native_started
+            && (effects.state.as_ref().is_some_and(|s| !s.is_empty())
+                || !effects.task_upserts.is_empty()
+                || !effects.idempotent_mutations.is_empty())
+        {
+            return Err(Status::failed_precondition(
+                "eager canonical map cannot mix deferred actor/task/idempotency effects",
+            ));
+        }
+        if let Some(calls) = current.reusable.as_mut() {
+            let _running_owner = receipt
+                .as_ref()
+                .and_then(|receipt| receipt.running.as_ref())
+                .map(|running| running.lock())
+                .transpose()?;
+            if owner.is_none()
+                || current.local_owner != owner
+                || !current.execution_active
+                || calls.admitting
+                || !calls.watch_claimed
+                || current.transaction_ids.len() != 2
+                || !effects.idempotent_mutations.is_empty()
+            {
+                return Err(Status::failed_precondition(
+                    "reusable staging requires exact active call capability",
+                ));
+            }
+            if !effects.task_upserts.is_empty()
+                && !receipt.as_ref().is_some_and(|receipt| {
+                    receipt.root == transaction_id
+                        && Some(receipt.owner) == owner
+                        && receipt.tasks == effects.task_upserts
+                })
+            {
+                return Err(Status::failed_precondition(
+                    "reusable tasks require consumed actor/incarnation/batch-bound validation",
+                ));
+            }
+            if calls.call_staged {
+                return Err(Status::failed_precondition(
+                    "reusable call may stage only once",
+                ));
+            }
+            let mut tasks = current.effects.task_upserts.clone();
+            tasks.extend(effects.task_upserts);
+            if tasks.len() > 1024 {
+                return Err(Status::resource_exhausted(
+                    "retained staged task capacity exceeded",
+                ));
+            }
+            let mut ids = std::collections::BTreeSet::new();
+            for task in &tasks {
+                let id = task
+                    .task_id
+                    .as_ref()
+                    .ok_or_else(|| Status::invalid_argument("missing task ID"))?;
+                if id.state_type != self.state_type
+                    || id.state_ref != self.state_ref
+                    || id.task_uuid.len() != 16
+                    || !ids.insert(id.task_uuid.clone())
+                {
+                    return Err(Status::invalid_argument(
+                        "duplicate or foreign retained task ID",
+                    ));
+                }
+            }
+            if let Some(state) = effects.state {
+                current.effects.state = Some(state);
+            }
+            current.effects.task_upserts = tasks;
+            current.staged = true;
+            calls.call_staged = true;
+            return Ok(None);
         }
         let changes_read_only_state = match (&current.loaded_state, &effects.state) {
             (None, Some(_)) => true,
@@ -1245,8 +1833,15 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             if current.lock.is_shared() {
                 current.disposition = PendingDisposition::ReadOnly;
             }
-            current.effects = effects;
-            current.staged = true;
+            {
+                let _running_owner = receipt
+                    .as_ref()
+                    .and_then(|receipt| receipt.running.as_ref())
+                    .map(|running| running.lock())
+                    .transpose()?;
+                current.effects = effects;
+                current.staged = true;
+            }
             #[cfg(feature = "test-support")]
             if !current.effects.task_upserts.is_empty()
                 && let Some(path) = std::env::var_os("REBOOT_TEST_WRITER_TASK_STAGED")
@@ -1363,6 +1958,17 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         read_only_aware: bool,
         read_only: bool,
     ) -> Result<PrepareOutcome, Status> {
+        self.prepare_with_deadline(transaction_id, read_only_aware, read_only, None)
+            .await
+    }
+
+    async fn prepare_with_deadline(
+        &self,
+        transaction_id: Uuid,
+        read_only_aware: bool,
+        read_only: bool,
+        deadline: Option<tokio::time::Instant>,
+    ) -> Result<PrepareOutcome, Status> {
         let mut pending = loop {
             let notified = self.changed.notified();
             tokio::pin!(notified);
@@ -1376,6 +1982,13 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             drop(pending);
             notified.await;
         };
+        // Client timeout is not server cancellation acknowledgement. Fence a
+        // queued expired control before read-only lease release or durable Prepare.
+        if deadline.is_some_and(|deadline| tokio::time::Instant::now() >= deadline) {
+            return Err(Status::deadline_exceeded(
+                "participant Prepare expired before admission",
+            ));
+        }
         let Some(current) = pending.as_mut() else {
             return Ok(PrepareOutcome::DefinitiveAbort);
         };
@@ -1387,6 +2000,16 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 "Prepare after ambiguous terminal ACK is forbidden",
             ));
         }
+        if current.native_started && current.loaded_state.is_none() && !current.prepared {
+            return Err(Status::failed_precondition(
+                "recovered unprepared native participant must abort, never resume",
+            ));
+        }
+        if current.native_uncertain {
+            return Err(Status::unavailable(
+                "early Store outcome uncertain; root must abort",
+            ));
+        }
         if current.disposition == PendingDisposition::ReadOnly {
             if !(read_only_aware && read_only) {
                 return Err(Status::failed_precondition(
@@ -1395,6 +2018,14 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             }
             // The coordinator has already sealed this participant in its read-only map.
             // No sidecar transaction exists, so release exactly once at Prepare.
+            #[cfg(feature = "test-support")]
+            if let Some(marker) = std::env::var_os("REBOOT_TEST_READ_ONLY_RELEASE") {
+                std::fs::write(
+                    marker,
+                    format!("{transaction_id}: read-only Prepare lease release"),
+                )
+                .map_err(|error| Status::internal(error.to_string()))?;
+            }
             *pending = None;
             return Ok(PrepareOutcome::Prepared);
         }
@@ -1408,7 +2039,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             .prepare(database::TransactionParticipantPrepareRequest {
                 state_type: self.state_type.clone(),
                 state_ref: self.state_ref.clone(),
-                transaction: Some(database::Transaction {
+                transaction: (!current.native_started).then(|| database::Transaction {
                     state_type: self.state_type.clone(),
                     state_ref: self.state_ref.clone(),
                     transaction_ids: current
@@ -1422,9 +2053,21 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                     uncommitted_tasks: vec![],
                     uncommitted_idempotent_mutations: vec![],
                 }),
-                state: current.effects.state.clone(),
-                task_upserts: current.effects.task_upserts.clone(),
-                idempotent_mutations: current.effects.idempotent_mutations.clone(),
+                state: if current.native_started {
+                    None
+                } else {
+                    current.effects.state.clone()
+                },
+                task_upserts: if current.native_started {
+                    vec![]
+                } else {
+                    current.effects.task_upserts.clone()
+                },
+                idempotent_mutations: if current.native_started {
+                    vec![]
+                } else {
+                    current.effects.idempotent_mutations.clone()
+                },
             })
             .await?;
         current.prepared = true;
@@ -1509,6 +2152,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             ));
         }
         *pending = Some(Pending {
+            reusable: None,
             execution_active: false,
             terminal_attempted: false,
             no_terminal_retry: false,
@@ -1530,6 +2174,9 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             // An unprepared record is retained only to ensure a later Commit
             // is converted to Abort; it can never be committed.
             prepared: transaction.prepared,
+            native_started: true,
+            native_uncertain: false,
+            factory: false,
             disposition: PendingDisposition::Commit,
             lock: PendingLock::Exclusive(lock),
         });
@@ -1616,8 +2263,10 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             current.root_id == transaction_id
                 && current.local_owner == Some(local_owner)
                 && !current.prepared
+                && !current.native_started
         }) {
             *pending = None;
+            self.changed.notify_waiters();
         }
     }
 
@@ -1655,7 +2304,13 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             if !pending.as_ref().is_some_and(|current| {
                 current.root_id == transaction_id
                     && current.execution_active
-                    && expected_local_owner.is_none_or(|owner| current.local_owner == Some(owner))
+                    && expected_local_owner.is_none_or(|owner| {
+                        if live {
+                            current.matches_live_owner(owner)
+                        } else {
+                            current.local_owner == Some(owner)
+                        }
+                    })
             }) {
                 break pending;
             }
@@ -1664,7 +2319,8 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         };
         if live
             && !pending.as_ref().is_some_and(|current| {
-                current.root_id == transaction_id && current.local_owner == expected_local_owner
+                current.root_id == transaction_id
+                    && expected_local_owner.is_some_and(|owner| current.matches_live_owner(owner))
             })
         {
             return Ok(false);
@@ -1672,7 +2328,11 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         if let Some(owner) = expected_local_owner
             && !pending.as_ref().is_some_and(|current| {
                 current.root_id == transaction_id
-                    && current.local_owner == Some(owner)
+                    && (if live {
+                        current.matches_live_owner(owner)
+                    } else {
+                        current.local_owner == Some(owner)
+                    })
                     && (live || !current.prepared)
             })
         {
@@ -1696,9 +2356,9 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             // Never terminalize that transaction for a stale control RPC.
             return Ok(false);
         }
-        if current.terminal_attempted {
+        if current.terminal_attempted || current.native_uncertain {
             return Err(Status::unavailable(
-                "terminal ACK uncertain; ownership retained, no retry",
+                "native ACK uncertain; ownership retained until sidecar restart/recovery",
             ));
         }
         if live && commit && !current.prepared {
@@ -1738,15 +2398,23 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 }
             }
         }
-        current.terminal_attempted = current.no_terminal_retry;
+        current.terminal_attempted = current.no_terminal_retry || current.native_started;
         let force_abort = commit && !current.prepared;
         if commit && !force_abort {
+            let commit_gate = match self.sidecar.database_endpoint() {
+                Some(endpoint) => {
+                    crate::runtime::same_actor_gate(endpoint, &self.state_type, &self.state_ref)
+                }
+                None => self.lock.clone(),
+            };
+            let commit_attempt = commit_gate.commit_attempt();
             self.sidecar
                 .commit(database::TransactionParticipantCommitRequest {
                     state_type: self.state_type.clone(),
                     state_ref: self.state_ref.clone(),
                 })
                 .await?;
+            commit_attempt.acknowledged();
         } else {
             self.sidecar
                 .abort(database::TransactionParticipantAbortRequest {
@@ -1780,6 +2448,29 @@ fn terminal_watch_failure(status: &Status) -> bool {
 #[cfg(feature = "test-support")]
 #[doc(hidden)]
 pub mod test_support {
+    /// Exact protobuf request identity is retained on both entry and successful
+    /// native Database ACK. The env is scoped to one acceptance host process.
+    pub async fn park_database_commit(
+        request: &crate::database_proto::TransactionParticipantCommitRequest,
+    ) -> Result<Option<(std::path::PathBuf, Vec<u8>)>, tonic::Status> {
+        use prost::Message as _;
+        let Some(marker) = std::env::var_os("REBOOT_TEST_DATABASE_COMMIT_PARK") else {
+            return Ok(None);
+        };
+        let marker = std::path::PathBuf::from(marker);
+        let bytes = request.encode_to_vec();
+        std::fs::write(&marker, &bytes)
+            .map_err(|error| tonic::Status::internal(error.to_string()))?;
+        tokio::time::timeout(std::time::Duration::from_secs(15), async {
+            while !marker.with_extension("release").exists() {
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .map_err(|_| tonic::Status::internal("actual Database Commit park not released"))?;
+        Ok(Some((marker, bytes)))
+    }
+
     pub fn signal_watch_terminalized() -> Result<(), tonic::Status> {
         let Ok(marker) = std::env::var("REBOOT_TEST_TARGET_WATCH_TERMINALIZED") else {
             return Ok(());
@@ -1857,6 +2548,84 @@ impl TransactionId for database::AbortRequest {
     }
 }
 
+fn prepare_request_deadline<T>(
+    request: &Request<T>,
+) -> Result<Option<tokio::time::Instant>, Status> {
+    let Some(timeout) = request.metadata().get("grpc-timeout") else {
+        return Ok(None);
+    };
+    let timeout = timeout
+        .to_str()
+        .map_err(|_| Status::invalid_argument("invalid grpc-timeout"))?;
+    if !(2..=9).contains(&timeout.len()) {
+        return Err(Status::invalid_argument("invalid grpc-timeout"));
+    }
+    let (digits, unit) = timeout.split_at(timeout.len() - 1);
+    if !digits.bytes().all(|c| c.is_ascii_digit()) {
+        return Err(Status::invalid_argument("invalid grpc-timeout"));
+    }
+    let value: u64 = digits
+        .parse()
+        .map_err(|_| Status::invalid_argument("invalid grpc-timeout"))?;
+    let duration = match unit {
+        "H" => std::time::Duration::from_secs(value * 3600),
+        "M" => std::time::Duration::from_secs(value * 60),
+        "S" => std::time::Duration::from_secs(value),
+        "m" => std::time::Duration::from_millis(value),
+        "u" => std::time::Duration::from_micros(value),
+        "n" => std::time::Duration::from_nanos(value),
+        _ => return Err(Status::invalid_argument("invalid grpc-timeout")),
+    };
+    Ok(Some(tokio::time::Instant::now() + duration))
+}
+#[cfg(feature = "test-support")]
+struct PrepareProbe {
+    marker: std::path::PathBuf,
+    returned: bool,
+}
+#[cfg(feature = "test-support")]
+impl PrepareProbe {
+    fn from_request<T>(request: &Request<T>) -> Result<Option<Self>, Status> {
+        if request
+            .metadata()
+            .get("x-reboot-test-prepare-probe")
+            .is_none()
+        {
+            return Ok(None);
+        }
+        let Some(marker) = std::env::var_os("REBOOT_TEST_PREPARE_PROBE") else {
+            return Ok(None);
+        };
+        let marker = std::path::PathBuf::from(marker);
+        std::fs::write(&marker, b"actual participant Prepare entered")
+            .map_err(|e| Status::internal(e.to_string()))?;
+        Ok(Some(Self {
+            marker,
+            returned: false,
+        }))
+    }
+    fn returned(&mut self, outcome: &Result<PrepareOutcome, Status>) -> Result<(), Status> {
+        std::fs::write(
+            self.marker.with_extension("returned"),
+            format!("{outcome:?}"),
+        )
+        .map_err(|e| Status::internal(e.to_string()))?;
+        self.returned = true;
+        Ok(())
+    }
+}
+#[cfg(feature = "test-support")]
+impl Drop for PrepareProbe {
+    fn drop(&mut self) {
+        if !self.returned {
+            let _ = std::fs::write(
+                self.marker.with_extension("dropped"),
+                b"actual server Prepare future dropped",
+            );
+        }
+    }
+}
+
 #[tonic::async_trait]
 impl<C: ParticipantSidecar> database::participant_server::Participant
     for DurableActorParticipantHost<C>
@@ -1865,14 +2634,26 @@ impl<C: ParticipantSidecar> database::participant_server::Participant
         &self,
         request: Request<database::PrepareRequest>,
     ) -> Result<Response<database::PrepareResponse>, Status> {
+        let deadline = prepare_request_deadline(&request)?;
+        #[cfg(feature = "test-support")]
+        let mut probe = PrepareProbe::from_request(&request)?;
         let abort_via_response = request.get_ref().abort_via_response;
         let read_only_aware = request.get_ref().read_only_aware;
         let read_only = request.get_ref().read_only;
-        match self
+        let outcome = self
             .participant
-            .prepare(self.transaction_id(&request)?, read_only_aware, read_only)
-            .await?
-        {
+            .prepare_with_deadline(
+                self.transaction_id(&request)?,
+                read_only_aware,
+                read_only,
+                deadline,
+            )
+            .await;
+        #[cfg(feature = "test-support")]
+        if let Some(probe) = &mut probe {
+            probe.returned(&outcome)?;
+        }
+        match outcome? {
             PrepareOutcome::Prepared => Ok(Response::new(database::PrepareResponse::default())),
             PrepareOutcome::DefinitiveAbort if abort_via_response => {
                 Ok(Response::new(database::PrepareResponse {
@@ -1909,10 +2690,23 @@ impl<C: ParticipantSidecar> database::participant_server::Participant
 
     async fn relinquish_ownership(
         &self,
-        _: Request<database::RelinquishOwnershipRequest>,
+        request: Request<database::RelinquishOwnershipRequest>,
     ) -> Result<Response<database::RelinquishOwnershipResponse>, Status> {
-        Err(Status::unimplemented(
-            "nested transaction ownership is not supported",
+        let headers = crate::RebootHeaders::from_request(&request)
+            .map_err(|error| Status::invalid_argument(error.to_string()))?;
+        if headers.state_ref != self.participant.state_ref {
+            return Err(Status::invalid_argument("relinquishment actor differs"));
+        }
+        let request = request.into_inner();
+        let root = Uuid::from_slice(&request.root_transaction_id)
+            .map_err(|_| Status::invalid_argument("invalid root UUID"))?;
+        let nested = Uuid::from_slice(&request.transaction_id)
+            .map_err(|_| Status::invalid_argument("invalid nested UUID"))?;
+        self.participant
+            .relinquish(root, nested, request.aborted, None)
+            .await?;
+        Ok(Response::new(
+            database::RelinquishOwnershipResponse::default(),
         ))
     }
 }
@@ -1977,6 +2771,8 @@ mod tests {
                 participant: participant.clone(),
                 root,
                 owner: local.local_owner,
+                call_owner: local.local_owner,
+                watch_new: true,
             };
             reservation.submit(Box::pin(async move { execution.watch(watch).await }));
             if phase == 2 {
@@ -2170,6 +2966,8 @@ mod tests {
                 participant: participant.clone(),
                 root,
                 owner: local.local_owner,
+                call_owner: local.local_owner,
+                watch_new: true,
             };
             reservation.submit(Box::pin(async move { execution.watch(watch).await }));
             if phase == 2 {
@@ -3019,6 +3817,706 @@ mod tests {
             .unwrap();
     }
 
+    #[tokio::test]
+    async fn expired_queued_read_only_prepare_cannot_release_descendant_lease() {
+        for fenced in [false, true] {
+            let sidecar = Arc::new(MockSidecar::default());
+            *sidecar.load_state.lock().unwrap() = Some(vec![40]);
+            let participant = DurableActorParticipant::new(sidecar, "example.Actor", "actor/1");
+            let root = Uuid::new_v4();
+            let nested = Uuid::new_v4();
+            let (local, context) = rollback_local(&participant, root, nested).await;
+            let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(10);
+            let mut queued = Box::pin(participant.prepare_with_deadline(
+                root,
+                true,
+                true,
+                fenced.then_some(deadline),
+            ));
+            assert!(
+                tokio::time::timeout(std::time::Duration::from_millis(20), &mut queued)
+                    .await
+                    .is_err()
+            );
+            local.rollback_declared_leaf(&context).await.unwrap();
+            local.end_execution().await.unwrap();
+            let outcome = queued.await;
+            if fenced {
+                assert!(
+                    matches!(outcome,Err(error) if error.code()==tonic::Code::DeadlineExceeded)
+                );
+                assert!(participant.pending.lock().await.is_some());
+                assert!(
+                    tokio::time::timeout(
+                        std::time::Duration::from_millis(10),
+                        participant.lock.exclusive()
+                    )
+                    .await
+                    .is_err(),
+                    "expired probe released C lease"
+                );
+                participant.prepare(root, true, true).await.unwrap();
+            } else {
+                assert!(matches!(outcome, Ok(PrepareOutcome::Prepared)));
+                assert!(
+                    participant.pending.lock().await.is_none(),
+                    "unfenced surviving probe must reproduce premature read-only release"
+                );
+            }
+            assert!(
+                tokio::time::timeout(
+                    std::time::Duration::from_millis(100),
+                    participant.lock.exclusive()
+                )
+                .await
+                .is_ok()
+            );
+        }
+    }
+
+    struct AdmissionBinding;
+    #[tonic::async_trait]
+    impl crate::one_shot_tasks::ReaderTaskBinding for AdmissionBinding {
+        fn validate(&self, task: &database::Task) -> Result<(), Status> {
+            use prost::Message;
+            crate::proto::Counter::decode(task.request.as_slice())
+                .map(|_| ())
+                .map_err(|_| Status::invalid_argument("malformed test request"))
+        }
+        async fn execute(&self, _: &database::Task) -> Result<prost_types::Any, Status> {
+            panic!("unstaged tasks must not dispatch")
+        }
+    }
+    struct AdmissionResolver;
+    impl crate::durable_coordinator::ParticipantResolver for AdmissionResolver {
+        type Endpoint = crate::durable_coordinator::TonicParticipantEndpoint;
+        fn resolve(
+            &self,
+            _: &crate::durable_coordinator::ParticipantTarget,
+        ) -> SidecarFuture<'_, Arc<Self::Endpoint>> {
+            panic!("staging test must not resolve")
+        }
+    }
+    struct AdmissionWatch;
+    impl CoordinatorWatchEndpoint for AdmissionWatch {
+        fn watch(
+            &self,
+            _: database::WatchRequest,
+        ) -> crate::legacy_coordinator::CoordinatorWatchFuture<'_, database::WatchResponse>
+        {
+            Box::pin(std::future::pending())
+        }
+    }
+    fn admission_task() -> database::Task {
+        use prost::Message;
+        database::Task {
+            task_id: Some(database::TaskId {
+                state_type: "example.Actor".into(),
+                state_ref: "actor/1".into(),
+                task_uuid: Uuid::new_v4().as_bytes().to_vec(),
+            }),
+            method: "Query".into(),
+            request: crate::proto::Counter { value: 8 }.encode_to_vec(),
+            status: database::task::Status::Pending as i32,
+            ..Default::default()
+        }
+    }
+    fn admission_recovery() -> database::RecoverRequest {
+        database::RecoverRequest {
+            shard_ids: vec!["s000000000".into()],
+            state_tags_by_state_type: [("example.Actor".into(), "test".into())].into(),
+            skip_idempotent_mutations: true,
+        }
+    }
+    #[tokio::test]
+    async fn reusable_registered_root_stages_state_and_task_without_inbound_watch() {
+        use crate::application_host::{HostRecovery, RecoveryCancellation};
+        use crate::durable_coordinator::{DurableRootCoordinator, TonicCoordinatorSidecar};
+        for task_bearing in [false, true] {
+            let (endpoint, database, server) = crate::runtime::test_support::start_database().await;
+            database.seed_actor("example.Actor", "actor/1", vec![0]);
+            let store = crate::runtime::DatabaseActorStore::connect_lazy(&endpoint).unwrap();
+            let participant = DurableActorParticipant::new(
+                Arc::new(TonicParticipantSidecar::connect(&endpoint).await.unwrap()),
+                "example.Actor",
+                "actor/1",
+            )
+            .with_database_actor_gate(&store);
+            let coordinator = DurableRootCoordinator::new(
+                Arc::new(TonicCoordinatorSidecar::connect(&endpoint).await.unwrap()),
+                Arc::new(AdmissionResolver),
+            );
+            let tasks = crate::one_shot_tasks::OneShotTasks::new(
+                store,
+                "example.Actor".into(),
+                "actor/1".into(),
+                AdmissionBinding,
+            )
+            .unwrap();
+            let (task_cancel, _readiness) = RecoveryCancellation::test_host();
+            let mut task_supervisor = tokio::task::JoinSet::new();
+            tasks
+                .recovery(admission_recovery())
+                .start(&mut task_supervisor, task_cancel.clone())
+                .await
+                .unwrap();
+            let owner = crate::explicit_abort::ExplicitAbortOwner::new(1).unwrap();
+            let root_cancel = RecoveryCancellation::new();
+            let mut root_supervisor = tokio::task::JoinSet::new();
+            owner
+                .recovery_registration()
+                .start(&mut root_supervisor, root_cancel.clone())
+                .await
+                .unwrap();
+            let root = Uuid::new_v4();
+            let mut context = crate::runtime::RootTransactionContext::start(
+                crate::RebootHeaders::new("actor/1"),
+                "example.Actor",
+                TransactionMode::Exclusive,
+                root,
+                prost_types::Timestamp::default(),
+            )
+            .unwrap()
+            .transaction()
+            .clone();
+            let coordinator = coordinator.with_identity(participant.actor_target());
+            let registration = crate::explicit_abort::RegisteredRoot::before_load(
+                &participant,
+                context.clone(),
+                coordinator.clone(),
+                Some(&owner),
+            )
+            .unwrap();
+            let mut request = start(root);
+            request.coordinator_state_type = "example.Actor".into();
+            request.coordinator_state_ref = "actor/1".into();
+            let local = participant
+                .start_local_reusable(request, ParticipantStartMode::Exclusive, true)
+                .await
+                .unwrap();
+            let mut guard = registration
+                .admitted(local)
+                .await
+                .unwrap()
+                .with_sequential_reusable_participants(&mut context, None)
+                .await
+                .unwrap();
+            let batch = if task_bearing {
+                vec![admission_task()]
+            } else {
+                vec![]
+            };
+            if task_bearing {
+                guard.validate_staged_tasks(&tasks, &batch).await.unwrap();
+            }
+            guard
+                .stage_effects(PendingActorEffects {
+                    state: Some(vec![9]),
+                    task_upserts: batch.clone(),
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
+            {
+                let pending = participant.pending.lock().await;
+                let current = pending.as_ref().unwrap();
+                assert!(current.execution_active && current.staged);
+                assert_eq!(current.transaction_ids, vec![root]);
+                assert!(
+                    current.reusable.is_none(),
+                    "fresh root must not become a retained leaf"
+                );
+                assert_eq!(current.effects.state, Some(vec![9]));
+                assert_eq!(current.effects.task_upserts, batch);
+            }
+            guard.test_handoff();
+            drop(guard);
+            task_cancel.cancel();
+            root_cancel.cancel();
+            task_supervisor.join_next().await.unwrap().unwrap().unwrap();
+            root_supervisor.join_next().await.unwrap().unwrap().unwrap();
+            *participant.pending.lock().await = None;
+            server.abort();
+            let _ = server.await;
+        }
+    }
+    #[tokio::test]
+    async fn reusable_task_load_resume_rejects_stopped_dispatcher_with_live_guard() {
+        use crate::application_host::{HostRecovery, RecoveryCancellation};
+        use crate::durable_coordinator::{
+            DurableRootCoordinator, ParticipantTarget, TonicCoordinatorSidecar,
+        };
+        let (endpoint, database, server) = crate::runtime::test_support::start_database().await;
+        database.seed_actor("example.Actor", "actor/1", vec![0]);
+        let store = crate::runtime::DatabaseActorStore::connect_lazy(&endpoint).unwrap();
+        let participant = DurableActorParticipant::new(
+            Arc::new(TonicParticipantSidecar::connect(&endpoint).await.unwrap()),
+            "example.Actor",
+            "actor/1",
+        )
+        .with_database_actor_gate(&store);
+        let coordinator = DurableRootCoordinator::new(
+            Arc::new(TonicCoordinatorSidecar::connect(&endpoint).await.unwrap()),
+            Arc::new(AdmissionResolver),
+        );
+        let tasks = crate::one_shot_tasks::OneShotTasks::new(
+            store,
+            "example.Actor".into(),
+            "actor/1".into(),
+            AdmissionBinding,
+        )
+        .unwrap();
+        let (task_cancel, _readiness) = RecoveryCancellation::test_host();
+        let mut task_supervisor = tokio::task::JoinSet::new();
+        tasks
+            .recovery(admission_recovery())
+            .start(&mut task_supervisor, task_cancel.clone())
+            .await
+            .unwrap();
+        let root = Uuid::new_v4();
+        let nested = Uuid::new_v4();
+        let mut context = rollback_context(root, nested);
+        let local = participant
+            .start_local_reusable(
+                reusable_request(root, nested),
+                ParticipantStartMode::Exclusive,
+                true,
+            )
+            .await
+            .unwrap();
+        let owner = crate::live_participant::LiveParticipantOwner::new(
+            1,
+            ParticipantTarget {
+                state_type: "example.Coordinator".into(),
+                state_ref: "coordinator/1".into(),
+            },
+            Arc::new(AdmissionWatch),
+        )
+        .unwrap();
+        let live_cancel = RecoveryCancellation::new();
+        let mut live_supervisor = tokio::task::JoinSet::new();
+        owner
+            .recovery_registration()
+            .start(&mut live_supervisor, live_cancel.clone())
+            .await
+            .unwrap();
+        let guard = crate::explicit_abort::RootHandlerGuard::before_handler(
+            local,
+            context.clone(),
+            coordinator,
+            None,
+        )
+        .await
+        .unwrap()
+        .with_sequential_reusable_participants(&mut context, Some(&owner))
+        .await
+        .unwrap();
+        let task = admission_task();
+        guard
+            .validate_staged_tasks(&tasks, std::slice::from_ref(&task))
+            .await
+            .unwrap();
+        let (entered, release) = database.park_task_load();
+        let mut staging = Box::pin(guard.stage_effects(PendingActorEffects {
+            state: Some(vec![99]),
+            task_upserts: vec![task],
+            ..Default::default()
+        }));
+        tokio::select! { result = &mut staging => panic!("staging returned before real Load park: {result:?}"), result = entered => result.unwrap() }
+        task_cancel.cancel();
+        task_supervisor.join_next().await.unwrap().unwrap().unwrap();
+        assert!(
+            guard.validate_tree_tasks(&tasks).await.is_ok(),
+            "participant/live owner must remain independently active"
+        );
+        release.send(()).unwrap();
+        assert_eq!(
+            staging.await.unwrap_err().code(),
+            tonic::Code::FailedPrecondition
+        );
+        {
+            let pending = participant.pending.lock().await;
+            let current = pending.as_ref().unwrap();
+            assert!(current.execution_active);
+            assert!(!current.staged);
+            assert_eq!(current.effects.state, None);
+            assert!(current.effects.task_upserts.is_empty());
+        }
+        drop(guard);
+        live_cancel.cancel();
+        live_supervisor.join_next().await.unwrap().unwrap().unwrap();
+        *participant.pending.lock().await = None;
+        server.abort();
+        let _ = server.await;
+    }
+
+    fn reusable_request(root: Uuid, nested: Uuid) -> ActorTransactionStart {
+        let mut request = start(root);
+        request.transaction_ids.push(nested);
+        request.transaction_path = TransactionPathContract::PreserveNested;
+        request
+    }
+
+    #[tokio::test]
+    async fn reusable_rfix_atomic_publication_blocks_early_controls() {
+        for abort in [false, true] {
+            let sidecar = Arc::new(MockSidecar::default());
+            *sidecar.load_state.lock().unwrap() = Some(vec![0]);
+            let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+            let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+            *sidecar.load_park.lock().unwrap() = Some((entered_tx, release_rx));
+            let participant =
+                DurableActorParticipant::new(sidecar.clone(), "example.Actor", "actor/1");
+            let root = Uuid::new_v4();
+            let p = participant.clone();
+            let admission = tokio::spawn(async move {
+                p.start_local_reusable(
+                    reusable_request(root, Uuid::new_v4()),
+                    ParticipantStartMode::Exclusive,
+                    true,
+                )
+                .await
+            });
+            entered_rx.await.unwrap();
+            let p = participant.clone();
+            let mut control = tokio::spawn(async move {
+                if abort {
+                    p.abort(root).await
+                } else {
+                    p.prepare_for_test(root).await
+                }
+            });
+            // Poll the queued control while Load owns the actual pending mutex.
+            assert!(
+                tokio::time::timeout(std::time::Duration::from_millis(20), &mut control)
+                    .await
+                    .is_err()
+            );
+            release_tx.send(()).unwrap();
+            let local = admission.await;
+            let crossed =
+                tokio::time::timeout(std::time::Duration::from_millis(30), &mut control).await;
+            let protected = crossed.is_err();
+            if let Ok(Ok(local)) = local {
+                drop(local);
+            }
+            if protected {
+                let _ = tokio::time::timeout(std::time::Duration::from_secs(1), &mut control)
+                    .await
+                    .unwrap();
+            }
+            assert!(
+                protected,
+                "early control crossed original reusable Pending publication before guard admission"
+            );
+            assert!(
+                !sidecar
+                    .calls
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|call| matches!(call, Call::Prepare(_))),
+                "empty uncertified effects reached Prepare"
+            );
+            // Cancellation/replacement remains usable and no delayed initializer touches it.
+            let replacement = participant
+                .start_local(start(Uuid::new_v4()), ParticipantStartMode::Exclusive)
+                .await
+                .unwrap();
+            drop(replacement);
+        }
+    }
+
+    #[tokio::test]
+    async fn reusable_rfix_first_touch_reservation_fences_same_root_legacy_and_reuse() {
+        for legacy in [false, true] {
+            let sidecar = Arc::new(MockSidecar::default());
+            *sidecar.load_state.lock().unwrap() = Some(vec![0]);
+            let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+            let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+            *sidecar.load_park.lock().unwrap() = Some((entered_tx, release_rx));
+            let participant =
+                DurableActorParticipant::new(sidecar.clone(), "example.Actor", "actor/1");
+            let root = Uuid::new_v4();
+            let p = participant.clone();
+            let first = tokio::spawn(async move {
+                p.start_local_reusable(
+                    reusable_request(root, Uuid::new_v4()),
+                    ParticipantStartMode::Exclusive,
+                    true,
+                )
+                .await
+            });
+            entered_rx.await.unwrap();
+            let p = participant.clone();
+            let mut second = tokio::spawn(async move {
+                let s = reusable_request(root, Uuid::new_v4());
+                if legacy {
+                    p.start_local(s, ParticipantStartMode::Exclusive).await
+                } else {
+                    p.start_local_reusable(s, ParticipantStartMode::Exclusive, true)
+                        .await
+                }
+            });
+            let early =
+                tokio::time::timeout(std::time::Duration::from_millis(50), &mut second).await;
+            let rejected = matches!(&early, Ok(Ok(Err(status))) if status.code() == tonic::Code::FailedPrecondition);
+            release_tx.send(()).unwrap();
+            let first = first.await.unwrap().unwrap();
+            let p = participant.clone();
+            let mut different = tokio::spawn(async move {
+                p.start_local(start(Uuid::new_v4()), ParticipantStartMode::Exclusive)
+                    .await
+            });
+            assert!(
+                tokio::time::timeout(std::time::Duration::from_millis(20), &mut different)
+                    .await
+                    .is_err(),
+                "different root lost normal actor serialization"
+            );
+            drop(first);
+            if early.is_err() {
+                drop(
+                    tokio::time::timeout(std::time::Duration::from_secs(1), &mut second)
+                        .await
+                        .unwrap()
+                        .unwrap(),
+                );
+            }
+            drop(
+                tokio::time::timeout(std::time::Duration::from_secs(1), &mut different)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .unwrap(),
+            );
+            assert!(
+                rejected,
+                "same-root contender remained parked behind Load/root-retained lease"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn reusable_rfix_preguard_cancel_restores_n1_snapshot_and_watch() {
+        let sidecar = Arc::new(MockSidecar::default());
+        *sidecar.load_state.lock().unwrap() = Some(vec![0]);
+        let participant = DurableActorParticipant::new(sidecar.clone(), "example.Actor", "actor/1");
+        let root = Uuid::new_v4();
+        let n1 = Uuid::new_v4();
+        let mut first = participant
+            .start_local_reusable(
+                reusable_request(root, n1),
+                ParticipantStartMode::Exclusive,
+                true,
+            )
+            .await
+            .unwrap();
+        let execution = first
+            .reserve_live_execution(&rollback_context(root, n1))
+            .await
+            .unwrap();
+        first
+            .stage(PendingActorEffects {
+                state: Some(vec![1]),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        participant
+            .relinquish(root, n1, false, Some(first.local_owner))
+            .await
+            .unwrap();
+        let n2 = Uuid::new_v4();
+        let second = participant
+            .start_local_reusable(
+                reusable_request(root, n2),
+                ParticipantStartMode::Exclusive,
+                true,
+            )
+            .await
+            .unwrap();
+        let rejected = second
+            .stage(PendingActorEffects {
+                state: Some(vec![9]),
+                ..Default::default()
+            })
+            .await
+            .is_err();
+        drop(second);
+        let restored = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            loop {
+                let notified = participant.changed.notified();
+                tokio::pin!(notified);
+                notified.as_mut().enable();
+                {
+                    let pending = participant.pending.lock().await;
+                    let current = pending.as_ref().unwrap();
+                    if !current.execution_active {
+                        return current.effects.state == Some(vec![1])
+                            && current.transaction_ids == vec![root]
+                            && current.disposition == PendingDisposition::Commit
+                            && current.reusable.as_ref().unwrap().watch_claimed
+                            && current.matches_live_owner(execution.owner)
+                            && !current.reusable.as_ref().unwrap().admitting;
+                    }
+                }
+                notified.await;
+            }
+        })
+        .await
+        .unwrap();
+        participant.prepare_for_test(root).await.unwrap();
+        let prepared_state = {
+            let calls = sidecar.calls.lock().unwrap();
+            calls.iter().find_map(|call| match call {
+                Call::Prepare(request) => request.state.clone(),
+                _ => None,
+            })
+        };
+        participant.abort(root).await.unwrap();
+        assert!(rejected, "unguarded admitting N2 obtained effect authority");
+        assert!(
+            restored,
+            "cancelled preguard N2 retained effects/path or lost stable N1 Watch"
+        );
+        assert_eq!(
+            prepared_state,
+            Some(vec![1]),
+            "uncertified N2 effects reached Prepare"
+        );
+    }
+
+    #[tokio::test]
+    async fn reusable_snapshots_accumulate_and_fence_delayed_calls() {
+        for aborted in [false, true] {
+            let sidecar = Arc::new(MockSidecar::default());
+            *sidecar.load_state.lock().unwrap() = Some(vec![0]);
+            let participant =
+                DurableActorParticipant::new(sidecar.clone(), "example.Actor", "actor/1");
+            let root = Uuid::new_v4();
+            let n1 = Uuid::new_v4();
+            let n2 = Uuid::new_v4();
+            let request = |nested| {
+                let mut s = start(root);
+                s.transaction_ids.push(nested);
+                s.transaction_path = TransactionPathContract::PreserveNested;
+                s
+            };
+            let task = |uuid: Uuid| database::Task {
+                task_id: Some(database::TaskId {
+                    state_type: "example.Actor".into(),
+                    state_ref: "actor/1".into(),
+                    task_uuid: uuid.as_bytes().to_vec(),
+                }),
+                ..Default::default()
+            };
+            let t1 = task(Uuid::new_v4());
+            let t2 = task(Uuid::new_v4());
+            let mut first = participant
+                .start_local_reusable(request(n1), ParticipantStartMode::Exclusive, true)
+                .await
+                .unwrap();
+            let first_execution = first
+                .reserve_live_execution(&rollback_context(root, n1))
+                .await
+                .unwrap();
+            first
+                .stage_mock_validated(PendingActorEffects {
+                    state: Some(vec![1]),
+                    task_upserts: vec![t1.clone()],
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
+            participant
+                .relinquish(root, n1, false, Some(first.local_owner))
+                .await
+                .unwrap();
+            let mut second = participant
+                .start_local_reusable(request(n2), ParticipantStartMode::Exclusive, true)
+                .await
+                .unwrap();
+            assert_eq!(second.state(), Some([1].as_slice()));
+            let second_execution = second
+                .reserve_live_execution(&rollback_context(root, n2))
+                .await
+                .unwrap();
+            assert!(
+                participant
+                    .start_local_reusable(
+                        request(Uuid::new_v4()),
+                        ParticipantStartMode::Exclusive,
+                        true
+                    )
+                    .await
+                    .is_err()
+            );
+            participant.relinquish(root, n1, false, None).await.unwrap();
+            assert!(participant.relinquish(root, n1, true, None).await.is_err());
+            assert!(participant.relinquish(root, n2, true, None).await.is_err());
+            // Same-root old Drop can neither end N2 nor release its gate.
+            drop(first);
+            tokio::task::yield_now().await;
+            assert!(
+                participant
+                    .pending
+                    .lock()
+                    .await
+                    .as_ref()
+                    .unwrap()
+                    .execution_active
+            );
+            assert!(
+                tokio::time::timeout(
+                    std::time::Duration::from_millis(10),
+                    participant.prepare(root, true, false)
+                )
+                .await
+                .is_err()
+            );
+            second
+                .stage_mock_validated(PendingActorEffects {
+                    state: Some(vec![2]),
+                    task_upserts: vec![t2.clone()],
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
+            assert!(first_execution.watch_new);
+            assert!(!second_execution.watch_new);
+            participant
+                .relinquish(root, n2, aborted, Some(second.local_owner))
+                .await
+                .unwrap();
+            let pending = participant.pending.lock().await;
+            let current = pending.as_ref().unwrap();
+            assert_eq!(
+                current.effects.state,
+                Some(vec![if aborted { 1 } else { 2 }])
+            );
+            assert_eq!(
+                current.effects.task_upserts,
+                if aborted { vec![t1] } else { vec![t1, t2] }
+            );
+            assert_eq!(current.disposition, PendingDisposition::Commit);
+            assert_eq!(current.transaction_ids, vec![root]);
+            assert_eq!(
+                sidecar
+                    .calls
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .filter(|call| matches!(call, Call::Load(_)))
+                    .count(),
+                1,
+                "N2 never reloads committed state"
+            );
+            drop(pending);
+            participant.abort(root).await.unwrap();
+        }
+    }
+
     #[derive(Clone, Debug, PartialEq)]
     enum Call {
         Load(database::LoadRequest),
@@ -3031,6 +4529,12 @@ mod tests {
     #[derive(Default)]
     struct MockSidecar {
         park_abort: bool,
+        load_park: Mutex<
+            Option<(
+                tokio::sync::oneshot::Sender<()>,
+                tokio::sync::oneshot::Receiver<()>,
+            )>,
+        >,
         calls: Mutex<Vec<Call>>,
         prepare_results: Mutex<VecDeque<Result<(), Status>>>,
         terminal_results: Mutex<VecDeque<Result<(), Status>>>,
@@ -3045,7 +4549,12 @@ mod tests {
         ) -> SidecarFuture<'_, database::LoadResponse> {
             self.calls.lock().unwrap().push(Call::Load(request));
             let state = self.load_state.lock().unwrap().clone();
+            let park = self.load_park.lock().unwrap().take();
             Box::pin(async move {
+                if let Some((entered, release)) = park {
+                    entered.send(()).unwrap();
+                    release.await.unwrap();
+                }
                 Ok(database::LoadResponse {
                     actors: state
                         .into_iter()
@@ -3382,7 +4891,7 @@ mod tests {
                 .is_err()
         );
         let mut outbound = root.transaction().begin_generated_outbound().unwrap();
-        outbound.completed();
+        outbound.test_terminal_state_setup();
         drop(outbound);
         participant
             .pending

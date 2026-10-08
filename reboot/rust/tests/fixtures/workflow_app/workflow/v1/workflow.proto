@@ -1,0 +1,19 @@
+syntax = "proto3";
+package workflow.v1;
+import "rbt/v1alpha1/options.proto";
+message Ledger { option (rbt.v1alpha1.state) = { implements: ["workflow.v1.LedgerMethods"] }; int64 first = 1; int64 second = 2; int64 schedules = 3; }
+message Empty {}
+message Step { int64 amount = 1; }
+message Value { int64 value = 1; }
+message Schedule { int64 not_before = 1; int64 amount = 2; }
+message Handle { bytes id = 1; }
+message Result { int64 first = 1; int64 second = 2; }
+service LedgerMethods {
+ option (rbt.v1alpha1.service) = { state: "workflow.v1.Ledger" };
+ rpc Create(Empty) returns (Empty) { option (rbt.v1alpha1.method).writer = { constructor: {} }; }
+ rpc Query(Empty) returns (Ledger) { option (rbt.v1alpha1.method).reader = {}; }
+ rpc ScheduleWork(Schedule) returns (Handle) { option (rbt.v1alpha1.method).writer = {}; }
+ rpc First(Step) returns (Value) { option (rbt.v1alpha1.method).writer = {}; }
+ rpc Second(Step) returns (Value) { option (rbt.v1alpha1.method).writer = {}; }
+ rpc Run(Step) returns (Result) { option (rbt.v1alpha1.method).workflow = {}; }
+}

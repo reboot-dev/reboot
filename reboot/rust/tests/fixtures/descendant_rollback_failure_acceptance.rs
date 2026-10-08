@@ -6,8 +6,11 @@ fn descendant_failure(mode: &str) {
         tree.marker(2, "private-effects").to_str().unwrap(),
     ]);
     let parked = tree.marker(2, "handler-park");
+    let probe = tree.marker(2, "prepare-probe");
+    let released = tree.marker(2, "read-only-release");
     if mode == "execution" {
         tip.args(["--rollback-handler-park", parked.to_str().unwrap()]);
+        tip.env("REBOOT_TEST_PREPARE_PROBE", &probe).env("REBOOT_TEST_READ_ONLY_RELEASE", &released);
     }
     let c = tree.spawn(2, &mut tip);
     let caught = tree.marker(1, "caught");
@@ -45,6 +48,7 @@ fn descendant_failure(mode: &str) {
     let mut hosts = [a, b, c];
     let port = tree.ports[0];
     let deadline = matches!(mode, "b-deadline" | "a-deadline");
+    let execution = mode == "execution";
     let call = tree.runtime.spawn(async move {
         let channel = tonic::transport::Endpoint::from_shared(format!("http://127.0.0.1:{port}"))
             .unwrap()
@@ -57,11 +61,11 @@ fn descendant_failure(mode: &str) {
         request
             .metadata_mut()
             .insert("x-reboot-state-ref", "root".parse().unwrap());
-        request.set_timeout(if deadline {
-            Duration::from_millis(1200)
-        } else {
-            Duration::from_secs(8)
-        });
+        // The execution-barrier vector owns root lifetime causally through B's
+        // caught/release barrier, not a full-suite scheduling-sensitive 8s timer.
+        if !execution {
+            request.set_timeout(if deadline { Duration::from_millis(1200) } else { Duration::from_secs(8) });
+        }
         client
             .unary::<_, TaskQueryResponse, _>(
                 request,
@@ -90,6 +94,7 @@ fn descendant_failure(mode: &str) {
             request
                 .metadata_mut()
                 .insert("x-reboot-state-ref", "tip".parse().unwrap());
+            request.metadata_mut().insert("x-reboot-test-prepare-probe", "r4".parse().unwrap());
             request.set_timeout(Duration::from_millis(150));
             let error = client.prepare(request).await.unwrap_err();
             assert!(
@@ -100,9 +105,18 @@ fn descendant_failure(mode: &str) {
                 "Prepare bypassed actual C execution: {error}"
             );
         });
+        await_marker(&probe.with_extension("dropped"), &mut hosts[2]);
+        assert!(!probe.with_extension("returned").exists(), "probe completed rather than server Drop while C executing");
+        assert!(!released.exists(), "timed-out probe released C lease");
         std::fs::write(format!("{}.release", parked.display()), b"release").unwrap();
     }
     await_marker(&caught, &mut hosts[1]);
+    if execution {
+        assert!(!call.is_finished(), "root request stopped before C writer exclusion probe");
+        assert!(tree.decision().is_none(), "actual root decision preceded lease assertion");
+        assert!(!tree.marker(2, "terminal").exists());
+        assert!(!released.exists(), "ghost Prepare released retained C lease");
+    }
     assert_eq!(
         tree.rpc(2, "Query", 0, Duration::from_millis(300)).unwrap(),
         40

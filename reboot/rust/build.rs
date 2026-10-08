@@ -21,12 +21,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 repository.join("tests/reboot/protoc/map_counter.proto"),
                 repository.join("tests/reboot/protoc/shared.proto"),
                 repository.join("rbt/v1alpha1/database.proto"),
+                repository.join("rbt/std/collections/v1/sorted_map.proto"),
                 repository.join("rbt/v1alpha1/tasks.proto"),
                 repository.join("rbt/v1alpha1/errors.proto"),
                 repository.join("rbt/v1alpha1/transactions.proto"),
                 repository.join("rbt/v1alpha1/native_2pc.proto"),
+                std::path::PathBuf::from("reactive.proto"),
             ],
-            &[repository.clone(), vendored_include.clone()],
+            &[
+                repository.clone(),
+                vendored_include.clone(),
+                std::path::PathBuf::from("."),
+            ],
         )?;
     tonic_build::configure()
         .build_client(true)

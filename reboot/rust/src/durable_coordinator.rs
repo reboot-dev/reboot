@@ -866,6 +866,18 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
             })
             .await?;
         #[cfg(feature = "test-support")]
+        if let Some(path) = std::env::var_os("REBOOT_TEST_STAR_BEFORE_PREPARE_FANOUT") {
+            let path = std::path::PathBuf::from(path);
+            std::fs::write(
+                &path,
+                b"canonical CoordinatorPrepare durable, before participant fanout",
+            )
+            .unwrap();
+            while !path.with_extension("release").exists() {
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        }
+        #[cfg(feature = "test-support")]
         if let Some(path) = std::env::var_os("REBOOT_TEST_ROOT_PREPARE_PARK") {
             std::fs::write(
                 path,
@@ -1372,7 +1384,7 @@ pub mod test_support {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::collections::VecDeque;
     use std::sync::Mutex;
@@ -1384,6 +1396,144 @@ mod tests {
     use crate::durable_participant::{
         ActorTransactionStart, DurableActorParticipant, ParticipantStartMode, PendingActorEffects,
     };
+
+    // Shared only by crate tests: actual registration/guard/owner lifecycle,
+    // with in-process sidecar endpoints (not native persistence evidence).
+    pub(crate) async fn registered_star_outbound_fixture() -> (
+        crate::runtime::TransactionContext,
+        impl FnOnce(),
+        impl std::future::Future<Output = ()>,
+    ) {
+        use crate::{
+            RebootHeaders,
+            application_host::{HostRecovery, RecoveryCancellation},
+            explicit_abort::{ExplicitAbortOwner, RegisteredRoot},
+            runtime::RootTransactionContext,
+        };
+        let trace = Arc::new(Mutex::new(Vec::new()));
+        let sidecar = Arc::new(MockSidecar {
+            trace: trace.clone(),
+            ..Default::default()
+        });
+        let endpoint = Arc::new(MockEndpoint {
+            trace: trace.clone(),
+            ..Default::default()
+        });
+        let local_sidecar = Arc::new(InProcessSidecar {
+            trace: trace.clone(),
+            load_state: Mutex::new(Some(vec![0])),
+            ..Default::default()
+        });
+        let participant = DurableActorParticipant::new(local_sidecar, "example.Actor", "actor/1");
+        let id = Uuid::new_v4();
+        let start = ActorTransactionStart {
+            transaction_ids: vec![id],
+            transaction_path: crate::durable_participant::TransactionPathContract::RootOnly,
+            coordinator_state_type: "example.Actor".into(),
+            coordinator_state_ref: "actor/1".into(),
+            mode: TransactionMode::Exclusive,
+            read_only: false,
+            factory: false,
+            state_type: "example.Actor".into(),
+            state_ref: "actor/1".into(),
+        };
+        let mut context = RootTransactionContext::start(
+            RebootHeaders::new("actor/1"),
+            "example.Actor",
+            TransactionMode::Exclusive,
+            id,
+            prost_types::Timestamp::default(),
+        )
+        .unwrap()
+        .transaction()
+        .clone();
+        let owner = ExplicitAbortOwner::new(1).unwrap();
+        let cancel = RecoveryCancellation::new();
+        let mut supervisor = tokio::task::JoinSet::new();
+        owner
+            .recovery_registration()
+            .start(&mut supervisor, cancel.clone())
+            .await
+            .unwrap();
+        let registration = RegisteredRoot::before_load(
+            &participant,
+            context.clone(),
+            coordinator(sidecar.clone(), endpoint.clone()),
+            Some(&owner),
+        )
+        .unwrap();
+        let local = participant
+            .start_local(start.clone(), ParticipantStartMode::Exclusive)
+            .await
+            .unwrap();
+        let guard = registration
+            .admitted(local)
+            .await
+            .unwrap()
+            .with_sequential_root_star(&mut context, None)
+            .await
+            .unwrap();
+        let closing_context = context.clone();
+        let closing_trace = trace.clone();
+        let abandon = move || {
+            drop(guard); // Production Drop synchronously closes; owner waits for C.
+            assert!(
+                closing_context.doomed_status().is_none(),
+                "closure alone is not doom"
+            );
+            assert!(
+                closing_context
+                    .begin_generated_outbound_for(
+                        "example.Actor",
+                        "D",
+                        "grpc.health.v1.Health.Check"
+                    )
+                    .is_err()
+            );
+            assert!(
+                closing_trace.lock().unwrap().is_empty(),
+                "no decision while C is active"
+            );
+        };
+        let cleaned_context = context.clone();
+        let cleanup = async move {
+            let next = tokio::time::timeout(
+                Duration::from_secs(5),
+                participant.start_local(start, ParticipantStartMode::Exclusive),
+            )
+            .await
+            .expect("registered owner must finish Abort after C drains")
+            .unwrap();
+            assert_eq!(
+                *trace.lock().unwrap(),
+                vec![
+                    "database.decision",
+                    "participant.abort",
+                    "participant.abort"
+                ]
+            );
+            {
+                let calls = sidecar.calls.lock().unwrap();
+                assert_eq!(calls.len(), 1, "no prepare/commit settlement");
+                assert!(matches!(&calls[0], Call::DecisionPut(request)
+                    if request.decision.as_ref().unwrap().outcome == database::transaction_coordinator_decision::Outcome::Abort as i32));
+            }
+            {
+                let calls = endpoint.calls.lock().unwrap();
+                assert_eq!(calls.len(), 1, "only confirmed B is delivered Abort");
+                assert!(matches!(&calls[0], Call::Abort(_)));
+                assert_eq!(*endpoint.abort_targets.lock().unwrap(), vec!["B"]);
+            }
+            assert_eq!(cleaned_context.returned_participants_snapshot().len(), 1);
+            drop(next);
+            cancel.cancel();
+            while let Some(result) = supervisor.join_next().await {
+                result.unwrap().unwrap();
+            }
+            drop(owner);
+        };
+        (context, abandon, cleanup)
+    }
 
     #[tokio::test]
     async fn supervised_tree_actual_guard_rejects_inbound_root_drive_and_reconstructed_context() {
@@ -2105,6 +2255,7 @@ mod tests {
     #[derive(Default)]
     struct MockEndpoint {
         calls: Mutex<Vec<Call>>,
+        abort_targets: Mutex<Vec<String>>,
         trace: Arc<Mutex<Vec<&'static str>>>,
         prepares: Mutex<VecDeque<Result<database::PrepareResponse, Status>>>,
         abort_error: bool,
@@ -2137,9 +2288,13 @@ mod tests {
         }
         fn abort(
             &self,
-            _: &str,
+            state_ref: &str,
             r: database::AbortRequest,
         ) -> CoordinatorFuture<'_, database::AbortResponse> {
+            self.abort_targets
+                .lock()
+                .unwrap()
+                .push(state_ref.to_owned());
             self.calls.lock().unwrap().push(Call::Abort(r));
             self.trace.lock().unwrap().push("participant.abort");
             Box::pin(async move {

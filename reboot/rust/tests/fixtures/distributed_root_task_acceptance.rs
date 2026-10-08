@@ -195,24 +195,39 @@ fn explicit_distributed_root_failure_acceptance(
                     .unwrap()
                     .connect_lazy();
             let mut client = tonic::client::Grpc::new(channel);
-            tokio::time::timeout(Duration::from_secs(3), async {
+            tokio::time::timeout(Duration::from_secs(15), async {
                 loop {
                     client.ready().await.unwrap();
                     let mut request = tonic::Request::new(TaskQueryRequest { amount: 1 });
                     request
                         .metadata_mut()
                         .insert("x-reboot-state-ref", "root".parse().unwrap());
-                    request.set_timeout(Duration::from_millis(500));
-                    let error = client
+                    request.set_timeout(if handler_cancelled { Duration::from_secs(5) } else { Duration::from_millis(500) });
+                    let rpc = client
                         .unary::<_, TaskQueryResponse, _>(
                             request,
                             "/tests.reboot.protoc.TransactionCounterWritesMethods/Increment"
                                 .parse()
                                 .unwrap(),
                             tonic::codec::ProstCodec::default(),
-                        )
-                        .await
-                        .unwrap_err();
+                        );
+                    tokio::pin!(rpc);
+                    let error = if handler_cancelled {
+                        let enlisted = async { while !handler_park.exists() { tokio::time::sleep(Duration::from_millis(10)).await; } };
+                        tokio::select! {
+                            result = &mut rpc => {
+                                let error = result.unwrap_err();
+                                if error.code() == tonic::Code::Unavailable {
+                                    tokio::time::sleep(Duration::from_millis(20)).await;
+                                    continue;
+                                }
+                                panic!("RPC ended before actual handler/remote enlistment barrier: {error}; handler dropped={}",handler_park.with_extension("handler-dropped").exists());
+                            },
+                            _ = enlisted => {}
+                        }
+                        assert!(!handler_park.with_extension("handler-dropped").exists(),"handler already cancelled at enlistment barrier");
+                        rpc.await.unwrap_err()
+                    } else { rpc.await.unwrap_err() };
                     if error.code() == tonic::Code::Unavailable && !park.exists() {
                         tokio::time::sleep(Duration::from_millis(20)).await;
                         continue;
@@ -230,13 +245,13 @@ fn explicit_distributed_root_failure_acceptance(
             .await
             .unwrap();
         });
-        for _ in 0..100 {
-            if park.with_extension("observer-dropped").exists() {
+        for _ in 0..500 {
+            if park.exists() && park.with_extension("observer-dropped").exists() {
                 break;
             }
             std::thread::sleep(Duration::from_millis(10));
         }
-        assert!(park.exists(), "real DecisionPut ACK barrier not reached");
+        assert!(park.exists(), "real DecisionPut ACK barrier not reached: handler entered={}, dropped={}, root process={:?}", handler_park.exists(), handler_park.with_extension("handler-dropped").exists(), root.try_wait().unwrap());
         if handler_cancelled {
             assert!(handler_park.exists());
             assert!(

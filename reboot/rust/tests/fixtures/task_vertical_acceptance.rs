@@ -13,6 +13,8 @@ include!("leaf_rollback_acceptance.rs");
 include!("descendant_rollback_acceptance.rs");
 include!("descendant_rollback_failure_acceptance.rs");
 include!("tree_participant_task_acceptance.rs");
+include!("sequential_star_acceptance.rs");
+include!("reusable_participant_acceptance.rs");
 include!("tree_declared_task_acceptance.rs");
 include!("task_wait_acceptance.rs");
 include!("task_wait_registry_acceptance.rs");

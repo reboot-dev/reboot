@@ -29,6 +29,8 @@ fn protoc_plugin_emits_durable_counter_adapters() {
     let content =
         std::fs::read_to_string(generated.join("tests/reboot/protoc/counter.reboot.rs")).unwrap();
     assert!(content.contains("pub trait CounterWritesMethodsDatabaseHandler"));
+    assert!(content.contains(".inspect_err(|status| { context.doom(status.clone()); })?"));
+    assert!(!content.contains(".map_err(|status| { context.doom(status.clone()); status })"));
     assert!(content.contains("pub trait CounterReadsMethodsDatabaseHandler"));
     assert!(
         content.contains("#[tonic::async_trait]\npub trait CounterWritesMethodsDatabaseHandler")
@@ -86,6 +88,8 @@ fn protoc_plugin_emits_durable_counter_adapters() {
     assert!(content.contains("pub enum CounterReadsMethodsGetError"));
     assert!(content.contains("System(reboot::SystemAbort)"));
     assert!(content.contains("system.error.into_status(system.message)"));
+    assert!(!content.contains("fn is_recoverable_transaction_abort"));
+    assert!(content.contains("fn is_method_declared"));
     assert!(content.contains("SystemAbort { error, message }"));
     assert!(content.contains("async fn get(&self, state: &proto::Counter, request: proto::Empty) -> Result<proto::CounterValue, CounterReadsMethodsGetError>;"));
     assert!(
@@ -1224,6 +1228,63 @@ async fn generated_fresh_non_factory_exclusive_transaction_replays_durably_after
     assert_eq!(replay.handler_calls.load(Ordering::SeqCst), 0);
     assert!(replay_recovery.lock().unwrap().is_empty(), "matching durable replay must be consumed");
     assert!(replay_trace.lock().unwrap().is_empty(), "replay must bypass participant admission and handler execution");
+}
+
+struct AdmissionMustNotResolve;
+
+#[tonic::async_trait]
+impl reboot::runtime::TransactionalChannelResolver for AdmissionMustNotResolve {
+    async fn resolve(&self, _: &str, _: &str) -> Result<tonic::transport::Channel, tonic::Status> {
+        panic!("admission rejection must precede channel resolution");
+    }
+}
+
+#[tokio::test]
+async fn generated_admission_observer_preserves_raw_and_declared_status_and_doom() {
+    fn context() -> reboot::runtime::TransactionContext {
+        let mut headers = reboot::RebootHeaders::new("transaction-counter");
+        headers.transaction_ids = Some(vec![Uuid::from_u128(710)]);
+        headers.transaction_coordinator_state_type = Some("tests.reboot.protoc.TransactionCounter".into());
+        headers.transaction_coordinator_state_ref = Some("root".into());
+        reboot::runtime::TransactionContext::from_headers(headers, reboot::runtime::TransactionMode::Exclusive).unwrap()
+    }
+    fn same_status(actual: &tonic::Status, expected: &tonic::Status) {
+        assert_eq!(actual.code(), expected.code());
+        assert_eq!(actual.message(), expected.message());
+        assert_eq!(actual.details(), expected.details());
+        assert_eq!(actual.metadata().clone().into_headers(), expected.metadata().clone().into_headers());
+    }
+    let client = transaction_generated::TransactionCounterWritesMethodsClient::new(AdmissionMustNotResolve);
+    let empty = transaction_generated::TransactionCounterWritesMethodsTarget::new("");
+    let raw_context = context();
+    let raw = client.query(&raw_context, &empty, proto::TransactionIncrementRequest { amount: 0 }).await.unwrap_err();
+    same_status(&raw, &tonic::Status::invalid_argument("outbound target/method must not be empty"));
+    same_status(&raw_context.doomed_status().unwrap(), &raw);
+    let declared_context = context();
+    let declared = client.increment(&declared_context, &empty, proto::TransactionIncrementRequest { amount: 0 }).await.unwrap_err();
+    let transaction_generated::TransactionCounterWritesMethodsIncrementError::Grpc(status) = declared else { panic!("admission errors must remain Grpc, not declared errors"); };
+    same_status(&status, &raw);
+    same_status(&declared_context.doomed_status().unwrap(), &status);
+
+    // A previously doomed context must retain rich protobuf details and metadata
+    // unchanged. Admission must not classify even valid declared details.
+    let mut rich = reboot::declared_error_status(tonic::Code::Unknown, "sticky rich doom", "type.googleapis.com/tests.reboot.protoc.TransactionLimitExceeded", &proto::TransactionLimitExceeded { limit: 713 });
+    rich.metadata_mut().insert("x-admission-proof", "retained".parse().unwrap());
+    let target = transaction_generated::TransactionCounterWritesMethodsTarget::new("remote-transaction-counter");
+    for declared in [false, true] {
+        let context = context();
+        context.doom(rich.clone());
+        let request = proto::TransactionIncrementRequest { amount: 0 };
+        let status = if declared {
+            let error = client.factory_increment(&context, &target, request).await.unwrap_err();
+            let transaction_generated::TransactionCounterWritesMethodsFactoryIncrementError::Grpc(status) = error else { panic!("sticky admission doom must remain Grpc"); };
+            status
+        } else {
+            client.apply(&context, &target, request).await.unwrap_err()
+        };
+        same_status(&status, &rich);
+        same_status(&context.doomed_status().unwrap(), &rich);
+    }
 }
 
 #[tokio::test]

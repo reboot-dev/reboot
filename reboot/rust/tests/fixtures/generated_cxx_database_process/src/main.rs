@@ -48,7 +48,7 @@ impl InboundTransactionStartFactory for Starts {
         &self,
         _: &reboot::runtime::InboundTransactionContext,
     ) -> Result<Uuid, tonic::Status> {
-        Ok(self.child)
+        if has("--sequential-reusable") { Ok(Uuid::new_v4()) } else { Ok(self.child) }
     }
 }
 
@@ -357,6 +357,29 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
         TransactionExecution<proto::TransactionCounterValue>,
         generated::TransactionCounterWritesMethodsIncrementError,
     > {
+        if has("--sequential-reusable") && !matches!(self, Self::Root(_)) {
+            use std::io::Write;
+            let marker = arg("--tree-local-tasks");
+            let mut log = std::fs::OpenOptions::new().create(true).append(true).open(format!("{marker}.reuse-entry")).unwrap();
+            writeln!(log, "{}|{}|{}", context.transaction_ids()[1], request.amount, state.value).unwrap();
+            state.value += request.amount;
+            let mut task = generated::TransactionCounterWritesMethodsTasksAt::query(
+                &context.headers().state_ref, &proto::TransactionIncrementRequest { amount: 9000 },
+                prost_types::Timestamp { seconds: arg("--tree-tasks-at").parse().unwrap(), nanos: 0 });
+            if request.amount == 11 && let Some(uuid) = optional_arg("--reuse-completed-uuid") {
+                task.task_id.as_mut().unwrap().task_uuid = Uuid::parse_str(&uuid).unwrap().as_bytes().to_vec();
+            }
+            std::fs::write(format!("{marker}.reuse-{}", request.amount), task.encode_to_vec()).unwrap();
+            if request.amount == 11 && has("--reuse-declared") {
+                return Err(generated::TransactionCounterWritesMethodsIncrementError::TransactionLimitExceeded(proto::TransactionLimitExceeded { limit: 4242 }));
+            }
+            if request.amount == 11 && has("--reuse-unknown") {
+                return Err(generated::TransactionCounterWritesMethodsIncrementError::Grpc(tonic::Status::unavailable("uncertain N2")));
+            }
+            let mut execution = TransactionExecution::new(proto::TransactionCounterValue { value: state.value });
+            execution.task_upserts.push(task);
+            return Ok(execution);
+        }
         if has("--rollback-leaf") {
             record_rollback_identity(context);
             state.value += 1000;
@@ -466,7 +489,24 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                 std::future::pending::<()>().await;
             }
         }
+        if has("--star-leaf-call") {
+            let (placement, _) = crate::placement();
+            let client = generated::TransactionCounterWritesMethodsClient::new(ObservedResolver(
+                LegacyApplicationResolver::new(LegacyApplicationId::new("generated-cxx-database-process").unwrap(),placement)));
+            let error = client.increment(context,&generated::TransactionCounterWritesMethodsTarget::new("unregistered-child"),request.clone()).await.unwrap_err();
+            assert!(context.doomed_status().is_some());
+            std::fs::write(arg("--outbound-error-marker"),format!("actual star leaf child denied: {error:?}")).unwrap();
+            return Err(tonic::Status::failed_precondition("star leaf child denied"));
+        }
         if let Self::Root(root) = self {
+            if has("--star-overlap") {
+                let _scope = context.begin_generated_outbound_for("tests.reboot.protoc.TransactionCounter",&arg("--star-first"),
+                    "/tests.reboot.protoc.TransactionCounterWritesMethods/Increment")?;
+                let error = root.client.increment(context,&generated::TransactionCounterWritesMethodsTarget::new(arg("--star-second")),request.clone()).await.unwrap_err();
+                assert!(context.doomed_status().is_some());
+                std::fs::write(arg("--outbound-error-marker"),format!("actual overlapping child denied: {error:?}")).unwrap();
+                return Err(tonic::Status::failed_precondition("overlap denied"));
+            }
             // The ordinary legacy recovery acceptance uses the first target.
             // This branch deliberately enlists two independently routed remote
             // actors so the root coordinator's concurrent Prepare fan-out and
@@ -477,7 +517,11 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                 optional_arg("--tree-next")
             };
             let tree_targets: Vec<&str> = tree_next.as_deref().into_iter().collect();
-            let targets: &[&str] = if tree_next.is_some() {
+            let star_targets = [optional_arg("--star-first"), optional_arg("--star-second")];
+            let star_refs: Vec<&str> = star_targets.iter().filter_map(|s| s.as_deref()).collect();
+            let targets: &[&str] = if !star_refs.is_empty() {
+                &star_refs
+            } else if tree_next.is_some() {
                 &tree_targets
             } else if root.multi_participant {
                 &["target-a", "target-b"]
@@ -524,16 +568,91 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                     tokio::time::sleep(std::time::Duration::from_millis(5)).await;
                 }
             } else {
-                for target in targets {
+                for (index, target) in targets.iter().enumerate() {
+                    if index == 1 && (has("--star-unissued-second") || has("--star-raw-lost-second")) {
+                        // A genuine generated B has already settled. Exercise
+                        // the supplied-context capability without invoking the
+                        // generated C error path (which would doom A first).
+                        let method = "tests.reboot.protoc.TransactionCounterWritesMethods.Increment";
+                        let scope = context.begin_generated_outbound_for(
+                            "tests.reboot.protoc.TransactionCounter", target, method,
+                        )?;
+                        if has("--star-raw-lost-second") {
+                            // Use the same live host-installed placement as
+                            // genuine B, not a fresh unstarted recovery manager.
+                            let resolver = &root.raw_resolver;
+                            let (channel, outbound) = reboot::runtime::scoped_generated_transactional_outbound_request(
+                                resolver, context, &scope, "tests.reboot.protoc.TransactionCounter", target, method, request.clone(),
+                            ).await?;
+                            let mut grpc = tonic::client::Grpc::new(channel);
+                            grpc.ready().await.map_err(|e| tonic::Status::unknown(e.to_string()))?;
+                            let mut rpc = Box::pin(grpc.unary::<_, proto::TransactionCounterValue, _>(
+                                outbound, "/tests.reboot.protoc.TransactionCounterWritesMethods/Increment".parse().unwrap(),
+                                tonic::codec::ProstCodec::default(),
+                            ));
+                            let ready = arg("--star-loss-ready");
+                            tokio::select! {
+                                result = &mut rpc => panic!("C unexpectedly delivered a terminal: {result:?}"),
+                                _ = async {
+                                    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(3);
+                                    while !std::path::Path::new(&ready).exists() {
+                                        assert!(tokio::time::Instant::now() < deadline, "real C admitted/staged marker missing");
+                                        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                                    }
+                                } => {},
+                            }
+                            drop(rpc); // actual admitted C response is destroyed
+                        }
+                        drop(scope); // no API may certify this unresolved C
+                        assert!(context.doomed_status().is_none(), "no error-path doom may mask the uncertainty gate");
+                        let members = context.returned_participants_snapshot();
+                        assert_eq!(members.len(), 1);
+                        assert_eq!(members[0].target.state_ref, targets[0]);
+                        assert!(!members[0].read_only);
+                        std::fs::write(arg("--outbound-error-marker"), b"handler attempts success without doom; genuine B retained, C unsettled").unwrap();
+                        continue;
+                    }
+                    if index == 1 && has("--star-repeat-first") {
+                        let error = root.client.increment(context,
+                            &generated::TransactionCounterWritesMethodsTarget::new(targets[0]), request.clone()).await.unwrap_err();
+                        assert!(context.doomed_status().is_some());
+                        std::fs::write(arg("--outbound-error-marker"),format!("repeat denied before resolver: {error:?}")).unwrap();
+                        return Err(tonic::Status::failed_precondition("repeat denied"));
+                    }
+                    let mut nested_request = request.clone();
+                    if has("--sequential-reusable") && index == 1 { nested_request.amount = 11; }
                     match root.client
                     .increment(
                         context,
                         &generated::TransactionCounterWritesMethodsTarget::new(*target),
-                        request.clone(),
+                        nested_request,
                     )
                     .await
                 {
-                    Ok(_) => {},
+                    Ok(_) => {
+                        if has("--sequential-root-star") {
+                            if let Some(marker) = optional_arg("--star-confirmed") {
+                                let members = context.returned_participants_snapshot().into_iter().map(|p|
+                                    format!("{}|{}|{}", p.target.state_type,p.target.state_ref,p.read_only)).collect::<Vec<_>>();
+                                std::fs::write(marker, members.join("\n")).unwrap();
+                            }
+                        }
+                    },
+                    Err(generated::TransactionCounterWritesMethodsIncrementError::TransactionLimitExceeded(error)) if has("--sequential-reusable") => {
+                        assert_eq!(error.limit, 4242);
+                        assert!(context.doomed_status().is_none(), "genuine declared N2 remains recoverable");
+                        let members = context.returned_participants_snapshot();
+                        assert_eq!(members.len(), 1); assert!(!members[0].read_only);
+                        std::fs::write(arg("--outbound-error-marker"), b"typed N2 caught; B writer retained").unwrap();
+                    },
+                    Err(error) if has("--star-catch-second") => {
+                        assert!(context.doomed_status().is_some(), "second-child caught error must doom A: {error:?}");
+                        let members = context.returned_participants_snapshot();
+                        assert_eq!(members.len(), 1, "retain confirmed B, never fabricate unknown C");
+                        assert_eq!(members[0].target.state_ref, star_refs[0]);
+                        assert!(!members[0].read_only);
+                        std::fs::write(arg("--outbound-error-marker"), format!("second-child caught with B retained: {error:?}")).unwrap();
+                    },
                     Err(error) if has("--catch-outbound-error") => {
                         assert!(context.doomed_status().is_some(), "caught unsupported outcome must doom root: {error:?}");
                         assert!(context.returned_participants_snapshot().is_empty());
@@ -1112,8 +1231,30 @@ impl generated::RegistryGaugeMethodsTransactionHandler for GaugeTaskHandler {
     }
 }
 
+struct ObservedResolver(LegacyApplicationResolver);
+#[tonic::async_trait]
+impl reboot::runtime::TransactionalChannelResolver for ObservedResolver {
+    async fn resolve(&self, state_type: &str, state_ref: &str) -> Result<tonic::transport::Channel, tonic::Status> {
+        if let Some(marker) = optional_arg("--star-resolver-log") {
+            use std::io::Write;
+            writeln!(std::fs::OpenOptions::new().create(true).append(true).open(&marker).unwrap(), "{state_type}|{state_ref}").unwrap();
+        }
+        if state_ref == optional_arg("--star-second").as_deref().unwrap_or("")
+            && let Some(marker) = optional_arg("--star-resolver-park") {
+            std::fs::write(&marker, b"actual resolver entered").unwrap();
+            struct ResolverDrop(String);
+            impl Drop for ResolverDrop { fn drop(&mut self) { std::fs::write(format!("{}.dropped",self.0),b"actual resolver future destroyed").unwrap(); } }
+            let _drop = ResolverDrop(marker.clone());
+            while !std::path::Path::new(&format!("{marker}.release")).exists() {
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        }
+        reboot::runtime::TransactionalChannelResolver::resolve(&self.0,state_type,state_ref).await
+    }
+}
 struct Root {
-    client: generated::TransactionCounterWritesMethodsClient<LegacyApplicationResolver>,
+    client: generated::TransactionCounterWritesMethodsClient<ObservedResolver>,
+    raw_resolver: ObservedResolver,
     multi_participant: bool,
     task_marker: Option<String>,
     block_task: bool,
@@ -1592,8 +1733,9 @@ async fn main() {
         }
     } else if role == "root" || role == "multi-root" || role == "tree-branch" {
         Handler::Root(Root {
+            raw_resolver: ObservedResolver(LegacyApplicationResolver::new(application.clone(), placement.clone())),
             client: generated::TransactionCounterWritesMethodsClient::new(
-                LegacyApplicationResolver::new(application.clone(), placement.clone()),
+                ObservedResolver(LegacyApplicationResolver::new(application.clone(), placement.clone())),
             ),
             multi_participant: role == "multi-root",
             task_marker: optional_arg("--root-reader-task"),
@@ -1672,6 +1814,7 @@ async fn main() {
         )
         .with_live_participant_owner(owner)
         .with_supervised_transaction_tree();
+        let legacy = if has("--sequential-root-star") { legacy.with_sequential_root_star() } else { legacy };
         let mut legacy_host = ApplicationHost::new("generated-cxx-database-process")
             .with_legacy_placement_readiness(placement.clone())
             .with_host_recovery(legacy.live_participant_recovery_registration().unwrap());
@@ -1742,7 +1885,11 @@ async fn main() {
     } else {
         adapter
     };
-    let adapter = if has("--supervised-tree") {
+    let adapter = if has("--sequential-reusable") {
+        adapter.with_sequential_reusable_participants()
+    } else if has("--sequential-root-star") {
+        adapter.with_sequential_root_star()
+    } else if has("--supervised-tree") {
         adapter.with_supervised_transaction_tree()
     } else {
         adapter

@@ -175,6 +175,27 @@ pub struct TransactionContext {
     /// Installed only after actual inbound live reservation/execution admission.
     /// An outbound nested clone is not a newly admitted inbound incarnation.
     supervised_inbound_headers: Option<RebootHeaders>,
+    admitted_actor: Option<crate::durable_coordinator::ParticipantTarget>,
+    sequential_root_star: bool,
+    sequential_reusable: bool,
+    builtin_map_admission: Option<BuiltinMapAdmission>,
+}
+
+/// In-process authority installed only by an admitted, cancellation-owned
+/// generated root guard. Public headers never manufacture this capability.
+#[derive(Clone)]
+struct BuiltinMapAdmission {
+    endpoint: String,
+    active: Arc<std::sync::atomic::AtomicBool>,
+    owner: crate::explicit_abort::ExplicitAbortOwner,
+}
+
+impl std::fmt::Debug for BuiltinMapAdmission {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BuiltinMapAdmission")
+            .field("endpoint", &self.endpoint)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, Default)]
@@ -185,21 +206,44 @@ struct ReturnedParticipantCollection {
     late_enlistment: bool,
     membership_uncertain: bool,
     dispatched: bool,
+    attempted: std::collections::BTreeSet<crate::durable_coordinator::ParticipantTarget>,
 }
 
-/// Generated clients retain this guard from before routing through enlistment.
-/// It tracks quiescence only; cancellation does not recover unknown trailers.
+/// One-use outbound authority consumed by the runtime-owned unary transport.
+/// Dropping even an unissued scope conservatively retains membership uncertainty.
+/// There is no public terminal setter: caller-created responses are only data.
+///
+/// ```compile_fail
+/// fn forge(scope: &mut reboot_rust_schema::runtime::TransactionalOutboundScope) {
+///     scope.completed();
+/// }
+/// ```
+///
+/// ```compile_fail
+/// fn forge(context: &reboot_rust_schema::runtime::TransactionContext,
+///          scope: &reboot_rust_schema::runtime::TransactionalOutboundScope,
+///          fake: &reboot_rust_schema::successful_trailers::ReturnedParticipants) {
+///     context.enlist_generated_returned_participants(scope, fake).unwrap();
+/// }
+/// ```
 #[doc(hidden)]
 pub struct TransactionalOutboundScope {
     completed: bool,
     collection: Option<Arc<Mutex<ReturnedParticipantCollection>>>,
+    context: TransactionContext,
+    binding: Option<(crate::durable_coordinator::ParticipantTarget, String)>,
+    request_used: std::sync::atomic::AtomicBool,
 }
 
+#[cfg(test)]
 impl TransactionalOutboundScope {
-    pub fn completed(&mut self) {
+    // Unit fixture setup, absent from SDK/downstream builds. This does not
+    // provide production completion authority.
+    pub(crate) fn test_terminal_state_setup(&mut self) {
         self.completed = true;
     }
 }
+
 impl Drop for TransactionalOutboundScope {
     fn drop(&mut self) {
         if let Some(collection) = &self.collection {
@@ -357,9 +401,9 @@ where
 }
 
 /// Builds a request under a caller-retained counted scope from the same branch.
-/// Generated clients retain that scope through trailer enlistment. Manual callers
-/// must likewise retain it through their RPC and complete it only after validated
-/// trailers; this helper cannot police arbitrary manual scope reuse/completion.
+/// This is raw/manual transport plumbing, not terminal authority. Its scope
+/// cannot be settled by the caller; dropping it retains uncertainty. Generated
+/// clients instead consume the scope in `generated_transactional_unary`.
 #[doc(hidden)]
 pub async fn scoped_transactional_outbound_request<R: TransactionalChannelResolver, Message>(
     resolver: &R,
@@ -369,25 +413,272 @@ pub async fn scoped_transactional_outbound_request<R: TransactionalChannelResolv
     state_ref: &str,
     message: Message,
 ) -> Result<(tonic::transport::Channel, Request<Message>), Status> {
-    let valid = match (&context.returned_participants, &scope.collection) {
-        (Some(a), Some(b)) => Arc::ptr_eq(a, b),
-        (None, None) => true,
-        _ => false,
+    context.validate_outbound_scope_admission(scope)?;
+    let target = crate::durable_coordinator::ParticipantTarget {
+        state_type: state_type.to_owned(),
+        state_ref: state_ref.to_owned(),
     };
-    if scope.completed || !valid {
+    if scope
+        .binding
+        .as_ref()
+        .is_some_and(|(bound, _)| bound != &target)
+        || (context.sequential_root_star && scope.binding.is_none())
+        || scope
+            .request_used
+            .swap(true, std::sync::atomic::Ordering::AcqRel)
+    {
         return Err(Status::failed_precondition(
-            "outbound scope differs from branch",
+            "outbound scope target mismatch or request reused",
         ));
     }
     if context.tree_owned()
-        && (state_ref == context.headers().state_ref
-            || state_ref == context.transaction_coordinator_state_ref())
+        && (context.admitted_actor.as_ref().map_or_else(
+            || state_ref == context.headers().state_ref,
+            |local| local == &target,
+        ) || (state_type == context.transaction_coordinator_state_type()
+            && state_ref == context.transaction_coordinator_state_ref()))
     {
         return Err(Status::failed_precondition(
             "tree actors must be distinct and non-reentrant",
         ));
     }
-    transactional_outbound_request_inner(resolver, context, state_type, state_ref, message).await
+    let routed =
+        transactional_outbound_request_inner(resolver, context, state_type, state_ref, message)
+            .await?;
+    context.validate_outbound_scope_admission(scope)?;
+    Ok(routed)
+}
+
+/// Generated method binding is checked independently of the transport helper.
+#[doc(hidden)]
+pub async fn scoped_generated_transactional_outbound_request<
+    R: TransactionalChannelResolver,
+    Message,
+>(
+    resolver: &R,
+    context: &TransactionContext,
+    scope: &TransactionalOutboundScope,
+    state_type: &str,
+    state_ref: &str,
+    method: &str,
+    message: Message,
+) -> Result<(tonic::transport::Channel, Request<Message>), Status> {
+    if scope
+        .binding
+        .as_ref()
+        .is_none_or(|(_, bound)| bound != method)
+    {
+        return Err(Status::failed_precondition(
+            "outbound generated method differs from scope",
+        ));
+    }
+    scoped_transactional_outbound_request(resolver, context, scope, state_type, state_ref, message)
+        .await
+}
+
+/// Generated method-declared error schema. This is trusted composition data,
+/// never a transport receipt. A validator only decodes protobuf bytes from the
+/// runtime's actual terminal Status; it cannot supply an RPC outcome.
+#[doc(hidden)]
+pub struct DeclaredTransactionalError {
+    type_url: &'static str,
+    validate: fn(&[u8]) -> Result<(), prost::DecodeError>,
+}
+impl DeclaredTransactionalError {
+    pub fn protobuf<M: Message + Default>(type_url: &'static str) -> Self {
+        Self {
+            type_url,
+            validate: |bytes| M::decode(bytes).map(|_| ()),
+        }
+    }
+}
+
+/// Performs the actual bound unary RPC and consumes its one-use scope.
+/// Only this runtime-owned transport path may settle terminal membership.
+/// Cancellation, routing failure and invalid terminal data leave uncertainty.
+/// Resolver registration and generated error schemas are trusted host inputs;
+/// caller-created Response/Status values are never accepted as evidence.
+#[doc(hidden)]
+pub async fn generated_transactional_unary<R, Req, Resp>(
+    resolver: &R,
+    context: &TransactionContext,
+    mut scope: TransactionalOutboundScope,
+    message: Req,
+    declared_errors: &[DeclaredTransactionalError],
+) -> Result<TransactionalCallResponse<Resp>, Status>
+where
+    R: TransactionalChannelResolver,
+    Req: Message + Default + Send + 'static,
+    Resp: Message + Default + Send + 'static,
+{
+    let result = generated_transactional_unary_inner(
+        resolver,
+        context,
+        &mut scope,
+        message,
+        declared_errors,
+    )
+    .await;
+    // Recoverable errors return the actual Status after private settlement.
+    // Every other failed outcome dooms even a handler which catches it.
+    if let Err(status) = &result
+        && !scope.completed
+    {
+        context.doom(status.clone());
+    }
+    result
+}
+
+async fn generated_transactional_unary_inner<R, Req, Resp>(
+    resolver: &R,
+    context: &TransactionContext,
+    scope: &mut TransactionalOutboundScope,
+    message: Req,
+    declared_errors: &[DeclaredTransactionalError],
+) -> Result<TransactionalCallResponse<Resp>, Status>
+where
+    R: TransactionalChannelResolver,
+    Req: Message + Default + Send + 'static,
+    Resp: Message + Default + Send + 'static,
+{
+    let (target, method) = scope
+        .binding
+        .clone()
+        .ok_or_else(|| Status::failed_precondition("generated unary requires bound scope"))?;
+    let path = if method.starts_with('/') {
+        method.clone()
+    } else {
+        let (service, rpc) = method
+            .rsplit_once('.')
+            .ok_or_else(|| Status::invalid_argument("invalid canonical RPC method"))?;
+        format!("/{service}/{rpc}")
+    };
+    let path = path
+        .parse::<http::uri::PathAndQuery>()
+        .map_err(|_| Status::invalid_argument("invalid canonical RPC path"))?;
+    let (channel, request) = scoped_generated_transactional_outbound_request(
+        resolver,
+        context,
+        scope,
+        &target.state_type,
+        &target.state_ref,
+        &method,
+        message,
+    )
+    .await?;
+    let mut client = tonic::client::Grpc::new(channel);
+    client
+        .ready()
+        .await
+        .map_err(|error| Status::unknown(format!("Service was not ready: {error}")))?;
+    // Readiness is another transport await after routing; a retained scope
+    // cannot issue work after its owner closes the branch.
+    context.validate_outbound_scope_admission(scope)?;
+    let response = client
+        .unary::<Req, Resp, _>(request, path, tonic::codec::ProstCodec::default())
+        .await;
+    context.validate_outbound_scope_admission(scope)?;
+    match response {
+        Ok(response) => {
+            let returned = crate::successful_trailers::ReturnedParticipants::from_metadata(
+                response.metadata(),
+            )
+            .map_err(|error| Status::failed_precondition(error.to_string()))?;
+            context.enlist_generated_returned_participants(scope, &returned)?;
+            Ok(TransactionalCallResponse::new(response, returned))
+        }
+        Err(status) => {
+            if context.supervised_tree_execution() {
+                if !singleton_declared_status(&status, declared_errors) {
+                    return Err(status);
+                }
+                context.enlist_rolled_back_leaf(
+                    Some(scope),
+                    status.metadata(),
+                    &target.state_type,
+                    &target.state_ref,
+                )?;
+            } else if recoverable_unsupervised_status(&status, declared_errors) {
+                // Preserve legacy declared/system recoverability; no supervised
+                // rollback membership contract is imposed on the default path.
+                settle_terminal_scope(context, scope)?;
+            }
+            Err(status)
+        }
+    }
+}
+
+fn singleton_declared_status(status: &Status, schema: &[DeclaredTransactionalError]) -> bool {
+    matches!(crate::declared_error_details(status), Ok(Some(ref rich))
+        if rich.details.len() == 1 && schema.iter().any(|entry|
+            entry.type_url == rich.details[0].type_url
+                && (entry.validate)(&rich.details[0].value).is_ok()))
+}
+
+fn recoverable_unsupervised_status(status: &Status, schema: &[DeclaredTransactionalError]) -> bool {
+    if schema.is_empty() {
+        return false;
+    }
+    let Ok(Some(rich)) = crate::declared_error_details(status) else {
+        return false;
+    };
+    // Match the legacy generated enum's ordered detail conversion exactly.
+    for detail in rich.details {
+        for entry in schema {
+            if entry.type_url == detail.type_url {
+                return (entry.validate)(&detail.value).is_ok();
+            }
+        }
+        match crate::system_aborted_from_detail(&detail) {
+            Ok(Some(system)) => return system.is_recoverable(),
+            Err(_) => return false,
+            Ok(None) => {}
+        }
+    }
+    false
+}
+
+// Called only after consuming an actual runtime-owned transport terminal.
+// No await separates terminal validation, ledger disposition and settlement.
+fn settle_terminal_scope(
+    context: &TransactionContext,
+    scope: &mut TransactionalOutboundScope,
+) -> Result<(), Status> {
+    context.require_outbound_allowed()?;
+    if let Some(status) = context.doomed_status() {
+        return Err(status);
+    }
+    if scope.completed
+        || !context.same_ownership_context(&scope.context)
+        || !scope
+            .request_used
+            .load(std::sync::atomic::Ordering::Acquire)
+    {
+        return Err(Status::failed_precondition(
+            "terminal scope ownership mismatch",
+        ));
+    }
+    if let Some(collection) = &scope.collection {
+        let ledger = collection
+            .lock()
+            .expect("returned participant mutex poisoned");
+        if ledger.sealed
+            || ledger.active == 0
+            || ledger.membership_uncertain
+            || ledger.late_enlistment
+        {
+            return Err(Status::failed_precondition(
+                "terminal settlement on closed or uncertain branch",
+            ));
+        }
+        if let Some(status) = context.doomed_status() {
+            return Err(status);
+        }
+        scope.completed = true;
+    } else {
+        scope.completed = true;
+    }
+    Ok(())
 }
 
 async fn transactional_outbound_request_inner<R: TransactionalChannelResolver, Message>(
@@ -409,6 +700,20 @@ async fn transactional_outbound_request_inner<R: TransactionalChannelResolver, M
         .to_metadata()
         .map_err(|error| Status::invalid_argument(error.to_string()))?;
     let channel = resolver.resolve(state_type, state_ref).await?;
+    context.require_outbound_allowed()?;
+    if let Some(collection) = &context.returned_participants
+        && collection
+            .lock()
+            .expect("returned participant mutex poisoned")
+            .sealed
+    {
+        return Err(Status::failed_precondition(
+            "outbound branch closed during routing",
+        ));
+    }
+    if let Some(status) = context.doomed_status() {
+        return Err(status);
+    }
     let mut request = Request::new(message);
     *request.metadata_mut() = metadata;
     Ok((channel, request))
@@ -445,6 +750,10 @@ impl TransactionContext {
             live_leaf: false,
             supervised_tree: false,
             supervised_inbound_headers: None,
+            admitted_actor: None,
+            sequential_root_star: false,
+            sequential_reusable: false,
+            builtin_map_admission: None,
         })
     }
 
@@ -512,6 +821,44 @@ impl TransactionContext {
         self.supervised_inbound_headers = Some(self.headers.clone());
     }
 
+    pub(crate) fn install_actor_authority(
+        &mut self,
+        actor: crate::durable_coordinator::ParticipantTarget,
+        sequential_root_star: bool,
+    ) -> Result<(), Status> {
+        if actor.state_ref != self.headers.state_ref || !self.supervised_tree {
+            return Err(Status::failed_precondition(
+                "tree actor authority differs from admitted execution",
+            ));
+        }
+        if sequential_root_star && !self.is_fresh_root() {
+            self.enforce_live_leaf()?;
+        }
+        self.admitted_actor = Some(actor);
+        self.sequential_root_star = sequential_root_star;
+        Ok(())
+    }
+
+    pub(crate) fn install_reusable_policy(&mut self) -> Result<(), Status> {
+        if !self.supervised_tree
+            || self.mode != TransactionMode::Exclusive
+            || self.headers.idempotency_key.is_some()
+            || self.transaction_ids().len() > 2
+        {
+            return Err(Status::failed_precondition(
+                "reusable policy requires registered root or direct leaf",
+            ));
+        }
+        self.sequential_reusable = true;
+        self.sequential_root_star = true;
+        Ok(())
+    }
+
+    #[doc(hidden)]
+    pub fn reusable_participants(&self) -> bool {
+        self.sequential_reusable
+    }
+
     fn supervised_inbound_at_depth(&self, depth: usize) -> bool {
         self.supervised_tree
             && self.returned_participants.is_some()
@@ -527,6 +874,12 @@ impl TransactionContext {
 
     pub(crate) fn same_ownership_context(&self, other: &Self) -> bool {
         self == other
+            && self.admitted_actor == other.admitted_actor
+            && self.sequential_root_star == other.sequential_root_star
+            && self.sequential_reusable == other.sequential_reusable
+            && self.supervised_inbound_headers == other.supervised_inbound_headers
+            && self.supervised_tree == other.supervised_tree
+            && self.live_leaf == other.live_leaf
             && Arc::ptr_eq(&self.doomed, &other.doomed)
             && match (&self.returned_participants, &other.returned_participants) {
                 (Some(a), Some(b)) => Arc::ptr_eq(a, b),
@@ -556,7 +909,11 @@ impl TransactionContext {
         let branch = collection
             .lock()
             .expect("returned participant mutex poisoned");
-        if branch.sealed || branch.active != 0 {
+        if branch.sealed
+            || branch.active != 0
+            || branch.membership_uncertain
+            || branch.late_enlistment
+        {
             return Err(Status::failed_precondition(
                 "tree tasks require open quiescent branch",
             ));
@@ -619,10 +976,91 @@ impl TransactionContext {
         Ok(())
     }
 
+    /// Admission only, never terminal authority. Recheck retained reservations
+    /// at every outbound await boundary; terminal disposition independently
+    /// validates the ledger under the same lock as its mutation and settlement.
+    fn validate_outbound_scope_admission(
+        &self,
+        scope: &TransactionalOutboundScope,
+    ) -> Result<(), Status> {
+        self.require_outbound_allowed()?;
+        if let Some(status) = self.doomed_status() {
+            return Err(status);
+        }
+        let same_collection = match (&self.returned_participants, &scope.collection) {
+            (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+            (None, None) => true,
+            _ => false,
+        };
+        if scope.completed || !same_collection || !self.same_ownership_context(&scope.context) {
+            return Err(Status::failed_precondition(
+                "outbound scope differs from branch",
+            ));
+        }
+        if let Some(collection) = &scope.collection {
+            let ledger = collection
+                .lock()
+                .expect("returned participant mutex poisoned");
+            if ledger.sealed
+                || ledger.active == 0
+                || (self.sequential_root_star && ledger.active != 1)
+                || ledger.membership_uncertain
+                || ledger.late_enlistment
+            {
+                return Err(Status::failed_precondition(
+                    "outbound scope on closed, inactive or uncertain branch",
+                ));
+            }
+        }
+        Ok(())
+    }
+
     /// Acquires generated outbound admission before any resolver or network call.
     #[doc(hidden)]
     pub fn begin_generated_outbound(&self) -> Result<TransactionalOutboundScope, Status> {
+        if self.sequential_root_star {
+            return Err(Status::failed_precondition(
+                "root-star requires target-bound generated admission",
+            ));
+        }
+        self.begin_outbound_bound(None)
+    }
+
+    /// One generated canonical method/target, reserved before resolver entry.
+    #[doc(hidden)]
+    pub fn begin_generated_outbound_for(
+        &self,
+        state_type: &str,
+        state_ref: &str,
+        method: &str,
+    ) -> Result<TransactionalOutboundScope, Status> {
+        if state_type.is_empty() || state_ref.is_empty() || method.is_empty() {
+            return Err(Status::invalid_argument(
+                "outbound target/method must not be empty",
+            ));
+        }
+        self.begin_outbound_bound(Some((
+            crate::durable_coordinator::ParticipantTarget {
+                state_type: state_type.to_owned(),
+                state_ref: state_ref.to_owned(),
+            },
+            method.to_owned(),
+        )))
+    }
+
+    fn begin_outbound_bound(
+        &self,
+        binding: Option<(crate::durable_coordinator::ParticipantTarget, String)>,
+    ) -> Result<TransactionalOutboundScope, Status> {
         self.require_outbound_allowed()?;
+        if let Some(status) = self.doomed_status() {
+            return Err(status);
+        }
+        if self.sequential_root_star && (!self.is_fresh_root() || self.admitted_actor.is_none()) {
+            return Err(Status::failed_precondition(
+                "root-star requires exact admitted root context",
+            ));
+        }
         if let Some(collection) = &self.returned_participants {
             let mut state = collection
                 .lock()
@@ -632,15 +1070,39 @@ impl TransactionContext {
                     "root outbound collection is sealed",
                 ));
             }
-            if state.active >= 1024 {
+            if state.active >= 1024 || state.attempted.len() >= 1024 {
                 return Err(Status::resource_exhausted(
                     "outbound branch capacity exceeded",
                 ));
             }
-            if self.supervised_tree && state.dispatched {
+            if self.sequential_root_star
+                && (state.active != 0 || state.membership_uncertain || state.late_enlistment)
+            {
+                return Err(Status::failed_precondition(
+                    "root-star requires quiescent certain branch",
+                ));
+            }
+            if self.supervised_tree && !self.sequential_root_star && state.dispatched {
                 return Err(Status::failed_precondition(
                     "tree branch admits only one child",
                 ));
+            }
+            if self.sequential_root_star {
+                let (target, _) = binding.as_ref().ok_or_else(|| {
+                    Status::failed_precondition("root-star target binding missing")
+                })?;
+                if self.admitted_actor.as_ref() == Some(target)
+                    || (target.state_type == self.transaction_coordinator_state_type()
+                        && target.state_ref == self.transaction_coordinator_state_ref())
+                    || (!self.sequential_reusable
+                        && (state.attempted.contains(target)
+                            || state.participants.contains_key(target)))
+                {
+                    return Err(Status::failed_precondition(
+                        "root-star actor repeated or reentrant",
+                    ));
+                }
+                state.attempted.insert(target.clone());
             }
             state.dispatched = true;
             state.active += 1;
@@ -648,13 +1110,92 @@ impl TransactionContext {
         Ok(TransactionalOutboundScope {
             completed: false,
             collection: self.returned_participants.clone(),
+            context: self.clone(),
+            binding,
+            request_used: std::sync::atomic::AtomicBool::new(false),
         })
+    }
+
+    /// Validate the complete leaf response before authorizing another sibling.
+    #[doc(hidden)]
+    fn enlist_generated_returned_participants(
+        &self,
+        scope: &mut TransactionalOutboundScope,
+        returned: &crate::successful_trailers::ReturnedParticipants,
+    ) -> Result<(), Status> {
+        if scope.completed
+            || !self.same_ownership_context(&scope.context)
+            || !scope
+                .request_used
+                .load(std::sync::atomic::Ordering::Acquire)
+        {
+            return Err(Status::failed_precondition(
+                "success differs from active generated request",
+            ));
+        }
+        if self.sequential_root_star {
+            let (target, _) = scope
+                .binding
+                .as_ref()
+                .ok_or_else(|| Status::failed_precondition("success lacks target binding"))?;
+            let entries = returned.participants();
+            if entries.len() != 1 || &entries[0].target != target || entries[0].read_only {
+                return Err(Status::failed_precondition(
+                    "root-star success requires exact singleton writer leaf",
+                ));
+            }
+        }
+        self.require_outbound_allowed()?;
+        if let Some(status) = self.doomed_status() {
+            return Err(status);
+        }
+        if let Some(collection) = &self.returned_participants {
+            let mut ledger = collection
+                .lock()
+                .expect("returned participant mutex poisoned");
+            if ledger.sealed
+                || ledger.active == 0
+                || ledger.membership_uncertain
+                || ledger.late_enlistment
+            {
+                return Err(Status::failed_precondition(
+                    "terminal response on closed or uncertain branch",
+                ));
+            }
+            if let Some(status) = self.doomed_status() {
+                return Err(status);
+            }
+            let new_count = returned
+                .participants()
+                .iter()
+                .filter(|p| !ledger.participants.contains_key(&p.target))
+                .count();
+            if ledger.participants.len().saturating_add(new_count) > 1024 {
+                ledger.membership_uncertain = true;
+                return Err(Status::resource_exhausted(
+                    "returned participant aggregate exceeded",
+                ));
+            }
+            for participant in returned.participants() {
+                ledger
+                    .participants
+                    .entry(participant.target.clone())
+                    .and_modify(|read_only| *read_only &= participant.read_only)
+                    .or_insert(participant.read_only);
+            }
+            // Exact terminal disposition and settlement share the ledger lock.
+            scope.completed = true;
+        } else {
+            scope.completed = true;
+        }
+        Ok(())
     }
 
     /// Validate error-path membership before the generated scope completes.
     #[doc(hidden)]
-    pub fn enlist_rolled_back_leaf(
+    fn enlist_rolled_back_leaf(
         &self,
+        scope: Option<&mut TransactionalOutboundScope>,
         metadata: &tonic::metadata::MetadataMap,
         state_type: &str,
         state_ref: &str,
@@ -692,13 +1233,39 @@ impl TransactionContext {
             || ledger.active != 1
             || ledger.membership_uncertain
             || ledger.late_enlistment
-            || !ledger.participants.is_empty()
+            || (!self.sequential_reusable && !ledger.participants.is_empty())
         {
             return Err(Status::failed_precondition(
                 "recoverable error requires first outbound leaf",
             ));
         }
-        ledger.participants.insert(entries[0].target.clone(), true);
+        if let Some(status) = self.doomed_status() {
+            return Err(status);
+        }
+        if let Some(scope) = scope {
+            if scope.completed
+                || !self.same_ownership_context(&scope.context)
+                || !scope
+                    .request_used
+                    .load(std::sync::atomic::Ordering::Acquire)
+                || scope
+                    .binding
+                    .as_ref()
+                    .is_none_or(|(target, _)| target != &entries[0].target)
+            {
+                return Err(Status::failed_precondition(
+                    "rollback terminal scope ownership mismatch",
+                ));
+            }
+            ledger
+                .participants
+                .entry(entries[0].target.clone())
+                .or_insert(true);
+            scope.completed = true;
+        } else {
+            // Private unit provenance setup only; no production call uses None.
+            ledger.participants.insert(entries[0].target.clone(), true);
+        }
         Ok(())
     }
 
@@ -857,6 +1424,90 @@ impl TransactionContext {
         }
     }
 
+    pub(crate) fn install_builtin_map_admission(
+        &mut self,
+        endpoint: &str,
+        active: Arc<std::sync::atomic::AtomicBool>,
+        owner: crate::explicit_abort::ExplicitAbortOwner,
+    ) {
+        self.builtin_map_admission = Some(BuiltinMapAdmission {
+            endpoint: endpoint.to_owned(),
+            active,
+            owner,
+        });
+    }
+
+    pub(crate) fn validate_builtin_map_admission(&self, endpoint: &str) -> Result<(), Status> {
+        let admitted = self
+            .builtin_map_admission
+            .as_ref()
+            .is_some_and(|admission| {
+                admission.endpoint == endpoint
+                    && admission.active.load(std::sync::atomic::Ordering::Acquire)
+                    && admission
+                        .owner
+                        .validate_builtin_root(self.transaction_root_id())
+                        .is_ok()
+            });
+        if !admitted
+            || !self.is_fresh_root()
+            || self.mode != TransactionMode::Exclusive
+            || self.supervised_tree
+            || self.sequential_root_star
+            || self.sequential_reusable
+            || self.doomed_status().is_some()
+        {
+            return Err(Status::failed_precondition(
+                "SortedMap requires active admitted app-internal fresh exclusive root at the same native endpoint",
+            ));
+        }
+        let ledger = self
+            .returned_participants
+            .as_ref()
+            .ok_or_else(|| Status::failed_precondition("missing generated root ledger"))?
+            .lock()
+            .unwrap();
+        if ledger.sealed
+            || ledger.membership_uncertain
+            || ledger.late_enlistment
+            || ledger.dispatched
+        {
+            return Err(Status::failed_precondition(
+                "SortedMap root is sealed or uncertain",
+            ));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn enlist_admitted_early_map(
+        &self,
+        target: crate::durable_coordinator::ParticipantTarget,
+    ) -> Result<(), Status> {
+        if !self.is_fresh_root()
+            || self.mode != TransactionMode::Exclusive
+            || self.returned_participants.is_none()
+        {
+            return Err(Status::failed_precondition(
+                "early map requires fresh generated exclusive root ledger",
+            ));
+        }
+        let mut ledger = self.returned_participants.as_ref().unwrap().lock().unwrap();
+        if ledger.sealed || ledger.membership_uncertain || ledger.late_enlistment {
+            return Err(Status::failed_precondition(
+                "early map root ledger is sealed or uncertain",
+            ));
+        }
+        if !ledger.participants.contains_key(&target) && ledger.participants.len() >= 1024 {
+            // This target has not performed native IO. Reject before Store and
+            // preserve complete existing membership for explicit Abort cleanup.
+            let error = Status::resource_exhausted("returned participant aggregate exceeded");
+            self.doom(error.clone());
+            return Err(error);
+        }
+        ledger.participants.insert(target, false);
+        Ok(())
+    }
+
     /// Copies confirmed enlistments without relinquishing their ownership.
     /// Explicit pre-handoff cleanup must retain this set until terminal ACKs.
     pub fn returned_participants_snapshot(
@@ -989,6 +1640,10 @@ impl TransactionContext {
             live_leaf: self.live_leaf,
             supervised_tree: self.supervised_tree,
             supervised_inbound_headers: None,
+            admitted_actor: self.admitted_actor.clone(),
+            sequential_root_star: self.sequential_root_star,
+            sequential_reusable: self.sequential_reusable,
+            builtin_map_admission: None,
         })
     }
 }
@@ -1407,6 +2062,7 @@ struct ActorGateWaiter {
 struct ActorGateInner {
     state: Mutex<ActorGateState>,
     changed: tokio::sync::Notify,
+    committed: tokio::sync::watch::Sender<(u64, bool)>,
 }
 
 /// Process-local reader/writer gate for one durable actor.
@@ -1419,6 +2075,29 @@ struct ActorGateInner {
 #[derive(Clone)]
 pub struct ActorGate {
     inner: Arc<ActorGateInner>,
+}
+
+/// A durable RPC in flight. Cancellation/error latches uncertainty so live
+/// subscriptions fail closed rather than silently retaining a stale baseline.
+pub(crate) struct ActorCommitAttempt {
+    gate: ActorGate,
+    acknowledged: bool,
+}
+impl ActorCommitAttempt {
+    pub(crate) fn acknowledged(mut self) {
+        self.gate.committed();
+        self.acknowledged = true;
+    }
+}
+impl Drop for ActorCommitAttempt {
+    fn drop(&mut self) {
+        if !self.acknowledged {
+            self.gate.inner.committed.send_modify(|event| {
+                event.0 = event.0.wrapping_add(1);
+                event.1 = true;
+            });
+        }
+    }
 }
 
 /// A shared actor lease. No production participant path requests this yet.
@@ -1458,7 +2137,25 @@ impl ActorGate {
             inner: Arc::new(ActorGateInner {
                 state: Mutex::new(ActorGateState::default()),
                 changed: tokio::sync::Notify::new(),
+                committed: tokio::sync::watch::channel((0, false)).0,
             }),
+        }
+    }
+
+    pub(crate) fn committed_revisions(&self) -> tokio::sync::watch::Receiver<(u64, bool)> {
+        self.inner.committed.subscribe()
+    }
+
+    pub(crate) fn committed(&self) {
+        self.inner
+            .committed
+            .send_modify(|revision| revision.0 = revision.0.wrapping_add(1));
+    }
+
+    pub(crate) fn commit_attempt(&self) -> ActorCommitAttempt {
+        ActorCommitAttempt {
+            gate: self.clone(),
+            acknowledged: false,
         }
     }
 
@@ -1705,7 +2402,7 @@ static DATABASE_ACTOR_LOCKS: LazyLock<Mutex<HashMap<ActorLockKey, Weak<ActorGate
 
 /// Returns the process-local gate shared by normal actor access and an
 /// exclusive durable participant for this exact actor identity.
-fn same_actor_gate(endpoint: &str, state_type: &str, state_ref: &str) -> ActorGate {
+pub(crate) fn same_actor_gate(endpoint: &str, state_type: &str, state_ref: &str) -> ActorGate {
     let key = ActorLockKey {
         endpoint: endpoint.to_owned(),
         state_type: state_type.to_owned(),
@@ -2238,6 +2935,8 @@ pub fn writer_task_key(id: &database::TaskId, method_identity: &str) -> Result<U
     ))
 }
 
+include!("workflow_store.rs");
+
 impl DatabaseActorStore {
     /// Connects to an existing Reboot Database sidecar.
     pub async fn connect(endpoint: impl AsRef<str>) -> Result<Self, tonic::transport::Error> {
@@ -2448,6 +3147,7 @@ impl DatabaseActorStore {
         request_fingerprint: Option<Vec<u8>>,
     ) -> Result<(), Status> {
         let mut database = self.database.clone();
+        let commit_attempt = self.actor_gate(state_type, state_ref).commit_attempt();
         database
             .store(database::StoreRequest {
                 actor_upserts: vec![database::Actor {
@@ -2473,6 +3173,84 @@ impl DatabaseActorStore {
             })
             .await
             .map_err(database_status)?;
+        commit_attempt.acknowledged();
+        Ok(())
+    }
+
+    /// Host-only canonical builtin constructor, invoked by generated SortedMap.
+    /// Schema creation precedes native unique CreateActor; neither path can
+    /// write nonempty map state or choose arbitrary colocated columns.
+    pub(crate) async fn create_empty_sorted_map(
+        &self,
+        state_ref: &str,
+        key: Uuid,
+    ) -> Result<(), Status> {
+        const MAP: &str = "rbt.std.collections.v1.SortedMap";
+        const ENTRY: &str = "rbt.std.collections.v1.SortedMapEntry";
+        check_idempotency_key_not_expired(key)?;
+        let lock = self.lock_for_type(MAP, state_ref);
+        let _guard = lock.exclusive().await;
+        let fingerprint = request_fingerprint(
+            "rbt.std.collections.v1.SortedMap.Create",
+            &crate::sorted_map_proto::SortedMap {},
+        );
+        if self
+            .replay_type::<crate::sorted_map_proto::SortedMap>(
+                MAP,
+                state_ref,
+                key,
+                Some(&fingerprint),
+            )
+            .await?
+            .is_some()
+        {
+            return Ok(());
+        }
+        if self
+            .load_type::<crate::sorted_map_proto::SortedMap>(MAP, state_ref)
+            .await?
+            .is_some()
+        {
+            return Err(Status::failed_precondition(
+                "SortedMap has already been constructed",
+            ));
+        }
+        let commit_attempt = self.actor_gate(MAP, state_ref).commit_attempt();
+        let mut database = self.database.clone();
+        database
+            .store(database::StoreRequest {
+                actor_upserts: vec![],
+                task_upserts: vec![],
+                colocated_upserts: vec![],
+                transaction: None,
+                idempotent_mutation: None,
+                ensure_state_types_created: vec![ENTRY.to_owned()],
+                sync: true,
+            })
+            .await
+            .map_err(database_status)?;
+        database
+            .create_actor(database::CreateActorRequest {
+                actor: Some(database::Actor {
+                    state_type: MAP.to_owned(),
+                    state_ref: state_ref.to_owned(),
+                    state: Some(vec![]),
+                }),
+                idempotent_mutation: Some(database::IdempotentMutation {
+                    state_type: MAP.to_owned(),
+                    state_ref: state_ref.to_owned(),
+                    key: key.as_bytes().to_vec(),
+                    response: vec![],
+                    task_ids: vec![],
+                    workflow_id: None,
+                    workflow_iteration: None,
+                    request_fingerprint: Some(fingerprint),
+                }),
+                sync: true,
+            })
+            .await
+            .map_err(database_status)?;
+        commit_attempt.acknowledged();
         Ok(())
     }
 
@@ -2848,6 +3626,9 @@ impl DatabaseActorStore {
         let mut state = Declaration::State::default();
         let response = invoke(&mut state, request.into_inner()).await?;
         let mut database = self.database.clone();
+        let commit_attempt = self
+            .actor_gate(Declaration::STATE_TYPE, &state_ref)
+            .commit_attempt();
         database
             .create_actor(database::CreateActorRequest {
                 actor: Some(database::Actor {
@@ -2857,7 +3638,7 @@ impl DatabaseActorStore {
                 }),
                 idempotent_mutation: Some(database::IdempotentMutation {
                     state_type: Declaration::STATE_TYPE.to_owned(),
-                    state_ref,
+                    state_ref: state_ref.clone(),
                     key: key.as_bytes().to_vec(),
                     response: response.encode_to_vec(),
                     task_ids: vec![],
@@ -2869,6 +3650,7 @@ impl DatabaseActorStore {
             })
             .await
             .map_err(database_status)?;
+        commit_attempt.acknowledged();
         Ok(Response::new(response))
     }
 
@@ -2936,6 +3718,9 @@ impl DatabaseActorStore {
         let mut state = Declaration::State::default();
         let response = invoke(&mut state, request.into_inner()).await?;
         let mut database = self.database.clone();
+        let commit_attempt = self
+            .actor_gate(Declaration::STATE_TYPE, &state_ref)
+            .commit_attempt();
         database
             .create_actor(database::CreateActorRequest {
                 actor: Some(database::Actor {
@@ -2945,7 +3730,7 @@ impl DatabaseActorStore {
                 }),
                 idempotent_mutation: Some(database::IdempotentMutation {
                     state_type: Declaration::STATE_TYPE.to_owned(),
-                    state_ref,
+                    state_ref: state_ref.clone(),
                     key: key.as_bytes().to_vec(),
                     response: response.encode_to_vec(),
                     task_ids: vec![],
@@ -2957,6 +3742,7 @@ impl DatabaseActorStore {
             })
             .await
             .map_err(database_status)?;
+        commit_attempt.acknowledged();
         Ok(Response::new(response))
     }
 
@@ -3057,6 +3843,7 @@ impl DatabaseActorStore {
             Box<dyn Future<Output = Result<ResponseBody, Status>> + Send + 'a>,
         >,
     {
+        crate::reactive::check_reader_scope(&request)?;
         let (context, auth) = authorization
             .verify(
                 crate::RebootHeaders::from_request(&request)
@@ -3065,12 +3852,14 @@ impl DatabaseActorStore {
                 method_identity,
             )
             .await?;
+        crate::reactive::check_reader_scope(&request)?;
         let state_ref = required_metadata(&request, STATE_REF_HEADER)?;
         let state = admit_state(
             self.load_type::<Declaration::State>(Declaration::STATE_TYPE, &state_ref)
                 .await?,
             admission,
         )?;
+        crate::reactive::check_reader_scope(&request)?;
         authorization
             .authorize(
                 &context,
@@ -3079,7 +3868,16 @@ impl DatabaseActorStore {
                 &request.get_ref().encode_to_vec(),
             )
             .await?;
-        Ok(Response::new(invoke(&state, request.into_inner()).await?))
+        crate::reactive::check_reader_scope(&request)?;
+        let scope = request
+            .extensions()
+            .get::<crate::reactive::ReaderScope>()
+            .cloned();
+        let response = invoke(&state, request.into_inner()).await?;
+        if let Some(scope) = scope {
+            scope.check()?;
+        }
+        Ok(Response::new(response))
     }
 
     /// Runs a generated reader with an explicit admission policy.
@@ -3333,6 +4131,15 @@ pub mod test_support {
     use super::*;
 
     type DatabaseStream<T> = tokio_stream::Iter<std::vec::IntoIter<Result<T, Status>>>;
+    #[cfg(test)]
+    type TaskRpcPark = Arc<
+        Mutex<
+            Option<(
+                tokio::sync::oneshot::Sender<()>,
+                tokio::sync::oneshot::Receiver<()>,
+            )>,
+        >,
+    >;
 
     /// Minimal durable fake exposed through the generated Database Tonic server.
     /// It implements only the storage semantics this runtime needs, while every
@@ -3340,6 +4147,10 @@ pub mod test_support {
     #[derive(Clone, Default)]
     pub struct FakeDatabase {
         state: Arc<Mutex<FakeDatabaseState>>,
+        #[cfg(test)]
+        task_load_park: TaskRpcPark,
+        #[cfg(test)]
+        task_recover_park: TaskRpcPark,
     }
 
     #[derive(Default)]
@@ -3351,6 +4162,38 @@ pub mod test_support {
     }
 
     impl FakeDatabase {
+        #[cfg(test)]
+        pub(crate) fn seed_actor(&self, state_type: &str, state_ref: &str, bytes: Vec<u8>) {
+            self.state
+                .lock()
+                .unwrap()
+                .actors
+                .insert((state_type.into(), state_ref.into()), bytes);
+        }
+        #[cfg(test)]
+        pub(crate) fn park_task_load(
+            &self,
+        ) -> (
+            tokio::sync::oneshot::Receiver<()>,
+            tokio::sync::oneshot::Sender<()>,
+        ) {
+            let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+            let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+            *self.task_load_park.lock().unwrap() = Some((entered_tx, release_rx));
+            (entered_rx, release_tx)
+        }
+        #[cfg(test)]
+        pub(crate) fn park_task_recover(
+            &self,
+        ) -> (
+            tokio::sync::oneshot::Receiver<()>,
+            tokio::sync::oneshot::Sender<()>,
+        ) {
+            let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+            let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+            *self.task_recover_park.lock().unwrap() = Some((entered_tx, release_rx));
+            (entered_rx, release_tx)
+        }
         pub fn store_requests(&self) -> Vec<database::StoreRequest> {
             self.state
                 .lock()
@@ -3403,6 +4246,14 @@ pub mod test_support {
             &self,
             request: Request<database::LoadRequest>,
         ) -> Result<Response<database::LoadResponse>, Status> {
+            #[cfg(test)]
+            if !request.get_ref().task_ids.is_empty() {
+                let park = self.task_load_park.lock().unwrap().take();
+                if let Some((entered, release)) = park {
+                    let _ = entered.send(());
+                    let _ = release.await;
+                }
+            }
             let state = self.state.lock().expect("fake database mutex poisoned");
             let actors = request
                 .into_inner()
@@ -3531,6 +4382,14 @@ pub mod test_support {
             &self,
             _: Request<database::RecoverRequest>,
         ) -> Result<Response<Self::RecoverStream>, Status> {
+            #[cfg(test)]
+            {
+                let park = self.task_recover_park.lock().unwrap().take();
+                if let Some((entered, release)) = park {
+                    let _ = entered.send(());
+                    let _ = release.await;
+                }
+            }
             Ok(Response::new(tokio_stream::iter(vec![])))
         }
 
@@ -3665,6 +4524,10 @@ pub mod test_support {
 }
 
 #[cfg(test)]
+#[path = "runtime_owned_unary_tests.rs"]
+mod owned_unary_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -3681,7 +4544,7 @@ mod tests {
         let context = root.transaction();
         let mut active = context.begin_generated_outbound().unwrap();
         assert!(context.seal_explicit_abort().is_err());
-        active.completed();
+        active.completed = true; // Test-only terminal state setup; no public certification API.
         drop(active);
         assert!(context.seal_explicit_abort().unwrap().is_empty());
         assert!(context.clone().begin_generated_outbound().is_err());
@@ -3697,6 +4560,120 @@ mod tests {
         assert!(context.finish_explicit_abort().is_err());
         assert!(context.take_returned_participants().is_empty());
         assert_eq!(context.returned_participants_snapshot().len(), 1);
+    }
+
+    #[test]
+    fn mixed_ordinary_and_direct_maps_share_aggregate_bound_before_native_io() {
+        let root = RootTransactionContext::start(
+            RebootHeaders::new("actor/1"),
+            "example.Actor",
+            TransactionMode::Exclusive,
+            Uuid::new_v4(),
+            prost_types::Timestamp::default(),
+        )
+        .unwrap();
+        let context = root.transaction();
+        for i in 0..1023 {
+            let state_ref =
+                crate::state_ref::StateRef::from_id("example.Actor", &format!("ordinary-{i}"))
+                    .unwrap()
+                    .to_string();
+            // Match Tonic's merged successful trailer transport representation;
+            // stage_successful_participants only installs a server extension.
+            let wire = serde_json::json!({ "example.Actor": [state_ref] }).to_string();
+            let mut metadata = tonic::metadata::MetadataMap::new();
+            metadata.insert(
+                crate::successful_trailers::TRANSACTION_PARTICIPANTS_HEADER,
+                wire.parse().unwrap(),
+            );
+            let returned =
+                crate::successful_trailers::ReturnedParticipants::from_metadata(&metadata).unwrap();
+            context.enlist_returned_participants(&returned);
+        }
+        let map = crate::durable_coordinator::ParticipantTarget {
+            state_type: "rbt.std.collections.v1.SortedMap".to_owned(),
+            state_ref: crate::state_ref::StateRef::from_id(
+                "rbt.std.collections.v1.SortedMap",
+                "at-limit",
+            )
+            .unwrap()
+            .to_string(),
+        };
+        context.enlist_admitted_early_map(map.clone()).unwrap();
+        context.enlist_admitted_early_map(map).unwrap(); // duplicate does not consume capacity
+        assert_eq!(context.returned_participants_snapshot().len(), 1024);
+        let excess = crate::durable_coordinator::ParticipantTarget {
+            state_type: "rbt.std.collections.v1.SortedMap".to_owned(),
+            state_ref: crate::state_ref::StateRef::from_id(
+                "rbt.std.collections.v1.SortedMap",
+                "excess",
+            )
+            .unwrap()
+            .to_string(),
+        };
+        assert_eq!(
+            context
+                .enlist_admitted_early_map(excess.clone())
+                .unwrap_err()
+                .code(),
+            tonic::Code::ResourceExhausted
+        );
+        assert_eq!(
+            context.doomed_status().unwrap().code(),
+            tonic::Code::ResourceExhausted
+        );
+        let retained = context.returned_participants_snapshot();
+        assert_eq!(retained.len(), 1024);
+        assert!(
+            retained
+                .iter()
+                .all(|participant| participant.target != excess)
+        );
+        assert_eq!(
+            context.seal_explicit_abort().unwrap().len(),
+            1024,
+            "known prior ownership must remain abortable"
+        );
+    }
+
+    #[test]
+    fn public_internal_headers_and_manual_root_do_not_grant_builtin_map_authority() {
+        let mut headers = RebootHeaders::new("actor/1");
+        headers.internal_call = true;
+        let root = RootTransactionContext::start(
+            headers,
+            "example.Actor",
+            TransactionMode::Exclusive,
+            Uuid::new_v4(),
+            prost_types::Timestamp::default(),
+        )
+        .unwrap();
+        assert!(
+            root.transaction()
+                .validate_builtin_map_admission("http://native")
+                .is_err()
+        );
+        let mut context = root.transaction().clone();
+        let active = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let inactive_owner = crate::explicit_abort::ExplicitAbortOwner::new(1).unwrap();
+        context.install_builtin_map_admission("http://native", active.clone(), inactive_owner);
+        assert!(
+            context
+                .validate_builtin_map_admission("http://native")
+                .is_err(),
+            "unregistered host flag is not active root authority"
+        );
+        assert!(
+            context
+                .validate_builtin_map_admission("http://other")
+                .is_err()
+        );
+        active.store(false, std::sync::atomic::Ordering::Release);
+        assert!(
+            context
+                .validate_builtin_map_admission("http://native")
+                .is_err()
+        );
     }
 
     #[test]
@@ -3755,7 +4732,7 @@ mod tests {
                 "seal and active outbound must never both win"
             );
             if let Ok(scope) = &mut outbound {
-                scope.completed();
+                scope.completed = true; // Test-only terminal state setup; no public certification API.
             }
             drop(outbound);
             if sealed.is_ok() {
@@ -4178,32 +5155,32 @@ mod tests {
             TransactionContext::from_headers(headers.clone(), TransactionMode::Exclusive).unwrap();
         assert!(
             branch
-                .enlist_rolled_back_leaf(status.metadata(), "example.Actor", "C")
+                .enlist_rolled_back_leaf(None, status.metadata(), "example.Actor", "C")
                 .is_err()
         );
         branch.enable_supervised_tree().unwrap();
         let mut scope = branch.begin_generated_outbound().unwrap();
         assert!(
             branch
-                .enlist_rolled_back_leaf(status.metadata(), "example.Actor", "C")
+                .enlist_rolled_back_leaf(None, status.metadata(), "example.Actor", "C")
                 .is_err(),
             "opt-in without actual inbound provenance must fail"
         );
         branch.mark_supervised_inbound();
         assert!(
             branch
-                .enlist_rolled_back_leaf(status.metadata(), "wrong.Type", "C")
+                .enlist_rolled_back_leaf(None, status.metadata(), "wrong.Type", "C")
                 .is_err()
         );
         assert!(
             branch
-                .enlist_rolled_back_leaf(status.metadata(), "example.Actor", "wrong-ref")
+                .enlist_rolled_back_leaf(None, status.metadata(), "example.Actor", "wrong-ref")
                 .is_err()
         );
         branch
-            .enlist_rolled_back_leaf(status.metadata(), "example.Actor", "C")
+            .enlist_rolled_back_leaf(None, status.metadata(), "example.Actor", "C")
             .unwrap();
-        scope.completed();
+        scope.completed = true; // Test-only terminal state setup; no public certification API.
         drop(scope);
         assert!(!branch.is_fresh_root());
         assert_eq!(branch.returned_participants_snapshot().len(), 1);
@@ -4251,9 +5228,246 @@ mod tests {
             TransactionContext::from_headers(headers, TransactionMode::Exclusive).unwrap();
         assert!(
             reconstructed
-                .enlist_rolled_back_leaf(status.metadata(), "example.Actor", "C")
+                .enlist_rolled_back_leaf(None, status.metadata(), "example.Actor", "C")
                 .is_err()
         );
+    }
+
+    #[tokio::test]
+    async fn sequential_star_scopes_bind_method_target_full_context_and_serialize() {
+        #[derive(Default)]
+        struct Resolver(std::sync::atomic::AtomicUsize);
+        #[tonic::async_trait]
+        impl TransactionalChannelResolver for Resolver {
+            async fn resolve(&self, _: &str, _: &str) -> Result<tonic::transport::Channel, Status> {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(tonic::transport::Endpoint::from_static("http://127.0.0.1:1").connect_lazy())
+            }
+        }
+        let mut headers = RebootHeaders::new("A");
+        headers.transaction_ids = Some(vec![Uuid::new_v4()]);
+        headers.transaction_coordinator_state_type = Some("example.Actor".into());
+        headers.transaction_coordinator_state_ref = Some("A".into());
+        let mut root =
+            TransactionContext::from_headers(headers, TransactionMode::Exclusive).unwrap();
+        root.enable_supervised_tree().unwrap();
+        root.install_actor_authority(
+            crate::durable_coordinator::ParticipantTarget {
+                state_type: "example.Actor".into(),
+                state_ref: "A".into(),
+            },
+            true,
+        )
+        .unwrap();
+        let resolver = Resolver::default();
+        assert!(
+            root.begin_generated_outbound_for("example.Actor", "A", "/example.Service/Write")
+                .is_err()
+        );
+        let mut scope = root
+            .begin_generated_outbound_for("example.Actor", "B", "/example.Service/Write")
+            .unwrap();
+        assert!(
+            root.clone()
+                .begin_generated_outbound_for("example.Actor", "C", "/example.Service/Write")
+                .is_err(),
+            "no overlapping sibling"
+        );
+        let foreign = root.with_nested_transaction_id(Uuid::new_v4()).unwrap();
+        assert!(
+            scoped_generated_transactional_outbound_request(
+                &resolver,
+                &foreign,
+                &scope,
+                "example.Actor",
+                "B",
+                "/example.Service/Write",
+                proto::Empty {}
+            )
+            .await
+            .is_err()
+        );
+        for coordinate in 0..5 {
+            let mut changed = root.clone();
+            match coordinate {
+                0 => changed.headers.transaction_coordinator_state_type = Some("wrong.Type".into()),
+                1 => changed.headers.transaction_coordinator_state_ref = Some("wrong-ref".into()),
+                2 => changed.headers.transaction_ids.as_mut().unwrap()[0] = Uuid::new_v4(),
+                3 => changed.mode = TransactionMode::Shared,
+                _ => changed.admitted_actor.as_mut().unwrap().state_type = "wrong.Local".into(),
+            }
+            assert!(
+                scoped_generated_transactional_outbound_request(
+                    &resolver,
+                    &changed,
+                    &scope,
+                    "example.Actor",
+                    "B",
+                    "/example.Service/Write",
+                    proto::Empty {}
+                )
+                .await
+                .is_err()
+            );
+        }
+        assert!(
+            scoped_generated_transactional_outbound_request(
+                &resolver,
+                &root,
+                &scope,
+                "example.Actor",
+                "C",
+                "/example.Service/Write",
+                proto::Empty {}
+            )
+            .await
+            .is_err()
+        );
+        assert!(
+            scoped_generated_transactional_outbound_request(
+                &resolver,
+                &root,
+                &scope,
+                "example.Actor",
+                "B",
+                "/example.Service/Other",
+                proto::Empty {}
+            )
+            .await
+            .is_err()
+        );
+        assert_eq!(
+            resolver.0.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "denials must precede resolver"
+        );
+        scoped_generated_transactional_outbound_request(
+            &resolver,
+            &root,
+            &scope,
+            "example.Actor",
+            "B",
+            "/example.Service/Write",
+            proto::Empty {},
+        )
+        .await
+        .unwrap();
+        assert!(
+            scoped_generated_transactional_outbound_request(
+                &resolver,
+                &root,
+                &scope,
+                "example.Actor",
+                "B",
+                "/example.Service/Write",
+                proto::Empty {}
+            )
+            .await
+            .is_err()
+        );
+        let mut metadata = tonic::metadata::MetadataMap::new();
+        assert!(
+            crate::successful_trailers::ReturnedParticipants::from_metadata(&metadata).is_err(),
+            "missing successful membership is not proof"
+        );
+        metadata.insert(
+            crate::successful_trailers::TRANSACTION_PARTICIPANTS_HEADER,
+            r#"{"example.Actor":["wrong-target"]}"#.parse().unwrap(),
+        );
+        assert!(
+            root.enlist_generated_returned_participants(
+                &mut scope,
+                &crate::successful_trailers::ReturnedParticipants::from_metadata(&metadata)
+                    .unwrap()
+            )
+            .is_err()
+        );
+        metadata.insert(
+            crate::successful_trailers::TRANSACTION_PARTICIPANTS_HEADER,
+            r#"{"example.Actor":["B"]}"#.parse().unwrap(),
+        );
+        root.enlist_generated_returned_participants(
+            &mut scope,
+            &crate::successful_trailers::ReturnedParticipants::from_metadata(&metadata).unwrap(),
+        )
+        .unwrap();
+        scope.completed = true; // Test-only terminal state setup; no public certification API.
+        drop(scope);
+        assert!(
+            root.begin_generated_outbound_for("example.Actor", "B", "/example.Service/Write")
+                .is_err(),
+            "confirmed repeat before resolver"
+        );
+        let second = root
+            .begin_generated_outbound_for("different.Type", "A", "/example.Service/Write")
+            .unwrap();
+        // Unissued scopes must never become certain.
+        drop(second);
+        assert!(
+            root.seal_explicit_abort().is_err(),
+            "unissued C prevents B-only Commit"
+        );
+        root.close_branch();
+        assert!(
+            root.clone()
+                .begin_generated_outbound_for("example.Actor", "C", "/example.Service/Write")
+                .is_err(),
+            "post-seal clone"
+        );
+        assert_eq!(resolver.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn sequential_star_leaf_and_uncertainty_gate_tasks_and_children() {
+        let mut headers = RebootHeaders::new("B");
+        headers.transaction_ids = Some(vec![Uuid::new_v4(), Uuid::new_v4()]);
+        headers.transaction_coordinator_state_type = Some("example.Actor".into());
+        headers.transaction_coordinator_state_ref = Some("A".into());
+        let mut leaf =
+            TransactionContext::from_headers(headers, TransactionMode::Exclusive).unwrap();
+        leaf.enable_supervised_tree().unwrap();
+        leaf.mark_supervised_inbound();
+        leaf.install_actor_authority(
+            crate::durable_coordinator::ParticipantTarget {
+                state_type: "example.Actor".into(),
+                state_ref: "B".into(),
+            },
+            true,
+        )
+        .unwrap();
+        assert!(
+            leaf.begin_generated_outbound_for("example.Actor", "C", "/example.Service/Write")
+                .is_err()
+        );
+        assert!(
+            leaf.with_nested_transaction_id(Uuid::new_v4())
+                .unwrap()
+                .begin_generated_outbound_for("example.Actor", "C", "/example.Service/Write")
+                .is_err()
+        );
+        let mut root_headers = leaf.headers.clone();
+        root_headers.state_ref = "A".into();
+        root_headers.transaction_ids.as_mut().unwrap().truncate(1);
+        let mut root =
+            TransactionContext::from_headers(root_headers, TransactionMode::Exclusive).unwrap();
+        root.enable_supervised_tree().unwrap();
+        root.install_actor_authority(
+            crate::durable_coordinator::ParticipantTarget {
+                state_type: "example.Actor".into(),
+                state_ref: "A".into(),
+            },
+            true,
+        )
+        .unwrap();
+        drop(
+            root.begin_generated_outbound_for("example.Actor", "B", "/example.Service/Write")
+                .unwrap(),
+        );
+        assert!(
+            root.begin_generated_outbound_for("example.Actor", "C", "/example.Service/Write")
+                .is_err()
+        );
+        assert!(root.validate_open_task_branch().is_err());
     }
 
     #[tokio::test]
@@ -4344,7 +5558,7 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(request.metadata().get(STATE_REF_HEADER).unwrap(), "tip");
-        scope.completed();
+        scope.completed = true; // Test-only terminal state setup; no public certification API.
         drop(scope);
         assert_eq!(context.seal_explicit_abort().unwrap().len(), 1);
         assert!(

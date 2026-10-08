@@ -218,9 +218,45 @@ fn remote_leaf_reader_tasks_commit_delayed_prepared_restart_and_redelivery() {
             target = fixture.spawn(&mut target_recovery, "leaf-recovery-target-log");
             wait(fixture.target_port); // target recovery begins before root.
             let mut root_recovery = fixture.command_with_root_tasks(true, false);
-            root_recovery.arg("--recover");
+            let root_commit = fixture.markers.path().join("root-database-commit");
+            root_recovery
+                .arg("--recover")
+                .env("REBOOT_TEST_DATABASE_COMMIT_PARK", &root_commit);
             root = fixture.spawn(&mut root_recovery, "leaf-recovery-root-log");
+            await_marker(&root_commit, &mut root);
             await_marker(&fixture.marker(), &mut target);
+            eprintln!("prepared-restart: remote task entered while actual root Database Commit parked");
+            // Watch recovery on the remote singleton proves only its own
+            // Commit. It must not be used as a root Database Commit barrier.
+            // Causally retain the root's real native Commit before issuance,
+            // while proving the target is already committed and dispatching.
+            fixture.leaf_states(5, 27);
+            assert!(!root_commit.with_extension("ack").exists());
+            let commit_bytes = std::fs::read(&root_commit).unwrap();
+            assert_eq!(
+                database::TransactionParticipantCommitRequest::decode(commit_bytes.as_slice())
+                    .unwrap(),
+                database::TransactionParticipantCommitRequest {
+                    state_type: "tests.reboot.protoc.TransactionCounter".into(),
+                    state_ref: "root".into(),
+                }
+            );
+            assert_eq!(
+                fixture
+                    .runtime
+                    .block_on(load_task(&fixture.target_db.endpoint(), id.clone()))
+                    .status,
+                database::task::Status::Pending as i32
+            );
+            std::fs::write(root_commit.with_extension("release"), b"issue actual root Commit")
+                .unwrap();
+            await_marker(&root_commit.with_extension("ack"), &mut root);
+            assert_eq!(
+                std::fs::read(root_commit.with_extension("ack")).unwrap(),
+                commit_bytes,
+                "root state is checked only after this exact native Commit ACK"
+            );
+            root_recovery.env_remove("REBOOT_TEST_DATABASE_COMMIT_PARK");
             fixture.leaf_states(12, 27);
             assert_eq!(
                 fixture
@@ -253,6 +289,7 @@ fn remote_leaf_reader_tasks_commit_delayed_prepared_restart_and_redelivery() {
                 27
             );
             fixture.leaf_wait(&id, 27);
+            fixture.leaf_states(12, 27);
             let completed = fixture
                 .runtime
                 .block_on(load_task(&fixture.target_db.endpoint(), id.clone()));
@@ -278,6 +315,7 @@ fn remote_leaf_reader_tasks_commit_delayed_prepared_restart_and_redelivery() {
                 27
             );
             fixture.leaf_wait(&id, 27);
+            fixture.leaf_states(12, 27);
             assert_eq!(
                 fixture
                     .runtime

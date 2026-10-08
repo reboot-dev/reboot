@@ -1,0 +1,12 @@
+# Experimental Rust mode: one direct gRPC host, durable C++ Database.
+# Cargo build.rs generates Rust bindings; rbt generate does not own them.
+dev run --rust
+dev run --application=backend/Cargo.toml
+dev run --application-name={{ name }}
+dev run --servers=1
+dev run --no-chaos
+dev run --no-generate-watch
+dev run --watch=backend/src/**/*.rs
+dev run --watch=backend/build.rs
+dev run --watch=backend/Cargo.toml
+dev run --watch=api/**/*.proto
