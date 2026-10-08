@@ -269,6 +269,47 @@ review provenance, scope boundaries and sole-build-owner release status.
 
 # Python → Rust SDK parity map
 
+## Higher-level parity status
+
+Rust has exercised bounded application verticals, not full Python/TypeScript SDK
+parity. Older checkpoint sections below retain their historical evidence and
+scope; use the capability documents for the current public contracts:
+
+- **Apps:** Cargo-native local init/build/run and generated typed clients are
+  implemented ([APP-DX.md](APP-DX.md)). One canonical CXX Database process,
+  explicit insecure-development opt-in; no production/cloud bootstrap or
+  deployment/package parity. The scaffold is ordinary unary methods, not an
+  integrated workflow/reactive/collection app template.
+- **Tasks/workflows:** bounded durable one-shot tasks and finite same-actor named
+  typed workflows are implemented ([WORKFLOWS.md](WORKFLOWS.md)), including
+  explicit clean local-body resumption. No workflow control-loop/iteration,
+  until/subscribe, cross-actor workflow or durable failure quarantine contract.
+  Exhaustion retains supervised host failure; external effects are not
+  exactly-once.
+- **Reactive readers:** generated typed local subscriptions are implemented
+  ([REACTIVE-LOCAL.md](REACTIVE-LOCAL.md)). One owner/actor and database-only
+  services; no canonical Python React wire compatibility, transparent reconnect,
+  cross-actor dependencies or remote-process invalidation.
+- **Collections:** canonical generated SortedMap constructor plus typed serial
+  same-host app-to-map transactions are implemented
+  ([SORTED-MAP-PREREQUISITE.md](SORTED-MAP-PREREQUISITE.md)). No public inbound map
+  adapter, nested/sibling reuse, distributed collections or transparent
+  sidecar-only restart.
+- **Transactions/runtime:** generated durable adapters, trusted host lifecycle,
+  authorization, legacy placement/recovery and explicitly bounded supervised
+  transaction shapes exist. General nested/distributed rollback, reentrancy,
+  promotion and migration beyond their documented admission shapes remain gaps.
+  Isolated Native2pc is not Python legacy-protocol interoperability.
+- **Schema/tooling:** Proto/Prost/Tonic generation exists; first-class Rust
+  derive/reflection and the complete Python-facing schema/application tooling
+  contract remain incomplete.
+
+No percentage is asserted: these capabilities differ substantially in public API,
+operation scope and exercised deployment contract. The latest workflow acceptance
+passed 22 frozen regression gates, but does not certify every older protocol or
+all SDK surfaces.
+
+
 ## Remote actor unary-reader task checkpoint
 
 **Partial, bounded executable vertical.** Generated exclusive

@@ -609,24 +609,45 @@ seeded UUID derivation; then a real sidecar replay acceptance across a Rust
 process restart. No Rust public alias/seeds API should be exposed before those
 vectors and workflow context semantics exist.
 
-## Other known parity gaps
+## Higher-level parity status
 
-These are not blockers for the local promotion slice and should be tackled
-independently rather than smuggled into it:
+Rust has exercised bounded application verticals, not full Python/TypeScript SDK
+parity. Older checkpoint sections below retain their historical evidence and
+scope; use the capability documents for the current public contracts:
 
-- Generic Rust application lifecycle/registration comparable to Python's
-  application and middleware runtime.
-- Task/workflow execution, reactive/streaming readers, colocated collection
-  range effects, and their durable recovery semantics.
-- General nested/distributed transaction behavior beyond the explicitly
-  supported legacy and isolated Native2pc paths.
-- First-class Rust state reflection/derive support with the same schema
-  compatibility model as the Python-facing SDK.
-- CLI support to build/install/run a Rust application rather than requiring a
-  prebuilt plugin and consumer-owned Prost/Tonic bindings.
+- **Apps:** Cargo-native local init/build/run and generated typed clients are
+  implemented ([APP-DX.md](APP-DX.md)). One canonical CXX Database process,
+  explicit insecure-development opt-in; no production/cloud bootstrap or
+  deployment/package parity. The scaffold is ordinary unary methods, not an
+  integrated workflow/reactive/collection app template.
+- **Tasks/workflows:** bounded durable one-shot tasks and finite same-actor named
+  typed workflows are implemented ([WORKFLOWS.md](WORKFLOWS.md)), including
+  explicit clean local-body resumption. No workflow control-loop/iteration,
+  until/subscribe, cross-actor workflow or durable failure quarantine contract.
+  Exhaustion retains supervised host failure; external effects are not
+  exactly-once.
+- **Reactive readers:** generated typed local subscriptions are implemented
+  ([REACTIVE-LOCAL.md](REACTIVE-LOCAL.md)). One owner/actor and database-only
+  services; no canonical Python React wire compatibility, transparent reconnect,
+  cross-actor dependencies or remote-process invalidation.
+- **Collections:** canonical generated SortedMap constructor plus typed serial
+  same-host app-to-map transactions are implemented
+  ([SORTED-MAP-PREREQUISITE.md](SORTED-MAP-PREREQUISITE.md)). No public inbound map
+  adapter, nested/sibling reuse, distributed collections or transparent
+  sidecar-only restart.
+- **Transactions/runtime:** generated durable adapters, trusted host lifecycle,
+  authorization, legacy placement/recovery and explicitly bounded supervised
+  transaction shapes exist. General nested/distributed rollback, reentrancy,
+  promotion and migration beyond their documented admission shapes remain gaps.
+  Isolated Native2pc is not Python legacy-protocol interoperability.
+- **Schema/tooling:** Proto/Prost/Tonic generation exists; first-class Rust
+  derive/reflection and the complete Python-facing schema/application tooling
+  contract remain incomplete.
 
-Each requires its own design and real sidecar acceptance; none should be claimed
-by the current generated unary adapter surface.
+No percentage is asserted: these capabilities differ substantially in public API,
+operation scope and exercised deployment contract. The latest workflow acceptance
+passed 22 frozen regression gates, but does not certify every older protocol or
+all SDK surfaces.
 
 ## Verified fixed-owner ordinary writer tasks (2026-10-07)
 
