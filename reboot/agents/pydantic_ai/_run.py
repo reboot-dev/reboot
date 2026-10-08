@@ -489,6 +489,12 @@ async def _agent_run(
             try:
                 yield
             except anyio.ClosedResourceError as error:
+                ###########################################################
+                # TODO: remove catching `anyio.ClosedResourceError` once
+                # we have upgraded to a version of pydantic_graph which
+                # doesn't have this bug, e.g., 2.43.0 or later.
+                ###########################################################
+                #
                 # Cancelling a run can surface as this instead of
                 # `asyncio.CancelledError`: pydantic_graph's tracked
                 # tasks send their results into a stream the
@@ -498,22 +504,18 @@ async def _agent_run(
                 # everything but cancellation, as ones stopped at
                 # shutdown must, would otherwise swallow the
                 # cancellation and keep running.
-                if not _raised_while_cancelling(error):
-                    raise
-                raise asyncio.CancelledError() from error
+                #
+                # Only treat it as a cancellation if it was raised
+                # while an `asyncio.CancelledError` was being
+                # handled, which Python records in its chain of
+                # `__context__`s.
+                seen: set[int] = set()
+                context = error.__context__
+                while context is not None and id(context) not in seen:
+                    if isinstance(context, asyncio.CancelledError):
+                        raise asyncio.CancelledError() from error
+                    seen.add(id(context))
+                    context = context.__context__
+                raise
     finally:
         _workflow_context.set(None)
-
-
-def _raised_while_cancelling(exception: BaseException) -> bool:
-    """Whether the exception was raised while an
-    `asyncio.CancelledError` was being handled, which Python records
-    in its chain of `__context__`s."""
-    seen: set[int] = set()
-    context = exception.__context__
-    while context is not None and id(context) not in seen:
-        if isinstance(context, asyncio.CancelledError):
-            return True
-        seen.add(id(context))
-        context = context.__context__
-    return False
