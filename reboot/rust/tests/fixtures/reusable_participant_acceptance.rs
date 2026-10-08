@@ -177,4 +177,3 @@ fn reusable_registered_root_tasks_commit_and_persist_on_restart() {
     assert_eq!(tree.records(1,&leaf_tasks).len(),2);
     tree.planner.stop();
 }
-
