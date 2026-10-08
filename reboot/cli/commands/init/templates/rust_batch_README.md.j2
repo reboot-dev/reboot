@@ -33,6 +33,29 @@ The host creates the empty map before public readiness; public `create` then
 constructs the Ledger separately. These are not an atomic two-actor constructor.
 A crash leaving only the empty map is repaired by stable constructor replay.
 
+## Declared business rejection
+
+`submit-rejecting batch count KEY NOT_BEFORE reject_after` schedules the same
+workflow but declares `BatchRejected` after that approved checkpoint. For example:
+
+```sh
+cargo run --manifest-path backend/Cargo.toml --bin client -- submit-rejecting batch-rejected 2 44444444-4444-4444-8444-444444444444 0 1
+cargo run --manifest-path backend/Cargo.toml --bin client -- approve batch-rejected 0
+cargo run --manifest-path backend/Cargo.toml --bin client -- wait RETURNED_UUID 5000
+```
+
+Wait prints `REJECTED batch-rejected 1 rejected after acknowledged checkpoint`.
+The typed declared error is a canonical durable terminal, not a transport retry.
+The approved map entry and acknowledged checkpoint remain committed; workflow
+business rejection is not a rollback of previous steps. Further approvals for
+the rejected batch are refused, and a new batch may be submitted. RocksDB restart
+returns the same typed error without rerunning the rejected body. The generated
+handler/Wait error enum distinguishes `BatchRejected` from `Grpc` transport errors;
+an arbitrary rich gRPC status does not mint a declared business-terminal receipt.
+Public `Checkpoint` RPCs are denied: only dispatcher-owned workflow steps may
+advance progress or mark rejection. Only the workflow method declares errors here; declared reader/writer errors in
+the same workflow service remain unsupported.
+
 ## Inspect pending tasks
 
 Listing is disabled unless the host receives a nonempty

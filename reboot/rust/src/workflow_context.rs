@@ -13,6 +13,9 @@ mod workflow_admission_tests {
         fn validate(&self, _: &db::Task) -> Result<(), Status> {
             Ok(())
         }
+        fn validate_error(&self, _: &db::Task, _: &prost_types::Any) -> Result<(), Status> {
+            Ok(())
+        }
         fn writer_capable(&self) -> bool {
             self.0
         }
@@ -136,6 +139,116 @@ mod workflow_admission_tests {
         assert!(attempt.clean());
         assert!(scoped.iteration("nested", 0, 1).is_err());
         assert!(!attempt.clean());
+    }
+    #[tokio::test]
+    async fn declared_workflow_receipt_rejects_foreign_malformed_and_tainted_terminals_before_load()
+    {
+        use prost::Message;
+        let tasks = OneShotTasks::new_with_declarations(
+            DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(),
+            D::STATE_TYPE.into(),
+            "actor".into(),
+            Binding(true),
+            vec![
+                TaskMethodDeclaration::new::<D, crate::proto::Counter, crate::proto::Counter>(
+                    "tests.Service.Run",
+                    "type.googleapis.com/Counter",
+                    vec![DeclaredTaskError::new::<crate::proto::Counter>(
+                        "type.googleapis.com/tests.Rejected",
+                    )],
+                )
+                .workflow(),
+            ],
+        )
+        .unwrap();
+        let task = db::Task {
+            method: "Run".into(),
+            ..Default::default()
+        };
+        let cancel = RecoveryCancellation::new();
+        let declared = |url: &str, payload: Vec<u8>| {
+            let rich = googleapis_tonic_google_rpc::google::rpc::Status {
+                code: tonic::Code::Unknown as i32,
+                message: "rejected".into(),
+                details: vec![prost_types::Any {
+                    type_url: url.into(),
+                    value: payload,
+                }],
+            };
+            prost_types::Any {
+                type_url: "type.googleapis.com/google.rpc.Status".into(),
+                value: rich.encode_to_vec(),
+            }
+        };
+        for error in [
+            prost_types::Any::default(),
+            declared("type.googleapis.com/tests.Foreign", vec![]),
+            declared("type.googleapis.com/tests.Rejected", vec![255]),
+        ] {
+            let attempt = WorkflowAttempt::default();
+            let context = WorkflowContext {
+                tasks: &tasks,
+                task: &task,
+                cancel: &cancel,
+                generation: Arc::new(()),
+                attempt: &attempt,
+                iteration: None,
+            };
+            assert_eq!(
+                context
+                    .body_failed(WorkflowBodyError::Declared(error))
+                    .await
+                    .err()
+                    .unwrap()
+                    .code(),
+                tonic::Code::DataLoss
+            );
+            assert!(
+                !attempt.clean(),
+                "failed framework validation must fence resumption"
+            );
+        }
+        let error = declared(
+            "type.googleapis.com/tests.Rejected",
+            crate::proto::Counter { value: 1 }.encode_to_vec(),
+        );
+        for scoped in [false, true] {
+            let attempt = WorkflowAttempt::default();
+            if !scoped {
+                drop(attempt.operation());
+            }
+            let context = WorkflowContext {
+                tasks: &tasks,
+                task: &task,
+                cancel: &cancel,
+                generation: Arc::new(()),
+                attempt: &attempt,
+                iteration: scoped.then(|| ("loop".into(), 0, 1)),
+            };
+            let denied = context
+                .body_failed(WorkflowBodyError::Declared(error.clone()))
+                .await
+                .err()
+                .unwrap();
+            assert_eq!(denied.code(), tonic::Code::FailedPrecondition);
+            assert_eq!(
+                denied.message(),
+                "declared workflow terminal requires clean outer scope"
+            );
+        }
+        let status = crate::declared_error_status(
+            tonic::Code::Unknown,
+            "rich but not a typed disposition",
+            "type.googleapis.com/tests.Rejected",
+            &crate::proto::Counter { value: 1 },
+        );
+        assert!(
+            matches!(
+                WorkflowBodyError::from(status),
+                WorkflowBodyError::Failed(_)
+            ),
+            "a rich Status is not typed business-terminal authority"
+        );
     }
     #[test]
     fn acknowledged_framework_operations_do_not_taint_body_resumption() {
@@ -291,10 +404,20 @@ pub struct WorkflowContext<'a> {
 /// Explicit body disposition. Status propagation is always nonretryable, even
 /// for Internal (which Tonic can produce for real transport errors).
 pub enum WorkflowBodyError {
+    /// Method-declared business terminal, validated by the immutable descriptor.
+    Declared(prost_types::Any),
     Failed(Status),
     /// Opt in only for failed local computation, never transport or external
     /// effects. Runtime evidence still rejects failed/dropped framework work.
     RetryLocal(String),
+}
+impl From<TaskHandlerError> for WorkflowBodyError {
+    fn from(error: TaskHandlerError) -> Self {
+        match error {
+            TaskHandlerError::Declared(error) => Self::Declared(error),
+            TaskHandlerError::Failed(error) => Self::Failed(error),
+        }
+    }
 }
 impl From<Status> for WorkflowBodyError {
     fn from(error: Status) -> Self {
@@ -553,6 +676,7 @@ impl<'a> WorkflowContext<'a> {
     /// not retry authority. Recheck canonical scope and private operation evidence.
     pub async fn body_failed(self, error: WorkflowBodyError) -> Result<WorkflowReceipt, Status> {
         let message = match error {
+            WorkflowBodyError::Declared(error) => return self.finish_declared(error).await,
             WorkflowBodyError::Failed(error) => return Err(error),
             WorkflowBodyError::RetryLocal(message) => message,
         };
@@ -711,6 +835,34 @@ impl<'a> WorkflowContext<'a> {
             acknowledged: false,
             started: None,
         }
+    }
+    // A declared business outcome is not a failed framework operation or a retry.
+    // Already acknowledged checkpoints remain durable; failed/dropped framework
+    // work cannot be caught and disguised as a successful declared terminal.
+    async fn finish_declared(self, error: prost_types::Any) -> Result<WorkflowReceipt, Status> {
+        if self.iteration.is_some() || !self.attempt.clean() {
+            return Err(Status::failed_precondition(
+                "declared workflow terminal requires clean outer scope",
+            ));
+        }
+        let declaration = self
+            .tasks
+            .declaration(self.task)
+            .ok_or_else(|| Status::failed_precondition("unregistered workflow"))?;
+        if !declaration.workflow {
+            return Err(Status::failed_precondition("not workflow authority"));
+        }
+        let operation = self.attempt.operation();
+        let terminal = db::task::ResponseOrError::Error(error);
+        // Validate before the canonical Load; malformed/foreign errors disclose
+        // no task bytes and never reach the durable completion path.
+        self.tasks.validate_terminal(self.task, &terminal)?;
+        self.validate_scope().await?;
+        operation.acknowledged();
+        Ok(WorkflowReceipt {
+            task: self.task.clone(),
+            outcome: WorkflowOutcome::Terminal(terminal),
+        })
     }
     /// Seal a typed terminal only for the exact registered workflow descriptor.
     pub async fn finish<D, Q, R>(

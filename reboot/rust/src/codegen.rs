@@ -527,6 +527,7 @@ fn annotations_for_generated_files(
                     && !matches!(
                         kind,
                         DurableKind::Reader
+                            | DurableKind::Workflow
                             | DurableKind::Writer(_)
                             | DurableKind::Transaction(TransactionMetadata {
                                 mode: TransactionMode::Exclusive,
@@ -535,7 +536,7 @@ fn annotations_for_generated_files(
                     )
                 {
                     return Err(format!(
-                        "{file_name}: service `{service_name}` method `{method_name}` declares errors, but declared errors are supported only on unary reader/writer methods and exclusive transactions"
+                        "{file_name}: service `{service_name}` method `{method_name}` declares errors, but declared errors are supported only on unary reader/writer methods, workflows and exclusive transactions"
                     ));
                 }
                 methods.insert(method_name.clone(), kind);
@@ -1580,7 +1581,10 @@ fn emit_declared_error_enum(
         output.push_str(&format!("    #[allow(dead_code)]\n    fn is_method_declared(&self) -> bool {{ matches!(self, {variants}) }}\n"));
     }
     output.push_str("    fn from_status(status: tonic::Status) -> Self {\n");
-    output.push_str(&format!("        let message = status.message().to_owned();\n        let Ok(Some(rich_status)) = {runtime_module}::declared_error_details(&status) else {{ return Self::Grpc(status); }};\n        for detail in rich_status.details {{\n"));
+    if include_system_aborts {
+        output.push_str("        let message = status.message().to_owned();\n");
+    }
+    output.push_str(&format!("        let Ok(Some(rich_status)) = {runtime_module}::declared_error_details(&status) else {{ return Self::Grpc(status); }};\n        for detail in rich_status.details {{\n"));
     for declared_error in declared_errors {
         let variant = declared_error.to_upper_camel_case();
         output.push_str(&format!("            if detail.type_url == \"type.googleapis.com/{package}.{declared_error}\" {{ match <proto::{variant} as prost::Message>::decode(detail.value.as_slice()) {{ Ok(error) => return Self::{variant}(error), Err(_) => return Self::Grpc(status), }} }}\n"));

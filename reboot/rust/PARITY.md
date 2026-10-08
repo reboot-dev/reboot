@@ -23,9 +23,10 @@ No overall percentage is asserted.
 - **Missing:** required semantics/API are absent or explicitly rejected. A
   rejected operation is not an implementation waiting for a compiler flag.
 
-The latest application vertical was implemented on baseline
-`e2a6bdc5914a8c152eb48c102c3dc91249cc4ead` (2026-10-08). Its executed
-public Cargo/native application acceptance and retained greeting regression
+The latest declared-workflow-error vertical was implemented on baseline
+`ba58bae69fb047b52e637525b36aa19227c7a7b5` (2026-10-08). The original public
+batch app was based on `e2a6bdc5914a8c152eb48c102c3dc91249cc4ead`. Executed
+public Cargo/native application acceptance and retained greeting regressions
 are described in [Verification](#verification). Older workflow/transaction
 proofs below retain their separate source snapshots and limits.
 
@@ -38,7 +39,7 @@ proofs below retain their separate source snapshots and limits.
 | State/client runtime | Durable constructors/readers/writers, idempotent response replay, metadata/auth | General distributed ownership/fencing and arbitrary external effects |
 | Transactions | Legacy durable coordinator/participant paths and bounded supervised chains/star | General nested snapshots, reentrancy, intersecting subtrees, migration |
 | Tasks | Durable scheduled reader/writer tasks, typed results/Wait, recovery, admin local list/stream | Transactional targets, public cancellation/aggregation, broad retry and dispatcher fencing |
-| Workflows | Finite typed named steps, finite indexed replay and saved reader decisions; explicit local-body resumption | Python unbounded Task cursor/GC/Break, cross-actor composition, failure isolation |
+| Workflows | Finite typed named steps, finite indexed replay, saved reader decisions, typed declared business terminals; explicit local-body resumption | Python unbounded Task cursor/GC/Break, cross-actor composition, framework failure isolation |
 | Reactive readers | Typed bounded local subscriptions and commit invalidation | Cross-actor/remote invalidation, reconnect, mixed-service generated bindings |
 | SortedMap | Canonical empty constructor and serial same-host app/map transactions | Public inbound adapter, nested/reusable siblings, distributed collection lifecycle |
 
@@ -463,6 +464,31 @@ Exhaustion retains existing supervised host failure and Pending restart progress
 There is no durable quarantine or separate per-workflow readiness contract;
 the three-attempt budget resets per host delivery after restart.
 
+### Implemented, bounded declared workflow terminals
+
+Generated workflow methods may declare same-file protobuf business errors.
+Their handler returns a typed error enum; its explicit declared variant becomes
+`WorkflowBodyError::Declared`. Plain tonic `Status`, even rich Status, remains
+nonretryable `Failed`. There is no status-code retry or error-detail classification
+of transport failures. Reader/writer errors inside workflow services remain
+unsupported, as do general system abort/cancellation terminals.
+
+A declared terminal requires a clean outer workflow scope. Private failed,
+dropped or active framework-operation evidence rejects it before canonical Load.
+Immutable method declarations validate the exact rich Status shape, declared type
+URL and decodable payload, independently of overridable binding hooks. Original
+owner, Pending/due scope and cancellation checks then precede the existing
+uncertainty-fenced canonical CompleteTask CAS. Acknowledged earlier checkpoints
+are retained: business failure is not an all-workflow rollback. Terminal Store
+or lost-ACK uncertainty does not authorize retry or a guessed error result.
+
+Generated `*_wait` validates the canonical terminal and reconstructs the typed
+business variant. RPC failures remain its `Grpc(Status)` variant. The batch app's
+`submit-rejecting` path checkpoints a rejection before returning `BatchRejected`.
+Public `Checkpoint` dispatch is explicitly denied by `checkpoint_scheduled`;
+only admitted private workflow steps call the checkpoint handler. Subsequent
+approval of a rejected batch fails, while a new scheduled batch can proceed.
+
 ### Implemented, bounded finite control-flow vertical
 
 `WorkflowContext::iteration(name, index, count)` mints explicit finite indexed
@@ -532,7 +558,7 @@ bounded corrections; terminal execution/hash/cleanup audit is separate evidence.
 
 **Missing:** Python unbounded cursor/GC and arbitrary durable Break semantics,
 remote/cross-actor steps, nested transactions, mixed transaction/workflow services,
-declared workflow errors and full alias/seed semantics. No arbitrary external
+declared reader/writer step errors in workflow services and full alias/seed semantics. No arbitrary external
 side-effect exactly-once claim. New retry proof does not inject Store/CompleteTask
 lost ACK; existing uncertainty tests/source guards are separate evidence.
 
@@ -645,6 +671,58 @@ parent/key bounds, unprepared recovery and lost-ACK retention. Unit coverage:
 [ownership tests](src/sorted_map_ownership_tests.rs).
 
 ## Verification
+
+### Declared workflow business-error application (2026-10-08)
+
+Fresh public generation passed generated-consumer strict Clippy/fmt and **three
+behavioral tests**. Actual `rbt dev run`/C++ Database acceptance created a rejecting
+workflow and approval, acknowledged its saved reader/writer checkpoints, and
+returned typed `BatchRejected` through canonical Tasks.Wait. Durable inspection
+verified Completed/error, exact rich Status/type/payload, partial application and
+SortedMap effects, and retained replay records. Full RocksDB restart returned
+identical typed Wait and canonical task/app/checkpoint bytes, with no completed
+body or writer redispatch. A later normal delayed workflow completed. Existing
+listing/stream policy, approval/map rollback, regeneration, pending restart,
+subscription cleanup, parked shutdown and lock reuse regressions passed.
+
+The public checkpoint repair was necessary: review found that ordinary callers
+could set rejection/progress without a workflow-scoped checkpoint. Both actual
+public RPC variants now return PermissionDenied and preserve canonical actor,
+task, map and replay bytes. Those native calls occur before approval; the
+otherwise-valid **approved** checkpoint is separately denied in the generated
+unit control. Targeted re-review confirmed the generated hook wiring and private
+step preservation. Do not describe this as a native after-approval exploit replay.
+
+Local runtime control denies unknown/malformed payloads even with a permissive
+binding, and denies tainted or iteration-scoped terminal receipts before Load.
+It also checks that rich Status alone remains Failed. Removing the clean-attempt
+fence made that control fail; restoration passed **8 focused tests**. Source
+emission checks inspect typed declarations, handler/Wait and terminal validation;
+those string assertions are not behavioral proof by themselves.
+
+Accepted immutable native proof:
+`/tmp/reboot-rust-batch-ledger-acceptance-1791454683886347424`
+(`accepted.json`, `frozen-source.json`, `native/result.json`). The earlier run
+before the public-checkpoint repair is **not accepted final publication evidence**.
+RED/restored control:
+`/tmp/reboot-rust-workflow-errors-controls-1791453887538072195`.
+Broad frozen gates:
+`/tmp/reboot-rust-batch-ledger-final-gates-1791455596651079196` passed strict locked
+all-target SDK Clippy, **387 passed / 0 failed / 128 ignored**, and the retained
+actual greeting regeneration/restart/signals/child-exit/failed-build cleanup gate.
+Ignored native matrices are not fresh passes. Both runners audited unchanged
+frozen semantic source and disk bounds; this canonical documentation/fingerprint
+refresh is subsequent metadata, not a modification of those snapshots.
+
+This acceptance does **not** inject restart between the rejecting checkpoint and
+terminal CAS, or declared-terminal CompleteTask lost ACK. Existing generic
+uncertainty fences remain source-backed/separately tested, not a new native
+injection claim. General framework-failure isolation, cancellation, Python
+unbounded cursor/GC/Break and distributed semantics remain missing.
+
+Portable sources: [typed workflow generation](src/workflow_codegen.rs),
+[terminal scope fences](src/workflow_context.rs),
+[public native application](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
 
 ### Server-local administrative task-list stream (2026-10-08)
 
@@ -903,7 +981,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 952f0cd983af4db7b06ced967172efac8092e814106869e3d5b2e16b0edb5456 -->
+<!-- parity-source-sha256: 2ca34c1ef782bd1c73e264fd249994b45524653112194ab3fb73884e80a3e0ac -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

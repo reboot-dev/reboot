@@ -75,7 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .into_inner(),
             );
         }
-        "submit" => {
+        "submit" | "submit-rejecting" => {
             let mut client =
                 proto::ledger_work_methods_client::LedgerWorkMethodsClient::new(channel);
             let key = uuid::Uuid::parse_str(&arg(3)?)?;
@@ -83,6 +83,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 batch: arg(1)?,
                 count: arg(2)?.parse()?,
                 not_before: args.get(4).map(|s| s.parse()).transpose()?.unwrap_or(0),
+                reject_after: if command == "submit-rejecting" {
+                    arg(5)?.parse()?
+                } else {
+                    0
+                },
             })?;
             request
                 .metadata_mut()
@@ -90,6 +95,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             request.set_timeout(Duration::from_secs(5));
             let id = client.submit_batch(request).await?.into_inner().id;
             println!("{}", uuid::Uuid::from_slice(&id)?);
+        }
+        "checkpoint-direct" => {
+            let mut client =
+                proto::ledger_work_methods_client::LedgerWorkMethodsClient::new(channel);
+            let mut request = context.writer(proto::Step {
+                batch: arg(1)?,
+                index: arg(2)?.parse()?,
+                reject: arg(3)?.parse()?,
+            })?;
+            request.set_timeout(Duration::from_secs(3));
+            show(client.checkpoint(request).await?.into_inner());
         }
         "approve" | "approve-invalid" => {
             let mut client =
@@ -148,7 +164,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 task_uuid: id.as_bytes().to_vec(),
             });
             request.set_timeout(Duration::from_millis(arg(2)?.parse()?));
-            show(generated::LedgerWorkMethodsTasksWait::run_batch(channel, request).await?);
+            match generated::LedgerWorkMethodsTasksWait::run_batch(channel, request).await {
+                Ok(state) => show(state),
+                Err(generated::LedgerWorkMethodsRunBatchError::BatchRejected(error)) => println!(
+                    "REJECTED {} {} {}",
+                    error.batch, error.completed, error.reason
+                ),
+                Err(generated::LedgerWorkMethodsRunBatchError::Grpc(error)) => {
+                    return Err(error.into());
+                }
+            }
         }
         "watch" => {
             let mut client = generated::LedgerViewMethodsReactiveClient::new(channel, context);

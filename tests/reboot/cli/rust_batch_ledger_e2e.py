@@ -302,7 +302,7 @@ try:
     command(['cargo', 'clippy', '--manifest-path', 'backend/Cargo.toml', '--all-targets', '--', '-D', 'warnings'])
     command(['cargo', 'fmt', '--manifest-path', 'backend/Cargo.toml', '--', '--check'])
     tests, _ = command(['cargo', 'test', '--manifest-path', 'backend/Cargo.toml', '--all-targets'])
-    check('generated consumer strict Clippy/fmt and nonzero tests', '2 passed' in tests)
+    check('generated consumer strict Clippy/fmt and nonzero tests', '4 passed' in tests)
     command(['cargo', 'build', '--manifest-path', 'backend/Cargo.toml', '--bins'])
     py = STAGE / 'generated-python'
     py.mkdir()
@@ -339,6 +339,15 @@ try:
     check('typed pending Wait preserves deadline', status != 0 and ('DeadlineExceeded' in pending or 'Cancelled' in pending))
     state, rows, task, _ = native(current, uuid)
     check('canonical task is Pending with no approvals', task.status == db.Task.PENDING and state.completed == 0 and not rows.keys)
+    before_direct = task.SerializeToString().hex()
+    for rejection in ['false', 'true']:
+        denied, status = client('checkpoint-direct', 'batch-001', '0', rejection, ok=False)
+        check('public checkpoint cannot forge progress/rejection ' + rejection,
+              status != 0 and 'PermissionDenied' in denied)
+    unchanged, unchanged_rows, unchanged_task, unchanged_replay = native(current, uuid)
+    check('public checkpoint denial preserves canonical actor/task/map/replay',
+          unchanged.SerializeToString() == state.SerializeToString() and not unchanged_rows.keys
+          and unchanged_task.SerializeToString().hex() == before_direct and not unchanged_replay)
     listed(uuid, 'STARTED')
     task_watch.observed(uuid, 'STARTED')
     task_watch.close(); task_watch = None
@@ -393,6 +402,37 @@ try:
     check('no completed body or step redispatch', not events(current))
     check('completed history not synthesized on restart listing', client('tasks')[0] == '')
     check('canonical terminal byte identity', native(current, uuid)[2].SerializeToString().hex() == saved)
+    rejected, _ = client('submit-rejecting', 'batch-rejected', '2', '44444444-4444-4444-8444-444444444444', '0', '1')
+    client('approve', 'batch-rejected', '0')
+    rejected_wait, _ = client('wait', rejected, '5000')
+    check('typed workflow declared rejection', rejected_wait == 'REJECTED batch-rejected 1 rejected after acknowledged checkpoint')
+    state, rows, rejected_task, rejected_replay = native(current, rejected)
+    from google.rpc import status_pb2
+    rich = status_pb2.Status.FromString(rejected_task.error.value)
+    check('canonical declared workflow terminal', rejected_task.status == db.Task.COMPLETED
+          and rejected_task.WhichOneof('response_or_error') == 'error'
+          and rejected_task.error.type_url == 'type.googleapis.com/google.rpc.Status'
+          and rich.code == grpc.StatusCode.UNKNOWN.value[0] and len(rich.details) == 1
+          and rich.details[0].type_url == 'type.googleapis.com/batch_ledger.v1.BatchRejected'
+          and proto.BatchRejected.FromString(rich.details[0].value).batch == 'batch-rejected'
+          and proto.BatchRejected.FromString(rich.details[0].value).completed == 1)
+    check('declared rejection preserves acknowledged app/map/checkpoint', state.rejected
+          and state.approved == state.completed == 1 and state.count == 2
+          and 'batch-rejected:0000' in logical_keys(rows) and rejected_replay)
+    _, status = client('approve', 'batch-rejected', '1', ok=False)
+    check('rejected batch cannot accept further approvals', status != 0)
+    until(lambda: client('tasks')[0] == '', 'declared terminal pruned from pending listing')
+    saved_error = rejected_task.SerializeToString().hex()
+    saved_state = state.SerializeToString().hex()
+    saved_replay = [m.SerializeToString().hex() for m in rejected_replay]
+    current.close(); current = None
+    current = Session('declared-error-restart')
+    check('typed declared Wait identical after RocksDB restart', client('wait', rejected, '5000')[0] == rejected_wait)
+    state, rows, rejected_task, rejected_replay = native(current, rejected)
+    check('declared terminal checkpoint and app bytes stable across restart',
+          rejected_task.SerializeToString().hex() == saved_error and state.SerializeToString().hex() == saved_state
+          and [m.SerializeToString().hex() for m in rejected_replay] == saved_replay)
+    check('declared terminal never retries or redispatches after restart', not events(current) and client('tasks')[0] == '')
     future = int(time.time()) + 120
     delayed, _ = client('submit', 'batch-002', '1', '22222222-2222-4222-8222-222222222222', str(future))
     client('approve', 'batch-002', '0')

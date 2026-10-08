@@ -74,8 +74,13 @@ impl generated::LedgerWorkMethodsDatabaseHandler for Ledger {
         state_ref: String,
     ) -> Result<TransactionExecution<proto::Handle>, tonic::Status> {
         validate_batch(&request.batch, request.count)?;
-        if state.completed < state.count {
+        if state.completed < state.count && !state.rejected {
             return Err(tonic::Status::failed_precondition("previous batch pending"));
+        }
+        if request.reject_after > request.count {
+            return Err(tonic::Status::invalid_argument(
+                "reject_after exceeds count",
+            ));
         }
         let timestamp = (request.not_before != 0).then_some(prost_types::Timestamp {
             seconds: request.not_before,
@@ -92,6 +97,7 @@ impl generated::LedgerWorkMethodsDatabaseHandler for Ledger {
         state.count = request.count;
         state.approved = 0;
         state.completed = 0;
+        state.rejected = false;
         state.submissions += 1;
         let mut execution = TransactionExecution::new(proto::Handle { id });
         execution.task_upserts.push(task);
@@ -102,7 +108,8 @@ impl generated::LedgerWorkMethodsDatabaseHandler for Ledger {
         state: &mut proto::Ledger,
         request: proto::Step,
     ) -> Result<proto::Ledger, tonic::Status> {
-        if state.batch != request.batch
+        if state.rejected
+            || state.batch != request.batch
             || state.completed != request.index
             || state.approved <= request.index
         {
@@ -112,14 +119,30 @@ impl generated::LedgerWorkMethodsDatabaseHandler for Ledger {
         }
         event(&format!("checkpoint-{}-{}", request.batch, request.index));
         state.completed += 1;
+        state.rejected = request.reject;
         Ok(state.clone())
+    }
+    // Ordinary public Checkpoint RPCs use this scheduling hook. Only the private
+    // workflow-step binding invokes checkpoint directly with dispatcher authority.
+    async fn checkpoint_scheduled(
+        &self,
+        _: &mut proto::Ledger,
+        _: proto::Step,
+        _: String,
+    ) -> Result<TransactionExecution<proto::Ledger>, tonic::Status> {
+        Err(tonic::Status::permission_denied(
+            "checkpoint requires private workflow authority",
+        ))
     }
     async fn run_batch(
         &self,
         context: &WorkflowContext<'_>,
         request: proto::Submit,
-    ) -> Result<proto::Ledger, tonic::Status> {
+    ) -> Result<proto::Ledger, generated::LedgerWorkMethodsRunBatchError> {
         validate_batch(&request.batch, request.count)?;
+        if request.reject_after > request.count {
+            return Err(tonic::Status::invalid_argument("reject_after exceeds count").into());
+        }
         event(&format!("body-{}", request.batch));
         let mut result = proto::Ledger::default();
         for index in 0..request.count {
@@ -142,9 +165,19 @@ impl generated::LedgerWorkMethodsDatabaseHandler for Ledger {
                 proto::Step {
                     batch: request.batch.clone(),
                     index,
+                    reject: request.reject_after == index + 1,
                 },
             )
             .await?;
+            if result.rejected {
+                return Err(generated::LedgerWorkMethodsRunBatchError::BatchRejected(
+                    proto::BatchRejected {
+                        batch: request.batch.clone(),
+                        completed: result.completed,
+                        reason: "rejected after acknowledged checkpoint".into(),
+                    },
+                ));
+            }
         }
         Ok(result)
     }
@@ -170,7 +203,8 @@ impl generated::LedgerIndexMethodsTransactionHandler for Index {
         state: &mut proto::Ledger,
         request: proto::Approval,
     ) -> Result<TransactionExecution<proto::Ledger>, tonic::Status> {
-        if state.batch != request.batch
+        if state.rejected
+            || state.batch != request.batch
             || request.index != state.approved
             || request.index >= state.count
         {
@@ -220,6 +254,85 @@ impl generated::LedgerIndexMethodsTransactionHandler for Index {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn public_checkpoint_cannot_mint_rejection_or_progress() {
+        use generated::LedgerWorkMethodsDatabaseHandler;
+        let original = proto::Ledger {
+            batch: "batch".into(),
+            count: 2,
+            approved: 1,
+            ..Default::default()
+        };
+        for reject in [false, true] {
+            let mut state = original.clone();
+            let error = Ledger
+                .checkpoint_scheduled(
+                    &mut state,
+                    proto::Step {
+                        batch: "batch".into(),
+                        index: 0,
+                        reject,
+                    },
+                    reference().unwrap(),
+                )
+                .await
+                .err()
+                .unwrap();
+            assert_eq!(error.code(), tonic::Code::PermissionDenied);
+            assert_eq!(state, original);
+        }
+    }
+    #[tokio::test]
+    async fn rejected_checkpoint_preserves_progress_and_allows_next_batch() {
+        use generated::LedgerWorkMethodsDatabaseHandler;
+        let mut state = proto::Ledger {
+            batch: "batch".into(),
+            count: 2,
+            approved: 1,
+            ..Default::default()
+        };
+        Ledger
+            .checkpoint(
+                &mut state,
+                proto::Step {
+                    batch: "batch".into(),
+                    index: 0,
+                    reject: true,
+                },
+            )
+            .await
+            .unwrap();
+        assert!(state.rejected);
+        assert_eq!(state.completed, 1);
+        assert!(
+            Ledger
+                .checkpoint(
+                    &mut state,
+                    proto::Step {
+                        batch: "batch".into(),
+                        index: 1,
+                        reject: false
+                    }
+                )
+                .await
+                .is_err()
+        );
+        let result = Ledger
+            .submit_batch_scheduled(
+                &mut state,
+                proto::Submit {
+                    batch: "next".into(),
+                    count: 1,
+                    ..Default::default()
+                },
+                reference().unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.task_upserts.len(), 1);
+        assert_eq!(state.batch, "next");
+        assert!(!state.rejected);
+    }
     #[test]
     fn bounded_batch_identity() {
         assert!(validate_batch("batch-001", 3).is_ok());
@@ -239,6 +352,7 @@ mod tests {
         let step = proto::Step {
             batch: "batch".into(),
             index: 0,
+            reject: false,
         };
         assert!(Ledger.checkpoint(&mut state, step.clone()).await.is_err());
         assert_eq!(state.completed, 0);
