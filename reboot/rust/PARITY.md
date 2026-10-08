@@ -43,7 +43,7 @@ proofs below retain their separate source snapshots and limits.
 | Transactions | Legacy durable coordinator/participant paths and bounded supervised chains/star | General nested snapshots, reentrancy, intersecting subtrees, migration |
 | Tasks | Durable scheduled tasks, typed results/Wait, recovery, local admin list/stream and scheduled-workflow cancellation | Transactional targets, running/ordinary/distributed cancellation, aggregation, broad retry and dispatcher fencing |
 | Workflows | Finite typed named steps, finite indexed replay, saved reader decisions, typed declared business terminals; explicit local-body resumption | Python unbounded Task cursor/GC/Break, cross-actor composition, framework failure isolation |
-| Reactive readers | Typed bounded database/workflow-service subscriptions, commit invalidation and explicit same-query reconnect | Cross-actor/remote invalidation, transparent reconnect/durable resume, transaction-service generated bindings |
+| Reactive readers | Typed bounded database/workflow/transaction-service ordinary reader subscriptions, commit invalidation and explicit same-query reconnect | Cross-actor/remote invalidation, transparent reconnect/durable resume, streaming/transaction RPC subscriptions |
 | SortedMap | Canonical empty constructor and serial same-host app/map transactions | Public inbound adapter, nested/reusable siblings, distributed collection lifecycle |
 
 ## Local app development
@@ -713,8 +713,50 @@ The shared generator rejects collisions among each reader's base, `_with_timeout
 and `_connect` methods and constructor `new` before companion emission; caller
 errors propagate to the public code-generation response without files.
 
-**Missing:** transaction-service generated subscription bindings,
-cross-actor dependencies, distributed or remote-process invalidation, transparent
+Transaction-bearing service companions now use the existing
+`TransactionAdapter<H, P, C, R, F>` bounds and manual Clone, preserving the
+shared handler/store/auth, participant, coordinator, registry, factories and
+optional reader-task binding. Only ordinary unary readers enter the dispatcher;
+root transactions, including reader-looking History, are not subscription
+targets. Pure transaction services without ordinary readers have no companion.
+Helper/reserved-name checks precede emission; actual per-file outbound
+Client/Target names now participate in root-symbol collision checks.
+
+The public batch app's approval service exposes `ApprovalSnapshot(Batch)` with
+typed declared `BatchMismatch`; `index-read`, `index-mismatch`,
+`index-target-error` and `watch-index-reconnect` exercise it. Its batch-match
+condition differs from Work.Observe, which remains the workflow's saved-wait
+and public observation reader. Both exact-method ReaderBindings share one
+validated local reader owner and LocalReaders service; no additional workflow
+dispatcher or canonical Tasks.Wait owner is created. This is local registered
+actor observation, not transaction subscription, streaming readers, or
+transaction-joined query execution.
+
+**Wakeup #8 executed evidence (2026-10-08):** immutable native proof
+`/tmp/reboot-rust-batch-ledger-acceptance-1791469520443513860` passed public
+`rbt init`, generation, strict all-target consumer Clippy, four consumer tests,
+and actual CLI/native RocksDB acceptance. It verifies decoded declared mismatch,
+actual committed approval observation, Approve/History subscription denial with
+canonical task/state/map/replay unchanged, same-process explicit reconnection
+through schema regeneration and full RocksDB restart, and reclamation of both
+subscriptions. Existing batch/reactive/reconnect and scheduled cancellation
+regressions remain passing. These are real generated API/native controls, not
+emitted-text assertions substituted for persistence evidence.
+Compiler-only ordinary-reader-without-business-errors variant
+`/tmp/reboot-rust-mixed-reader-no-business-errors-1791470377785105382` passed
+strict all-target Clippy and four consumer tests, not separate native persistence.
+Broad gates `/tmp/reboot-rust-batch-ledger-final-gates-1791470437913724777`
+passed strict SDK Clippy, **399 SDK tests, 128 ignored**, and default greeting
+native restart, regeneration, supervision and cleanup. All three accepted
+manifests affirm source unchanged at completion; semantic SDK/template inputs
+remain unchanged, and only this canonical ledger/fingerprint was refreshed
+after the gates (the broad manifest also captured its earlier documentation). The first preflight exposed missing System error arms and
+a typed initial-message conversion; both were repaired before corrected
+preflight/native acceptance. Independent review found these same compiler
+blockers and no other confirmed safety defect; targeted re-review confirmed
+closure. Compiler/native evidence comes from parent execution, not review claims.
+
+**Missing:** cross-actor dependencies, distributed or remote-process invalidation, transparent
 reconnect/resumption. This uses a Rust-specific local service, not canonical React
 wire behavior; that is an API scope distinction, not a mixed-language app goal.
 Raw Database/custom persistence/other-process mutation violates its single-owner
@@ -1181,7 +1223,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 515be1be1db9548e179805c15bdb2d9bc9cc5ead7bbc2061817629cbc01adac5 -->
+<!-- parity-source-sha256: 87d74740e8c672e3f59ef317c44817ac57f69b0bf5ac4ed1cfdfce9851efc93b -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

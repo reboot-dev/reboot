@@ -1153,6 +1153,16 @@ fn reject_generated_symbol_collisions(
                     .and_then(|name| annotation.methods.get(name))
             });
             let durable_kinds: Vec<_> = durable_kinds.collect();
+            if !durable_kinds.is_empty()
+                && !durable_kinds
+                    .iter()
+                    .any(|kind| matches!(kind, DurableKind::Workflow))
+            {
+                symbols.extend([
+                    format!("{service_name}Client"),
+                    format!("{service_name}Target"),
+                ]);
+            }
             if durable_kinds
                 .iter()
                 .any(|kind| !matches!(kind, DurableKind::Transaction(_)))
@@ -1179,9 +1189,6 @@ fn reject_generated_symbol_collisions(
                 if durable_kinds
                     .iter()
                     .any(|kind| matches!(kind, DurableKind::Reader))
-                    && !durable_kinds
-                        .iter()
-                        .any(|kind| matches!(kind, DurableKind::Transaction(_)))
                 {
                     symbols.push(format!("{service_name}ReactiveClient"));
                 }
@@ -2334,6 +2341,17 @@ fn emit_transactions(
     if transactions.is_empty() {
         return Ok(());
     }
+    if database_methods
+        .iter()
+        .any(|(kind, _, _, _, _)| matches!(kind, DurableKind::Reader))
+        && methods
+            .iter()
+            .any(|(_, method, _, _, _)| method == "new" || method == "local_readers")
+    {
+        return Err(format!(
+            "{service_name}: method collides with reserved local reader helper"
+        ));
+    }
     let handler = format!("{service_name}TransactionHandler");
     let adapter = format!("{service_name}TransactionAdapter");
     let declaration = format!("{state}DurableState");
@@ -2479,6 +2497,14 @@ fn emit_transactions(
         }
     }
     output.push_str("}\n\n");
+    emit_local_readers(
+        output,
+        service_name,
+        &declaration,
+        runtime_module,
+        annotation,
+        database_methods,
+    )?;
     Ok(())
 }
 
@@ -5046,6 +5072,118 @@ mod tests {
         ));
         assert!(content.contains("\"tests.reboot.protoc.CounterWritesMethods.Increment\", reboot_rust_schema::runtime::StateAdmission::DefaultOnAbsent, &self.authorization, request"));
         assert!(!content.contains("store.writer_async_for_method::<CounterDurableState"));
+    }
+
+    #[test]
+    fn mixed_transaction_readers_emit_scoped_companions_and_reject_helper_symbols() {
+        let mut value = request();
+        value.proto_file[0].service[0]
+            .method
+            .push(MethodDescriptorProto {
+                name: Some("Transaction".into()),
+                input_type: Some(".tests.reboot.protoc.IncrementRequest".into()),
+                output_type: Some(".tests.reboot.protoc.CounterValue".into()),
+                ..Default::default()
+            });
+        let annotation = DurableService {
+            state: "Counter".into(),
+            default_constructible: true,
+            methods: HashMap::from([
+                ("Increment".into(), DurableKind::Reader),
+                (
+                    "Transaction".into(),
+                    DurableKind::Transaction(TransactionMetadata {
+                        mode: TransactionMode::Exclusive,
+                        factory: false,
+                    }),
+                ),
+            ]),
+            declared_errors: HashMap::new(),
+        };
+        let annotations = HashMap::from([(
+            "counter.proto".into(),
+            HashMap::from([("CounterWritesMethods".into(), annotation.clone())]),
+        )]);
+        let content = generate_inner(value.clone(), annotations.clone())
+            .unwrap()
+            .remove(0)
+            .content
+            .unwrap();
+        assert!(content.contains("pub struct CounterWritesMethodsReactiveClient"));
+        assert!(
+            content.contains(
+                "ReaderBinding for CounterWritesMethodsTransactionAdapter<H, P, C, R, F>"
+            )
+        );
+        assert!(content.contains("self.authorization, request"));
+        assert!(content.contains("StateAdmission::RequireExisting"));
+        assert!(content.contains("self.clone(), owner"));
+        let dispatch = content
+            .split("::reactive::ReaderBinding")
+            .nth(1)
+            .unwrap()
+            .split("pub struct CounterWritesMethodsReactiveClient")
+            .next()
+            .unwrap();
+        assert!(dispatch.contains("CounterWritesMethods.Increment"));
+        assert!(!dispatch.contains("CounterWritesMethods.Transaction"));
+        let mut symbol = value.clone();
+        let mut extra = symbol.proto_file[0].service[0].clone();
+        extra.name = Some("CounterWritesMethodsReactive".into());
+        extra.method.truncate(1);
+        extra.method[0].name = Some("Other".into());
+        symbol.proto_file[0].service.push(extra);
+        let mut symbol_annotations = annotations.clone();
+        let mut extra_annotation = annotation.clone();
+        extra_annotation.methods = HashMap::from([("Other".into(), DurableKind::Reader)]);
+        symbol_annotations
+            .get_mut("counter.proto")
+            .unwrap()
+            .insert("CounterWritesMethodsReactive".into(), extra_annotation);
+        assert!(
+            generate_inner(symbol, symbol_annotations)
+                .unwrap_err()
+                .contains("both generate")
+        );
+        for method in [
+            "IncrementWithTimeout",
+            "IncrementConnect",
+            "LocalReaders",
+            "New",
+        ] {
+            let mut bad = value.clone();
+            let mut descriptor = bad.proto_file[0].service[0].method[0].clone();
+            descriptor.name = Some(method.into());
+            bad.proto_file[0].service[0].method.push(descriptor);
+            let mut bad_annotation = annotation.clone();
+            bad_annotation
+                .methods
+                .insert(method.into(), DurableKind::Reader);
+            let bad_annotations = HashMap::from([(
+                "counter.proto".into(),
+                HashMap::from([("CounterWritesMethods".into(), bad_annotation)]),
+            )]);
+            assert!(
+                generate_inner(bad, bad_annotations)
+                    .unwrap_err()
+                    .contains("collid")
+            );
+        }
+        let mut pure = value;
+        pure.proto_file[0].service[0].method.remove(0);
+        let mut annotation = annotation;
+        annotation.methods.remove("Increment");
+        let pure_annotations = HashMap::from([(
+            "counter.proto".into(),
+            HashMap::from([("CounterWritesMethods".into(), annotation)]),
+        )]);
+        let content = generate_inner(pure, pure_annotations)
+            .unwrap()
+            .remove(0)
+            .content
+            .unwrap();
+        assert!(!content.contains("ReactiveClient"));
+        assert!(!content.contains("ReaderBinding"));
     }
 
     #[test]

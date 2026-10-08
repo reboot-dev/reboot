@@ -1,5 +1,21 @@
 use {{ name }}::{generated, proto};
 use std::time::Duration;
+fn index_status(error: generated::LedgerIndexMethodsApprovalSnapshotError) -> tonic::Status {
+    match error {
+        generated::LedgerIndexMethodsApprovalSnapshotError::BatchMismatch(error) => {
+            reboot::declared_error_status(
+                tonic::Code::Unknown,
+                "declared error",
+                "type.googleapis.com/{{ name }}.v1.BatchMismatch",
+                &error,
+            )
+        }
+        generated::LedgerIndexMethodsApprovalSnapshotError::System(system) => {
+            system.error.into_status(system.message)
+        }
+        generated::LedgerIndexMethodsApprovalSnapshotError::Grpc(error) => error,
+    }
+}
 fn show(state: proto::Ledger) {
     println!(
         "{} {} {} {} {}",
@@ -96,11 +112,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let id = client.submit_batch(request).await?.into_inner().id;
             println!("{}", uuid::Uuid::from_slice(&id)?);
         }
-        "reader-target-error" => {
+        "reader-target-error" | "index-target-error" => {
             let mut client =
                 reboot::reactive::wire::local_readers_client::LocalReadersClient::new(channel);
             let request = context.reader(reboot::reactive::wire::Query {
-                method: format!("{{ name }}.v1.LedgerWorkMethods.{}", arg(1)?),
+                method: format!(
+                    "{{ name }}.v1.{}.{}",
+                    if command == "index-target-error" {
+                        "LedgerIndexMethods"
+                    } else {
+                        "LedgerWorkMethods"
+                    },
+                    arg(1)?
+                ),
                 request: vec![],
             })?;
             let error = match client.subscribe(request).await {
@@ -270,6 +294,90 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "quit" => break,
                     _ => return Err("expected next, reconnect, disconnect, or quit".into()),
                 }
+            }
+        }
+        "watch-index-reconnect" => {
+            use std::io::BufRead;
+            let mut client = generated::LedgerIndexMethodsReactiveClient::new(channel, context);
+            let mut stream = client
+                .approval_snapshot_with_timeout(
+                    proto::Batch {
+                        batch: String::new(),
+                    },
+                    Duration::from_millis(
+                        args.get(1)
+                            .map(|s| s.parse())
+                            .transpose()?
+                            .unwrap_or(600_000),
+                    ),
+                )
+                .await
+                .map_err(index_status)?;
+            println!("CONNECTED");
+            if let Some(state) = stream.message().await.map_err(index_status)? {
+                show(state);
+            }
+            // Explicit commands, not an automatic status-based reconnect loop.
+            for line in std::io::stdin().lock().lines() {
+                match line?.trim() {
+                    "reconnect" => match stream.reconnect().await {
+                        Ok(()) => {
+                            println!("CONNECTED");
+                            match stream.message().await {
+                                Ok(Some(state)) => show(state),
+                                Ok(None) => println!("CLOSED"),
+                                Err(error) => {
+                                    println!("DISCONNECTED {:?}", index_status(error).code())
+                                }
+                            }
+                        }
+                        Err(error) => println!("DISCONNECTED {:?}", index_status(error).code()),
+                    },
+                    "next" => match stream.message().await {
+                        Ok(Some(state)) => show(state),
+                        Ok(None) => println!("CLOSED"),
+                        Err(error) => println!("DISCONNECTED {:?}", index_status(error).code()),
+                    },
+                    "disconnect" => {
+                        stream.disconnect();
+                        println!("DISCONNECTED");
+                    }
+                    "quit" => break,
+                    _ => return Err("expected next, reconnect, disconnect, or quit".into()),
+                }
+            }
+        }
+        "index-read" | "index-mismatch" => {
+            let mut client = generated::LedgerIndexMethodsReactiveClient::new(channel, context);
+            let request = proto::Batch { batch: arg(1)? };
+            let error = match client
+                .approval_snapshot_with_timeout(request, Duration::from_secs(3))
+                .await
+            {
+                Err(error) => Some(error),
+                Ok(mut stream) => match stream.message().await {
+                    Ok(Some(state)) => {
+                        show(state);
+                        None
+                    }
+                    Ok(None) => return Err("snapshot closed without response".into()),
+                    Err(error) => Some(error),
+                },
+            };
+            if let Some(error) = error {
+                match error {
+                    generated::LedgerIndexMethodsApprovalSnapshotError::BatchMismatch(error) => {
+                        println!("MISMATCH {} {}", error.expected, error.actual)
+                    }
+                    error @ generated::LedgerIndexMethodsApprovalSnapshotError::System(_) => {
+                        return Err(index_status(error).into());
+                    }
+                    generated::LedgerIndexMethodsApprovalSnapshotError::Grpc(error) => {
+                        return Err(error.into());
+                    }
+                }
+            } else if command == "index-mismatch" {
+                return Err("expected declared reader error".into());
             }
         }
         "watch" => {

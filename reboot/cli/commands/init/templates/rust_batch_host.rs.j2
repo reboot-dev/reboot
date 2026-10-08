@@ -123,6 +123,33 @@ impl CoordinatorWatchEndpoint for Watch {
         })
     }
 }
+struct CombinedReaders<W, I> {
+    work: W,
+    index: I,
+}
+#[tonic::async_trait]
+impl<W: reboot::reactive::ReaderBinding, I: reboot::reactive::ReaderBinding>
+    reboot::reactive::ReaderBinding for CombinedReaders<W, I>
+{
+    fn validate_owner(&self, owner: &reboot::reactive::LocalReaderOwner) -> Result<(), Status> {
+        self.work.validate_owner(owner)?;
+        self.index.validate_owner(owner)
+    }
+    async fn read(
+        &self,
+        request: tonic::Request<reboot::reactive::wire::Query>,
+    ) -> Result<Vec<u8>, Status> {
+        if request
+            .get_ref()
+            .method
+            .starts_with("{{ name }}.v1.LedgerWorkMethods.")
+        {
+            self.work.read(request).await
+        } else {
+            self.index.read(request).await
+        }
+    }
+}
 struct ReaderTelemetry(reboot::reactive::LocalReaderOwner);
 #[tonic::async_trait]
 impl HostRecovery for ReaderTelemetry {
@@ -240,6 +267,7 @@ pub async fn serve(
         .with_identity(participant.actor_target());
     let abort_owner = reboot::explicit_abort::ExplicitAbortOwner::new(8)?;
     let index = generated::LedgerIndexMethodsTransactionAdapter::new(
+        store.clone(),
         participant.clone(),
         coordinator.clone(),
         Starts,
@@ -271,7 +299,14 @@ pub async fn serve(
     .with_participant(map_participant, participant_metadata)?;
     let (work, tasks) = generated::LedgerWorkMethodsDatabaseAdapter::new(store.clone(), Ledger)
         .with_workflows(&reference)?;
-    let (readers, companion) = work.local_readers(&reference)?;
+    let (readers, _) = index.local_readers(&reference)?;
+    let companion = reboot::reactive::LocalReaderService::new(
+        CombinedReaders {
+            work: work.clone(),
+            index: index.clone(),
+        },
+        readers.clone(),
+    )?;
     let wait = reboot::one_shot_tasks::ReaderTaskWaitService::new(
         [tasks.clone()],
         reboot::legacy_placement::LegacyApplicationId::new(&application)?,

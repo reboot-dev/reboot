@@ -177,10 +177,10 @@ class Watch:
 
 
 class ReconnectingWatch:
-    def __init__(self):
-        self.log = STAGE / 'reconnecting-watch.log'
+    def __init__(self, index=False):
+        self.log = STAGE / ('index-reconnecting-watch.log' if index else 'reconnecting-watch.log')
         self.out = self.log.open('w')
-        self.proc = subprocess.Popen([str(TARGET / 'debug/client'), 'watch-reconnect', '600000'], cwd=APP, env=ENV,
+        self.proc = subprocess.Popen([str(TARGET / 'debug/client'), 'watch-index-reconnect' if index else 'watch-reconnect', '600000'], cwd=APP, env=ENV,
             stdin=subprocess.PIPE, stdout=self.out, stderr=subprocess.STDOUT, text=True, start_new_session=True)
         evidence['live_handles'].append({'kind': 'reconnecting-watch', 'pid': self.proc.pid, 'log': str(self.log)})
         checkpoint()
@@ -341,6 +341,7 @@ def rebuild(session, text):
 
 current = None
 reconnecting = None
+index_watch = None
 watch = None
 task_watch = None
 try:
@@ -392,6 +393,9 @@ try:
     check('submit fingerprint collision rejected', status != 0)
     watch = Watch('initial')
     reconnecting = ReconnectingWatch()
+    index_watch = ReconnectingWatch(index=True)
+    check('transaction reader initial snapshot', client('index-read', 'batch-001')[0] == 'batch-001 3 0 0 1')
+    check('transaction reader typed declared mismatch', client('index-mismatch', 'other')[0] == 'MISMATCH other batch-001')
     check('index zero not implicitly approved', read()[2:4] == ['0', '0'])
     pending, status = client('wait', uuid, '150', ok=False)
     check('typed pending Wait preserves deadline', status != 0 and ('DeadlineExceeded' in pending or 'Cancelled' in pending))
@@ -403,6 +407,11 @@ try:
         check('workflow companion rejects nonreader ' + method, client('reader-target-error', method)[0] == 'NONREADER_DENIED')
     after_reader, after_rows, after_task, after_replay = native(current, uuid)
     check('nonreader subscription attempts preserve canonical task/ledger/map/replay', after_reader.SerializeToString() == before_reader and after_task.SerializeToString() == before_reader_task and not after_rows.keys and not after_replay)
+    for method in ['Approve', 'History']:
+        check('transaction companion rejects transaction ' + method, client('index-target-error', method)[0] == 'NONREADER_DENIED')
+    after_index, rows_index, task_index, replay_index = native(current, uuid)
+    check('transaction subscription errors/negatives preserve canonical state/task/map/replay',
+          after_index.SerializeToString() == before_reader and task_index.SerializeToString() == before_reader_task and not rows_index.keys and not replay_index)
     before_direct = task.SerializeToString().hex()
     for rejection in ['false', 'true']:
         denied, status = client('checkpoint-direct', 'batch-001', '0', rejection, ok=False)
@@ -431,7 +440,13 @@ try:
     else:
         raise AssertionError('live typed subscriber missed acknowledged checkpoint')
     check('persistent subscription live committed change')
+    for _ in range(4):
+        observed = index_watch.send('next', 'batch-001')
+        if 'batch-001 3 1 1 1' in observed: break
+    else: raise AssertionError('transaction companion missed acknowledged app/map commit')
+    check('transaction companion observes actual committed approval')
     reconnecting.send('reconnect', 'batch-001 3 1 1 1')
+    index_watch.send('reconnect', 'batch-001 3 1 1 1')
     before = events(current)
     check('one checkpoint before restart', sum('checkpoint-batch-001-0' in line for line in before) == 1)
     path = APP / 'api/batch_ledger/v1/batch.proto'
@@ -445,17 +460,23 @@ try:
     check('new stream persisted baseline', 'batch-001 3 1 1 1' in watch.log.read_text())
     watch.close(); watch = None
     reconnecting.send('reconnect', 'batch-001 3 1 1 1')
+    index_watch.send('reconnect', 'batch-001 3 1 1 1')
     reconnecting.send('disconnect', 'DISCONNECTED')
+    index_watch.send('disconnect', 'DISCONNECTED')
     reader_zero(current)
     rebuild(current, original)
     wait_state(1, 1)
     check('watch preserves pending workflow checkpoint', native(current, uuid)[0].completed == 1)
     reconnecting.send('reconnect', 'batch-001 3 1 1 1')
+    index_watch.send('reconnect', 'batch-001 3 1 1 1')
     current.close(); current = None
     reconnecting.send('reconnect', 'DISCONNECTED Unavailable')
+    index_watch.send('reconnect', 'DISCONNECTED Unavailable')
     current = Session('parked-restart')
     reconnecting.send('reconnect', 'batch-001 3 1 1 1')
+    index_watch.send('reconnect', 'batch-001 3 1 1 1')
     reconnecting.close(); reconnecting = None
+    index_watch.close(); index_watch = None
     reader_zero(current)
     wait_state(1, 1)
     check('same pending UUID survives full RocksDB restart', native(current, uuid)[2].status == db.Task.PENDING)
@@ -604,6 +625,8 @@ finally:
     if not timeout_seen:
         if reconnecting is not None:
             reconnecting.close(expect_success=False)
+        if index_watch is not None:
+            index_watch.close(expect_success=False)
         if task_watch is not None:
             task_watch.close()
         if watch is not None:

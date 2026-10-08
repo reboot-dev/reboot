@@ -154,3 +154,26 @@ companion: Create, SubmitBatch, Checkpoint and RunBatch are not subscribe target
 Private workflow execution/checkpoint authority is unchanged. Transaction-service
 subscriptions, mixed workflow/transaction services and declared reader/writer
 step errors remain unsupported.
+
+## Reactive approvals on the transaction-bearing service
+
+`LedgerIndexMethods.ApprovalSnapshot` is an ordinary immutable reader on the
+same service as `Approve` and `History` transactions. It now has a generated
+`LedgerIndexMethodsReactiveClient`; transaction RPCs themselves remain excluded
+from subscriptions. Supply a batch name to require it to match the current batch;
+a mismatch terminates the subscription with typed `BatchMismatch`, not a guessed
+transport status. An empty batch name follows the current batch.
+
+```sh
+cargo run --manifest-path backend/Cargo.toml --bin client -- index-read batch-001
+cargo run --manifest-path backend/Cargo.toml --bin client -- index-mismatch other
+cargo run --manifest-path backend/Cargo.toml --bin client -- watch-index-reconnect 600000
+# Interactive commands: next / reconnect / disconnect / quit
+```
+
+Explicit reconnect preserves the original query, metadata and absolute deadline.
+There are no automatic status retries or distributed invalidation claims. The
+host combines workflow and transaction reader bindings behind one local reader
+owner for this actor, retaining the original handler/store/auth/transaction
+owners. Approval subscribers see acknowledged app/map transaction commits;
+failed approvals cannot be used as subscription calls to mutate the ledger.

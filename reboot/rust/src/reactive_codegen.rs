@@ -1,5 +1,5 @@
-// Unary reader companion for database and standalone workflow services.
-// Transaction services and user-defined streaming RPCs remain separate gaps.
+// Unary reader companion for database, workflow and mixed transaction services.
+// Transaction RPCs and user-defined streaming RPCs are never reader targets.
 fn emit_local_readers(
     output: &mut String,
     service: &str,
@@ -29,9 +29,26 @@ fn emit_local_readers(
             }
         }
     }
-    let adapter = format!("{service}DatabaseAdapter");
-    let handler = format!("{service}DatabaseHandler");
-    output.push_str(&format!("impl<H: {handler}> {adapter}<H> {{\n/// Bind Rust-only local subscriptions to an exact actor. Register the returned owner with ApplicationHost; only one trusted host may mutate this sidecar.\n#[allow(clippy::result_large_err)]\npub fn local_readers(&self, state_ref: &str) -> Result<({runtime}::reactive::LocalReaderOwner, {runtime}::reactive::LocalReaderService<Self>), tonic::Status> {{ let owner = {runtime}::reactive::LocalReaderOwner::for_generated_actor(&self.store, <{declaration} as {runtime}::runtime::DurableStateDeclaration>::STATE_TYPE, state_ref)?; Ok((owner.clone(), {runtime}::reactive::LocalReaderService::new(self.clone(), owner)?)) }}\n}}\n#[tonic::async_trait]\nimpl<H: {handler}> {runtime}::reactive::ReaderBinding for {adapter}<H> {{\nfn validate_owner(&self, owner: &{runtime}::reactive::LocalReaderOwner) -> Result<(), tonic::Status> {{ owner.validate_generated_store(&self.store, <{declaration} as {runtime}::runtime::DurableStateDeclaration>::STATE_TYPE) }}\nasync fn read(&self, request: tonic::Request<{runtime}::reactive::wire::Query>) -> Result<Vec<u8>, tonic::Status> {{ match request.get_ref().method.as_str() {{\n"));
+    let transactions = annotation
+        .methods
+        .values()
+        .any(|kind| matches!(kind, DurableKind::Transaction(_)));
+    let (adapter, parameters, bounds) = if transactions {
+        let handler = format!("{service}TransactionHandler");
+        let bounds = format!(
+            "H: {handler}, P: {runtime}::durable_participant::ParticipantSidecar, C: {runtime}::durable_coordinator::CoordinatorSidecar, R: {runtime}::durable_coordinator::ParticipantResolver, F: {runtime}::runtime::RootTransactionStartFactory + {runtime}::runtime::InboundTransactionStartFactory"
+        );
+        (
+            format!("{service}TransactionAdapter"),
+            "H, P, C, R, F",
+            bounds,
+        )
+    } else {
+        let handler = format!("{service}DatabaseHandler");
+        let bounds = format!("H: {handler}");
+        (format!("{service}DatabaseAdapter"), "H", bounds)
+    };
+    output.push_str(&format!("impl<{parameters}> {adapter}<{parameters}> where {bounds} {{\n/// Bind Rust-only local subscriptions to an exact actor. Register the returned owner with ApplicationHost; only one trusted host may mutate this sidecar.\n#[allow(clippy::result_large_err)]\npub fn local_readers(&self, state_ref: &str) -> Result<({runtime}::reactive::LocalReaderOwner, {runtime}::reactive::LocalReaderService<Self>), tonic::Status> {{ let owner = {runtime}::reactive::LocalReaderOwner::for_generated_actor(&self.store, <{declaration} as {runtime}::runtime::DurableStateDeclaration>::STATE_TYPE, state_ref)?; Ok((owner.clone(), {runtime}::reactive::LocalReaderService::new(self.clone(), owner)?)) }}\n}}\n#[tonic::async_trait]\nimpl<{parameters}> {runtime}::reactive::ReaderBinding for {adapter}<{parameters}> where {bounds} {{\nfn validate_owner(&self, owner: &{runtime}::reactive::LocalReaderOwner) -> Result<(), tonic::Status> {{ owner.validate_generated_store(&self.store, <{declaration} as {runtime}::runtime::DurableStateDeclaration>::STATE_TYPE) }}\nasync fn read(&self, request: tonic::Request<{runtime}::reactive::wire::Query>) -> Result<Vec<u8>, tonic::Status> {{ match request.get_ref().method.as_str() {{\n"));
     for (kind, method, request, _response, identity) in &readers {
         let error = if declared_database_errors(annotation, kind, identity).is_empty() {
             ""
