@@ -44,7 +44,10 @@ impl Authorizer for Admin {
     ) -> AuthorizeFuture<'a> {
         Box::pin(async move {
             use prost::Message;
-            assert_eq!(context.method, "rbt.v1alpha1.Tasks.ListTasks");
+            assert!(matches!(
+                context.method.as_str(),
+                "rbt.v1alpha1.Tasks.ListTasks" | "rbt.v1alpha1.Tasks.ListTasksStream"
+            ));
             assert!(auth.is_some());
             assert!(state.is_none());
             db::ListTasksRequest::decode(request).unwrap();
@@ -270,4 +273,284 @@ async fn policy_await_cannot_disclose_after_generation_uncertainty_placement_or_
             "action {action}"
         );
     }
+}
+
+#[tokio::test]
+async fn stream_initial_change_coalescing_and_no_duplicate_observations() {
+    use tonic::codegen::tokio_stream::StreamExt;
+    let (service, owner, task) = setup(0);
+    let mut stream = service
+        .list_tasks_stream(request(Some("server"), true))
+        .await
+        .unwrap()
+        .into_inner();
+    let initial = stream.next().await.unwrap().unwrap();
+    assert_eq!(
+        initial.tasks[0].status,
+        db::task_info::Status::Scheduled as i32
+    );
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(450), stream.next())
+            .await
+            .is_err(),
+        "unchanged scans must not publish duplicates"
+    );
+    owner.tasks.inner.listing.started(&task);
+    let changed = tokio::time::timeout(std::time::Duration::from_secs(1), stream.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        changed.tasks[0].status,
+        db::task_info::Status::Started as i32
+    );
+    // Two changes without a pull: only the latest observation is returned.
+    owner
+        .tasks
+        .inner
+        .listing
+        .retry(&task, std::time::Duration::from_millis(20));
+    owner.tasks.inner.listing.observe(&[]);
+    assert!(stream.next().await.unwrap().unwrap().tasks.is_empty());
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(450), stream.next())
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn stream_auth_scope_and_policy_await_authority_match_unary_fences() {
+    for action in 0..=5 {
+        let (mut service, _owner, _) = setup(action);
+        let result = service
+            .list_tasks_stream(request(Some("server"), true))
+            .await;
+        match action {
+            0 => {
+                assert!(result.is_ok());
+                for (server, expected) in [
+                    (None, tonic::Code::Unimplemented),
+                    (Some("other"), tonic::Code::Unavailable),
+                ] {
+                    assert_eq!(
+                        service
+                            .list_tasks_stream(request(server, true))
+                            .await
+                            .err()
+                            .unwrap()
+                            .code(),
+                        expected
+                    );
+                }
+                assert_eq!(
+                    service
+                        .list_tasks_stream(request(Some("server"), false))
+                        .await
+                        .err()
+                        .unwrap()
+                        .code(),
+                    tonic::Code::Unauthenticated
+                );
+                service.admin = None;
+                assert_eq!(
+                    service
+                        .list_tasks_stream(request(Some("server"), true))
+                        .await
+                        .err()
+                        .unwrap()
+                        .code(),
+                    tonic::Code::PermissionDenied
+                );
+            }
+            1 => assert_eq!(result.err().unwrap().code(), tonic::Code::PermissionDenied),
+            _ => assert_eq!(result.err().unwrap().code(), tonic::Code::Unavailable),
+        }
+    }
+}
+
+#[tokio::test]
+async fn stream_original_generation_and_authority_revoked_even_without_cache_change() {
+    use tonic::codegen::tokio_stream::StreamExt;
+    for action in 2..=5 {
+        let (service, owner, _) = setup(0);
+        let mut stream = service
+            .list_tasks_stream(request(Some("server"), true))
+            .await
+            .unwrap()
+            .into_inner();
+        stream.next().await.unwrap().unwrap();
+        match action {
+            2 => *owner.tasks.inner.running_owner.lock().unwrap() = Some(Arc::new(())),
+            3 => {
+                owner.tasks.inner.uncertain.send_replace(true);
+            }
+            4 => install(&service.placement, 2, "other"),
+            5 => owner
+                .tasks
+                .inner
+                .active
+                .store(false, std::sync::atomic::Ordering::Release),
+            _ => unreachable!(),
+        }
+        assert_eq!(
+            tokio::time::timeout(std::time::Duration::from_secs(1), stream.next())
+                .await
+                .expect(
+                    "revoked stream must terminate within one second even without cache changes"
+                )
+                .unwrap()
+                .unwrap_err()
+                .code(),
+            tonic::Code::Unavailable
+        );
+        assert!(
+            stream.next().await.is_none(),
+            "terminal error must close stream"
+        );
+    }
+}
+
+struct StreamPolicy {
+    revoke: Option<OneShotTasks>,
+    mode: std::sync::atomic::AtomicU8,
+    calls: std::sync::atomic::AtomicUsize,
+    entered: tokio::sync::Notify,
+    dropped: Arc<std::sync::atomic::AtomicBool>,
+}
+struct PolicyDrop(Arc<std::sync::atomic::AtomicBool>);
+impl Drop for PolicyDrop {
+    fn drop(&mut self) {
+        self.0.store(true, std::sync::atomic::Ordering::Release);
+    }
+}
+impl TokenVerifier for StreamPolicy {
+    fn verify<'a>(&'a self, _: &'a AuthorizationContext, _: Option<&'a str>) -> VerifyFuture<'a> {
+        Box::pin(async { TokenVerification::Authenticated(Auth::new(serde_json::json!(true))) })
+    }
+}
+impl Authorizer for StreamPolicy {
+    fn authorize<'a>(
+        &'a self,
+        context: &'a AuthorizationContext,
+        _: Option<&'a Auth>,
+        _: Option<&'a [u8]>,
+        _: &'a [u8],
+    ) -> AuthorizeFuture<'a> {
+        Box::pin(async move {
+            assert_eq!(context.method, "rbt.v1alpha1.Tasks.ListTasksStream");
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+            match self.mode.load(std::sync::atomic::Ordering::Acquire) {
+                1 => AuthorizationDecision::PermissionDenied {
+                    message: "revoked".into(),
+                },
+                2 => {
+                    let _drop = PolicyDrop(self.dropped.clone());
+                    self.entered.notify_one();
+                    std::future::pending().await
+                }
+                3 => {
+                    tokio::task::yield_now().await;
+                    *self
+                        .revoke
+                        .as_ref()
+                        .expect("revocation fixture owner")
+                        .inner
+                        .running_owner
+                        .lock()
+                        .unwrap() = Some(Arc::new(()));
+                    AuthorizationDecision::Allow
+                }
+                _ => AuthorizationDecision::Allow,
+            }
+        })
+    }
+}
+#[tokio::test]
+async fn stream_rechecks_policy_and_drop_cancels_the_owned_policy_future() {
+    use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
+    use tonic::codegen::tokio_stream::StreamExt;
+    let (service, _owner, _) = setup(0);
+    let policy = Arc::new(StreamPolicy {
+        revoke: None,
+        mode: AtomicU8::new(0),
+        calls: AtomicUsize::new(0),
+        entered: tokio::sync::Notify::new(),
+        dropped: Arc::new(AtomicBool::new(false)),
+    });
+    let service = service.with_admin_authorization(policy.clone(), policy.clone());
+    let mut stream = service
+        .list_tasks_stream(request(Some("server"), true))
+        .await
+        .unwrap()
+        .into_inner();
+    stream.next().await.unwrap().unwrap();
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(650), stream.next())
+            .await
+            .is_err()
+    );
+    assert!(policy.calls.load(Ordering::Acquire) >= 3);
+    policy.mode.store(1, Ordering::Release);
+    assert_eq!(
+        stream.next().await.unwrap().unwrap_err().code(),
+        tonic::Code::PermissionDenied
+    );
+    assert!(stream.next().await.is_none());
+    policy.mode.store(0, Ordering::Release);
+    let mut stream = service
+        .list_tasks_stream(request(Some("server"), true))
+        .await
+        .unwrap()
+        .into_inner();
+    stream.next().await.unwrap().unwrap();
+    policy.mode.store(2, Ordering::Release);
+    {
+        let next = stream.next();
+        tokio::pin!(next);
+        tokio::select! { _ = &mut next => panic!("parked policy returned"), _ = policy.entered.notified() => {} }
+    }
+    assert!(!policy.dropped.load(Ordering::Acquire));
+    drop(stream);
+    assert!(
+        policy.dropped.load(Ordering::Acquire),
+        "stream drop must cancel policy, not detach it"
+    );
+    let calls = policy.calls.load(Ordering::Acquire);
+    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    assert_eq!(policy.calls.load(Ordering::Acquire), calls);
+}
+
+#[tokio::test]
+async fn stream_later_policy_await_revalidates_original_generation_before_disclosure() {
+    use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
+    use tonic::codegen::tokio_stream::StreamExt;
+    let (service, owner, _) = setup(0);
+    let policy = Arc::new(StreamPolicy {
+        revoke: Some(owner.tasks.clone()),
+        mode: AtomicU8::new(0),
+        calls: AtomicUsize::new(0),
+        entered: tokio::sync::Notify::new(),
+        dropped: Arc::new(AtomicBool::new(false)),
+    });
+    let service = service.with_admin_authorization(policy.clone(), policy.clone());
+    let mut stream = service
+        .list_tasks_stream(request(Some("server"), true))
+        .await
+        .unwrap()
+        .into_inner();
+    stream.next().await.unwrap().unwrap();
+    policy.mode.store(3, Ordering::Release);
+    assert_eq!(
+        tokio::time::timeout(std::time::Duration::from_secs(1), stream.next())
+            .await
+            .expect("post-policy generation revocation must terminate the stream")
+            .unwrap()
+            .unwrap_err()
+            .code(),
+        tonic::Code::Unavailable
+    );
+    assert_eq!(policy.calls.load(Ordering::Acquire), 2);
+    assert!(stream.next().await.is_none());
 }

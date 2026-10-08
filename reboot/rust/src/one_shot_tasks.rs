@@ -1721,12 +1721,15 @@ impl ReaderTaskWaitService {
         })
     }
     /// Enable server-scoped administrative listing with an explicit application policy.
-    /// Default is deny; ListTasks never borrows the ordinary Wait authorization surface.
+    /// Default is deny; ListTasks and ListTasksStream do not alter Wait authorization.
     /// Both application-owned policies are required. Authorization gets the encoded
-    /// ListTasks request, no actor state, and server-owned application/server IDs.
+    /// ListTasks request, exact RPC method, no actor state and server-owned identity.
     /// Listing is pending-only and eventually refreshed by canonical singleton
     /// scans; phase timestamps and retry counts are local to this generation.
-    /// Shared-reader recovery, aggregation and streaming are not supported.
+    /// The stream rechecks policy and original owner authority on each 200ms pulled
+    /// observation. Changes coalesce under backpressure; no durable event history
+    /// or independent revocation push is promised. Drop owns polling cancellation.
+    /// Shared-reader recovery and cross-server aggregation are not supported.
     pub fn with_admin_authorization(
         mut self,
         verifier: Arc<dyn crate::auth::TokenVerifier>,
@@ -1748,6 +1751,98 @@ impl ReaderTaskWaitService {
         Ok(())
     }
 }
+impl ReaderTaskWaitService {
+    fn list_admissions(&self) -> Result<Vec<(String, RunningTaskAdmission)>, Status> {
+        self.tasks
+            .iter()
+            .map(|((_, reference), tasks)| {
+                self.require_authority(reference)?;
+                let generation = tasks
+                    .inner
+                    .running_owner
+                    .lock()
+                    .expect("task owner mutex poisoned")
+                    .clone()
+                    .ok_or_else(|| Status::unavailable("task dispatcher is not active"))?;
+                let admission = RunningTaskAdmission {
+                    tasks: tasks.clone(),
+                    generation,
+                };
+                if tasks
+                    .inner
+                    .recovery_request
+                    .lock()
+                    .expect("task recovery mutex poisoned")
+                    .is_none()
+                {
+                    return Err(Status::unimplemented(
+                        "listing requires singleton task recovery",
+                    ));
+                }
+                {
+                    let _owner = admission
+                        .lock()
+                        .map_err(|error| Status::unavailable(error.message().to_owned()))?;
+                }
+                Ok((reference.clone(), admission))
+            })
+            .collect()
+    }
+    async fn list_snapshot(
+        &self,
+        request: &tonic::Request<db::ListTasksRequest>,
+        method: &'static str,
+        admissions: &Result<Vec<(String, RunningTaskAdmission)>, Status>,
+    ) -> Result<db::ListTasksResponse, Status> {
+        use prost::Message;
+        let policy = self
+            .admin
+            .as_ref()
+            .ok_or_else(|| Status::permission_denied("task administration is not enabled"))?;
+        // Administrative listing has no actor route. Reuse metadata validation
+        // without treating a caller state-ref as actor authority.
+        let mut metadata = request.metadata().clone();
+        metadata.insert(
+            crate::STATE_REF_HEADER,
+            "task-administration".parse().expect("static ASCII"),
+        );
+        let mut headers = crate::RebootHeaders::from_metadata(&metadata)
+            .map_err(|error| Status::invalid_argument(error.to_string()))?;
+        headers.state_ref.clear();
+        headers.server_id = Some(self.server_id.clone());
+        headers.application_id = Some(self.application.as_str().to_owned());
+        // Capture the original generations before policy awaits. Delay authority
+        // errors until authentication/authorization so denial discloses no tasks.
+        let (context, principal) = policy.verify(headers, "rbt.v1alpha1.Tasks", method).await?;
+        policy
+            .authorize(
+                &context,
+                principal.as_ref(),
+                None,
+                &request.get_ref().encode_to_vec(),
+            )
+            .await?;
+        match request.get_ref().only_server_id.as_deref() {
+            Some(server) if server == self.server_id => {}
+            Some(_) => return Err(Status::unavailable("requested task server is not local")),
+            None => {
+                return Err(Status::unimplemented(
+                    "cross-server task aggregation is unsupported; specify only_server_id",
+                ));
+            }
+        }
+        let mut snapshot = Vec::new();
+        for (reference, admission) in admissions.as_ref().map_err(Clone::clone)? {
+            self.require_authority(reference)?;
+            let _owner = admission
+                .lock()
+                .map_err(|error| Status::unavailable(error.message().to_owned()))?;
+            snapshot.extend(admission.tasks.inner.listing.snapshot());
+        }
+        Ok(db::ListTasksResponse { tasks: snapshot })
+    }
+}
+
 #[tonic::async_trait]
 impl db::tasks_server::Tasks for ReaderTaskWaitService {
     async fn wait(
@@ -1910,104 +2005,27 @@ impl db::tasks_server::Tasks for ReaderTaskWaitService {
         &self,
         request: tonic::Request<db::ListTasksRequest>,
     ) -> Result<tonic::Response<db::ListTasksResponse>, Status> {
-        use prost::Message;
-        let policy = self
-            .admin
-            .as_ref()
-            .ok_or_else(|| Status::permission_denied("task administration is not enabled"))?;
-        // Administrative listing has no actor route. Reuse metadata validation
-        // without treating a caller state-ref as actor authority.
-        let mut metadata = request.metadata().clone();
-        metadata.insert(
-            crate::STATE_REF_HEADER,
-            "task-administration".parse().expect("static ASCII"),
-        );
-        let mut headers = crate::RebootHeaders::from_metadata(&metadata)
-            .map_err(|error| Status::invalid_argument(error.to_string()))?;
-        headers.state_ref.clear();
-        headers.server_id = Some(self.server_id.clone());
-        headers.application_id = Some(self.application.as_str().to_owned());
-        // Capture the original generations before policy awaits. Delay authority
-        // errors until authentication/authorization so denial discloses no tasks.
-        let admissions: Result<Vec<_>, Status> = self
-            .tasks
-            .iter()
-            .map(|((_, reference), tasks)| {
-                self.require_authority(reference)?;
-                let generation = tasks
-                    .inner
-                    .running_owner
-                    .lock()
-                    .expect("task owner mutex poisoned")
-                    .clone()
-                    .ok_or_else(|| Status::unavailable("task dispatcher is not active"))?;
-                let admission = RunningTaskAdmission {
-                    tasks: tasks.clone(),
-                    generation,
-                };
-                if tasks
-                    .inner
-                    .recovery_request
-                    .lock()
-                    .expect("task recovery mutex poisoned")
-                    .is_none()
-                {
-                    return Err(Status::unimplemented(
-                        "listing requires singleton task recovery",
-                    ));
-                }
-                {
-                    let _owner = admission
-                        .lock()
-                        .map_err(|error| Status::unavailable(error.message().to_owned()))?;
-                }
-                Ok((reference, admission))
-            })
-            .collect();
-        let (context, principal) = policy
-            .verify(
-                headers,
-                "rbt.v1alpha1.Tasks",
-                "rbt.v1alpha1.Tasks.ListTasks",
-            )
-            .await?;
-        policy
-            .authorize(
-                &context,
-                principal.as_ref(),
-                None,
-                &request.get_ref().encode_to_vec(),
-            )
-            .await?;
-        match request.get_ref().only_server_id.as_deref() {
-            Some(server) if server == self.server_id => {}
-            Some(_) => return Err(Status::unavailable("requested task server is not local")),
-            None => {
-                return Err(Status::unimplemented(
-                    "cross-server task aggregation is unsupported; specify only_server_id",
-                ));
-            }
-        }
-        let mut snapshot = Vec::new();
-        for (reference, admission) in admissions? {
-            self.require_authority(reference)?;
-            let _owner = admission
-                .lock()
-                .map_err(|error| Status::unavailable(error.message().to_owned()))?;
-            snapshot.extend(admission.tasks.inner.listing.snapshot());
-        }
-        Ok(tonic::Response::new(db::ListTasksResponse {
-            tasks: snapshot,
-        }))
+        let admissions = self.list_admissions();
+        self.list_snapshot(&request, "rbt.v1alpha1.Tasks.ListTasks", &admissions)
+            .await
+            .map(tonic::Response::new)
     }
-    type ListTasksStreamStream = tonic::codegen::tokio_stream::wrappers::ReceiverStream<
-        Result<db::ListTasksResponse, Status>,
+    type ListTasksStreamStream = std::pin::Pin<
+        Box<
+            dyn tonic::codegen::tokio_stream::Stream<Item = Result<db::ListTasksResponse, Status>>
+                + Send,
+        >,
     >;
     async fn list_tasks_stream(
         &self,
-        _: tonic::Request<db::ListTasksRequest>,
+        request: tonic::Request<db::ListTasksRequest>,
     ) -> Result<tonic::Response<Self::ListTasksStreamStream>, Status> {
-        Err(Status::unimplemented("task subscriptions are unsupported"))
+        let admissions = self.list_admissions();
+        let initial = self
+            .list_snapshot(&request, "rbt.v1alpha1.Tasks.ListTasksStream", &admissions)
+            .await?;
+        let stream = TaskListStream::new(self.clone(), request, admissions?, initial);
+        Ok(tonic::Response::new(Box::pin(stream)))
     }
     async fn cancel_task(
         &self,

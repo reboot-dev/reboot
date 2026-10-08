@@ -86,6 +86,90 @@ impl TaskListing {
     }
 }
 
+// A pull-owned stream: no spawned producer, detached timer or unbounded queue.
+// Fixed owner generations survive every observation; slow consumers coalesce
+// cache changes instead of retaining a durable event history.
+type ListPoll = std::pin::Pin<
+    Box<dyn std::future::Future<Output = Result<db::ListTasksResponse, Status>> + Send>,
+>;
+struct TaskListStream {
+    service: ReaderTaskWaitService,
+    request: Arc<tonic::Request<db::ListTasksRequest>>,
+    admissions: Arc<Result<Vec<(String, RunningTaskAdmission)>, Status>>,
+    last: db::ListTasksResponse,
+    initial: Option<db::ListTasksResponse>,
+    pending: Option<ListPoll>,
+    done: bool,
+}
+impl TaskListStream {
+    fn new(
+        service: ReaderTaskWaitService,
+        request: tonic::Request<db::ListTasksRequest>,
+        admissions: Vec<(String, RunningTaskAdmission)>,
+        initial: db::ListTasksResponse,
+    ) -> Self {
+        Self {
+            service,
+            request: Arc::new(request),
+            admissions: Arc::new(Ok(admissions)),
+            last: initial.clone(),
+            initial: Some(initial),
+            pending: None,
+            done: false,
+        }
+    }
+}
+impl tonic::codegen::tokio_stream::Stream for TaskListStream {
+    type Item = Result<db::ListTasksResponse, Status>;
+    fn poll_next(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        use std::task::Poll;
+        let this = self.get_mut();
+        if this.done {
+            return Poll::Ready(None);
+        }
+        if let Some(initial) = this.initial.take() {
+            return Poll::Ready(Some(Ok(initial)));
+        }
+        if this.pending.is_none() {
+            let service = this.service.clone();
+            let request = this.request.clone();
+            let admissions = this.admissions.clone();
+            let last = this.last.clone();
+            this.pending = Some(Box::pin(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                    let snapshot = service
+                        .list_snapshot(&request, "rbt.v1alpha1.Tasks.ListTasksStream", &admissions)
+                        .await?;
+                    if snapshot != last {
+                        return Ok(snapshot);
+                    }
+                }
+            }));
+        }
+        match this
+            .pending
+            .as_mut()
+            .expect("installed observation future")
+            .as_mut()
+            .poll(cx)
+        {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(result) => {
+                this.pending = None;
+                match &result {
+                    Ok(snapshot) => this.last = snapshot.clone(),
+                    Err(_) => this.done = true,
+                }
+                Poll::Ready(Some(result))
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 #[path = "task_listing_tests.rs"]
 mod task_listing_service_tests;

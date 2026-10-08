@@ -58,8 +58,10 @@ impl reboot::auth::Authorizer for TaskAdmin {
         _: &'a [u8],
     ) -> reboot::auth::AuthorizeFuture<'a> {
         Box::pin(async move {
-            if context.method == "rbt.v1alpha1.Tasks.ListTasks"
-                && state.is_none()
+            if matches!(
+                context.method.as_str(),
+                "rbt.v1alpha1.Tasks.ListTasks" | "rbt.v1alpha1.Tasks.ListTasksStream"
+            ) && state.is_none()
                 && auth.is_some_and(|auth| auth.payload()["task_admin"] == true)
             {
                 reboot::auth::AuthorizationDecision::Allow

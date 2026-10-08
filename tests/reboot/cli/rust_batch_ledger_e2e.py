@@ -181,12 +181,53 @@ def list_denied(code, token=None, server='local-rust'):
         request = tasks_pb2.ListTasksRequest()
         if server is not None:
             request.only_server_id = server
+        stub = tasks_pb2_grpc.TasksStub(channel)
+        for name in ['ListTasks', 'ListTasksStream']:
+            try:
+                reply = getattr(stub, name)(request, timeout=3,
+                    metadata=[('authorization', 'Bearer ' + token)] if token else [])
+                if name.endswith('Stream'):
+                    next(reply)
+                raise AssertionError('listing unexpectedly authorized')
+            except grpc.RpcError as error:
+                check(name + ' rejects ' + code.name, error.code() == code)
+
+
+def stream_deadline():
+    with grpc.insecure_channel(f'127.0.0.1:{PORT}') as channel:
+        stream = tasks_pb2_grpc.TasksStub(channel).ListTasksStream(
+            tasks_pb2.ListTasksRequest(only_server_id='local-rust'), timeout=.7,
+            metadata=[('authorization', 'Bearer ' + ENV['RBT_RUST_TASK_ADMIN_TOKEN'])])
+        initial = next(stream)
         try:
-            tasks_pb2_grpc.TasksStub(channel).ListTasks(request, timeout=3,
-                metadata=[('authorization', 'Bearer ' + token)] if token else [])
-            raise AssertionError('listing unexpectedly authorized')
+            next(stream)
+            raise AssertionError('unchanged stream emitted duplicate snapshot')
         except grpc.RpcError as error:
-            check('task listing rejects ' + code.name, error.code() == code)
+            check('canonical stream initial/no duplicates/deadline', error.code() == grpc.StatusCode.DEADLINE_EXCEEDED)
+        return initial
+
+
+class TaskWatch:
+    def __init__(self, name):
+        self.log = STAGE / ('task-watch-' + name + '.log')
+        self.out = self.log.open('w')
+        self.proc = subprocess.Popen([str(TARGET / 'debug/client'), 'tasks-watch'], cwd=APP,
+            env=ENV, stdout=self.out, stderr=subprocess.STDOUT, start_new_session=True)
+        evidence['live_handles'].append({'kind': 'task-watch', 'pid': self.proc.pid, 'log': str(self.log)})
+        checkpoint()
+        until(lambda: 'TASKS ' in self.log.read_text(), 'generated task stream baseline')
+
+    def observed(self, uuid=None, phase=None):
+        until(lambda: (uuid + ' ' + phase in self.log.read_text()) if uuid else
+            self.log.read_text().rstrip().endswith('TASKS 0'), 'generated task stream change')
+        check('generated task stream ' + (phase or 'empty'))
+
+    def close(self):
+        if self.proc.poll() is None:
+            self.proc.send_signal(signal.SIGTERM)
+        self.proc.wait(timeout=5)
+        self.out.close()
+        check('task stream client reaped', not Path(f'/proc/{self.proc.pid}').exists())
 
 
 def listed(task_uuid, phase, due=None):
@@ -255,6 +296,7 @@ def rebuild(session, text):
 
 current = None
 watch = None
+task_watch = None
 try:
     command([RBT, 'init', '--backend=rust', '--frontend=none', '--application-name=batch_ledger', '--rust-sdk=' + str(ROOT / 'reboot/rust'), '--rust-example=batch-ledger'])
     command(['cargo', 'clippy', '--manifest-path', 'backend/Cargo.toml', '--all-targets', '--', '-D', 'warnings'])
@@ -283,6 +325,8 @@ try:
     list_denied(grpc.StatusCode.UNIMPLEMENTED, token=ENV['RBT_RUST_TASK_ADMIN_TOKEN'], server=None)
     list_denied(grpc.StatusCode.UNAVAILABLE, token=ENV['RBT_RUST_TASK_ADMIN_TOKEN'], server='wrong-server')
     check('authenticated generated task listing starts empty', client('tasks')[0] == '')
+    check('empty stream snapshot', not stream_deadline().tasks)
+    task_watch = TaskWatch('initial')
     client('create')
     uuid, _ = client('submit', 'batch-001', '3', '11111111-1111-4111-8111-111111111111')
     replay, _ = client('submit', 'batch-001', '3', '11111111-1111-4111-8111-111111111111')
@@ -296,6 +340,8 @@ try:
     state, rows, task, _ = native(current, uuid)
     check('canonical task is Pending with no approvals', task.status == db.Task.PENDING and state.completed == 0 and not rows.keys)
     listed(uuid, 'STARTED')
+    task_watch.observed(uuid, 'STARTED')
+    task_watch.close(); task_watch = None
     for args in [('approve', 'other', '0'), ('approve', 'batch-001', '2'), ('approve', 'batch-001', '3'), ('approve-invalid', 'batch-001', '0')]:
         _, status = client(*args, ok=False)
         check('invalid approval rejected ' + ' '.join(args), status != 0)
@@ -327,6 +373,8 @@ try:
     check('same pending UUID survives full RocksDB restart', native(current, uuid)[2].status == db.Task.PENDING)
     listed(uuid, 'STARTED')
     check('saved first step not remutated after restart', not any('checkpoint-batch-001-0' in line for line in events(current)))
+    task_watch = TaskWatch('completion')
+    task_watch.observed(uuid, 'STARTED')
     for i in range(3):
         w = Watch('drop-' + str(i)); w.close(); reader_zero(current)
     client('approve', 'batch-001', '1'); client('approve', 'batch-001', '2')
@@ -335,6 +383,8 @@ try:
     check('canonical Completed task and three sorted approvals', task.status == db.Task.COMPLETED and state.completed == 3 and logical_keys(rows) == ['batch-001:0000', 'batch-001:0001', 'batch-001:0002'])
     until(lambda: client('tasks')[0] == '', 'completed task pruned from live listing')
     check('completed task absent from pending-only listing')
+    task_watch.observed(); task_watch.close(); task_watch = None
+    check('no stream replay of completed task', not stream_deadline().tasks)
     saved = task.SerializeToString().hex()
     check('typed public transactional history', client('history', 'batch-001')[0].splitlines() == logical_keys(rows))
     current.close(signal.SIGINT); current = None
@@ -358,16 +408,25 @@ try:
     # Shutdown with a real parked workflow and subscription, then lock reuse.
     parked, _ = client('submit', 'batch-003', '1', '33333333-3333-4333-8333-333333333333')
     watch = Watch('shutdown-parked')
+    task_watch = TaskWatch('shutdown-parked')
+    task_watch.observed(parked, 'STARTED')
     current.close(); current = None
+    until(lambda: task_watch.proc.poll() is not None, 'task stream closes on host shutdown')
+    task_watch.close(); task_watch = None
     until(lambda: watch.proc.poll() is not None, 'parked host subscription drained')
     watch.close(); watch = None
     current = Session('lock-reuse')
     check('durable lock reusable and pending task retained', native(current, parked)[2].status == db.Task.PENDING)
+    task_watch = TaskWatch('restart')
+    task_watch.observed(parked, 'STARTED')
+    task_watch.close(); task_watch = None
     current.close(); current = None
     check('acceptance complete')
     evidence['accepted'] = True
 finally:
     if not timeout_seen:
+        if task_watch is not None:
+            task_watch.close()
         if watch is not None:
             watch.close()
         if current is not None:

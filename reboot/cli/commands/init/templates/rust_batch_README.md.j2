@@ -43,6 +43,7 @@ example verifier/authorizer with their own identity provider and admin policy.
 
 ```sh
 cargo run --manifest-path backend/Cargo.toml --bin client -- tasks
+cargo run --manifest-path backend/Cargo.toml --bin client -- tasks-watch local-rust 60000
 ```
 
 The client calls canonical `Tasks.ListTasks` with `only_server_id=local-rust`, a
@@ -57,9 +58,18 @@ canonical scans, not an atomic Database snapshot or durable transition history.
 Completion disappears on a subsequent scan. Recovery recreates phase timestamps
 and resets local failure counts; completed history is not recreated. Listing
 checks the original owner generation, uncertainty and accepted placement around
-authorization. Cross-server aggregation, shared-reader registry listing, streaming
-and public cancellation are not implemented. Ordinary RPCs and Wait retain their
-existing authorization behavior; this admin policy protects listing only.
+authorization. `tasks-watch` calls canonical `Tasks.ListTasksStream` with the same
+explicit server and bearer; the final argument is the RPC deadline in milliseconds
+(default 60000). It prints `TASKS count` followed by the same columns for each
+initial/changed snapshot. A 200ms pull-owned observation loop rechecks the exact
+stream admin policy, original owner generations, activity, uncertainty and placement
+before disclosure. No detached polling worker or event queue is created. Slow
+consumers coalesce changes; revocation is checked on the next pulled observation,
+not pushed independently through transport backpressure. Reconnect after host
+restart/regeneration; there is no resume cursor or durable event history.
+Cross-server aggregation, shared-reader registry listing and public cancellation
+are not implemented. Ordinary RPCs and Wait retain their existing authorization
+behavior; this admin policy protects listing and its stream only.
 
 Local app/map ownership restoration precedes coordinator convergence, stable
 EMPTY map constructor replay, task recovery and reactive reader activation.

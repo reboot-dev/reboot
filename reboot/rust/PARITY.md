@@ -37,7 +37,7 @@ proofs below retain their separate source snapshots and limits.
 | Schema/codegen | Explicit schema DSL, Prost/Tonic bindings and concrete typed adapters | Rust derive/reflection and complete schema/tooling contract |
 | State/client runtime | Durable constructors/readers/writers, idempotent response replay, metadata/auth | General distributed ownership/fencing and arbitrary external effects |
 | Transactions | Legacy durable coordinator/participant paths and bounded supervised chains/star | General nested snapshots, reentrancy, intersecting subtrees, migration |
-| Tasks | Durable scheduled reader/writer tasks, typed results/Wait and recovery | Transactional targets, public cancel/list, broad retry and dispatcher fencing |
+| Tasks | Durable scheduled reader/writer tasks, typed results/Wait, recovery, admin local list/stream | Transactional targets, public cancellation/aggregation, broad retry and dispatcher fencing |
 | Workflows | Finite typed named steps, finite indexed replay and saved reader decisions; explicit local-body resumption | Python unbounded Task cursor/GC/Break, cross-actor composition, failure isolation |
 | Reactive readers | Typed bounded local subscriptions and commit invalidation | Cross-actor/remote invalidation, reconnect, mixed-service generated bindings |
 | SortedMap | Canonical empty constructor and serial same-host app/map transactions | Public inbound adapter, nested/reusable siblings, distributed collection lifecycle |
@@ -387,9 +387,21 @@ completed IDs on subsequent canonical scans and clears on owner revocation.
 Phase timestamps/failure counts are local to this server generation; there is no
 atomic canonical snapshot, durable transition history or completed-cache parity.
 `iterations` is the canonical task-level count, not a finite workflow checkpoint
-index. Shared-reader recovery listing, aggregation and streaming remain rejected.
+index. Shared-reader recovery listing and cross-server aggregation remain rejected.
 
-**Missing:** transactional task targets, public CancelTask/full listing/streaming,
+Canonical `Tasks.ListTasksStream` shares the exact local listing scope and emits
+an initial snapshot, then changed observations. Its RPC-owned lazy future polls
+at 200ms, retains the original dispatcher generations for the subscription
+lifetime and re-verifies/re-authorizes the exact stream method on each observation
+before post-await placement/activity/uncertainty checks. Errors terminate the
+stream; Drop cancels its timer/policy future, without a spawned producer or
+unbounded event queue. Slow consumers coalesce current observations, not a durable
+event history. Revocation is checked on the next pulled observation, not pushed
+independently through backpressure. The initial snapshot is authorized at RPC
+admission. Generated batch `tasks-watch` supplies bearer/server scope and an RPC
+deadline; reconnect creates a new current snapshot, without a resume cursor.
+
+**Missing:** transactional task targets, public CancelTask/full aggregated listing,
 task-result authorization, broad retry policies, distributed dispatcher fencing and
 migration, arbitrary shared/factory/idempotent tree scheduling. Workflow methods
 have their separate context/result contract below, not ordinary declared-task
@@ -634,6 +646,46 @@ parent/key bounds, unprepared recovery and lost-ACK retention. Unit coverage:
 
 ## Verification
 
+### Server-local administrative task-list stream (2026-10-08)
+
+Fresh native acceptance generated the public ordinary Cargo consumer and passed
+strict all-target Clippy/fmt and two behavioral tests. Actual `rbt dev run` with
+C++ Database/RocksDB exercised canonical and generated ListTasksStream: disabled
+policy, missing/invalid bearer and unsupported server scope fail closed; initial
+empty snapshot and unchanged observations preserve the real RPC deadline; the
+same live workflow changes empty → STARTED and completed → empty. Stream clients
+terminate on host shutdown and reconnect to a recovered current STARTED snapshot.
+Full batch approval/map/checkpoint/replay/regeneration/persisted delayed-task/Wait,
+subscription cleanup and durable-lock reuse regressions also passed.
+
+Local controls exercised no-duplicate/coalescing behavior, fresh exact-method
+policy checks, original generation/placement/uncertainty/stop revocation with an
+unchanged cache, owner replacement during a later awaited policy, terminal error
+closure and cancellation of an armed policy future on stream Drop. Two RED
+controls failed their exact invariants after removing the original owner fence
+or publishing unchanged observations; restored source passed. These are local
+controls, not native distributed authority proof. Native deadline/client reaping
+is not direct evidence of a particular server future's destructor, nor proof of
+independent revocation under transport backpressure.
+
+Immutable native proof:
+`/tmp/reboot-rust-batch-ledger-acceptance-1791451791876267609`
+(`accepted.json`, `frozen-source.json`, `native/result.json`). Post-native source
+changes are public rustdoc correction and an extra test-only awaited-generation
+control, not production behavior changes. RED/restored proof:
+`/tmp/reboot-rust-task-stream-controls-1791451599163707664`.
+Broad frozen gates:
+`/tmp/reboot-rust-batch-ledger-final-gates-1791452393276815561` passed strict locked
+all-target SDK Clippy, **386 tests passed / 0 failed / 128 ignored**, and the
+retained actual greeting regeneration/restart/signals/child-exit/failed-build
+cleanup regression. Ignored native matrices are not fresh passes. All manifests
+were unchanged during their respective runs; later canonical ledger updates are
+separate from those immutable semantic source snapshots.
+
+Portable sources: [RPC fences](src/one_shot_tasks.rs),
+[pull-owned stream](src/task_listing.rs), [local controls](src/task_listing_tests.rs),
+[public app acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
+
 ### Server-local administrative task listing (2026-10-08)
 
 The public generated batch app now exposes the `tasks` client command and an
@@ -851,7 +903,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: b60980dc828e417dceaf9b178ae25d4f6baea292a419aa49eac41cec1715c14f -->
+<!-- parity-source-sha256: 952f0cd983af4db7b06ced967172efac8092e814106869e3d5b2e16b0edb5456 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,
