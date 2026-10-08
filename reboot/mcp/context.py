@@ -4,13 +4,16 @@ Provides helpers for accessing the Reboot `ExternalContext`
 from within MCP tool/resource handlers.
 """
 
+import os
 from mcp.server.fastmcp import Context
 from reboot.aio.external import ExternalContext
 from reboot.mcp.helpers import \
     get_mcp_user_id  # noqa: F401 — PEP 484 re-export for `reboot.py.j2`
 from reboot.mcp.helpers import _MCP_USER_ID_KEY
+from reboot.settings import ENVVAR_RBT_MCP_UI_URL
 from reboot.uuidv7 import uuid7
 from starlette.requests import Request
+from typing import Optional
 
 # Key used to store ExternalContext in request.state.
 _REBOOT_CONTEXT_KEY = "reboot_external_context"
@@ -35,6 +38,34 @@ def get_reboot_context(context: Context) -> ExternalContext:
             "No Reboot context available — are you inside an MCP tool?"
         )
     return external_context
+
+
+def reboot_url_from_request(request: Optional[Request]) -> str:
+    """The URL an MCP App served in reply to `request` calls the
+    application back on: `RBT_MCP_UI_URL` when that is set (see
+    `reboot.settings`), otherwise the URL the request reached the
+    application at.
+
+    A proxy in front of the application (a tunnel, say) names the
+    address it was reached at in `X-Forwarded-Host` and
+    `X-Forwarded-Proto`; absent those, the request's own `Host` and
+    scheme are the address.
+    """
+    url = os.environ.get(ENVVAR_RBT_MCP_UI_URL)
+    if url:
+        return url
+    if request is None:
+        raise RuntimeError("No HTTP request in MCP context")
+    host = (
+        request.headers.get("x-forwarded-host") or request.headers.get("host")
+    )
+    if not host:
+        raise RuntimeError("No host header in request")
+    scheme = (
+        request.headers.get("x-forwarded-proto") or
+        ("https" if request.url.scheme == "https" else "http")
+    )
+    return f"{scheme}://{host}"
 
 
 def _session_id_for_request(request: Request) -> str:
