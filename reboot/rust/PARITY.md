@@ -674,7 +674,7 @@ parent/key bounds, unprepared recovery and lost-ACK retention. Unit coverage:
 
 ### Declared workflow business-error application (2026-10-08)
 
-Fresh public generation passed generated-consumer strict Clippy/fmt and **three
+Fresh public generation passed generated-consumer strict Clippy/fmt and **four
 behavioral tests**. Actual `rbt dev run`/C++ Database acceptance created a rejecting
 workflow and approval, acknowledged its saved reader/writer checkpoints, and
 returned typed `BatchRejected` through canonical Tasks.Wait. Durable inspection
