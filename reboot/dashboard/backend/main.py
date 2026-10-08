@@ -14,8 +14,10 @@ from rbt.std.collections.ordered_map.v1.ordered_map_rbt import OrderedMap
 from rbt.std.presence.v1.presence_rbt import Presence
 from reboot.aio.applications import Application
 from reboot.aio.auth.authorizers import allow, allow_if, is_app_internal
+from reboot.aio.auth.oauth import OAuth
 from reboot.aio.external import InitializeContext
 from reboot.bdd import recordings
+from reboot.dashboard.backend.auth import DeveloperSelector, RequireToken
 from reboot.dashboard.backend.constants import (
     CHANGELOG_ID,
     DASHBOARD_ID,
@@ -74,6 +76,17 @@ def _recording(directory: Path, relative: str) -> Path:
 def application() -> Application:
     """The dashboard application, with its page mounted."""
     application = Application(
+        # Whoever is at this machine is the developer, and nothing
+        # else gets in; see `auth.py`.
+        oauth=OAuth(
+            provider=DeveloperSelector(),
+            # The page is served from this application's own origin,
+            # which is always allowed; no other origin may carry the
+            # session cookie.
+            allowed_origins=[],
+            hosts=['localhost', '127.0.0.1'],
+        ),
+        token_verifier=RequireToken(),
         servicers=[
             DashboardServicer,
             PreferencesServicer,
@@ -100,7 +113,11 @@ def application() -> Application:
         root=DASHBOARD_PATH + '/',
     )
 
-    @application.http.get(RECORDINGS_PATH + '/{relative:path}')
+    # Signed-in callers only: recordings are the developer's own
+    # screenshots and videos, and the tunnel can reach this path.
+    @application.http.get(
+        RECORDINGS_PATH + '/{relative:path}', authenticated=True
+    )
     async def recording(relative: str) -> FileResponse:
         """A scenario's video or a step's screenshot, from beside the
         feature file under the working directory."""

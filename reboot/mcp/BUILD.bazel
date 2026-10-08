@@ -8,6 +8,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":helpers_py",
+        "//reboot:settings_py",
         "//reboot:uuidv7_py",
         "@com_github_reboot_dev_reboot//reboot/aio:external_py",
         requirement("mcp"),

@@ -1,12 +1,15 @@
 """A UI's cache-bust token follows the page a host is given, which
 embeds the URL the application was reached at; and that URL is what a
 proxy in front of the application says it is."""
+import os
 import tempfile
 import unittest
 from pathlib import Path
 from reboot.mcp.context import reboot_url_from_request
 from reboot.mcp.ui import compute_ui_cache_bust
+from reboot.settings import ENVVAR_RBT_MCP_UI_URL
 from starlette.requests import Request
+from unittest.mock import patch
 
 
 def _request(headers: dict[str, str]) -> Request:
@@ -77,6 +80,18 @@ class RebootUrlTest(unittest.TestCase):
             ),
             'https://app.example',
         )
+
+    def test_configured_url_wins(self) -> None:
+        with patch.dict(
+            os.environ, {ENVVAR_RBT_MCP_UI_URL: 'https://t.example'}
+        ):
+            self.assertEqual(
+                reboot_url_from_request(_request({'Host': 'localhost:9991'})),
+                'https://t.example',
+            )
+            self.assertEqual(
+                reboot_url_from_request(None), 'https://t.example'
+            )
 
     def test_no_request_or_host(self) -> None:
         with self.assertRaises(RuntimeError):

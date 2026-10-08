@@ -96,11 +96,22 @@ class OAuth:
         your app. An `https://` App Link / Universal Link, which the
         operating system verifies against your domain, avoids the race
         entirely and is the stronger choice where you can use one.
+    :param hosts: the hostnames this application's OAuth server
+        answers under, e.g. `["localhost", "127.0.0.1"]`; a request
+        for any of its endpoints under another `Host` is refused, so
+        nobody signs in, and no token is minted or refreshed, that
+        way. `None`, the default, answers under any `Host`. For an
+        application reached through a tunnel whose users sign in only
+        on the machine it runs on: the tunnel's requests arrive under
+        the tunnel's name, which cannot be a loopback name, while a
+        browser's and an MCP host's on that machine do. A port is not
+        part of a hostname here, so `localhost` covers every port.
     """
 
     provider: OAuthProviderSelector
     allowed_origins: Optional[Sequence[str]] = None
     skip_consent_for_redirect_uris: Sequence[str] = ()
+    hosts: Optional[Sequence[str]] = None
 
     def __post_init__(self) -> None:
         # Copy both sequences into tuples so that `frozen=True` means
@@ -118,6 +129,17 @@ class OAuth:
             "skip_consent_for_redirect_uris",
             tuple(self.skip_consent_for_redirect_uris),
         )
+        object.__setattr__(
+            self,
+            "hosts",
+            None if self.hosts is None else tuple(self.hosts),
+        )
+        for host in self.hosts or []:
+            if not isinstance(host, str) or not host or ":" in host:
+                raise ValueError(
+                    "`hosts` must be a list of hostnames with no port, e.g. "
+                    f"`['localhost', '127.0.0.1']`; got {host!r}"
+                )
         # Light validation: surface obvious typos at construction
         # rather than waiting for a browser to silently fail a CORS
         # preflight at runtime.

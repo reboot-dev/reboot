@@ -6,6 +6,7 @@ import secrets
 import shutil
 import sys
 import webbrowser
+from contextlib import AsyncExitStack, suppress
 from pathlib import Path
 from reboot.aio.backoff import Backoff
 from reboot.cli.commands.dev import (
@@ -31,12 +32,19 @@ from reboot.dashboard.backend.constants import (
     ENVVAR_RBT_APPLICATION,
     ENVVAR_RBT_GENERATED_DIRECTORY,
 )
+from reboot.dashboard.tunnel import (
+    DashboardTunnel,
+    TunnelError,
+    cloudflare_tunnel,
+)
 from reboot.settings import (
+    ENVVAR_LOCAL_ENVOY_USE_TLS,
     ENVVAR_RBT_DEV,
     ENVVAR_RBT_EFFECT_VALIDATION,
     ENVVAR_RBT_FRONTEND_DIST_PATH,
     ENVVAR_RBT_FRONTEND_HOST,
     ENVVAR_RBT_FRONTEND_ROOT_PATH,
+    ENVVAR_RBT_MCP_UI_URL,
     ENVVAR_RBT_NAME,
     ENVVAR_RBT_NODEJS,
     ENVVAR_RBT_SERVE,
@@ -64,6 +72,15 @@ def dashboard_subcommands() -> list[str]:
 
 def register_dashboard(parser: ArgumentParser):
     add_working_directory_options(parser.subcommand('dashboard'))
+
+    parser.subcommand('dashboard').add_argument(
+        '--tunnel',
+        type=bool,
+        default=True,
+        help='open a Cloudflare tunnel so that an MCP host such as Claude '
+        'can show the dashboard as an MCP App; `--no-tunnel` serves the '
+        'dashboard to this machine only',
+    )
 
     parser.subcommand('dashboard').add_argument(
         '--port',
@@ -143,11 +160,15 @@ def _dashboard_env(
     parser: ArgumentParser,
     *,
     port: int,
+    mcp_ui_url: Optional[str],
     api_directory: str,
     application: Optional[str],
     generated_directory: Optional[str],
 ) -> dict[str, str]:
-    """The environment for the dashboard application.
+    """The environment for the dashboard application, serving on
+    `port`, and telling an MCP App to call back on `mcp_ui_url` when
+    that is given: the tunnel's address, which the App's sandbox can
+    reach where this machine's address cannot be.
 
     Built from the ambient environment rather than from any
     application environment, so that nothing naming a developer's
@@ -181,6 +202,16 @@ def _dashboard_env(
     composed[ENVVAR_REBOOT_EXPECTED_VERSION] = REBOOT_VERSION
     composed[ENVVAR_REBOOT_LOCAL_ENVOY] = 'true'
     composed[ENVVAR_REBOOT_LOCAL_ENVOY_PORT] = str(port)
+
+    # Plain HTTP: the dashboard is for this machine, and the tunnel
+    # carries TLS for the rest of the way. Set rather than left to the
+    # ambient environment, where a developer's export for their own
+    # application would otherwise reach this one.
+    composed[ENVVAR_LOCAL_ENVOY_USE_TLS] = 'false'
+
+    composed.pop(ENVVAR_RBT_MCP_UI_URL, None)
+    if mcp_ui_url is not None:
+        composed[ENVVAR_RBT_MCP_UI_URL] = mcp_ui_url
 
     # A single server, so that a subscriber's `Connect` and
     # `Toggle` always land on the same process; presence tracks its
@@ -282,6 +313,30 @@ async def _run_dashboard(
         await backoff()
 
 
+async def _serve(
+    *,
+    env: dict[str, str],
+    port: int,
+    subprocesses: Subprocesses,
+) -> None:
+    """Runs the dashboard application in `env`, opening a browser on
+    it once it serves on `port`."""
+    open_task = asyncio.create_task(
+        _open_when_serving(port=port),
+        name=f'_open_when_serving(...) in {__name__}',
+    )
+    try:
+        await _run_dashboard(
+            env=env,
+            state_directory=Path(env[ENVVAR_RBT_STATE_DIRECTORY]),
+            subprocesses=subprocesses,
+        )
+    finally:
+        open_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await open_task
+
+
 async def _open_when_serving(*, port: int) -> None:
     """Opens the dashboard once it is serving, unless somebody is
     already looking at one: the page subscribes to `Presence` for as
@@ -363,30 +418,52 @@ async def dashboard(
 
         port = args.port or DEFAULT_DASHBOARD_PORT
 
-        env = _dashboard_env(
-            args,
-            parser,
-            port=port,
-            api_directory=_api_directory(parser),
-            application=_application(parser),
-            generated_directory=_generated_directory(parser),
-        )
+        async with AsyncExitStack() as stack:
+            # Without a tunnel the dashboard still serves, to this
+            # machine; only an MCP host, whose App cannot reach this
+            # machine, goes without. Said so, since the developer did
+            # not ask for that.
+            tunnel: Optional[DashboardTunnel] = None
+            if args.tunnel:
+                try:
+                    tunnel = await stack.enter_async_context(
+                        cloudflare_tunnel(
+                            port=port, subprocesses=subprocesses
+                        )
+                    )
+                except TunnelError as error:
+                    terminal.warn(
+                        f'{error}\n\n'
+                        'Serving the dashboard without a tunnel, so an MCP '
+                        'host cannot show it; pass `--no-tunnel` to skip '
+                        'trying for one.\n'
+                    )
 
-        terminal.info(f'Your dashboard is at http://127.0.0.1:{port}/\n')
-
-        open_task = asyncio.create_task(
-            _open_when_serving(port=port),
-            name=f'_open_when_serving(...) in {__name__}',
-        )
-
-        try:
-            await _run_dashboard(
-                env=env,
-                state_directory=Path(env[ENVVAR_RBT_STATE_DIRECTORY]),
-                subprocesses=subprocesses,
+            env = _dashboard_env(
+                args,
+                parser,
+                port=port,
+                mcp_ui_url=None if tunnel is None else tunnel.url,
+                api_directory=_api_directory(parser),
+                application=_application(parser),
+                generated_directory=_generated_directory(parser),
             )
-        finally:
-            open_task.cancel()
+
+            terminal.info(f'Your dashboard is at http://127.0.0.1:{port}/\n')
+            if tunnel is not None:
+                terminal.info(
+                    'Your dashboard is also an MCP App; give an MCP host '
+                    f'http://127.0.0.1:{port}/mcp/\n'
+                )
+
+            serving = _serve(env=env, port=port, subprocesses=subprocesses)
+            try:
+                if tunnel is None:
+                    await serving
+                else:
+                    await tunnel.run(serving)
+            except TunnelError as error:
+                terminal.fail(str(error))
 
     return 0
 

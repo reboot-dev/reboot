@@ -144,6 +144,16 @@ ENVVAR_RBT_FRONTEND_HOST = 'RBT_FRONTEND_HOST'
 ENVVAR_RBT_FRONTEND_ROOT_PATH = 'RBT_FRONTEND_ROOT_PATH'
 ENVVAR_RBT_FRONTEND_DIST_PATH = 'RBT_FRONTEND_DIST_PATH'
 
+# The address an MCP App calls the application back on, when it is
+# not the address the MCP host reached the application at. Unset, the
+# App is told the address of the request that served it (see
+# `reboot_url_from_request` in `reboot/mcp/context.py`), which is
+# right whenever the host and the App reach the application the same
+# way. `rbt dashboard` sets it: an MCP host on this machine reaches
+# the dashboard at `127.0.0.1`, while the App it shows runs in a
+# sandbox that reaches the dashboard only through a tunnel.
+ENVVAR_RBT_MCP_UI_URL = 'RBT_MCP_UI_URL'
+
 # Environment variable indicating that `rbt` is being invoked from
 # Node.js.
 ENVVAR_RBT_FROM_NODEJS = 'RBT_FROM_NODEJS'

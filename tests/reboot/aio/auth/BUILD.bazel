@@ -79,3 +79,21 @@ py_test(
         "//reboot/ping:ping_py",
     ],
 )
+
+py_test(
+    name = "authenticated_routes_test_py",
+    size = "small",
+    timeout = "short",
+    srcs = ["authenticated_routes_test.py"],
+    main = "authenticated_routes_test.py",
+    deps = [
+        "//reboot/aio:applications_py",
+        "//reboot/aio:exceptions_py",
+        "//reboot/aio:tests_py",
+        "//reboot/aio/auth:oauth_providers_py",
+        "//reboot/aio/auth:oauth_py",
+        "//reboot/ping:ping_py",
+        requirement("httpx"),
+        requirement("starlette"),
+    ],
+)

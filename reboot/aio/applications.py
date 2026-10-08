@@ -462,11 +462,14 @@ class Application:
         # allow-list (possibly empty) applies.
         self._allowed_origins: Optional[list[str]] = None
         self._skip_consent_for_redirect_uris: list[str] = []
+        self._oauth_hosts: Optional[list[str]] = None
         if oauth is not None:
             self._allowed_origins = list(oauth.allowed_origins or [])
             self._skip_consent_for_redirect_uris = list(
                 oauth.skip_consent_for_redirect_uris
             )
+            if oauth.hosts is not None:
+                self._oauth_hosts = list(oauth.hosts)
         self._title = title or application_name()
         self._description = description
         self._example_prompts = example_prompts or []
@@ -738,8 +741,11 @@ class Application:
                 skip_consent_for_redirect_uris=(
                     self._skip_consent_for_redirect_uris
                 ),
+                hosts=self._oauth_hosts,
             )
             self._oauth_server = oauth_server
+            # What an `authenticated=True` HTTP route asks of a request.
+            self.http.authenticate_with(oauth_server.authenticated_user_id)
             if self._token_verifier is not None:
                 # Compose with the user's own verifier: the OAuth
                 # server's verifier runs first, definitively rejecting
@@ -752,6 +758,14 @@ class Application:
             else:
                 self._token_verifier = oauth_server.token_verifier
             oauth_server.mount_routes(self.http)
+        elif self.http.has_authenticated_routes():
+            raise InputError(
+                reason=(
+                    "An HTTP route with `authenticated=True` requires "
+                    "`Application(oauth=...)`: the access token it asks "
+                    "for is the one the OAuth server mints."
+                )
+            )
         return auto_construct_state_type_full_names
 
     async def _authenticated(

@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import re
 import uvicorn  # type: ignore[import]
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -10,6 +11,8 @@ from reboot.aio.internals.channel_manager import _ChannelManager
 from reboot.aio.types import ApplicationId, ServerId
 from reboot.wait_for_tasks import wait_for_tasks
 from starlette.requests import Request  # type: ignore[import]
+from starlette.responses import Response  # type: ignore[import]
+from starlette.routing import compile_path  # type: ignore[import]
 from starlette.types import Receive, Scope, Send  # type: ignore[import]
 from typing import (
     Any,
@@ -93,6 +96,29 @@ class PythonWebFramework(WebFramework):
             # instead of the usual external one, because they opted in via
             # `app_internal=True`. See the DANGER note in `_api_route`.
             self._app_internal_paths: set[str] = set()
+            # The paths of routes that require the application's access
+            # token (`authenticated=True`), each compiled the way
+            # Starlette matches it, so that a path template matches the
+            # requests it serves.
+            self._authenticated_paths: list[re.Pattern[str]] = []
+            # How such a route learns who is calling, or `None` until
+            # the application has an OAuth server to say; see
+            # `authenticate_with`.
+            self._authenticate: Optional[Callable[[Request],
+                                                  Optional[str]]] = None
+
+        def authenticate_with(
+            self,
+            authenticate: Callable[[Request], Optional[str]],
+        ) -> None:
+            """Sets what an `authenticated=True` route asks of a request:
+            the user it is signed in as, or `None` for nobody. The
+            application sets this once it has mounted its OAuth server,
+            whose access tokens are what sign a request in."""
+            self._authenticate = authenticate
+
+        def has_authenticated_routes(self) -> bool:
+            return len(self._authenticated_paths) > 0
 
         def _api_route(self, path: str, **kwargs):
             # `app_internal` is our own kwarg, not one of FastAPI's, so we
@@ -111,6 +137,20 @@ class PythonWebFramework(WebFramework):
             # request input.
             if kwargs.pop("app_internal", False):
                 self._app_internal_paths.add(path)
+
+            # `authenticated` is ours too. A route with it serves only a
+            # request signed in as some user of the application, by
+            # the access JWT in its `Authorization: Bearer` header or,
+            # for a browser's same-origin navigation, in its session
+            # cookie; anything else gets a 401. Such a route is
+            # callable from any origin, like `/mcp`: it answers its
+            # own CORS with no credentials allowed, so a cross-origin
+            # page can call it only with a bearer it already holds,
+            # never with the user's cookie. Which is also what makes
+            # it safe to answer a page shown by an MCP host, whose
+            # origin is not knowable in advance.
+            if kwargs.pop("authenticated", False):
+                self._authenticated_paths.append(compile_path(path)[0])
 
             # TODO: add type annotations for `endpoint` so that what
             # we take in is exactly what we return.
@@ -273,8 +313,46 @@ class PythonWebFramework(WebFramework):
 
         fastapi = FastAPI()
 
+        # What an `authenticated=True` route's replies say to any
+        # origin; see `HTTP._api_route`.
+        authenticated_cors_headers = {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST",
+            "Access-Control-Allow-Headers": "authorization, content-type",
+            "Access-Control-Max-Age": "600",
+        }
+
+        async def authenticated_route(request: Request, call_next):
+            if request.method == "OPTIONS":
+                return Response(
+                    status_code=204, headers=authenticated_cors_headers
+                )
+            # `Application` refuses to mount an authenticated route
+            # without an OAuth server to ask.
+            assert self._http._authenticate is not None
+            if self._http._authenticate(request) is None:
+                return Response(
+                    status_code=401,
+                    headers={
+                        **authenticated_cors_headers,
+                        "WWW-Authenticate":
+                            "Bearer",
+                    },
+                )
+            response = await call_next(request)
+            response.headers.update(authenticated_cors_headers)
+            return response
+
         @fastapi.middleware("http")
         async def external_context_middleware(request: Request, call_next):
+            if any(
+                pattern.match(request.url.path)
+                for pattern in self._http._authenticated_paths
+            ):
+                request.state.reboot_external_context = (
+                    external_context_from_request(request)
+                )
+                return await authenticated_route(request, call_next)
             # Most routes get an *external* context (no `caller_id`): an
             # HTTP handler serves untrusted external traffic, so handing it
             # a caller that bypasses authorizers would let external

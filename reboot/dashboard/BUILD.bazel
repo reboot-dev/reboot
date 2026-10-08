@@ -1,0 +1,22 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library")
+
+# The Reboot plugin's installer for a pinned, checksum-verified
+# `cloudflared`, packaged beside `tunnel.py` so that `rbt dashboard`
+# can install one the same way, into the same cache.
+genrule(
+    name = "cloudflared_installer",
+    srcs = ["//reboot/plugin:lib/install_cloudflared.sh"],
+    outs = ["install_cloudflared.sh"],
+    cmd = "cp $< $@",
+)
+
+py_library(
+    name = "tunnel_py",
+    srcs = ["tunnel.py"],
+    data = [":cloudflared_installer"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//reboot/cli/common:subprocesses_py",
+    ],
+)

@@ -414,7 +414,9 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
     async def _code_changes(self, *, satisfied) -> list[Change]:
         """The code's entries in the changelog once they satisfy,
         newest first, reading again whenever the changelog changes."""
-        context = self.rbt.create_external_context(name=self.id())
+        context = self.rbt.create_external_context(
+            name=self.id(), app_internal=True
+        )
         async for response, aborted in OrderedMap.ref(CHANGELOG_ID).reactively(
         ).ReverseRange(context, limit=100):
             if aborted is not None:
@@ -439,7 +441,9 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
         A list per state type, because two classes servicing one is
         two entries rather than anything the recording adjudicates.
         """
-        context = self.rbt.create_external_context(name=self.id())
+        context = self.rbt.create_external_context(
+            name=self.id(), app_internal=True
+        )
 
         async for response, aborted in Dashboard.ref(DASHBOARD_ID).reactively(
         ).Get(context):
@@ -459,7 +463,9 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
     async def _implementation(self, *, satisfied):
         """Returns the recorded implementation once it satisfies,
         reading again whenever it changes."""
-        context = self.rbt.create_external_context(name=self.id())
+        context = self.rbt.create_external_context(
+            name=self.id(), app_internal=True
+        )
 
         async for response, aborted in Dashboard.ref(DASHBOARD_ID).reactively(
         ).Get(context):
@@ -576,7 +582,9 @@ class ImplementationWatcherTest(unittest.IsolatedAsyncioTestCase):
             [str(self.source / 'shop_servicer.py')],
         )
 
-        context = self.rbt.create_external_context(name=self.id())
+        context = self.rbt.create_external_context(
+            name=self.id(), app_internal=True
+        )
 
         async for response, aborted in Dashboard.ref(DASHBOARD_ID).reactively(
         ).Get(context):
