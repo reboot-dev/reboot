@@ -44,7 +44,7 @@ proofs below retain their separate source snapshots and limits.
 | Tasks | Durable scheduled tasks, typed results/Wait, recovery, local admin list/stream and scheduled-workflow cancellation | Transactional targets, running/ordinary/distributed cancellation, aggregation, broad retry and dispatcher fencing |
 | Workflows | Finite typed named steps, finite indexed replay, saved reader decisions, typed declared business terminals; explicit local-body resumption | Python unbounded Task cursor/GC/Break, cross-actor composition, framework failure isolation |
 | Reactive readers | Typed bounded database/workflow/transaction-service ordinary reader subscriptions, commit invalidation and explicit same-query reconnect | Cross-actor/remote invalidation, transparent reconnect/durable resume, streaming/transaction RPC subscriptions |
-| SortedMap | Canonical empty constructor and serial same-host app/map transactions | Public inbound adapter, nested/reusable siblings, distributed collection lifecycle |
+| SortedMap | Canonical empty constructor, serial same-host app/map transactions and public two-map atomic approval transfer | Public inbound adapter, nested/reusable siblings, distributed collection lifecycle |
 
 ## Local app development
 
@@ -68,7 +68,10 @@ rbt init --backend=rust --frontend=none --application-name=batch_ledger \
 ```
 
 Its generated README documents `create`, `submit`, `approve`, `watch`, `wait`,
-`read` and `history`. Approval updates the ledger and index in one transaction;
+`read`, `history`, `archive`, `archive-history` and typed archive rejection.
+Approval updates the ledger and index in one transaction; archive moves an exact
+approval entry between two distinct canonical maps and updates a cumulative counter
+under the same admitted app root. Existing workflow terminals/checkpoints are retained;
 workflow steps wait without holding an exclusive lease. The stable empty-map
 constructor replays on restart; no private state seeding is required. Arbitrary
 external-effects exactly-once and additional status-code retry policies are not
@@ -813,6 +816,12 @@ guarantee.
 **Sources:** [library/session](src/sorted_map.rs),
 [native participant](src/sorted_map_participant.rs),
 [canonical schema](../../rbt/std/collections/v1/sorted_map.proto).
+The public application also exercises serial distinct-map transfer under one app
+root: exact bytes/read-own-writes, app-plus-two-map Commit/Abort, occupied destination
+and present-empty values, all-participant restoration and fresh post-restart transfer.
+See [public collection evidence](#public-serial-distinct-map-transfer-2026-10-08).
+This does not remove the missing admission/operation-lifetime shapes above.
+
 **Executed acceptance:** [native prerequisite](tests/sorted_map_native_prerequisite.rs),
 [generated app](tests/fixtures/sorted_map_app/src/main.rs),
 [lost ACK vector](tests/fixtures/sorted_map_lost_ack.rs).
@@ -822,6 +831,73 @@ parent/key bounds, unprepared recovery and lost-ACK retention. Unit coverage:
 [ownership tests](src/sorted_map_ownership_tests.rs).
 
 ## Verification
+
+### Public serial distinct-map transfer (2026-10-08)
+
+The opt-in public batch scaffold adds `LedgerIndex.ArchiveEntry`/`ArchiveHistory`,
+`ArchiveRejected`, cumulative `Ledger.archived`, and generated client commands
+`archive`/`archive-history`. A second canonical EMPTY SortedMap is host-created via
+its stable constructor, not privately seeded. Both exact map participants are in
+resolver control routes and recovery registration. All app/map ownership restoration
+precedes coordinator/task recovery and readiness; Work still owns the only Tasks.Wait.
+
+Within one fresh same-host existing-actor exclusive app root without automatic
+root idempotency, the handler reads source presence (Some(empty) is not absent),
+rejects an occupied destination, removes source, inserts exact bytes into destination,
+checks both read-own-writes and increments a checked cumulative app counter. Root
+Commit covers the app plus both distinct map participants. A caught invalid Range
+after all provisional effects dooms/aborts the entire cohort; the CLI preserves the
+actual original **Unknown InvalidRangeError**, not an invented Code::Aborted.
+Method-scoped ArchiveRejected uses the existing Status-compatible transaction
+handler and generated typed-result compatibility hook; required handler traits did
+not change. The client validates exact single-detail declared payload/Unknown status.
+
+**Fresh executed evidence (frozen inputs, all source_unchanged):**
+
+- `/tmp/reboot-rust-batch-ledger-acceptance-1791474667645658662`: actual public
+  init/Cargo/rbt/CXX/RocksDB. Emitted consumer fmt/strict all-target Clippy and
+  **six library tests** passed. Native canonical reads prove raw actor-state,
+  both map rows, original workflow terminal and saved progress records unchanged
+  after caught two-map doom, source-absent rejection and occupied-destination
+  rejection. Occupancy is tested by archiving, publicly resubmitting the same
+  batch with a fresh scheduling key, approving/recreating source and completing
+  that workflow; a present-empty destination is rejected, not overwritten.
+  Successful transfers preserve present-empty value, remove only selected source
+  key, increment the durable app counter and retain original task/checkpoint
+  bytes. Duplicate move is declared source absence, not a second effect. Full
+  RocksDB restart retains identical raw committed snapshot; a fresh transfer
+  succeeds after all participant ownership is restored. ArchiveHistory reads the
+  canonical destination. Both new transaction RPC subscription attempts fail
+  closed; all prior batch/workflow/reactive/list/stream/cancellation/watch checks
+  pass and recorded owned process groups are reaped.
+- `/tmp/reboot-rust-batch-ledger-final-gates-1791475468598897705`: strict SDK
+  all-target Clippy; **399 passed, 0 failed, 128 ignored**. Default greeting
+  generation/native create/write/replay/read, canonical Load, RocksDB restart,
+  host/Database failure supervision and failed-live-rebuild cleanup pass.
+- `/tmp/reboot-rust-mixed-reader-no-business-errors-1791475982812429036`: separate
+  generated reader-error variant strict all-target consumer Clippy and **six
+  library tests**. This is compiler/consumer evidence, not native persistence
+  for that variant. Archive's own declared error remains present in this schema;
+  "no business errors" here describes the ordinary ApprovalSnapshot reader.
+
+**Limits:** a bounded serial distinct-actor/direct-root collection application,
+not same-map reentry, reusable sibling/nested paths, a header-authorized public
+builtin/network adapter, distributed placement or general collection migration.
+Sessions/futures remain handler-awaited and nonescaping; no new root-operation
+reservation or cancellation-overlap safety is implied. Empty values are exercised,
+not arbitrary nonempty transfer bytes. Unit counter-overflow control proves no
+partial increment, not native full-cohort overflow rollback. New three-participant
+Store/Prepare/terminal lost-ACK or crash-boundary injection is not executed; prior
+single-map uncertainty evidence is not upgraded. No automatic transfer idempotency,
+status retry or external-effects exactly-once; callers must reconcile uncertain
+RPC outcomes through durable application state. Constructor crash/lost-ACK and
+sidecar-only restart remain separate unsupported/unproved shapes.
+
+**Sources:** [public schema](../cli/commands/init/templates/rust_batch.proto.j2),
+[handler](../cli/commands/init/templates/rust_batch_lib.rs.j2),
+[host](../cli/commands/init/templates/rust_batch_host.rs.j2),
+[client](../cli/commands/init/templates/rust_batch_client.rs.j2),
+[native acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
 
 ### Workflow-service reactive composition (2026-10-08)
 
@@ -1223,7 +1299,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 87d74740e8c672e3f59ef317c44817ac57f69b0bf5ac4ed1cfdfce9851efc93b -->
+<!-- parity-source-sha256: b4ccc85370cd0a0b866eafa20a6a0a7608e9d4cd0e6268a7b6eeb382a88b46dd -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

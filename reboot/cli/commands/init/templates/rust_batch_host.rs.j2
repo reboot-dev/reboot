@@ -173,6 +173,7 @@ impl HostRecovery for ReaderTelemetry {
 struct MapConstructor {
     library: reboot::sorted_map::SortedMapLibrary,
     state_ref: String,
+    key: Uuid,
 }
 #[tonic::async_trait]
 impl HostRecovery for MapConstructor {
@@ -182,12 +183,7 @@ impl HostRecovery for MapConstructor {
         _: RecoveryCancellation,
     ) -> Result<(), Status> {
         // Stable logical EMPTY constructor replay, AFTER all native ownership recovery.
-        generated_map::SortedMap::create(
-            &self.library,
-            &self.state_ref,
-            Uuid::from_u128(0x6c65646765724d61b043726561740001),
-        )
-        .await?;
+        generated_map::SortedMap::create(&self.library, &self.state_ref, self.key).await?;
         Ok(())
     }
 }
@@ -242,6 +238,7 @@ pub async fn serve(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let reference = crate::reference()?;
     let map_ref = reboot::state_ref::StateRef::from_id(MAP, "approvals")?.to_string();
+    let archive_ref = reboot::state_ref::StateRef::from_id(MAP, "archived-approvals")?.to_string();
     let store = DatabaseActorStore::connect(endpoint.clone()).await?;
     let sidecar = Arc::new(TonicParticipantSidecar::connect(endpoint.clone()).await?);
     let participant = DurableActorParticipant::new(sidecar, STATE_TYPE, &reference)
@@ -249,18 +246,24 @@ pub async fn serve(
     let library = reboot::sorted_map::SortedMapLibrary::new(store.clone()).await?;
     let map = generated_map::SortedMap::target(&library, &map_ref)?;
     let map_participant = map.participant();
+    let archive = generated_map::SortedMap::target(&library, &archive_ref)?;
+    let archive_participant = archive.participant();
     let routes = Routes {
-        entries: [participant.clone(), map_participant.clone()]
-            .into_iter()
-            .map(|participant| {
-                (
-                    participant.actor_target(),
-                    Arc::new(InProcessParticipantEndpoint::new(
-                        DurableActorParticipantHost::new(participant),
-                    )),
-                )
-            })
-            .collect(),
+        entries: [
+            participant.clone(),
+            map_participant.clone(),
+            archive_participant.clone(),
+        ]
+        .into_iter()
+        .map(|participant| {
+            (
+                participant.actor_target(),
+                Arc::new(InProcessParticipantEndpoint::new(
+                    DurableActorParticipantHost::new(participant),
+                )),
+            )
+        })
+        .collect(),
     };
     let coordinator_sidecar = Arc::new(TonicCoordinatorSidecar::connect(endpoint).await?);
     let coordinator = DurableRootCoordinator::new(coordinator_sidecar.clone(), Arc::new(routes))
@@ -271,7 +274,7 @@ pub async fn serve(
         participant.clone(),
         coordinator.clone(),
         Starts,
-        Index { map },
+        Index { map, archive },
     )
     .with_explicit_abort_owner(abort_owner);
     let abort_recovery = index.explicit_abort_recovery_registration()?;
@@ -296,7 +299,8 @@ pub async fn serve(
             &reference,
         )?)),
     )?
-    .with_participant(map_participant, participant_metadata)?;
+    .with_participant(map_participant, participant_metadata.clone())?
+    .with_participant(archive_participant, participant_metadata)?;
     let (work, tasks) = generated::LedgerWorkMethodsDatabaseAdapter::new(store.clone(), Ledger)
         .with_workflows(&reference)?;
     let (readers, _) = index.local_readers(&reference)?;
@@ -327,8 +331,14 @@ pub async fn serve(
     ApplicationHost::new(application)
         .with_host_recovery(recovery)
         .with_host_recovery(MapConstructor {
-            library,
+            library: library.clone(),
             state_ref: map_ref,
+            key: Uuid::from_u128(0x6c65646765724d61b043726561740001),
+        })
+        .with_host_recovery(MapConstructor {
+            library,
+            state_ref: archive_ref,
+            key: Uuid::from_u128(0x6c65646765724d61b043726561740002),
         })
         .with_host_recovery(abort_recovery)
         .with_host_recovery(tasks.recovery(db::RecoverRequest {

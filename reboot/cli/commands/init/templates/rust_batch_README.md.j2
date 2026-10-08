@@ -56,6 +56,34 @@ Public `Checkpoint` RPCs are denied: only dispatcher-owned workflow steps may
 advance progress or mark rejection. Only the workflow method declares errors here; declared reader/writer errors in
 the same workflow service remain unsupported.
 
+
+## Atomic transfer between two collections
+
+`client archive batch-001:0000` moves an acknowledged approval entry from the
+`approvals` canonical SortedMap into a separately constructed
+`archived-approvals` SortedMap, atomically with the app's cumulative `archived`
+counter. The RPC returns key/value byte length/counter. Present-empty bytes are
+an existing value and transfer normally; absent source or occupied destination
+returns typed `ArchiveRejected`, never a false success or overwrite.
+`client history batch-001` and `client archive-history batch-001` read each map
+through public typed app transactions. Keys retain the existing map constraints.
+
+`client archive-invalid KEY` deliberately catches a declared invalid range after
+both map overlays and the tentative counter changed. The whole root must abort:
+source removal, destination insertion and counter all roll back. The native
+acceptance inspects exact canonical app/map/task/replay records and then verifies
+committed transfer plus another transfer after full host/Database restart.
+The original completed workflow terminal/checkpoints do not change when the
+current app state and collection contents change.
+
+This is a serial handler-awaited fresh exclusive app root with two DISTINCT
+same-host map actors; both maps restore ownership before coordinator/task
+recovery and readiness. It is not same-map reentry, nested/reusable sibling
+paths, a public/network builtin adapter or distributed placement. Automatic
+root idempotency remains disabled for direct-map calls; duplicate transfer
+returns source-absent rejection. No status retries or external exactly-once
+claim. This acceptance is not a new multi-map lost-ACK/crash-at-Prepare proof.
+
 ## Inspect pending tasks
 
 Listing is disabled unless the host receives a nonempty

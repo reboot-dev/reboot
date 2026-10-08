@@ -182,8 +182,29 @@ impl generated::LedgerWorkMethodsDatabaseHandler for Ledger {
         Ok(result)
     }
 }
+fn archive_rejection(key: String, reason: &str) -> tonic::Status {
+    // Preserve the existing Status handler contract; the generated typed
+    // transaction-result hook validates this method-scoped declared envelope.
+    reboot::declared_error_status(
+        tonic::Code::Unknown,
+        reason,
+        "type.googleapis.com/{{ name }}.v1.ArchiveRejected",
+        &proto::ArchiveRejected {
+            key,
+            reason: reason.into(),
+        },
+    )
+}
+fn increment_archive_count(state: &mut proto::Ledger) -> Result<(), Box<tonic::Status>> {
+    state.archived = state
+        .archived
+        .checked_add(1)
+        .ok_or_else(|| Box::new(tonic::Status::resource_exhausted("archive count overflow")))?;
+    Ok(())
+}
 pub struct Index {
     pub map: generated_map::SortedMap,
+    pub archive: generated_map::SortedMap,
 }
 #[tonic::async_trait]
 impl generated::LedgerIndexMethodsTransactionHandler for Index {
@@ -238,6 +259,105 @@ impl generated::LedgerIndexMethodsTransactionHandler for Index {
         }
         Ok(TransactionExecution::new(state.clone()))
     }
+    async fn archive_entry(
+        &self,
+        context: &TransactionContext,
+        state: &mut proto::Ledger,
+        request: proto::ArchiveRequest,
+    ) -> Result<TransactionExecution<proto::ArchiveResult>, tonic::Status> {
+        // Serial, handler-awaited admission of two distinct map actors. Do not
+        // reenter the same map or escape/spawn any of these sessions/futures.
+        let source = self.map.in_transaction(context).await?;
+        let value = source
+            .get(reboot::sorted_map_proto::GetRequest {
+                key: request.key.clone(),
+            })
+            .await?
+            .value;
+        let Some(value) = value else {
+            return Err(archive_rejection(request.key, "source entry is absent"));
+        };
+        let destination = self.archive.in_transaction(context).await?;
+        if destination
+            .get(reboot::sorted_map_proto::GetRequest {
+                key: request.key.clone(),
+            })
+            .await?
+            .value
+            .is_some()
+        {
+            return Err(archive_rejection(
+                request.key,
+                "archive entry already exists",
+            ));
+        }
+        // Some(empty) is an existing value, not a missing entry.
+        source
+            .remove(reboot::sorted_map_proto::RemoveRequest {
+                keys: vec![request.key.clone()],
+            })
+            .await?;
+        destination
+            .insert(reboot::sorted_map_proto::InsertRequest {
+                entries: [(request.key.clone(), value.clone())].into(),
+            })
+            .await?;
+        if source
+            .get(reboot::sorted_map_proto::GetRequest {
+                key: request.key.clone(),
+            })
+            .await?
+            .value
+            .is_some()
+            || destination
+                .get(reboot::sorted_map_proto::GetRequest {
+                    key: request.key.clone(),
+                })
+                .await?
+                .value
+                != Some(value.clone())
+        {
+            return Err(tonic::Status::data_loss(
+                "archive read-own-writes did not preserve exact presence/value",
+            ));
+        }
+        increment_archive_count(state).map_err(|error| *error)?;
+        if request.invalid_range {
+            // A caught map failure after touching BOTH actors must doom ALL
+            // enrolled participants and discard the tentative app increment.
+            destination
+                .range(reboot::sorted_map_proto::RangeRequest {
+                    limit: 0,
+                    ..Default::default()
+                })
+                .await
+                .expect_err("invalid archive range accepted");
+        }
+        Ok(TransactionExecution::new(proto::ArchiveResult {
+            key: request.key,
+            value,
+            archived: state.archived,
+        }))
+    }
+    async fn archive_history(
+        &self,
+        context: &TransactionContext,
+        _: &mut proto::Ledger,
+        request: proto::Batch,
+    ) -> Result<TransactionExecution<proto::HistoryResult>, tonic::Status> {
+        validate_batch(&request.batch, 1)?;
+        let session = self.archive.in_transaction(context).await?;
+        let range = session
+            .range(reboot::sorted_map_proto::RangeRequest {
+                start_key: Some(format!("{}:", request.batch)),
+                end_key: Some(format!("{};", request.batch)),
+                limit: 100,
+            })
+            .await?;
+        Ok(TransactionExecution::new(proto::HistoryResult {
+            keys: range.entries.into_iter().map(|entry| entry.key).collect(),
+        }))
+    }
     async fn history(
         &self,
         context: &TransactionContext,
@@ -261,6 +381,37 @@ impl generated::LedgerIndexMethodsTransactionHandler for Index {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn archive_rejection_preserves_method_declared_payload() {
+        use prost::Message;
+        let status = archive_rejection("entry".into(), "source entry is absent");
+        let rich = reboot::declared_error_details(&status).unwrap().unwrap();
+        assert_eq!(status.code(), tonic::Code::Unknown);
+        assert_eq!(rich.details.len(), 1);
+        assert_eq!(
+            rich.details[0].type_url,
+            "type.googleapis.com/{{ name }}.v1.ArchiveRejected"
+        );
+        let rejected = proto::ArchiveRejected::decode(rich.details[0].value.as_slice()).unwrap();
+        assert_eq!(rejected.key, "entry");
+        assert_eq!(rejected.reason, "source entry is absent");
+    }
+    #[test]
+    fn archive_count_is_checked_without_partial_increment() {
+        let mut state = proto::Ledger {
+            archived: 4,
+            ..Default::default()
+        };
+        increment_archive_count(&mut state).unwrap();
+        assert_eq!(state.archived, 5);
+        state.archived = u64::MAX;
+        let before = state.clone();
+        assert_eq!(
+            increment_archive_count(&mut state).unwrap_err().code(),
+            tonic::Code::ResourceExhausted
+        );
+        assert_eq!(state, before);
+    }
     #[tokio::test]
     async fn public_checkpoint_cannot_mint_rejection_or_progress() {
         use generated::LedgerWorkMethodsDatabaseHandler;

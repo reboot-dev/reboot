@@ -162,13 +162,72 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             request.set_timeout(Duration::from_secs(5));
             show(client.approve(request).await?.into_inner());
         }
-        "history" => {
+        "archive" | "archive-invalid" => {
+            use prost::Message;
+            let mut client =
+                proto::ledger_index_methods_client::LedgerIndexMethodsClient::new(channel);
+            let mut request = context.writer(proto::ArchiveRequest {
+                key: arg(1)?,
+                invalid_range: command == "archive-invalid",
+            })?;
+            // Same admitted direct-map contract as approve/history: no automatic
+            // root idempotency. No RPC status retry or exactly-once claim.
+            request.metadata_mut().remove("x-reboot-idempotency-key");
+            request.set_timeout(Duration::from_secs(5));
+            match client.archive_entry(request).await {
+                Ok(response) => {
+                    let moved = response.into_inner();
+                    println!(
+                        "ARCHIVED {} {} {}",
+                        moved.key,
+                        moved.value.len(),
+                        moved.archived
+                    );
+                }
+                Err(error) => {
+                    if error.code() == tonic::Code::Aborted {
+                        println!("ABORTED");
+                    } else if let Some(rich) = reboot::declared_error_details(&error)? {
+                        if command == "archive-invalid"
+                            && error.code() == tonic::Code::Unknown
+                            && rich.details.len() == 1
+                            && rich.details[0].type_url
+                                == "type.googleapis.com/rbt.std.collections.v1.InvalidRangeError"
+                        {
+                            reboot::sorted_map_proto::InvalidRangeError::decode(
+                                rich.details[0].value.as_slice(),
+                            )?;
+                            println!("DOOMED_MAP_RANGE Unknown");
+                            return Ok(());
+                        }
+                        if error.code() != tonic::Code::Unknown
+                            || rich.details.len() != 1
+                            || rich.details[0].type_url
+                                != "type.googleapis.com/{{ name }}.v1.ArchiveRejected"
+                        {
+                            return Err(error.into());
+                        }
+                        let rejected =
+                            proto::ArchiveRejected::decode(rich.details[0].value.as_slice())?;
+                        println!("REJECTED {} {}", rejected.key, rejected.reason);
+                    } else {
+                        return Err(error.into());
+                    }
+                }
+            }
+        }
+        "history" | "archive-history" => {
             let mut client =
                 proto::ledger_index_methods_client::LedgerIndexMethodsClient::new(channel);
             let mut request = context.writer(proto::Batch { batch: arg(1)? })?;
             request.metadata_mut().remove("x-reboot-idempotency-key");
             request.set_timeout(Duration::from_secs(5));
-            for key in client.history(request).await?.into_inner().keys {
+            let keys = if command == "archive-history" {
+                client.archive_history(request).await?.into_inner().keys
+            } else {
+                client.history(request).await?.into_inner().keys
+            };
+            for key in keys {
                 println!("{key}");
             }
         }

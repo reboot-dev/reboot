@@ -312,11 +312,21 @@ def native(session, task_uuid=None):
         return state, rows, task, mutations
 
 
-def logical_keys(rows):
+def archive_rows(session):
+    with grpc.insecure_channel(f'127.0.0.1:{session.database_port}') as channel:
+        rows = db_grpc.DatabaseStub(channel).ColocatedRange(db.ColocatedRangeRequest(
+            state_type='rbt.std.collections.v1.SortedMapEntry', parent_state_ref=archive_ref, limit=200), timeout=3)
+        evidence.setdefault('archive_durable', []).append({'session': session.name,
+            'rows_hex': rows.SerializeToString().hex(), 'keys': logical_keys(rows, archive_ref)})
+        checkpoint()
+        return rows
+
+
+def logical_keys(rows, parent=None):
     from reboot.aio.types import StateRef
     keys = []
     for key in rows.keys:
-        assert key.startswith(map_ref + '/'), key
+        assert key.startswith((parent or map_ref) + '/'), key
         keys.append(str(StateRef.from_maybe_readable(key).id))
     return keys
 
@@ -350,7 +360,7 @@ try:
     command(['cargo', 'clippy', '--manifest-path', 'backend/Cargo.toml', '--all-targets', '--', '-D', 'warnings'])
     command(['cargo', 'fmt', '--manifest-path', 'backend/Cargo.toml', '--', '--check'])
     tests, _ = command(['cargo', 'test', '--manifest-path', 'backend/Cargo.toml', '--all-targets'])
-    check('generated consumer strict Clippy/fmt and nonzero tests', '4 passed' in tests)
+    check('generated consumer strict Clippy/fmt and nonzero tests', '6 passed' in tests)
     command(['cargo', 'build', '--manifest-path', 'backend/Cargo.toml', '--bins'])
     py = STAGE / 'generated-python'
     py.mkdir()
@@ -364,6 +374,7 @@ try:
     from reboot.aio.types import StateRef
     reference = str(StateRef.from_id('batch_ledger.v1.Ledger', 'ledger'))
     map_ref = str(StateRef.from_id('rbt.std.collections.v1.SortedMap', 'approvals'))
+    archive_ref = str(StateRef.from_id('rbt.std.collections.v1.SortedMap', 'archived-approvals'))
     current = Session('admin-disabled', admin=False)
     list_denied(grpc.StatusCode.PERMISSION_DENIED, token=ENV['RBT_RUST_TASK_ADMIN_TOKEN'])
     cancel_denied(grpc.StatusCode.PERMISSION_DENIED, token=ENV['RBT_RUST_TASK_ADMIN_TOKEN'])
@@ -407,7 +418,7 @@ try:
         check('workflow companion rejects nonreader ' + method, client('reader-target-error', method)[0] == 'NONREADER_DENIED')
     after_reader, after_rows, after_task, after_replay = native(current, uuid)
     check('nonreader subscription attempts preserve canonical task/ledger/map/replay', after_reader.SerializeToString() == before_reader and after_task.SerializeToString() == before_reader_task and not after_rows.keys and not after_replay)
-    for method in ['Approve', 'History']:
+    for method in ('Approve', 'History', 'ArchiveEntry', 'ArchiveHistory'):
         check('transaction companion rejects transaction ' + method, client('index-target-error', method)[0] == 'NONREADER_DENIED')
     after_index, rows_index, task_index, replay_index = native(current, uuid)
     check('transaction subscription errors/negatives preserve canonical state/task/map/replay',
@@ -502,6 +513,69 @@ try:
     check('no completed body or step redispatch', not events(current))
     check('completed history not synthesized on restart listing', client('tasks')[0] == '')
     check('canonical terminal byte identity', native(current, uuid)[2].SerializeToString().hex() == saved)
+    before_archive = native(current, uuid)
+    empty_archive = archive_rows(current)
+    check('second canonical map starts empty', not empty_archive.keys and not before_archive[0].archived)
+    snapshot_archive = (evidence['durable'][-1]['state_hex'], before_archive[1].SerializeToString(),
+        empty_archive.SerializeToString(), before_archive[2].SerializeToString(),
+        [r.SerializeToString() for r in before_archive[3]])
+    # Both native map overlays and tentative app counter have changed before this
+    # caught declared range failure. The whole three-participant root must abort.
+    check('two-map caught failure preserves actual Unknown InvalidRange cause', client('archive-invalid', 'batch-001:0000')[0] == 'DOOMED_MAP_RANGE Unknown')
+    after_invalid = native(current, uuid)
+    check('three-participant rollback preserves exact canonical app/maps/task/replay',
+        snapshot_archive == (evidence['durable'][-1]['state_hex'], after_invalid[1].SerializeToString(),
+            archive_rows(current).SerializeToString(), after_invalid[2].SerializeToString(),
+            [r.SerializeToString() for r in after_invalid[3]]))
+    check('typed absent source transfer rejection', client('archive', 'batch-001:0099')[0] ==
+        'REJECTED batch-001:0099 source entry is absent')
+    check('actual atomic two-map transfer preserves present empty value',
+        client('archive', 'batch-001:0000')[0] == 'ARCHIVED batch-001:0000 0 1')
+    moved = native(current, uuid); archived_rows = archive_rows(current)
+    check('committed app counter/source removal/destination insertion', moved[0].archived == 1
+        and logical_keys(moved[1]) == ['batch-001:0001', 'batch-001:0002']
+        and logical_keys(archived_rows, archive_ref) == ['batch-001:0000']
+        and len(archived_rows.values) == 1 and archived_rows.values[0] == b'')
+    check('transfer never changes canonical workflow terminal or saved checkpoints',
+        moved[2].SerializeToString().hex() == saved and
+        [r.SerializeToString() for r in moved[3]] == snapshot_archive[4])
+    check('public typed archive history', client('archive-history', 'batch-001')[0] == 'batch-001:0000')
+    check('duplicate transfer is declared rejection not duplicate effect', client('archive', 'batch-001:0000')[0] ==
+        'REJECTED batch-001:0000 source entry is absent')
+    # Reuse a valid batch name via public submission/approval to make the same
+    # source key live again, while its archive copy already exists.
+    refill, _ = client('submit', 'batch-001', '1', '99999999-9999-4999-8999-999999999999')
+    client('approve', 'batch-001', '0')
+    client('wait', refill, '5000')
+    occupied = native(current, refill)
+    occupied_bytes = (evidence['durable'][-1]['state_hex'], occupied[1].SerializeToString(),
+        archive_rows(current).SerializeToString(), occupied[2].SerializeToString(),
+        [r.SerializeToString() for r in occupied[3]])
+    check('present-empty destination is occupied not an overwrite permission',
+        client('archive', 'batch-001:0000')[0] == 'REJECTED batch-001:0000 archive entry already exists')
+    occupied_after = native(current, refill)
+    check('destination collision preserves exact app/maps/task/replay', occupied_bytes ==
+        (evidence['durable'][-1]['state_hex'], occupied_after[1].SerializeToString(),
+         archive_rows(current).SerializeToString(), occupied_after[2].SerializeToString(),
+         [r.SerializeToString() for r in occupied_after[3]]))
+    moved = native(current, uuid)
+    committed_archive = (evidence['durable'][-1]['state_hex'], moved[1].SerializeToString(), archived_rows.SerializeToString())
+    current.close(signal.SIGINT); current = None
+    current = Session('two-map-transfer-restart')
+    restored_archive = native(current, uuid)
+    check('two-map transfer and counter identical after full RocksDB restart', committed_archive ==
+        (evidence['durable'][-1]['state_hex'], restored_archive[1].SerializeToString(), archive_rows(current).SerializeToString()))
+    check('restart retains original canonical completed workflow terminal', client('wait', uuid, '5000')[0] == completed
+        and restored_archive[2].SerializeToString().hex() == saved
+        and [r.SerializeToString() for r in restored_archive[3]] == snapshot_archive[4] and not events(current))
+    check('fresh transfer after restored participant ownership', client('archive', 'batch-001:0001')[0] ==
+        'ARCHIVED batch-001:0001 0 2')
+    after_second = native(current, uuid)
+    check('two restored map participants remain usable', after_second[0].archived == 2
+        and logical_keys(after_second[1]) == ['batch-001:0000', 'batch-001:0002']
+        and logical_keys(archive_rows(current), archive_ref) == ['batch-001:0000', 'batch-001:0001']
+        and after_second[2].SerializeToString().hex() == saved
+        and [r.SerializeToString() for r in after_second[3]] == snapshot_archive[4])
     rejected, _ = client('submit-rejecting', 'batch-rejected', '2', '44444444-4444-4444-8444-444444444444', '0', '1')
     client('approve', 'batch-rejected', '0')
     rejected_wait, _ = client('wait', rejected, '5000')
