@@ -7,7 +7,7 @@ tags: stdlib, Presence, Subscriber, MousePosition, online, connected
 
 ## Track Online Subscribers with `Presence`
 
-> **Critical:** `presence.servicers()` returns three Servicers
+> **Critical:** `presence_library()` registers three Servicers
 > (`PresenceServicer, SubscriberServicer, MousePositionServicer`).
 > Connection lifecycle uses a long-lived `Subscriber.connect` reader
 > RPC plus a `wait_for_disconnect` workflow that fires when the RPC
@@ -52,19 +52,35 @@ connected to your application:
 | `update`   | writer (`left: int32, top: int32`) |
 | `position` | reader                             |
 
-### Register the Servicers
+### Register the Library
 
-`presence.servicers()` returns
-`[PresenceServicer, SubscriberServicer, MousePositionServicer]`:
+`presence_library()` brings all three servicers:
 
 ```python
-from reboot.std.presence.v1 import presence
+from reboot.std.presence.v1.presence import presence_library
 
 
 async def main():
     await Application(
-        servicers=[MyServicer] + presence.servicers(),
+        servicers=[MyServicer],
+        libraries=[presence_library()],
     ).run()
+```
+
+By default every method of the three admits a caller with a verified
+token or the application itself, so an application whose users sign
+in needs nothing more. An application whose users do not sign in
+passes `authorizer=allow()`; any other rule, for every method of all
+three, or a per-method `Authorizer`, goes the same way:
+
+```python
+from reboot.aio.auth.authorizers import allow
+from reboot.std.presence.v1.presence import presence_library
+
+await Application(
+    servicers=[MyServicer],
+    libraries=[presence_library(authorizer=allow())],
+).run()
 ```
 
 ### Connection Lifecycle

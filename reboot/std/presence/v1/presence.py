@@ -30,9 +30,17 @@ from rbt.std.presence.v1.presence_rbt import (
     WatchResponse,
 )
 from rbt.v1alpha1.errors_pb2 import AlreadyExists, FailedPrecondition, NotFound
-from reboot.aio.auth.authorizers import allow
+from reboot.aio.applications import Library
+from reboot.aio.auth.authorizers import (
+    Authorizer,
+    AuthorizerRule,
+    allow_if,
+    has_verified_token,
+    is_app_internal,
+)
 from reboot.aio.contexts import ReaderContext, WorkflowContext, WriterContext
 from reboot.aio.workflows import until
+from typing import Optional
 
 
 class Event:
@@ -65,8 +73,14 @@ class Event:
 
 class PresenceServicer(Presence.singleton.Servicer):
 
+    # A class attribute, so the last `presence_library(authorizer=...)`
+    # call sets it for every application in the process.
+    _authorizer: Authorizer | AuthorizerRule = allow_if(
+        any=[is_app_internal, has_verified_token]
+    )
+
     def authorizer(self):
-        return allow()
+        return self._authorizer
 
     async def Create(
         self,
@@ -140,8 +154,14 @@ class SubscriberServicer(Subscriber.singleton.Servicer):
 
     _disconnect_events: dict[str, Event] = {}
 
+    # A class attribute, so the last `presence_library(authorizer=...)`
+    # call sets it for every application in the process.
+    _authorizer: Authorizer | AuthorizerRule = allow_if(
+        any=[is_app_internal, has_verified_token]
+    )
+
     def authorizer(self):
-        return allow()
+        return self._authorizer
 
     async def Create(
         self,
@@ -240,8 +260,14 @@ class SubscriberServicer(Subscriber.singleton.Servicer):
 
 class MousePositionServicer(MousePosition.singleton.Servicer):
 
+    # A class attribute, so the last `presence_library(authorizer=...)`
+    # call sets it for every application in the process.
+    _authorizer: Authorizer | AuthorizerRule = allow_if(
+        any=[is_app_internal, has_verified_token]
+    )
+
     def authorizer(self):
-        return allow()
+        return self._authorizer
 
     async def Update(
         self,
@@ -267,9 +293,41 @@ class MousePositionServicer(MousePosition.singleton.Servicer):
         return PositionResponse(left=state.left, top=state.top)
 
 
-def servicers():
-    return [
-        PresenceServicer,
-        SubscriberServicer,
-        MousePositionServicer,
-    ]
+PRESENCE_LIBRARY_NAME = "reboot.std.presence.v1.presence"
+
+
+class PresenceLibrary(Library):
+    """The presence servicers. `authorizer` applies to every method of
+    all three; `None` keeps the default, which admits the application
+    itself or a caller with a verified token.
+    """
+
+    name = PRESENCE_LIBRARY_NAME
+
+    def __init__(
+        self,
+        *,
+        authorizer: Optional[Authorizer | AuthorizerRule] = None,
+    ):
+        if authorizer is not None:
+            # Set on the classes rather than on a subclass per library,
+            # because a servicer subclass defined inside a function does
+            # not work:
+            # https://github.com/reboot-dev/mono/pull/5140#issuecomment-3667592432
+            PresenceServicer._authorizer = authorizer
+            SubscriberServicer._authorizer = authorizer
+            MousePositionServicer._authorizer = authorizer
+
+    def servicers(self):
+        return [
+            PresenceServicer,
+            SubscriberServicer,
+            MousePositionServicer,
+        ]
+
+
+def presence_library(
+    *,
+    authorizer: Optional[Authorizer | AuthorizerRule] = None,
+) -> PresenceLibrary:
+    return PresenceLibrary(authorizer=authorizer)
