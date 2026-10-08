@@ -269,6 +269,14 @@ ENVVAR_LOCAL_ENVOY_USE_TLS = 'REBOOT_LOCAL_ENVOY_USE_TLS'
 ENVVAR_LOCAL_ENVOY_TLS_CERTIFICATE_PATH = 'REBOOT_LOCAL_ENVOY_TLS_CERTIFICATE_PATH'
 ENVVAR_LOCAL_ENVOY_TLS_KEY_PATH = 'REBOOT_LOCAL_ENVOY_TLS_KEY_PATH'
 
+# The address the local Envoy's public listener binds to, which is
+# every interface when unset, so that a phone on the same network can
+# reach an application under development. `127.0.0.1` keeps an
+# application to this machine; `rbt dashboard` sets that, since
+# everything the dashboard serves is for this machine or for its
+# tunnel, which is on this machine too.
+ENVVAR_LOCAL_ENVOY_PUBLIC_HOST = 'REBOOT_LOCAL_ENVOY_PUBLIC_HOST'
+
 
 class LocalEnvoyMode(enum.Enum):
     """The mode in which a local Envoy proxy runs: as a stand-alone

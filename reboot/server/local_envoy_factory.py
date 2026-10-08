@@ -11,6 +11,7 @@ from reboot.settings import (
     ENVOY_VERSION,
     ENVVAR_LOCAL_ENVOY_DEBUG,
     ENVVAR_LOCAL_ENVOY_MODE,
+    ENVVAR_LOCAL_ENVOY_PUBLIC_HOST,
     ENVVAR_LOCAL_ENVOY_TLS_CERTIFICATE_PATH,
     ENVVAR_LOCAL_ENVOY_TLS_KEY_PATH,
     LocalEnvoyMode,
@@ -87,10 +88,13 @@ class LocalEnvoyFactory:
 
         assert certificate is None or key is not None
 
+        public_host = os.environ.get(ENVVAR_LOCAL_ENVOY_PUBLIC_HOST, '0.0.0.0')
+
         mode = LocalEnvoyFactory.pick_mode()
 
         if mode is LocalEnvoyMode.DOCKER:
             return DockerLocalEnvoy(
+                public_host=public_host,
                 public_port=public_port,
                 application_id=application_id,
                 file_descriptor_set=file_descriptor_set,
@@ -103,6 +107,7 @@ class LocalEnvoyFactory:
 
         assert mode is LocalEnvoyMode.EXECUTABLE
         return ExecutableLocalEnvoy(
+            public_host=public_host,
             public_port=public_port,
             application_id=application_id,
             file_descriptor_set=file_descriptor_set,

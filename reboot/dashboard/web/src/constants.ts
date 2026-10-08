@@ -13,6 +13,14 @@ export const CHANGELOG_ID = "changelog";
 export const APPLICATION_URL: string =
   (globalThis as { REBOOT_URL?: string }).REBOOT_URL ?? "";
 
+// The dashboard's credential, which the gateway serving the page in a
+// browser writes into it; every RPC the page makes carries it. Absent
+// in an MCP host, where the page is given its credential the way every
+// Reboot MCP App is: in the result of the tool that opened it.
+export const DASHBOARD_TOKEN: string | undefined = (
+  globalThis as { REBOOT_DASHBOARD_TOKEN?: string }
+).REBOOT_DASHBOARD_TOKEN;
+
 // Whether an MCP host shows the page, which the application says the
 // same way.
 export const IN_MCP_HOST: boolean =

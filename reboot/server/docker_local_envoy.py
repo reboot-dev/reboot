@@ -48,6 +48,7 @@ class DockerLocalEnvoy(LocalEnvoy):
     def __init__(
         self,
         *,
+        public_host: str,
         public_port: int,
         application_id: ApplicationId,
         file_descriptor_set: FileDescriptorSet,
@@ -66,6 +67,10 @@ class DockerLocalEnvoy(LocalEnvoy):
                 f"'{local_envoy_nanny_path}'"
             )
 
+        # The address and port Docker publishes the public port on,
+        # which is where the user's traffic arrives; the container's own
+        # Envoy listens on every interface of the container.
+        self._published_public_host = public_host
         self._published_public_port = public_port
         self._published_trusted_port = 0
         self._container_id: Optional[str] = None
@@ -106,6 +111,9 @@ class DockerLocalEnvoy(LocalEnvoy):
             # pick a static port for its trusted port as seen internal
             # to the container.
             trusted_port=self._trusted_port,
+            # Public traffic arrives through `docker run`'s port
+            # publishing too, which is where `public_host` is applied.
+            public_host='0.0.0.0',
             public_port=self._public_port,
             observed_dir=Path(DOCKERIZED_ENVOY_DIR),
             application_id=application_id,
@@ -416,6 +424,7 @@ class DockerLocalEnvoy(LocalEnvoy):
         if self._published_public_port != 0:
             local_envoy_run_command += [
                 '-p'
+                f'{self._published_public_host}:'
                 f'{self._published_public_port}:{self._public_port}',
             ]
         else:

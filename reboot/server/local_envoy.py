@@ -59,6 +59,7 @@ class LocalEnvoy(ABC):
         xds_connect_host: str,
         trusted_host: str,
         trusted_port: int,
+        public_host: str,
         public_port: int,
         application_id: ApplicationId,
         file_descriptor_set: FileDescriptorSet,
@@ -71,6 +72,7 @@ class LocalEnvoy(ABC):
         self._xds_listen_host = xds_listen_host
         self._xds_connect_host = xds_connect_host
         self._trusted_host = trusted_host
+        self._public_host = public_host
         # Store the requested ports for use in xDS listener configs. These
         # may be 0 for dynamic allocation, and the xDS config should always
         # use these values (not the actual bound ports) to avoid Envoy
@@ -216,6 +218,7 @@ class LocalEnvoy(ABC):
             # it sees those as defining new listeners asking for ports
             # that are already in use.
             trusted_port=self._requested_trusted_port,
+            public_host=self._public_host,
             public_port=self._requested_public_port,
             use_tls=self._use_tls,
             certificate_path=self._observed_dir / CERTIFICATE_FILENAME,

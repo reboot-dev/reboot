@@ -20,6 +20,7 @@ class ExecutableLocalEnvoy(LocalEnvoy):
     def __init__(
         self,
         *,
+        public_host: str,
         public_port: int,
         application_id: ApplicationId,
         file_descriptor_set: FileDescriptorSet,
@@ -61,8 +62,9 @@ class ExecutableLocalEnvoy(LocalEnvoy):
             xds_connect_host='127.0.0.1',
             trusted_host='127.0.0.1',
             trusted_port=0,  # Pick dynamically to avoid collisions.
-            # The port we run Envoy on is the port the user has requested to
-            # send traffic to.
+            # Envoy runs on this host, so the address and port it serves
+            # on are the ones the user asked to send traffic to.
+            public_host=public_host,
             public_port=self._requested_public_port,
             application_id=application_id,
             file_descriptor_set=file_descriptor_set,

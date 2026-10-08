@@ -8,6 +8,7 @@ own process, with its own state store, alongside the application
 being developed.
 """
 import asyncio
+import os
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_rbt import Dashboard, Preferences
 from rbt.std.collections.ordered_map.v1.ordered_map_rbt import OrderedMap
@@ -16,10 +17,12 @@ from reboot.aio.applications import Application
 from reboot.aio.auth.authorizers import allow, allow_if, is_app_internal
 from reboot.aio.external import InitializeContext
 from reboot.bdd import recordings
+from reboot.dashboard.backend.auth import DashboardTokenVerifier
 from reboot.dashboard.backend.constants import (
     CHANGELOG_ID,
     DASHBOARD_ID,
     DASHBOARD_PATH,
+    ENVVAR_RBT_DASHBOARD_TOKEN,
     PREFERENCES_ID,
     PRESENCE_ID,
 )
@@ -73,7 +76,14 @@ def _recording(directory: Path, relative: str) -> Path:
 
 def application() -> Application:
     """The dashboard application, with its page mounted."""
+    token = os.environ.get(ENVVAR_RBT_DASHBOARD_TOKEN)
+
     application = Application(
+        # Every RPC needs the credential `rbt dashboard` minted, when
+        # there is one; see `ENVVAR_RBT_DASHBOARD_TOKEN`.
+        token_verifier=(
+            DashboardTokenVerifier(token) if token is not None else None
+        ),
         servicers=[
             DashboardServicer,
             PreferencesServicer,

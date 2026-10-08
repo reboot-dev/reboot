@@ -42,6 +42,7 @@ import { v4 as uuidv4 } from "uuid";
 import {
   DASHBOARD_ID,
   CHANGELOG_ID,
+  DASHBOARD_TOKEN,
   IN_MCP_HOST,
   PREFERENCES_ID,
   PRESENCE_ID,
@@ -4246,7 +4247,7 @@ if (root !== null) {
           also serves its RPCs, so the client defaults to this page's
           origin; in an MCP host the application writes the URL into
           the page, which the client finds the same way. */}
-      <RebootClientProvider offlineCacheEnabled={true}>
+      <RebootClientProvider offlineCacheEnabled={true} token={DASHBOARD_TOKEN}>
         <Presence id={PRESENCE_ID} subscriberId={SUBSCRIBER_ID}>
           <App />
         </Presence>

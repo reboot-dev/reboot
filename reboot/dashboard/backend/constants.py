@@ -54,6 +54,14 @@ ENVVAR_RBT_APPLICATION = 'RBT_APPLICATION'
 # case nothing can be typed.
 ENVVAR_RBT_GENERATED_DIRECTORY = 'RBT_GENERATED_DIRECTORY'
 
+# The credential `rbt dashboard` mints for one launch, which every
+# RPC to the dashboard application has to carry as its bearer token.
+# Only the dashboard's gateway and the pages it serves know it; see
+# `reboot/dashboard/gateway.py`. Unset when the application runs
+# without a gateway, as the tests run it, and then nothing is
+# required.
+ENVVAR_RBT_DASHBOARD_TOKEN = 'RBT_DASHBOARD_TOKEN'
+
 # The `Presence` state the dashboard page subscribes to, recording who
 # is looking at a dashboard right now. `rbt dev run` reads it to decide
 # whether to open one.

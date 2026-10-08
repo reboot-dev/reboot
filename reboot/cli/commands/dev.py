@@ -1,4 +1,5 @@
 import aiofiles.os
+import aiohttp
 import argparse
 import asyncio
 import functools
@@ -18,18 +19,20 @@ from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from dotenv import dotenv_values
 from enum import Enum
+from google.protobuf import json_format, message_factory
+from google.protobuf.descriptor import Descriptor, ServiceDescriptor
+from google.protobuf.message import Message
 from grpc_health.v1 import health_pb2, health_pb2_grpc
 from opentelemetry.sdk.environment_variables import (
     OTEL_EXPORTER_OTLP_TRACES_ENDPOINT,
     OTEL_EXPORTER_OTLP_TRACES_INSECURE,
 )
 from pathlib import Path
-from rbt.dashboard.v1.dashboard_rbt import Preferences
-from rbt.std.presence.v1.presence_rbt import Presence
+from rbt.dashboard.v1 import dashboard_pb2
+from rbt.std.presence.v1 import presence_pb2
 from reboot.aio.backoff import Backoff
 from reboot.aio.contexts import EffectValidation
 from reboot.aio.exceptions import InputError
-from reboot.aio.external import ExternalContext
 from reboot.cli.commands.generate import generate_direct
 # We import the whole `terminal` module (as opposed to the methods it contains)
 # to allow us to mock these methods out in tests.
@@ -453,14 +456,53 @@ async def _run(
     application_started_event.clear()
 
 
+async def _read_dashboard(
+    dashboard_url: str,
+    *,
+    state: Descriptor,
+    state_id: str,
+    service: ServiceDescriptor,
+    method: str,
+) -> Message:
+    """Calls a reader of the dashboard application, with an empty
+    request, and returns its response.
+
+    Called over HTTP rather than with an `ExternalContext`, because
+    the dashboard is reached through its gateway (see
+    `reboot/dashboard/gateway.py`), which forwards HTTP/1 for Envoy to
+    transcode but not the HTTP/2 that gRPC is. The gateway adds the
+    dashboard's credential to what it forwards, so a caller on this
+    machine needs none.
+    """
+    url = (
+        f'{dashboard_url}/__/reboot/rpc/{state.full_name}:{state_id}/'
+        f'{service.full_name}/{method}'
+    )
+    async with aiohttp.ClientSession() as client:
+        async with client.post(url, json={}) as response:
+            response.raise_for_status()
+            return json_format.ParseDict(
+                await response.json(),
+                message_factory.GetMessageClass(
+                    service.methods_by_name[method].output_type
+                )(),
+            )
+
+
 async def _viewers(dashboard_url: str) -> list[str]:
     """The subscriber ids of everyone looking at a dashboard.
 
     The dashboard constructs the `Presence` instance, empty, when it
     initializes, so there is an answer from the moment it is up.
     """
-    context = ExternalContext(name="dev-run-open-dashboard", url=dashboard_url)
-    response = await Presence.ref(PRESENCE_ID).List(context)
+    response = await _read_dashboard(
+        dashboard_url,
+        state=presence_pb2.Presence.DESCRIPTOR,
+        state_id=PRESENCE_ID,
+        service=presence_pb2.DESCRIPTOR.services_by_name['PresenceMethods'],
+        method='List',
+    )
+    assert isinstance(response, presence_pb2.ListResponse)
     return list(response.subscriber_ids)
 
 
@@ -472,8 +514,16 @@ async def _open_on_restart(dashboard_url: str) -> bool:
     writes the default when it initializes, so nobody ever clicking
     means a dashboard opens.
     """
-    context = ExternalContext(name="dev-run-open-dashboard", url=dashboard_url)
-    response = await Preferences.ref(PREFERENCES_ID).Get(context)
+    preferences = dashboard_pb2.DESCRIPTOR.services_by_name[
+        'PreferencesMethods']
+    response = await _read_dashboard(
+        dashboard_url,
+        state=dashboard_pb2.Preferences.DESCRIPTOR,
+        state_id=PREFERENCES_ID,
+        service=preferences,
+        method='Get',
+    )
+    assert isinstance(response, dashboard_pb2.PreferencesGetResponse)
     return not response.suppress_open_on_restart
 
 

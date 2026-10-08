@@ -883,6 +883,7 @@ def listeners(
     certificate_path: Path,
     key_path: Path,
     allowed_origins: Optional[list[str]],
+    public_host: str = "0.0.0.0",
 ) -> list[listener_pb2.Listener]:
 
     @dataclass
@@ -898,7 +899,7 @@ def listeners(
         # be TLS-encrypted) on the port specified by the user.
         ListenerConfig(
             name="public",
-            host="0.0.0.0",
+            host=public_host,
             port=public_port,
             use_tls=use_tls,
             # On the Reboot Cloud, proxies ensure that the caller ID is

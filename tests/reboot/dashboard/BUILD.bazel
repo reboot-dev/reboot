@@ -68,9 +68,15 @@ py_test(
     srcs = ["mcp_tests.py"],
     main = "mcp_tests.py",
     deps = [
+        requirement("aiohttp"),
         requirement("httpx"),
         requirement("mcp"),
+        "//rbt/dashboard/v1:dashboard_py_reboot",
+        "//rbt/v1alpha1:react_py_proto",
         "//reboot/aio:tests_py",
+        "//reboot/cli/commands:dev_py",
+        "//reboot/dashboard:gateway_py",
+        "//reboot/dashboard/backend:constants_py",
         "//reboot/dashboard/backend:main_py",
     ],
 )
@@ -321,4 +327,15 @@ vitest_test(
     ],
     node_modules = "//:node_modules",
     visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "gateway_tests_py",
+    srcs = ["gateway_tests.py"],
+    main = "gateway_tests.py",
+    deps = [
+        requirement("aiohttp"),
+        "//reboot/cli/common:subprocesses_py",
+        "//reboot/dashboard:gateway_py",
+    ],
 )

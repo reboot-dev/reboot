@@ -8,6 +8,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":dev_py",
+        "//reboot/dashboard:gateway_py",
         "//reboot:version_py",
         "//reboot/cli/common:dev_extra_py",
         "//reboot/cli/common:directories_py",
@@ -29,6 +30,7 @@ py_library(
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
+        requirement("aiohttp"),
         requirement("aiofiles"),
         requirement("pyprctl"),
         requirement("cryptography"),
