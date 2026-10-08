@@ -105,7 +105,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .into_inner(),
             );
         }
-        "submit" | "submit-rejecting" => {
+        "submit" | "submit-rejecting" | "submit-step-reject" => {
             let mut client =
                 proto::ledger_work_methods_client::LedgerWorkMethodsClient::new(channel);
             let key = uuid::Uuid::parse_str(&arg(3)?)?;
@@ -113,6 +113,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 batch: arg(1)?,
                 count: arg(2)?.parse()?,
                 not_before: args.get(4).map(|s| s.parse()).transpose()?.unwrap_or(0),
+                reject_step: command == "submit-step-reject",
                 reject_after: if command == "submit-rejecting" {
                     arg(5)?.parse()?
                 } else {

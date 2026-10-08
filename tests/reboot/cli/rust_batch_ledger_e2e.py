@@ -305,8 +305,15 @@ def native(session, task_uuid=None):
                 assert mutation.workflow_id == tasks[0].task_uuid and mutation.request_fingerprint
                 from google.protobuf.any_pb2 import Any
                 response = Any.FromString(mutation.response)
-                assert response.type_url == 'type.googleapis.com/batch_ledger.v1.Ledger'
-                proto.Ledger.FromString(response.value)
+                if response.type_url == 'type.googleapis.com/google.rpc.Status':
+                    from google.rpc.status_pb2 import Status
+                    rich = Status.FromString(response.value)
+                    assert rich.code == grpc.StatusCode.UNKNOWN.value[0] and len(rich.details) == 1
+                    assert rich.details[0].type_url == 'type.googleapis.com/batch_ledger.v1.StepRejected'
+                    proto.StepRejected.FromString(rich.details[0].value)
+                else:
+                    assert response.type_url == 'type.googleapis.com/batch_ledger.v1.Ledger'
+                    proto.Ledger.FromString(response.value)
         evidence.setdefault('durable', []).append({'session': session.name, 'state_hex': loaded.actors[0].state.hex(), 'approved': state.approved, 'completed': state.completed, 'raw_keys': list(rows.keys), 'keys': logical_keys(rows), 'task_status': task.status if task else None, 'task_hex': task.SerializeToString().hex() if task else None, 'replay_records': len(mutations), 'replay_hex': [m.SerializeToString().hex() for m in mutations]})
         checkpoint()
         return state, rows, task, mutations
@@ -357,6 +364,19 @@ watch = None
 task_watch = None
 try:
     command([RBT, 'init', '--backend=rust', '--frontend=none', '--application-name=batch_ledger', '--rust-sdk=' + str(ROOT / 'reboot/rust'), '--rust-example=batch-ledger'])
+    if os.environ.get('RUST_BATCH_WRITER_FRAMEWORK_ONLY'):
+        lib=APP/'backend/src/lib.rs'
+        text=lib.read_text()
+        needle='        // The rejected handler deliberately changes its tentative local copy.'
+        injected='        if std::env::var_os("RBT_RUST_WRITER_FAILURE_PROBE").is_some() {\n            state.completed += 1;\n            event("framework-writer-failure");\n            let status=reboot::declared_error_status(tonic::Code::Unknown,"StepRejected","type.googleapis.com/batch_ledger.v1.StepRejected",&proto::StepRejected {\n                batch:request.batch.clone(),index:request.index,reason:"transport carrying declared-looking details".into(),\n            });\n            return Err(generated::LedgerWorkMethodsTryCheckpointError::Grpc(status));\n        }\n'
+        assert text.count(needle)==1
+        text=text.replace(needle,injected+needle)
+        needle='                    Err(generated::LedgerWorkMethodsTryCheckpointError::Grpc(error)) => {\n                        return Err(error.into());'
+        injected='                    Err(generated::LedgerWorkMethodsTryCheckpointError::Grpc(error)) => {\n                        if std::env::var_os("RBT_RUST_WRITER_FAILURE_PROBE").is_some() {\n                            event("caught-framework-writer-failure");\n                            return Ok(proto::Ledger::default());\n                        }\n                        return Err(error.into());'
+        assert text.count(needle)==1
+        lib.write_text(text.replace(needle,injected))
+        command(['cargo','fmt','--manifest-path','backend/Cargo.toml'])
+        evidence['writer_framework_handler_sha256']=hashlib.sha256(lib.read_bytes()).hexdigest()
     if os.environ.get('RUST_BATCH_CAUGHT_READER_ONLY'):
         # A real generated application handler deliberately catches a failed
         # framework reader observation. No private state/task seeding.
@@ -381,7 +401,7 @@ try:
     command(['cargo', 'clippy', '--manifest-path', 'backend/Cargo.toml', '--all-targets', '--', '-D', 'warnings'])
     command(['cargo', 'fmt', '--manifest-path', 'backend/Cargo.toml', '--', '--check'])
     tests, _ = command(['cargo', 'test', '--manifest-path', 'backend/Cargo.toml', '--all-targets'])
-    check('generated consumer strict Clippy/fmt and nonzero tests', '6 passed' in tests)
+    check('generated consumer strict Clippy/fmt and nonzero tests', '7 passed' in tests)
     command(['cargo', 'build', '--manifest-path', 'backend/Cargo.toml', '--bins'])
     py = STAGE / 'generated-python'
     py.mkdir()
@@ -396,6 +416,77 @@ try:
     reference = str(StateRef.from_id('batch_ledger.v1.Ledger', 'ledger'))
     map_ref = str(StateRef.from_id('rbt.std.collections.v1.SortedMap', 'approvals'))
     archive_ref = str(StateRef.from_id('rbt.std.collections.v1.SortedMap', 'archived-approvals'))
+    if os.environ.get('RUST_BATCH_WRITER_FRAMEWORK_ONLY'):
+        ENV['RBT_RUST_WRITER_FAILURE_PROBE']='1'
+        current=Session('writer-framework-failure')
+        until(lambda: 'actor state must be constructed' in client('work-unary','step-framework',ok=False)[0],'framework writer admission published')
+        client('create')
+        uuid,_=client('submit-step-reject','step-framework','2','cccccccc-cccc-4ccc-8ccc-cccccccccccc')
+        client('approve','step-framework','0',ok=False)
+        until(lambda: any('caught-framework-writer-failure' in event for event in events(current)),'body catches actual framework writer failure')
+        end=time.monotonic()+15
+        while current.process.poll() is None and time.monotonic()<end:
+            time.sleep(.05)
+        if current.process.poll() is None:
+            timeout_seen=True
+            raise TimeoutError('caught writer framework outcome unknown; preserve exact session handles')
+        check('declared-looking Grpc remains fatal despite catch-to-success',current.process.returncode!=0 and 'unclean workflow attempt cannot complete successfully' in current.host_text())
+        current.close();current=None
+        ENV.pop('RBT_RUST_WRITER_FAILURE_PROBE')
+        current=Session('writer-framework-restored')
+        until(lambda: native(current,uuid)[0].completed==1,'restored handler executes genuine declared outcome then checkpoint')
+        first=native(current,uuid)
+        from google.protobuf.any_pb2 import Any
+        from google.rpc.status_pb2 import Status
+        errors=[r for r in first[3] if Any.FromString(r.response).type_url=='type.googleapis.com/google.rpc.Status']
+        check('framework failure did not become terminal or saved business replay', first[2].status==db.Task.PENDING and first[2].WhichOneof('response_or_error') is None and len(errors)==1 and len(first[3])==3 and not first[0].rejected and first[0].approved==1 and logical_keys(first[1])==['step-framework:0000'])
+        error=proto.StepRejected.FromString(Status.FromString(Any.FromString(errors[0].response).value).details[0].value)
+        check('restore executes writer not forged framework checkpoint',error.reason=='writer declined tentative checkpoint' and sum('try-checkpoint-step-framework-0' in event for event in events(current))==1)
+        client('approve','step-framework','1')
+        check('restored framework failure progresses through public approval and Wait',client('wait',uuid,'5000')[0]=='step-framework 2 2 2 1' and native(current,uuid)[2].status==db.Task.COMPLETED)
+        current.close();current=None
+        evidence['accepted']=True
+        raise SystemExit(0)
+    if os.environ.get('RUST_BATCH_WRITER_ERROR_ONLY'):
+        current = Session('writer-declared-error')
+        until(lambda: 'actor state must be constructed' in client('work-unary','step-reject',ok=False)[0], 'writer decision admission published')
+        client('create')
+        uuid, _ = client('submit-step-reject','step-reject','2','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb')
+        client('approve','step-reject','0')
+        until(lambda: native(current,uuid)[0].completed == 1,'caught writer rejection followed by actual successful checkpoint')
+        first = native(current,uuid)
+        from google.protobuf.any_pb2 import Any
+        from google.rpc.status_pb2 import Status
+        errors = [r for r in first[3] if Any.FromString(r.response).type_url == 'type.googleapis.com/google.rpc.Status']
+        check('declared writer decision is one scoped canonical error checkpoint',len(errors)==1 and errors[0].workflow_iteration==0 and len(first[3])==3)
+        rich = Status.FromString(Any.FromString(errors[0].response).value)
+        rejection = proto.StepRejected.FromString(rich.details[0].value)
+        check('saved writer rejection retains exact method-declared payload',rich.code==2 and rejection.batch=='step-reject' and rejection.index==0 and rejection.reason=='writer declined tentative checkpoint')
+        check('declared writer rolls back tentative state and keeps workflow pending',first[0].completed==1 and first[0].approved==1 and not first[0].rejected and first[2].status==db.Task.PENDING and first[2].WhichOneof('response_or_error') is None and logical_keys(first[1])==['step-reject:0000'])
+        check('actual writer handler executed once before restart',sum('try-checkpoint-step-reject-0' in event for event in events(current))==1)
+        saved_error = errors[0].SerializeToString()
+        saved_task = first[2].SerializeToString()
+        saved_state = evidence['durable'][-1]['state_hex']
+        saved_rows = first[1].SerializeToString()
+        saved_progress = sorted(r.SerializeToString() for r in first[3])
+        current.close(); current=None
+        current=Session('writer-declared-error-restored')
+        until(lambda: any('caught-step-step-reject-0' in event for event in events(current)),'restored body catches durable saved rejection')
+        restored=native(current,uuid)
+        check('restored caught decision never redispatches rejected writer',not any('try-checkpoint-' in event for event in events(current)))
+        check('restart retains raw actor maps pending task and exact saved decisions', evidence['durable'][-1]['state_hex']==saved_state and restored[1].SerializeToString()==saved_rows and restored[2].SerializeToString()==saved_task and sorted(r.SerializeToString() for r in restored[3])==saved_progress)
+        client('approve','step-reject','1')
+        result=client('wait',uuid,'5000')[0]
+        final=native(current,uuid)
+        check('caught saved writer decision allows real completion',result=='step-reject 2 2 2 1' and final[2].status==db.Task.COMPLETED and not final[0].rejected and len(final[3])==5)
+        check('later effects retain exact original error checkpoint',saved_error in [r.SerializeToString() for r in final[3]])
+        terminal=final[2].SerializeToString()
+        current.close();current=None
+        current=Session('writer-declared-terminal-restored')
+        check('typed Wait and terminal replay after full restart',client('wait',uuid,'5000')[0]==result and native(current,uuid)[2].SerializeToString()==terminal and not events(current))
+        current.close();current=None
+        evidence['accepted']=True
+        raise SystemExit(0)
     if os.environ.get('RUST_BATCH_CAUGHT_READER_ONLY'):
         ENV['RBT_RUST_CAUGHT_READER_PROBE'] = '1'
         current = Session('caught-reader-failure')
@@ -497,7 +588,7 @@ try:
     check('canonical task is Pending with no approvals', task.status == db.Task.PENDING and state.completed == 0 and not rows.keys)
     before_reader = state.SerializeToString()
     before_reader_task = task.SerializeToString()
-    for method in ['Create', 'SubmitBatch', 'Checkpoint', 'RunBatch']:
+    for method in ['Create', 'SubmitBatch', 'Checkpoint', 'TryCheckpoint', 'RunBatch']:
         check('workflow companion rejects nonreader ' + method, client('reader-target-error', method)[0] == 'NONREADER_DENIED')
     after_reader, after_rows, after_task, after_replay = native(current, uuid)
     check('nonreader subscription attempts preserve canonical task/ledger/map/replay', after_reader.SerializeToString() == before_reader and after_task.SerializeToString() == before_reader_task and not after_rows.keys and not after_replay)

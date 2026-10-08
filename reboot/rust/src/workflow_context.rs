@@ -59,6 +59,98 @@ mod workflow_admission_tests {
         assert!(!attempt.clean());
     }
     #[tokio::test]
+    async fn declared_writer_checkpoint_requires_exact_descriptor_and_clean_serial_attempt() {
+        let tasks = OneShotTasks::new_with_declarations(
+            DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(),
+            D::STATE_TYPE.into(),
+            "actor".into(),
+            Binding(true),
+            vec![
+                TaskMethodDeclaration::new::<D, crate::proto::Counter, crate::proto::Counter>(
+                    "tests.Service.Step",
+                    "type.googleapis.com/Counter",
+                    vec![DeclaredTaskError::new::<crate::proto::Counter>(
+                        "type.googleapis.com/tests.Rejected",
+                    )],
+                )
+                .workflow_writer_step(),
+            ],
+        )
+        .unwrap();
+        let attempt = WorkflowAttempt::default();
+        let task = db::Task::default();
+        let cancel = RecoveryCancellation::new();
+        let context = WorkflowContext {
+            tasks: &tasks,
+            task: &task,
+            cancel: &cancel,
+            generation: Arc::new(()),
+            attempt: &attempt,
+            iteration: None,
+        };
+        let error = |url: &str, value: Vec<u8>| prost_types::Any {
+            type_url: "type.googleapis.com/google.rpc.Status".into(),
+            value: googleapis_tonic_google_rpc::google::rpc::Status {
+                code: tonic::Code::Unknown as i32,
+                message: "declined".into(),
+                details: vec![prost_types::Any {
+                    type_url: url.into(),
+                    value,
+                }],
+            }
+            .encode_to_vec(),
+        };
+        let valid = error(
+            "type.googleapis.com/tests.Rejected",
+            crate::proto::Counter::default().encode_to_vec(),
+        );
+        assert!(
+            context
+                .validate_writer_step_error("tests.Service.Step", &valid)
+                .is_err()
+        );
+        let operation = attempt.operation();
+        context
+            .validate_writer_step_error("tests.Service.Step", &valid)
+            .unwrap();
+        assert!(
+            context
+                .validate_writer_step_error("tests.Service.Foreign", &valid)
+                .is_err()
+        );
+        assert!(
+            context
+                .validate_writer_step_error(
+                    "tests.Service.Step",
+                    &error("type.googleapis.com/tests.Foreign", vec![])
+                )
+                .is_err()
+        );
+        assert!(
+            context
+                .validate_writer_step_error(
+                    "tests.Service.Step",
+                    &error("type.googleapis.com/tests.Rejected", vec![255])
+                )
+                .is_err()
+        );
+        let peer = attempt.operation();
+        assert!(
+            context
+                .validate_writer_step_error("tests.Service.Step", &valid)
+                .is_err()
+        );
+        peer.acknowledged();
+        let failed = attempt.operation();
+        drop(failed);
+        assert!(
+            context
+                .validate_writer_step_error("tests.Service.Step", &valid)
+                .is_err()
+        );
+        operation.acknowledged();
+    }
+    #[tokio::test]
     async fn successful_finish_rejects_failed_dropped_and_live_framework_work_before_load() {
         let tasks = OneShotTasks::new(
             DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(),
@@ -373,17 +465,20 @@ mod workflow_admission_tests {
             )],
         )
         .unwrap();
-        assert!(legacy_reader
-            .validate_workflow_writer::<D, crate::proto::Counter, crate::proto::Counter>(
-                "tests.Service.Apply"
-            )
-            .is_err());
+        assert!(
+            legacy_reader
+                .validate_workflow_writer::<D, crate::proto::Counter, crate::proto::Counter>(
+                    "tests.Service.Apply"
+                )
+                .is_err()
+        );
         assert!(rw.workflow_running_admission().is_err());
-        assert!(rw
-            .validate_workflow_writer::<D, crate::proto::Counter, crate::proto::Counter>(
+        assert!(
+            rw.validate_workflow_writer::<D, crate::proto::Counter, crate::proto::Counter>(
                 "tests.Service.Run"
             )
-            .is_err());
+            .is_err()
+        );
     }
 }
 
@@ -760,21 +855,21 @@ impl<'a> WorkflowContext<'a> {
         {
             let _owner = admission.lock()?;
         }
-        let loaded = self
-            .tasks
-            .inner
-            .store
-            .task_database()
-            .load(db::LoadRequest {
-                actors: vec![],
-                task_ids: vec![self
-                    .task
-                    .task_id
-                    .clone()
-                    .ok_or_else(|| Status::failed_precondition("missing workflow identity"))?],
-            })
-            .await?
-            .into_inner();
+        let loaded =
+            self.tasks
+                .inner
+                .store
+                .task_database()
+                .load(db::LoadRequest {
+                    actors: vec![],
+                    task_ids: vec![
+                        self.task.task_id.clone().ok_or_else(|| {
+                            Status::failed_precondition("missing workflow identity")
+                        })?,
+                    ],
+                })
+                .await?
+                .into_inner();
         {
             let _owner = admission.lock()?;
         }
@@ -876,6 +971,138 @@ impl<'a> WorkflowContext<'a> {
             .await?;
         operation.acknowledged();
         response.ok_or_else(|| Status::internal("writer step omitted result"))
+    }
+    pub async fn writer_step_declared<D, Q, R, F>(
+        &self,
+        alias: &str,
+        method: &'static str,
+        response_type: &'static str,
+        request: Q,
+        invoke: F,
+    ) -> Result<R, TaskHandlerError>
+    where
+        D: crate::runtime::DurableStateDeclaration + 'static,
+        Q: prost::Message + Default + Send + 'static,
+        R: prost::Message + Default + Clone + Send + 'static,
+        F: for<'s> FnOnce(
+            &'s mut D::State,
+            Q,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<R, TaskHandlerError>> + Send + 's>,
+        >,
+    {
+        let operation = self.attempt.operation();
+        let result: Result<Result<R, prost_types::Any>, Status> = async {
+            if alias.is_empty() || alias.len() > 256 || alias.chars().any(char::is_control) {
+                return Err(Status::invalid_argument(
+                    "workflow step requires a bounded explicit name",
+                ));
+            }
+            let id = self
+                .task
+                .task_id
+                .as_ref()
+                .ok_or_else(|| Status::failed_precondition("missing workflow ID"))?;
+            let declaration = self
+                .tasks
+                .inner
+                .declarations
+                .iter()
+                .find(|d| d.method == method)
+                .ok_or_else(|| Status::failed_precondition("unregistered workflow writer step"))?;
+            if declaration.workflow
+                || !declaration.workflow_writer_step
+                || id.state_type != D::STATE_TYPE
+                || declaration.declaration != std::any::TypeId::of::<D>()
+                || declaration.request != std::any::TypeId::of::<Q>()
+                || declaration.response != std::any::TypeId::of::<R>()
+                || declaration.response_type != response_type
+            {
+                return Err(Status::failed_precondition(
+                    "workflow writer step descriptor mismatch",
+                ));
+            }
+            let probe = db::Task {
+                method: method.rsplit('.').next().unwrap_or("").to_owned(),
+                ..self.task.clone()
+            };
+            if !self.tasks.inner.binding.writer_capable()
+                || !self.tasks.inner.binding.is_writer(&probe)
+            {
+                return Err(Status::failed_precondition(
+                    "workflow step is not an ordinary writer",
+                ));
+            }
+            crate::runtime::writer_task_key(id, method)?;
+            let gate = self
+                .tasks
+                .inner
+                .store
+                .actor_gate(&id.state_type, &id.state_ref);
+            let _lease = gate.exclusive().await;
+            self.validate_scope().await?;
+            let response = self
+                .tasks
+                .inner
+                .store
+                .workflow_step_outcome::<D, Q, R, _>(
+                    self,
+                    (alias, None),
+                    method,
+                    response_type,
+                    request,
+                    move |state, request| {
+                        let future = invoke(state, request);
+                        Box::pin(async move {
+                            match future.await {
+                                Ok(response) => Ok(Some(Ok(response))),
+                                Err(TaskHandlerError::Declared(error)) => Ok(Some(Err(error))),
+                                Err(TaskHandlerError::Failed(error)) => Err(error),
+                            }
+                        })
+                    },
+                )
+                .await?;
+            response.ok_or_else(|| Status::internal("writer step omitted result"))
+        }
+        .await;
+        match result {
+            Ok(response) => {
+                operation.acknowledged();
+                response.map_err(TaskHandlerError::Declared)
+            }
+            Err(error) => Err(TaskHandlerError::Failed(error)),
+        }
+    }
+    // A saved business decision is admitted only for the exact immutable writer
+    // descriptor and a serial, otherwise-clean framework operation.
+    pub(crate) fn validate_writer_step_error(
+        &self,
+        method: &str,
+        error: &prost_types::Any,
+    ) -> Result<(), Status> {
+        if self
+            .attempt
+            .failed
+            .load(std::sync::atomic::Ordering::Acquire)
+            || self
+                .attempt
+                .active
+                .load(std::sync::atomic::Ordering::Acquire)
+                != 1
+        {
+            return Err(Status::failed_precondition(
+                "declared writer decision requires clean serial attempt",
+            ));
+        }
+        let declaration = self
+            .tasks
+            .inner
+            .declarations
+            .iter()
+            .find(|d| d.method == method && d.workflow_writer_step)
+            .ok_or_else(|| Status::failed_precondition("unregistered declared writer step"))?;
+        declaration.validate_terminal(&db::task::ResponseOrError::Error(error.clone()))
     }
     pub(crate) fn durable(&self) -> DurableTaskOperation<'_> {
         DurableTaskOperation {

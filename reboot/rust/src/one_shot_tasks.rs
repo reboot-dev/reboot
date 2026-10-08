@@ -136,6 +136,21 @@ pub enum TaskHandlerError {
     Failed(Status),
 }
 impl TaskHandlerError {
+    /// Transport view only: callers must preserve the explicit disposition when
+    /// deciding whether a failure is durably catchable.
+    pub fn into_status(self) -> Status {
+        match self {
+            Self::Failed(status) => status,
+            Self::Declared(error) => match decode_task_error(&error) {
+                Ok(rich) => Status::with_details(
+                    tonic::Code::from_i32(rich.code),
+                    rich.message,
+                    error.value.into(),
+                ),
+                Err(status) => status,
+            },
+        }
+    }
     pub fn declared(status: Status) -> Self {
         Self::Declared(prost_types::Any {
             type_url: "type.googleapis.com/google.rpc.Status".to_owned(),

@@ -148,10 +148,10 @@ services use specifically supported generator paths, not a blanket exception
 for arbitrary trusted effects. Request/state/declared-error protobuf shapes are
 bounded to supported same-package top-level models. Declared errors are supported
 for ordinary unary readers/writers, exclusive transactions, standalone workflow
-terminals and ordinary unary readers on workflow-bearing services. Workflow
-reader errors remain fatal framework step failures, not durable catchable error
-decisions. Shared transactions and workflow-service writer/constructor errors
-remain unsupported. Metadata/StateRef helpers also remain a
+terminals, ordinary unary reader/writer errors on workflow-bearing services,
+and serial same-actor named writer business decisions. Workflow reader errors
+remain fatal framework step failures, not durable catchable error decisions.
+Shared transactions and workflow-service constructor errors remain unsupported. Metadata/StateRef helpers also remain a
 subset: the StateRef codec is not automatic migration of opaque durable keys;
 full per-call Options/context merge, timezone/DST parsing and cross-application
 service discovery are not supplied.
@@ -565,8 +565,9 @@ Generated workflow methods may declare same-file protobuf business errors.
 Their handler returns a typed error enum; its explicit declared variant becomes
 `WorkflowBodyError::Declared`. Plain tonic `Status`, even rich Status, remains
 nonretryable `Failed`. There is no status-code retry or error-detail classification
-of transport failures. Reader/writer errors inside workflow services remain
-unsupported, as do general system abort/running-cancellation terminals. The bounded
+of transport failures. Ordinary reader/writer errors inside workflow services
+and serial named writer business decisions are covered below; constructors and
+general system abort/running-cancellation terminals remain unsupported. The bounded
 admin scheduled-workflow Cancelled terminal is documented separately above.
 
 A declared terminal requires a clean outer workflow scope. Private failed,
@@ -654,7 +655,7 @@ bounded corrections; terminal execution/hash/cleanup audit is separate evidence.
 
 **Missing:** Python unbounded cursor/GC and arbitrary durable Break semantics,
 remote/cross-actor steps, nested transactions, mixed transaction/workflow services,
-durably catchable declared reader/writer step errors and full alias/seed semantics. No arbitrary external
+durably catchable declared reader step errors and full alias/seed semantics. No arbitrary external
 side-effect exactly-once claim. New retry proof does not inject Store/CompleteTask
 lost ACK; existing uncertainty tests/source guards are separate evidence.
 
@@ -724,7 +725,8 @@ writers. Declared ordinary-reader errors use the existing method-specific rich
 status enum for unary RPCs and subscriptions. Internal waits convert them to
 framework Status and taint the attempt before any saved decision; catching a
 failed reader cannot authorize successful terminal completion. Declared
-workflow-service writer/constructor errors remain unsupported.
+workflow-service constructor errors remain unsupported. Ordinary writer errors
+are now permitted; their scoped named-step business decisions are documented below.
 The shared generator rejects collisions among each reader's base, `_with_timeout`
 and `_connect` methods and constructor `new` before companion emission; caller
 errors propagate to the public code-generation response without files.
@@ -845,6 +847,78 @@ parent/key bounds, unprepared recovery and lost-ACK retention. Unit coverage:
 
 ## Verification
 
+### Named writer business decisions (2026-10-08)
+
+Implemented on baseline `f154bd0c368d447360ee5554f07e6ec537728278`:
+ordinary nonconstructor writers on workflow-bearing services may declare typed
+business errors. Generated named-step helpers use `writer_step_declared` and
+preserve explicit `TaskHandlerError::Declared` versus `Failed`; they never infer
+business authority from a Status code or matching rich details. Constructors
+remain rejected. Task ownership, canonical Wait and workflow terminal authority
+are unchanged; a writer-step error is not a new workflow/task terminal type.
+
+A same-actor serial writer decision requires the exact immutable writer method,
+state/request/response and error-payload decoder, named/finite-indexed provenance,
+canonical Pending ownership, and a clean attempt with only its own active
+operation. Its declared rejection discards the tentative actor copy and atomically
+Stores only a validated `Any<google.rpc.Status>` checkpoint plus provenance, with
+zero actor upserts and no state-change invalidation. Successful writer effects
+continue to Store state plus response. Replay validates the same descriptor and
+request fingerprint before returning the typed error, without dispatching the
+handler; malformed/foreign/colliding envelopes fail closed. Plain or rich framework
+Status remains fatal and taints the attempt; all existing successful-completion
+fences and uncertain Store/readiness handling remain in place.
+
+The public opt-in app adds private named `TryCheckpoint`, `StepRejected`,
+`Submit.reject_step`, and `submit-step-reject`. The handler deliberately changes
+its tentative counter before rejecting. The body catches only the typed business
+variant, performs the real Checkpoint and parks at the next approval. Ordinary
+public scheduling of TryCheckpoint is denied, like Checkpoint. The default app
+path and retained greeting are unchanged. Python source backs writer exception
+rollback; these proofs do not assert Python automatically memoizes every caught
+writer exception or certify broader Python equivalence.
+
+**Fresh executed evidence (immutable stages, source_unchanged):**
+
+- `/tmp/reboot-rust-batch-ledger-acceptance-1791484810586135003`:
+  a generated native handler returns **Grpc** with a real declared-looking
+  StepRejected envelope; the body catches it and returns success. The host rejects
+  unclean completion. After RocksDB restart the real writer runs, and the only
+  saved rejection has its genuine payload, not the forged framework payload;
+  public approvals and canonical Wait finish the original task.
+- `/tmp/reboot-rust-batch-ledger-acceptance-1791485066794866486`:
+  rejected tentative state is discarded; the typed error checkpoint is present;
+  the same Pending task and all checkpoint bytes survive restart; no writer
+  redispatch occurs for that error. A second real approval completes the task,
+  preserving the exact original error row; terminal Wait replays after restart.
+- `/tmp/reboot-rust-batch-ledger-acceptance-1791485361738095883`:
+  prior caught-reader failure still cannot save a terminal or decision and remains
+  unresolved across restart, then progresses through actual approval/Wait.
+- `/tmp/reboot-rust-batch-ledger-acceptance-1791485619021677264`:
+  full public batch persistence/rebuild/reconnect, shared readers, archive/map
+  rollback, listing/stream/cancellation and typed terminals pass; strict consumer
+  Clippy/fmt and **seven library tests** pass.
+- `/tmp/reboot-rust-batch-ledger-final-gates-1791486315240085598`:
+  strict SDK all-target Clippy; **402 passed, 0 failed, 128 ignored**; retained
+  greeting native persistence/replay/restart and host/Database supervision pass.
+- `/tmp/reboot-rust-workflow-reader-no-business-errors-1791486832728407419`:
+  a separate generated ordinary-reader-error-free consumer passes strict Clippy
+  and **seven library tests**, retaining the typed writer path. This is compiler
+  evidence, not a second native persistence proof.
+
+**Limits:** serial same-actor finite named steps, not concurrent or remote writer
+composition. No durable catchable reader failures, constructor errors, new
+running cancellation, automatic Status retry or external exactly-once claim.
+This new error-checkpoint proof does not inject Store lost ACK, dropped completion
+or arbitrary concurrent-operation races. Existing uncertainty controls are
+source/unit evidence, not those missing native fault cases. Full parity remains
+incomplete.
+
+**Sources:** [typed step admission](src/workflow_context.rs),
+[checkpoint effect/replay](src/workflow_store.rs),
+[generation](src/workflow_codegen.rs),
+[public native acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
+
 ### Workflow-service declared readers and clean completion (2026-10-08)
 
 Implemented on baseline `5335e9c61dbffe43c5f9ffce14c4906364f5a3e6`:
@@ -854,7 +928,9 @@ errors. The public batch app adds `Work.ObserveBatch` with `BatchMismatch`,
 shared reactive paths preserve the typed rich-error payload. Internal reader
 waits use framework Status and retain empty task-business-error descriptors;
 this grants neither new task terminal authority nor durable catchable reader
-failure decisions. Ordinary writer/constructor declarations remain rejected.
+failure decisions. At this checkpoint ordinary writer/constructor declarations
+remained rejected; the subsequent writer-decision checkpoint below supersedes
+the writer restriction, not the constructor restriction.
 
 A native negative probe exposed a pre-existing safety defect: catching a failed
 reader observation and returning success could persist an empty successful task
@@ -1369,7 +1445,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: a43e6ac6318c158dc32d44b8aa5575b2f30feee6f77d6acd0a5efc4e8ec86446 -->
+<!-- parity-source-sha256: 0124d5542a7fc60b45393d056255774699e1e9f856555be277955f6d716fd356 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

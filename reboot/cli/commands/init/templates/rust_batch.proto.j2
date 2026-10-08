@@ -12,9 +12,10 @@ message Ledger {
  uint64 archived = 7;
 }
 message Empty {}
-message Submit { string batch = 1; uint32 count = 2; int64 not_before = 3; uint32 reject_after = 4; }
+message Submit { string batch = 1; uint32 count = 2; int64 not_before = 3; uint32 reject_after = 4; bool reject_step = 5; }
 message Handle { bytes id = 1; }
 message Step { string batch = 1; uint32 index = 2; bool reject = 3; }
+message StepRejected { string batch = 1; uint32 index = 2; string reason = 3; }
 message BatchRejected { string batch = 1; uint32 completed = 2; string reason = 3; }
 message Approval { string batch = 1; uint32 index = 2; bool invalid_range = 3; }
 message Batch { string batch = 1; }
@@ -29,6 +30,7 @@ service LedgerWorkMethods {
  rpc SubmitBatch(Submit) returns (Handle) { option (rbt.v1alpha1.method).writer = {}; }
  rpc Observe(Empty) returns (Ledger) { option (rbt.v1alpha1.method).reader = {}; }
  rpc ObserveBatch(Batch) returns (Ledger) { option (rbt.v1alpha1.method) = { reader: {} errors: ["BatchMismatch"] }; }
+ rpc TryCheckpoint(Step) returns (Ledger) { option (rbt.v1alpha1.method) = { writer: {} errors: ["StepRejected"] }; }
  rpc Checkpoint(Step) returns (Ledger) { option (rbt.v1alpha1.method).writer = {}; }
  rpc RunBatch(Submit) returns (Ledger) { option (rbt.v1alpha1.method) = { workflow: {} errors: ["BatchRejected"] }; }
 }

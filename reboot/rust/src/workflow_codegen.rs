@@ -2,7 +2,7 @@
 mod workflow_emission_tests {
     use super::*;
     #[test]
-    fn workflow_declared_reader_does_not_grant_writer_or_constructor_errors() {
+    fn workflow_declared_reader_does_not_grant_constructor_errors() {
         let service = ServiceDescriptorProto {
             name: Some("Methods".into()),
             method: vec![MethodDescriptorProto {
@@ -13,27 +13,27 @@ mod workflow_emission_tests {
             }],
             ..Default::default()
         };
-        for kind in [
-            DurableKind::Writer(WriterMetadata { constructor: false }),
-            DurableKind::Writer(WriterMetadata { constructor: true }),
-        ] {
+        {
+            let kind = DurableKind::Writer(WriterMetadata { constructor: true });
             let annotation = DurableService {
                 state: "demo.State".into(),
                 default_constructible: false,
                 methods: [("Observe".into(), kind)].into(),
                 declared_errors: [("Observe".into(), vec!["Rejected".into()])].into(),
             };
-            assert!(emit_workflow_service(
-                &mut String::new(),
-                &service,
-                &annotation,
-                "Methods",
-                "State",
-                "reboot",
-                "demo"
-            )
-            .unwrap_err()
-            .contains("writers are unsupported"));
+            assert!(
+                emit_workflow_service(
+                    &mut String::new(),
+                    &service,
+                    &annotation,
+                    "Methods",
+                    "State",
+                    "reboot",
+                    "demo"
+                )
+                .unwrap_err()
+                .contains("constructors are unsupported")
+            );
         }
     }
     #[test]
@@ -121,16 +121,23 @@ mod workflow_emission_tests {
         with_errors
             .declared_errors
             .insert("Apply".into(), vec!["Rejected".into()]);
-        assert!(emit_workflow_service(
-            &mut String::new(),
+        let mut declared_writer = String::new();
+        emit_workflow_service(
+            &mut declared_writer,
             &service,
             &with_errors,
             "Methods",
             "State",
             "reboot",
-            "demo"
+            "demo",
         )
-        .is_err());
+        .unwrap();
+        assert!(declared_writer.contains("writer_step_declared"));
+        assert!(declared_writer.contains("DeclaredTaskError::new::<proto::Rejected>"));
+        assert!(
+            declared_writer
+                .contains("TaskHandlerError::Failed(status)=>MethodsApplyError::Grpc(status)")
+        );
         let mut with_reader = annotation.clone();
         with_reader
             .methods
@@ -185,17 +192,19 @@ mod workflow_emission_tests {
             conflict_annotation
                 .methods
                 .insert(conflict.into(), DurableKind::Reader);
-            assert!(emit_workflow_service(
-                &mut String::new(),
-                &conflict_service,
-                &conflict_annotation,
-                "Methods",
-                "State",
-                "reboot",
-                "demo"
-            )
-            .unwrap_err()
-            .contains("reactive helper"));
+            assert!(
+                emit_workflow_service(
+                    &mut String::new(),
+                    &conflict_service,
+                    &conflict_annotation,
+                    "Methods",
+                    "State",
+                    "reboot",
+                    "demo"
+                )
+                .unwrap_err()
+                .contains("reactive helper")
+            );
         }
         with_reader
             .declared_errors
@@ -213,10 +222,13 @@ mod workflow_emission_tests {
         .unwrap();
         for expected in [
             "state:& proto::State,request:proto::Q)->Result<proto::R,MethodsObserveError>",
-            "MethodsObserveError::from_status", ".map_err(|error|error.into_status())",
+            "MethodsObserveError::from_status",
+            ".map_err(|error|error.into_status())",
             "Result<reboot::reactive::TypedSubscription<proto::R, MethodsObserveError>, MethodsObserveError>",
             "workflow_reader_wait()",
-        ] { assert!(declared_reader.contains(expected), "missing {expected}"); }
+        ] {
+            assert!(declared_reader.contains(expected), "missing {expected}");
+        }
         assert!(!declared_reader.contains("async fn apply(&self,state:&mut proto::State,request:proto::Q)->Result<proto::R,MethodsApplyError>"));
         let mut mixed = annotation.clone();
         mixed.methods.insert(
@@ -226,16 +238,18 @@ mod workflow_emission_tests {
                 factory: false,
             }),
         );
-        assert!(emit_workflow_service(
-            &mut String::new(),
-            &service,
-            &mixed,
-            "Methods",
-            "State",
-            "reboot",
-            "demo"
-        )
-        .is_err());
+        assert!(
+            emit_workflow_service(
+                &mut String::new(),
+                &service,
+                &mixed,
+                "Methods",
+                "State",
+                "reboot",
+                "demo"
+            )
+            .is_err()
+        );
     }
 }
 // Bounded standalone workflow services. Mixed transaction/workflow services are
@@ -260,10 +274,14 @@ fn emit_workflow_service(
         !errors.is_empty()
             && !matches!(
                 annotation.methods.get(method),
-                Some(DurableKind::Workflow | DurableKind::Reader)
+                Some(
+                    DurableKind::Workflow
+                        | DurableKind::Reader
+                        | DurableKind::Writer(WriterMetadata { constructor: false })
+                )
             )
     }) {
-        return Err("declared errors on workflow-service writers are unsupported".to_owned());
+        return Err("declared errors on workflow-service constructors are unsupported".to_owned());
     }
     for method in &service.method {
         let name = method.name.as_deref().unwrap();
@@ -364,11 +382,45 @@ fn emit_workflow_service(
                 rpc_methods.push_str(&format!("async fn {rust}(&self, _: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>,tonic::Status> {{ Err(tonic::Status::permission_denied(\"workflows run only through durable generated writer scheduling\")) }}\n"));
             }
             DurableKind::Writer(WriterMetadata { constructor: false }) => {
-                output.push_str(&format!("async fn {rust}(&self,state:&mut proto::{state},request:proto::{request})->Result<proto::{response},tonic::Status>;\nasync fn {rust}_scheduled(&self,state:&mut proto::{state},request:proto::{request},_state_ref:String)->Result<{runtime_module}::runtime::TransactionExecution<proto::{response}>,tonic::Status> {{ self.{rust}(state,request).await.map({runtime_module}::runtime::TransactionExecution::new) }}\n"));
-                declarations.push_str(&format!("{runtime_module}::one_shot_tasks::TaskMethodDeclaration::new::<{declaration},proto::{request},proto::{response}>(\"{identity}\",\"{response_type}\",vec![]).workflow_writer_step(),"));
+                let errors = annotation
+                    .declared_errors
+                    .get(name)
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]);
+                let declared = !errors.is_empty();
+                let handler_error = if declared {
+                    declared_error_type(service_name, &rust)
+                } else {
+                    "tonic::Status".to_owned()
+                };
+                let error_map = if declared {
+                    ".map_err(|error|error.into_status())"
+                } else {
+                    ""
+                };
+                let disposition = if declared {
+                    ".map_err(|error|error.into_task_handler_error())"
+                } else {
+                    ""
+                };
+                let step = if declared {
+                    "writer_step_declared"
+                } else {
+                    "writer_step"
+                };
+                let decode = if declared {
+                    format!(
+                        ".map_err(|error|match error {{ {runtime_module}::one_shot_tasks::TaskHandlerError::Declared(error)=>{handler_error}::from_status({runtime_module}::one_shot_tasks::TaskHandlerError::Declared(error).into_status()),{runtime_module}::one_shot_tasks::TaskHandlerError::Failed(status)=>{handler_error}::Grpc(status) }})"
+                    )
+                } else {
+                    String::new()
+                };
+                let error_descriptors=errors.iter().map(|error|format!("{runtime_module}::one_shot_tasks::DeclaredTaskError::new::<proto::{}>(\"type.googleapis.com/{package}.{error}\")",error.to_upper_camel_case())).collect::<Vec<_>>().join(",");
+                output.push_str(&format!("async fn {rust}(&self,state:&mut proto::{state},request:proto::{request})->Result<proto::{response},{handler_error}>;\nasync fn {rust}_scheduled(&self,state:&mut proto::{state},request:proto::{request},_state_ref:String)->Result<{runtime_module}::runtime::TransactionExecution<proto::{response}>,{handler_error}> {{ self.{rust}(state,request).await.map({runtime_module}::runtime::TransactionExecution::new) }}\n"));
+                declarations.push_str(&format!("{runtime_module}::one_shot_tasks::TaskMethodDeclaration::new::<{declaration},proto::{request},proto::{response}>(\"{identity}\",\"{response_type}\",vec![{error_descriptors}]).workflow_writer_step(),"));
                 writers.push_str(&format!("\"{name}\" | "));
-                step_methods.push_str(&format!("pub async fn {rust}<H:{handler}>(context:&{runtime_module}::one_shot_tasks::WorkflowContext<'_>,handler:std::sync::Arc<H>,alias:&str,request:proto::{request})->Result<proto::{response},tonic::Status> {{ context.writer_step::<{declaration},proto::{request},proto::{response},_>(alias,\"{identity}\",\"{response_type}\",request,move |state,request|Box::pin(async move {{handler.{rust}(state,request).await}})).await }}\n"));
-                rpc_methods.push_str(&format!("async fn {rust}(&self,request:tonic::Request<proto::{request}>)->Result<tonic::Response<proto::{response}>,tonic::Status> {{ let handler=self.handler.clone(); self.store.workflow_scheduling_writer::<{declaration},_,_,_>(\"{identity}\",&self.authorization,self.tasks.as_ref(),request,move |state,request,state_ref|Box::pin(async move {{handler.{rust}_scheduled(state,request,state_ref).await}})).await }}\n"));
+                step_methods.push_str(&format!("pub async fn {rust}<H:{handler}>(context:&{runtime_module}::one_shot_tasks::WorkflowContext<'_>,handler:std::sync::Arc<H>,alias:&str,request:proto::{request})->Result<proto::{response},{handler_error}> {{ context.{step}::<{declaration},proto::{request},proto::{response},_>(alias,\"{identity}\",\"{response_type}\",request,move |state,request|Box::pin(async move {{handler.{rust}(state,request).await{disposition}}})).await{decode} }}\n"));
+                rpc_methods.push_str(&format!("async fn {rust}(&self,request:tonic::Request<proto::{request}>)->Result<tonic::Response<proto::{response}>,tonic::Status> {{ let handler=self.handler.clone(); self.store.workflow_scheduling_writer::<{declaration},_,_,_>(\"{identity}\",&self.authorization,self.tasks.as_ref(),request,move |state,request,state_ref|Box::pin(async move {{handler.{rust}_scheduled(state,request,state_ref).await{error_map}}})).await }}\n"));
             }
             DurableKind::Writer(WriterMetadata { constructor: true }) | DurableKind::Reader => {
                 let declared = matches!(kind, DurableKind::Reader)

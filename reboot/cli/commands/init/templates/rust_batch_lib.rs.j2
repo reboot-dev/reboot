@@ -121,6 +121,51 @@ impl generated::LedgerWorkMethodsDatabaseHandler for Ledger {
         Ok(state.clone())
     }
 
+    async fn try_checkpoint(
+        &self,
+        state: &mut proto::Ledger,
+        request: proto::Step,
+    ) -> Result<proto::Ledger, generated::LedgerWorkMethodsTryCheckpointError> {
+        if state.batch != request.batch
+            || state.completed != request.index
+            || state.approved <= request.index
+        {
+            return Err(tonic::Status::failed_precondition(
+                "try checkpoint identity or approval mismatch",
+            )
+            .into());
+        }
+        event(&format!(
+            "try-checkpoint-{}-{}",
+            request.batch, request.index
+        ));
+        // The rejected handler deliberately changes its tentative local copy.
+        // A declared outcome must persist only its decision, never this state.
+        state.completed += 1;
+        if request.reject {
+            state.rejected = true;
+            return Err(
+                generated::LedgerWorkMethodsTryCheckpointError::StepRejected(proto::StepRejected {
+                    batch: request.batch,
+                    index: request.index,
+                    reason: "writer declined tentative checkpoint".into(),
+                }),
+            );
+        }
+        Ok(state.clone())
+    }
+    async fn try_checkpoint_scheduled(
+        &self,
+        _: &mut proto::Ledger,
+        _: proto::Step,
+        _: String,
+    ) -> Result<TransactionExecution<proto::Ledger>, generated::LedgerWorkMethodsTryCheckpointError>
+    {
+        Err(
+            tonic::Status::permission_denied("try checkpoint requires private workflow authority")
+                .into(),
+        )
+    }
     async fn checkpoint(
         &self,
         state: &mut proto::Ledger,
@@ -176,6 +221,35 @@ impl generated::LedgerWorkMethodsDatabaseHandler for Ledger {
                 move |state| state.approved > index,
             )
             .await?;
+            if request.reject_step && index == 0 {
+                match generated::LedgerWorkMethodsWorkflowSteps::try_checkpoint(
+                    &iteration,
+                    Arc::new(self.clone()),
+                    "try-complete",
+                    proto::Step {
+                        batch: request.batch.clone(),
+                        index,
+                        reject: true,
+                    },
+                )
+                .await
+                {
+                    Err(generated::LedgerWorkMethodsTryCheckpointError::StepRejected(error))
+                        if error.batch == request.batch && error.index == index =>
+                    {
+                        event(&format!("caught-step-{}-{}", error.batch, error.index));
+                    }
+                    Err(generated::LedgerWorkMethodsTryCheckpointError::Grpc(error)) => {
+                        return Err(error.into());
+                    }
+                    _ => {
+                        return Err(tonic::Status::data_loss(
+                            "unexpected tentative checkpoint outcome",
+                        )
+                        .into());
+                    }
+                }
+            }
             result = generated::LedgerWorkMethodsWorkflowSteps::checkpoint(
                 &iteration,
                 Arc::new(self.clone()),
@@ -431,6 +505,39 @@ mod tests {
         assert_eq!(state, before);
     }
     #[tokio::test]
+    async fn tentative_writer_returns_exact_declared_rejection() {
+        use generated::LedgerWorkMethodsDatabaseHandler;
+        let mut state = proto::Ledger {
+            batch: "batch".into(),
+            count: 2,
+            approved: 1,
+            ..Default::default()
+        };
+        let error = Ledger
+            .try_checkpoint(
+                &mut state,
+                proto::Step {
+                    batch: "batch".into(),
+                    index: 0,
+                    reject: true,
+                },
+            )
+            .await
+            .unwrap_err();
+        match error {
+            generated::LedgerWorkMethodsTryCheckpointError::StepRejected(error) => {
+                assert_eq!(error.batch, "batch");
+                assert_eq!(error.index, 0);
+            }
+            generated::LedgerWorkMethodsTryCheckpointError::Grpc(error) => {
+                panic!("unexpected framework failure {error}")
+            }
+        }
+        // Handler effects are tentative; native Store acceptance proves rollback.
+        assert_eq!(state.completed, 1);
+        assert!(state.rejected);
+    }
+    #[tokio::test]
     async fn public_checkpoint_cannot_mint_rejection_or_progress() {
         use generated::LedgerWorkMethodsDatabaseHandler;
         let original = proto::Ledger {
@@ -455,6 +562,23 @@ mod tests {
                 .err()
                 .unwrap();
             assert_eq!(error.code(), tonic::Code::PermissionDenied);
+            assert_eq!(state, original);
+            let error = Ledger
+                .try_checkpoint_scheduled(
+                    &mut state,
+                    proto::Step {
+                        batch: "batch".into(),
+                        index: 0,
+                        reject: true,
+                    },
+                    reference().unwrap(),
+                )
+                .await
+                .err()
+                .unwrap();
+            assert!(
+                matches!(error,generated::LedgerWorkMethodsTryCheckpointError::Grpc(status) if status.code()==tonic::Code::PermissionDenied)
+            );
             assert_eq!(state, original);
         }
     }

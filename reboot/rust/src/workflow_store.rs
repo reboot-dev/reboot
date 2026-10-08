@@ -10,6 +10,7 @@ struct WorkflowSchedulingCheckpoint {
     version: u32,
 }
 
+#[cfg(test)]
 fn decode_workflow_checkpoint<R: Message + Default>(
     mutation: &database::IdempotentMutation,
     id: &database::TaskId,
@@ -18,6 +19,27 @@ fn decode_workflow_checkpoint<R: Message + Default>(
     response_type: &str,
     iteration: Option<u64>,
 ) -> Result<R, Status> {
+    let any = decode_workflow_checkpoint_envelope(
+        mutation,
+        id,
+        key,
+        fingerprint,
+        response_type,
+        iteration,
+    )?;
+    if any.type_url != response_type {
+        return Err(Status::data_loss("workflow step result type collision"));
+    }
+    R::decode(any.value.as_slice()).map_err(|_| Status::data_loss("malformed workflow step result"))
+}
+fn decode_workflow_checkpoint_envelope(
+    mutation: &database::IdempotentMutation,
+    id: &database::TaskId,
+    key: Uuid,
+    fingerprint: &[u8],
+    response_type: &str,
+    iteration: Option<u64>,
+) -> Result<prost_types::Any, Status> {
     if mutation.state_type != id.state_type
         || mutation.state_ref != id.state_ref
         || mutation.key != key.as_bytes()
@@ -33,10 +55,8 @@ fn decode_workflow_checkpoint<R: Message + Default>(
     }
     let any = prost_types::Any::decode(mutation.response.as_slice())
         .map_err(|_| Status::data_loss("malformed workflow step envelope"))?;
-    if any.type_url != response_type {
-        return Err(Status::data_loss("workflow step result type collision"));
-    }
-    R::decode(any.value.as_slice()).map_err(|_| Status::data_loss("malformed workflow step result"))
+    let _ = response_type;
+    Ok(any)
 }
 #[cfg(test)]
 mod workflow_checkpoint_tests {
@@ -201,6 +221,51 @@ impl DatabaseActorStore {
         )
             -> Pin<Box<dyn Future<Output = Result<Option<R>, Status>> + Send + 'a>>,
     {
+        let result = self
+            .workflow_step_outcome::<D, Q, R, _>(
+                scope,
+                (alias, condition),
+                method,
+                response_type,
+                request,
+                move |state, request| {
+                    let future = invoke(state, request);
+                    Box::pin(async move { future.await.map(|response| response.map(Ok)) })
+                },
+            )
+            .await?;
+        match result {
+            Some(Ok(response)) => Ok(Some(response)),
+            None => Ok(None),
+            Some(Err(_)) => Err(Status::failed_precondition(
+                "declared checkpoint requires typed writer step",
+            )),
+        }
+    }
+    pub(crate) async fn workflow_step_outcome<D, Q, R, F>(
+        &self,
+        scope: &crate::one_shot_tasks::WorkflowContext<'_>,
+        (alias, condition): (&str, Option<&str>),
+        method: &'static str,
+        response_type: &'static str,
+        request: Q,
+        invoke: F,
+    ) -> Result<Option<Result<R, prost_types::Any>>, Status>
+    where
+        D: DurableStateDeclaration + 'static,
+        Q: Message + Default + Send + 'static,
+        R: Message + Default + Clone + Send + 'static,
+        F: for<'a> FnOnce(
+            &'a mut D::State,
+            Q,
+        ) -> Pin<
+            Box<
+                dyn Future<Output = Result<Option<Result<R, prost_types::Any>>, Status>>
+                    + Send
+                    + 'a,
+            >,
+        >,
+    {
         let task = scope.task();
         let id = task
             .task_id
@@ -257,14 +322,26 @@ impl DatabaseActorStore {
                         "duplicate workflow step checkpoint",
                     ));
                 }
-                saved = Some(decode_workflow_checkpoint::<R>(
+                let any = decode_workflow_checkpoint_envelope(
                     &mutation,
                     id,
                     key,
                     &fingerprint,
                     response_type,
                     iteration,
-                )?);
+                )?;
+                saved = Some(if any.type_url == response_type {
+                    Ok(R::decode(any.value.as_slice())
+                        .map_err(|_| Status::data_loss("malformed workflow step result"))?)
+                } else {
+                    if condition.is_some() {
+                        return Err(Status::data_loss(
+                            "reader checkpoint cannot contain declared error",
+                        ));
+                    }
+                    scope.validate_writer_step_error(method, &any)?;
+                    Err(any)
+                });
             }
         }
         scope.validate_scope().await?;
@@ -302,11 +379,33 @@ impl DatabaseActorStore {
             return Ok(None);
         };
         scope.validate_scope().await?;
-        if condition.is_some() && response.encoded_len() > 1048576 {
+        if condition.is_some()
+            && response
+                .as_ref()
+                .map(|value| value.encoded_len())
+                .unwrap_or(0)
+                > 1048576
+        {
             return Err(Status::resource_exhausted(
                 "workflow wait snapshot exceeds 1MiB",
             ));
         }
+        if let Err(error) = &response {
+            if condition.is_some() {
+                return Err(Status::failed_precondition(
+                    "reader cannot save declared writer error",
+                ));
+            }
+            scope.validate_writer_step_error(method, error)?;
+        }
+        let rejected = response.is_err();
+        let saved_response = match &response {
+            Ok(response) => prost_types::Any {
+                type_url: response_type.to_owned(),
+                value: response.encode_to_vec(),
+            },
+            Err(error) => error.clone(),
+        };
         let mut operation = scope.durable();
         let commit_attempt = self
             .actor_gate(&id.state_type, &id.state_ref)
@@ -314,7 +413,7 @@ impl DatabaseActorStore {
         self.database
             .clone()
             .store(database::StoreRequest {
-                actor_upserts: if condition.is_some() {
+                actor_upserts: if condition.is_some() || rejected {
                     vec![]
                 } else {
                     vec![database::Actor {
@@ -327,11 +426,7 @@ impl DatabaseActorStore {
                     state_type: id.state_type.clone(),
                     state_ref: id.state_ref.clone(),
                     key: key.as_bytes().to_vec(),
-                    response: prost_types::Any {
-                        type_url: response_type.to_owned(),
-                        value: response.encode_to_vec(),
-                    }
-                    .encode_to_vec(),
+                    response: saved_response.encode_to_vec(),
                     workflow_id: Some(id.task_uuid.clone()),
                     workflow_iteration: iteration,
                     request_fingerprint: Some(fingerprint),
@@ -344,7 +439,7 @@ impl DatabaseActorStore {
                 sync: true,
             })
             .await?;
-        if condition.is_some() {
+        if condition.is_some() || rejected {
             commit_attempt.checkpoint_acknowledged();
         } else {
             commit_attempt.acknowledged();

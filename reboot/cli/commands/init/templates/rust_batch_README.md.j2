@@ -100,6 +100,25 @@ saved-step method/request identity for an existing workflow requires a separate
 migration; incompatible persisted replay fails closed rather than silently changing
 its meaning.
 
+## Catching a saved writer decision
+
+`submit-step-reject step-reject 2 <UUIDv4-key>` selects a workflow which deliberately
+tries a rejected `TryCheckpoint` at index zero. Approve index zero normally; the
+writer's tentative counter/rejected-state changes are discarded, while its typed
+`StepRejected` decision is stored at the named step. The body catches that decision,
+executes its ordinary checkpoint and parks for index one. Restart and approve index
+one: the same error replays without rerunning the rejected writer, then canonical
+Wait returns success. Ordinary Checkpoint and TryCheckpoint RPCs cannot bypass the
+private workflow authority.
+
+This is a bounded Rust named-step decision contract, not a claim that Python
+implicitly persists aborted writer RPCs. Saved errors require the exact declared
+method/type and an otherwise-clean serial attempt; malformed/foreign errors,
+framework `Grpc` failures, dropped work and uncertain Store remain fatal. There is
+no status-code retry, external-effect exactly-once, cross-actor error recovery or
+constructor-error expansion. Ordinary public scheduling-writer errors are transport
+responses, not this private saved-decision path.
+
 ## Inspect pending tasks
 
 Listing is disabled unless the host receives a nonempty
