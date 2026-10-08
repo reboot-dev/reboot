@@ -16,6 +16,7 @@ ts_project(
         "src/features.ts",
         "src/graph.tsx",
         "src/link_properties_to_data_types.ts",
+        "src/logo.tsx",
         "src/main.tsx",
         "src/markdown.ts",
         "src/pane_target.ts",
@@ -67,6 +68,27 @@ esbuild(
     visibility = ["//reboot/dashboard/backend:__pkg__"],
 )
 
+# The same bundle minified, for the page built into one file that an
+# MCP host is given whole: every byte of it crosses the MCP connection
+# each time the page is opened.
+esbuild(
+    name = "dashboard_bundle_minified",
+    srcs = [
+        ":dashboard_ts",
+    ],
+    bazel_sandbox_plugin = False,
+    define = {"process.env.NODE_ENV": "\"production\""},
+    entry_point = "src/main.js",
+    format = "esm",
+    minify = True,
+    output = "dashboard_bundle_minified.js",
+    platform = "browser",
+    # The page has no file beside it for a source map to be in.
+    sourcemap = "",
+    tsconfig = "tsconfig.json",
+    visibility = ["//rbt/dashboard/v1:__pkg__"],
+)
+
 exports_files(
     [
         "dashboard.css",
@@ -74,5 +96,8 @@ exports_files(
         "index.html",
         "reboot-logo.svg",
     ],
-    visibility = ["//reboot/dashboard/backend:__pkg__"],
+    visibility = [
+        "//rbt/dashboard/v1:__pkg__",
+        "//reboot/dashboard/backend:__pkg__",
+    ],
 )
