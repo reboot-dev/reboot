@@ -221,6 +221,23 @@ def list_denied(code, token=None, server='local-rust'):
                 check(name + ' rejects ' + code.name, error.code() == code)
 
 
+def cancel_denied(code, task_uuid=None, token=None, routed_ref=None):
+    import uuid as uuid_module
+    task_uuid = task_uuid or str(uuid_module.uuid4())
+    request = tasks_pb2.CancelTaskRequest(task_id=tasks_pb2.TaskId(
+        state_type='batch_ledger.v1.Ledger', state_ref=reference,
+        task_uuid=uuid_module.UUID(task_uuid).bytes))
+    metadata = [('x-reboot-state-ref', routed_ref or reference)]
+    if token:
+        metadata.append(('authorization', 'Bearer ' + token))
+    with grpc.insecure_channel(f'127.0.0.1:{PORT}') as channel:
+        try:
+            tasks_pb2_grpc.TasksStub(channel).CancelTask(request, metadata=metadata, timeout=3)
+            raise AssertionError('cancellation unexpectedly admitted')
+        except grpc.RpcError as error:
+            check('CancelTask rejects ' + code.name, error.code() == code)
+
+
 def stream_deadline():
     with grpc.insecure_channel(f'127.0.0.1:{PORT}') as channel:
         stream = tasks_pb2_grpc.TasksStub(channel).ListTasksStream(
@@ -348,10 +365,13 @@ try:
     map_ref = str(StateRef.from_id('rbt.std.collections.v1.SortedMap', 'approvals'))
     current = Session('admin-disabled', admin=False)
     list_denied(grpc.StatusCode.PERMISSION_DENIED, token=ENV['RBT_RUST_TASK_ADMIN_TOKEN'])
+    cancel_denied(grpc.StatusCode.PERMISSION_DENIED, token=ENV['RBT_RUST_TASK_ADMIN_TOKEN'])
     current.close(); current = None
     current = Session('first')
     list_denied(grpc.StatusCode.UNAUTHENTICATED)
     list_denied(grpc.StatusCode.UNAUTHENTICATED, token='invalid')
+    cancel_denied(grpc.StatusCode.UNAUTHENTICATED)
+    cancel_denied(grpc.StatusCode.UNAUTHENTICATED, token='invalid')
     list_denied(grpc.StatusCode.UNIMPLEMENTED, token=ENV['RBT_RUST_TASK_ADMIN_TOKEN'], server=None)
     list_denied(grpc.StatusCode.UNAVAILABLE, token=ENV['RBT_RUST_TASK_ADMIN_TOKEN'], server='wrong-server')
     check('authenticated generated task listing starts empty', client('tasks')[0] == '')
@@ -361,6 +381,13 @@ try:
     uuid, _ = client('submit', 'batch-001', '3', '11111111-1111-4111-8111-111111111111')
     replay, _ = client('submit', 'batch-001', '3', '11111111-1111-4111-8111-111111111111')
     check('submit same key same task UUID', replay == uuid)
+    listed(uuid, 'STARTED')
+    cancel_before = [item.SerializeToString() if hasattr(item, 'SerializeToString') else [entry.SerializeToString() for entry in item] for item in native(current, uuid)]
+    cancel_denied(grpc.StatusCode.FAILED_PRECONDITION, uuid, token=ENV['RBT_RUST_TASK_ADMIN_TOKEN'])
+    cancel_after = [item.SerializeToString() if hasattr(item, 'SerializeToString') else [entry.SerializeToString() for entry in item] for item in native(current, uuid)]
+    check('running workflow cancellation has no canonical effects', cancel_before == cancel_after)
+    cancel_denied(grpc.StatusCode.INVALID_ARGUMENT, uuid, token=ENV['RBT_RUST_TASK_ADMIN_TOKEN'], routed_ref='wrong')
+    check('unknown task cancellation is NOT_FOUND', client('cancel', str(__import__('uuid').uuid4()))[0] == 'NOT_FOUND')
     changed, status = client('submit', 'changed', '3', '11111111-1111-4111-8111-111111111111', ok=False)
     check('submit fingerprint collision rejected', status != 0)
     watch = Watch('initial')
@@ -512,6 +539,64 @@ try:
     task_watch = TaskWatch('restart')
     task_watch.observed(parked, 'STARTED')
     task_watch.close(); task_watch = None
+    # Release the retained parked task through its ordinary public approval.
+    client('approve', 'batch-003', '0')
+    client('wait', parked, '5000')
+    future = int(time.time()) + 45
+    cancelled_key = '55555555-5555-4555-8555-555555555555'
+    cancelled, _ = client('submit', 'batch-cancelled', '1', cancelled_key, str(future))
+    listed(cancelled, 'SCHEDULED', future)
+    state, rows, pending_cancel, cancel_replay = native(current, cancelled)
+    before_cancel = (state.SerializeToString(), rows.SerializeToString(), [entry.SerializeToString() for entry in cancel_replay])
+    pending_bytes = pending_cancel.SerializeToString()
+    # Two real public admin calls: one durable winner, then no live task to cancel.
+    calls = []
+    for index in range(2):
+        path = STAGE / f'cancel-concurrent-{index}.log'
+        output = path.open('w')
+        argv = [str(TARGET / 'debug/client'), 'cancel', cancelled]
+        process = subprocess.Popen(argv, cwd=APP, env=ENV, stdout=output,
+                                   stderr=subprocess.STDOUT, start_new_session=True)
+        data = {'argv': argv, 'pid': process.pid, 'log': str(path)}
+        evidence['commands'].append(data); calls.append((process, output, data))
+        checkpoint()
+    outcomes = []
+    for process, output, data in calls:
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            timeout_seen = True
+            evidence['live_handles'].extend(item[2] for item in calls)
+            checkpoint()
+            raise
+        output.close(); data['exit'] = process.returncode; checkpoint()
+        assert process.returncode == 0, Path(data['log']).read_text()
+        outcomes.append(Path(data['log']).read_text().strip())
+    check('concurrent cancellation one winner and one NOT_FOUND', sorted(outcomes) == ['NOT_FOUND', 'OK'])
+    check('generated typed Wait exposes system cancellation', client('wait', cancelled, '5000')[0] == 'CANCELLED')
+    state, rows, cancelled_task, cancel_replay = native(current, cancelled)
+    rich = status_pb2.Status.FromString(cancelled_task.error.value)
+    check('canonical durable system cancellation', cancelled_task.status == db.Task.COMPLETED
+          and cancelled_task.error.type_url == 'type.googleapis.com/google.rpc.Status'
+          and rich.code == 1 and len(rich.details) == 1
+          and rich.details[0].type_url == 'type.googleapis.com/rbt.v1alpha1.Cancelled'
+          and rich.details[0].value == b'')
+    canonical_pending = db.Task.FromString(cancelled_task.SerializeToString())
+    canonical_pending.status = db.Task.PENDING; canonical_pending.ClearField('error')
+    check('cancellation preserves immutable pending identity/payload/schedule', canonical_pending.SerializeToString() == pending_bytes)
+    check('cancellation is not submission state/map/replay rollback', before_cancel ==
+          (state.SerializeToString(), rows.SerializeToString(), [entry.SerializeToString() for entry in cancel_replay]))
+    terminal_bytes = cancelled_task.SerializeToString()
+    check('cancelled scheduling replay does not reopen terminal', client('submit', 'batch-cancelled', '1', cancelled_key, str(future))[0] == cancelled)
+    until(lambda: client('tasks')[0] == '', 'cancelled task pruned from local listing')
+    current.close(); current = None
+    current = Session('cancelled-restart')
+    check('cancelled typed Wait and terminal identical after RocksDB restart', client('wait', cancelled, '5000')[0] == 'CANCELLED'
+          and native(current, cancelled)[2].SerializeToString() == terminal_bytes)
+    until(lambda: time.time() >= future + 1, 'cancelled schedule passed', 50)
+    time.sleep(.3)  # permit several canonical rescan periods after the original due time
+    check('cancelled body never starts after due/restart', not events(current)
+          and native(current, cancelled)[2].SerializeToString() == terminal_bytes and client('tasks')[0] == '')
     current.close(); current = None
     check('acceptance complete')
     evidence['accepted'] = True

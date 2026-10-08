@@ -90,9 +90,32 @@ before disclosure. No detached polling worker or event queue is created. Slow
 consumers coalesce changes; revocation is checked on the next pulled observation,
 not pushed independently through transport backpressure. Reconnect after host
 restart/regeneration; there is no resume cursor or durable event history.
-Cross-server aggregation, shared-reader registry listing and public cancellation
-are not implemented. Ordinary RPCs and Wait retain their existing authorization
-behavior; this admin policy protects listing and its stream only.
+Cross-server aggregation and shared-reader registry listing are not implemented.
+Ordinary RPCs and Wait retain their existing authorization behavior; this admin
+policy protects listing, its stream and the bounded cancellation operation below.
+
+## Cancel a scheduled workflow
+
+`client cancel RETURNED_UUID` sends canonical `Tasks.CancelTask` once with the same
+admin bearer and a deadline. Only a future-scheduled, not-yet-started workflow is
+eligible in the current dispatcher generation. The phase cache is not a durable
+never-started certificate across clock rollback/recovery; previous-generation
+effects, if any, remain. It persists a canonical system `Cancelled` terminal through completion
+CAS before returning `OK`; concurrent/repeated calls or completed/missing tasks
+return `NOT_FOUND`. Running/due workflows and ordinary reader/writer task targets
+are refused with `FailedPrecondition`, not interrupted. There is no asynchronous
+`CANCELLING` state in this bounded contract.
+
+Generated workflow Wait returns the error enum's `Grpc` variant with the exact rich
+`Cancelled` status; this example client prints `CANCELLED`. The same terminal survives
+RocksDB restart and cannot be reopened by submission replay. This is not business
+rejection or rollback: submission state, map entries and earlier effects remain.
+In this sample a cancelled batch still occupies its business reservation; a new
+submission is rejected. Releasing that reservation needs an application-defined
+compensation, not a caller-controlled reset or a fabricated successful workflow.
+Transport/ACK uncertainty fails the task owner and requires durable recovery; it
+never triggers automatic cancellation retry. General running-task cancellation,
+workflow compensation and distributed cancellation remain unsupported.
 
 Local app/map ownership restoration precedes coordinator convergence, stable
 EMPTY map constructor replay, task recovery and reactive reader activation.

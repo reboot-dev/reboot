@@ -1000,15 +1000,47 @@ impl OneShotTasks {
             attempt: &attempt,
             iteration: None,
         };
-        context.validate_scope().await?;
         {
+            let id = task.task_id.clone().expect("validated workflow ID");
+            let gate = self.inner.store.actor_gate(&id.state_type, &id.state_ref);
+            let _lease = gate.exclusive().await;
+            cancel.public_ready().await?;
             let admission = RunningTaskAdmission {
                 tasks: self.clone(),
                 generation: generation.clone(),
             };
-            let _owner = admission.lock()?;
+            {
+                let _owner = admission.lock()?;
+            }
+            let loaded = self
+                .inner
+                .store
+                .task_database()
+                .load(db::LoadRequest {
+                    actors: vec![],
+                    task_ids: vec![id],
+                })
+                .await?
+                .into_inner();
+            {
+                let _owner = admission.lock()?;
+            }
+            if loaded.tasks.len() == 1
+                && loaded.tasks[0].status == db::task::Status::Completed as i32
+            {
+                validate_completed(&task, &loaded.tasks[0], None)?;
+                self.validate_terminal(
+                    &loaded.tasks[0],
+                    loaded.tasks[0]
+                        .response_or_error
+                        .as_ref()
+                        .expect("validated terminal"),
+                )?;
+                return Ok(None);
+            }
+            context.validate_scope().await?;
+            self.inner.listing.started(&task);
         }
-        self.inner.listing.started(&task);
         let receipt = self.inner.binding.execute_workflow(context).await?;
         if receipt.task != task {
             return Err(Status::failed_precondition(

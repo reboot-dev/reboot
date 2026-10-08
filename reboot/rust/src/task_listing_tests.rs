@@ -46,11 +46,17 @@ impl Authorizer for Admin {
             use prost::Message;
             assert!(matches!(
                 context.method.as_str(),
-                "rbt.v1alpha1.Tasks.ListTasks" | "rbt.v1alpha1.Tasks.ListTasksStream"
+                "rbt.v1alpha1.Tasks.ListTasks"
+                    | "rbt.v1alpha1.Tasks.ListTasksStream"
+                    | "rbt.v1alpha1.Tasks.CancelTask"
             ));
             assert!(auth.is_some());
             assert!(state.is_none());
-            db::ListTasksRequest::decode(request).unwrap();
+            if context.method.ends_with("CancelTask") {
+                db::CancelTaskRequest::decode(request).unwrap();
+            } else {
+                db::ListTasksRequest::decode(request).unwrap();
+            }
             tokio::task::yield_now().await;
             match self.action {
                 1 => {
@@ -112,7 +118,7 @@ fn install(
         })
         .unwrap();
 }
-fn setup(action: u8) -> (ReaderTaskWaitService, DispatchOwner, db::Task) {
+pub(super) fn setup(action: u8) -> (ReaderTaskWaitService, DispatchOwner, db::Task) {
     let reference = uuid::Uuid::new_v4().to_string();
     let tasks = OneShotTasks::new(
         DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(),

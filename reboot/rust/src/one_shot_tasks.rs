@@ -18,6 +18,7 @@ use std::{
 };
 include!("workflow_context.rs");
 include!("task_listing.rs");
+include!("task_cancellation.rs");
 const MAX_TASKS: usize = 1024;
 use tokio::{sync::mpsc, task::JoinSet};
 use tonic::Status;
@@ -451,6 +452,12 @@ impl OneShotTasks {
         terminal: &db::task::ResponseOrError,
     ) -> Result<(), Status> {
         if let Some(declaration) = self.declaration(task) {
+            if declaration.workflow
+                && let db::task::ResponseOrError::Error(error) = terminal
+                && task_cancellation_status(error)?.is_some()
+            {
+                return Ok(());
+            }
             declaration.validate_terminal(terminal)?;
         } else if matches!(terminal, db::task::ResponseOrError::Error(_)) {
             return Err(Status::failed_precondition(
@@ -1720,10 +1727,13 @@ impl ReaderTaskWaitService {
             admin: None,
         })
     }
-    /// Enable server-scoped administrative listing with an explicit application policy.
-    /// Default is deny; ListTasks and ListTasksStream do not alter Wait authorization.
+    /// Enable local task administration with an explicit application policy.
+    /// Default is deny; listing/stream/cancellation do not alter Wait authorization.
     /// Both application-owned policies are required. Authorization gets the encoded
-    /// ListTasks request, exact RPC method, no actor state and server-owned identity.
+    /// RPC request, exact method, no actor state and server-owned identity.
+    /// CancelTask accepts only not-yet-due workflows still SCHEDULED in this owner
+    /// generation. It synchronously persists a system Cancelled terminal without
+    /// rolling back submission state; running/ordinary task cancellation is rejected.
     /// Listing is pending-only and eventually refreshed by canonical singleton
     /// scans; phase timestamps and retry counts are local to this generation.
     /// The stream rechecks policy and original owner authority on each 200ms pulled
@@ -2029,9 +2039,9 @@ impl db::tasks_server::Tasks for ReaderTaskWaitService {
     }
     async fn cancel_task(
         &self,
-        _: tonic::Request<db::CancelTaskRequest>,
+        request: tonic::Request<db::CancelTaskRequest>,
     ) -> Result<tonic::Response<db::CancelTaskResponse>, Status> {
-        Err(Status::unimplemented("task cancellation is unsupported"))
+        self.cancel_scheduled_workflow(request).await
     }
 }
 

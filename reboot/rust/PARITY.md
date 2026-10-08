@@ -23,8 +23,9 @@ No overall percentage is asserted.
 - **Missing:** required semantics/API are absent or explicitly rejected. A
   rejected operation is not an implementation waiting for a compiler flag.
 
-The latest workflow-service reactive integration was implemented on baseline
-`2ab2695302a62ded67eda4a63cf0919efc41a11d` (2026-10-08). The preceding explicit
+The latest scheduled-workflow cancellation was implemented on baseline
+`f385e2b49680e1fb7d2e7bfd557bfe3bc2875cf2` (2026-10-08). Workflow-service reactive
+integration was based on `2ab2695302a62ded67eda4a63cf0919efc41a11d`. The preceding explicit
 reconnect vertical was based on `dfb8734c9834f31a2038d36deb8bbadfb6e80601`. Declared workflow
 terminals were implemented from `ba58bae69fb047b52e637525b36aa19227c7a7b5`;
 the original public batch app was based on `e2a6bdc5914a8c152eb48c102c3dc91249cc4ead`. Executed
@@ -40,7 +41,7 @@ proofs below retain their separate source snapshots and limits.
 | Schema/codegen | Explicit schema DSL, Prost/Tonic bindings and concrete typed adapters | Rust derive/reflection and complete schema/tooling contract |
 | State/client runtime | Durable constructors/readers/writers, idempotent response replay, metadata/auth | General distributed ownership/fencing and arbitrary external effects |
 | Transactions | Legacy durable coordinator/participant paths and bounded supervised chains/star | General nested snapshots, reentrancy, intersecting subtrees, migration |
-| Tasks | Durable scheduled reader/writer tasks, typed results/Wait, recovery, admin local list/stream | Transactional targets, public cancellation/aggregation, broad retry and dispatcher fencing |
+| Tasks | Durable scheduled tasks, typed results/Wait, recovery, local admin list/stream and scheduled-workflow cancellation | Transactional targets, running/ordinary/distributed cancellation, aggregation, broad retry and dispatcher fencing |
 | Workflows | Finite typed named steps, finite indexed replay, saved reader decisions, typed declared business terminals; explicit local-body resumption | Python unbounded Task cursor/GC/Break, cross-actor composition, framework failure isolation |
 | Reactive readers | Typed bounded database/workflow-service subscriptions, commit invalidation and explicit same-query reconnect | Cross-actor/remote invalidation, transparent reconnect/durable resume, transaction-service generated bindings |
 | SortedMap | Canonical empty constructor and serial same-host app/map transactions | Public inbound adapter, nested/reusable siblings, distributed collection lifecycle |
@@ -405,7 +406,7 @@ independently through backpressure. The initial snapshot is authorized at RPC
 admission. Generated batch `tasks-watch` supplies bearer/server scope and an RPC
 deadline; reconnect creates a new current snapshot, without a resume cursor.
 
-**Missing:** transactional task targets, public CancelTask/full aggregated listing,
+**Missing:** transactional task targets, running/ordinary/distributed cancellation and full aggregated listing,
 task-result authorization, broad retry policies, distributed dispatcher fencing and
 migration, arbitrary shared/factory/idempotent tree scheduling. Workflow methods
 have their separate context/result contract below, not ordinary declared-task
@@ -421,6 +422,86 @@ error semantics.
 Python comparison: [task dispatcher](../aio/internals/tasks_dispatcher.py),
 [Tasks service](../aio/internals/tasks_servicer.py),
 [generated method contract](../templates/reboot.py.j2).
+
+### Implemented, bounded scheduled-workflow cancellation
+
+Implemented on baseline `f385e2b49680e1fb7d2e7bfd557bfe3bc2875cf2` (2026-10-08).
+Public canonical `Tasks.CancelTask` shares the listing admin's explicitly configured
+verifier AND authorizer; default host exposure remains deny. Original dispatcher
+generation and server-owned application/server identity are captured before policy
+waits. Authorization receives the exact encoded request without actor-state loading;
+identity/UUIDv4/placement/owner errors follow successful policy outcomes. Malformed
+transport headers still fail parsing before authentication.
+
+Eligibility is a registered singleton workflow, future-scheduled and not entered
+STARTED **in this local owner generation**. SCHEDULED is a process-local observation,
+not a durable certificate that no prior generation ran it; prior effects across
+recovery/clock rollback are retained. Actor-exclusive admission serializes cancellation
+with workflow start. Initial admission reloads/validates canonical Pending, owner and
+due time and marks STARTED before releasing the gate; a stale completed hint is
+validated/skipped without invoking the body.
+
+Cancellation preserves identity/request/method/schedule and performs one sync
+`Database.CompleteTask` Pending→Completed CAS, with `Any<google.rpc.Status>` code
+Cancelled and exactly one typed `rbt.v1alpha1.Cancelled` detail. A valid ACK plus
+still-current authority yields OK; missing/completed canonical tasks yield NOT_FOUND.
+Running/due workflows and ordinary task targets are rejected. This is NOT Python's
+interrupt/async-cleanup/CANCELLING protocol. False CAS, transport/drop uncertainty
+or post-ACK authority loss leave sticky uncertainty before lease release. Existing
+host supervision propagates failure asynchronously; no status retry or synchronous
+readiness-revocation guarantee is added.
+
+Canonical workflow validation/generated Wait recognize cancellation separately from
+business declarations. Declared body validation cannot inject it as an undeclared
+business error. Generated Wait retains original TaskId/exact method metadata and
+supports both business-error enums (Grpc arm) and no-business-error methods
+(tonic::Status). An actual no-error consumer exposed unconditional identity
+conversions and a fallback-only match under strict Clippy; generation now emits
+only required conversions and direct fail-closed empty validation.
+
+The public batch client adds `cancel TASK_UUID`, with separately admitted exact
+admin request. Cancellation does **not** roll back submission state, map data,
+scheduling replay or saved steps, nor release an app business reservation.
+Compensation/retirement needs a separate app writer, not an invented rollback.
+
+**Executed final acceptance** (all accepted manifests recorded unchanged source):
+- `/tmp/reboot-rust-batch-ledger-acceptance-1791466910057365779`: actual public
+  scaffold/generation/Cargo/rbt/CXX/RocksDB. Disabled admin, absent/invalid bearer,
+  wrong route and running-task denial preserved canonical records. Two generated
+  clients concurrently cancelling returned one OK and one NOT_FOUND. Typed Wait
+  exposed Cancelled; durable status/type/details and immutable payload/schedule
+  matched. Submission/map/replay remained intact; scheduling replay did not reopen
+  the terminal; live inventory pruned it. Full RocksDB restart returned identical
+  terminal/Wait and zero body dispatch beyond original due time. Batch/reactive/
+  reconnect/watch/typed-business-error regressions passed; recorded children reaped.
+- `/tmp/reboot-rust-batch-ledger-final-gates-1791467542400778108`: SDK strict
+  all-target Clippy with test-support, **398 passed, 0 failed, 128 ignored**;
+  default native greeting durable restart/supervision/failed-live-rebuild cleanup.
+  The native batch consumer passed strict Clippy and four tests.
+- `/tmp/reboot-rust-cancellation-no-business-errors-1791466814746697061`: separate
+  generated no-business-error consumer strict all-target Clippy and four library
+  tests. This is compiler/consumer evidence, not native persisted cancellation
+  for that schema variant. All 51 focused codegen controls passed. SDK controls
+  exercise exact rich validation, admin auth/revocation and sticky destructor
+  uncertainty; their unit/static role is not native lost-ACK proof.
+- First native stage `1791465354930538153` failed an inspector before cancellation
+  (ColocatedRangeResponse incorrectly treated as rows), not accepted.
+  `1791466020736921795` passed native semantics but was superseded after the
+  no-error compiler repair. Final native/broad proofs above were rerun after it.
+  Concurrent clients have separate exact PID/command/log records, not a
+  thread-unsafe sequential evidence helper.
+
+Both source reviews found no confirmed defect. Source/destructor controls and
+uncontrolled concurrency do NOT prove actual completion-CAS lost ACK, dropped
+in-flight completion or a deterministic start-versus-cancel race; these are explicit
+test gaps. Running/ordinary cancellation, active-body cleanup, distributed authority,
+durable phase history and Python CANCELLING remain unsupported. Other parity gaps
+are not closed by this slice.
+
+**Sources:** [cancellation](src/task_cancellation.rs),
+[controls](src/task_cancellation_tests.rs), [workflow admission](src/workflow_context.rs),
+[typed Wait](src/workflow_codegen.rs),
+[public native acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
 
 ## Durable named workflows
 
@@ -474,7 +555,8 @@ Their handler returns a typed error enum; its explicit declared variant becomes
 `WorkflowBodyError::Declared`. Plain tonic `Status`, even rich Status, remains
 nonretryable `Failed`. There is no status-code retry or error-detail classification
 of transport failures. Reader/writer errors inside workflow services remain
-unsupported, as do general system abort/cancellation terminals.
+unsupported, as do general system abort/running-cancellation terminals. The bounded
+admin scheduled-workflow Cancelled terminal is documented separately above.
 
 A declared terminal requires a clean outer workflow scope. Private failed,
 dropped or active framework-operation evidence rejects it before canonical Load.
@@ -835,7 +917,7 @@ refresh is subsequent metadata, not a modification of those snapshots.
 This acceptance does **not** inject restart between the rejecting checkpoint and
 terminal CAS, or declared-terminal CompleteTask lost ACK. Existing generic
 uncertainty fences remain source-backed/separately tested, not a new native
-injection claim. General framework-failure isolation, cancellation, Python
+injection claim. General framework-failure isolation, running cancellation, Python
 unbounded cursor/GC/Break and distributed semantics remain missing.
 
 Portable sources: [typed workflow generation](src/workflow_codegen.rs),
@@ -1099,7 +1181,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 90052ce7eba1612a4264ca42e01a53b21106f7d3878ecf04f744ec685fbe1917 -->
+<!-- parity-source-sha256: 515be1be1db9548e179805c15bdb2d9bc9cc5ead7bbc2061817629cbc01adac5 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

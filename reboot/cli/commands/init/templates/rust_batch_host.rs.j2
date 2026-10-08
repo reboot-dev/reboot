@@ -60,7 +60,9 @@ impl reboot::auth::Authorizer for TaskAdmin {
         Box::pin(async move {
             if matches!(
                 context.method.as_str(),
-                "rbt.v1alpha1.Tasks.ListTasks" | "rbt.v1alpha1.Tasks.ListTasksStream"
+                "rbt.v1alpha1.Tasks.ListTasks"
+                    | "rbt.v1alpha1.Tasks.ListTasksStream"
+                    | "rbt.v1alpha1.Tasks.CancelTask"
             ) && state.is_none()
                 && auth.is_some_and(|auth| auth.payload()["task_admin"] == true)
             {

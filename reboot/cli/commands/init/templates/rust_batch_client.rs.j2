@@ -175,6 +175,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 show_tasks(client.list_tasks(request).await?.into_inner().tasks)?;
             }
         }
+        "cancel" => {
+            let id = uuid::Uuid::parse_str(&arg(1)?)?;
+            let mut client = reboot::database_proto::tasks_client::TasksClient::new(channel);
+            let mut request = context.reader(reboot::database_proto::CancelTaskRequest {
+                task_id: Some(reboot::database_proto::TaskId {
+                    state_type: {{ name }}::STATE_TYPE.into(),
+                    state_ref: {{ name }}::reference()?,
+                    task_uuid: id.as_bytes().to_vec(),
+                }),
+            })?;
+            if let Ok(token) = std::env::var("RBT_RUST_TASK_ADMIN_TOKEN") {
+                request
+                    .metadata_mut()
+                    .insert("authorization", format!("Bearer {token}").parse()?);
+            }
+            request.set_timeout(Duration::from_secs(3));
+            let status = reboot::database_proto::cancel_task_response::Status::try_from(
+                client.cancel_task(request).await?.into_inner().status,
+            )?;
+            println!("{}", status.as_str_name());
+        }
         "wait" => {
             let id = uuid::Uuid::parse_str(&arg(1)?)?;
             let mut request = tonic::Request::new(reboot::database_proto::TaskId {
@@ -190,7 +211,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     error.batch, error.completed, error.reason
                 ),
                 Err(generated::LedgerWorkMethodsRunBatchError::Grpc(error)) => {
-                    return Err(error.into());
+                    if reboot::one_shot_tasks::task_cancellation_status(&prost_types::Any {
+                        type_url: "type.googleapis.com/google.rpc.Status".into(),
+                        value: error.details().to_vec(),
+                    })
+                    .ok()
+                    .flatten()
+                    .is_some()
+                    {
+                        println!("CANCELLED");
+                    } else {
+                        return Err(error.into());
+                    }
                 }
             }
         }
