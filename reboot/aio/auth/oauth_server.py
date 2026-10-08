@@ -39,6 +39,7 @@ from reboot.aio.contexts import ReaderContext
 from reboot.aio.external import ExternalContext
 from reboot.aio.http import PythonWebFramework, external_context
 from reboot.crypto import root_keys
+from reboot.routing.cors_settings import permissive_cors_headers
 from starlette.requests import Request
 from starlette.responses import (
     HTMLResponse,
@@ -107,13 +108,13 @@ _WHOAMI_PATH = WHOAMI_PATH
 _BROWSER_CLIENT_TYPE = "browser-client"
 
 # CORS headers for browser-based MCP clients (e.g. MCPJam, MCP
-# Inspector). Allow any origin since the server is an OAuth
-# Authorization Server that public clients talk to.
-_CORS_HEADERS = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, MCP-Protocol-Version",
-}
+# Inspector). Any origin, since the server is an OAuth Authorization
+# Server that public clients talk to, and never credentialed; see
+# `permissive_cors_headers`.
+_CORS_HEADERS = permissive_cors_headers(
+    methods=("GET", "POST"),
+    headers=("content-type", "mcp-protocol-version"),
+)
 
 # HKDF `info` (domain separator) for the OAuth server's token-signing key.
 _SIGNING_INFO = b"reboot.oauth.signing"
