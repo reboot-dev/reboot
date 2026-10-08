@@ -40,6 +40,13 @@ body,
   margin: 0;
 }
 
+/* An MCP host sizes the frame by the page's content height, and the
+   page (above) is as tall as its frame: circular, so in a host the
+   page sets a height of its own. */
+html.mcp-host body {
+  min-height: 800px;
+}
+
 body {
   font-family: ui-sans-serif, system-ui, sans-serif;
   background: hsl(var(--background));
