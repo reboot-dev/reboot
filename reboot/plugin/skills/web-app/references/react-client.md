@@ -244,3 +244,26 @@ function SignedIn({ user }: { user: UseUserApi }) {
   // ...
 }
 ```
+
+## Fetching a File the Backend Serves
+
+A route registered with `require_oauth_token=True` (an export, an
+image, a video) serves only the signed-in user. A same-origin
+`<a href="/exports/x">` works, since the browser sends the session
+cookie on the navigation; an `<img src>` or a `fetch` from the page
+carries no cookie cross-origin and no bearer at all, so fetch with
+the client's token and show an object URL:
+
+```tsx
+import { useRebootClient } from "@reboot-dev/reboot-react";
+
+const client = useRebootClient();
+const response = await fetch(new URL(path, client.url).toString(), {
+  headers: { Authorization: `Bearer ${client.bearerToken}` },
+});
+const url = URL.createObjectURL(await response.blob()); // revoke when done
+```
+
+The hook that wraps this, with cancellation and revocation, is in
+[python/references/auth-http-routes.md](../../python/references/auth-http-routes.md),
+which also covers the backend side.

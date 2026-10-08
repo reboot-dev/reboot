@@ -1,15 +1,20 @@
 import asyncio
 import contextlib
+import re
 import uvicorn  # type: ignore[import]
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from fastapi import Depends, FastAPI  # type: ignore[import]
 from reboot.aio.caller_id import CallerID
 from reboot.aio.external import ExternalContext
+from reboot.aio.headers import AUTHORIZATION_HEADER
 from reboot.aio.internals.channel_manager import _ChannelManager
 from reboot.aio.types import ApplicationId, ServerId
+from reboot.routing.cors_settings import permissive_cors_headers
 from reboot.wait_for_tasks import wait_for_tasks
 from starlette.requests import Request  # type: ignore[import]
+from starlette.responses import Response  # type: ignore[import]
+from starlette.routing import compile_path  # type: ignore[import]
 from starlette.types import Receive, Scope, Send  # type: ignore[import]
 from typing import (
     Any,
@@ -93,6 +98,31 @@ class PythonWebFramework(WebFramework):
             # instead of the usual external one, because they opted in via
             # `app_internal=True`. See the DANGER note in `_api_route`.
             self._app_internal_paths: set[str] = set()
+            # The paths of routes that require the application's access
+            # token (`require_oauth_token=True`), each compiled the way
+            # Starlette matches it, so that a path template matches the
+            # requests it serves, with the methods the route serves,
+            # which its CORS preflight answers with.
+            self._require_oauth_token_paths: list[tuple[re.Pattern[str],
+                                                        tuple[str, ...]]] = []
+            # How such a route learns who is calling, or `None` until
+            # the application has an OAuth server to say; see
+            # `verify_oauth_token_with`.
+            self._authenticate: Optional[Callable[[Request],
+                                                  Optional[str]]] = None
+
+        def verify_oauth_token_with(
+            self,
+            authenticate: Callable[[Request], Optional[str]],
+        ) -> None:
+            """Sets what a `require_oauth_token=True` route asks of a request:
+            the user it is signed in as, or `None` for nobody. The
+            application sets this once it has mounted its OAuth server,
+            whose access tokens are what sign a request in."""
+            self._authenticate = authenticate
+
+        def has_require_oauth_token_routes(self) -> bool:
+            return len(self._require_oauth_token_paths) > 0
 
         def _api_route(self, path: str, **kwargs):
             # `app_internal` is our own kwarg, not one of FastAPI's, so we
@@ -111,6 +141,22 @@ class PythonWebFramework(WebFramework):
             # request input.
             if kwargs.pop("app_internal", False):
                 self._app_internal_paths.add(path)
+
+            # `require_oauth_token` is ours too. A route with it serves only a
+            # request signed in as some user of the application, by
+            # the access JWT in its `Authorization: Bearer` header or,
+            # for a browser's same-origin navigation, in its session
+            # cookie; anything else gets a 401. Such a route is
+            # callable from any origin, like `/mcp`: it answers its
+            # own CORS with no credentials allowed, so a cross-origin
+            # page can call it only with a bearer it already holds,
+            # never with the user's cookie. Which is also what makes
+            # it safe to answer a page shown by an MCP host, whose
+            # origin is not knowable in advance.
+            if kwargs.pop("require_oauth_token", False):
+                self._require_oauth_token_paths.append(
+                    (compile_path(path)[0], tuple(kwargs["methods"]))
+                )
 
             # TODO: add type annotations for `endpoint` so that what
             # we take in is exactly what we return.
@@ -293,6 +339,40 @@ class PythonWebFramework(WebFramework):
                 )
 
             return await call_next(request)
+
+        # Registered after `external_context_middleware`, which makes it
+        # the outer of the two: a `require_oauth_token=True` route's
+        # preflight and its refusals are answered before any context
+        # is built, and a request that gets through is then handled
+        # like any other.
+        @fastapi.middleware("http")
+        async def require_oauth_token_middleware(request: Request, call_next):
+            for pattern, methods in self._http._require_oauth_token_paths:
+                if pattern.match(request.url.path):
+                    break
+            else:
+                return await call_next(request)
+            # What a `require_oauth_token=True` route's replies say to
+            # any origin; see `HTTP._api_route`.
+            cors_headers = permissive_cors_headers(
+                methods=methods,
+                headers=(AUTHORIZATION_HEADER, "content-type"),
+            )
+            if request.method == "OPTIONS":
+                return Response(status_code=204, headers=cors_headers)
+            # `Application` refuses to mount a route requiring an OAuth
+            # token without an OAuth server to ask.
+            assert self._http._authenticate is not None
+            if self._http._authenticate(request) is None:
+                return Response(
+                    status_code=401,
+                    headers={
+                        **cors_headers, "WWW-Authenticate": "Bearer"
+                    },
+                )
+            response = await call_next(request)
+            response.headers.update(cors_headers)
+            return response
 
         for mount in self._http._mounts:
             assert mount.app is not None or mount.factory is not None

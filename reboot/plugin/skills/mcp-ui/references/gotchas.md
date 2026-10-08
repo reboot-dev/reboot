@@ -198,3 +198,13 @@ The list below is what's specific to the MCP UI layer:
     `--mobile` (React Native) client — `rbt generate` rejects
     `--react-extensions` with `--mobile`, because Metro can't resolve
     the `.js`-suffixed imports back to their `.ts` sources.
+
+22. **An `<img src>` or `<a href>` pointing at the backend carries
+    no bearer.** The UI runs in the host's sandbox, cross-origin to
+    the backend, so a plain `src` or `href` arrives with no
+    credential at all and a `require_oauth_token=True` route answers
+    401. Fetch with `useRebootClient().bearerToken` and show an
+    object URL instead; never append the token to the URL. And mark
+    such routes `require_oauth_token=True` rather than checking the
+    bearer or writing CORS headers by hand. Recipe in
+    `python/references/auth-http-routes.md`.

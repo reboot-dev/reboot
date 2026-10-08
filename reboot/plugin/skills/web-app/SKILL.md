@@ -76,6 +76,16 @@ are carried in an HttpOnly `rbt_session` cookie set by
 RPC, so user code only sees `context.auth.user_id` (same shape
 as MCP).
 
+A plain HTTP route the page calls — a download, an image, an export
+— is not a Reboot method and has no authorizer. Register it with
+`require_oauth_token=True` and it serves only the signed-in user,
+by bearer or by the session cookie on a same-origin navigation;
+the page fetches it with the client's bearer and shows an object
+URL (`useRebootClient()`, see
+[react-client.md](references/react-client.md#fetching-a-file-the-backend-serves)).
+The full recipe, and what not to do instead, is
+[python/references/auth-http-routes.md](../python/references/auth-http-routes.md).
+
 > **`token_verifier=` is the escape hatch, not the default.** Use
 > it only when you need to integrate with an IdP that the
 > built-in `oauth=` providers don't cover (e.g. an enterprise
