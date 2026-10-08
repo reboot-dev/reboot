@@ -30,6 +30,7 @@ RESULT = Path(str(PREFIX) + '-result.json')
 ENV = dict(os.environ, CARGO_TARGET_DIR=str(TARGET), CARGO_INCREMENTAL='0', CARGO_BUILD_JOBS='2',
            CARGO_PROFILE_DEV_DEBUG='0', CARGO_PROFILE_TEST_DEBUG='0', CARGO_NET_OFFLINE=os.environ.get('RUST_DX_CARGO_OFFLINE', 'false'),
            RBT_RUST_DATABASE_BINARY=str(BINARY), RBT_RUST_URL=f'http://127.0.0.1:{PORT}')
+timeout_seen = False
 evidence = {'commands': [], 'sessions': [], 'source_hashes': {},
             'database_sha256': hashlib.sha256(BINARY.read_bytes()).hexdigest()}
 # Freeze the actual SDK and CLI overlay identities, not a stale staged SDK.
@@ -59,20 +60,11 @@ def command(args, *, timeout=30, cwd=APP, env=ENV):
     try:
         stdout, stderr = process.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
-        # Give the real CLI's terminal-signal handler a chance to reap its
-        # separately-sessioned host/Database children before any escalation.
-        process.send_signal(signal.SIGTERM)
-        try:
-            stdout, stderr = process.communicate(timeout=20)
-        except subprocess.TimeoutExpired:
-            os.killpg(process.pid, signal.SIGKILL)
-            stdout, stderr = process.communicate()
-        for pid in [int(n) for n in re.findall(r'Rust (?:Database|app) PID=(\d+)', stdout)]:
-            if Path(f'/proc/{pid}').exists():
-                os.killpg(pid, signal.SIGKILL)
+        global timeout_seen
+        timeout_seen = True
         evidence['commands'].append({'argv': [str(a) for a in args], 'pid': process.pid,
-                                     'exit': process.returncode, 'timeout': True,
-                                     'stdout': stdout, 'stderr': stderr})
+                                     'timeout': True, 'live': True})
+        RESULT.write_text(json.dumps(evidence, indent=2))
         raise
     evidence['commands'].append({'argv': [str(a) for a in args], 'cwd': str(cwd), 'pid': process.pid,
                                  'exit': process.returncode, 'stdout': stdout, 'stderr': stderr})
@@ -103,9 +95,12 @@ class Session:
                     return
                 assert self.process.poll() is None, text
                 time.sleep(0.1)
-            raise AssertionError('CLI readiness timeout: ' + self.path.read_text())
+            global timeout_seen
+            timeout_seen = True
+            raise TimeoutError('CLI readiness timeout: ' + self.path.read_text())
         except BaseException:
-            self.close()
+            if not timeout_seen:
+                self.close()
             raise
 
     def close(self, sig=signal.SIGTERM):
@@ -114,19 +109,14 @@ class Session:
         try:
             status = self.process.wait(timeout=10)
         except subprocess.TimeoutExpired:
-            os.killpg(self.process.pid, signal.SIGKILL)
-            self.process.wait()
-            raise AssertionError('Owned CLI did not clean up within ten seconds')
-        finally:
-            self.log.close()
-            # Failures never signal any unrelated host/sidecar. Emergency
-            # cleanup is confined to PIDs emitted by this owned CLI session.
-            self.data['exit'] = self.process.returncode
-            self.data['children_absent'] = all(not Path(f'/proc/{pid}').exists() for pid in self.children)
-            if not self.data['children_absent']:
-                for pid in self.children:
-                    if Path(f'/proc/{pid}').exists():
-                        os.killpg(pid, signal.SIGKILL)
+            global timeout_seen
+            timeout_seen = True
+            self.data['live'] = True
+            RESULT.write_text(json.dumps(evidence, indent=2))
+            raise
+        self.log.close()
+        self.data['exit'] = self.process.returncode
+        self.data['children_absent'] = all(not Path(f'/proc/{pid}').exists() for pid in self.children)
         record(f'SESSION {self.data["name"]}: CLI exit={status}, children absent={self.data["children_absent"]}')
         assert self.data['children_absent'], self.data
         return status
@@ -241,6 +231,17 @@ try:
     smoke_children = [int(n) for n in re.findall(r'Rust (?:Database|app) PID=(\d+)', smoke)]
     assert len(smoke_children) == 2 and all(not Path(f'/proc/{pid}').exists() for pid in smoke_children)
     evidence['smoke_children_terminal'] = smoke_children
+    current = Session('failed-build')
+    proto_path.write_text(original + '\ninvalid proto syntax\n')
+    try:
+        failed_status = current.process.wait(timeout=240)
+    except subprocess.TimeoutExpired:
+        timeout_seen = True
+        raise
+    assert failed_status == 1, current.path.read_text()
+    current.close()
+    current = None
+    record('PASS failed live rebuild exits CLI and reaps host/Database instead of serving stale code')
     evidence['passed'] = True
     record('PASS actual init + Cargo generation + typed create/write/replay/read + canonical durable Load + RocksDB restart + CLI SIGTERM/SIGINT cleanup + actual host-exit supervision')
 except BaseException as error:
@@ -248,7 +249,7 @@ except BaseException as error:
     evidence['failure'] = repr(error)
     raise
 finally:
-    if current:
+    if current and not timeout_seen:
         current.close()
     evidence['app_directory'] = str(APP)
     evidence['frozen_sources_match_end'] = all(Path(path).is_file() and hashlib.sha256(Path(path).read_bytes()).hexdigest() == digest for path, digest in evidence['source_hashes'].items())

@@ -28,6 +28,33 @@ RBT = str(Path(os.environ.get('RUST_DX_RBT', Path(sys.executable).parent / 'rbt'
 
 
 class ScaffoldTest(unittest.TestCase):
+    def test_batch_selector_real_cli_and_complete_outputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run([RBT, 'init', '--backend=rust', '--frontend=none',
+                                     '--application-name=batch_ledger', f'--rust-sdk={SDK}',
+                                     '--rust-example=batch-ledger'], cwd=directory, text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            root = Path(directory)
+            self.assertTrue((root / 'backend/src/host.rs').is_file())
+            self.assertIn('with_participant(map_participant', (root / 'backend/src/host.rs').read_text())
+            self.assertIn('batch-v1', (root / 'backend/src/lib.rs').read_text())
+            self.assertIn('sorted_map.proto', (root / 'backend/build.rs').read_text())
+            self.assertTrue((root / 'api/batch_ledger/v1/batch.proto').is_file())
+
+    def test_batch_invalid_selector_and_host_collision_publish_nothing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with self.assertRaisesRegex(ValueError, 'Unsupported Rust example'):
+                initialize_rust(root, 'ledger', str(SDK), 'none', 'bogus')
+            self.assertEqual(list(root.iterdir()), [])
+            (root / 'backend/src').mkdir(parents=True)
+            (root / 'backend/src/host.rs').write_text('mine')
+            with self.assertRaisesRegex(ValueError, 'overwrite'):
+                initialize_rust(root, 'ledger', str(SDK), 'none', 'batch-ledger')
+            self.assertEqual((root / 'backend/src/host.rs').read_text(), 'mine')
+            self.assertFalse((root / '.rbtrc').exists())
+            self.assertFalse((root / 'backend/Cargo.toml').exists())
+
     def test_real_cli_init_creates_cargo_native_app(self):
         with tempfile.TemporaryDirectory() as directory:
             result = subprocess.run([RBT, 'init', '--backend=rust',

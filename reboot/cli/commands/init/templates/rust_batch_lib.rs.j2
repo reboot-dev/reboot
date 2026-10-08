@@ -1,0 +1,256 @@
+use reboot::{
+    one_shot_tasks::WorkflowContext,
+    runtime::{TransactionContext, TransactionExecution},
+};
+use std::sync::Arc;
+pub mod proto {
+    tonic::include_proto!("{{ name }}.v1");
+}
+pub mod generated {
+    include!(concat!(env!("OUT_DIR"), "/{{ name }}/v1/batch.reboot.rs"));
+}
+pub mod generated_map {
+    include!(concat!(
+        env!("OUT_DIR"),
+        "/rbt/std/collections/v1/sorted_map.reboot.rs"
+    ));
+}
+pub mod host;
+pub const STATE_TYPE: &str = "{{ name }}.v1.Ledger";
+pub fn reference() -> Result<String, Box<dyn std::error::Error>> {
+    Ok(reboot::state_ref::StateRef::from_id(STATE_TYPE, "ledger")?.to_string())
+}
+#[allow(clippy::result_large_err)]
+fn validate_batch(batch: &str, count: u32) -> Result<(), tonic::Status> {
+    if batch.is_empty()
+        || batch.len() > 48
+        || !batch
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || c == b'-')
+        || count == 0
+        || count > 100
+    {
+        return Err(tonic::Status::invalid_argument(
+            "batch must be bounded ASCII; count must be 1..100",
+        ));
+    }
+    Ok(())
+}
+/// Append-only handler entries are visible in the normal rbt host log.
+fn event(name: &str) {
+    eprintln!("batch-ledger-handler {name}");
+}
+#[derive(Clone)]
+pub struct Ledger;
+#[tonic::async_trait]
+impl generated::LedgerWorkMethodsDatabaseHandler for Ledger {
+    async fn create(
+        &self,
+        _: &mut proto::Ledger,
+        _: proto::Empty,
+    ) -> Result<proto::Empty, tonic::Status> {
+        Ok(proto::Empty {})
+    }
+    async fn observe(
+        &self,
+        state: &proto::Ledger,
+        _: proto::Empty,
+    ) -> Result<proto::Ledger, tonic::Status> {
+        Ok(state.clone())
+    }
+    async fn submit_batch(
+        &self,
+        _: &mut proto::Ledger,
+        _: proto::Submit,
+    ) -> Result<proto::Handle, tonic::Status> {
+        Err(tonic::Status::failed_precondition(
+            "requires generated scheduling writer",
+        ))
+    }
+    async fn submit_batch_scheduled(
+        &self,
+        state: &mut proto::Ledger,
+        request: proto::Submit,
+        state_ref: String,
+    ) -> Result<TransactionExecution<proto::Handle>, tonic::Status> {
+        validate_batch(&request.batch, request.count)?;
+        if state.completed < state.count {
+            return Err(tonic::Status::failed_precondition("previous batch pending"));
+        }
+        let timestamp = (request.not_before != 0).then_some(prost_types::Timestamp {
+            seconds: request.not_before,
+            nanos: 0,
+        });
+        let task = generated::LedgerWorkMethodsTasks::run_batch(&state_ref, &request, timestamp);
+        let id = task
+            .task_id
+            .as_ref()
+            .ok_or_else(|| tonic::Status::internal("missing generated task identity"))?
+            .task_uuid
+            .clone();
+        state.batch = request.batch;
+        state.count = request.count;
+        state.approved = 0;
+        state.completed = 0;
+        state.submissions += 1;
+        let mut execution = TransactionExecution::new(proto::Handle { id });
+        execution.task_upserts.push(task);
+        Ok(execution)
+    }
+    async fn checkpoint(
+        &self,
+        state: &mut proto::Ledger,
+        request: proto::Step,
+    ) -> Result<proto::Ledger, tonic::Status> {
+        if state.batch != request.batch
+            || state.completed != request.index
+            || state.approved <= request.index
+        {
+            return Err(tonic::Status::failed_precondition(
+                "checkpoint identity or approval mismatch",
+            ));
+        }
+        event(&format!("checkpoint-{}-{}", request.batch, request.index));
+        state.completed += 1;
+        Ok(state.clone())
+    }
+    async fn run_batch(
+        &self,
+        context: &WorkflowContext<'_>,
+        request: proto::Submit,
+    ) -> Result<proto::Ledger, tonic::Status> {
+        validate_batch(&request.batch, request.count)?;
+        event(&format!("body-{}", request.batch));
+        let mut result = proto::Ledger::default();
+        for index in 0..request.count {
+            let iteration =
+                context.iteration("batch-v1", u64::from(index), u64::from(request.count))?;
+            let batch = request.batch.clone();
+            generated::LedgerWorkMethodsWorkflowSteps::observe_until(
+                &iteration,
+                Arc::new(self.clone()),
+                "approval",
+                "approved-through-index.v1",
+                proto::Empty {},
+                move |state| state.batch == batch && state.approved > index,
+            )
+            .await?;
+            result = generated::LedgerWorkMethodsWorkflowSteps::checkpoint(
+                &iteration,
+                Arc::new(self.clone()),
+                "complete",
+                proto::Step {
+                    batch: request.batch.clone(),
+                    index,
+                },
+            )
+            .await?;
+        }
+        Ok(result)
+    }
+}
+#[tonic::async_trait]
+impl generated::LedgerViewMethodsDatabaseHandler for Ledger {
+    async fn snapshot(
+        &self,
+        state: &proto::Ledger,
+        _: proto::Empty,
+    ) -> Result<proto::Ledger, tonic::Status> {
+        Ok(state.clone())
+    }
+}
+pub struct Index {
+    pub map: generated_map::SortedMap,
+}
+#[tonic::async_trait]
+impl generated::LedgerIndexMethodsTransactionHandler for Index {
+    async fn approve(
+        &self,
+        context: &TransactionContext,
+        state: &mut proto::Ledger,
+        request: proto::Approval,
+    ) -> Result<TransactionExecution<proto::Ledger>, tonic::Status> {
+        if state.batch != request.batch
+            || request.index != state.approved
+            || request.index >= state.count
+        {
+            return Err(tonic::Status::invalid_argument(
+                "approval must be the next active batch index",
+            ));
+        }
+        let guard = self.map.in_transaction(context).await?;
+        guard
+            .insert(reboot::sorted_map_proto::InsertRequest {
+                entries: [(format!("{}:{:04}", request.batch, request.index), vec![])].into(),
+            })
+            .await?;
+        state.approved += 1;
+        if request.invalid_range {
+            // Catch deliberately: the nested failure must still doom the whole root.
+            guard
+                .range(reboot::sorted_map_proto::RangeRequest {
+                    limit: 0,
+                    ..Default::default()
+                })
+                .await
+                .expect_err("invalid range accepted");
+        }
+        Ok(TransactionExecution::new(state.clone()))
+    }
+    async fn history(
+        &self,
+        context: &TransactionContext,
+        _: &mut proto::Ledger,
+        request: proto::Batch,
+    ) -> Result<TransactionExecution<proto::HistoryResult>, tonic::Status> {
+        validate_batch(&request.batch, 1)?;
+        let guard = self.map.in_transaction(context).await?;
+        let range = guard
+            .range(reboot::sorted_map_proto::RangeRequest {
+                start_key: Some(format!("{}:", request.batch)),
+                end_key: Some(format!("{};", request.batch)),
+                limit: 100,
+            })
+            .await?;
+        Ok(TransactionExecution::new(proto::HistoryResult {
+            keys: range.entries.into_iter().map(|entry| entry.key).collect(),
+        }))
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn bounded_batch_identity() {
+        assert!(validate_batch("batch-001", 3).is_ok());
+        for s in ["", "a/b", "a:b", "é"] {
+            assert!(validate_batch(s, 3).is_err());
+        }
+        assert!(validate_batch("batch", 101).is_err());
+    }
+    #[tokio::test]
+    async fn checkpoint_requires_approval() {
+        use generated::LedgerWorkMethodsDatabaseHandler;
+        let mut state = proto::Ledger {
+            batch: "batch".into(),
+            count: 2,
+            ..Default::default()
+        };
+        let step = proto::Step {
+            batch: "batch".into(),
+            index: 0,
+        };
+        assert!(Ledger.checkpoint(&mut state, step.clone()).await.is_err());
+        assert_eq!(state.completed, 0);
+        state.approved = 1;
+        assert_eq!(
+            Ledger
+                .checkpoint(&mut state, step.clone())
+                .await
+                .unwrap()
+                .completed,
+            1
+        );
+        assert!(Ledger.checkpoint(&mut state, step).await.is_err());
+    }
+}

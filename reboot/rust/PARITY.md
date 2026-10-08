@@ -23,17 +23,17 @@ No overall percentage is asserted.
 - **Missing:** required semantics/API are absent or explicitly rejected. A
   rejected operation is not an implementation waiting for a compiler flag.
 
-This ledger was reconciled against implementation/test source based on
-`c8718865849d9fd71a34b2856a42dc591dbb31a1` (2026-10-08). Its latest native
-execution evidence is the corrected, sole-owner workflow regression described
-in [Verification](#verification). Documentation-only consolidation does not
-turn historical transaction tests into fresh executions.
+The latest application vertical was implemented on baseline
+`e2a6bdc5914a8c152eb48c102c3dc91249cc4ead` (2026-10-08). Its executed
+public Cargo/native application acceptance and retained greeting regression
+are described in [Verification](#verification). Older workflow/transaction
+proofs below retain their separate source snapshots and limits.
 
 ## Capability overview
 
 | Capability | Current useful slice | Main remaining gap |
 | --- | --- | --- |
-| Local app DX | Cargo scaffold, annotated-proto generation, typed client, durable dev host | Production packaging/bootstrap and integrated advanced-feature scaffold |
+| Local app DX | Cargo scaffold, annotated-proto generation, typed client, durable dev host | Production packaging/bootstrap and general distributed application composition |
 | Schema/codegen | Explicit schema DSL, Prost/Tonic bindings and concrete typed adapters | Rust derive/reflection and complete schema/tooling contract |
 | State/client runtime | Durable constructors/readers/writers, idempotent response replay, metadata/auth | General distributed ownership/fencing and arbitrary external effects |
 | Transactions | Legacy durable coordinator/participant paths and bounded supervised chains/star | General nested snapshots, reentrancy, intersecting subtrees, migration |
@@ -47,9 +47,28 @@ turn historical transaction tests into fresh executions.
 **Implemented, bounded:** one local public gRPC host backed by one canonical
 C++ Database/RocksDB process. The SDK crate is unpublished and requires a checkout.
 The CLI does not use Python/Node Envoy/bootstrap, distributed placement, dashboard
-or chaos machinery. The scaffold wires ordinary unary constructor/writer/reader
-methods only; tasks, workflows, subscriptions and collections require explicit
-host/application composition.
+or chaos machinery. The default greeting scaffold wires ordinary unary
+constructor/writer/reader methods. The opt-in `--rust-example=batch-ledger`
+scaffold additionally composes a finite approval-gated workflow, typed canonical
+Tasks.Wait, a local reactive subscription and transactional SortedMap in one
+host. It restores **all** application/map participant ownership before coordinator
+recovery, authoritative Watch convergence, task recovery and public readiness.
+One task owner and one Wait service serve this bounded one-server topology;
+this is not general distributed placement or mixed-language composition.
+
+Generate it with the same Cargo/native development path:
+
+```sh
+rbt init --backend=rust --frontend=none --application-name=batch_ledger \
+  --rust-sdk=/absolute/path/to/sdk/reboot/rust --rust-example=batch-ledger
+```
+
+Its generated README documents `create`, `submit`, `approve`, `watch`, `wait`,
+`read` and `history`. Approval updates the ledger and index in one transaction;
+workflow steps wait without holding an exclusive lease. The stable empty-map
+constructor replays on restart; no private state seeding is required. Arbitrary
+external-effects exactly-once and additional status-code retry policies are not
+claimed.
 
 ```sh
 mkdir greetings && cd greetings
@@ -598,7 +617,51 @@ parent/key bounds, unprepared recovery and lost-ACK retention. Unit coverage:
 
 ## Verification
 
-### Latest post-repair executed evidence (2026-10-08)
+### Public batch-ledger application and retained greeting (2026-10-08)
+
+The actual opt-in `rbt init` generated consumer passed strict all-target Clippy,
+formatting and two behavioral tests, then ran through normal `rbt dev run` with
+the canonical C++ Database. Native acceptance decoded application state,
+canonical Pending/Completed Tasks, typed saved replay responses and canonical
+SortedMap entries. It exercised submit UUID replay/fingerprint rejection,
+pending Wait deadlines, invalid approvals and caught map-range root doom with
+**both** app/map unchanged, followed by successful atomic approval.
+
+After one acknowledged checkpoint, live proto regeneration retained Database,
+reaped the old host, emitted new bindings and replaced the typed subscription
+from persisted state. Full RocksDB restart recovered the same pending UUID
+without repeating the saved checkpoint mutation; remaining approvals completed
+all three entries. A second restart returned identical typed Wait results and
+canonical terminal bytes without body/step redispatch. A future task survived
+restart before its persisted due time and completed after it. Subscriber owners
+returned to zero, parked shutdown drained streams, and process/lock reuse passed.
+Handler evidence is bounded by each session's byte offset into append-only logs.
+
+A separate final frozen gate passed SDK all-target strict Clippy and tests with
+`--features test-support`: **377 passed / 0 failed / 128 ignored** (ignored native
+matrices are not fresh passes). The default generated greeting retained its own
+strict Clippy/fmt/test, real create/write/replay/read, canonical Load, regeneration,
+RocksDB restart, SIGTERM/SIGINT and child-exit supervision. An intentionally broken
+live proto rebuild exited the CLI and reaped host/Database rather than serving
+stale code. Both runners audited unchanged frozen source and target/free-disk
+bounds. Test-only observation hooks are not enabled in generated consumers.
+
+Local immutable evidence:
+- `/tmp/reboot-rust-batch-ledger-acceptance-1791445215069889908`
+  (`accepted.json`, `frozen-source.json`, `command-2.log`, `native/result.json`).
+- `/tmp/reboot-rust-batch-ledger-final-gates-1791445889892168445`
+  (`accepted.json`, `frozen-source.json`, SDK logs and greeting proof).
+
+Portable acceptance sources are
+[`rust_batch_ledger_e2e.py`](../../tests/reboot/cli/rust_batch_ledger_e2e.py) and
+[`rust_app_dx_e2e.py`](../../tests/reboot/cli/rust_app_dx_e2e.py), executed with one
+exclusive target owner. Earlier failed inspector runs are not accepted proofs.
+The final changes after batch acceptance were test-fixture type naming and
+greeting timeout/failed-rebuild coverage; the batch SDK/runtime/templates stayed
+identical. General distributed recovery, Python cursor/GC/Break and external
+exactly-once remain outside this application slice.
+
+### Historical post-repair executed evidence (2026-10-08)
 
 The sole-owner post-R1 frozen run completed **23/23 planned gates**:
 **21 exited zero**, while the deliberately stale ledger fingerprint exited 1
@@ -730,7 +793,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 125f43a7ee157e8d33683491b15066cfe125ffcfcca5780d7ca00db4a3728a96 -->
+<!-- parity-source-sha256: 588595b61bb7252750695984a48b3003a86d27395511c9e7412f594b9ce08dd0 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

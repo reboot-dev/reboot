@@ -1,0 +1,17 @@
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("cargo:rerun-if-changed=../api");
+    reboot::build::compile_protos_with_runtime(
+        &["../api/{{ name }}/v1/batch.proto"],
+        &["../api"],
+        "crate::proto",
+        "reboot",
+    )?;
+    let root = std::path::Path::new({{ sdk_root }});
+    reboot::build::compile_protos_with_runtime(
+        &[root.join("rbt/std/collections/v1/sorted_map.proto")],
+        &[root],
+        "reboot::sorted_map_proto",
+        "reboot",
+    )?;
+    Ok(())
+}

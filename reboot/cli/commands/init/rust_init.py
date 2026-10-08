@@ -15,8 +15,10 @@ RUST_KEYWORDS = set('as break const continue crate else enum extern false fn for
 RUST_DEPENDENCY_NAMES = {'reboot', 'prost', 'prost_types', 'tonic', 'tonic_health', 'uuid', 'tokio', 'std', 'core', 'alloc'}
 
 
-def initialize_rust(directory: Path, name: str, sdk: str | None, frontend: str) -> None:
+def initialize_rust(directory: Path, name: str, sdk: str | None, frontend: str, example: str = "greeting") -> None:
     # Validate every prerequisite/collision before publishing any scaffold file.
+    if example not in {"greeting", "batch-ledger"}:
+        raise ValueError("Unsupported Rust example: " + example)
     if frontend != 'none':
         raise ValueError("Rust apps currently require '--frontend=none' (direct gRPC only)")
     if name in RUST_KEYWORDS:
@@ -44,6 +46,18 @@ def initialize_rust(directory: Path, name: str, sdk: str | None, frontend: str) 
         'rust_rbtrc.j2': '.rbtrc',
         'rust_README.md.j2': 'README.md',
     }
+    if example == "batch-ledger":
+        outputs = {
+            'rust_Cargo.toml.j2': 'backend/Cargo.toml',
+            'rust_batch_build.rs.j2': 'backend/build.rs',
+            'rust_batch_lib.rs.j2': 'backend/src/lib.rs',
+            'rust_batch_host.rs.j2': 'backend/src/host.rs',
+            'rust_batch_main.rs.j2': 'backend/src/main.rs',
+            'rust_batch_client.rs.j2': 'backend/src/bin/client.rs',
+            'rust_batch.proto.j2': f'api/{name}/v1/batch.proto',
+            'rust_rbtrc.j2': '.rbtrc',
+            'rust_batch_README.md.j2': 'README.md',
+        }
     for relative in outputs.values():
         path = directory / relative
         if path.exists() or path.is_symlink():
@@ -54,7 +68,7 @@ def initialize_rust(directory: Path, name: str, sdk: str | None, frontend: str) 
             if parent.is_symlink() or (parent.exists() and not parent.is_dir()):
                 raise ValueError(f"Invalid scaffold parent '{parent}'")
     env = Environment(loader=FileSystemLoader(Path(__file__).parent / 'templates'), autoescape=False, keep_trailing_newline=True)
-    rendered = {relative: env.get_template(template).render(name=name, sdk_path=json.dumps(str(sdk_path)))
+    rendered = {relative: env.get_template(template).render(name=name, sdk_path=json.dumps(str(sdk_path)), sdk_root=json.dumps(str(sdk_path.parent.parent)), example=example)
                 for template, relative in outputs.items()}
     # Publish rc last: rendering failures never leave an initialized project.
     for relative, content in sorted(rendered.items(), key=lambda item: item[0] == '.rbtrc'):

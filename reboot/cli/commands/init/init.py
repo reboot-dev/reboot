@@ -48,6 +48,10 @@ def init_subcommands() -> list[str]:
 
 def register_init(parser: ArgumentParser):
     parser.subcommand('init').add_argument(
+        '--rust-example', type=str, choices=['greeting', 'batch-ledger'], default='greeting',
+        help='opt-in Cargo-native Rust application example',
+    )
+    parser.subcommand('init').add_argument(
         '--rust-sdk', type=str,
         help='local reboot/rust crate for experimental Rust apps (not yet published)',
     )
@@ -341,7 +345,8 @@ async def init_run(args):
         from reboot.cli.commands.init.rust_init import initialize_rust
         try:
             initialize_rust(Path(directory), args.application_name,
-                            getattr(args, 'rust_sdk', None), args.frontend)
+                            getattr(args, 'rust_sdk', None), args.frontend,
+                            getattr(args, 'rust_example', 'greeting'))
         except ValueError as error:
             terminal.fail(str(error))
         terminal.info("Rust app initialized. Set RBT_RUST_DATABASE_BINARY and use an isolated trusted network, then run 'rbt dev run --rust-allow-insecure-database'. "

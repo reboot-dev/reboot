@@ -33,6 +33,7 @@ def source_manifest():
             'reboot/cli/commands/dev.py', 'reboot/cli/commands/rust_dev.py',
             'reboot/server/database.cc', 'reboot/server/database.h',
             'tests/reboot/cli/rust_app_dx_test.py', 'tests/reboot/cli/rust_app_dx_e2e.py',
+            'tests/reboot/cli/rust_batch_ledger_e2e.py',
         }:
             selected.append(name)
     return {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest() for name in sorted(selected)}

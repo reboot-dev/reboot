@@ -426,6 +426,9 @@ impl HostRecovery for PlacementPlannerRecovery {
     }
 }
 
+#[cfg(test)]
+mod recovery_barrier_tests;
+
 /// Exact durable metadata for one generated adapter's injected local actor and
 /// coordinator. The application topology supplies it; recovery does not infer
 /// actor identity or construct a resolver from a durable record.
@@ -448,6 +451,7 @@ where
     W: CoordinatorWatchEndpoint,
 {
     participant: DurableActorParticipant<P>,
+    additional_participants: Vec<(DurableActorParticipant<P>, ParticipantRecovery)>,
     coordinator: DurableRootCoordinator<C, R>,
     metadata: LegacyRecoveryMetadata,
     watch: Arc<W>,
@@ -473,10 +477,35 @@ where
         }
         Ok(Self {
             participant,
+            additional_participants: Vec::new(),
             coordinator,
             metadata,
             watch,
         })
+    }
+
+    /// Add an exact host-injected participant to the restoration barrier.
+    /// Every participant is restored before any coordinator delivery, and every
+    /// authoritative Watch converges before later task/readers registrations.
+    /// This does not infer routing or fabricate actor state from durable records.
+    pub fn with_participant(
+        mut self,
+        participant: DurableActorParticipant<P>,
+        recovery: ParticipantRecovery,
+    ) -> Result<Self, tonic::Status> {
+        let target = participant.actor_target();
+        if self.participant.actor_target() == target
+            || self
+                .additional_participants
+                .iter()
+                .any(|(p, _)| p.actor_target() == target)
+        {
+            return Err(tonic::Status::invalid_argument(
+                "duplicate recovery participant",
+            ));
+        }
+        self.additional_participants.push((participant, recovery));
+        Ok(self)
     }
 }
 
@@ -496,6 +525,9 @@ where
         self.participant
             .recover_ownership(self.metadata.participant.clone())
             .await?;
+        for (participant, recovery) in &self.additional_participants {
+            participant.recover_ownership(recovery.clone()).await?;
+        }
         // A restarted root can reach a peer's fixed control listener before
         // that peer has restored its prepared participant ownership. The
         // coordinator record remains durable, so an Unavailable terminal
@@ -523,26 +555,33 @@ where
         // there is no pending durable work. Control routes are already bound by
         // ApplicationHost before it invokes recovery, so this wait never
         // deadlocks a recovering remote coordinator.
-        let mut retry_delay = std::time::Duration::from_millis(25);
-        loop {
-            tokio::select! {
-                result = self.participant.watch_recovered(self.watch.as_ref()) => match result {
-                    Ok(()) => return Ok(()),
-                    Err(status) if status.code() == tonic::Code::Unavailable => {
-                        // The remote coordinator may still be binding its
-                        // recovery-only control listener. This is non-definitive;
-                        // retain ownership and retry without inventing abort.
-                    }
-                    Err(status) => return Err(status),
-                },
-                _ = cancel.cancelled() => return Ok(()),
+        for participant in std::iter::once(&self.participant).chain(
+            self.additional_participants
+                .iter()
+                .map(|(participant, _)| participant),
+        ) {
+            let mut retry_delay = std::time::Duration::from_millis(25);
+            loop {
+                tokio::select! {
+                    result = participant.watch_recovered(self.watch.as_ref()) => match result {
+                        Ok(()) => break,
+                        Err(status) if status.code() == tonic::Code::Unavailable => {
+                            // The remote coordinator may still be binding its
+                            // recovery-only control listener. This is non-definitive;
+                            // retain ownership and retry without inventing abort.
+                        }
+                        Err(status) => return Err(status),
+                    },
+                    _ = cancel.cancelled() => return Ok(()),
+                }
+                tokio::select! {
+                    _ = cancel.cancelled() => return Ok(()),
+                    _ = tokio::time::sleep(retry_delay) => {}
+                }
+                retry_delay = (retry_delay * 2).min(std::time::Duration::from_secs(1));
             }
-            tokio::select! {
-                _ = cancel.cancelled() => return Ok(()),
-                _ = tokio::time::sleep(retry_delay) => {}
-            }
-            retry_delay = (retry_delay * 2).min(std::time::Duration::from_secs(1));
         }
+        Ok(())
     }
 }
 

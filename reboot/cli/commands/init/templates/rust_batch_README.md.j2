@@ -1,0 +1,47 @@
+# Approval-gated batch ledger
+
+Cargo-native Rust local application: one ledger, one transactional SortedMap,
+one workflow owner and canonical typed Tasks.Wait. Direct gRPC only; trusted
+single-server development network, not production or mixed-language placement.
+
+```sh
+export RBT_RUST_DATABASE_BINARY=/absolute/path/to/reboot/server/database
+rbt dev run --rust-allow-insecure-database --port=12991
+# separate terminal:
+export RBT_RUST_URL=http://127.0.0.1:12991
+cargo run --manifest-path backend/Cargo.toml --bin client -- create
+cargo run --manifest-path backend/Cargo.toml --bin client -- watch
+cargo run --manifest-path backend/Cargo.toml --bin client -- submit batch-001 3 11111111-1111-4111-8111-111111111111
+cargo run --manifest-path backend/Cargo.toml --bin client -- approve batch-001 0
+cargo run --manifest-path backend/Cargo.toml --bin client -- approve batch-001 1
+cargo run --manifest-path backend/Cargo.toml --bin client -- approve batch-001 2
+cargo run --manifest-path backend/Cargo.toml --bin client -- wait RETURNED_UUID 5000
+cargo run --manifest-path backend/Cargo.toml --bin client -- history batch-001
+```
+
+Submit keys replay the same task handle; only one active batch is accepted.
+Optional final submit argument is a future UTC Unix timestamp. Counts are 1..100,
+batch names bounded ASCII alphanumeric/hyphen. Approvals must arrive in order.
+Each approval commits ledger state and index entry in one fresh exclusive root;
+`approve-invalid` catches an invalid map range but still aborts the whole root.
+Workflow steps use finite `batch-v1` iterations, saved pure reader observations,
+and named writer checkpoints. No actor lease is held while awaiting approval.
+`read`/`watch` show batch, count, approved, completed and submissions. Handler
+entries in the normal host log make replay vs remutation inspectable.
+
+The host creates the empty map before public readiness; public `create` then
+constructs the Ledger separately. These are not an atomic two-actor constructor.
+A crash leaving only the empty map is repaired by stable constructor replay.
+
+Local app/map ownership restoration precedes coordinator convergence, stable
+EMPTY map constructor replay, task recovery and reactive reader activation.
+Stopping/restarting rbt preserves RocksDB in `.rbt/dev/{{ name }}/rust/rocksdb`.
+Proto/source edits rebuild the host while retaining Database. Reopen watch after
+rebuild. Public mutation commands send once with deadlines; failures may be
+uncertain and are not blindly retried. No external-effect exactly-once claim.
+
+```sh
+cargo clippy --manifest-path backend/Cargo.toml --all-targets -- -D warnings
+cargo fmt --manifest-path backend/Cargo.toml -- --check
+cargo test --manifest-path backend/Cargo.toml --all-targets
+```

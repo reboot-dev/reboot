@@ -1,0 +1,264 @@
+//! One-server local topology. No header can select an unregistered participant.
+use crate::{Index, Ledger, STATE_TYPE, generated, generated_map, proto};
+use reboot::{
+    application_host::{
+        ApplicationHost, HostRecovery, LegacyDurableRecovery, LegacyRecoveryMetadata,
+        RecoveryCancellation,
+    },
+    database_proto as db,
+    durable_coordinator::{
+        CoordinatorRecovery, DurableRootCoordinator, InProcessParticipantEndpoint,
+        ParticipantResolver, ParticipantTarget, TonicCoordinatorSidecar,
+    },
+    durable_participant::{
+        DurableActorParticipant, DurableActorParticipantHost, ParticipantRecovery,
+        TonicParticipantSidecar,
+    },
+    legacy_coordinator::{
+        CoordinatorWatchEndpoint, CoordinatorWatchFuture, DurableCoordinatorWatchHost,
+    },
+    runtime::{
+        DatabaseActorStore, InboundTransactionStartFactory, RootTransactionStart,
+        RootTransactionStartFactory,
+    },
+};
+use std::{collections::BTreeMap, future::Future, net::SocketAddr, pin::Pin, sync::Arc};
+use tonic::Status;
+use uuid::Uuid;
+const SHARD: &str = "s000000000";
+const MAP: &str = "rbt.std.collections.v1.SortedMap";
+pub struct Starts;
+impl RootTransactionStartFactory for Starts {
+    fn next_root_transaction(&self) -> Result<RootTransactionStart, Status> {
+        Ok(RootTransactionStart {
+            transaction_id: Uuid::new_v4(),
+            timestamp: prost_types::Timestamp::default(),
+        })
+    }
+}
+impl InboundTransactionStartFactory for Starts {
+    fn next_inbound_transaction(
+        &self,
+        _: &reboot::runtime::InboundTransactionContext,
+    ) -> Result<Uuid, Status> {
+        Err(Status::failed_precondition(
+            "batch ledger supports fresh local roots only",
+        ))
+    }
+}
+pub struct Routes {
+    entries:
+        BTreeMap<ParticipantTarget, Arc<InProcessParticipantEndpoint<TonicParticipantSidecar>>>,
+}
+impl ParticipantResolver for Routes {
+    type Endpoint = InProcessParticipantEndpoint<TonicParticipantSidecar>;
+    fn resolve(
+        &self,
+        target: &ParticipantTarget,
+    ) -> Pin<Box<dyn Future<Output = Result<Arc<Self::Endpoint>, Status>> + Send + '_>> {
+        let result =
+            self.entries.get(target).cloned().ok_or_else(|| {
+                Status::failed_precondition("unregistered batch ledger participant")
+            });
+        Box::pin(async move { result })
+    }
+}
+struct Watch(DurableCoordinatorWatchHost<TonicCoordinatorSidecar>);
+impl CoordinatorWatchEndpoint for Watch {
+    fn watch(&self, request: db::WatchRequest) -> CoordinatorWatchFuture<'_, db::WatchResponse> {
+        Box::pin(async move {
+            use db::coordinator_server::Coordinator;
+            self.0
+                .watch(tonic::Request::new(request))
+                .await
+                .map(tonic::Response::into_inner)
+        })
+    }
+}
+struct ReaderTelemetry(reboot::reactive::LocalReaderOwner);
+#[tonic::async_trait]
+impl HostRecovery for ReaderTelemetry {
+    async fn start(
+        &self,
+        children: &mut tokio::task::JoinSet<Result<(), Status>>,
+        cancel: RecoveryCancellation,
+    ) -> Result<(), Status> {
+        let readers = self.0.clone();
+        children.spawn(async move {
+            let mut prior = None;
+            loop {
+                let count = readers.active_subscriptions();
+                if prior != Some(count) { eprintln!("batch-ledger-active-readers {count}"); prior = Some(count); }
+                tokio::select! { _ = cancel.cancelled() => return Ok(()), _ = tokio::time::sleep(std::time::Duration::from_millis(25)) => {} }
+            }
+        });
+        Ok(())
+    }
+}
+struct MapConstructor {
+    library: reboot::sorted_map::SortedMapLibrary,
+    state_ref: String,
+}
+#[tonic::async_trait]
+impl HostRecovery for MapConstructor {
+    async fn start(
+        &self,
+        _: &mut tokio::task::JoinSet<Result<(), Status>>,
+        _: RecoveryCancellation,
+    ) -> Result<(), Status> {
+        // Stable logical EMPTY constructor replay, AFTER all native ownership recovery.
+        generated_map::SortedMap::create(
+            &self.library,
+            &self.state_ref,
+            Uuid::from_u128(0x6c65646765724d61b043726561740001),
+        )
+        .await?;
+        Ok(())
+    }
+}
+#[allow(clippy::result_large_err)]
+fn placement(
+    application: &str,
+    address: SocketAddr,
+) -> Result<reboot::legacy_placement::PlanOnlyLegacyPlacement, Status> {
+    use reboot::placement_proto as p;
+    let plan = reboot::legacy_placement::PlanOnlyLegacyPlacement::new();
+    plan.install(p::ListenForPlanResponse {
+        plan: Some(p::Plan {
+            version: 1,
+            applications: vec![p::plan::Application {
+                id: application.into(),
+                services: [
+                    "{{ name }}.v1.LedgerWorkMethods",
+                    "{{ name }}.v1.LedgerViewMethods",
+                    "{{ name }}.v1.LedgerIndexMethods",
+                    "rbt.v1alpha1.Tasks",
+                ]
+                .into_iter()
+                .map(|name| p::plan::application::Service {
+                    full_name: name.into(),
+                    state_type_full_name: STATE_TYPE.into(),
+                })
+                .collect(),
+                shards: vec![p::plan::application::Shard {
+                    id: SHARD.into(),
+                    range: Some(p::plan::application::shard::KeyRange { first_key: vec![] }),
+                    server_id: "local-rust".into(),
+                    replica_index: 0,
+                }],
+            }],
+        }),
+        servers: vec![p::Server {
+            id: "local-rust".into(),
+            application_id: application.into(),
+            address: Some(p::server::Address {
+                host: address.ip().to_string(),
+                port: i32::from(address.port()),
+            }),
+            ..Default::default()
+        }],
+    })?;
+    Ok(plan)
+}
+pub async fn serve(
+    endpoint: String,
+    address: SocketAddr,
+    application: String,
+    shutdown: impl Future<Output = ()> + Send + 'static,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let reference = crate::reference()?;
+    let map_ref = reboot::state_ref::StateRef::from_id(MAP, "approvals")?.to_string();
+    let store = DatabaseActorStore::connect(endpoint.clone()).await?;
+    let sidecar = Arc::new(TonicParticipantSidecar::connect(endpoint.clone()).await?);
+    let participant = DurableActorParticipant::new(sidecar, STATE_TYPE, &reference)
+        .with_database_actor_gate(&store);
+    let library = reboot::sorted_map::SortedMapLibrary::new(store.clone()).await?;
+    let map = generated_map::SortedMap::target(&library, &map_ref)?;
+    let map_participant = map.participant();
+    let routes = Routes {
+        entries: [participant.clone(), map_participant.clone()]
+            .into_iter()
+            .map(|participant| {
+                (
+                    participant.actor_target(),
+                    Arc::new(InProcessParticipantEndpoint::new(
+                        DurableActorParticipantHost::new(participant),
+                    )),
+                )
+            })
+            .collect(),
+    };
+    let coordinator_sidecar = Arc::new(TonicCoordinatorSidecar::connect(endpoint).await?);
+    let coordinator = DurableRootCoordinator::new(coordinator_sidecar.clone(), Arc::new(routes))
+        .with_identity(participant.actor_target());
+    let abort_owner = reboot::explicit_abort::ExplicitAbortOwner::new(8)?;
+    let index = generated::LedgerIndexMethodsTransactionAdapter::new(
+        participant.clone(),
+        coordinator.clone(),
+        Starts,
+        Index { map },
+    )
+    .with_explicit_abort_owner(abort_owner);
+    let abort_recovery = index.explicit_abort_recovery_registration()?;
+    let participant_metadata = ParticipantRecovery {
+        shard_ids: vec![SHARD.into()],
+        ..Default::default()
+    };
+    let recovery = LegacyDurableRecovery::new(
+        participant,
+        coordinator,
+        LegacyRecoveryMetadata {
+            participant: participant_metadata.clone(),
+            coordinator: CoordinatorRecovery {
+                shard_ids: vec![SHARD.into()],
+                coordinator_state_ref: reference.clone(),
+                ..Default::default()
+            },
+        },
+        Arc::new(Watch(DurableCoordinatorWatchHost::new(
+            coordinator_sidecar,
+            STATE_TYPE,
+            &reference,
+        )?)),
+    )?
+    .with_participant(map_participant, participant_metadata)?;
+    let (work, tasks) = generated::LedgerWorkMethodsDatabaseAdapter::new(store.clone(), Ledger)
+        .with_workflows(&reference)?;
+    let view = generated::LedgerViewMethodsDatabaseAdapter::new(store, Ledger);
+    let (readers, companion) = view.local_readers(&reference)?;
+    let wait = tasks.wait_service(
+        reboot::legacy_placement::LegacyApplicationId::new(&application)?,
+        "local-rust",
+        placement(&application, address)?,
+    );
+    let reader_monitor = readers.clone();
+    ApplicationHost::new(application)
+        .with_host_recovery(recovery)
+        .with_host_recovery(MapConstructor {
+            library,
+            state_ref: map_ref,
+        })
+        .with_host_recovery(abort_recovery)
+        .with_host_recovery(tasks.recovery(db::RecoverRequest {
+            state_tags_by_state_type: [(STATE_TYPE.into(), "Ledger".into())].into(),
+            shard_ids: vec![SHARD.into()],
+            skip_idempotent_mutations: true,
+        }))
+        .with_host_recovery(readers)
+        .with_host_recovery(ReaderTelemetry(reader_monitor.clone()))
+        .add_public_service(proto::ledger_work_methods_server::LedgerWorkMethodsServer::new(work))
+        .add_public_service(proto::ledger_view_methods_server::LedgerViewMethodsServer::new(view))
+        .add_public_service(
+            proto::ledger_index_methods_server::LedgerIndexMethodsServer::new(index),
+        )
+        .add_public_service(wait)
+        .try_add_local_readers(companion)?
+        .serve_with_shutdown(address, shutdown)
+        .await?;
+    assert_eq!(
+        reader_monitor.active_subscriptions(),
+        0,
+        "host drained typed readers"
+    );
+    Ok(())
+}

@@ -1,0 +1,109 @@
+use {{ name }}::{generated, proto};
+use std::time::Duration;
+fn show(state: proto::Ledger) {
+    println!(
+        "{} {} {} {} {}",
+        state.batch, state.count, state.approved, state.completed, state.submissions
+    );
+}
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let command = args.first().map(String::as_str).ok_or("command required")?;
+    let url = std::env::var("RBT_RUST_URL").unwrap_or_else(|_| "http://127.0.0.1:9991".into());
+    let channel = tonic::transport::Endpoint::from_shared(url)?
+        .connect_timeout(Duration::from_secs(3))
+        .timeout(Duration::from_secs(10))
+        .connect()
+        .await?;
+    if command == "health" {
+        let mut client = tonic_health::pb::health_client::HealthClient::new(channel);
+        let result = client
+            .check(tonic_health::pb::HealthCheckRequest { service: "".into() })
+            .await?
+            .into_inner();
+        println!("{}", result.status);
+        return Ok(());
+    }
+    let context = reboot::ExternalContext::new({{ name }}::reference()?);
+    let arg = |index: usize| args.get(index).cloned().ok_or("missing argument");
+    // Raw generated Tonic clients send mutations ONCE, with explicit deadlines.
+    // There is deliberately no generated external Unavailable retry loop here.
+    match command {
+        "create" => {
+            let mut client =
+                proto::ledger_work_methods_client::LedgerWorkMethodsClient::new(channel);
+            let mut request = context.writer(proto::Empty {})?;
+            request.set_timeout(Duration::from_secs(5));
+            client.create(request).await?;
+            println!("created");
+        }
+        "read" => {
+            let mut client =
+                proto::ledger_view_methods_client::LedgerViewMethodsClient::new(channel);
+            show(
+                client
+                    .snapshot(context.reader(proto::Empty {})?)
+                    .await?
+                    .into_inner(),
+            );
+        }
+        "submit" => {
+            let mut client =
+                proto::ledger_work_methods_client::LedgerWorkMethodsClient::new(channel);
+            let key = uuid::Uuid::parse_str(&arg(3)?)?;
+            let mut request = context.writer(proto::Submit {
+                batch: arg(1)?,
+                count: arg(2)?.parse()?,
+                not_before: args.get(4).map(|s| s.parse()).transpose()?.unwrap_or(0),
+            })?;
+            request
+                .metadata_mut()
+                .insert("x-reboot-idempotency-key", key.to_string().parse()?);
+            request.set_timeout(Duration::from_secs(5));
+            let id = client.submit_batch(request).await?.into_inner().id;
+            println!("{}", uuid::Uuid::from_slice(&id)?);
+        }
+        "approve" | "approve-invalid" => {
+            let mut client =
+                proto::ledger_index_methods_client::LedgerIndexMethodsClient::new(channel);
+            let mut request = context.writer(proto::Approval {
+                batch: arg(1)?,
+                index: arg(2)?.parse()?,
+                invalid_range: command == "approve-invalid",
+            })?;
+            request.metadata_mut().remove("x-reboot-idempotency-key");
+            request.set_timeout(Duration::from_secs(5));
+            show(client.approve(request).await?.into_inner());
+        }
+        "history" => {
+            let mut client =
+                proto::ledger_index_methods_client::LedgerIndexMethodsClient::new(channel);
+            let mut request = context.writer(proto::Batch { batch: arg(1)? })?;
+            request.metadata_mut().remove("x-reboot-idempotency-key");
+            request.set_timeout(Duration::from_secs(5));
+            for key in client.history(request).await?.into_inner().keys {
+                println!("{key}");
+            }
+        }
+        "wait" => {
+            let id = uuid::Uuid::parse_str(&arg(1)?)?;
+            let mut request = tonic::Request::new(reboot::database_proto::TaskId {
+                state_type: {{ name }}::STATE_TYPE.into(),
+                state_ref: {{ name }}::reference()?,
+                task_uuid: id.as_bytes().to_vec(),
+            });
+            request.set_timeout(Duration::from_millis(arg(2)?.parse()?));
+            show(generated::LedgerWorkMethodsTasksWait::run_batch(channel, request).await?);
+        }
+        "watch" => {
+            let mut client = generated::LedgerViewMethodsReactiveClient::new(channel, context);
+            let mut stream = client.snapshot(proto::Empty {}).await?;
+            while let Some(state) = stream.message().await? {
+                show(state);
+            }
+        }
+        _ => return Err("unknown command".into()),
+    }
+    Ok(())
+}
