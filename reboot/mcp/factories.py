@@ -18,8 +18,13 @@ from reboot.mcp.context import (
     _get_user_id,
     _session_id_for_request,
     _set_user_id,
+    reboot_url_from_request,
 )
-from reboot.mcp.request_state import _UI_ASSETS_PREFIX, _request_user_agent
+from reboot.mcp.request_state import (
+    _UI_ASSETS_PREFIX,
+    _request_reboot_url,
+    _request_user_agent,
+)
 from reboot.mcp.ui import (
     _resolve_dist_path,
     _resource_meta,
@@ -135,6 +140,7 @@ async def _list_tools_with_fresh_cache_busts(
                 info["ui_path"],
                 info["ui_name"],
                 info.get("artifact_path"),
+                reboot_url=_request_reboot_url.get(),
             )
         except Exception:
             # Keep the existing URI baked in at registration.
@@ -309,10 +315,17 @@ def create_mcp_factory(
 
             request = Request(scope, receive, send)
 
-            # Publish the incoming User-Agent. Set here, before handing
-            # off to the MCP transport, so the contextvar is captured
-            # into downstream tasks.
+            # Publish the incoming User-Agent and the URL the request
+            # reached us at. Set here, before handing off to the MCP
+            # transport, so the contextvars are captured into
+            # downstream tasks.
             _request_user_agent.set(request.headers.get("user-agent"))
+            try:
+                _request_reboot_url.set(reboot_url_from_request(request))
+            except RuntimeError:
+                # No `Host`: nothing a page could call back on, so
+                # the cache-bust token has only the build to hash.
+                _request_reboot_url.set(None)
 
             # If no tools are registered, there is nothing useful for an
             # MCP client to do.
