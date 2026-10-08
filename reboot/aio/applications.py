@@ -740,6 +740,8 @@ class Application:
                 ),
             )
             self._oauth_server = oauth_server
+            # What a `require_oauth_token=True` HTTP route asks of a request.
+            self.http.verify_oauth_token_with(oauth_server.verify_token)
             if self._token_verifier is not None:
                 # Compose with the user's own verifier: the OAuth
                 # server's verifier runs first, definitively rejecting
@@ -752,6 +754,14 @@ class Application:
             else:
                 self._token_verifier = oauth_server.token_verifier
             oauth_server.mount_routes(self.http)
+        elif self.http.has_require_oauth_token_routes():
+            raise InputError(
+                reason=(
+                    "An HTTP route with `require_oauth_token=True` requires "
+                    "`Application(oauth=...)`: the access token it asks "
+                    "for is the one the OAuth server mints."
+                )
+            )
         return auto_construct_state_type_full_names
 
     async def _authenticated(
