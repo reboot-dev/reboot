@@ -167,40 +167,33 @@ py_library(
 
 # The dashboard page and its assets, laid out beside `main.py` for its
 # `StaticFiles` mount to serve. The `sed` points the page at the
-# `esbuild` bundle in place of `./src/main.tsx`, the entry point Vite
-# serves in development. React Flow's stylesheet is copied out of its
-# package under the name the page links it by.
+# `esbuild` bundle and its stylesheet in place of `./src/main.tsx`,
+# the entry point Vite serves in development.
 genrule(
     name = "dashboard_dist",
     srcs = [
-        "//:node_modules/@xyflow/react/dir",
-        "//reboot/dashboard/web:dashboard.css",
+        "//reboot/dashboard/web:dashboard_bundle.css",
         "//reboot/dashboard/web:dashboard_bundle.js",
-        "//reboot/dashboard/web:index.html",
         "//reboot/dashboard/web:favicon.svg",
-        "//reboot/dashboard/web:reboot-logo.svg",
+        "//reboot/dashboard/web:index.html",
     ],
     outs = [
         "dashboard/index.html",
-        "dashboard/dashboard.css",
+        "dashboard/dashboard_bundle.css",
         "dashboard/dashboard_bundle.js",
         "dashboard/favicon.svg",
-        "dashboard/reboot-logo.svg",
-        "dashboard/xyflow-react.css",
     ],
-    cmd = "sed 's|\\./src/main\\.tsx|./dashboard_bundle.js|' " +
+    cmd = "sed 's|<script type=\"module\" src=\"./src/main.tsx\"></script>|" +
+          "<link rel=\"stylesheet\" href=\"./dashboard_bundle.css\" />" +
+          "<script type=\"module\" src=\"./dashboard_bundle.js\"></script>|' " +
           "$(location //reboot/dashboard/web:index.html) " +
           "> $(location dashboard/index.html) && " +
-          "cp $(location //reboot/dashboard/web:dashboard.css) " +
-          "$(location dashboard/dashboard.css) && " +
+          "cp $(location //reboot/dashboard/web:dashboard_bundle.css) " +
+          "$(location dashboard/dashboard_bundle.css) && " +
           "cp $(location //reboot/dashboard/web:dashboard_bundle.js) " +
           "$(location dashboard/dashboard_bundle.js) && " +
           "cp $(location //reboot/dashboard/web:favicon.svg) " +
-          "$(location dashboard/favicon.svg) && " +
-          "cp $(location //reboot/dashboard/web:reboot-logo.svg) " +
-          "$(location dashboard/reboot-logo.svg) && " +
-          "cp $(location //:node_modules/@xyflow/react/dir)/dist/style.css " +
-          "$(location dashboard/xyflow-react.css)",
+          "$(location dashboard/favicon.svg)",
 )
 
 py_library(
@@ -208,6 +201,7 @@ py_library(
     srcs = ["main.py"],
     data = [
         ":dashboard_dist",
+        "//rbt/dashboard/v1:ui",
     ],
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
@@ -231,6 +225,7 @@ py_binary(
     srcs = ["main.py"],
     data = [
         ":dashboard_dist",
+        "//rbt/dashboard/v1:ui",
     ],
     main = "main.py",
     visibility = ["//visibility:public"],
