@@ -16,7 +16,11 @@ from log.log import get_logger, log_at_most_once_per
 from rbt.std.oauth.v1.oauth_rbt import OAuthTokens
 from reboot.aio.exceptions import InputError
 from reboot.aio.external import ExternalContext
-from reboot.aio.http import PythonWebFramework, external_context
+from reboot.aio.http import (
+    PythonWebFramework,
+    external_context,
+    origin_from_request,
+)
 from reboot.crypto import root_keys
 from reboot.run_environments import running_rbt_dev
 from starlette.requests import Request
@@ -154,24 +158,6 @@ def _decoded_id_token(
     if not id_token:
         return None
     return jwt.decode(id_token, options={"verify_signature": False})
-
-
-def origin_from_request(request: Request) -> str:
-    """
-    Derive the server's origin (`scheme://host`) from request headers.
-
-    Respects `X-Forwarded-Proto` and `X-Forwarded-Host` when behind a
-    reverse proxy.
-    """
-    scheme = request.headers.get(
-        "x-forwarded-proto",
-        request.url.scheme,
-    )
-    host = request.headers.get(
-        "x-forwarded-host",
-        request.headers.get("host", "localhost"),
-    )
-    return f"{scheme}://{host}"
 
 
 class OAuthProvider(ABC):

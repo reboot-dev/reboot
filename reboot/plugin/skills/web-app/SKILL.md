@@ -76,6 +76,15 @@ are carried in an HttpOnly `rbt_session` cookie set by
 RPC, so user code only sees `context.auth.user_id` (same shape
 as MCP).
 
+A plain HTTP route the page calls — a download, an image, an export
+— serves every request unless registered with
+`require_oauth_token=True`, which serves only the signed-in user.
+A page the application serves itself uses it with a plain `<img src>`,
+`<video src>` or `<a href>`, since the browser sends the session
+cookie; a page on another origin fetches it with the client's bearer
+and shows an object URL. Backend and page side are in
+[python/references/auth-http-routes.md](../python/references/auth-http-routes.md).
+
 > **`token_verifier=` is the escape hatch, not the default.** Use
 > it only when you need to integrate with an IdP that the
 > built-in `oauth=` providers don't cover (e.g. an enterprise

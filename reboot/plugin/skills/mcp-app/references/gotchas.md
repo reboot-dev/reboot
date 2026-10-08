@@ -217,3 +217,11 @@ The list below is what's specific to the MCP App layer:
     the standalone web app's sign-in. A CORS error on an RPC from the
     UI therefore means a missing or expired bearer, not a missing
     origin.
+
+23. **An `<img src>` or `<a href>` pointing at the backend carries
+    no bearer.** The UI runs in the host's sandbox, cross-origin to
+    the backend, so a plain `src` or `href` arrives with no
+    credential and a `require_oauth_token=True` route returns 401.
+    Fetch with the client's bearer and show an object URL instead;
+    never put the token in the URL. Recipe in
+    `python/references/auth-http-routes.md`.

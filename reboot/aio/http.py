@@ -10,15 +10,18 @@ from fastapi import Depends, FastAPI  # type: ignore[import]
 from pathlib import Path
 from reboot.aio.caller_id import CallerID
 from reboot.aio.external import ExternalContext
+from reboot.aio.headers import AUTHORIZATION_HEADER
 from reboot.aio.internals.channel_manager import _ChannelManager
 from reboot.aio.types import ApplicationId, ServerId
 from reboot.rootpage.page import probe, root_page, root_page_asset
 from reboot.settings import ONLY_LOCALHOST_NETWORK_ADDRESS
+from reboot.routing.cors_settings import permissive_cors_headers
 from reboot.wait_for_tasks import wait_for_tasks
 from starlette.exceptions import HTTPException  # type: ignore[import]
 from starlette.requests import Request  # type: ignore[import]
 from starlette.responses import Response  # type: ignore[import]
 from starlette.staticfiles import StaticFiles  # type: ignore[import]
+from starlette.routing import compile_path
 from starlette.types import Receive, Scope, Send  # type: ignore[import]
 from typing import (
     Any,
@@ -156,6 +159,24 @@ def _route_match(
     )
 
 
+def origin_from_request(request: Request) -> str:
+    """
+    Derive the server's origin (`scheme://host`) from request headers.
+
+    Respects `X-Forwarded-Proto` and `X-Forwarded-Host` when behind a
+    reverse proxy.
+    """
+    scheme = request.headers.get(
+        "x-forwarded-proto",
+        request.url.scheme,
+    )
+    host = request.headers.get(
+        "x-forwarded-host",
+        request.headers.get("host", "localhost"),
+    )
+    return f"{scheme}://{host}"
+
+
 class PythonWebFramework(WebFramework):
 
     @dataclass(kw_only=True, frozen=True)
@@ -186,6 +207,14 @@ class PythonWebFramework(WebFramework):
         for api_route in self._http._api_routes:
             matches.append(_route_match(api_route))
         return matches
+    @dataclass(frozen=True)
+    class RequireOAuthTokenRoute:
+        """A route registered with `require_oauth_token=True`: its
+        path, compiled as Starlette matches it so a path template
+        (`/x/{id}`) matches its requests, and the methods its CORS
+        preflight lists."""
+        pattern: re.Pattern[str]
+        methods: tuple[str, ...]
 
     class HTTP:
         """Interface for decorating functions as API routes.
@@ -211,6 +240,23 @@ class PythonWebFramework(WebFramework):
             # instead of the usual external one, because they opted in via
             # `app_internal=True`. See the DANGER note in `_api_route`.
             self._app_internal_paths: set[str] = set()
+            self._require_oauth_token_routes: list[
+                PythonWebFramework.RequireOAuthTokenRoute] = []
+            self._verify_oauth_token: Optional[Callable[[Request],
+                                                        Optional[str]]] = None
+
+        def verify_oauth_token_with(
+            self,
+            verify: Callable[[Request], Optional[str]],
+        ) -> None:
+            """Sets how a `require_oauth_token=True` route verifies a
+            request: `verify` returns the user the request is signed in
+            as, or `None`. `Application` calls this once it has an
+            OAuth server, whose access tokens sign a request in."""
+            self._verify_oauth_token = verify
+
+        def has_require_oauth_token_routes(self) -> bool:
+            return len(self._require_oauth_token_routes) > 0
 
         def _api_route(self, path: str, **kwargs):
             # `app_internal` is our own kwarg, not one of FastAPI's, so we
@@ -229,6 +275,21 @@ class PythonWebFramework(WebFramework):
             # request input.
             if kwargs.pop("app_internal", False):
                 self._app_internal_paths.add(path)
+
+            # `require_oauth_token` is ours too. Such a route serves only
+            # a request signed in as a user of the application: by the
+            # access JWT in its `Authorization: Bearer` header or, on a
+            # same-origin request, in its session cookie; anything else
+            # gets a 401. It answers any origin's CORS without
+            # credentials, so a page in an MCP host's sandbox can call
+            # it with a bearer, while the cookie counts only same-origin.
+            if kwargs.pop("require_oauth_token", False):
+                self._require_oauth_token_routes.append(
+                    PythonWebFramework.RequireOAuthTokenRoute(
+                        pattern=compile_path(path)[0],
+                        methods=tuple(kwargs["methods"]),
+                    )
+                )
 
             # TODO: add type annotations for `endpoint` so that what
             # we take in is exactly what we return.
@@ -428,6 +489,52 @@ class PythonWebFramework(WebFramework):
                 )
 
             return await call_next(request)
+
+        # Registered after `external_context_middleware`, so it runs
+        # first and answers a preflight or a 401 before anything builds
+        # a context.
+        @fastapi.middleware("http")
+        async def require_oauth_token_middleware(request: Request, call_next):
+            # Matched by path alone: every method on such a path needs
+            # the token, and an unserved one gets a 401 rather than a 405.
+            for route in self._http._require_oauth_token_routes:
+                if route.pattern.match(request.url.path):
+                    break
+            else:
+                return await call_next(request)
+            cors_headers = permissive_cors_headers(
+                methods=route.methods,
+                headers=(AUTHORIZATION_HEADER, "content-type"),
+            )
+            if request.method == "OPTIONS":
+                return Response(status_code=204, headers=cors_headers)
+            # `Application` refuses to mount a route requiring an OAuth
+            # token without an OAuth server.
+            assert self._http._verify_oauth_token is not None
+            if self._http._verify_oauth_token(request) is None:
+                # RFC 6750: a 401 carries `WWW-Authenticate: Bearer`,
+                # with `error="invalid_token"` only when the request
+                # presented a token in `Authorization`; a cookie the
+                # browser attached on its own does not count.
+                # `resource_metadata` (RFC 9728) tells the client where
+                # to sign in; `/mcp` sends the same.
+                base = origin_from_request(request)
+                challenge = (
+                    'Bearer error="invalid_token", '
+                    if AUTHORIZATION_HEADER in request.headers else "Bearer "
+                ) + (
+                    'resource_metadata="'
+                    f'{base}/.well-known/oauth-protected-resource"'
+                )
+                return Response(
+                    status_code=401,
+                    headers={
+                        **cors_headers, "WWW-Authenticate": challenge
+                    },
+                )
+            response = await call_next(request)
+            response.headers.update(cors_headers)
+            return response
 
         # Reboot's own routes first, so that a catch-all mount can't
         # swallow them.
