@@ -1,3 +1,7 @@
+// React Flow's stylesheet first; `dashboard.css` overrides it.
+import "@xyflow/react/dist/style.css";
+import "../dashboard.css";
+import logo from "./reboot-logo.svg";
 import {
   useDashboard,
   usePreferences,
@@ -26,6 +30,7 @@ import { Group, Panel, Separator, usePanelRef } from "react-resizable-panels";
 import {
   HashRouter,
   Link,
+  MemoryRouter,
   NavLink,
   Navigate,
   Route,
@@ -40,6 +45,7 @@ import { v4 as uuidv4 } from "uuid";
 import {
   DASHBOARD_ID,
   CHANGELOG_ID,
+  IN_MCP_HOST,
   PREFERENCES_ID,
   PRESENCE_ID,
 } from "./constants";
@@ -665,7 +671,7 @@ const Checks: FC<{
 
 const RebootBrand: FC<{ live: boolean }> = ({ live }) => (
   <div className="brand">
-    <img className="brand-logo" src="./reboot-logo.svg" alt="Reboot logo" />
+    <img className="brand-logo" src={logo} alt="Reboot logo" />
     <Connection live={live} />
   </div>
 );
@@ -4248,6 +4254,11 @@ const StateTypeRedirect: FC = () => {
   );
 };
 
+// In a browser the URL's hash holds the route, so a page can be linked
+// to and reloaded. An MCP host's frame has no URL of its own, so there
+// memory holds it.
+const Router = IN_MCP_HOST ? MemoryRouter : HashRouter;
+
 // The preferences are the dashboard application's state: every tab
 // reads the same ones, and they persist after the tab that set them
 // closes.
@@ -4329,7 +4340,7 @@ const App: FC = () => {
           onClose={() => setOpenedNotice(false)}
         />
       )}
-      <HashRouter>
+      <Router>
         <Routes>
           {PAGES.map((page) => (
             <Route
@@ -4372,18 +4383,25 @@ const App: FC = () => {
               application's model. */}
           <Route path="*" element={<Navigate to="/models" replace />} />
         </Routes>
-      </HashRouter>
+      </Router>
     </div>
   );
 };
 
 const root = document.getElementById("root");
 
+// `dashboard.css` sizes the page by this class in an MCP host.
+if (IN_MCP_HOST) {
+  document.documentElement.classList.add("mcp-host");
+}
+
 if (root !== null) {
   createRoot(root).render(
     <StrictMode>
-      {/* No `url`: the application that serves this page also serves
-          Presence, so the client defaults to this page's origin. */}
+      {/* No `url`: in a browser the application that serves this page
+          also serves its RPCs, so the client defaults to this page's
+          origin; in an MCP host the application writes the URL into
+          the page, which the client finds the same way. */}
       <RebootClientProvider offlineCacheEnabled={true}>
         <Presence id={PRESENCE_ID} subscriberId={SUBSCRIBER_ID}>
           <App />

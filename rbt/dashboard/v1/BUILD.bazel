@@ -84,3 +84,36 @@ js_reboot_react_library(
     ],
     visibility = ["//visibility:public"],
 )
+
+# The dashboard's page built into one file: an MCP host gets the page
+# as a single resource with no address to fetch a script or stylesheet
+# from. Built here rather than in `//reboot/dashboard/web` because the
+# `Dashboard` state type's `uis` name it by a path relative to this
+# directory; see `dashboard.proto`.
+genrule(
+    name = "ui_dist",
+    srcs = [
+        "//reboot/dashboard/web:dashboard_bundle.css",
+        "//reboot/dashboard/web:dashboard_bundle.js",
+        "//reboot/dashboard/web:index.html",
+    ],
+    outs = ["ui/index.html"],
+    cmd = "$(location //reboot/ping:inline_bundle) " +
+          "$(location //reboot/dashboard/web:index.html) " +
+          "$(location //reboot/dashboard/web:dashboard_bundle.js) " +
+          "$@ " +
+          "--css $(location //reboot/dashboard/web:dashboard_bundle.css) " +
+          "--marker '<script type=\"module\" src=\"./src/main.tsx\"></script>'",
+    tools = ["//reboot/ping:inline_bundle"],
+)
+
+# What the `Dashboard` state type's `uis` need at runtime: the page,
+# and the `.rbtrc` the MCP UI runtime resolves its path against.
+filegroup(
+    name = "ui",
+    srcs = [
+        ".rbtrc",
+        ":ui_dist",
+    ],
+    visibility = ["//reboot/dashboard/backend:__pkg__"],
+)
