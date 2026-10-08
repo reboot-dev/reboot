@@ -364,6 +364,23 @@ watch = None
 task_watch = None
 try:
     command([RBT, 'init', '--backend=rust', '--frontend=none', '--application-name=batch_ledger', '--rust-sdk=' + str(ROOT / 'reboot/rust'), '--rust-example=batch-ledger'])
+    if os.environ.get('RUST_BATCH_COOPERATIVE_STOP_ONLY'):
+        lib=APP/'backend/src/lib.rs'
+        text=lib.read_text()
+        needle='            result = generated::LedgerWorkMethodsWorkflowSteps::checkpoint('
+        pause='''            if index==0 && request.stop_enabled && let Some(path)=std::env::var_os("RBT_RUST_STOP_BOUNDARY_PROBE") {
+                let path=std::path::PathBuf::from(path);
+                event("stop-boundary-before-checkpoint");
+                std::fs::write(&path,b"durable approval accepted; writer not admitted").map_err(|e|tonic::Status::internal(e.to_string()))?;
+                while !path.with_extension("release").exists() {
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+            }
+'''
+        assert text.count(needle)==1
+        lib.write_text(text.replace(needle,pause+needle))
+        command(['cargo','fmt','--manifest-path','backend/Cargo.toml'])
+        evidence['cooperative_handler_sha256']=hashlib.sha256(lib.read_bytes()).hexdigest()
     if os.environ.get('RUST_BATCH_WRITER_FRAMEWORK_ONLY'):
         lib=APP/'backend/src/lib.rs'
         text=lib.read_text()
@@ -401,7 +418,7 @@ try:
     command(['cargo', 'clippy', '--manifest-path', 'backend/Cargo.toml', '--all-targets', '--', '-D', 'warnings'])
     command(['cargo', 'fmt', '--manifest-path', 'backend/Cargo.toml', '--', '--check'])
     tests, _ = command(['cargo', 'test', '--manifest-path', 'backend/Cargo.toml', '--all-targets'])
-    check('generated consumer strict Clippy/fmt and nonzero tests', '7 passed' in tests)
+    check('generated consumer strict Clippy/fmt and nonzero tests', '10 passed' in tests)
     command(['cargo', 'build', '--manifest-path', 'backend/Cargo.toml', '--bins'])
     py = STAGE / 'generated-python'
     py.mkdir()
@@ -416,6 +433,104 @@ try:
     reference = str(StateRef.from_id('batch_ledger.v1.Ledger', 'ledger'))
     map_ref = str(StateRef.from_id('rbt.std.collections.v1.SortedMap', 'approvals'))
     archive_ref = str(StateRef.from_id('rbt.std.collections.v1.SortedMap', 'archived-approvals'))
+    if os.environ.get('RUST_BATCH_COOPERATIVE_STOP_ONLY'):
+        def ordinary_records(session):
+            stub=db_grpc.DatabaseStub(grpc.insecure_channel(f"127.0.0.1:{session.database_port}"))
+            rows=stub.RecoverIdempotentMutations(db.RecoverIdempotentMutationsRequest(state_type='batch_ledger.v1.Ledger',state_ref=reference),timeout=3)
+            return sorted(m.SerializeToString() for batch in rows for m in batch.idempotent_mutations if not m.HasField('workflow_id'))
+        def snapshot(data):
+            return (data[0].SerializeToString(),data[1].SerializeToString(),data[2].SerializeToString(),sorted(m.SerializeToString() for m in data[3]),archive_rows(current).SerializeToString(),ordinary_records(current))
+        current=Session('cooperative-start')
+        until(lambda:'actor state must be constructed' in client('work-unary','cooperative',ok=False)[0],'stop feature public admission published')
+        client('create')
+        uuid,_=client('submit-stoppable-step-reject','cooperative','3','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
+        client('approve','cooperative','0')
+        until(lambda:native(current,uuid)[0].completed==1,'real first effect followed by parked cooperative observation')
+        initial=native(current,uuid)
+        check('opt-in batch has partial effect and saved writer business decision',initial[0].workflow_id==__import__("uuid").UUID(uuid).bytes and initial[0].stop_enabled and not initial[0].stop_requested and not initial[0].stopped and initial[2].status==db.Task.PENDING and len(initial[3])==3 and logical_keys(initial[1])==['cooperative:0000'])
+        original_error=[m.SerializeToString() for m in initial[3] if __import__('google.protobuf.any_pb2',fromlist=['Any']).Any.FromString(m.response).type_url=='type.googleapis.com/google.rpc.Status']
+        check('cooperative feature composes with real saved writer error',len(original_error)==1)
+        initial_snapshot=snapshot(initial)
+        current.close();current=None
+        admin=ENV.pop('RBT_RUST_TASK_ADMIN_TOKEN')
+        current=Session('cooperative-disabled')
+        until(lambda:native(current,uuid)[0].completed==1,'parked prefix restored before stop')
+        check('restart preserves full parked task and prefix checkpoints',snapshot(native(current,uuid))==initial_snapshot)
+        error,_=client('stop','cooperative',uuid,'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',ok=False)
+        check('stop defaults deny without configured admin','PermissionDenied' in error and snapshot(native(current,uuid))==initial_snapshot)
+        check('stop restore does not redispatch rejected or completed writer',not any('try-checkpoint-' in event or 'checkpoint-cooperative-0' in event for event in events(current)))
+        current.close();current=None
+        ENV['RBT_RUST_TASK_ADMIN_TOKEN']=admin
+        current=Session('cooperative-controlled')
+        until(lambda:native(current,uuid)[0].completed==1,'configured stopped workflow serving')
+        baseline=snapshot(native(current,uuid))
+        ENV.pop('RBT_RUST_TASK_ADMIN_TOKEN')
+        try:error,_=client('stop','cooperative',uuid,'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',ok=False)
+        finally:ENV['RBT_RUST_TASK_ADMIN_TOKEN']=admin
+        check('stop denies anonymous even configured','Unauthenticated' in error and snapshot(native(current,uuid))==baseline)
+        error,_=client('stop','other',uuid,'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',ok=False)
+        check('typed stop denial for wrong batch leaves records intact','StopDenied' in error and snapshot(native(current,uuid))==baseline)
+        error,_=client('stop-finish-direct','cooperative','1',ok=False)
+        check('ordinary stop checkpoint cannot forge workflow completion','PermissionDenied' in error and snapshot(native(current,uuid))==baseline)
+        for method in ['StopBatch','FinishStopped']:
+            check('stop writers are not reactive readers',client('reader-target-error',method)[0]=='NONREADER_DENIED')
+        receipt,_=client('stop','cooperative',uuid,'cccccccc-cccc-4ccc-8ccc-cccccccccccc')
+        check('public admin stop receipt preserves partial counters',receipt=='cooperative 3 1 1 1\ncontrol true true false')
+        terminal,_=client('wait',uuid,'5000')
+        check('canonical success explicitly returns stopped partial work',terminal=='cooperative 3 1 1 1\ncontrol true true true')
+        stopped=native(current,uuid)
+        check('stop preserves prefix map and saves observed stop plus private outcome',stopped[0].stopped and stopped[0].completed==1 and stopped[0].approved==1 and logical_keys(stopped[1])==['cooperative:0000'] and len(stopped[3])==5 and stopped[2].status==db.Task.COMPLETED and stopped[2].WhichOneof('response_or_error')=='response')
+        check('old saved error remains byte identical',all(value in [m.SerializeToString() for m in stopped[3]] for value in original_error))
+        after_stop=snapshot(stopped)
+        check('same stop key replays original receipt not live state',client('stop','cooperative',uuid,'cccccccc-cccc-4ccc-8ccc-cccccccccccc')[0]==receipt and snapshot(native(current,uuid))==after_stop)
+        error,_=client('approve','cooperative','1',ok=False)
+        check('stopped approvals reject without app or map mutation','InvalidArgument' in error and snapshot(native(current,uuid))==after_stop)
+        current.close();current=None
+        ENV.pop('RBT_RUST_TASK_ADMIN_TOKEN')
+        current=Session('cooperative-receipt-revoked')
+        until(lambda:client('read')[0]==terminal,'stopped actor restored with admin disabled')
+        error,_=client('stop','cooperative',uuid,'cccccccc-cccc-4ccc-8ccc-cccccccccccc',ok=False)
+        check('cached stop receipt requires fresh authorizer after admin revocation','PermissionDenied' in error and snapshot(native(current,uuid))==after_stop)
+        current.close();current=None
+        ENV['RBT_RUST_TASK_ADMIN_TOKEN']=admin
+        current=Session('cooperative-terminal-restored')
+        check('stopped result replays after RocksDB restart',client('wait',uuid,'5000')[0]==terminal and snapshot(native(current,uuid))==after_stop)
+        check('stopped completed workflow does not reexecute',not any('finish-stopped-' in event or 'checkpoint-cooperative-' in event for event in events(current)))
+        next_uuid,_=client('submit','after-stop','1','dddddddd-dddd-4ddd-8ddd-dddddddddddd')
+        new_batch=native(current,next_uuid)
+        check('new batch resets control flags',not new_batch[0].workflow_id and not new_batch[0].stop_enabled and not new_batch[0].stop_requested and not new_batch[0].stopped)
+        new_snapshot=snapshot(new_batch)
+        check('old stop receipt cannot mutate successor batch',client('stop','cooperative',uuid,'cccccccc-cccc-4ccc-8ccc-cccccccccccc')[0]==receipt and snapshot(native(current,next_uuid))==new_snapshot)
+        error,_=client('stop','after-stop',next_uuid,'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',ok=False)
+        check('non-opt-in batch typed stop rejection','StopDenied' in error and snapshot(native(current,next_uuid))==new_snapshot)
+        client('approve','after-stop','0')
+        check('normal successor workflow still completes',client('wait',next_uuid,'5000')[0]=='after-stop 1 1 1 2')
+        check('original stopped task remains exact immutable terminal',native(current,uuid)[2].SerializeToString()==stopped[2].SerializeToString())
+        current.close();current=None
+        marker=STAGE/'before-approved-checkpoint'
+        ENV['RBT_RUST_STOP_BOUNDARY_PROBE']=str(marker)
+        current=Session('cooperative-approved-boundary')
+        until(lambda:client('read')[0]=='after-stop 1 1 1 2','boundary test host ready')
+        boundary_uuid,_=client('submit-stoppable','cooperative','2','ffffffff-ffff-4fff-8fff-ffffffffffff')
+        client('approve','cooperative','0')
+        until(marker.exists,'real saved approval before writer admission')
+        ready=native(current,boundary_uuid)
+        check('boundary race has genuine saved decision but no writer effect',ready[0].approved==1 and ready[0].completed==0 and len(ready[3])==1)
+        ready_snapshot=snapshot(ready)
+        error,_=client('stop','cooperative',uuid,'88888888-8888-4888-8888-888888888888',ok=False)
+        check('old workflow UUID cannot stop same-name replacement','StopDenied' in error and snapshot(native(current,boundary_uuid))==ready_snapshot)
+        error,_=client('stop','cooperative',boundary_uuid,'cccccccc-cccc-4ccc-8ccc-cccccccccccc',ok=False)
+        check('same stop key different workflow request fails without remutation',snapshot(native(current,boundary_uuid))==ready_snapshot)
+        receipt,_=client('stop','cooperative',boundary_uuid,'99999999-9999-4999-8999-999999999999')
+        check('stop intent commits before already observed writer',receipt=='cooperative 2 1 0 3\ncontrol true true false' and native(current,boundary_uuid)[0].completed==0)
+        marker.with_suffix('.release').write_text('release')
+        check('already observed unit may finish then next boundary stops',client('wait',boundary_uuid,'5000')[0]=='cooperative 2 1 1 3\ncontrol true true true')
+        boundary=native(current,boundary_uuid)
+        check('boundary stop retains one real effect and exact original decision',boundary[0].stopped and boundary[0].completed==1 and len(boundary[3])==4 and ready[3][0].SerializeToString() in [m.SerializeToString() for m in boundary[3]])
+        current.close();current=None
+        ENV.pop('RBT_RUST_STOP_BOUNDARY_PROBE')
+        evidence['accepted']=True
+        raise SystemExit(0)
     if os.environ.get('RUST_BATCH_WRITER_FRAMEWORK_ONLY'):
         ENV['RBT_RUST_WRITER_FAILURE_PROBE']='1'
         current=Session('writer-framework-failure')

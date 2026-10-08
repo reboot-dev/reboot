@@ -111,28 +111,24 @@ mod workflow_checkpoint_tests {
             .value,
             7
         );
-        assert!(
-            decode_workflow_checkpoint::<proto::Counter>(
-                &scoped,
-                &id,
-                key,
-                &[1, 2],
-                "type.googleapis.com/Counter",
-                Some(1)
-            )
-            .is_err()
-        );
-        assert!(
-            decode_workflow_checkpoint::<proto::Counter>(
-                &scoped,
-                &id,
-                key,
-                &[1, 2],
-                "type.googleapis.com/Counter",
-                None
-            )
-            .is_err()
-        );
+        assert!(decode_workflow_checkpoint::<proto::Counter>(
+            &scoped,
+            &id,
+            key,
+            &[1, 2],
+            "type.googleapis.com/Counter",
+            Some(1)
+        )
+        .is_err());
+        assert!(decode_workflow_checkpoint::<proto::Counter>(
+            &scoped,
+            &id,
+            key,
+            &[1, 2],
+            "type.googleapis.com/Counter",
+            None
+        )
+        .is_err());
         for vector in 0..10 {
             let mut bad = record.clone();
             match vector {
@@ -160,28 +156,24 @@ mod workflow_checkpoint_tests {
                 "vector {vector}"
             );
         }
-        assert!(
-            decode_workflow_checkpoint::<proto::Counter>(
-                &record,
-                &id,
-                key,
-                &[],
-                "type.googleapis.com/Counter",
-                None
-            )
-            .is_err()
-        );
-        assert!(
-            decode_workflow_checkpoint::<proto::Counter>(
-                &record,
-                &id,
-                key,
-                &[1, 2],
-                "type.googleapis.com/Other",
-                None
-            )
-            .is_err()
-        );
+        assert!(decode_workflow_checkpoint::<proto::Counter>(
+            &record,
+            &id,
+            key,
+            &[],
+            "type.googleapis.com/Counter",
+            None
+        )
+        .is_err());
+        assert!(decode_workflow_checkpoint::<proto::Counter>(
+            &record,
+            &id,
+            key,
+            &[1, 2],
+            "type.googleapis.com/Other",
+            None
+        )
+        .is_err());
     }
     #[test]
     fn explicit_named_key_matches_python_external_helper_not_typed_rpc_manager() {
@@ -492,6 +484,28 @@ impl DatabaseActorStore {
         {
             let _owner = running.lock()?;
         }
+        // A durable receipt is not an authorization grant. Recheck policy
+        // against canonical current state before inspecting or returning replay.
+        let mut state = self
+            .load_for_declaration::<D>(&state_ref)
+            .await?
+            .ok_or_else(|| {
+                Status::failed_precondition("scheduling writer requires existing actor")
+            })?;
+        {
+            let _owner = running.lock()?;
+        }
+        authorization
+            .authorize(
+                &auth_context,
+                auth.as_ref(),
+                Some(&state.encode_to_vec()),
+                &request.get_ref().encode_to_vec(),
+            )
+            .await?;
+        {
+            let _owner = running.lock()?;
+        }
         let mut stream = self
             .database
             .clone()
@@ -567,26 +581,6 @@ impl DatabaseActorStore {
         }
         if let Some(response) = replay {
             return Ok(Response::new(response));
-        }
-        let mut state = self
-            .load_for_declaration::<D>(&state_ref)
-            .await?
-            .ok_or_else(|| {
-                Status::failed_precondition("scheduling writer requires existing actor")
-            })?;
-        {
-            let _owner = running.lock()?;
-        }
-        authorization
-            .authorize(
-                &auth_context,
-                auth.as_ref(),
-                Some(&state.encode_to_vec()),
-                &request.get_ref().encode_to_vec(),
-            )
-            .await?;
-        {
-            let _owner = running.lock()?;
         }
         let execution = invoke(&mut state, request.into_inner(), state_ref.clone()).await?;
         {

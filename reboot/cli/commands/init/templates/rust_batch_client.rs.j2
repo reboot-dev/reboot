@@ -35,6 +35,12 @@ fn show(state: proto::Ledger) {
         "{} {} {} {} {}",
         state.batch, state.count, state.approved, state.completed, state.submissions
     );
+    if state.stop_enabled {
+        println!(
+            "control {} {} {}",
+            state.stop_enabled, state.stop_requested, state.stopped
+        );
+    }
 }
 fn show_tasks(
     tasks: Vec<reboot::database_proto::TaskInfo>,
@@ -105,7 +111,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .into_inner(),
             );
         }
-        "submit" | "submit-rejecting" | "submit-step-reject" => {
+        "submit"
+        | "submit-rejecting"
+        | "submit-step-reject"
+        | "submit-stoppable"
+        | "submit-stoppable-step-reject" => {
             let mut client =
                 proto::ledger_work_methods_client::LedgerWorkMethodsClient::new(channel);
             let key = uuid::Uuid::parse_str(&arg(3)?)?;
@@ -113,7 +123,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 batch: arg(1)?,
                 count: arg(2)?.parse()?,
                 not_before: args.get(4).map(|s| s.parse()).transpose()?.unwrap_or(0),
-                reject_step: command == "submit-step-reject",
+                reject_step: matches!(
+                    command,
+                    "submit-step-reject" | "submit-stoppable-step-reject"
+                ),
+                stop_enabled: matches!(
+                    command,
+                    "submit-stoppable" | "submit-stoppable-step-reject"
+                ),
                 reject_after: if command == "submit-rejecting" {
                     arg(5)?.parse()?
                 } else {
@@ -126,6 +143,64 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             request.set_timeout(Duration::from_secs(5));
             let id = client.submit_batch(request).await?.into_inner().id;
             println!("{}", uuid::Uuid::from_slice(&id)?);
+        }
+        "stop" => {
+            let mut client =
+                proto::ledger_work_methods_client::LedgerWorkMethodsClient::new(channel);
+            let key = uuid::Uuid::parse_str(&arg(3)?)?;
+            let mut request = context.writer(proto::StopRequest {
+                batch: arg(1)?,
+                task_id: uuid::Uuid::parse_str(&arg(2)?)?.as_bytes().to_vec(),
+            })?;
+            request
+                .metadata_mut()
+                .insert("x-reboot-idempotency-key", key.to_string().parse()?);
+            if let Ok(token) = std::env::var("RBT_RUST_TASK_ADMIN_TOKEN") {
+                request
+                    .metadata_mut()
+                    .insert("authorization", format!("Bearer {token}").parse()?);
+            }
+            request.set_timeout(Duration::from_secs(5));
+            use prost::Message;
+            match client.stop_batch(request).await {
+                Ok(response) => show(response.into_inner()),
+                Err(error) => {
+                    let denied = reboot::declared_error_details(&error)
+                        .ok()
+                        .flatten()
+                        .filter(|rich| {
+                            error.code() == tonic::Code::Unknown
+                                && rich.details.len() == 1
+                                && rich.details[0].type_url
+                                    == "type.googleapis.com/{{ name }}.v1.StopDenied"
+                        })
+                        .and_then(|rich| {
+                            proto::StopDenied::decode(rich.details[0].value.as_slice()).ok()
+                        });
+                    if let Some(denied) = denied {
+                        return Err(
+                            format!("StopDenied {}: {}", denied.batch, denied.reason).into()
+                        );
+                    }
+                    return Err(error.into());
+                }
+            }
+        }
+        "stop-finish-direct" => {
+            let mut client =
+                proto::ledger_work_methods_client::LedgerWorkMethodsClient::new(channel);
+            let mut request = context.writer(proto::Step {
+                batch: arg(1)?,
+                index: arg(2)?.parse()?,
+                reject: false,
+            })?;
+            if let Ok(token) = std::env::var("RBT_RUST_TASK_ADMIN_TOKEN") {
+                request
+                    .metadata_mut()
+                    .insert("authorization", format!("Bearer {token}").parse()?);
+            }
+            request.set_timeout(Duration::from_secs(3));
+            show(client.finish_stopped(request).await?.into_inner());
         }
         "reader-target-error" | "index-target-error" => {
             let mut client =

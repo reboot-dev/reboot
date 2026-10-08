@@ -75,6 +75,47 @@ impl reboot::auth::Authorizer for TaskAdmin {
         })
     }
 }
+// Only StopBatch gains new credential policy. Existing development RPCs retain
+// their old access rules; no client header can grant task or completion authority.
+struct StopAccess(Option<Arc<TaskAdmin>>);
+impl reboot::auth::TokenVerifier for StopAccess {
+    fn verify<'a>(
+        &'a self,
+        context: &'a reboot::auth::AuthorizationContext,
+        token: Option<&'a str>,
+    ) -> reboot::auth::VerifyFuture<'a> {
+        if context.method != "{{ name }}.v1.LedgerWorkMethods.StopBatch" {
+            return Box::pin(async { reboot::auth::TokenVerification::NoOpinion });
+        }
+        match &self.0 {
+            Some(admin) => reboot::auth::TokenVerifier::verify(admin.as_ref(), context, token),
+            None => Box::pin(async { reboot::auth::TokenVerification::NoOpinion }),
+        }
+    }
+}
+impl reboot::auth::Authorizer for StopAccess {
+    fn authorize<'a>(
+        &'a self,
+        context: &'a reboot::auth::AuthorizationContext,
+        auth: Option<&'a reboot::auth::Auth>,
+        state: Option<&'a [u8]>,
+        _: &'a [u8],
+    ) -> reboot::auth::AuthorizeFuture<'a> {
+        Box::pin(async move {
+            if context.method != "{{ name }}.v1.LedgerWorkMethods.StopBatch"
+                || (context.state_type == STATE_TYPE
+                    && state.is_some()
+                    && auth.is_some_and(|a| a.payload()["task_admin"] == true))
+            {
+                reboot::auth::AuthorizationDecision::Allow
+            } else {
+                reboot::auth::AuthorizationDecision::PermissionDenied {
+                    message: "cooperative stop requires configured task admin".into(),
+                }
+            }
+        })
+    }
+}
 pub struct Starts;
 impl RootTransactionStartFactory for Starts {
     fn next_root_transaction(&self) -> Result<RootTransactionStart, Status> {
@@ -301,7 +342,18 @@ pub async fn serve(
     )?
     .with_participant(map_participant, participant_metadata.clone())?
     .with_participant(archive_participant, participant_metadata)?;
+    let admin = match std::env::var("RBT_RUST_TASK_ADMIN_TOKEN") {
+        Ok(token) if !token.is_empty() => Some(Arc::new(TaskAdmin(token))),
+        Ok(_) => return Err("task admin token must not be empty".into()),
+        Err(std::env::VarError::NotPresent) => None,
+        Err(error) => return Err(error.into()),
+    };
+    let stop_access = Arc::new(StopAccess(admin.clone()));
     let (work, tasks) = generated::LedgerWorkMethodsDatabaseAdapter::new(store.clone(), Ledger)
+        .with_authorization(reboot::auth::AuthorizationPolicy::new(
+            Some(stop_access.clone()),
+            Some(stop_access),
+        ))
         .with_workflows(&reference)?;
     let (readers, _) = index.local_readers(&reference)?;
     let companion = reboot::reactive::LocalReaderService::new(
@@ -317,14 +369,9 @@ pub async fn serve(
         "local-rust",
         placement(&application, address)?,
     )?;
-    let wait = match std::env::var("RBT_RUST_TASK_ADMIN_TOKEN") {
-        Ok(token) if !token.is_empty() => {
-            let admin = Arc::new(TaskAdmin(token));
-            wait.with_admin_authorization(admin.clone(), admin)
-        }
-        Ok(_) => return Err("task admin token must not be empty".into()),
-        Err(std::env::VarError::NotPresent) => wait,
-        Err(error) => return Err(error.into()),
+    let wait = match admin {
+        Some(admin) => wait.with_admin_authorization(admin.clone(), admin),
+        None => wait,
     };
     let wait = db::tasks_server::TasksServer::new(wait);
     let reader_monitor = readers.clone();

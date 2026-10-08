@@ -74,7 +74,12 @@ impl generated::LedgerWorkMethodsDatabaseHandler for Ledger {
         state_ref: String,
     ) -> Result<TransactionExecution<proto::Handle>, tonic::Status> {
         validate_batch(&request.batch, request.count)?;
-        if state.completed < state.count && !state.rejected {
+        if request.stop_enabled && request.not_before != 0 {
+            return Err(tonic::Status::invalid_argument(
+                "cooperative stop requires an immediate batch",
+            ));
+        }
+        if state.completed < state.count && !state.rejected && !state.stopped {
             return Err(tonic::Status::failed_precondition("previous batch pending"));
         }
         if request.reject_after > request.count {
@@ -98,6 +103,14 @@ impl generated::LedgerWorkMethodsDatabaseHandler for Ledger {
         state.approved = 0;
         state.completed = 0;
         state.rejected = false;
+        state.stop_enabled = request.stop_enabled;
+        state.stop_requested = false;
+        state.stopped = false;
+        state.workflow_id = if request.stop_enabled {
+            id.clone()
+        } else {
+            Vec::new()
+        };
         state.submissions += 1;
         let mut execution = TransactionExecution::new(proto::Handle { id });
         execution.task_upserts.push(task);
@@ -121,6 +134,71 @@ impl generated::LedgerWorkMethodsDatabaseHandler for Ledger {
         Ok(state.clone())
     }
 
+    async fn stop_batch(
+        &self,
+        state: &mut proto::Ledger,
+        request: proto::StopRequest,
+    ) -> Result<proto::Ledger, generated::LedgerWorkMethodsStopBatchError> {
+        let reason = if request.batch != state.batch {
+            Some("batch identity mismatch")
+        } else if !state.stop_enabled {
+            Some("batch did not opt into cooperative stop")
+        } else if request.task_id.len() != 16 || request.task_id != state.workflow_id {
+            Some("workflow identity mismatch")
+        } else if state.rejected || state.count == 0 || state.completed >= state.count {
+            Some("batch already finished")
+        } else {
+            None
+        };
+        if let Some(reason) = reason {
+            return Err(generated::LedgerWorkMethodsStopBatchError::StopDenied(
+                proto::StopDenied {
+                    batch: request.batch,
+                    reason: reason.into(),
+                },
+            ));
+        }
+        if !state.stop_requested {
+            event(&format!("stop-request-{}", request.batch));
+        }
+        state.stop_requested = true;
+        Ok(state.clone())
+    }
+    async fn finish_stopped(
+        &self,
+        state: &mut proto::Ledger,
+        request: proto::Step,
+    ) -> Result<proto::Ledger, tonic::Status> {
+        if !state.stop_enabled
+            || !state.stop_requested
+            || state.stopped
+            || state.rejected
+            || state.batch != request.batch
+            || state.completed != request.index
+            || request.index >= state.count
+            || request.reject
+        {
+            return Err(tonic::Status::failed_precondition(
+                "stop checkpoint identity or control mismatch",
+            ));
+        }
+        event(&format!(
+            "finish-stopped-{}-{}",
+            request.batch, request.index
+        ));
+        state.stopped = true;
+        Ok(state.clone())
+    }
+    async fn finish_stopped_scheduled(
+        &self,
+        _: &mut proto::Ledger,
+        _: proto::Step,
+        _: String,
+    ) -> Result<TransactionExecution<proto::Ledger>, tonic::Status> {
+        Err(tonic::Status::permission_denied(
+            "stop completion requires private workflow authority",
+        ))
+    }
     async fn try_checkpoint(
         &self,
         state: &mut proto::Ledger,
@@ -212,15 +290,33 @@ impl generated::LedgerWorkMethodsDatabaseHandler for Ledger {
             let iteration =
                 context.iteration("batch-v1", u64::from(index), u64::from(request.count))?;
             let batch = request.batch.clone();
-            generated::LedgerWorkMethodsWorkflowSteps::observe_batch_until(
+            let stop_enabled = request.stop_enabled;
+            let observed = generated::LedgerWorkMethodsWorkflowSteps::observe_batch_until(
                 &iteration,
                 Arc::new(self.clone()),
                 "approval",
-                "approved-through-index.v1",
+                if stop_enabled {
+                    "approved-or-stop.v1"
+                } else {
+                    "approved-through-index.v1"
+                },
                 proto::Batch { batch },
-                move |state| state.approved > index,
+                move |state| state.approved > index || (stop_enabled && state.stop_requested),
             )
             .await?;
+            if stop_enabled && observed.stop_requested {
+                return Ok(generated::LedgerWorkMethodsWorkflowSteps::finish_stopped(
+                    &iteration,
+                    Arc::new(self.clone()),
+                    "stop",
+                    proto::Step {
+                        batch: request.batch.clone(),
+                        index,
+                        reject: false,
+                    },
+                )
+                .await?);
+            }
             if request.reject_step && index == 0 {
                 match generated::LedgerWorkMethodsWorkflowSteps::try_checkpoint(
                     &iteration,
@@ -324,6 +420,8 @@ impl generated::LedgerIndexMethodsTransactionHandler for Index {
         request: proto::Approval,
     ) -> Result<TransactionExecution<proto::Ledger>, tonic::Status> {
         if state.rejected
+            || state.stop_requested
+            || state.stopped
             || state.batch != request.batch
             || request.index != state.approved
             || request.index >= state.count
@@ -632,6 +730,235 @@ mod tests {
         assert_eq!(result.task_upserts.len(), 1);
         assert_eq!(state.batch, "next");
         assert!(!state.rejected);
+    }
+    #[test]
+    fn default_control_fields_preserve_legacy_wire_encoding() {
+        use prost::Message;
+        #[derive(Clone, PartialEq, prost::Message)]
+        struct LegacySubmit {
+            #[prost(string, tag = "1")]
+            batch: String,
+            #[prost(uint32, tag = "2")]
+            count: u32,
+            #[prost(int64, tag = "3")]
+            not_before: i64,
+            #[prost(uint32, tag = "4")]
+            reject_after: u32,
+            #[prost(bool, tag = "5")]
+            reject_step: bool,
+        }
+        #[derive(Clone, PartialEq, prost::Message)]
+        struct LegacyLedger {
+            #[prost(string, tag = "1")]
+            batch: String,
+            #[prost(uint32, tag = "2")]
+            count: u32,
+            #[prost(uint32, tag = "3")]
+            approved: u32,
+            #[prost(uint32, tag = "4")]
+            completed: u32,
+            #[prost(uint64, tag = "5")]
+            submissions: u64,
+            #[prost(bool, tag = "6")]
+            rejected: bool,
+            #[prost(uint64, tag = "7")]
+            archived: u64,
+        }
+        let current = proto::Submit {
+            batch: "compat".into(),
+            count: 3,
+            reject_step: true,
+            ..Default::default()
+        };
+        let legacy = LegacySubmit {
+            batch: current.batch.clone(),
+            count: current.count,
+            not_before: current.not_before,
+            reject_after: current.reject_after,
+            reject_step: current.reject_step,
+        };
+        assert_eq!(current.encode_to_vec(), legacy.encode_to_vec());
+        let current = proto::Ledger {
+            batch: "compat".into(),
+            count: 3,
+            approved: 2,
+            completed: 1,
+            submissions: 7,
+            archived: 5,
+            ..Default::default()
+        };
+        let legacy = LegacyLedger {
+            batch: current.batch.clone(),
+            count: current.count,
+            approved: current.approved,
+            completed: current.completed,
+            submissions: current.submissions,
+            rejected: current.rejected,
+            archived: current.archived,
+        };
+        assert_eq!(current.encode_to_vec(), legacy.encode_to_vec());
+    }
+
+    #[tokio::test]
+    async fn cooperative_stop_is_opt_in_and_identity_bound() {
+        use generated::LedgerWorkMethodsDatabaseHandler;
+        let mut state = proto::Ledger {
+            batch: "batch".into(),
+            count: 3,
+            approved: 1,
+            completed: 1,
+            ..Default::default()
+        };
+        let before = state.clone();
+        assert!(matches!(
+            Ledger
+                .stop_batch(
+                    &mut state,
+                    proto::StopRequest {
+                        batch: "batch".into(),
+                        task_id: vec![1; 16]
+                    }
+                )
+                .await
+                .unwrap_err(),
+            generated::LedgerWorkMethodsStopBatchError::StopDenied(_)
+        ));
+        assert_eq!(state, before);
+        let before = state.clone();
+        let error = Ledger
+            .submit_batch_scheduled(
+                &mut state,
+                proto::Submit {
+                    batch: "future".into(),
+                    count: 1,
+                    stop_enabled: true,
+                    not_before: 1,
+                    ..Default::default()
+                },
+                reference().unwrap(),
+            )
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(error.code(), tonic::Code::InvalidArgument);
+        assert_eq!(state, before);
+        state.stop_enabled = true;
+        state.workflow_id = vec![1; 16];
+        let before = state.clone();
+        assert!(
+            Ledger
+                .stop_batch(
+                    &mut state,
+                    proto::StopRequest {
+                        batch: "batch".into(),
+                        task_id: vec![2; 16],
+                    }
+                )
+                .await
+                .is_err()
+        );
+        assert_eq!(state, before);
+        assert!(
+            Ledger
+                .stop_batch(
+                    &mut state,
+                    proto::StopRequest {
+                        batch: "other".into(),
+                        task_id: vec![1; 16]
+                    }
+                )
+                .await
+                .is_err()
+        );
+        assert_eq!(state, before);
+        let reply = Ledger
+            .stop_batch(
+                &mut state,
+                proto::StopRequest {
+                    batch: "batch".into(),
+                    task_id: vec![1; 16],
+                },
+            )
+            .await
+            .unwrap();
+        assert!(reply.stop_requested && !reply.stopped);
+        assert_eq!((reply.approved, reply.completed, reply.count), (1, 1, 3));
+        let repeated = Ledger
+            .stop_batch(
+                &mut state,
+                proto::StopRequest {
+                    batch: "batch".into(),
+                    task_id: vec![1; 16],
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(reply, repeated);
+        state.completed = 3;
+        let before = state.clone();
+        assert!(
+            Ledger
+                .stop_batch(
+                    &mut state,
+                    proto::StopRequest {
+                        batch: "batch".into(),
+                        task_id: vec![1; 16]
+                    }
+                )
+                .await
+                .is_err()
+        );
+        assert_eq!(state, before);
+    }
+    #[tokio::test]
+    async fn stopped_completion_is_private_preserves_progress_and_resets_on_submit() {
+        use generated::LedgerWorkMethodsDatabaseHandler;
+        let mut state = proto::Ledger {
+            batch: "batch".into(),
+            count: 3,
+            approved: 1,
+            completed: 1,
+            stop_enabled: true,
+            stop_requested: true,
+            ..Default::default()
+        };
+        let before = state.clone();
+        let step = proto::Step {
+            batch: "batch".into(),
+            index: 1,
+            reject: false,
+        };
+        let error = Ledger
+            .finish_stopped_scheduled(&mut state, step.clone(), reference().unwrap())
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(error.code(), tonic::Code::PermissionDenied);
+        assert_eq!(state, before);
+        let wrong = proto::Step {
+            index: 0,
+            ..step.clone()
+        };
+        assert!(Ledger.finish_stopped(&mut state, wrong).await.is_err());
+        assert_eq!(state, before);
+        let reply = Ledger.finish_stopped(&mut state, step).await.unwrap();
+        assert!(reply.stopped);
+        assert_eq!((reply.approved, reply.completed, reply.count), (1, 1, 3));
+        let execution = Ledger
+            .submit_batch_scheduled(
+                &mut state,
+                proto::Submit {
+                    batch: "next".into(),
+                    count: 1,
+                    ..Default::default()
+                },
+                reference().unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(execution.task_upserts.len(), 1);
+        assert!(!state.stop_enabled && !state.stop_requested && !state.stopped);
+        assert_eq!((state.approved, state.completed, state.count), (0, 0, 1));
     }
     #[test]
     fn bounded_batch_identity() {

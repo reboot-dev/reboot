@@ -559,6 +559,45 @@ Exhaustion retains existing supervised host failure and Pending restart progress
 There is no durable quarantine or separate per-workflow readiness contract;
 the three-attempt budget resets per host delivery after restart.
 
+### Implemented, bounded application cooperative stop
+
+The public batch-ledger app can opt an **immediate** batch into cooperative stop
+with `Submit.stop_enabled`; default-false submissions retain the previous wire
+encoding and `approved-through-index.v1` predicate identity. Opt-in state binds
+the original workflow UUID. An authenticated configured task admin calls ordinary
+`StopBatch(batch, task_id)` with an idempotency key. Stale UUIDs, non-opt-in batches
+and finished batches return typed `StopDenied`, not guessed cancellation.
+
+The workflow branches on its returned **persisted** reader observation using
+`approved-or-stop.v1`, then calls private named `FinishStopped`. It retains the
+acknowledged prefix, maps and saved business decisions and returns an explicitly
+`stopped` partial Ledger through canonical successful Tasks.Wait. Further
+approvals are denied after stop intent commits; an already observed approved unit
+may finish before the next observation stops. A replacement batch resets control
+flags; its UUID isolates delayed stop requests even when the batch name is reused.
+Public FinishStopped scheduling is denied and both control methods remain writers,
+not reactive reader targets. Existing task ownership and participant restoration
+order are unchanged.
+
+Ordinary workflow-service scheduling writers now load canonical current actor
+state and run the authorizer **before** recovering/returning any cached receipt,
+under the same exclusive actor gate. Verified/no-op token handling alone is not
+authorization. Owner checks bracket awaited policy/recovery work and existing
+Store uncertainty fencing remains intact. Previously a cached receipt could bypass
+the authorizer; native restart with server administration disabled now denies the
+exact previously accepted stop key without changing durable records.
+
+This is a finite application control-flow branch, **not** canonical running-task
+cancellation, Python durable Break/unbounded cursor parity, asynchronous interruption,
+rollback of prior effects, compensation or external-effects exactly-once. Stop
+checkpoint Store lost-ACK and post-checkpoint/pre-terminal crash/replacement are
+not newly exercised; general task cancellation gaps remain unchanged.
+
+Sources: [batch application](../cli/commands/init/templates/rust_batch_lib.rs.j2),
+[admin policy](../cli/commands/init/templates/rust_batch_host.rs.j2),
+[shared scheduling replay](src/workflow_store.rs),
+[native acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
+
 ### Implemented, bounded declared workflow terminals
 
 Generated workflow methods may declare same-file protobuf business errors.
@@ -846,6 +885,41 @@ parent/key bounds, unprepared recovery and lost-ACK retention. Unit coverage:
 [ownership tests](src/sorted_map_ownership_tests.rs).
 
 ## Verification
+
+### Cooperative stop and fresh receipt authorization (2026-10-08)
+
+Implemented on `ac595b011a68f43c94775666cdb7d6949ab95dc7` with a shared scheduling
+replay authorization correction; source reviewed after the confirmed bypass fix.
+
+- `/tmp/reboot-rust-batch-ledger-acceptance-1791494496665595401`:
+  **38 checks**, native public CLI/C++ Database/RocksDB. A real partial prefix
+  including a saved writer business-error decision stops through admin StopBatch,
+  retains exact prefix/checkpoints and completes canonical Wait with an explicit
+  stopped response. RocksDB/host restart preserves the result without redispatch.
+  Replaying the accepted key with administration disabled is PermissionDenied;
+  complete actor/map/task/checkpoint/ordinary-receipt snapshots remain identical.
+  Re-enabling admin replays the original receipt, including after a successor
+  submission. Same-name stale UUID and same-key/different-request negatives leave
+  records unchanged. A controlled saved-approval-before-stop-before-writer race
+  completes one already-observed unit, then stops at the next observation.
+- `/tmp/reboot-rust-batch-ledger-acceptance-1791494902443424066`:
+  **162 full batch checks**, strict consumer Clippy/fmt and **10 library tests**;
+  default workflows, transaction/map transfer, typed terminals, scheduled cancel,
+  reactive reconnect/rebuild and watcher cleanup retained. Recorded watcher PIDs
+  were confirmed absent after completion, despite historical handles in the result.
+- `/tmp/reboot-rust-batch-ledger-final-gates-1791495601318353167`:
+  strict all-target SDK Clippy and **402 passed, 0 failed, 128 ignored**;
+  full native greeting restart/idempotency/rebuild/failed-rebuild/shutdown proof.
+- `/tmp/reboot-rust-workflow-reader-no-business-errors-1791496109043528591`:
+  separate plain-reader generated consumer strict Clippy and **10 library tests**;
+  this is a compilation/behavior gate, not independent native persistence proof.
+
+Frozen manifests matched throughout. Each runner retained exclusive target
+ownership, target <=8 GiB/free >=8 GiB. Do not credit earlier pre-authorization-fix
+proofs as evidence for the security correction. The predecessor framework-error
+and caught-reader focused negative proofs were retained; the shared correction
+changes ordinary writer ingress, not private typed decisions or reader fences.
+Post-stop-checkpoint/pre-terminal crash and lost-ACK boundaries remain unclaimed.
 
 ### Named writer business decisions (2026-10-08)
 
@@ -1445,7 +1519,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 0124d5542a7fc60b45393d056255774699e1e9f856555be277955f6d716fd356 -->
+<!-- parity-source-sha256: c649f4191616f982408cb18a0aef84d182532db77488c50c12e0270bf48fc8a8 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

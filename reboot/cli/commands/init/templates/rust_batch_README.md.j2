@@ -240,3 +240,39 @@ host combines workflow and transaction reader bindings behind one local reader
 owner for this actor, retaining the original handler/store/auth/transaction
 owners. Approval subscribers see acknowledged app/map transaction commits;
 failed approvals cannot be used as subscription calls to mutate the ledger.
+
+## Cooperative stop at a durable observation boundary
+
+Use `client submit-stoppable batch 3 <submission-uuid>` for an immediately scheduled
+opt-in batch (`submit-stoppable-step-reject` also exercises a saved writer rejection).
+Configure a nonempty `RBT_RUST_TASK_ADMIN_TOKEN` on the host and control client,
+then send `client stop batch <workflow-uuid> <stable-stop-uuid>`. Without server configuration or a
+valid credential, StopBatch denies before handler effects; other development RPCs
+retain their existing access rules. Production apps should replace this local
+admin verifier with their own identity provider.
+
+The stop request is an ordinary idempotent writer, not a task Cancelled terminal.
+It binds the original workflow UUID as well as the batch name; a fresh delayed stop
+cannot affect a same-name replacement. Reusing its key with another target is denied.
+Its original receipt is replayed for the same key even after completion or a newer
+batch; changed requests with the same key collide rather than being reinterpreted.
+A parked workflow observes the committed intent without another approval and
+saves that exact reader decision. Its private FinishStopped step records the
+stopped result; canonical typed Wait returns the original partial counters and
+`control true true true` (enabled/requested/stopped). Previously committed work,
+approval rows and saved writer-error decisions are retained across restart.
+The private completion RPC and reactive subscription to control writers are denied.
+
+New approvals are denied after stop is requested. A unit whose approval was already
+durably observed may still finish (including its declared rejection); stopping is
+honored at the next observation boundary. Finishing all units first remains normal
+completion with `stopped=false`. Thus request acceptance does not promise immediate
+or rollback cancellation. After stopped completion a new submission clears control
+flags; an old stop-key replay cannot mutate that new batch.
+
+Only immediately scheduled opt-in batches support this control. Delayed opt-in
+submission is rejected before staging; existing scheduled-workflow cancellation
+remains separate. This demonstrates finite same-actor saved-decision branching,
+not Python unbounded cursor/Break/GC parity, running/distributed task cancellation,
+or external-effects exactly-once semantics. Ordinary batches keep their existing
+condition identity and behavior; opt-in waits use `approved-or-stop.v1`.
