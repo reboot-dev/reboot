@@ -6,7 +6,8 @@
 //! Network inbound children, reusable siblings and distributed placement are
 //! deliberately outside this bounded library. Sessions and every call future
 //! MUST remain serial and handler-awaited; no escaping/detached calls are
-//! supported. Stale-context checks do not prove in-flight lifetime fencing.
+//! supported. Every polled admission/call now reserves root work through its
+//! await; unfinished Drop dooms the root and retains membership uncertainty.
 use crate::{
     durable_participant::{
         ActorTransactionStart, DurableActorParticipant, ParticipantStartMode,
@@ -78,8 +79,10 @@ impl SortedMapHandle {
         &self,
         context: &TransactionContext,
     ) -> Result<SortedMapSession, Status> {
-        let result = async {
-            context.validate_builtin_map_admission(&self.endpoint)?;
+        let mut operation = context
+            .begin_builtin_map_operation(&self.endpoint)
+            .inspect_err(|status| context.doom(status.clone()))?;
+        let result: Result<SortedMapSession, Status> = async {
             let target = self.participant.actor_target();
             let guard = self
                 .participant
@@ -113,7 +116,18 @@ impl SortedMapHandle {
             })
         }
         .await;
-        result.inspect_err(|status: &Status| context.doom(status.clone()))
+        match result {
+            Ok(session) => {
+                operation
+                    .returned(&self.endpoint)
+                    .inspect_err(|status| context.doom(status.clone()))?;
+                Ok(session)
+            }
+            Err(status) => {
+                context.doom(status.clone());
+                Err(status)
+            }
+        }
     }
 }
 
@@ -121,8 +135,9 @@ impl SortedMapHandle {
 /// Any failed call dooms the root even if an application catches the error.
 /// Dropping this session never discards uncertain/eager native ownership.
 /// Calls MUST be serial and awaited inside the owning handler. Do not move a
-/// session/call into a detached task or let it outlive the handler: there is no
-/// active-root operation reservation across the await in this bounded API.
+/// session/call into a detached task or let it outlive the handler. Active work
+/// blocks root completion; unfinished Drop retains uncertainty. This lifetime
+/// fence does not certify task provenance or enable concurrent map operations.
 pub struct SortedMapSession {
     guard: StartedLocalTransaction<TonicParticipantSidecar>,
     context: TransactionContext,
@@ -133,10 +148,20 @@ impl SortedMapSession {
         &self,
         future: impl std::future::Future<Output = Result<T, Status>>,
     ) -> Result<T, Status> {
-        let result = match self.context.validate_builtin_map_admission(&self.endpoint) {
-            Ok(()) => future.await,
-            Err(error) => Err(error),
-        };
+        let result = async {
+            let mut operation = self.context.begin_builtin_map_operation(&self.endpoint)?;
+            match future.await {
+                Ok(response) => {
+                    operation.returned(&self.endpoint)?;
+                    Ok(response)
+                }
+                Err(status) => {
+                    self.context.doom(status.clone());
+                    Err(status)
+                }
+            }
+        }
+        .await;
         result.inspect_err(|status| self.context.doom(status.clone()))
     }
     pub async fn insert(

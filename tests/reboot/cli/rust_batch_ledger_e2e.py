@@ -364,6 +364,30 @@ watch = None
 task_watch = None
 try:
     command([RBT, 'init', '--backend=rust', '--frontend=none', '--application-name=batch_ledger', '--rust-sdk=' + str(ROOT / 'reboot/rust'), '--rust-example=batch-ledger'])
+    if os.environ.get('RUST_BATCH_MAP_LIFETIME_ONLY'):
+        # Generated-handler overlay only: poll a real map reader to its native
+        # await after a real eager insert, then drop it and try returning success.
+        # No runtime hook or private Database write is used.
+        lib=APP/'backend/src/lib.rs'
+        text=lib.read_text()
+        needle='        state.approved += 1;'
+        probe='''        if std::env::var_os("RBT_RUST_MAP_LIFETIME_PROBE").is_some() {
+            let mut pending = Box::pin(guard.range(reboot::sorted_map_proto::RangeRequest {
+                start_key: Some(format!("{}:", request.batch)),
+                end_key: Some(format!("{};", request.batch)),
+                limit: 1,
+            }));
+            std::future::poll_fn(|cx| match std::future::Future::poll(pending.as_mut(), cx) {
+                std::task::Poll::Pending => std::task::Poll::Ready(()),
+                std::task::Poll::Ready(_) => panic!("map reader did not reach native await"),
+            })
+            .await;
+            drop(pending);
+            event("dropped-map-reader-after-real-insert");
+        }
+'''
+        assert text.count(needle)==1
+        lib.write_text(text.replace(needle,probe+needle))
     if os.environ.get('RUST_BATCH_COOPERATIVE_STOP_ONLY'):
         lib=APP/'backend/src/lib.rs'
         text=lib.read_text()
@@ -433,6 +457,39 @@ try:
     reference = str(StateRef.from_id('batch_ledger.v1.Ledger', 'ledger'))
     map_ref = str(StateRef.from_id('rbt.std.collections.v1.SortedMap', 'approvals'))
     archive_ref = str(StateRef.from_id('rbt.std.collections.v1.SortedMap', 'archived-approvals'))
+    if os.environ.get('RUST_BATCH_MAP_LIFETIME_ONLY'):
+        current=Session('map-lifetime-baseline')
+        until(lambda:'actor state must be constructed' in client('work-unary','lifetime',ok=False)[0],'map lifetime public admission')
+        client('create')
+        uuid,_=client('submit','lifetime','2','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
+        before=native(current,uuid)
+        baseline=(before[0].SerializeToString(),before[1].SerializeToString(),before[2].SerializeToString(),sorted(m.SerializeToString() for m in before[3]),archive_rows(current).SerializeToString())
+        check('map lifetime baseline is real parked pending task',before[2].status==db.Task.PENDING and before[0].approved==0 and before[0].completed==0 and not logical_keys(before[1]) and not before[3])
+        current.close();current=None
+        ENV['RBT_RUST_MAP_LIFETIME_PROBE']='1'
+        current=Session('map-lifetime-drop')
+        error,_=client('approve','lifetime','0',ok=False)
+        until(lambda:any('dropped-map-reader-after-real-insert' in event for event in events(current)),'real insert plus polled map read dropped')
+        check('caught dropped map future cannot return a successful transaction','builtin' in error or 'uncertain' in error or 'closed' in error)
+        # The inserted participant is known and its Store was acknowledged.
+        # Registered abandonment may Abort that exact root, not fail the host.
+        # This is a dropped read, NOT an unknown Store/lost-ACK test.
+        until(lambda:client('read')[0]=='lifetime 2 0 0 1','registered known-root Abort releases app admission')
+        rolled_back=native(current,uuid)
+        check('dropped reader root abort preserves exact committed app/map/task/checkpoints',(rolled_back[0].SerializeToString(),rolled_back[1].SerializeToString(),rolled_back[2].SerializeToString(),sorted(m.SerializeToString() for m in rolled_back[3]),archive_rows(current).SerializeToString())==baseline)
+        current.close();current=None
+        ENV.pop('RBT_RUST_MAP_LIFETIME_PROBE')
+        current=Session('map-lifetime-restored')
+        until(lambda:client('read')[0]=='lifetime 2 0 0 1','all participants and parked task restored')
+        after=native(current,uuid)
+        check('restart recovers dropped-map root without partial app/map/task mutation',(after[0].SerializeToString(),after[1].SerializeToString(),after[2].SerializeToString(),sorted(m.SerializeToString() for m in after[3]),archive_rows(current).SerializeToString())==baseline)
+        client('approve','lifetime','0')
+        until(lambda:native(current,uuid)[0].completed==1,'fresh actual approval after fenced-root recovery')
+        client('approve','lifetime','1')
+        check('original task progresses through public approval and canonical Wait',client('wait',uuid,'5000')[0]=='lifetime 2 2 2 1' and logical_keys(native(current,uuid)[1])==['lifetime:0000','lifetime:0001'])
+        current.close();current=None
+        evidence['accepted']=True
+        raise SystemExit(0)
     if os.environ.get('RUST_BATCH_COOPERATIVE_STOP_ONLY'):
         def ordinary_records(session):
             stub=db_grpc.DatabaseStub(grpc.insecure_channel(f"127.0.0.1:{session.database_port}"))

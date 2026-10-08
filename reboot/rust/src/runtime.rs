@@ -258,6 +258,57 @@ impl Drop for TransactionalOutboundScope {
     }
 }
 
+/// Private lifetime reservation for one same-host builtin operation.
+/// Failed or unreturned work retains root membership uncertainty. Only a
+/// successful return can settle; native participant uncertainty stays separate.
+pub(crate) struct BuiltinMapOperation {
+    context: TransactionContext,
+    completed: bool,
+}
+impl BuiltinMapOperation {
+    pub(crate) fn returned(&mut self, endpoint: &str) -> Result<(), Status> {
+        self.context.validate_builtin_map_admission(endpoint)?;
+        self.settle_ledger()
+    }
+    fn settle_ledger(&mut self) -> Result<(), Status> {
+        let ledger = self
+            .context
+            .returned_participants
+            .as_ref()
+            .expect("admitted root ledger");
+        let state = ledger.lock().expect("returned participant mutex poisoned");
+        if state.sealed || state.active != 1 || state.membership_uncertain || state.late_enlistment
+        {
+            return Err(Status::failed_precondition(
+                "builtin operation cannot settle a closed or uncertain root",
+            ));
+        }
+        self.completed = true;
+        Ok(())
+    }
+}
+impl Drop for BuiltinMapOperation {
+    fn drop(&mut self) {
+        {
+            let ledger = self
+                .context
+                .returned_participants
+                .as_ref()
+                .expect("admitted root ledger");
+            let mut state = ledger.lock().expect("returned participant mutex poisoned");
+            state.active -= 1;
+            if !self.completed {
+                state.membership_uncertain = true;
+            }
+        }
+        if !self.completed {
+            self.context.doom(Status::failed_precondition(
+                "builtin map operation dropped or failed before acknowledged settlement",
+            ));
+        }
+    }
+}
+
 impl PartialEq for TransactionContext {
     fn eq(&self, other: &Self) -> bool {
         self.headers == other.headers && self.mode == other.mode
@@ -1435,6 +1486,38 @@ impl TransactionContext {
             active,
             owner,
         });
+    }
+
+    pub(crate) fn begin_builtin_map_operation(
+        &self,
+        endpoint: &str,
+    ) -> Result<BuiltinMapOperation, Status> {
+        self.validate_builtin_map_admission(endpoint)?;
+        self.reserve_builtin_map_operation()
+    }
+
+    fn reserve_builtin_map_operation(&self) -> Result<BuiltinMapOperation, Status> {
+        let ledger = self
+            .returned_participants
+            .as_ref()
+            .ok_or_else(|| Status::failed_precondition("missing admitted root ledger"))?;
+        let mut state = ledger.lock().expect("returned participant mutex poisoned");
+        if state.sealed
+            || state.active != 0
+            || state.membership_uncertain
+            || state.late_enlistment
+            || state.dispatched
+            || self.doomed_status().is_some()
+        {
+            return Err(Status::failed_precondition(
+                "builtin map operation requires a quiescent certain root",
+            ));
+        }
+        state.active = 1;
+        Ok(BuiltinMapOperation {
+            context: self.clone(),
+            completed: false,
+        })
     }
 
     pub(crate) fn validate_builtin_map_admission(&self, endpoint: &str) -> Result<(), Status> {
@@ -4681,6 +4764,108 @@ mod tests {
         );
     }
 
+    fn map_work_context() -> TransactionContext {
+        RootTransactionContext::start(
+            RebootHeaders::new("actor/1"),
+            "example.Actor",
+            TransactionMode::Exclusive,
+            Uuid::new_v4(),
+            prost_types::Timestamp::default(),
+        )
+        .unwrap()
+        .transaction()
+        .clone()
+    }
+    #[test]
+    fn builtin_map_active_work_blocks_commit_and_abort_seals() {
+        let context = map_work_context();
+        let operation = context.reserve_builtin_map_operation().unwrap();
+        assert!(context.seal_explicit_abort().is_err());
+        assert!(context.reserve_builtin_map_operation().is_err());
+        drop(operation);
+        assert!(context.doomed_status().is_some());
+        assert!(
+            context
+                .returned_participants
+                .as_ref()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .membership_uncertain
+        );
+        assert!(context.seal_explicit_abort().is_err());
+    }
+    #[test]
+    fn builtin_map_failed_work_retains_uncertainty_with_original_doom() {
+        let context = map_work_context();
+        let operation = context.reserve_builtin_map_operation().unwrap();
+        context.doom(Status::invalid_argument("original map failure"));
+        drop(operation);
+        assert_eq!(
+            context.doomed_status().unwrap().message(),
+            "original map failure"
+        );
+        let state = context
+            .returned_participants
+            .as_ref()
+            .unwrap()
+            .lock()
+            .unwrap();
+        assert_eq!(state.active, 0);
+        assert!(state.membership_uncertain);
+        drop(state);
+        assert!(context.seal_explicit_abort().is_err());
+    }
+    #[test]
+    fn builtin_map_returned_work_allows_serial_reuse_without_dispatch_authority() {
+        let context = map_work_context();
+        for _ in 0..3 {
+            let mut operation = context.reserve_builtin_map_operation().unwrap();
+            operation.settle_ledger().unwrap();
+            drop(operation);
+        }
+        assert!(context.doomed_status().is_none());
+        let state = context
+            .returned_participants
+            .as_ref()
+            .unwrap()
+            .lock()
+            .unwrap();
+        assert_eq!(state.active, 0);
+        assert!(!state.dispatched && !state.membership_uncertain);
+        drop(state);
+        assert!(context.seal_explicit_abort().is_ok());
+        assert!(context.reserve_builtin_map_operation().is_err());
+    }
+    #[test]
+    fn builtin_map_abandonment_cannot_acknowledge_live_work_or_forget_known_membership() {
+        let context = map_work_context();
+        let mut operation = context.reserve_builtin_map_operation().unwrap();
+        let target = crate::durable_coordinator::ParticipantTarget {
+            state_type: "rbt.std.collections.v1.SortedMap".into(),
+            state_ref: "map/known".into(),
+        };
+        context
+            .returned_participants
+            .as_ref()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .participants
+            .insert(target.clone(), false);
+        assert_eq!(context.close_for_abandonment().unwrap()[0].target, target);
+        assert!(operation.settle_ledger().is_err());
+        drop(operation);
+        let state = context
+            .returned_participants
+            .as_ref()
+            .unwrap()
+            .lock()
+            .unwrap();
+        assert_eq!(state.active, 0);
+        assert!(state.membership_uncertain && state.participants.contains_key(&target));
+        assert!(context.doomed_status().is_some());
+    }
     #[test]
     fn unfinished_outbound_drop_retains_membership_uncertainty() {
         let root = RootTransactionContext::start(

@@ -848,10 +848,12 @@ Commit or Abort. A caught declared map error dooms the root, not just the sessio
 Private root provenance is mandatory; public internal/transaction headers and
 manual contexts cannot grant it.
 
-**Lifetime boundary:** sessions/futures must be serial and handler-awaited. Do not
-escape/spawn detached calls: no active root-operation reservation spans their awaits.
-The stale-root test checks calls after completion, not an overlapping cancellation
-race. Aggregate membership uses the ordinary bounded participant contract before
+**Lifetime boundary:** sessions/futures must be serial and handler-awaited. Every
+polled builtin admission/call now reserves counted root work through its await;
+only successful returns settle. Failed/dropped work retains ledger uncertainty and
+doom, so active or failed operations cannot authorize successful root sealing.
+Do not escape/spawn detached calls: this fence does not establish task provenance
+or support concurrent sessions. See [lifetime evidence](#sortedmap-operation-lifetime-fencing-2026-10-09). Aggregate membership uses the ordinary bounded participant contract before
 eager Store. Uncertain native start/Store cannot release, re-stage or Prepare a
 vanished transaction; reset host plus sidecar, recover and abort unprepared work.
 
@@ -874,7 +876,8 @@ The public application also exercises serial distinct-map transfer under one app
 root: exact bytes/read-own-writes, app-plus-two-map Commit/Abort, occupied destination
 and present-empty values, all-participant restoration and fresh post-restart transfer.
 See [public collection evidence](#public-serial-distinct-map-transfer-2026-10-08).
-This does not remove the missing admission/operation-lifetime shapes above.
+This does not remove the unsupported lifecycle shapes above; admission-await
+cancellation and dropped native Store windows need distinct native proofs.
 
 **Executed acceptance:** [native prerequisite](tests/sorted_map_native_prerequisite.rs),
 [generated app](tests/fixtures/sorted_map_app/src/main.rs),
@@ -885,6 +888,44 @@ parent/key bounds, unprepared recovery and lost-ACK retention. Unit coverage:
 [ownership tests](src/sorted_map_ownership_tests.rs).
 
 ## Verification
+
+
+### SortedMap operation-lifetime fencing (2026-10-09)
+
+Same-host builtin admission and every public map call reserve the existing root
+active-work ledger before awaiting. A private RAII guard counts unfinished work;
+only successful returns settle after fresh authority/admission validation.
+Returned errors latch their original doom while the reservation remains held.
+Unsettled Drop atomically decrements active work and retains membership uncertainty,
+preventing a completion/error race from authorizing successful root sealing.
+This bookkeeping grants no dispatch authority and neither sets nor clears native
+Store ACK uncertainty. Successful serial reuse remains supported.
+
+The public generated-consumer acceptance overlay performs a real native Insert,
+polls a reader until unfinished, drops it, and tries to return transaction success.
+That success is rejected. Registered Abort of known, ACKed participants preserves
+exact committed app/map/task/checkpoint/archive bytes before and after RocksDB
+restart; fresh public approvals complete the original task through canonical Wait.
+First Pending proves a polled unfinished future, NOT native Range receipt.
+Four new SDK tests cover active sealing, serial settlement, dropped-work fencing,
+and original-error/uncertainty retention. Python's participant-transaction-manager
+unfinished-call checks provide a lifecycle comparison, not broader parity.
+
+Evidence: `/tmp/reboot-rust-batch-ledger-acceptance-1791499412823156953`
+(focused lifetime proof, 10 checks) and
+`/tmp/reboot-rust-batch-ledger-acceptance-1791499702590131853`
+(full batch regression, 162 checks), and
+`/tmp/reboot-rust-batch-ledger-final-gates-1791500401268791548`
+(strict SDK all-target Clippy; **406 passed, 0 failed, 128 ignored**; native greeting,
+restart, host/Database exit supervision, failed rebuild and child cleanup).
+Both native batch consumers passed strict Clippy/fmt and **10 library tests**.
+All frozen-source audits matched; recorded owned process groups were reaped.
+
+Limits remain: serial handler-awaited same-host calls only. No promise of map
+sessions escaping handlers, concurrent/cloned callers, remote routing, dropped
+Store/lost-ACK recovery windows, or general transaction-future cancellation.
+Settlement-validation errors may latch a generic dropped-work doom before their
+specific diagnostic; original native-operation errors retain their own status.
 
 ### Cooperative stop and fresh receipt authorization (2026-10-08)
 
@@ -1103,8 +1144,8 @@ not change. The client validates exact single-detail declared payload/Unknown st
 **Limits:** a bounded serial distinct-actor/direct-root collection application,
 not same-map reentry, reusable sibling/nested paths, a header-authorized public
 builtin/network adapter, distributed placement or general collection migration.
-Sessions/futures remain handler-awaited and nonescaping; no new root-operation
-reservation or cancellation-overlap safety is implied. Empty values are exercised,
+At that checkpoint sessions/futures remained handler-awaited and nonescaping; no
+root-operation reservation or cancellation-overlap safety was implied. Empty values are exercised,
 not arbitrary nonempty transfer bytes. Unit counter-overflow control proves no
 partial increment, not native full-cohort overflow rollback. New three-participant
 Store/Prepare/terminal lost-ACK or crash-boundary injection is not executed; prior
@@ -1519,7 +1560,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: c649f4191616f982408cb18a0aef84d182532db77488c50c12e0270bf48fc8a8 -->
+<!-- parity-source-sha256: 37cce3b22b8d32ac3d75979bf713304a50ee73a8c1832e64cf5205c81bac183e -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,
