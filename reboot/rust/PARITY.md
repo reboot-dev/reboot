@@ -310,8 +310,10 @@ Writer success atomically persists actor state plus its saved response, then
 **separately** completes via canonical CompleteTask CAS. Restart replays that
 checkpoint without remutating, including after an intervening ordinary writer.
 This is not atomic Store+CompleteTask. CompleteTask first-result-wins applies to
-its CAS authority; legacy Store/transaction/import write authorities are a
-separate overwrite boundary, not universally prohibited by a mutex.
+its CAS authority. Its mutex serializes CompleteTask and nontransactional Store,
+but legacy Store still unconditionally upserts tasks; transaction commit/import
+have separate write authority. Thus alternate overwrites are not universally
+prohibited by the CAS or mutex.
 
 Method-declared reader/writer errors persist as validated `Any<google.rpc.Status>`.
 Immutable trusted registration binds full method, state/request/response types
@@ -436,11 +438,14 @@ rejects this reserved route. Generated typed subscriptions cancel their RPC on
 Drop; ordinary unary readers stay unary.
 
 **Bounded contract:** one actor/service/trusted host owning every sidecar mutation;
-64 subscriptions, 64KiB inputs and 1MiB snapshots. One coalescing revision/current
-response/pending future per stream avoids unbounded queues. Baseline registration
+64 subscriptions **per owner**, a 64KiB **encoded request payload** and a
+1MiB **encoded reader response**. These are not bounds on the whole RPC envelope
+or total transport memory. One coalescing revision/current response/pending future
+per stream avoids unbounded queues. Baseline registration
 precedes Load; shared admission covers Load/auth/handler, not idle/backpressure.
 Equal serialized responses deduplicate; slow consumers may skip intermediate
-values but converge on latest acknowledged state. Authorization/accepted placement
+values but converge on latest acknowledged state only while the subscription
+remains healthy and the consumer continues polling. Authorization/accepted placement
 is rechecked; revocation is terminal even if authority later returns.
 
 Acknowledged writer/constructor/workflow-step/scheduling/participant-commit paths
@@ -498,8 +503,12 @@ reusable siblings, nested savepoints, shared/factory/tasks/map-root idempotency,
 implicit singleton construction, placement/migration and transparent sidecar-only
 restart. Constructor crash/lost-ACK/restart replay is not established by the
 constructor test. Existing map Store-lost-ACK recovery is a different test.
-Keys are bounded StateRef-valid ASCII and exclude slash; forward/reverse bound
-semantics and declared InvalidRangeError do not imply a cross-RPC cursor snapshot.
+**Key/range limits:** nonempty ASCII, at most 128 bytes; `/`, `\`, NUL and
+newline are rejected. Forward ranges are `[start,end)` with `start < end`;
+reverse ranges include start/exclude end with `start > end`. Limits must be
+nonzero. Invalid ordering/zero limit produces declared `InvalidRangeError`; invalid
+key characters produce InvalidArgument. There is no cursor or cross-RPC snapshot
+guarantee.
 
 **Sources:** [library/session](src/sorted_map.rs),
 [native participant](src/sorted_map_participant.rs),
