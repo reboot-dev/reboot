@@ -17,6 +17,10 @@ struct Ledger {
     attempts: Arc<std::sync::atomic::AtomicUsize>,
 }
 fn event(name: &str) {
+    // Formatting can issue multiple append writes; serialize concurrent bodies
+    // so proof markers remain complete lines, especially during mass recovery.
+    static EVENTS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = EVENTS.lock().unwrap();
     if let Ok(path) = std::env::var("WORKFLOW_BODY_EVENTS") {
         use std::io::Write;
         writeln!(
@@ -124,6 +128,50 @@ impl generated::LedgerMethodsDatabaseHandler for Ledger {
         request: proto::Step,
     ) -> Result<proto::Result, reboot::one_shot_tasks::WorkflowBodyError> {
         event("body");
+        if std::env::var("WORKFLOW_BODY_MODE").as_deref() == Ok("control") {
+            let count = u64::try_from(request.amount)
+                .map_err(|_| tonic::Status::invalid_argument("negative finite count"))?;
+            if count > 3 {
+                return Err(tonic::Status::invalid_argument(
+                    "fixture accepts at most three iterations",
+                )
+                .into());
+            }
+            let mut result = proto::Result::default();
+            for index in 0..count {
+                let iteration = context.iteration("settle", index, count)?;
+                event(&format!("waiting-{index}"));
+                let observed = generated::LedgerMethodsWorkflowSteps::query_until(
+                    &iteration,
+                    Arc::new(self.clone()),
+                    "gate",
+                    "first-at-least-index-plus-one.v1",
+                    proto::Empty {},
+                    move |state| state.first >= (index + 1) as i64,
+                )
+                .await?;
+                event(&format!("wait-{index}-ack"));
+                if std::env::var("CONTROL_PAUSE_AFTER_WAIT").ok().as_deref()
+                    == Some(&index.to_string())
+                {
+                    event("control-parked");
+                    std::future::pending::<()>().await;
+                }
+                let effect = generated::LedgerMethodsWorkflowSteps::second(
+                    &iteration,
+                    Arc::new(self.clone()),
+                    "effect",
+                    proto::Step { amount: 1 },
+                )
+                .await?;
+                event(&format!("effect-{index}-ack"));
+                result = proto::Result {
+                    first: observed.first,
+                    second: effect.value,
+                };
+            }
+            return Ok(result);
+        }
         let attempt = self
             .attempts
             .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
@@ -352,6 +400,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let (adapter, tasks) =
             generated::LedgerMethodsDatabaseAdapter::new(store, Ledger::default())
                 .with_workflows(&reference())?;
+        if let Ok(limit) = std::env::var("CONTROL_MAX_LIVE") {
+            tasks.set_max_live_deliveries(limit.parse()?)?;
+        }
         let wait = tasks.wait_service(
             reboot::legacy_placement::LegacyApplicationId::new("workflow-app")?,
             "server",
@@ -375,7 +426,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
         return Ok(());
     }
-    if mode == "inspect" {
+    if mode == "inspect" || mode == "inspect-control" {
         let mut c = db::database_client::DatabaseClient::connect(arg(2)).await?;
         let id = db::TaskId {
             state_type: "workflow.v1.Ledger".into(),
@@ -397,20 +448,43 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 state_ref: id.state_ref.clone(),
                 idempotency_key: None,
                 workflow_id: Some(id.task_uuid.clone()),
-                workflow_iteration: None,
+                workflow_iteration: if mode == "inspect-control" {
+                    Some(arg(4).parse()?)
+                } else {
+                    None
+                },
             })
             .await?
             .into_inner();
         let mut count = 0;
+        let mut checkpoints = Vec::new();
         while let Some(batch) = stream.message().await? {
             for m in batch.idempotent_mutations {
                 assert_eq!(m.workflow_id, Some(id.task_uuid.clone()));
-                assert_eq!(m.workflow_iteration, None);
                 assert!(m.request_fingerprint.is_some());
                 let any = prost_types::Any::decode(m.response.as_slice())?;
-                assert_eq!(any.type_url, "type.googleapis.com/workflow.v1.Value");
+                if mode == "inspect-control" {
+                    checkpoints.push(format!(
+                        "{{\"iteration\":{},\"key\":\"{}\",\"type\":\"{}\"}}",
+                        m.workflow_iteration.ok_or("missing iteration")?,
+                        uuid::Uuid::from_slice(&m.key)?,
+                        any.type_url
+                    ));
+                } else {
+                    assert_eq!(m.workflow_iteration, None);
+                    assert_eq!(any.type_url, "type.googleapis.com/workflow.v1.Value");
+                }
                 count += 1;
             }
+        }
+        if mode == "inspect-control" {
+            checkpoints.sort();
+            println!(
+                "{{\"status\":{},\"checkpoints\":[{}]}}",
+                task.status,
+                checkpoints.join(",")
+            );
+            return Ok(());
         }
         println!(
             "{{\"status\":{},\"iteration\":{},\"step_mutations\":{},\"timestamp\":{}}}",
@@ -426,6 +500,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     let mut client = proto::ledger_methods_client::LedgerMethodsClient::new(channel.clone());
     match mode.as_str() {
+        "signal" => {
+            let result = client
+                .first(request(
+                    proto::Step {
+                        amount: arg(4).parse()?,
+                    },
+                    Some(&arg(3)),
+                ))
+                .await?
+                .into_inner();
+            println!("{}", result.value);
+        }
         "create" => {
             client
                 .create(request(proto::Empty {}, Some(&arg(3))))

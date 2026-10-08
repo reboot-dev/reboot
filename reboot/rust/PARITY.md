@@ -38,7 +38,7 @@ turn historical transaction tests into fresh executions.
 | State/client runtime | Durable constructors/readers/writers, idempotent response replay, metadata/auth | General distributed ownership/fencing and arbitrary external effects |
 | Transactions | Legacy durable coordinator/participant paths and bounded supervised chains/star | General nested snapshots, reentrancy, intersecting subtrees, migration |
 | Tasks | Durable scheduled reader/writer tasks, typed results/Wait and recovery | Transactional targets, public cancel/list, broad retry and dispatcher fencing |
-| Workflows | Finite same-actor named typed steps, restart replay, explicit local-body resumption | Iterations/control loops, until/subscribe, cross-actor composition, failure isolation |
+| Workflows | Finite typed named steps, finite indexed replay and saved reader decisions; explicit local-body resumption | Python unbounded Task cursor/GC/Break, cross-actor composition, failure isolation |
 | Reactive readers | Typed bounded local subscriptions and commit invalidation | Cross-actor/remote invalidation, reconnect, mixed-service generated bindings |
 | SortedMap | Canonical empty constructor and serial same-host app/map transactions | Public inbound adapter, nested/reusable siblings, distributed collection lifecycle |
 
@@ -301,7 +301,7 @@ owners must be actively registered with host recovery; a dormant builder cannot
 schedule. Pending work is durable data, not a queue message. Bounded canonical
 rescans discover committed work even when notifications are lost; future tasks
 do not block ready peers. The supported runtime bounds pending/admitted work and
-serializes deliveries rather than spawning unbounded detached workers. Singleton
+owns bounded concurrent singleton deliveries rather than unbounded detached workers. Singleton
 admission bounds pending plus staged tasks to **1024**. Shared canonical recovery
 rejects a cumulative Pending batch over **1024 before dispatch**, even if each
 owner is individually below the limit; it does not page/drain excess work.
@@ -323,14 +323,14 @@ transport/system `Grpc` failures rather than becoming declared results just
 because their details resemble a schema. Trusted custom registration is not
 cryptographic/protoc-origin sealing or third-party Tasks-server certification.
 
-Writer failures sealed as private `PreStoreFailure` receipts receive at most three
-host-owned attempts; reader escaped failures do not gain that policy. This proves
-failure before the framework's Store, **not local-computation-only provenance**:
-`TaskHandlerError::Failed(Status)` returned by a writer handler is not filtered by
-status code in this retry loop. A handler-forwarded transport/Cancelled status can
-therefore be retried. Do not generalize the workflow's explicit `RetryLocal`
-contract to ordinary writer tasks. This classification is a known limitation;
-applications must not assume handler external IO is retry-safe.
+Ordinary writer `PreStoreFailure` receipts now escape as supervised failures,
+without live retry. Before Store does **not** establish local-computation-only
+provenance: handlers can forward transport or Cancelled statuses and perform
+external IO. This on-path fail-closed correction removes the previous implicit
+three-attempt policy; the workflow's explicit `RetryLocal` policy remains separate.
+The fresh ordinary-writer native regression executed all 10 selected cases,
+including the changed handler-failure vectors; historical three-attempt writer
+proof is not evidence for this correction.
 
 Failed private state is discarded. Framework Load/Store/replay/completion errors
 escape that retry receipt path, and actual owner cancellation/uncertainty remains
@@ -402,13 +402,87 @@ attempts, with 25/50ms backoff, run without restarting the host. Actual transpor
 Store uncertainty, completion failures and cancellation do not request retry.
 Swallowing/dropping a failed framework operation cannot erase its fence.
 
-One dispatcher serializes bodies: a parked workflow does not block ordinary actor
-readers/writers but blocks other workflow delivery during its body/backoff.
+One dispatcher owns at most 1024 live bodies by default, equal to the durable
+Pending admission bound (configurable 1..1024 before recovery via
+`set_max_live_deliveries`). Each Pending ID is delivered at most once while live.
+Parked bodies consume the budget, but every accepted due ID has a delivery slot;
+scheduling rejects Pending plus staged work above the configured budget before
+commit rather than accepting work that could be stranded indefinitely. Recovery
+fails closed if the persisted Pending set exceeds the configured budget. Ordinary
+actor RPC admission is separate. Completed children may briefly occupy a slot
+until joined; canonical rescans then admit their replacements.
 Exhaustion retains existing supervised host failure and Pending restart progress.
 There is no durable quarantine or separate per-workflow readiness contract;
 the three-attempt budget resets per host delivery after restart.
 
-**Missing:** persisted control loops/iterations, until/subscribe/reactive waits,
+### Implemented, bounded finite control-flow vertical
+
+`WorkflowContext::iteration(name, index, count)` mints explicit finite indexed
+replay scopes, with count bounded to 1..1024 and no nested scopes. This is **not**
+Python's unbounded canonical `Task.iteration` cursor, iteration GC, or persisted
+Continue/Break API: Task remains iteration zero and restart reruns the finite
+application body, loading each acknowledged typed decision/effect. There is no
+arbitrary-loop exit-decision guarantee; callers must keep the explicit finite
+count, indices, condition version and named calls stable across replay.
+
+Generated `WorkflowSteps::<reader>_until` binds exact immutable reader descriptor,
+request/result types, explicit checkpoint alias and versioned named condition.
+Predicates/reader implementations are trusted pure local computations; closure
+semantics are not introspectable. Changed named condition, request, method, type
+or finite count fails fingerprint validation at the same checkpoint identity.
+Wait-only reader descriptors cannot be staged as ordinary tasks. Hierarchical
+UUIDv5 operation namespaces and length-delimited loop/index/name material keep
+waits, iteration writers and legacy global writer aliases structurally disjoint;
+legacy global writer UUIDv5 semantics remain unchanged. Iteration checkpoint
+records carry Some(index), distinct from global None.
+
+The wait subscribes/marks revision before canonical Load and releases actor
+admission before parking. A successful immutable read is checked and saved while
+exclusive admission is retained; only its typed decision is stored (no actor
+upsert or fabricated actor invalidation). A saved matched observation replays
+before consulting live state, even after true-to-false flapping and host/RocksDB
+restart. Failed/dropped operations retain private attempt evidence; original
+owner generation, terminal reader revocation, cancellation and sticky uncertainty
+remain fences. No Load/Store/completion uncertainty is retried.
+
+Capacity regression executed on the corrected source:
+`/tmp/reboot-rust-control-flow-loop1-capacity-final2-proof.json` records 64 parked
+false predicates, ready workflow 65 completing without releasing them, the same
+progress after host recovery, configured-capacity scheduling rejection with state
+rollback, and undersized-recovery rejection. All 16 owned processes were reaped.
+The corresponding SDK all-target tests and SDK/generated workflow consumer strict
+Clippy gates passed (`/tmp/reboot-rust-capacity-final-{alltargets,clippy,consumer-clippy,native}.log`).
+This is targeted capacity/control-flow evidence, not a fresh run of every ignored
+native workflow or transaction acceptance.
+
+The fresh post-repair frozen run in [Verification](#verification) executed all
+three native workflow tests, including expanded capacity, subscription-before-read
+and false-before-idle barrier races, saved wait flap/restart, three typed iterations
+with exactly two checkpoints per finished iteration, ordinary RPC responsiveness
+and parked-owner shutdown. Its control-flow proof records 16 owned processes,
+all absent after cleanup. The 64 parked/ready-65 scenario is not a full 1024-body
+stress test. Earlier native/capacity runs remain separate revision-scoped evidence.
+
+Forced supervisor destruction revokes publication immediately, but each delivery
+captures the registry owner before spawn/first poll and retains it until future
+destruction. The controlled synchronous-callback unit test proves replacement
+claim rejection while an old child survives supervisor abortion, then successful
+claim after destruction. Its production spawn-helper mutant failed and restoration
+passed; this is focused lifetime evidence, not execution of the entire host's
+five-second forced-abort fallback or distributed fencing. Normal shutdown drains
+owned children before releasing ownership.
+
+Abort-drain preserves an already-selected delivery error using explicit fallback
+provenance, not Status-code/message classification. It can adopt one completed
+child error for a supervision fallback or successful cancellation, but does not
+overwrite an already-selected primary with secondary readiness failure. Two
+deterministic production-helper tests and an unconditional-overwrite causal mutant
+exercise this correction without clearing uncertainty or authorizing retry. This
+does not rank every concurrent failure by causal importance. Independent read-only
+ownership and R1 diagnostic reviews found no unresolved decisive defect in those
+bounded corrections; terminal execution/hash/cleanup audit is separate evidence.
+
+**Missing:** Python unbounded cursor/GC and arbitrary durable Break semantics,
 remote/cross-actor steps, nested transactions, mixed transaction/workflow services,
 declared workflow errors and full alias/seed semantics. No arbitrary external
 side-effect exactly-once claim. New retry proof does not inject Store/CompleteTask
@@ -420,7 +494,8 @@ lost ACK; existing uncertainty tests/source guards are separate evidence.
 **Executed acceptance:** [native restart tests](tests/workflow_native_restart.rs),
 [generated app](tests/fixtures/workflow_app/src/main.rs),
 [restart proof](tests/fixtures/workflow_app/prove_restart.py),
-[12-case body proof](tests/fixtures/workflow_app/prove_body_retry.py).
+[12-case body proof](tests/fixtures/workflow_app/prove_body_retry.py),
+[finite control-flow proof](tests/fixtures/workflow_app/prove_control_flow.py).
 This uses generated Create/ScheduleWork, not task-state seeding: future scheduling,
 concurrent ordinary Read while paused, same-host failure/success, first writer
 once, exhaustion, real transport/framework failures, cancellation, generation ABA,
@@ -523,7 +598,50 @@ parent/key bounds, unprepared recovery and lost-ACK retention. Unit coverage:
 
 ## Verification
 
-### Latest executed evidence and its limits
+### Latest post-repair executed evidence (2026-10-08)
+
+The sole-owner post-R1 frozen run completed **23/23 planned gates**:
+**21 exited zero**, while the deliberately stale ledger fingerprint exited 1
+and the existing legacy process-consumer strict Clippy baseline exited 101.
+Required gates passed; this is **not an all-green matrix**. The stale rejection
+was preserved before this reviewed documentation/fingerprint refresh; the checker
+was then rerun separately. Legacy generated dead-code/style diagnostics remain
+unresolved, rather than being suppressed or described as green.
+
+All-feature SDK all-target execution recorded **374 passed / 0 failed / 128 ignored**,
+including **317 library tests** and 28 generated downstream behavioral tests.
+Default and no-default library gates each passed 317 tests; these repeated
+configurations are not unique coverage totals. Six doctests passed. Strict SDK,
+no-default SDK and emitted workflow/map/reactive consumer Clippy passed, along
+with docs and formatting/diff checks. Emitted workflow/map all-target gates each
+executed zero tests: they establish compilation only, not native behavior.
+
+Actual native execution passed workflow **3**, ordinary-writer **10**, and focused
+precise-child-error **3** cases (the latter overlap the writer suite). The workflow
+gate preserved separate finite-control-flow, **12-case body-retry**, and named-step
+restart proofs. This run did not execute the complete ignored legacy/Native2pc,
+native map or native reactive matrices; their older proofs remain historical.
+
+Terminal audit matched **190 frozen source hashes**, all **23 gate-log hashes**,
+all **3 proof hashes**, the source manifest and canonical Database/app binaries;
+test-result counts matched the logs. Proof process counts were 16/50/11, all with
+recorded exits and no live recorded PIDs. Runner descendants were empty, its
+process group was empty and the target lock was released. Target/free disk bounds
+were checked. Documentation changes after this audit are separate from the freeze.
+
+Local evidence prefix:
+`/tmp/reboot-rust-control-flow-loop1-ownerfix-r1-1791441615138944047`
+with `-result.json`, `-source.json`, `-successor-audit.json` and separate
+`-5-{proof,retry-proof,legacy-proof}.json` artifacts. Read-only R1 review:
+`/tmp/reboot-rust-control-flow-loop1-r1-final-independent-review.md`.
+Focused diagnostic green/causal-red/restored-green logs:
+`/tmp/reboot-rust-ownerfix-r1-{green1,causal-red1,restored-green1}.log`
+(2 passed / 1 failed / 2 passed respectively, not unique-test totals).
+These local handles are not shipped or portable prerequisites. No newly injected
+workflow-wait Store/CompleteTask lost-ACK, Python cursor/GC/Break, distributed
+fencing or arbitrary external-effects exactly-once acceptance is claimed.
+
+### Historical corrected workflow evidence and its limits
 
 The corrected sole-owner workflow batch ran successfully on the runtime source
 represented by the baseline above: **22/22 gates green**, **312 library tests**
@@ -612,7 +730,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 9467d16016ba72b0d6aa6f0558bdde81a291762f2287653099409c91dd725291 -->
+<!-- parity-source-sha256: 125f43a7ee157e8d33683491b15066cfe125ffcfcca5780d7ca00db4a3728a96 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,
@@ -624,9 +742,10 @@ need their own acceptance, not more historical prose.
 
 ## Next higher-level priority
 
-Compose same-host durable workflow waits/control flow with typed reactive readers:
-durable iteration/checkpoint identity, cancellation-owned waits and restart-safe
-subscription establishment. First decide safe state/ownership authority from
-source; current iteration-zero and single-owner fences remain mandatory. This is
-a priority, **not implemented behavior**. Do not silently add global retry budgets,
-quarantine semantics or cross-actor guarantees to the existing finite-step API.
+Extend the bounded finite replay/wait vertical only after defining and exercising
+canonical unbounded iteration advancement/GC and durable Break authority, or a
+separate explicit application contract. Add new-wait Store/CompleteTask lost-ACK
+injection and full-bound saturation evidence before expanding those claims.
+Current Task iteration-zero and single-owner fences remain mandatory; these
+extensions are **not implemented behavior**. Do not silently add quarantine,
+distributed fencing or cross-actor guarantees to the existing finite-step API.

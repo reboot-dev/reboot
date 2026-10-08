@@ -150,6 +150,10 @@ fn emit_workflow_service(
                 rpc_methods.push_str(&format!("async fn {rust}(&self,request:tonic::Request<proto::{request}>)->Result<tonic::Response<proto::{response}>,tonic::Status> {{ let handler=self.handler.clone(); self.store.workflow_scheduling_writer::<{declaration},_,_,_>(\"{identity}\",&self.authorization,self.tasks.as_ref(),request,move |state,request,state_ref|Box::pin(async move {{handler.{rust}_scheduled(state,request,state_ref).await}})).await }}\n"));
             }
             DurableKind::Writer(WriterMetadata { constructor: true }) | DurableKind::Reader => {
+                if matches!(kind, DurableKind::Reader) {
+                    declarations.push_str(&format!("{runtime_module}::one_shot_tasks::TaskMethodDeclaration::new::<{declaration},proto::{request},proto::{response}>(\"{identity}\",\"{response_type}\",vec![]).workflow_reader_wait(),"));
+                    step_methods.push_str(&format!("pub async fn {rust}_until<H:{handler},P:Fn(&proto::{response})->bool+Send+Sync+'static>(context:&{runtime_module}::one_shot_tasks::WorkflowContext<'_>,handler:std::sync::Arc<H>,alias:&str,condition:&str,request:proto::{request},predicate:P)->Result<proto::{response},tonic::Status> {{ context.wait_reader::<{declaration},proto::{request},proto::{response},_,_>({runtime_module}::one_shot_tasks::WorkflowWaitName{{alias,condition}},\"{identity}\",\"{response_type}\",request,move |state,request| {{ let handler=handler.clone(); Box::pin(async move {{handler.{rust}(state,request).await}}) }},predicate).await }}\n"));
+                }
                 let mutable = matches!(kind, DurableKind::Writer(_));
                 let reference = if mutable { "&mut" } else { "&" };
                 let envelope = if mutable {

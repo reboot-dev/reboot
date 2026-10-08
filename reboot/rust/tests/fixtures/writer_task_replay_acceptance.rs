@@ -350,6 +350,8 @@ fn generated_writer_task_pre_store_exclusive_and_uncertain_ack_restart() {
         "store-ack",
         "complete-ack",
         "handler-status",
+        "handler-broken-pipe",
+        "handler-cancelled",
         "declared-ack",
     ] {
         let runtime = tokio::runtime::Runtime::new().unwrap();
@@ -408,6 +410,12 @@ fn generated_writer_task_pre_store_exclusive_and_uncertain_ack_restart() {
             "handler-status" => {
                 command.arg("--writer-handler-error");
             }
+            "handler-broken-pipe" => {
+                command.arg("--writer-handler-broken-pipe");
+            }
+            "handler-cancelled" => {
+                command.arg("--writer-handler-cancelled");
+            }
             _ => unreachable!(),
         }
         let mut host = WaitHostGuard(command.spawn().unwrap());
@@ -431,16 +439,17 @@ fn generated_writer_task_pre_store_exclusive_and_uncertain_ack_restart() {
             &db.endpoint(),
             id.clone(),
         ));
-        let expected = if matches!(vector, "pre-store" | "handler-status" | "declared-ack") {
-            12
-        } else {
-            15
-        };
+        let expected =
+            if vector.starts_with("handler-") || matches!(vector, "pre-store" | "declared-ack") {
+                12
+            } else {
+                15
+            };
         assert_eq!(
             runtime.block_on(load_state(&db.endpoint(), &reference)),
             Some(TaskCounter { value: expected }.encode_to_vec())
         );
-        if vector != "handler-status" {
+        if !vector.starts_with("handler-") {
             // Actual generated ordinary Apply must not enter while dispatcher holds its lease.
             let status = runtime.block_on(async {
                 let channel =
@@ -483,7 +492,7 @@ fn generated_writer_task_pre_store_exclusive_and_uncertain_ack_restart() {
             host.kill().unwrap();
             host.wait().unwrap();
         } else {
-            if vector != "handler-status" {
+            if !vector.starts_with("handler-") {
                 std::fs::write(boundary.with_extension("release"), b"release ACK failure").unwrap();
             }
             let start = std::time::Instant::now();
@@ -550,9 +559,7 @@ fn generated_writer_task_pre_store_exclusive_and_uncertain_ack_restart() {
             std::fs::read_to_string(format!("{}.writer-invocations", handler.display())).unwrap();
         assert_eq!(
             calls.lines().count(),
-            if vector == "handler-status" {
-                4
-            } else if vector == "pre-store" {
+            if vector.starts_with("handler-") || vector == "pre-store" {
                 2
             } else {
                 1

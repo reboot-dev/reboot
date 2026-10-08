@@ -9,6 +9,11 @@ fn generated_named_workflow_survives_three_actual_process_restarts() {
 fn generated_workflow_body_resumes_without_host_restart_and_fences_unsafe_failures() {
     proof("prove_body_retry.py");
 }
+#[test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real CXX/RocksDB"]
+fn generated_finite_iterations_and_reactive_decisions_survive_native_restart() {
+    proof("prove_control_flow.py");
+}
 fn proof(script: &str) {
     let fixture =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/workflow_app");

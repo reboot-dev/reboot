@@ -1,14 +1,16 @@
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
-fn generated_declared_reader_writer_restart_and_sealed_handler_retry() {
+fn generated_declared_reader_writer_restart_and_fenced_handler_failure() {
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/generated_cxx_database_process");
-    assert!(Command::new("cargo")
-        .args(["build", "--locked"])
-        .current_dir(&fixture)
-        .status()
-        .unwrap()
-        .success());
+    assert!(
+        Command::new("cargo")
+            .args(["build", "--locked"])
+            .current_dir(&fixture)
+            .status()
+            .unwrap()
+            .success()
+    );
     let binary = generated_host_binary(&fixture);
     for vector in ["reader", "writer", "retry", "before-cas"] {
         let runtime = tokio::runtime::Runtime::new().unwrap();
@@ -66,6 +68,50 @@ fn generated_declared_reader_writer_restart_and_sealed_handler_retry() {
             state_ref: reference.clone(),
             task_uuid: Uuid::parse_str(&uuid).unwrap().as_bytes().to_vec(),
         };
+        if vector == "retry" {
+            let start = std::time::Instant::now();
+            while host.try_wait().unwrap().is_none() {
+                assert!(start.elapsed() < Duration::from_secs(5));
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            assert!(!host.wait().unwrap().success());
+            assert_eq!(
+                runtime
+                    .block_on(task_vertical_acceptance::load_task(
+                        &db.endpoint(),
+                        id.clone()
+                    ))
+                    .status,
+                database::task::Status::Pending as i32
+            );
+            assert_eq!(
+                runtime.block_on(load_state(&db.endpoint(), &reference)),
+                Some(TaskCounter { value: 12 }.encode_to_vec())
+            );
+            let calls = format!("{}.writer-invocations", handler.display());
+            assert_eq!(
+                std::fs::read_to_string(&calls).unwrap().lines().count(),
+                1,
+                "arbitrary pre-Store handler Status must not retry live"
+            );
+            drop(host);
+            db.restart();
+            let mut command = writer_command(WriterHostOptions {
+                endpoint: &db.endpoint(),
+                ..options()
+            });
+            command.args(["--writer-wait", &uuid]);
+            if ack.exists() {
+                std::fs::remove_file(&ack).unwrap();
+            }
+            let mut host = WaitHostGuard(command.spawn().unwrap());
+            task_vertical_acceptance::await_marker(&ack, &mut host);
+            assert_eq!(std::fs::read_to_string(&ack).unwrap(), "15");
+            assert_eq!(std::fs::read_to_string(calls).unwrap().lines().count(), 2);
+            host.kill().unwrap();
+            host.wait().unwrap();
+            continue;
+        }
         let await_completed = || {
             let start = std::time::Instant::now();
             loop {
@@ -193,7 +239,20 @@ fn generated_declared_reader_writer_restart_and_sealed_handler_retry() {
             std::fs::read_to_string(&ack).unwrap(),
             if vector == "retry" { "15" } else { "4242" }
         );
-        assert_eq!(std::fs::read_to_string(&calls_path).unwrap().lines().count(), if vector == "retry" { 3 } else if vector == "before-cas" { 2 } else { 1 }, "Completed replay must skip handler; pre-CAS declared return is explicitly at least once");
+        assert_eq!(
+            std::fs::read_to_string(&calls_path)
+                .unwrap()
+                .lines()
+                .count(),
+            if vector == "retry" {
+                3
+            } else if vector == "before-cas" {
+                2
+            } else {
+                1
+            },
+            "Completed replay must skip handler; pre-CAS declared return is explicitly at least once"
+        );
         if let Some(terminal) = terminal {
             assert_eq!(
                 runtime.block_on(task_vertical_acceptance::load_task(&db.endpoint(), id)),

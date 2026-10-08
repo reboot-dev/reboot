@@ -135,7 +135,7 @@ pub(crate) struct ReaderScope {
     epoch: u64,
 }
 impl ReaderScope {
-    fn new(lifecycle: RecoveryCancellation) -> Self {
+    pub(crate) fn new(lifecycle: RecoveryCancellation) -> Self {
         let revocations = lifecycle.reader_revocations();
         let epoch = revocations.as_ref().map_or(0, |r| *r.borrow());
         Self {
@@ -155,7 +155,7 @@ impl ReaderScope {
         }
         Ok(())
     }
-    async fn revoked(&self) {
+    pub(crate) async fn revoked(&self) {
         let mut revisions = self.revocations.clone();
         tokio::select! { _ = self.lifecycle.reader_revoked() => {}, _ = async { if let Some(r) = &mut revisions { if *r.borrow() == self.epoch { let _ = r.changed().await; } } else { std::future::pending::<()>().await; } } => {}, }
     }

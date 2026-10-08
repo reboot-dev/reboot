@@ -209,6 +209,7 @@ pub struct TaskMethodDeclaration {
     errors: Vec<DeclaredTaskError>,
     workflow: bool,
     workflow_writer_step: bool,
+    workflow_reader_wait: bool,
 }
 pub struct DeclaredTaskError {
     type_url: &'static str,
@@ -250,18 +251,28 @@ impl TaskMethodDeclaration {
             errors,
             workflow: false,
             workflow_writer_step: false,
+            workflow_reader_wait: false,
         }
     }
     /// Immutable explicit workflow kind; never inferred from a reader binding.
     pub fn workflow(mut self) -> Self {
         self.workflow = true;
         self.workflow_writer_step = false;
+        self.workflow_reader_wait = false;
         self
     }
     /// Immutable named workflow writer-step contract, distinct from reader bindings.
     pub fn workflow_writer_step(mut self) -> Self {
         self.workflow = false;
         self.workflow_writer_step = true;
+        self.workflow_reader_wait = false;
+        self
+    }
+    /// Wait-only reader authority; never an ordinary scheduled task target.
+    pub fn workflow_reader_wait(mut self) -> Self {
+        self.workflow = false;
+        self.workflow_writer_step = false;
+        self.workflow_reader_wait = true;
         self
     }
     fn validate_terminal(&self, terminal: &db::task::ResponseOrError) -> Result<(), Status> {
@@ -299,10 +310,36 @@ struct Inner {
     recovery_request: Mutex<Option<db::RecoverRequest>>,
     running_owner: Mutex<Option<Arc<()>>>,
     uncertain: tokio::sync::watch::Sender<bool>,
+    max_live: std::sync::atomic::AtomicUsize,
     #[cfg(feature = "test-support")]
     completed_operations: std::sync::atomic::AtomicUsize,
 }
 impl OneShotTasks {
+    /// Set the host-owned pending/delivery budget before recovery starts.
+    /// Defaults to the durable admission bound (1024). Parked bodies consume
+    /// this budget, so scheduling rejects excess Pending rather than accepting
+    /// work that cannot run until another workflow's predicate becomes true.
+    /// Recovery also rejects a pending set above this budget. RPC admission is
+    /// separate; every accepted due ID has a delivery slot.
+    pub fn set_max_live_deliveries(&self, limit: usize) -> Result<(), Status> {
+        if limit == 0 || limit > MAX_TASKS {
+            return Err(Status::invalid_argument("live task limit must be 1..1024"));
+        }
+        let owner = self
+            .inner
+            .running_owner
+            .lock()
+            .expect("task owner mutex poisoned");
+        if owner.is_some() || self.inner.active.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(Status::failed_precondition(
+                "delivery budget is immutable after host recovery starts",
+            ));
+        }
+        self.inner
+            .max_live
+            .store(limit, std::sync::atomic::Ordering::Release);
+        Ok(())
+    }
     pub fn new(
         store: DatabaseActorStore,
         state_type: String,
@@ -349,6 +386,7 @@ impl OneShotTasks {
                 recovery_request: Mutex::new(None),
                 running_owner: Mutex::new(None),
                 uncertain: tokio::sync::watch::channel(false).0,
+                max_live: std::sync::atomic::AtomicUsize::new(MAX_TASKS),
                 #[cfg(feature = "test-support")]
                 completed_operations: 0.into(),
             }),
@@ -595,6 +633,14 @@ impl OneShotTasks {
                 return Err(Status::invalid_argument("duplicate task UUID"));
             }
             scheduled_at(task)?;
+            if self
+                .declaration(task)
+                .is_some_and(|d| d.workflow_reader_wait)
+            {
+                return Err(Status::failed_precondition(
+                    "reader wait descriptor cannot be scheduled as a task",
+                ));
+            }
             if self.is_workflow(task) {
                 if !self.inner.binding.writer_capable() {
                     return Err(Status::failed_precondition(
@@ -712,9 +758,13 @@ impl OneShotTasks {
                 std::future::pending::<()>().await;
             }
         }
-        if pending.len().saturating_add(tasks.len()) > MAX_TASKS {
+        let max_live = self
+            .inner
+            .max_live
+            .load(std::sync::atomic::Ordering::Acquire);
+        if pending.len().saturating_add(tasks.len()) > max_live {
             return Err(Status::resource_exhausted(
-                "pending plus staged tasks exceed 1024",
+                "pending plus staged tasks exceed live delivery budget",
             ));
         }
         // Caller retains the participant exclusive actor admission until staging.
@@ -892,8 +942,11 @@ impl OneShotTasks {
             let terminal = match receipt.outcome {
                 WriterTaskOutcome::Terminal(terminal) => terminal,
                 WriterTaskOutcome::PreStoreFailure(error) => {
+                    // Pre-Store does not establish local computation provenance:
+                    // handlers can perform external IO. Never implicitly retry
+                    // an ordinary writer's arbitrary Status.
                     whole_execution.acknowledged();
-                    return Ok(Some(error));
+                    return Err(error);
                 }
             };
             self.validate_terminal(&task, &terminal)?;
@@ -1202,6 +1255,65 @@ impl DispatchOwner {
             .expect("task owner mutex poisoned") = Some(Arc::new(()));
         Ok(Self { tasks, key })
     }
+    fn revoke(&self) {
+        // Revoke publication immediately, but retain registry ownership until
+        // the last delivery future has actually been destroyed.
+        let mut owner = self
+            .tasks
+            .inner
+            .running_owner
+            .lock()
+            .expect("task owner mutex poisoned");
+        *owner = None;
+        self.tasks
+            .inner
+            .active
+            .store(false, std::sync::atomic::Ordering::Release);
+        *self
+            .tasks
+            .inner
+            .recovery_request
+            .lock()
+            .expect("task recovery mutex poisoned") = None;
+    }
+}
+struct DispatchSupervisorOwner(Arc<DispatchOwner>);
+impl Drop for DispatchSupervisorOwner {
+    fn drop(&mut self) {
+        self.0.revoke();
+    }
+}
+fn spawn_owned_delivery<T: Send + 'static>(
+    deliveries: &mut JoinSet<T>,
+    owner: &Arc<DispatchOwner>,
+    delivery: impl std::future::Future<Output = T> + Send + 'static,
+) {
+    // Capture before spawn/first poll: forced supervisor abortion only requests
+    // child abortion; a synchronous callback may still be executing elsewhere.
+    let owner = owner.clone();
+    deliveries.spawn(async move {
+        let _owner = owner;
+        delivery.await
+    });
+}
+async fn abort_drain_deliveries(
+    deliveries: &mut JoinSet<(Vec<u8>, Result<(), Status>)>,
+    mut result: Result<(), Status>,
+    mut replace_fallback: bool,
+) -> Result<(), Status> {
+    deliveries.abort_all();
+    while let Some(joined) = deliveries.join_next().await {
+        if let Ok((_, Err(error))) = joined {
+            // A selected owned-work error is primary. Only a supervision
+            // fallback (or successful cancellation) may adopt a child error;
+            // subsequent readiness failures cannot overwrite that diagnostic.
+            if replace_fallback || result.is_ok() {
+                result = Err(error);
+                replace_fallback = false;
+            }
+        }
+    }
+    result
 }
 impl Drop for DispatchOwner {
     fn drop(&mut self) {
@@ -1252,7 +1364,17 @@ impl HostRecovery for OneShotTaskRecovery {
             ));
         }
         let owner = DispatchOwner::claim(self.tasks.clone())?;
+        let max_live = self
+            .tasks
+            .inner
+            .max_live
+            .load(std::sync::atomic::Ordering::Acquire);
         let pending = self.tasks.pending(self.request.clone()).await?;
+        if pending.len() > max_live {
+            return Err(Status::resource_exhausted(
+                "recovered pending tasks exceed live delivery budget",
+            ));
+        }
         *self
             .tasks
             .inner
@@ -1275,23 +1397,39 @@ impl HostRecovery for OneShotTaskRecovery {
             .active
             .store(true, std::sync::atomic::Ordering::Release);
         supervisor.spawn(async move {
-            let _owner = owner;
-            // A single owner serializes handler deliveries. Notifications are
-            // coalesced hints, never task payloads; durable scans cover ambiguous
-            // notifications lost after acknowledged participant release. A root
-            // with an uncertain durable handoff fails the supervised host instead.
+            let _owner = DispatchSupervisorOwner(Arc::new(owner));
+            // One child per admitted ID, bounded by the admission budget.
+            // Parked bodies cannot consume slots promised to other accepted IDs.
+            // Completed-but-not-yet-joined children can briefly occupy slots;
+            // canonical rescans retry after they are joined, without detached work.
+            // Exclusive actor admission still serializes durable state operations.
+            let mut deliveries = JoinSet::new();
             let work = async {
                 cancel.public_ready().await?;
                 let mut pending = pending;
+                let mut inflight = HashSet::new();
                 loop {
                     for task in pending {
                         cancel.public_ready().await?;
                         // Future work does not block immediate tasks later in
                         // this batch. Canonical rescans remain bounded and own
                         // all scheduling; no detached timer is created.
-                        if schedule_due(&task)? { tasks.execute(task, &cancel).await?; }
+                        let id = task.task_id.clone().ok_or_else(|| Status::data_loss("pending task lacks ID"))?;
+                        let key = id.task_uuid.clone();
+                        if schedule_due(&task)? && !inflight.contains(&key) {
+                            if deliveries.len() >= max_live { continue; }
+                            inflight.insert(key.clone());
+                            let tasks = tasks.clone();
+                            let cancel = cancel.clone();
+                            spawn_owned_delivery(&mut deliveries, &_owner.0, async move { (key, tasks.execute(task, &cancel).await) });
+                        }
                     }
                     tokio::select! {
+                        joined = deliveries.join_next(), if !deliveries.is_empty() => {
+                            let (id,result) = joined.expect("nonempty delivery set").map_err(|e| Status::internal(format!("task delivery child failed: {e}")))?;
+                            inflight.remove(&id);
+                            result?;
+                        },
                         _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {},
                         signal = receiver.recv() => { if signal.is_none() { return Ok(()); } },
                     }
@@ -1309,12 +1447,15 @@ impl HostRecovery for OneShotTaskRecovery {
                     }
                 }
             };
-            let result = tokio::select! {
+            let (result, replace_fallback) = tokio::select! {
                 biased;
-                result = failure => result,
-                _ = cancel.cancelled() => Ok(()),
-                result = work => result,
+                result = work => (result, false),
+                result = failure => (result, true),
+                _ = cancel.cancelled() => (Ok(()), true),
             };
+            // Keep an already-selected work diagnostic primary while adopting
+            // one completed child error instead of a supervision fallback.
+            let result = abort_drain_deliveries(&mut deliveries, result, replace_fallback).await;
             // DispatchOwner Drop revokes active/generation together under the
             // synchronous publication mutex; do not split that linearization.
             if *tasks.inner.uncertain.borrow() {
@@ -2293,6 +2434,196 @@ mod tests {
                 .load(std::sync::atomic::Ordering::Acquire)
         );
         assert!(first.inner.recovery_request.lock().unwrap().is_none());
+    }
+    #[tokio::test]
+    async fn delivery_budget_defaults_to_admission_bound_and_is_frozen_by_owner() {
+        let tasks = OneShotTasks::new(
+            DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(),
+            "test.DeliveryBudget".into(),
+            "actor".into(),
+            Binding,
+        )
+        .unwrap();
+        assert_eq!(
+            tasks
+                .inner
+                .max_live
+                .load(std::sync::atomic::Ordering::Acquire),
+            MAX_TASKS
+        );
+        for invalid in [0, MAX_TASKS + 1] {
+            assert_eq!(
+                tasks.set_max_live_deliveries(invalid).unwrap_err().code(),
+                tonic::Code::InvalidArgument
+            );
+        }
+        tasks.set_max_live_deliveries(2).unwrap();
+        let owner = DispatchOwner::claim(tasks.clone()).unwrap();
+        assert_eq!(
+            tasks.set_max_live_deliveries(3).unwrap_err().code(),
+            tonic::Code::FailedPrecondition
+        );
+        drop(owner);
+        tasks.set_max_live_deliveries(MAX_TASKS).unwrap();
+    }
+    #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+    async fn forced_supervisor_abort_retains_owner_until_synchronous_delivery_drops() {
+        let store = DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap();
+        let tasks = OneShotTasks::new(
+            store.clone(),
+            "test.ForcedOwner".into(),
+            "blocked-callback".into(),
+            Binding,
+        )
+        .unwrap();
+        let replacement = OneShotTasks::new(
+            store,
+            "test.ForcedOwner".into(),
+            "blocked-callback".into(),
+            Binding,
+        )
+        .unwrap();
+        let owner = Arc::new(DispatchOwner::claim(tasks.clone()).unwrap());
+        let weak = Arc::downgrade(&owner);
+        tasks
+            .inner
+            .active
+            .store(true, std::sync::atomic::Ordering::Release);
+        *tasks.inner.recovery_request.lock().unwrap() = Some(db::RecoverRequest::default());
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        // Always release the synchronous callback even when an assertion unwinds.
+        struct Release(Option<std::sync::mpsc::Sender<()>>);
+        impl Drop for Release {
+            fn drop(&mut self) {
+                if let Some(sender) = self.0.take() {
+                    let _ = sender.send(());
+                }
+            }
+        }
+        let mut release = Release(Some(release_tx));
+        let supervisor = tokio::spawn(async move {
+            let owner = DispatchSupervisorOwner(owner);
+            let mut deliveries = JoinSet::new();
+            spawn_owned_delivery(&mut deliveries, &owner.0, async move {
+                // Real synchronous application callback, not a cooperatively parked future.
+                let callback = || {
+                    let _ = entered_tx.send(());
+                    release_rx
+                        .recv_timeout(std::time::Duration::from_secs(30))
+                        .unwrap();
+                };
+                callback();
+            });
+            while deliveries.join_next().await.is_some() {}
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(2), entered_rx)
+            .await
+            .unwrap()
+            .unwrap();
+        supervisor.abort(); // Same destruction policy as host's timeout fallback.
+        assert!(supervisor.await.unwrap_err().is_cancelled());
+        let retained = weak
+            .upgrade()
+            .expect("blocked delivery must retain registry owner");
+        assert!(
+            matches!(DispatchOwner::claim(replacement.clone()), Err(e) if e.code() == tonic::Code::AlreadyExists)
+        );
+        assert!(
+            !tasks
+                .inner
+                .active
+                .load(std::sync::atomic::Ordering::Acquire)
+        );
+        assert!(tasks.inner.running_owner.lock().unwrap().is_none());
+        assert!(tasks.inner.recovery_request.lock().unwrap().is_none());
+        assert!(tasks.validate_staged(&[]).await.is_err());
+        drop(retained);
+        release.0.take().unwrap().send(()).unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while weak.upgrade().is_some() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        // Final child destruction, not supervisor abortion, releases the registry.
+        drop(DispatchOwner::claim(replacement).unwrap());
+    }
+    #[tokio::test]
+    async fn delivery_drain_preserves_selected_primary_over_readiness_failure() {
+        let (cancel, readiness) = RecoveryCancellation::test_host();
+        let (uncertain, _) = tokio::sync::watch::channel(false);
+        let mut deliveries = JoinSet::new();
+        let primary_cancel = cancel.clone();
+        let primary_uncertain = uncertain.clone();
+        deliveries.spawn(async move {
+            primary_uncertain.send_replace(true);
+            primary_cancel.fail();
+            (
+                vec![1],
+                Err(Status::failed_precondition("primary writer rejection")),
+            )
+        });
+        // Join the primary before allowing the second delivery to observe its
+        // readiness failure; no sleep or scheduler-order assumption is needed.
+        let (_, primary) = deliveries.join_next().await.unwrap().unwrap();
+        let secondary_cancel = cancel.clone();
+        let (finished_tx, finished_rx) = tokio::sync::oneshot::channel();
+        deliveries.spawn(async move {
+            let secondary = secondary_cancel.public_ready().await;
+            assert_eq!(
+                secondary.as_ref().unwrap_err().code(),
+                tonic::Code::Unavailable
+            );
+            let _ = finished_tx.send(());
+            (vec![2], secondary)
+        });
+        finished_rx.await.unwrap();
+        // On this current-thread runtime, the sender's poll finishes its task
+        // before the receiving test resumes. The completed secondary is drained.
+        let error = abort_drain_deliveries(&mut deliveries, primary, false)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.code(),
+            tonic::Code::FailedPrecondition,
+            "secondary readiness failure must not replace selected primary"
+        );
+        assert_eq!(error.message(), "primary writer rejection");
+        assert!(deliveries.is_empty());
+        assert!(*uncertain.borrow());
+        assert_eq!(
+            *readiness.borrow(),
+            crate::application_host::RecoveryState::Failed
+        );
+        assert_eq!(
+            cancel.public_ready().await.unwrap_err().code(),
+            tonic::Code::Unavailable
+        );
+    }
+    #[tokio::test]
+    async fn delivery_drain_replaces_only_supervision_fallback() {
+        let mut deliveries = JoinSet::new();
+        let (finished_tx, finished_rx) = tokio::sync::oneshot::channel();
+        deliveries.spawn(async move {
+            let _ = finished_tx.send(());
+            (
+                vec![1],
+                Err(Status::data_loss("precise checkpoint rejection")),
+            )
+        });
+        finished_rx.await.unwrap();
+        let error = abort_drain_deliveries(
+            &mut deliveries,
+            Err(Status::unavailable("uncertainty supervision fallback")),
+            true,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.code(), tonic::Code::DataLoss);
+        assert_eq!(error.message(), "precise checkpoint rejection");
+        assert!(deliveries.is_empty());
     }
     #[tokio::test]
     async fn duplicate_local_owner_rejected_and_drop_releases_registration() {

@@ -16,12 +16,13 @@ fn decode_workflow_checkpoint<R: Message + Default>(
     key: Uuid,
     fingerprint: &[u8],
     response_type: &str,
+    iteration: Option<u64>,
 ) -> Result<R, Status> {
     if mutation.state_type != id.state_type
         || mutation.state_ref != id.state_ref
         || mutation.key != key.as_bytes()
         || mutation.workflow_id.as_deref() != Some(id.task_uuid.as_slice())
-        || mutation.workflow_iteration.is_some()
+        || mutation.workflow_iteration != iteration
         || !mutation.task_ids.is_empty()
         || fingerprint.is_empty()
         || mutation.request_fingerprint.as_deref() != Some(fingerprint)
@@ -68,11 +69,49 @@ mod workflow_checkpoint_tests {
                 &id,
                 key,
                 &[1, 2],
-                "type.googleapis.com/Counter"
+                "type.googleapis.com/Counter",
+                None
             )
             .unwrap()
             .value,
             7
+        );
+        let mut scoped = record.clone();
+        scoped.workflow_iteration = Some(0);
+        assert_eq!(
+            decode_workflow_checkpoint::<proto::Counter>(
+                &scoped,
+                &id,
+                key,
+                &[1, 2],
+                "type.googleapis.com/Counter",
+                Some(0)
+            )
+            .unwrap()
+            .value,
+            7
+        );
+        assert!(
+            decode_workflow_checkpoint::<proto::Counter>(
+                &scoped,
+                &id,
+                key,
+                &[1, 2],
+                "type.googleapis.com/Counter",
+                Some(1)
+            )
+            .is_err()
+        );
+        assert!(
+            decode_workflow_checkpoint::<proto::Counter>(
+                &scoped,
+                &id,
+                key,
+                &[1, 2],
+                "type.googleapis.com/Counter",
+                None
+            )
+            .is_err()
         );
         for vector in 0..10 {
             let mut bad = record.clone();
@@ -94,7 +133,8 @@ mod workflow_checkpoint_tests {
                     &id,
                     key,
                     &[1, 2],
-                    "type.googleapis.com/Counter"
+                    "type.googleapis.com/Counter",
+                    None
                 )
                 .is_err(),
                 "vector {vector}"
@@ -106,7 +146,8 @@ mod workflow_checkpoint_tests {
                 &id,
                 key,
                 &[],
-                "type.googleapis.com/Counter"
+                "type.googleapis.com/Counter",
+                None
             )
             .is_err()
         );
@@ -116,7 +157,8 @@ mod workflow_checkpoint_tests {
                 &id,
                 key,
                 &[1, 2],
-                "type.googleapis.com/Other"
+                "type.googleapis.com/Other",
+                None
             )
             .is_err()
         );
@@ -143,12 +185,12 @@ impl DatabaseActorStore {
     pub(crate) async fn workflow_writer_step<D, Q, R, F>(
         &self,
         scope: &crate::one_shot_tasks::WorkflowContext<'_>,
-        alias: &str,
+        (alias, condition): (&str, Option<&str>),
         method: &'static str,
         response_type: &'static str,
         request: Q,
         invoke: F,
-    ) -> Result<R, Status>
+    ) -> Result<Option<R>, Status>
     where
         D: DurableStateDeclaration + 'static,
         Q: Message + Default + Send + 'static,
@@ -156,7 +198,8 @@ impl DatabaseActorStore {
         F: for<'a> FnOnce(
             &'a mut D::State,
             Q,
-        ) -> Pin<Box<dyn Future<Output = Result<R, Status>> + Send + 'a>>,
+        )
+            -> Pin<Box<dyn Future<Output = Result<Option<R>, Status>> + Send + 'a>>,
     {
         let task = scope.task();
         let id = task
@@ -165,20 +208,32 @@ impl DatabaseActorStore {
             .ok_or_else(|| Status::failed_precondition("missing workflow task"))?;
         let seed = Uuid::from_slice(&id.task_uuid)
             .map_err(|_| Status::failed_precondition("invalid workflow UUID"))?;
-        let key = Uuid::new_v5(&seed, alias.as_bytes());
+        let iteration = scope.checkpoint_iteration();
+        let scoped_alias = scope.checkpoint_alias(alias);
+        let key = scope.checkpoint_key(seed, alias, condition);
         // Pin workflow method/request, alias, writer method, response type and
         // canonical writer request. No legacy/incomplete record is accepted.
-        let identity = format!(
+        let mut identity = format!(
             "reboot.workflow.named-step.v1:{}:{}:{}:{}:{}",
             task.method,
             task.request
                 .iter()
                 .map(|b| format!("{b:02x}"))
                 .collect::<String>(),
-            alias,
+            scoped_alias,
             method,
             response_type
         );
+        if scope.checkpoint_iteration().is_some() {
+            identity.push_str(&format!(":finite-bound={}", scope.checkpoint_bound()));
+        }
+        if let Some(condition) = condition {
+            identity.push_str(&format!(
+                ":wait-condition={}:{}",
+                condition.len(),
+                condition
+            ));
+        }
         let fingerprint = request_fingerprint(&identity, &request);
         let mut stream = self
             .database
@@ -188,7 +243,7 @@ impl DatabaseActorStore {
                 state_ref: id.state_ref.clone(),
                 idempotency_key: Some(key.as_bytes().to_vec()),
                 workflow_id: Some(id.task_uuid.clone()),
-                workflow_iteration: None,
+                workflow_iteration: iteration,
             })
             .await?
             .into_inner();
@@ -208,12 +263,13 @@ impl DatabaseActorStore {
                     key,
                     &fingerprint,
                     response_type,
+                    iteration,
                 )?);
             }
         }
         scope.validate_scope().await?;
         if let Some(saved) = saved {
-            return Ok(saved);
+            return Ok(Some(saved));
         }
         let mut legacy = self
             .database
@@ -242,8 +298,15 @@ impl DatabaseActorStore {
             .await?
             .ok_or_else(|| Status::failed_precondition("workflow requires existing actor"))?;
         scope.validate_scope().await?;
-        let response = invoke(&mut state, request).await?;
+        let Some(response) = invoke(&mut state, request).await? else {
+            return Ok(None);
+        };
         scope.validate_scope().await?;
+        if condition.is_some() && response.encoded_len() > 1048576 {
+            return Err(Status::resource_exhausted(
+                "workflow wait snapshot exceeds 1MiB",
+            ));
+        }
         let mut operation = scope.durable();
         let commit_attempt = self
             .actor_gate(&id.state_type, &id.state_ref)
@@ -251,11 +314,15 @@ impl DatabaseActorStore {
         self.database
             .clone()
             .store(database::StoreRequest {
-                actor_upserts: vec![database::Actor {
-                    state_type: id.state_type.clone(),
-                    state_ref: id.state_ref.clone(),
-                    state: Some(state.encode_to_vec()),
-                }],
+                actor_upserts: if condition.is_some() {
+                    vec![]
+                } else {
+                    vec![database::Actor {
+                        state_type: id.state_type.clone(),
+                        state_ref: id.state_ref.clone(),
+                        state: Some(state.encode_to_vec()),
+                    }]
+                },
                 idempotent_mutation: Some(database::IdempotentMutation {
                     state_type: id.state_type.clone(),
                     state_ref: id.state_ref.clone(),
@@ -266,7 +333,7 @@ impl DatabaseActorStore {
                     }
                     .encode_to_vec(),
                     workflow_id: Some(id.task_uuid.clone()),
-                    workflow_iteration: None,
+                    workflow_iteration: iteration,
                     request_fingerprint: Some(fingerprint),
                     task_ids: vec![],
                 }),
@@ -277,10 +344,14 @@ impl DatabaseActorStore {
                 sync: true,
             })
             .await?;
-        commit_attempt.acknowledged();
+        if condition.is_some() {
+            commit_attempt.checkpoint_acknowledged();
+        } else {
+            commit_attempt.acknowledged();
+        }
         scope.validate_scope().await?;
         operation.acknowledged();
-        Ok(response)
+        Ok(Some(response))
     }
     /// Ordinary generated writer plus atomic durable scheduling. Host owner and
     /// canonical actor identity are mandatory; scheduling never calls task RPCs.

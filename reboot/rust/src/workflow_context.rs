@@ -55,6 +55,88 @@ mod workflow_admission_tests {
         drop(operation); // failed, cancelled or swallowed framework operation
         assert!(!attempt.clean());
     }
+    #[tokio::test]
+    async fn finite_checkpoint_namespaces_are_disjoint_and_iteration_errors_fence_retry() {
+        let store = DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap();
+        let tasks =
+            OneShotTasks::new(store, D::STATE_TYPE.into(), "actor".into(), Binding(true)).unwrap();
+        assert!(tasks.set_max_live_deliveries(0).is_err());
+        assert!(tasks.set_max_live_deliveries(1025).is_err());
+        tasks.set_max_live_deliveries(2).unwrap();
+        let wait_owner = OneShotTasks::new_with_declarations(
+            tasks.inner.store.clone(),
+            D::STATE_TYPE.into(),
+            "actor".into(),
+            Binding(false),
+            vec![
+                TaskMethodDeclaration::new::<D, crate::proto::Counter, crate::proto::Counter>(
+                    "tests.Service.Query",
+                    "type.googleapis.com/Counter",
+                    vec![],
+                )
+                .workflow_reader_wait(),
+            ],
+        )
+        .unwrap();
+        let wait_task = db::Task {
+            task_id: Some(db::TaskId {
+                state_type: D::STATE_TYPE.into(),
+                state_ref: "actor".into(),
+                task_uuid: uuid::Uuid::new_v4().as_bytes().to_vec(),
+            }),
+            method: "Query".into(),
+            status: db::task::Status::Pending as i32,
+            ..Default::default()
+        };
+        assert_eq!(
+            wait_owner.validate(&[wait_task]).unwrap_err().code(),
+            tonic::Code::FailedPrecondition
+        );
+        let owner = DispatchOwner::claim(tasks.clone()).unwrap();
+        assert!(tasks.set_max_live_deliveries(3).is_err());
+        drop(owner);
+        let task = db::Task::default();
+        let cancel = RecoveryCancellation::new();
+        let attempt = WorkflowAttempt::default();
+        let context = WorkflowContext {
+            tasks: &tasks,
+            task: &task,
+            cancel: &cancel,
+            generation: Arc::new(()),
+            attempt: &attempt,
+            iteration: None,
+        };
+        let seed = uuid::Uuid::new_v4();
+        let scoped = context.iteration("a:1", 0, 3).unwrap();
+        let legacy_alias = scoped.checkpoint_alias("gate");
+        let keys = [
+            context.checkpoint_key(seed, &legacy_alias, None),
+            scoped.checkpoint_key(seed, "gate", None),
+            scoped.checkpoint_key(seed, "gate", Some("condition.v1")),
+            context.checkpoint_key(seed, "gate", Some("condition.v1")),
+            context
+                .iteration("a", 1, 3)
+                .unwrap()
+                .checkpoint_key(seed, "gate", None),
+            context
+                .iteration("a:1", 1, 3)
+                .unwrap()
+                .checkpoint_key(seed, "gate", None),
+        ];
+        assert_eq!(keys.iter().collect::<HashSet<_>>().len(), keys.len());
+        assert_eq!(
+            context.checkpoint_key(seed, "first", None),
+            uuid::Uuid::new_v5(&seed, b"first")
+        );
+        assert_eq!(
+            scoped.checkpoint_key(seed, "gate", Some("condition.v1")),
+            scoped.checkpoint_key(seed, "gate", Some("changed.v2")),
+            "condition changes must collide at same checkpoint key and fail fingerprint validation, never create a fresh decision"
+        );
+        assert!(attempt.clean());
+        assert!(scoped.iteration("nested", 0, 1).is_err());
+        assert!(!attempt.clean());
+    }
     #[test]
     fn acknowledged_framework_operations_do_not_taint_body_resumption() {
         let attempt = WorkflowAttempt::default();
@@ -188,7 +270,9 @@ impl Drop for WorkflowAttemptOperation<'_> {
 }
 
 /// Private, dispatcher-minted workflow authority. Explicit named same-actor
-/// writer steps only. No loop, subscription, external effects or nested calls.
+/// typed named writer steps and checkpointed immutable-reader waits. Explicit
+/// finite indexed replay scopes only; no unbounded Task cursor, external effects
+/// or cross-actor/nested calls.
 /// Construction is private, even to generated application consumers:
 /// ```compile_fail
 /// use reboot_rust_schema::one_shot_tasks::WorkflowContext;
@@ -201,6 +285,7 @@ pub struct WorkflowContext<'a> {
     cancel: &'a RecoveryCancellation,
     generation: Arc<()>,
     attempt: &'a WorkflowAttempt,
+    iteration: Option<(String, u64, u64)>,
 }
 /// Consumed private receipt: user callbacks cannot manufacture completion.
 /// Explicit body disposition. Status propagation is always nonretryable, even
@@ -216,6 +301,11 @@ impl From<Status> for WorkflowBodyError {
         Self::Failed(error)
     }
 }
+/// Explicit versioned pure-condition contract for a durable typed observation.
+pub struct WorkflowWaitName<'a> {
+    pub alias: &'a str,
+    pub condition: &'a str,
+}
 pub struct WorkflowReceipt {
     task: db::Task,
     outcome: WorkflowOutcome,
@@ -224,7 +314,238 @@ enum WorkflowOutcome {
     Terminal(db::task::ResponseOrError),
     PreStoreBodyFailure(Status),
 }
-impl WorkflowContext<'_> {
+impl<'a> WorkflowContext<'a> {
+    /// Explicit finite replay scope, not an unbounded Task cursor. Restart replays
+    /// the bounded body; acknowledged typed decisions/effects are loaded, never
+    /// re-evaluated. Use the same loop name, count, indices and named calls on replay.
+    /// Nested scopes and more than 1024 iterations are rejected.
+    pub fn iteration(
+        &self,
+        alias: &str,
+        index: u64,
+        count: u64,
+    ) -> Result<WorkflowContext<'a>, Status> {
+        let operation = self.attempt.operation();
+        if self.iteration.is_some()
+            || alias.is_empty()
+            || alias.len() > 256
+            || alias.chars().any(char::is_control)
+            || count == 0
+            || count > 1024
+            || index >= count
+        {
+            return Err(Status::invalid_argument(
+                "invalid finite workflow iteration scope",
+            ));
+        }
+        let context = WorkflowContext {
+            tasks: self.tasks,
+            task: self.task,
+            cancel: self.cancel,
+            generation: self.generation.clone(),
+            attempt: self.attempt,
+            iteration: Some((alias.to_owned(), index, count)),
+        };
+        operation.acknowledged();
+        Ok(context)
+    }
+    pub(crate) fn checkpoint_iteration(&self) -> Option<u64> {
+        self.iteration.as_ref().map(|(_, index, _)| *index)
+    }
+    pub(crate) fn checkpoint_bound(&self) -> u64 {
+        self.iteration.as_ref().map_or(0, |(_, _, count)| *count)
+    }
+    pub(crate) fn checkpoint_key(
+        &self,
+        seed: uuid::Uuid,
+        alias: &str,
+        condition: Option<&str>,
+    ) -> uuid::Uuid {
+        if self.iteration.is_none() && condition.is_none() {
+            return uuid::Uuid::new_v5(&seed, alias.as_bytes());
+        }
+        let domain = match (self.iteration.is_some(), condition.is_some()) {
+            (true, false) => b"reboot.finite.writer.v1".as_slice(),
+            (true, true) => b"reboot.finite.wait.v1".as_slice(),
+            (false, true) => b"reboot.named.wait.v1".as_slice(),
+            (false, false) => unreachable!(),
+        };
+        let namespace = uuid::Uuid::new_v5(&seed, domain);
+        let mut encoded = Vec::new();
+        if let Some((name, index, _)) = &self.iteration {
+            encoded.extend_from_slice(&(name.len() as u64).to_be_bytes());
+            encoded.extend_from_slice(name.as_bytes());
+            encoded.extend_from_slice(&index.to_be_bytes());
+        }
+        encoded.extend_from_slice(&(alias.len() as u64).to_be_bytes());
+        encoded.extend_from_slice(alias.as_bytes());
+        uuid::Uuid::new_v5(&namespace, &encoded)
+    }
+    pub(crate) fn checkpoint_alias(&self, alias: &str) -> String {
+        match &self.iteration {
+            None => alias.to_owned(),
+            Some((name, index, _)) => format!(
+                "reboot.loop:{}:{}:{}:{}:{}",
+                name.len(),
+                name,
+                index,
+                alias.len(),
+                alias
+            ),
+        }
+    }
+
+    /// Checkpointed same-actor generated immutable reader wait. Subscribe before
+    /// checking canonical state; mark before Load. Only a matched typed result is
+    /// durably acknowledged. Restart replays that result even if state flaps false.
+    /// `condition` names a versioned trusted pure predicate contract; closure
+    /// semantics cannot be introspected. Reusing an alias with a different named
+    /// condition fails closed. Change its version whenever its meaning changes.
+    /// There is no actor lease while parked, and no retry of a failed framework call.
+    pub async fn wait_reader<D, Q, R, F, P>(
+        &self,
+        name: WorkflowWaitName<'_>,
+        method: &'static str,
+        response_type: &'static str,
+        request: Q,
+        read: F,
+        predicate: P,
+    ) -> Result<R, Status>
+    where
+        D: crate::runtime::DurableStateDeclaration + 'static,
+        Q: prost::Message + Default + Clone + Send + 'static,
+        R: prost::Message + Default + Clone + Send + 'static,
+        F: for<'s> Fn(
+                &'s D::State,
+                Q,
+            ) -> std::pin::Pin<
+                Box<dyn std::future::Future<Output = Result<R, Status>> + Send + 's>,
+            > + Send
+            + Sync
+            + 'static,
+        P: Fn(&R) -> bool + Send + Sync + 'static,
+    {
+        let operation = self.attempt.operation();
+        let WorkflowWaitName { alias, condition } = name;
+        if alias.is_empty()
+            || alias.len() > 256
+            || alias.chars().any(char::is_control)
+            || condition.is_empty()
+            || condition.len() > 256
+            || condition.chars().any(char::is_control)
+        {
+            return Err(Status::invalid_argument(
+                "wait requires bounded explicit checkpoint and condition names",
+            ));
+        }
+        let id = self
+            .task
+            .task_id
+            .as_ref()
+            .ok_or_else(|| Status::failed_precondition("missing workflow ID"))?;
+        let declaration = self
+            .tasks
+            .inner
+            .declarations
+            .iter()
+            .find(|d| d.method == method)
+            .ok_or_else(|| Status::failed_precondition("unregistered workflow reader"))?;
+        let probe = db::Task {
+            method: method.rsplit('.').next().unwrap_or("").to_owned(),
+            ..self.task.clone()
+        };
+        if !declaration.workflow_reader_wait
+            || declaration.workflow
+            || declaration.workflow_writer_step
+            || declaration.declaration != std::any::TypeId::of::<D>()
+            || declaration.request != std::any::TypeId::of::<Q>()
+            || declaration.response != std::any::TypeId::of::<R>()
+            || declaration.response_type != response_type
+            || id.state_type != D::STATE_TYPE
+            || self.tasks.inner.binding.is_writer(&probe)
+        {
+            return Err(Status::failed_precondition(
+                "workflow reader descriptor mismatch",
+            ));
+        }
+        let gate = self
+            .tasks
+            .inner
+            .store
+            .actor_gate(&id.state_type, &id.state_ref);
+        let mut revisions = gate.committed_revisions();
+        let reader_scope = crate::reactive::ReaderScope::new(self.cancel.clone());
+        reader_scope.check()?;
+        let read = Arc::new(read);
+        let predicate = Arc::new(predicate);
+        loop {
+            reader_scope.check()?;
+            if revisions.borrow_and_update().1 {
+                return Err(Status::unavailable("actor commit outcome uncertain"));
+            }
+            #[cfg(feature = "test-support")]
+            self.wait_test_pause("REBOOT_TEST_WORKFLOW_WAIT_BEFORE_READ")
+                .await?;
+            let result = {
+                let _lease = gate.exclusive().await;
+                reader_scope.check()?;
+                self.validate_scope().await?;
+                self.tasks
+                    .inner
+                    .store
+                    .workflow_writer_step::<D, Q, R, _>(
+                        self,
+                        (alias, Some(condition)),
+                        method,
+                        response_type,
+                        request.clone(),
+                        {
+                            let read = read.clone();
+                            let predicate = predicate.clone();
+                            move |state, request| {
+                                Box::pin(async move {
+                                    let response = read(state, request).await?;
+                                    Ok(predicate(&response).then_some(response))
+                                })
+                            }
+                        },
+                    )
+                    .await?
+            };
+            reader_scope.check()?;
+            if let Some(result) = result {
+                operation.acknowledged();
+                return Ok(result);
+            }
+            #[cfg(feature = "test-support")]
+            self.wait_test_pause("REBOOT_TEST_WORKFLOW_WAIT_AFTER_FALSE")
+                .await?;
+            // Do not mark after Load: a racing acknowledged commit stays pending.
+            tokio::select! {
+                biased;
+                _=self.cancel.cancelled()=>return Err(Status::cancelled("workflow wait cancelled")),
+                _=reader_scope.revoked()=>return Err(Status::unavailable("workflow reader authority revoked")),
+                changed=revisions.changed()=>changed.map_err(|_|Status::unavailable("actor revision owner lost"))?,
+            }
+            self.validate_scope().await?;
+        }
+    }
+
+    #[cfg(feature = "test-support")]
+    async fn wait_test_pause(&self, name: &str) -> Result<(), Status> {
+        if let Some(path) = std::env::var_os(name) {
+            let path = std::path::PathBuf::from(path);
+            std::fs::write(&path, name).map_err(|e| Status::internal(e.to_string()))?;
+            let release = path.with_extension("release");
+            tokio::time::timeout(std::time::Duration::from_secs(10),async {
+                while !release.exists() {
+                    tokio::select! { biased; _=self.cancel.cancelled()=>return Err(Status::cancelled("workflow wait test barrier cancelled")),_=tokio::time::sleep(std::time::Duration::from_millis(5))=>{} }
+                }
+                self.validate_scope().await
+            }).await.map_err(|_|Status::deadline_exceeded("workflow wait test barrier timeout"))??;
+        }
+        Ok(())
+    }
     pub fn task(&self) -> &db::Task {
         self.task
     }
@@ -368,10 +689,20 @@ impl WorkflowContext<'_> {
             .tasks
             .inner
             .store
-            .workflow_writer_step::<D, Q, R, F>(self, alias, method, response_type, request, invoke)
+            .workflow_writer_step::<D, Q, R, _>(
+                self,
+                (alias, None),
+                method,
+                response_type,
+                request,
+                move |state, request| {
+                    let future = invoke(state, request);
+                    Box::pin(async move { future.await.map(Some) })
+                },
+            )
             .await?;
         operation.acknowledged();
-        Ok(response)
+        response.ok_or_else(|| Status::internal("writer step omitted result"))
     }
     pub(crate) fn durable(&self) -> DurableTaskOperation<'_> {
         DurableTaskOperation {
@@ -393,6 +724,11 @@ impl WorkflowContext<'_> {
         R: prost::Message + Default + 'static,
     {
         let operation = self.attempt.operation();
+        if self.iteration.is_some() {
+            return Err(Status::failed_precondition(
+                "finish requires outer workflow scope",
+            ));
+        }
         let declaration = self
             .tasks
             .declaration(self.task)
@@ -507,6 +843,7 @@ impl OneShotTasks {
             cancel,
             generation: generation.clone(),
             attempt: &attempt,
+            iteration: None,
         };
         context.validate_scope().await?;
         {
@@ -546,6 +883,7 @@ impl OneShotTasks {
             cancel,
             generation: generation.clone(),
             attempt: &attempt,
+            iteration: None,
         }
         .validate_scope()
         .await?;

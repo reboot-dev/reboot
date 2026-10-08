@@ -147,7 +147,15 @@ with tempfile.TemporaryDirectory(prefix="rust-workflow-loop84-cxx-") as d:
                     host.wait(timeout=10)
                     assert host.returncode != 0
                     log = Path(next(e["log"] for e in processes if e["pid"] == host.pid)).read_text()
-                    assert ("owner changed during admission" if mode == "aba-backoff" else "durable task outcome uncertain") in log, log
+                    if mode == "aba-backoff":
+                        assert "owner changed during admission" in log, log
+                    else:
+                        # Concurrent owner supervision may observe the root's
+                        # sticky uncertainty before the parked body's scope check.
+                        assert any(message in log for message in (
+                            "durable task outcome uncertain",
+                            "scheduling root outcome uncertain; restart host through durable recovery",
+                        )), log
                 assert events().count("body") == 1
                 before = json.loads(run("inspect", database, handle))
             elif mode in ["load-failure", "finish-failure"]:

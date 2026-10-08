@@ -2084,6 +2084,11 @@ pub(crate) struct ActorCommitAttempt {
     acknowledged: bool,
 }
 impl ActorCommitAttempt {
+    /// A durable control checkpoint changed no actor state; disarm uncertainty
+    /// without fabricating a reader invalidation.
+    pub(crate) fn checkpoint_acknowledged(mut self) {
+        self.acknowledged = true;
+    }
     pub(crate) fn acknowledged(mut self) {
         self.gate.committed();
         self.acknowledged = true;
