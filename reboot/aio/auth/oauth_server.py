@@ -172,6 +172,19 @@ def _bearer_token(request: Request) -> Optional[str]:
     return token
 
 
+def _cookie_may_authenticate(request: Request) -> bool:
+    """Whether the session cookie on `request` counts as a credential.
+
+    A browser attaches the cookie to cross-site requests too, so a page
+    on another site could otherwise get a route served as the signed-in
+    user. `Sec-Fetch-Site` says who made the request: `same-origin` and
+    `none` (the user navigated here) count; `same-site` and `cross-site`
+    do not. A client that sends no such header is not a browser, and
+    any cookie it sends it chose to send."""
+    site = request.headers.get("sec-fetch-site")
+    return site is None or site in ("same-origin", "none")
+
+
 def _compute_code_challenge(code_verifier: str) -> str:
     """The PKCE S256 code challenge for `code_verifier` (RFC 7636
     4.2): the URL-safe, unpadded base64 of its SHA-256 digest."""
@@ -412,6 +425,20 @@ class OAuthServer:
         # The consent page template, compiled lazily on first render so
         # only apps that actually serve an OAuth flow pay for it.
         self._consent_page_template: Optional[Template] = None
+
+    def verify_token(self, request: Request) -> Optional[UserId]:
+        """The user `request` is signed in as, by the access JWT in its
+        `Authorization: Bearer` header or in its session cookie, when
+        that counts (`_cookie_may_authenticate`); `None` otherwise.
+        `require_oauth_token=True` routes verify with this."""
+        token = _bearer_token(request)
+        if token is None and _cookie_may_authenticate(request):
+            token = request.cookies.get(SESSION_COOKIE_NAME)
+        if token is None:
+            return None
+        decoded = self._verify_jwt(token, "access")
+        sub = decoded.get("sub") if decoded is not None else None
+        return UserId(sub) if sub else None
 
     @property
     def token_verifier(self) -> OAuthTokenVerifier:
@@ -1939,9 +1966,9 @@ class OAuthServer:
         generated React hooks can resolve without the front end
         threading the user_id through every call.
 
-        The session comes from the `rbt_session` cookie, or, failing
-        that, from an `Authorization: Bearer` access JWT. The bearer
-        form is what a native app uses: it holds its access token
+        The session comes from an `Authorization: Bearer` access JWT
+        or, when none is present, from the `rbt_session` cookie. The
+        bearer form is what a native app uses: it holds its access token
         directly (it signed in through the authorization-code flow
         rather than the browser one, and has no cookie jar shared with
         the backend), and this is how it learns its `default_ids`
@@ -1976,9 +2003,9 @@ class OAuthServer:
         # The cookie's value IS the access JWT, so either way the
         # token we verify is the one we hand back — the front end's
         # bearer and its session then expire in lockstep.
-        access_token = request.cookies.get(SESSION_COOKIE_NAME)
+        access_token = _bearer_token(request)
         if access_token is None:
-            access_token = _bearer_token(request)
+            access_token = request.cookies.get(SESSION_COOKIE_NAME)
         if access_token is None:
             return JSONResponse({"authenticated": False})
         decoded = self._verify_jwt(access_token, "access")

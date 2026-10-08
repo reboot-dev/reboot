@@ -31,9 +31,11 @@ export {
   DefaultStateIdsContext,
   useMcpApp,
   useMcpToolData,
+  useRefreshBearerToken,
   useRefreshMCPBearerToken,
   type McpAppContextValue,
   type DefaultStateIdsContextValue,
+  type RefreshBearerToken,
 } from "./internal/index.js";
 import {
   BearerRefreshContext,
