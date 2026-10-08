@@ -29,7 +29,7 @@ fn emit_local_readers(
     output.push_str(
         "_ => Err(tonic::Status::unimplemented(\"not a generated local unary reader\")), } } }\n",
     );
-    output.push_str(&format!("/// Typed Rust-only subscription client. No automatic stream retries/reconnect.\npub struct {service}ReactiveClient {{ client: {runtime}::reactive::wire::local_readers_client::LocalReadersClient<tonic::transport::Channel>, context: {runtime}::ExternalContext }}\nimpl {service}ReactiveClient {{ pub fn new(channel: tonic::transport::Channel, context: {runtime}::ExternalContext) -> Self {{ Self {{ client: {runtime}::reactive::wire::local_readers_client::LocalReadersClient::new(channel), context }} }}\n"));
+    output.push_str(&format!("/// Typed Rust-only subscription client. No automatic stream retries/reconnect.\npub struct {service}ReactiveClient {{ channel: tonic::transport::Channel, context: {runtime}::ExternalContext }}\nimpl {service}ReactiveClient {{ pub fn new(channel: tonic::transport::Channel, context: {runtime}::ExternalContext) -> Self {{ Self {{ channel, context }} }}\n"));
     for (kind, method, request, response, identity) in readers {
         let (error, decode) = if declared_database_errors(annotation, kind, identity).is_empty() {
             (
@@ -45,12 +45,7 @@ fn emit_local_readers(
         } else {
             format!("{decode}(tonic::Status::invalid_argument(e.to_string()))")
         };
-        let rpc_map = if error == "tonic::Status" {
-            String::new()
-        } else {
-            format!(".map_err({decode})")
-        };
-        output.push_str(&format!("pub async fn {method}(&mut self, request: proto::{request}) -> Result<{runtime}::reactive::TypedSubscription<proto::{response}, {error}>, {error}> {{ let request = self.context.reader({runtime}::reactive::wire::Query {{ method: \"{identity}\".to_owned(), request: prost::Message::encode_to_vec(&request) }}).map_err(|e| {input_error})?; let stream = self.client.subscribe(request).await{rpc_map}?.into_inner(); Ok({runtime}::reactive::TypedSubscription::new(stream, {decode})) }}\n"));
+        output.push_str(&format!("pub async fn {method}(&mut self, request: proto::{request}) -> Result<{runtime}::reactive::TypedSubscription<proto::{response}, {error}>, {error}> {{ self.{method}_connect(request, None).await }}\n pub async fn {method}_with_timeout(&mut self, request: proto::{request}, timeout: std::time::Duration) -> Result<{runtime}::reactive::TypedSubscription<proto::{response}, {error}>, {error}> {{ self.{method}_connect(request, Some(timeout)).await }}\n async fn {method}_connect(&self, request: proto::{request}, timeout: Option<std::time::Duration>) -> Result<{runtime}::reactive::TypedSubscription<proto::{response}, {error}>, {error}> {{ let mut request = self.context.reader({runtime}::reactive::wire::Query {{ method: \"{identity}\".to_owned(), request: prost::Message::encode_to_vec(&request) }}).map_err(|e| {input_error})?; if let Some(timeout) = timeout {{ request.set_timeout(timeout); }} {runtime}::reactive::TypedSubscription::connect(self.channel.clone(), request, {decode}).await }}\n"));
     }
     output.push_str("}\n");
 }

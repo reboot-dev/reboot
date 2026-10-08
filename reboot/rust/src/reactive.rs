@@ -323,34 +323,125 @@ impl<B: ReaderBinding> wire::local_readers_server::LocalReaders for LocalReaderS
         }))
     }
 }
-/// Generated typed client result; dropping it cancels the underlying Tonic RPC.
-/// Terminal rich statuses use the generated method's declared-error decoder.
+/// One typed local observation stream with explicit, caller-driven reconnection.
+/// Reconnection starts a fresh authenticated scope/baseline, not event replay.
+/// There are no automatic retries; terminal errors disconnect the stream.
+/// Dropping/cancelling reconnect drops its RPC; the old stream is dropped first.
 pub struct TypedSubscription<T, E> {
-    stream: tonic::Streaming<wire::Snapshot>,
+    stream: Option<tonic::Streaming<wire::Snapshot>>,
+    channel: tonic::transport::Channel,
+    query: wire::Query,
+    metadata: tonic::metadata::MetadataMap,
+    deadline: Option<tokio::time::Instant>,
     decode_error: fn(Status) -> E,
     _type: std::marker::PhantomData<T>,
 }
 impl<T: Message + Default, E> TypedSubscription<T, E> {
     #[doc(hidden)]
-    pub fn new(stream: tonic::Streaming<wire::Snapshot>, decode_error: fn(Status) -> E) -> Self {
-        Self {
-            stream,
+    pub async fn connect(
+        channel: tonic::transport::Channel,
+        request: Request<wire::Query>,
+        decode_error: fn(Status) -> E,
+    ) -> Result<Self, E> {
+        let deadline =
+            crate::durable_participant::prepare_request_deadline(&request).map_err(decode_error)?;
+        let (metadata, _, query) = request.into_parts();
+        let mut subscription = Self {
+            stream: None,
+            channel,
+            query,
+            metadata,
+            deadline,
             decode_error,
             _type: std::marker::PhantomData,
+        };
+        subscription.reconnect().await?;
+        Ok(subscription)
+    }
+    /// Drop the current RPC, retaining query, caller metadata and deadline.
+    pub fn disconnect(&mut self) {
+        self.stream.take();
+    }
+    /// Close the previous RPC, then issue ONE fresh Subscribe with the original
+    /// query/metadata. A failed or cancelled attempt leaves this disconnected.
+    /// An original explicit deadline is not reset. Reconnection does not adopt
+    /// any old server authority or guarantee delivery of intervening states.
+    pub async fn reconnect(&mut self) -> Result<(), E> {
+        self.disconnect();
+        let mut request = Request::new(self.query.clone());
+        *request.metadata_mut() = self.metadata.clone();
+        if let Some(deadline) = self.deadline {
+            let remaining = deadline
+                .checked_duration_since(tokio::time::Instant::now())
+                .filter(|duration| !duration.is_zero())
+                .ok_or_else(|| {
+                    (self.decode_error)(Status::deadline_exceeded("subscription deadline elapsed"))
+                })?;
+            request.set_timeout(remaining);
         }
+        let mut client = wire::local_readers_client::LocalReadersClient::new(self.channel.clone());
+        let connect = client.subscribe(request);
+        let response = match self.deadline {
+            Some(deadline) => tokio::time::timeout_at(deadline, connect)
+                .await
+                .map_err(|_| {
+                    (self.decode_error)(Status::deadline_exceeded("subscription deadline elapsed"))
+                })?,
+            None => connect.await,
+        };
+        if self.expired() {
+            return Err((self.decode_error)(Status::deadline_exceeded(
+                "subscription deadline elapsed",
+            )));
+        }
+        let response = response.map_err(self.decode_error)?;
+        self.stream = Some(response.into_inner());
+        Ok(())
+    }
+    fn expired(&self) -> bool {
+        self.deadline
+            .is_some_and(|deadline| deadline <= tokio::time::Instant::now())
     }
     pub async fn message(&mut self) -> Result<Option<T>, E> {
-        let Some(snapshot) = self.stream.message().await.map_err(self.decode_error)? else {
+        if self.stream.is_some() && self.expired() {
+            self.disconnect();
+            return Err((self.decode_error)(Status::deadline_exceeded(
+                "subscription deadline elapsed",
+            )));
+        }
+        let Some(stream) = self.stream.as_mut() else {
             return Ok(None);
         };
-        T::decode(snapshot.response.as_slice())
-            .map(Some)
-            .map_err(|e| {
-                (self.decode_error)(Status::data_loss(format!(
-                    "invalid typed reactive snapshot: {e}"
-                )))
-            })
+        let next = stream.message();
+        let received = match self.deadline {
+            Some(deadline) => tokio::time::timeout_at(deadline, next)
+                .await
+                .unwrap_or_else(|_| {
+                    Err(Status::deadline_exceeded("subscription deadline elapsed"))
+                }),
+            None => next.await,
+        };
+        if self.expired() {
+            self.disconnect();
+            return Err((self.decode_error)(Status::deadline_exceeded(
+                "subscription deadline elapsed",
+            )));
+        }
+        let decoded = received.and_then(|snapshot| {
+            snapshot
+                .map(|snapshot| {
+                    T::decode(snapshot.response.as_slice()).map_err(|e| {
+                        Status::data_loss(format!("invalid typed reactive snapshot: {e}"))
+                    })
+                })
+                .transpose()
+        });
+        if !matches!(decoded, Ok(Some(_))) {
+            self.stream.take();
+        }
+        decoded.map_err(self.decode_error)
     }
 }
 
 include!("reactive_tests.rs");
+include!("reactive_reconnect_tests.rs");

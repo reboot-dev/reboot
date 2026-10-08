@@ -106,3 +106,19 @@ cargo clippy --manifest-path backend/Cargo.toml --all-targets -- -D warnings
 cargo fmt --manifest-path backend/Cargo.toml -- --check
 cargo test --manifest-path backend/Cargo.toml --all-targets
 ```
+
+## Explicit reactive reconnection
+
+`client watch-reconnect [deadline_ms]` retains a single typed query and caller
+metadata in one client process. It prints an initial snapshot; enter `next` to
+pull a change, `reconnect` to close the old RPC and start a fresh authenticated
+scope/baseline, `disconnect` to pause, or `quit` to release it. Reconnect errors
+are printed and leave it disconnected. There is no automatic retry by status.
+
+Generated `snapshot` subscriptions expose `disconnect()` and `reconnect()`.
+`snapshot_with_timeout(request, duration)` applies one absolute subscription
+budget across reads and explicit reconnects; reconnect never resets it.
+A successful reconnect emits the current baseline even if unchanged. It may
+lose/coalesce intermediate states while disconnected: no durable events, cursor
+resume, remote invalidation, or Python React interoperability are claimed.
+Server scope/auth is evaluated anew; this does not resurrect revoked authority.

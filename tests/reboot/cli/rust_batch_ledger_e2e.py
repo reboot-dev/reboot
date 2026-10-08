@@ -176,6 +176,34 @@ class Watch:
         self.out.close()
 
 
+class ReconnectingWatch:
+    def __init__(self):
+        self.log = STAGE / 'reconnecting-watch.log'
+        self.out = self.log.open('w')
+        self.proc = subprocess.Popen([str(TARGET / 'debug/client'), 'watch-reconnect', '600000'], cwd=APP, env=ENV,
+            stdin=subprocess.PIPE, stdout=self.out, stderr=subprocess.STDOUT, text=True, start_new_session=True)
+        evidence['live_handles'].append({'kind': 'reconnecting-watch', 'pid': self.proc.pid, 'log': str(self.log)})
+        checkpoint()
+        until(lambda: 'batch-001 3 0 0 1' in self.log.read_text(), 'persistent typed subscription baseline')
+
+    def send(self, command, expected):
+        offset = self.log.stat().st_size
+        self.proc.stdin.write(command + '\n'); self.proc.stdin.flush()
+        def observed():
+            assert self.proc.poll() is None, self.log.read_text()
+            return expected in self.log.read_bytes()[offset:].decode()
+        until(observed, 'explicit reactive ' + command, 20)
+        check('persistent reactive ' + command + ' ' + expected)
+        return self.log.read_bytes()[offset:].decode()
+
+    def close(self, expect_success=True):
+        if self.proc.poll() is None:
+            self.proc.stdin.write('quit\n'); self.proc.stdin.flush()
+        self.proc.wait(timeout=5)
+        self.proc.stdin.close(); self.out.close()
+        check('persistent reconnect client reaped', (not expect_success or self.proc.returncode == 0) and not Path(f'/proc/{self.proc.pid}').exists())
+
+
 def list_denied(code, token=None, server='local-rust'):
     with grpc.insecure_channel(f'127.0.0.1:{PORT}') as channel:
         request = tasks_pb2.ListTasksRequest()
@@ -295,6 +323,7 @@ def rebuild(session, text):
 
 
 current = None
+reconnecting = None
 watch = None
 task_watch = None
 try:
@@ -334,6 +363,7 @@ try:
     changed, status = client('submit', 'changed', '3', '11111111-1111-4111-8111-111111111111', ok=False)
     check('submit fingerprint collision rejected', status != 0)
     watch = Watch('initial')
+    reconnecting = ReconnectingWatch()
     check('index zero not implicitly approved', read()[2:4] == ['0', '0'])
     pending, status = client('wait', uuid, '150', ok=False)
     check('typed pending Wait preserves deadline', status != 0 and ('DeadlineExceeded' in pending or 'Cancelled' in pending))
@@ -360,6 +390,14 @@ try:
     wait_state(1, 1)
     state, rows, _, mutations = native(current, uuid)
     check('atomic approval persisted map/app and saved step', state.approved == 1 and state.completed == 1 and logical_keys(rows) == ['batch-001:0000'] and mutations)
+    for _ in range(4):
+        observed = reconnecting.send('next', 'batch-001')
+        if 'batch-001 3 1 1 1' in observed:
+            break
+    else:
+        raise AssertionError('live typed subscriber missed acknowledged checkpoint')
+    check('persistent subscription live committed change')
+    reconnecting.send('reconnect', 'batch-001 3 1 1 1')
     before = events(current)
     check('one checkpoint before restart', sum('checkpoint-batch-001-0' in line for line in before) == 1)
     path = APP / 'api/batch_ledger/v1/batch.proto'
@@ -372,12 +410,19 @@ try:
     watch = Watch('after-rebuild')
     check('new stream persisted baseline', 'batch-001 3 1 1 1' in watch.log.read_text())
     watch.close(); watch = None
+    reconnecting.send('reconnect', 'batch-001 3 1 1 1')
+    reconnecting.send('disconnect', 'DISCONNECTED')
     reader_zero(current)
     rebuild(current, original)
     wait_state(1, 1)
     check('watch preserves pending workflow checkpoint', native(current, uuid)[0].completed == 1)
+    reconnecting.send('reconnect', 'batch-001 3 1 1 1')
     current.close(); current = None
+    reconnecting.send('reconnect', 'DISCONNECTED Unavailable')
     current = Session('parked-restart')
+    reconnecting.send('reconnect', 'batch-001 3 1 1 1')
+    reconnecting.close(); reconnecting = None
+    reader_zero(current)
     wait_state(1, 1)
     check('same pending UUID survives full RocksDB restart', native(current, uuid)[2].status == db.Task.PENDING)
     listed(uuid, 'STARTED')
@@ -465,6 +510,8 @@ try:
     evidence['accepted'] = True
 finally:
     if not timeout_seen:
+        if reconnecting is not None:
+            reconnecting.close(expect_success=False)
         if task_watch is not None:
             task_watch.close()
         if watch is not None:

@@ -2548,7 +2548,7 @@ impl TransactionId for database::AbortRequest {
     }
 }
 
-fn prepare_request_deadline<T>(
+pub(crate) fn prepare_request_deadline<T>(
     request: &Request<T>,
 ) -> Result<Option<tokio::time::Instant>, Status> {
     let Some(timeout) = request.metadata().get("grpc-timeout") else {

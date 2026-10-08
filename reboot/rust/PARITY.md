@@ -23,9 +23,10 @@ No overall percentage is asserted.
 - **Missing:** required semantics/API are absent or explicitly rejected. A
   rejected operation is not an implementation waiting for a compiler flag.
 
-The latest declared-workflow-error vertical was implemented on baseline
-`ba58bae69fb047b52e637525b36aa19227c7a7b5` (2026-10-08). The original public
-batch app was based on `e2a6bdc5914a8c152eb48c102c3dc91249cc4ead`. Executed
+The latest explicit reactive-reconnect vertical was implemented on baseline
+`dfb8734c9834f31a2038d36deb8bbadfb6e80601` (2026-10-08). Declared workflow
+terminals were implemented from `ba58bae69fb047b52e637525b36aa19227c7a7b5`;
+the original public batch app was based on `e2a6bdc5914a8c152eb48c102c3dc91249cc4ead`. Executed
 public Cargo/native application acceptance and retained greeting regressions
 are described in [Verification](#verification). Older workflow/transaction
 proofs below retain their separate source snapshots and limits.
@@ -40,7 +41,7 @@ proofs below retain their separate source snapshots and limits.
 | Transactions | Legacy durable coordinator/participant paths and bounded supervised chains/star | General nested snapshots, reentrancy, intersecting subtrees, migration |
 | Tasks | Durable scheduled reader/writer tasks, typed results/Wait, recovery, admin local list/stream | Transactional targets, public cancellation/aggregation, broad retry and dispatcher fencing |
 | Workflows | Finite typed named steps, finite indexed replay, saved reader decisions, typed declared business terminals; explicit local-body resumption | Python unbounded Task cursor/GC/Break, cross-actor composition, framework failure isolation |
-| Reactive readers | Typed bounded local subscriptions and commit invalidation | Cross-actor/remote invalidation, reconnect, mixed-service generated bindings |
+| Reactive readers | Typed bounded local subscriptions, commit invalidation and explicit same-query reconnect | Cross-actor/remote invalidation, transparent reconnect/durable resume, mixed-service generated bindings |
 | SortedMap | Canonical empty constructor and serial same-host app/map transactions | Public inbound adapter, nested/reusable siblings, distributed collection lifecycle |
 
 ## Local app development
@@ -604,6 +605,19 @@ terminates existing/new subscriptions with Unavailable rather than silently goin
 stale; a later write does not clear the latch. Restart/re-read is required. This
 is not exactly-once notification after a lost ACK.
 
+Generated subscriptions retain the exact query, caller metadata, channel and
+method-specific error decoder. `disconnect()` releases the current RPC but keeps
+that plan; explicit `reconnect()` drops the old RPC before awaiting a single new
+Subscribe. Failed/cancelled attempts leave it disconnected. A new authenticated
+server scope emits a fresh baseline, even if equal; intervening states may be
+lost/coalesced. There is no automatic status-based retry or durable resume cursor.
+The generated `*_with_timeout(request, duration)` client entry point captures one
+absolute budget across reads/reconnects and sends only its remaining duration.
+Expiry is checked before and after awaited IO: Tokio timeout alone is insufficient
+when a buffered value/header is ready. There is no independent client idle-expiry
+task; the deadline is enforced when the client reads or explicitly reconnects.
+Remote cursor destruction is asynchronous, not an acknowledged teardown barrier.
+
 **Missing:** mixed transaction/workflow-service generated subscription bindings,
 cross-actor dependencies, distributed or remote-process invalidation, transparent
 reconnect/resumption. This uses a Rust-specific local service, not canonical React
@@ -671,6 +685,56 @@ parent/key bounds, unprepared recovery and lost-ACK retention. Unit coverage:
 [ownership tests](src/sorted_map_ownership_tests.rs).
 
 ## Verification
+
+### Explicit reactive reconnect in the public application (2026-10-08)
+
+Fresh public Cargo generation passed emitted-consumer strict Clippy/fmt and
+**four behavioral tests**. Actual `rbt dev run`/C++ Database/RocksDB acceptance
+retained one generated `watch-reconnect` client PID/query. `next` observed live
+approval/checkpoint changes; explicit reconnect returned equal current baselines,
+including after native live proto replacement and full durable restart. Explicit
+disconnect reclaimed reader slots; stopped-host reconnect returned Unavailable
+without exiting the client, then a caller-requested reconnect succeeded after
+recovery. Quit reaped that client and reader slots returned to zero. The existing
+batch approval/map/rollback, canonical task/replay/typed Wait/declared-error,
+regeneration, delayed task, task-list/stream and shutdown/lock regressions passed.
+
+Six new local live-Tonic controls (12 reactive tests including retained controls)
+exercise query/ASCII/binary metadata retention, equal fresh baselines, eventual
+old-RPC release, failed/cancelled reconnect, terminal Unavailable/PermissionDenied,
+malformed snapshot, exact Subscribe counts/no automatic retries, and absolute
+budgets including buffered snapshots/ready headers after expiry. These are local
+client controls, not C++ distributed authority or native credential-revocation
+proof. The native stopped-host status alone does not establish retry absence.
+
+Three RED paths were exercised: retaining the old stream failed the parked
+Subscribe cancellation control; the uncorrected buffered-snapshot path returned
+Ok(Some(Counter7)) after expiry; removing the reconnect postcheck accepted a ready
+header after expiry. Restoration passed 12 tests. Notification-before-response is
+not an explicit client transport-buffer acknowledgement; actual mutant failures
+establish sensitivity to the production gates. Targeted read-only repair review
+found no remaining confirmed deadline defect.
+
+Accepted immutable native proof:
+`/tmp/reboot-rust-batch-ledger-acceptance-1791458706014249420`
+(`accepted.json`, `frozen-source.json`, `native/result.json`). The prior native run
+`/tmp/reboot-rust-batch-ledger-acceptance-1791457669489224470` preceded the deadline
+repair and is **superseded, not final publication evidence**. Control logs:
+`/tmp/reboot-rust-reactive-reconnect-controls-1791457557441175078`.
+Broad frozen gates:
+`/tmp/reboot-rust-batch-ledger-final-gates-1791459295060650678` passed strict locked
+all-target SDK Clippy, **393 passed / 0 failed / 128 ignored**, and actual retained
+greeting regeneration/restart/signals/child-exit/failed-build cleanup. Ignored
+native matrices are not fresh passes. Both final manifests were unchanged during
+their runs; this canonical ledger/digest update is later metadata.
+
+This is explicit fresh-snapshot reconnection, **not** transparent recovery,
+durable event replay, cursor resume, remote invalidation or canonical Python React
+protocol parity. Client idle expiry has no independent spawned deadline watcher.
+Portable sources: [client/server ownership](src/reactive.rs),
+[generated surface](src/reactive_codegen.rs),
+[local controls](src/reactive_reconnect_tests.rs),
+[public native acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
 
 ### Declared workflow business-error application (2026-10-08)
 
@@ -981,7 +1045,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 2ca34c1ef782bd1c73e264fd249994b45524653112194ab3fb73884e80a3e0ac -->
+<!-- parity-source-sha256: 1bc4f859271f15ac326d705034ee6c93226206452e15b03cb5ca13d23450233d -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

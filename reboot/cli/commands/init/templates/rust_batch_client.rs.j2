@@ -175,6 +175,52 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
+        "watch-reconnect" => {
+            use std::io::BufRead;
+            let mut client = generated::LedgerViewMethodsReactiveClient::new(channel, context);
+            let mut stream = client
+                .snapshot_with_timeout(
+                    proto::Empty {},
+                    Duration::from_millis(
+                        args.get(1)
+                            .map(|s| s.parse())
+                            .transpose()?
+                            .unwrap_or(600_000),
+                    ),
+                )
+                .await?;
+            println!("CONNECTED");
+            if let Some(state) = stream.message().await? {
+                show(state);
+            }
+            // Explicit commands, not an automatic status-based reconnect loop.
+            for line in std::io::stdin().lock().lines() {
+                match line?.trim() {
+                    "reconnect" => match stream.reconnect().await {
+                        Ok(()) => {
+                            println!("CONNECTED");
+                            match stream.message().await {
+                                Ok(Some(state)) => show(state),
+                                Ok(None) => println!("CLOSED"),
+                                Err(error) => println!("DISCONNECTED {:?}", error.code()),
+                            }
+                        }
+                        Err(error) => println!("DISCONNECTED {:?}", error.code()),
+                    },
+                    "next" => match stream.message().await {
+                        Ok(Some(state)) => show(state),
+                        Ok(None) => println!("CLOSED"),
+                        Err(error) => println!("DISCONNECTED {:?}", error.code()),
+                    },
+                    "disconnect" => {
+                        stream.disconnect();
+                        println!("DISCONNECTED");
+                    }
+                    "quit" => break,
+                    _ => return Err("expected next, reconnect, disconnect, or quit".into()),
+                }
+            }
+        }
         "watch" => {
             let mut client = generated::LedgerViewMethodsReactiveClient::new(channel, context);
             let mut stream = client.snapshot(proto::Empty {}).await?;
