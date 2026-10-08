@@ -27,3 +27,15 @@ _UI_ASSETS_PREFIX = "/ui-assets/"
 _request_user_agent: contextvars.ContextVar[str | None] = (
     contextvars.ContextVar("_request_user_agent", default=None)
 )
+
+# The URL the incoming request reached the application at, as
+# `reboot_url_from_request` in `context.py` derives it. Set by
+# `mcp_asgi_app` in `factories.py` beside the User-Agent. Read by the
+# patched `FastMCP.list_tools` there, which folds it into each UI's
+# cache-bust token: the page a host is given embeds this URL, so a
+# change of URL has to change the resource URI too, or a host that
+# caches pages by URI keeps one pointing at an address that no longer
+# serves the application (a tunnel that was restarted, say).
+_request_reboot_url: contextvars.ContextVar[str | None] = (
+    contextvars.ContextVar("_request_reboot_url", default=None)
+)

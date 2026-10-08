@@ -1,0 +1,13 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_test")
+
+py_test(
+    name = "ui_tests_py",
+    srcs = ["ui_tests.py"],
+    main = "ui_tests.py",
+    deps = [
+        "//reboot/mcp:context_py",
+        "//reboot/mcp:ui_py",
+        requirement("starlette"),
+    ],
+)

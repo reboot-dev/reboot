@@ -237,6 +237,8 @@ def compute_ui_cache_bust(
     ui_path: str,
     ui_name: str,
     artifact_path: str | None = None,
+    *,
+    reboot_url: str | None = None,
 ) -> str:
     """Compute a cache-bust token for a UI resource URI.
 
@@ -275,6 +277,16 @@ def compute_ui_cache_bust(
        Logs a warning naming the missing path so the operator
        sees the misconfig.
 
+    In the two dist modes `reboot_url`, when given, is hashed in
+    with the bytes: the page `ui_html` serves embeds the URL the
+    application was reached at (`window.REBOOT_URL`), so the same
+    build reached at a new URL is a different page, and a host that
+    caches pages by URI must be given a new URI for it or it keeps
+    calling an address that no longer serves the application, such
+    as a tunnel that was restarted. The token is still a pure
+    function of its inputs: the same build at the same URL is the
+    same token across restarts and replicas.
+
     Hash is not cryptographic — just enough entropy (12 hex =
     48 bits) to distinguish builds.
     """
@@ -304,8 +316,17 @@ def compute_ui_cache_bust(
         # `ui_html` makes in this branch, so the cache-bust
         # token is derived from the bytes the host will see.
         placeholder = _build_not_found_html(f"{ui_name.title()} UI", ui_name)
-        return hashlib.sha1(placeholder.encode()).hexdigest()[:12]
-    return hashlib.sha1(dist_path.read_bytes()).hexdigest()[:12]
+        return _cache_bust_token(placeholder.encode(), reboot_url)
+    return _cache_bust_token(dist_path.read_bytes(), reboot_url)
+
+
+def _cache_bust_token(page: bytes, reboot_url: str | None) -> str:
+    """The token for a page's bytes and, when given, the URL the
+    page embeds; see `compute_ui_cache_bust`."""
+    digest = hashlib.sha1(page)
+    if reboot_url is not None:
+        digest.update(reboot_url.encode())
+    return digest.hexdigest()[:12]
 
 
 def compute_ui_cache_busts(

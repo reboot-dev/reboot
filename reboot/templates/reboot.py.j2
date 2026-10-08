@@ -3095,30 +3095,6 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% endif %}
 
 {% endfor %}
-        def _get_reboot_url_from_request(
-            ctx: IMPORT_mcp_server_fastmcp.Context,
-        ) -> str:
-            """Extract Reboot URL from request headers."""
-            request = ctx.request_context.request
-            if request is None:
-                raise RuntimeError(
-                    "No HTTP request in MCP context"
-                )
-            host = (
-                request.headers.get("x-forwarded-host")
-                or request.headers.get("host")
-            )
-            if not host:
-                raise RuntimeError(
-                    "No host header in request"
-                )
-            scheme = (
-                request.headers.get("x-forwarded-proto")
-                or ("https" if request.url.scheme == "https"
-                    else "http")
-            )
-            return f"{scheme}://{host}"
-
         @mcp.resource(
             "ui://{{ state.proto.name | to_snake }}/{ui}/{cache_bust}",
             name="{{ state.proto.name | to_snake }}-ui",
@@ -3138,7 +3114,9 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             # cache keys on it — same token = cache hit,
             # changed token (because the dist file changed) =
             # cache miss = fresh read.
-            reboot_url = _get_reboot_url_from_request(ctx)
+            reboot_url = IMPORT_reboot_mcp_context.reboot_url_from_request(
+                ctx.request_context.request
+            )
             if ui not in _ui_app_paths:
                 raise ValueError(f"Unknown UI: {ui}")
             return IMPORT_reboot_mcp_ui.ui_html(
