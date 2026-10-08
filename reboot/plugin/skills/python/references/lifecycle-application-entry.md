@@ -113,8 +113,8 @@ type needs:
   reference for the exact import)
 - `stdlib-pubsub.md` — `pubsub.servicers()` (transitively pulls
   `queue.servicers()`) + the stdlib map library
-- `stdlib-presence.md` — `presence.servicers()` (returns three
-  Servicers; no library factory)
+- `stdlib-presence.md` — `presence_library()` (brings three
+  Servicers)
 
 For first-run setup that creates singletons or seeds state, see
 `lifecycle-initialize-hook.md`.
