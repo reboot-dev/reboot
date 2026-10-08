@@ -64,6 +64,18 @@ py_test(
 )
 
 py_test(
+    name = "mcp_tests_py",
+    srcs = ["mcp_tests.py"],
+    main = "mcp_tests.py",
+    deps = [
+        requirement("httpx"),
+        requirement("mcp"),
+        "//reboot/aio:tests_py",
+        "//reboot/dashboard/backend:main_py",
+    ],
+)
+
+py_test(
     name = "code_watcher_tests_py",
     srcs = ["code_watcher_tests.py"],
     data = [

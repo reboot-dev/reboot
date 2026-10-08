@@ -5,6 +5,7 @@
 import type * as feature_pb from "../../../../rbt/v1alpha1/bdd/feature_pb";
 import type * as grammar_pb from "../../../../rbt/v1alpha1/bdd/grammar_pb";
 import { Element_Role } from "../../../../rbt/v1alpha1/bdd/grammar_pb";
+import { APPLICATION_URL } from "./constants";
 import type { APIs } from "./link_properties_to_data_types";
 import { qualifiedName } from "./link_properties_to_data_types";
 
@@ -21,7 +22,9 @@ export interface FeatureEntry {
 // the working directory, each segment escaped on its own so the
 // slashes stay.
 export const recordingUrl = (path: string): string =>
-  "/recordings/" + path.split("/").map(encodeURIComponent).join("/");
+  APPLICATION_URL +
+  "/recordings/" +
+  path.split("/").map(encodeURIComponent).join("/");
 
 export const sortedFeatures = (features: Features): FeatureEntry[] =>
   Object.entries(features)

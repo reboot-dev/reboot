@@ -112,6 +112,8 @@ py_binary(
     name = "inline_bundle",
     srcs = ["frontend/inline_bundle.py"],
     main = "frontend/inline_bundle.py",
+    # The dashboard's page is inlined the same way.
+    visibility = ["//rbt/dashboard/v1:__pkg__"],
 )
 
 genrule(
