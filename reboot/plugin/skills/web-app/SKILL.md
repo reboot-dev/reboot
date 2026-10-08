@@ -74,7 +74,10 @@ sign-in against the configured upstream IdP. Browser sessions
 are carried in an HttpOnly `rbt_session` cookie set by
 `/__/oauth/finish`; the framework reads it as a bearer on every
 RPC, so user code only sees `context.auth.user_id` (same shape
-as MCP).
+as MCP). A page that is sign-in or nothing passes `requireSignIn`
+to `RebootClientProvider` instead of showing a button, and a page
+without a `User` type reads `useAuth()`; see
+[react-client.md](references/react-client.md#a-page-that-is-sign-in-or-nothing).
 
 A plain HTTP route the page calls — a download, an image, an export
 — is not a Reboot method and has no authorizer. Register it with

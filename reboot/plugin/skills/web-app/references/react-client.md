@@ -245,6 +245,27 @@ function SignedIn({ user }: { user: UseUserApi }) {
 }
 ```
 
+### A page that is sign-in or nothing
+
+When the app has nothing to show before sign-in, or its provider asks
+nothing of the user (`Development()` in dev, say), skip the button:
+`requireSignIn` on the provider sends a browser that is not signed in
+to `/__/oauth/start` on its own, returning to the same URL, and
+renders its children only once the user is signed in and the client
+holds their token, so no read goes out without one. In an MCP host
+the host signed the user in already, and the children render at once.
+
+```tsx
+<RebootClientProvider url={url} requireSignIn>
+  <App />
+</RebootClientProvider>
+```
+
+An app without a `User` state type has no `useUser()` to branch on;
+`useAuth()` gives it the same answer, `{ status }` as `"loading"`,
+`"error"` (the probe is being retried), `"authenticated"` or
+`"unauthenticated"`.
+
 ## Fetching a File the Backend Serves
 
 A route registered with `require_oauth_token=True` (an export, an
