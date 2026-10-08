@@ -27,6 +27,50 @@ use tonic::Status;
 use uuid::Uuid;
 const SHARD: &str = "s000000000";
 const MAP: &str = "rbt.std.collections.v1.SortedMap";
+// Optional local-development administration; no baked-in credential.
+// Production apps should supply their own identity-provider verifier/authorizer.
+struct TaskAdmin(String);
+impl reboot::auth::TokenVerifier for TaskAdmin {
+    fn verify<'a>(
+        &'a self,
+        _: &'a reboot::auth::AuthorizationContext,
+        token: Option<&'a str>,
+    ) -> reboot::auth::VerifyFuture<'a> {
+        Box::pin(async move {
+            if token == Some(self.0.as_str()) {
+                reboot::auth::TokenVerification::Authenticated(reboot::auth::Auth::new(
+                    serde_json::json!({"task_admin": true}),
+                ))
+            } else {
+                reboot::auth::TokenVerification::Unauthenticated {
+                    message: "task admin credential required".into(),
+                }
+            }
+        })
+    }
+}
+impl reboot::auth::Authorizer for TaskAdmin {
+    fn authorize<'a>(
+        &'a self,
+        context: &'a reboot::auth::AuthorizationContext,
+        auth: Option<&'a reboot::auth::Auth>,
+        state: Option<&'a [u8]>,
+        _: &'a [u8],
+    ) -> reboot::auth::AuthorizeFuture<'a> {
+        Box::pin(async move {
+            if context.method == "rbt.v1alpha1.Tasks.ListTasks"
+                && state.is_none()
+                && auth.is_some_and(|auth| auth.payload()["task_admin"] == true)
+            {
+                reboot::auth::AuthorizationDecision::Allow
+            } else {
+                reboot::auth::AuthorizationDecision::PermissionDenied {
+                    message: "task administration denied".into(),
+                }
+            }
+        })
+    }
+}
 pub struct Starts;
 impl RootTransactionStartFactory for Starts {
     fn next_root_transaction(&self) -> Result<RootTransactionStart, Status> {
@@ -226,11 +270,22 @@ pub async fn serve(
         .with_workflows(&reference)?;
     let view = generated::LedgerViewMethodsDatabaseAdapter::new(store, Ledger);
     let (readers, companion) = view.local_readers(&reference)?;
-    let wait = tasks.wait_service(
+    let wait = reboot::one_shot_tasks::ReaderTaskWaitService::new(
+        [tasks.clone()],
         reboot::legacy_placement::LegacyApplicationId::new(&application)?,
         "local-rust",
         placement(&application, address)?,
-    );
+    )?;
+    let wait = match std::env::var("RBT_RUST_TASK_ADMIN_TOKEN") {
+        Ok(token) if !token.is_empty() => {
+            let admin = Arc::new(TaskAdmin(token));
+            wait.with_admin_authorization(admin.clone(), admin)
+        }
+        Ok(_) => return Err("task admin token must not be empty".into()),
+        Err(std::env::VarError::NotPresent) => wait,
+        Err(error) => return Err(error.into()),
+    };
+    let wait = db::tasks_server::TasksServer::new(wait);
     let reader_monitor = readers.clone();
     ApplicationHost::new(application)
         .with_host_recovery(recovery)

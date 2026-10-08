@@ -86,6 +86,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("{key}");
             }
         }
+        "tasks" => {
+            let mut client = reboot::database_proto::tasks_client::TasksClient::new(channel);
+            let mut request = tonic::Request::new(reboot::database_proto::ListTasksRequest {
+                only_server_id: Some(args.get(1).cloned().unwrap_or_else(|| "local-rust".into())),
+            });
+            if let Ok(token) = std::env::var("RBT_RUST_TASK_ADMIN_TOKEN") {
+                request
+                    .metadata_mut()
+                    .insert("authorization", format!("Bearer {token}").parse()?);
+            }
+            request.set_timeout(Duration::from_secs(3));
+            for task in client.list_tasks(request).await?.into_inner().tasks {
+                let id = task.task_id.ok_or("listed task lacks identity")?;
+                let phase = reboot::database_proto::task_info::Status::try_from(task.status)?;
+                let occurred = task
+                    .occurred_at
+                    .ok_or("listed task lacks phase timestamp")?;
+                let due = task
+                    .scheduled_at
+                    .map(|time| format!("{}.{:09}", time.seconds, time.nanos))
+                    .unwrap_or_else(|| "-".into());
+                println!(
+                    "{} {} {} {}.{:09} {} {} {}",
+                    uuid::Uuid::from_slice(&id.task_uuid)?,
+                    phase.as_str_name(),
+                    task.method,
+                    occurred.seconds,
+                    occurred.nanos,
+                    due,
+                    task.iterations,
+                    task.num_runs_failed_recently
+                );
+            }
+        }
         "wait" => {
             let id = uuid::Uuid::parse_str(&arg(1)?)?;
             let mut request = tonic::Request::new(reboot::database_proto::TaskId {

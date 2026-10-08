@@ -33,6 +33,34 @@ The host creates the empty map before public readiness; public `create` then
 constructs the Ledger separately. These are not an atomic two-actor constructor.
 A crash leaving only the empty map is repaired by stable constructor replay.
 
+## Inspect pending tasks
+
+Listing is disabled unless the host receives a nonempty
+`RBT_RUST_TASK_ADMIN_TOKEN`. For this isolated development example, choose a
+credential privately and export the same value in the host and client terminals
+before starting them. Never commit it. Production applications should replace the
+example verifier/authorizer with their own identity provider and admin policy.
+
+```sh
+cargo run --manifest-path backend/Cargo.toml --bin client -- tasks
+```
+
+The client calls canonical `Tasks.ListTasks` with `only_server_id=local-rust`, a
+bearer credential and a deadline. Output columns are UUID, observed phase, method,
+phase UTC timestamp, scheduled UTC timestamp (or `-`), task-level completed
+iterations and recent local retry failures. Workflow checkpoint indices are not
+task-level iterations. A parked approval workflow is `STARTED`; a future task is
+`SCHEDULED`. Only framework-owned local retry delays become `SCHEDULED_RETRY`.
+
+This is the singleton dispatcher's current pending-only cache, refreshed by
+canonical scans, not an atomic Database snapshot or durable transition history.
+Completion disappears on a subsequent scan. Recovery recreates phase timestamps
+and resets local failure counts; completed history is not recreated. Listing
+checks the original owner generation, uncertainty and accepted placement around
+authorization. Cross-server aggregation, shared-reader registry listing, streaming
+and public cancellation are not implemented. Ordinary RPCs and Wait retain their
+existing authorization behavior; this admin policy protects listing only.
+
 Local app/map ownership restoration precedes coordinator convergence, stable
 EMPTY map constructor replay, task recovery and reactive reader activation.
 Stopping/restarting rbt preserves RocksDB in `.rbt/dev/{{ name }}/rust/rocksdb`.

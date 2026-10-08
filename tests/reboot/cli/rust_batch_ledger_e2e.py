@@ -28,7 +28,7 @@ assert protoc.main(['protoc', '-I' + str(ROOT), '-I' + str(Path(grpc_tools.__fil
                     '--python_out=' + str(canonical), '--grpc_python_out=' + str(canonical),
                     *[str(ROOT / ('rbt/v1alpha1/' + name + '.proto')) for name in ['database', 'tasks', 'application_metadata']]]) == 0
 sys.path.insert(0, str(canonical))
-from rbt.v1alpha1 import database_pb2 as db, database_pb2_grpc as db_grpc, tasks_pb2
+from rbt.v1alpha1 import database_pb2 as db, database_pb2_grpc as db_grpc, tasks_pb2, tasks_pb2_grpc
 APP = STAGE / 'project'
 APP.mkdir()
 TARGET = Path(os.environ['RUST_BATCH_TARGET'])
@@ -37,7 +37,8 @@ RBT = Path(os.environ['RUST_BATCH_RBT'])
 PORT = int(os.environ.get('RUST_BATCH_PORT', '12993'))
 ENV = dict(os.environ, CARGO_TARGET_DIR=str(TARGET), CARGO_INCREMENTAL='0',
            CARGO_BUILD_JOBS='2', CARGO_PROFILE_DEV_DEBUG='0', CARGO_PROFILE_TEST_DEBUG='0',
-           RBT_RUST_DATABASE_BINARY=str(BINARY), RBT_RUST_URL=f'http://127.0.0.1:{PORT}')
+           RBT_RUST_DATABASE_BINARY=str(BINARY), RBT_RUST_URL=f'http://127.0.0.1:{PORT}',
+           RBT_RUST_TASK_ADMIN_TOKEN=str(__import__('uuid').uuid4()))
 RESULT = STAGE / 'result.json'
 evidence = {'commands': [], 'sessions': [], 'checks': [], 'live_handles': [],
             'database_sha256': hashlib.sha256(BINARY.read_bytes()).hexdigest()}
@@ -93,12 +94,15 @@ def command(args, timeout=180, ok=True):
 
 
 class Session:
-    def __init__(self, name):
+    def __init__(self, name, admin=True):
         self.name = name
         self.host_log_offset = self.host_log.stat().st_size if self.host_log.exists() else 0
         self.log = STAGE / f'session-{name}.log'
         self.out = self.log.open('w')
-        self.process = subprocess.Popen([str(RBT), 'dev', 'run', '--rust-allow-insecure-database', f'--port={PORT}'], cwd=APP, env=ENV, stdout=self.out, stderr=subprocess.STDOUT, start_new_session=True)
+        host_env = dict(ENV)
+        if not admin:
+            host_env.pop('RBT_RUST_TASK_ADMIN_TOKEN')
+        self.process = subprocess.Popen([str(RBT), 'dev', 'run', '--rust-allow-insecure-database', f'--port={PORT}'], cwd=APP, env=host_env, stdout=self.out, stderr=subprocess.STDOUT, start_new_session=True)
         self.data = {'name': name, 'cli_pid': self.process.pid, 'log': str(self.log)}
         evidence['sessions'].append(self.data)
         checkpoint()
@@ -170,6 +174,31 @@ class Watch:
             self.proc.send_signal(signal.SIGTERM)
         self.proc.wait(timeout=5)
         self.out.close()
+
+
+def list_denied(code, token=None, server='local-rust'):
+    with grpc.insecure_channel(f'127.0.0.1:{PORT}') as channel:
+        request = tasks_pb2.ListTasksRequest()
+        if server is not None:
+            request.only_server_id = server
+        try:
+            tasks_pb2_grpc.TasksStub(channel).ListTasks(request, timeout=3,
+                metadata=[('authorization', 'Bearer ' + token)] if token else [])
+            raise AssertionError('listing unexpectedly authorized')
+        except grpc.RpcError as error:
+            check('task listing rejects ' + code.name, error.code() == code)
+
+
+def listed(task_uuid, phase, due=None):
+    def observed():
+        lines = client('tasks')[0].splitlines()
+        return len(lines) == 1 and lines[0].split()[:2] == [task_uuid, phase]
+    until(observed, 'actual listed dispatcher phase ' + phase)
+    fields = client('tasks')[0].split()
+    check('generated admin listing actual ' + phase,
+          fields[0:3] == [task_uuid, phase, 'RunBatch'] and float(fields[3]) > 0
+          and fields[4] == (str(due) + '.000000000' if due else '-')
+          and fields[5:] == ['0', '0'])
 
 
 def native(session, task_uuid=None):
@@ -245,7 +274,15 @@ try:
     from reboot.aio.types import StateRef
     reference = str(StateRef.from_id('batch_ledger.v1.Ledger', 'ledger'))
     map_ref = str(StateRef.from_id('rbt.std.collections.v1.SortedMap', 'approvals'))
+    current = Session('admin-disabled', admin=False)
+    list_denied(grpc.StatusCode.PERMISSION_DENIED, token=ENV['RBT_RUST_TASK_ADMIN_TOKEN'])
+    current.close(); current = None
     current = Session('first')
+    list_denied(grpc.StatusCode.UNAUTHENTICATED)
+    list_denied(grpc.StatusCode.UNAUTHENTICATED, token='invalid')
+    list_denied(grpc.StatusCode.UNIMPLEMENTED, token=ENV['RBT_RUST_TASK_ADMIN_TOKEN'], server=None)
+    list_denied(grpc.StatusCode.UNAVAILABLE, token=ENV['RBT_RUST_TASK_ADMIN_TOKEN'], server='wrong-server')
+    check('authenticated generated task listing starts empty', client('tasks')[0] == '')
     client('create')
     uuid, _ = client('submit', 'batch-001', '3', '11111111-1111-4111-8111-111111111111')
     replay, _ = client('submit', 'batch-001', '3', '11111111-1111-4111-8111-111111111111')
@@ -258,6 +295,7 @@ try:
     check('typed pending Wait preserves deadline', status != 0 and ('DeadlineExceeded' in pending or 'Cancelled' in pending))
     state, rows, task, _ = native(current, uuid)
     check('canonical task is Pending with no approvals', task.status == db.Task.PENDING and state.completed == 0 and not rows.keys)
+    listed(uuid, 'STARTED')
     for args in [('approve', 'other', '0'), ('approve', 'batch-001', '2'), ('approve', 'batch-001', '3'), ('approve-invalid', 'batch-001', '0')]:
         _, status = client(*args, ok=False)
         check('invalid approval rejected ' + ' '.join(args), status != 0)
@@ -287,6 +325,7 @@ try:
     current = Session('parked-restart')
     wait_state(1, 1)
     check('same pending UUID survives full RocksDB restart', native(current, uuid)[2].status == db.Task.PENDING)
+    listed(uuid, 'STARTED')
     check('saved first step not remutated after restart', not any('checkpoint-batch-001-0' in line for line in events(current)))
     for i in range(3):
         w = Watch('drop-' + str(i)); w.close(); reader_zero(current)
@@ -294,20 +333,25 @@ try:
     completed, _ = client('wait', uuid, '5000')
     state, rows, task, _ = native(current, uuid)
     check('canonical Completed task and three sorted approvals', task.status == db.Task.COMPLETED and state.completed == 3 and logical_keys(rows) == ['batch-001:0000', 'batch-001:0001', 'batch-001:0002'])
+    until(lambda: client('tasks')[0] == '', 'completed task pruned from live listing')
+    check('completed task absent from pending-only listing')
     saved = task.SerializeToString().hex()
     check('typed public transactional history', client('history', 'batch-001')[0].splitlines() == logical_keys(rows))
     current.close(signal.SIGINT); current = None
     current = Session('completed-restart')
     check('typed completion identical after second restart', client('wait', uuid, '5000')[0] == completed)
     check('no completed body or step redispatch', not events(current))
+    check('completed history not synthesized on restart listing', client('tasks')[0] == '')
     check('canonical terminal byte identity', native(current, uuid)[2].SerializeToString().hex() == saved)
     future = int(time.time()) + 120
     delayed, _ = client('submit', 'batch-002', '1', '22222222-2222-4222-8222-222222222222', str(future))
     client('approve', 'batch-002', '0')
     check('future task not started', read()[3] == '0')
+    listed(delayed, 'SCHEDULED', future)
     current.close(); current = None
     current = Session('future-restart')
     check('future timestamp persisted before due', time.time() < future and native(current, delayed)[2].timestamp.seconds == future and not events(current))
+    listed(delayed, 'SCHEDULED', future)
     until(lambda: time.time() >= future, 'future due', 125)
     client('wait', delayed, '5000')
     check('delayed task completed after due', native(current, delayed)[2].status == db.Task.COMPLETED)

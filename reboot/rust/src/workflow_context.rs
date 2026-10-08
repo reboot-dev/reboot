@@ -779,6 +779,9 @@ impl OneShotTasks {
                 None => return Ok(()),
                 Some(error) if retry == 2 => return Err(error),
                 Some(_) => {
+                    self.inner
+                        .listing
+                        .retry(&task, std::time::Duration::from_millis(25 << retry));
                     tokio::select! {
                         biased;
                         _ = cancel.cancelled() => return Err(Status::cancelled("workflow resumption cancelled")),
@@ -853,6 +856,7 @@ impl OneShotTasks {
             };
             let _owner = admission.lock()?;
         }
+        self.inner.listing.started(&task);
         let receipt = self.inner.binding.execute_workflow(context).await?;
         if receipt.task != task {
             return Err(Status::failed_precondition(

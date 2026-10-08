@@ -372,8 +372,25 @@ private effects; only committed canonical Pending plus local terminalization
 makes them runnable. Trailers/queue hints/root decision alone cannot publish
 work. Arbitrary foreign task upserts remain rejected.
 
-**Missing:** transactional task targets, public ListTasks/CancelTask/streaming,
-task authorization, broad retry policies, distributed dispatcher fencing and
+Canonical server-local `Tasks.ListTasks` is opt-in on `ReaderTaskWaitService`:
+`with_admin_authorization(verifier, authorizer)` requires both explicit
+application-owned policies; no policy means denial. Authorization receives an
+encoded ListTasks request and no actor state. Original dispatch generations are
+retained across both policy awaits; accepted placement, activity and sticky
+uncertainty are rechecked before disclosure. This is application-controlled
+administration, not Python's built-in admin credential mechanism.
+
+Only an explicit matching `only_server_id` and singleton-recovered owners are
+admitted. The bounded in-memory cache records actual `SCHEDULED`, `STARTED` and
+local `SCHEDULED_RETRY` phases, preserves retry counts across rescans, prunes
+completed IDs on subsequent canonical scans and clears on owner revocation.
+Phase timestamps/failure counts are local to this server generation; there is no
+atomic canonical snapshot, durable transition history or completed-cache parity.
+`iterations` is the canonical task-level count, not a finite workflow checkpoint
+index. Shared-reader recovery listing, aggregation and streaming remain rejected.
+
+**Missing:** transactional task targets, public CancelTask/full listing/streaming,
+task-result authorization, broad retry policies, distributed dispatcher fencing and
 migration, arbitrary shared/factory/idempotent tree scheduling. Workflow methods
 have their separate context/result contract below, not ordinary declared-task
 error semantics.
@@ -617,6 +634,47 @@ parent/key bounds, unprepared recovery and lost-ACK retention. Unit coverage:
 
 ## Verification
 
+### Server-local administrative task listing (2026-10-08)
+
+The public generated batch app now exposes the `tasks` client command and an
+opt-in environment-owned development admin verifier/authorizer. Fresh native
+acceptance generated the ordinary consumer, passed strict all-target Clippy/fmt
+and two tests, then exercised canonical ListTasks through actual `rbt dev run`
+and C++ Database/RocksDB. It proved default denial, missing/invalid bearer denial,
+explicit-server scope rejection, actual STARTED parked workflow listing before
+and after restart, SCHEDULED future timestamp listing before and after restart,
+completed pruning and no synthesized terminal history. The full approval/map,
+saved-checkpoint replay, regeneration, delayed execution, typed Wait, subscription
+cleanup and lock-reuse regression also passed with unchanged frozen source.
+
+Four local controls exercised cache retry/phase bookkeeping and administrative
+policy denial plus generation replacement, uncertainty, placement movement and
+stop during an awaited authorizer. These are local controls, not native proof of
+distributed ownership or retry execution. Native retry-phase observation remains
+unexercised; no public cancellation or task-result auth claim is made.
+
+Native proof: `/tmp/reboot-rust-batch-ledger-acceptance-1791449231292063216`
+(`accepted.json`, `frozen-source.json`, `command-2.log`, `native/result.json`).
+The earlier interrupted run is not accepted evidence. Subsequent changes are
+documentation/comments and the strict-Clippy correction `task.timestamp.clone()`
+to `task.timestamp` (the optional Timestamp is Copy), not task behavior changes.
+The broad gate also exposed a test synchronization race: Weak::upgrade may fail
+before DispatchOwner::drop publishes registry release. The ownership control now
+waits for actual registry removal; it retains its blocked-child ownership and
+replacement-denial assertions and passed 50 exact repeated executions.
+These changes must be distinguished from the immutable semantic source snapshot.
+Broad frozen gates passed strict locked all-target SDK Clippy, **381 tests passed,
+0 failed, 128 ignored**, and the retained native greeting regeneration/restart,
+child-exit, signal and failed-build cleanup regression. Ignored native matrices
+are not fresh passes. Gate evidence:
+`/tmp/reboot-rust-batch-ledger-final-gates-1791450151288499096`
+(`accepted.json`, `frozen-source.json`, SDK logs and greeting proof).
+
+Portable sources: [listing controls](src/task_listing_tests.rs),
+[phase bookkeeping](src/task_listing.rs),
+[public application acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
+
+
 ### Public batch-ledger application and retained greeting (2026-10-08)
 
 The actual opt-in `rbt init` generated consumer passed strict all-target Clippy,
@@ -793,7 +851,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 588595b61bb7252750695984a48b3003a86d27395511c9e7412f594b9ce08dd0 -->
+<!-- parity-source-sha256: b60980dc828e417dceaf9b178ae25d4f6baea292a419aa49eac41cec1715c14f -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

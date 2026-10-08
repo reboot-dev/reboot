@@ -17,6 +17,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 include!("workflow_context.rs");
+include!("task_listing.rs");
 const MAX_TASKS: usize = 1024;
 use tokio::{sync::mpsc, task::JoinSet};
 use tonic::Status;
@@ -311,6 +312,7 @@ struct Inner {
     running_owner: Mutex<Option<Arc<()>>>,
     uncertain: tokio::sync::watch::Sender<bool>,
     max_live: std::sync::atomic::AtomicUsize,
+    listing: TaskListing,
     #[cfg(feature = "test-support")]
     completed_operations: std::sync::atomic::AtomicUsize,
 }
@@ -387,6 +389,7 @@ impl OneShotTasks {
                 running_owner: Mutex::new(None),
                 uncertain: tokio::sync::watch::channel(false).0,
                 max_live: std::sync::atomic::AtomicUsize::new(MAX_TASKS),
+                listing: TaskListing::default(),
                 #[cfg(feature = "test-support")]
                 completed_operations: 0.into(),
             }),
@@ -675,6 +678,7 @@ impl OneShotTasks {
             application,
             server_id: server_id.into(),
             placement,
+            admin: None,
         })
     }
     // Called only while the registry owns this actor's DispatchOwner claim.
@@ -851,6 +855,9 @@ impl OneShotTasks {
                 None => return Ok(()),
                 Some(error) if attempt == 2 => return Err(error),
                 Some(_) => {
+                    self.inner
+                        .listing
+                        .retry(&task, std::time::Duration::from_millis(25 << attempt));
                     tokio::time::sleep(std::time::Duration::from_millis(25 << attempt)).await
                 }
             }
@@ -926,6 +933,7 @@ impl OneShotTasks {
                 cancel,
                 tasks: self,
             };
+            self.inner.listing.started(&task);
             let receipt = match self.inner.binding.execute_writer(admitted).await {
                 Ok(response) => response,
                 Err(error) => {
@@ -1062,6 +1070,7 @@ impl OneShotTasks {
             if !schedule_due(&task)? {
                 return Ok(None);
             }
+            self.inner.listing.started(&task);
             self.inner.binding.execute_terminal(&task).await?
         };
         let _lease = gate.exclusive().await;
@@ -1265,6 +1274,7 @@ impl DispatchOwner {
             .lock()
             .expect("task owner mutex poisoned");
         *owner = None;
+        self.tasks.inner.listing.clear();
         self.tasks
             .inner
             .active
@@ -1326,6 +1336,7 @@ impl Drop for DispatchOwner {
             .lock()
             .expect("task owner mutex poisoned");
         *owner = None;
+        self.tasks.inner.listing.clear();
         self.tasks
             .inner
             .active
@@ -1370,6 +1381,7 @@ impl HostRecovery for OneShotTaskRecovery {
             .max_live
             .load(std::sync::atomic::Ordering::Acquire);
         let pending = self.tasks.pending(self.request.clone()).await?;
+        self.tasks.inner.listing.observe(&pending);
         if pending.len() > max_live {
             return Err(Status::resource_exhausted(
                 "recovered pending tasks exceed live delivery budget",
@@ -1435,6 +1447,7 @@ impl HostRecovery for OneShotTaskRecovery {
                     }
                     cancel.public_ready().await?;
                     pending = tasks.pending(request.clone()).await?;
+                    tasks.inner.listing.observe(&pending);
                 }
             };
             let failure = async {
@@ -1667,6 +1680,7 @@ pub struct ReaderTaskWaitService {
     application: crate::legacy_placement::LegacyApplicationId,
     server_id: String,
     placement: crate::legacy_placement::PlanOnlyLegacyPlacement,
+    admin: Option<crate::auth::AuthorizationPolicy>,
 }
 impl ReaderTaskWaitService {
     /// Register exact actor identities once before mounting this PUBLIC service.
@@ -1703,7 +1717,26 @@ impl ReaderTaskWaitService {
             application,
             server_id,
             placement,
+            admin: None,
         })
+    }
+    /// Enable server-scoped administrative listing with an explicit application policy.
+    /// Default is deny; ListTasks never borrows the ordinary Wait authorization surface.
+    /// Both application-owned policies are required. Authorization gets the encoded
+    /// ListTasks request, no actor state, and server-owned application/server IDs.
+    /// Listing is pending-only and eventually refreshed by canonical singleton
+    /// scans; phase timestamps and retry counts are local to this generation.
+    /// Shared-reader recovery, aggregation and streaming are not supported.
+    pub fn with_admin_authorization(
+        mut self,
+        verifier: Arc<dyn crate::auth::TokenVerifier>,
+        authorizer: Arc<dyn crate::auth::Authorizer>,
+    ) -> Self {
+        self.admin = Some(crate::auth::AuthorizationPolicy::new(
+            Some(verifier),
+            Some(authorizer),
+        ));
+        self
     }
     fn require_authority(&self, state_ref: &str) -> Result<(), Status> {
         let route = self.placement.route(&self.application, state_ref)?;
@@ -1875,11 +1908,97 @@ impl db::tasks_server::Tasks for ReaderTaskWaitService {
     }
     async fn list_tasks(
         &self,
-        _: tonic::Request<db::ListTasksRequest>,
+        request: tonic::Request<db::ListTasksRequest>,
     ) -> Result<tonic::Response<db::ListTasksResponse>, Status> {
-        Err(Status::unimplemented(
-            "task listing is outside the reader-only Wait slice",
-        ))
+        use prost::Message;
+        let policy = self
+            .admin
+            .as_ref()
+            .ok_or_else(|| Status::permission_denied("task administration is not enabled"))?;
+        // Administrative listing has no actor route. Reuse metadata validation
+        // without treating a caller state-ref as actor authority.
+        let mut metadata = request.metadata().clone();
+        metadata.insert(
+            crate::STATE_REF_HEADER,
+            "task-administration".parse().expect("static ASCII"),
+        );
+        let mut headers = crate::RebootHeaders::from_metadata(&metadata)
+            .map_err(|error| Status::invalid_argument(error.to_string()))?;
+        headers.state_ref.clear();
+        headers.server_id = Some(self.server_id.clone());
+        headers.application_id = Some(self.application.as_str().to_owned());
+        // Capture the original generations before policy awaits. Delay authority
+        // errors until authentication/authorization so denial discloses no tasks.
+        let admissions: Result<Vec<_>, Status> = self
+            .tasks
+            .iter()
+            .map(|((_, reference), tasks)| {
+                self.require_authority(reference)?;
+                let generation = tasks
+                    .inner
+                    .running_owner
+                    .lock()
+                    .expect("task owner mutex poisoned")
+                    .clone()
+                    .ok_or_else(|| Status::unavailable("task dispatcher is not active"))?;
+                let admission = RunningTaskAdmission {
+                    tasks: tasks.clone(),
+                    generation,
+                };
+                if tasks
+                    .inner
+                    .recovery_request
+                    .lock()
+                    .expect("task recovery mutex poisoned")
+                    .is_none()
+                {
+                    return Err(Status::unimplemented(
+                        "listing requires singleton task recovery",
+                    ));
+                }
+                {
+                    let _owner = admission
+                        .lock()
+                        .map_err(|error| Status::unavailable(error.message().to_owned()))?;
+                }
+                Ok((reference, admission))
+            })
+            .collect();
+        let (context, principal) = policy
+            .verify(
+                headers,
+                "rbt.v1alpha1.Tasks",
+                "rbt.v1alpha1.Tasks.ListTasks",
+            )
+            .await?;
+        policy
+            .authorize(
+                &context,
+                principal.as_ref(),
+                None,
+                &request.get_ref().encode_to_vec(),
+            )
+            .await?;
+        match request.get_ref().only_server_id.as_deref() {
+            Some(server) if server == self.server_id => {}
+            Some(_) => return Err(Status::unavailable("requested task server is not local")),
+            None => {
+                return Err(Status::unimplemented(
+                    "cross-server task aggregation is unsupported; specify only_server_id",
+                ));
+            }
+        }
+        let mut snapshot = Vec::new();
+        for (reference, admission) in admissions? {
+            self.require_authority(reference)?;
+            let _owner = admission
+                .lock()
+                .map_err(|error| Status::unavailable(error.message().to_owned()))?;
+            snapshot.extend(admission.tasks.inner.listing.snapshot());
+        }
+        Ok(tonic::Response::new(db::ListTasksResponse {
+            tasks: snapshot,
+        }))
     }
     type ListTasksStreamStream = tonic::codegen::tokio_stream::wrappers::ReceiverStream<
         Result<db::ListTasksResponse, Status>,
@@ -2540,13 +2659,25 @@ mod tests {
         assert!(tasks.validate_staged(&[]).await.is_err());
         drop(retained);
         release.0.take().unwrap().send(()).unwrap();
+        let key = (
+            tasks.inner.store.database_endpoint().to_owned(),
+            tasks.inner.state_type.clone(),
+            tasks.inner.state_ref.clone(),
+        );
         tokio::time::timeout(std::time::Duration::from_secs(2), async {
-            while weak.upgrade().is_some() {
+            // Arc strong count reaches zero BEFORE DispatchOwner::drop finishes.
+            // Wait for actual registry release, not merely Weak::upgrade failure.
+            while owners()
+                .lock()
+                .expect("task owner registry poisoned")
+                .contains(&key)
+            {
                 tokio::task::yield_now().await;
             }
         })
         .await
         .unwrap();
+        assert!(weak.upgrade().is_none());
         // Final child destruction, not supervisor abortion, releases the registry.
         drop(DispatchOwner::claim(replacement).unwrap());
     }
