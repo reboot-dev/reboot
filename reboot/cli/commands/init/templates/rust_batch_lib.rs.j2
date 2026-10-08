@@ -182,16 +182,6 @@ impl generated::LedgerWorkMethodsDatabaseHandler for Ledger {
         Ok(result)
     }
 }
-#[tonic::async_trait]
-impl generated::LedgerViewMethodsDatabaseHandler for Ledger {
-    async fn snapshot(
-        &self,
-        state: &proto::Ledger,
-        _: proto::Empty,
-    ) -> Result<proto::Ledger, tonic::Status> {
-        Ok(state.clone())
-    }
-}
 pub struct Index {
     pub map: generated_map::SortedMap,
 }

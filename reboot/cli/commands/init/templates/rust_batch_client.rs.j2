@@ -67,10 +67,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         "read" => {
             let mut client =
-                proto::ledger_view_methods_client::LedgerViewMethodsClient::new(channel);
+                proto::ledger_work_methods_client::LedgerWorkMethodsClient::new(channel);
             show(
                 client
-                    .snapshot(context.reader(proto::Empty {})?)
+                    .observe(context.reader(proto::Empty {})?)
                     .await?
                     .into_inner(),
             );
@@ -95,6 +95,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             request.set_timeout(Duration::from_secs(5));
             let id = client.submit_batch(request).await?.into_inner().id;
             println!("{}", uuid::Uuid::from_slice(&id)?);
+        }
+        "reader-target-error" => {
+            let mut client =
+                reboot::reactive::wire::local_readers_client::LocalReadersClient::new(channel);
+            let request = context.reader(reboot::reactive::wire::Query {
+                method: format!("{{ name }}.v1.LedgerWorkMethods.{}", arg(1)?),
+                request: vec![],
+            })?;
+            let error = match client.subscribe(request).await {
+                Err(error) => error,
+                Ok(response) => match response.into_inner().message().await {
+                    Err(error) => error,
+                    Ok(_) => return Err("nonreader entered subscription surface".into()),
+                },
+            };
+            if error.code() != tonic::Code::Unimplemented {
+                return Err(error.into());
+            }
+            println!("NONREADER_DENIED");
         }
         "checkpoint-direct" => {
             let mut client =
@@ -177,9 +196,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         "watch-reconnect" => {
             use std::io::BufRead;
-            let mut client = generated::LedgerViewMethodsReactiveClient::new(channel, context);
+            let mut client = generated::LedgerWorkMethodsReactiveClient::new(channel, context);
             let mut stream = client
-                .snapshot_with_timeout(
+                .observe_with_timeout(
                     proto::Empty {},
                     Duration::from_millis(
                         args.get(1)
@@ -222,8 +241,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         "watch" => {
-            let mut client = generated::LedgerViewMethodsReactiveClient::new(channel, context);
-            let mut stream = client.snapshot(proto::Empty {}).await?;
+            let mut client = generated::LedgerWorkMethodsReactiveClient::new(channel, context);
+            let mut stream = client.observe(proto::Empty {}).await?;
             while let Some(state) = stream.message().await? {
                 show(state);
             }

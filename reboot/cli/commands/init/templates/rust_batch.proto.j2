@@ -2,7 +2,7 @@ syntax = "proto3";
 package {{ name }}.v1;
 import "rbt/v1alpha1/options.proto";
 message Ledger {
- option (rbt.v1alpha1.state) = { implements: ["{{ name }}.v1.LedgerWorkMethods", "{{ name }}.v1.LedgerViewMethods", "{{ name }}.v1.LedgerIndexMethods"] };
+ option (rbt.v1alpha1.state) = { implements: ["{{ name }}.v1.LedgerWorkMethods", "{{ name }}.v1.LedgerIndexMethods"] };
  string batch = 1;
  uint32 count = 2;
  uint32 approved = 3;
@@ -25,10 +25,6 @@ service LedgerWorkMethods {
  rpc Observe(Empty) returns (Ledger) { option (rbt.v1alpha1.method).reader = {}; }
  rpc Checkpoint(Step) returns (Ledger) { option (rbt.v1alpha1.method).writer = {}; }
  rpc RunBatch(Submit) returns (Ledger) { option (rbt.v1alpha1.method) = { workflow: {} errors: ["BatchRejected"] }; }
-}
-service LedgerViewMethods {
- option (rbt.v1alpha1.service) = { state: "{{ name }}.v1.Ledger" };
- rpc Snapshot(Empty) returns (Ledger) { option (rbt.v1alpha1.method).reader = {}; }
 }
 service LedgerIndexMethods {
  option (rbt.v1alpha1.service) = { state: "{{ name }}.v1.Ledger" };

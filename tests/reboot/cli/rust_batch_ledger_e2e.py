@@ -328,6 +328,7 @@ watch = None
 task_watch = None
 try:
     command([RBT, 'init', '--backend=rust', '--frontend=none', '--application-name=batch_ledger', '--rust-sdk=' + str(ROOT / 'reboot/rust'), '--rust-example=batch-ledger'])
+    check('workflow reader composition removes duplicate view schema', 'LedgerViewMethods' not in (APP / 'api/batch_ledger/v1/batch.proto').read_text())
     command(['cargo', 'clippy', '--manifest-path', 'backend/Cargo.toml', '--all-targets', '--', '-D', 'warnings'])
     command(['cargo', 'fmt', '--manifest-path', 'backend/Cargo.toml', '--', '--check'])
     tests, _ = command(['cargo', 'test', '--manifest-path', 'backend/Cargo.toml', '--all-targets'])
@@ -369,6 +370,12 @@ try:
     check('typed pending Wait preserves deadline', status != 0 and ('DeadlineExceeded' in pending or 'Cancelled' in pending))
     state, rows, task, _ = native(current, uuid)
     check('canonical task is Pending with no approvals', task.status == db.Task.PENDING and state.completed == 0 and not rows.keys)
+    before_reader = state.SerializeToString()
+    before_reader_task = task.SerializeToString()
+    for method in ['Create', 'SubmitBatch', 'Checkpoint', 'RunBatch']:
+        check('workflow companion rejects nonreader ' + method, client('reader-target-error', method)[0] == 'NONREADER_DENIED')
+    after_reader, after_rows, after_task, after_replay = native(current, uuid)
+    check('nonreader subscription attempts preserve canonical task/ledger/map/replay', after_reader.SerializeToString() == before_reader and after_task.SerializeToString() == before_reader_task and not after_rows.keys and not after_replay)
     before_direct = task.SerializeToString().hex()
     for rejection in ['false', 'true']:
         denied, status = client('checkpoint-direct', 'batch-001', '0', rejection, ok=False)

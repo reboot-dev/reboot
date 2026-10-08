@@ -94,6 +94,90 @@ mod workflow_emission_tests {
             )
             .is_err()
         );
+        let mut with_reader = annotation.clone();
+        with_reader
+            .methods
+            .insert("Observe".into(), DurableKind::Reader);
+        let mut mixed_service = service.clone();
+        mixed_service.method.push(method("Observe"));
+        let mut reactive = String::new();
+        emit_workflow_service(
+            &mut reactive,
+            &mixed_service,
+            &with_reader,
+            "Methods",
+            "State",
+            "reboot",
+            "demo",
+        )
+        .unwrap();
+        assert!(reactive.contains("MethodsReactiveClient"));
+        assert!(reactive.contains("pub async fn observe_with_timeout"));
+        assert!(reactive.contains("reader_async_for_with_admission_authorized"));
+        let dispatch = reactive
+            .split("async fn read(&self, request:")
+            .nth(1)
+            .unwrap()
+            .split("_ => Err")
+            .next()
+            .unwrap();
+        assert!(dispatch.contains("demo.Methods.Observe"));
+        assert!(!dispatch.contains("demo.Methods.Run"));
+        assert!(!dispatch.contains("demo.Methods.Apply"));
+        for reserved in ["New", "LocalReaders"] {
+            let mut bad_service = mixed_service.clone();
+            bad_service.method.push(method(reserved));
+            let mut bad = with_reader.clone();
+            bad.methods.insert(reserved.into(), DurableKind::Reader);
+            let error = emit_workflow_service(
+                &mut String::new(),
+                &bad_service,
+                &bad,
+                "Methods",
+                "State",
+                "reboot",
+                "demo",
+            )
+            .unwrap_err();
+            assert!(error.contains("reserved local reader helper"));
+        }
+        for conflict in ["ObserveWithTimeout", "ObserveConnect"] {
+            let mut conflict_service = mixed_service.clone();
+            conflict_service.method.push(method(conflict));
+            let mut conflict_annotation = with_reader.clone();
+            conflict_annotation
+                .methods
+                .insert(conflict.into(), DurableKind::Reader);
+            assert!(
+                emit_workflow_service(
+                    &mut String::new(),
+                    &conflict_service,
+                    &conflict_annotation,
+                    "Methods",
+                    "State",
+                    "reboot",
+                    "demo"
+                )
+                .unwrap_err()
+                .contains("reactive helper")
+            );
+        }
+        with_reader
+            .declared_errors
+            .insert("Observe".into(), vec!["Rejected".into()]);
+        assert!(
+            emit_workflow_service(
+                &mut String::new(),
+                &mixed_service,
+                &with_reader,
+                "Methods",
+                "State",
+                "reboot",
+                "demo"
+            )
+            .unwrap_err()
+            .contains("readers/writers are unsupported")
+        );
         let mut mixed = annotation.clone();
         mixed.methods.insert(
             "Apply".into(),
@@ -269,7 +353,40 @@ fn emit_workflow_service(
     let writers = writers.strip_suffix(" | ").unwrap_or("\"\"");
     declarations.push(']');
     output.push_str(&format!("pub struct {tasks}; impl {tasks} {{ {scheduling} }}\npub struct {tasks}Wait; impl {tasks}Wait {{ {waits} }}\npub struct {steps}; impl {steps} {{ {step_methods} }}\n"));
-    output.push_str(&format!("pub struct {adapter}<H> {{store:{runtime_module}::runtime::DatabaseActorStore,handler:std::sync::Arc<H>,authorization:{runtime_module}::auth::AuthorizationPolicy,tasks:Option<{runtime_module}::one_shot_tasks::OneShotTasks>}}\nimpl<H:{handler}> {adapter}<H> {{ pub fn new(store:{runtime_module}::runtime::DatabaseActorStore,handler:H)->Self {{Self{{store,handler:std::sync::Arc::new(handler),authorization:Default::default(),tasks:None}}}} pub fn with_authorization(mut self,authorization:{runtime_module}::auth::AuthorizationPolicy)->Self {{self.authorization=authorization;self}} #[allow(clippy::result_large_err)] pub fn with_workflows(mut self,state_ref:&str)->Result<(Self,{runtime_module}::one_shot_tasks::OneShotTasks),tonic::Status> {{ let tasks={runtime_module}::one_shot_tasks::OneShotTasks::new_with_declarations(self.store.clone(),<{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(),state_ref.to_owned(),{binding}{{handler:self.handler.clone()}},{declarations})?;self.tasks=Some(tasks.clone());Ok((self,tasks)) }} }}\n#[tonic::async_trait]\nimpl<H:{handler}> proto::{server}::{service_name} for {adapter}<H> {{ {rpc_methods} }}\n"));
+    output.push_str(&format!("pub struct {adapter}<H> {{store:{runtime_module}::runtime::DatabaseActorStore,handler:std::sync::Arc<H>,authorization:{runtime_module}::auth::AuthorizationPolicy,tasks:Option<{runtime_module}::one_shot_tasks::OneShotTasks>}}\nimpl<H> Clone for {adapter}<H> {{ fn clone(&self)->Self {{ Self {{ store:self.store.clone(),handler:self.handler.clone(),authorization:self.authorization.clone(),tasks:self.tasks.clone() }} }} }}\nimpl<H:{handler}> {adapter}<H> {{ pub fn new(store:{runtime_module}::runtime::DatabaseActorStore,handler:H)->Self {{Self{{store,handler:std::sync::Arc::new(handler),authorization:Default::default(),tasks:None}}}} pub fn with_authorization(mut self,authorization:{runtime_module}::auth::AuthorizationPolicy)->Self {{self.authorization=authorization;self}} #[allow(clippy::result_large_err)] pub fn with_workflows(mut self,state_ref:&str)->Result<(Self,{runtime_module}::one_shot_tasks::OneShotTasks),tonic::Status> {{ let tasks={runtime_module}::one_shot_tasks::OneShotTasks::new_with_declarations(self.store.clone(),<{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(),state_ref.to_owned(),{binding}{{handler:self.handler.clone()}},{declarations})?;self.tasks=Some(tasks.clone());Ok((self,tasks)) }} }}\n#[tonic::async_trait]\nimpl<H:{handler}> proto::{server}::{service_name} for {adapter}<H> {{ {rpc_methods} }}\n"));
     output.push_str(&format!("struct {binding}<H>{{handler:std::sync::Arc<H>}}\n#[tonic::async_trait]\nimpl<H:{handler}> {runtime_module}::one_shot_tasks::ReaderTaskBinding for {binding}<H> {{fn validate(&self,task:&{runtime_module}::database_proto::Task)->Result<(),tonic::Status>{{match task.method.as_str(){{{validations}_=>Err(tonic::Status::invalid_argument(\"not a registered workflow target\"))}}}}\nasync fn execute(&self,_:&{runtime_module}::database_proto::Task)->Result<prost_types::Any,tonic::Status>{{Err(tonic::Status::failed_precondition(\"workflow requires private admission\"))}}\nfn validate_response(&self,task:&{runtime_module}::database_proto::Task,response:&prost_types::Any)->Result<(),tonic::Status>{{match task.method.as_str(){{{responses}_=>Err(tonic::Status::data_loss(\"wrong workflow method/result\"))}}}}\nfn validate_error(&self,task:&{runtime_module}::database_proto::Task,error:&prost_types::Any)->Result<(),tonic::Status>{{let _ = error; match task.method.as_str(){{{error_validations}_=>Err(tonic::Status::data_loss(\"workflow method does not declare errors\"))}}}}\nfn writer_capable(&self)->bool{{true}}\nfn is_writer(&self,task:&{runtime_module}::database_proto::Task)->bool{{matches!(task.method.as_str(),{writers})}}\nasync fn execute_workflow(&self,context:{runtime_module}::one_shot_tasks::WorkflowContext<'_>)->Result<{runtime_module}::one_shot_tasks::WorkflowReceipt,tonic::Status>{{match context.task().method.as_str(){{{executions}_=>Err(tonic::Status::failed_precondition(\"wrong workflow executor\"))}}}} }}\n"));
+    let methods = service
+        .method
+        .iter()
+        .map(|method| {
+            let name = method.name.as_deref().unwrap();
+            let (rust, request, response) =
+                method_types("workflow", package, service_name, method)?;
+            Ok((
+                annotation.methods.get(name).unwrap(),
+                rust,
+                request,
+                response,
+                format!("{package}.{service_name}.{name}"),
+            ))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let methods = methods.iter().collect::<Vec<_>>();
+    if methods
+        .iter()
+        .any(|(_, method, _, _, _)| method == "new" || method == "local_readers")
+    {
+        return Err(format!(
+            "{service_name}: method collides with reserved local reader helper"
+        ));
+    }
+    emit_local_readers(
+        output,
+        service_name,
+        &declaration,
+        runtime_module,
+        annotation,
+        &methods,
+    )?;
     Ok(())
 }

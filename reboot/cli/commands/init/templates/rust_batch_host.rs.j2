@@ -176,7 +176,6 @@ fn placement(
                 id: application.into(),
                 services: [
                     "{{ name }}.v1.LedgerWorkMethods",
-                    "{{ name }}.v1.LedgerViewMethods",
                     "{{ name }}.v1.LedgerIndexMethods",
                     "rbt.v1alpha1.Tasks",
                 ]
@@ -270,8 +269,7 @@ pub async fn serve(
     .with_participant(map_participant, participant_metadata)?;
     let (work, tasks) = generated::LedgerWorkMethodsDatabaseAdapter::new(store.clone(), Ledger)
         .with_workflows(&reference)?;
-    let view = generated::LedgerViewMethodsDatabaseAdapter::new(store, Ledger);
-    let (readers, companion) = view.local_readers(&reference)?;
+    let (readers, companion) = work.local_readers(&reference)?;
     let wait = reboot::one_shot_tasks::ReaderTaskWaitService::new(
         [tasks.clone()],
         reboot::legacy_placement::LegacyApplicationId::new(&application)?,
@@ -304,7 +302,6 @@ pub async fn serve(
         .with_host_recovery(readers)
         .with_host_recovery(ReaderTelemetry(reader_monitor.clone()))
         .add_public_service(proto::ledger_work_methods_server::LedgerWorkMethodsServer::new(work))
-        .add_public_service(proto::ledger_view_methods_server::LedgerViewMethodsServer::new(view))
         .add_public_service(
             proto::ledger_index_methods_server::LedgerIndexMethodsServer::new(index),
         )

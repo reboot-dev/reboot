@@ -23,8 +23,9 @@ No overall percentage is asserted.
 - **Missing:** required semantics/API are absent or explicitly rejected. A
   rejected operation is not an implementation waiting for a compiler flag.
 
-The latest explicit reactive-reconnect vertical was implemented on baseline
-`dfb8734c9834f31a2038d36deb8bbadfb6e80601` (2026-10-08). Declared workflow
+The latest workflow-service reactive integration was implemented on baseline
+`2ab2695302a62ded67eda4a63cf0919efc41a11d` (2026-10-08). The preceding explicit
+reconnect vertical was based on `dfb8734c9834f31a2038d36deb8bbadfb6e80601`. Declared workflow
 terminals were implemented from `ba58bae69fb047b52e637525b36aa19227c7a7b5`;
 the original public batch app was based on `e2a6bdc5914a8c152eb48c102c3dc91249cc4ead`. Executed
 public Cargo/native application acceptance and retained greeting regressions
@@ -41,7 +42,7 @@ proofs below retain their separate source snapshots and limits.
 | Transactions | Legacy durable coordinator/participant paths and bounded supervised chains/star | General nested snapshots, reentrancy, intersecting subtrees, migration |
 | Tasks | Durable scheduled reader/writer tasks, typed results/Wait, recovery, admin local list/stream | Transactional targets, public cancellation/aggregation, broad retry and dispatcher fencing |
 | Workflows | Finite typed named steps, finite indexed replay, saved reader decisions, typed declared business terminals; explicit local-body resumption | Python unbounded Task cursor/GC/Break, cross-actor composition, framework failure isolation |
-| Reactive readers | Typed bounded local subscriptions, commit invalidation and explicit same-query reconnect | Cross-actor/remote invalidation, transparent reconnect/durable resume, mixed-service generated bindings |
+| Reactive readers | Typed bounded database/workflow-service subscriptions, commit invalidation and explicit same-query reconnect | Cross-actor/remote invalidation, transparent reconnect/durable resume, transaction-service generated bindings |
 | SortedMap | Canonical empty constructor and serial same-host app/map transactions | Public inbound adapter, nested/reusable siblings, distributed collection lifecycle |
 
 ## Local app development
@@ -142,8 +143,9 @@ reader state is not ordinary unary state; canonical map and standalone workflow
 services use specifically supported generator paths, not a blanket exception
 for arbitrary trusted effects. Request/state/declared-error protobuf shapes are
 bounded to supported same-package top-level models. Declared errors are supported
-for ordinary unary readers/writers and exclusive transactions, not shared
-transactions or workflow terminals. Metadata/StateRef helpers also remain a
+for ordinary unary readers/writers, exclusive transactions and standalone workflow
+terminals, not shared transactions or declared reader/writer step errors in
+workflow services. Metadata/StateRef helpers also remain a
 subset: the StateRef codec is not automatic migration of opaque durable keys;
 full per-call Options/context merge, timezone/DST parsing and cross-application
 service discovery are not supplied.
@@ -618,7 +620,18 @@ when a buffered value/header is ready. There is no independent client idle-expir
 task; the deadline is enforced when the client reads or explicitly reconnects.
 Remote cursor destruction is asynchronous, not an acknowledged teardown barrier.
 
-**Missing:** mixed transaction/workflow-service generated subscription bindings,
+Standalone workflow-bearing adapters now expose the same bounded ordinary unary
+reader companions. Their manual Clone shares the existing store/handler/auth/task
+owner rather than constructing another dispatcher. The generated batch app uses
+Work.Observe for both private saved waits and public observation; there is no
+separate View schema/handler/placement entry. Only declared ordinary readers enter
+the subscription dispatcher, never workflow bodies, constructors or scheduling
+writers. Declared reader/writer errors in workflow services remain unsupported.
+The shared generator rejects collisions among each reader's base, `_with_timeout`
+and `_connect` methods and constructor `new` before companion emission; caller
+errors propagate to the public code-generation response without files.
+
+**Missing:** transaction-service generated subscription bindings,
 cross-actor dependencies, distributed or remote-process invalidation, transparent
 reconnect/resumption. This uses a Rust-specific local service, not canonical React
 wire behavior; that is an API scope distinction, not a mixed-language app goal.
@@ -685,6 +698,47 @@ parent/key bounds, unprepared recovery and lost-ACK retention. Unit coverage:
 [ownership tests](src/sorted_map_ownership_tests.rs).
 
 ## Verification
+
+### Workflow-service reactive composition (2026-10-08)
+
+The generated batch app now subscribes to Work.Observe on its workflow-bearing
+adapter, with the duplicate View service removed across schema, handler, host,
+placement and clients. Fresh public generation passed strict emitted-consumer
+all-target Clippy/fmt and **four behavioral tests**. Actual public rbt/C++
+Database/RocksDB acceptance passed live updates, explicit same-client reconnect,
+proto regeneration and full restart, slot cleanup, and retained batch/map/task/
+declared-terminal/list/stream/delayed/lock regressions. Subscribe attempts for
+Create, SubmitBatch, Checkpoint and RunBatch returned exact Unimplemented; canonical
+ledger/task/map/replay remained unchanged. These are actual integrated controls,
+not private seeding or generator-text authority proof.
+
+Review found helper-name collisions for Observe + ObserveWithTimeout/ObserveConnect.
+The new control failed RED because emission incorrectly returned Ok; central
+symbol validation corrected both database/workflow callers. **51 codegen tests**
+passed, including workflow accepted/excluded methods, reserved names, helper
+collisions and retained declared-step/mixed-transaction rejection. The shared
+helper test checks an untouched companion-output buffer, not compiled colliding
+schemas. The targeted read-only review found the P2 closed with no remaining
+confirmed repair defect. An initial missing adapter Clone failed actual downstream
+preflight and was fixed with manual generic cloning, without H:Clone.
+
+Final immutable native proof:
+`/tmp/reboot-rust-batch-ledger-acceptance-1791463075805391400`
+(`accepted.json`, `frozen-source.json`, `native/result.json`). Final broad proof:
+`/tmp/reboot-rust-batch-ledger-final-gates-1791463666520275062` passed strict SDK
+all-target Clippy, **394 passed / 0 failed / 128 ignored**, and actual greeting
+regeneration/restart/signals/child-exit/failed-build cleanup. Ignored matrices are
+not fresh passes. Sources matched both runs; the ledger/digest update is later
+metadata. The pre-symbol-repair native/broad proofs ending `1791461474516531206`
+and `1791462099168909387` are **superseded, not final publication evidence**.
+
+This does not add transaction-service subscription bindings, mixed workflow/
+transaction services, declared step errors, remote invalidation or canonical
+React interoperability. Workflow execution/terminal CAS and uncertainty fences
+are unchanged. Sources: [workflow emitter](src/workflow_codegen.rs),
+[shared reader emitter](src/reactive_codegen.rs),
+[native app acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
+
 
 ### Explicit reactive reconnect in the public application (2026-10-08)
 
@@ -1045,7 +1099,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 1bc4f859271f15ac326d705034ee6c93226206452e15b03cb5ca13d23450233d -->
+<!-- parity-source-sha256: 90052ce7eba1612a4264ca42e01a53b21106f7d3878ecf04f744ec685fbe1917 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

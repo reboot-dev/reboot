@@ -122,3 +122,12 @@ A successful reconnect emits the current baseline even if unchanged. It may
 lose/coalesce intermediate states while disconnected: no durable events, cursor
 resume, remote invalidation, or Python React interoperability are claimed.
 Server scope/auth is evaluated anew; this does not resurrect revoked authority.
+
+Reactive observation uses `LedgerWorkMethodsReactiveClient::observe` (or
+`observe_with_timeout`) on the same workflow-bearing service and handler as the
+saved workflow reader step. No separate view service/handler/placement entry is
+needed. Only ordinary unary readers are exposed by its local subscription
+companion: Create, SubmitBatch, Checkpoint and RunBatch are not subscribe targets.
+Private workflow execution/checkpoint authority is unchanged. Transaction-service
+subscriptions, mixed workflow/transaction services and declared reader/writer
+step errors remain unsupported.

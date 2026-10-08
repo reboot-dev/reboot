@@ -1179,9 +1179,9 @@ fn reject_generated_symbol_collisions(
                 if durable_kinds
                     .iter()
                     .any(|kind| matches!(kind, DurableKind::Reader))
-                    && !durable_kinds.iter().any(|kind| {
-                        matches!(kind, DurableKind::Transaction(_) | DurableKind::Workflow)
-                    })
+                    && !durable_kinds
+                        .iter()
+                        .any(|kind| matches!(kind, DurableKind::Transaction(_)))
                 {
                     symbols.push(format!("{service_name}ReactiveClient"));
                 }
@@ -1414,7 +1414,7 @@ fn emit_durable(
             runtime_module,
             annotation,
             &database_methods,
-        );
+        )?;
     }
     if has_transactions {
         for (kind, method, _, _, method_identity) in &database_methods {
