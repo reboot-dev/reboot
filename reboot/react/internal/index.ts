@@ -62,9 +62,12 @@ export const BearerRefreshContext = createContext<RefreshBearerToken | null>(
 );
 
 /**
- * @internal Do not import directly; use the generated hooks instead.
- * Returns the frontend's bearer-refresh function, or `null` when no
- * frontend provides one.
+ * The frontend's bearer-refresh function, or `null` when no frontend
+ * provides one. The generated hooks call it when a call answers 401; a
+ * page that fetches a `require_oauth_token=True` route itself calls it
+ * on a 401, then fetches again with the fresh token. It resolves to
+ * `undefined` when it gets no fresh token: the session is over and the
+ * provider signs out, or the application did not answer.
  */
 export function useRefreshBearerToken(): RefreshBearerToken | null {
   return useContext(BearerRefreshContext);
