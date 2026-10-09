@@ -290,6 +290,35 @@ const RebootSignInContext = createContext<RebootSignInContextValue | undefined>(
   undefined
 );
 
+/**
+ * Whether the user is signed in, as the surrounding
+ * `RebootClientProvider` knows it: `"loading"` until the session
+ * probe answers, `"error"` while it cannot be answered (backend
+ * unreachable) and is being retried, then `"authenticated"` or
+ * `"unauthenticated"`. In an MCP host the host signed the user in
+ * before the page existed, so it is `"authenticated"` from the start.
+ */
+export interface RebootAuthStatusValue {
+  status: RebootAuthStatus;
+}
+
+const RebootAuthContext = createContext<RebootAuthStatusValue | undefined>(
+  undefined
+);
+
+/**
+ * Returns whether the user is signed in; see `RebootAuthStatusValue`.
+ * For a page without a `User` state type to branch on, the way one
+ * with such a type branches on `useUser()`.
+ */
+export const useAuth = (): RebootAuthStatusValue => {
+  const context = useContext(RebootAuthContext);
+  if (context === undefined) {
+    throw new Error("`useAuth` must be used within a `RebootClientProvider`.");
+  }
+  return context;
+};
+
 const useRebootSignInContext = (): RebootSignInContextValue => {
   const context = useContext(RebootSignInContext);
   if (context === undefined) {
@@ -466,6 +495,9 @@ export async function refreshBearer(
 
 const RebootClientContext = createContext<RebootClient | undefined>(undefined);
 
+// In an MCP host the host signed the user in before the page existed.
+const MCP_AUTH_STATUS: RebootAuthStatusValue = { status: "authenticated" };
+
 interface RebootClientProviderWithClientProps {
   children: ReactNode;
   url?: undefined;
@@ -474,6 +506,7 @@ interface RebootClientProviderWithClientProps {
   nativeAuth?: RebootAuthFactory;
   client: RebootClient;
   offlineCacheEnabled?: boolean;
+  requireSignIn?: boolean;
 }
 
 interface RebootClientProviderWithURLProps {
@@ -484,6 +517,7 @@ interface RebootClientProviderWithURLProps {
   nativeAuth?: RebootAuthFactory;
   client?: undefined;
   offlineCacheEnabled?: boolean;
+  requireSignIn?: boolean;
 }
 
 interface RebootClientProviderAutoProps {
@@ -494,6 +528,7 @@ interface RebootClientProviderAutoProps {
   nativeAuth?: RebootAuthFactory;
   client?: undefined;
   offlineCacheEnabled?: boolean;
+  requireSignIn?: boolean;
 }
 
 type RebootClientProviderProps =
@@ -509,6 +544,7 @@ export const RebootClientProvider = ({
   nativeAuth,
   client,
   offlineCacheEnabled = false,
+  requireSignIn = false,
 }: RebootClientProviderProps) => {
   const [bearerToken, setBearerToken] = useState<string | undefined>(token);
 
@@ -811,6 +847,27 @@ export const RebootClientProvider = ({
   // proactive-refresh `expiresAt` bump, which re-renders this
   // provider every TTL-5s; without the memo every generated
   // `use<State>()` hook would re-render too).
+  // With `requireSignIn`, a page nobody is signed in to signs them in
+  // itself, once, the way a "Sign in" button would: the browser goes
+  // to the OAuth server and comes back to this URL. For a page whose
+  // sign-in asks nothing of the user, or that has nothing to show
+  // before it. The ref keeps a driver-backed sign-in from being
+  // launched twice; a browser's redirect leaves the page anyway.
+  const signingIn = useRef(false);
+  useEffect(() => {
+    if (!requireSignIn || mcpTitle) return;
+    if (authState.status !== "unauthenticated" || signingIn.current) return;
+    signingIn.current = true;
+    void signIn().finally(() => {
+      signingIn.current = false;
+    });
+  }, [requireSignIn, mcpTitle, authState.status, signIn]);
+
+  const authStatusValue = useMemo<RebootAuthStatusValue>(
+    () => ({ status: authState.status }),
+    [authState.status]
+  );
+
   const stateIdsContextValue = useMemo<DefaultStateIdsContextValue>(
     () => ({
       defaultIds:
@@ -825,20 +882,22 @@ export const RebootClientProvider = ({
     return (
       <RebootClientContext.Provider value={rebootClient}>
         <RebootSignInContext.Provider value={signInContextValue}>
-          <Suspense
-            fallback={
-              <div style={{ padding: "1rem", opacity: 0.7 }}>
-                Loading MCP...
-              </div>
-            }
-          >
-            <LazyMcpConnector
-              appName={mcpTitle.uiTitle}
-              setBearerToken={setBearerToken}
+          <RebootAuthContext.Provider value={MCP_AUTH_STATUS}>
+            <Suspense
+              fallback={
+                <div style={{ padding: "1rem", opacity: 0.7 }}>
+                  Loading MCP...
+                </div>
+              }
             >
-              {children}
-            </LazyMcpConnector>
-          </Suspense>
+              <LazyMcpConnector
+                appName={mcpTitle.uiTitle}
+                setBearerToken={setBearerToken}
+              >
+                {children}
+              </LazyMcpConnector>
+            </Suspense>
+          </RebootAuthContext.Provider>
         </RebootSignInContext.Provider>
       </RebootClientContext.Provider>
     );
@@ -847,11 +906,18 @@ export const RebootClientProvider = ({
   return (
     <RebootClientContext.Provider value={rebootClient}>
       <RebootSignInContext.Provider value={signInContextValue}>
-        <BearerRefreshContext.Provider value={refreshBearerToken}>
-          <DefaultStateIdsContext.Provider value={stateIdsContextValue}>
-            {children}
-          </DefaultStateIdsContext.Provider>
-        </BearerRefreshContext.Provider>
+        <RebootAuthContext.Provider value={authStatusValue}>
+          <BearerRefreshContext.Provider value={refreshBearerToken}>
+            <DefaultStateIdsContext.Provider value={stateIdsContextValue}>
+              {/* With `requireSignIn`, nothing renders until the user
+                  is signed in and the client holds their token, so no
+                  read goes out without it. */}
+              {requireSignIn && authState.status !== "authenticated"
+                ? null
+                : children}
+            </DefaultStateIdsContext.Provider>
+          </BearerRefreshContext.Provider>
+        </RebootAuthContext.Provider>
       </RebootSignInContext.Provider>
     </RebootClientContext.Provider>
   );
