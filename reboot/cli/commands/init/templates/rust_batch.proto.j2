@@ -11,10 +11,10 @@ message Ledger {
  bool rejected = 6;
  uint64 archived = 7;
  bool stop_enabled = 8; bool stop_requested = 9; bool stopped = 10;
- bytes workflow_id = 11;
+ bytes workflow_id = 11; bool decision_finished = 12; uint32 break_after = 13;
 }
 message Empty {}
-message Submit { string batch = 1; uint32 count = 2; int64 not_before = 3; uint32 reject_after = 4; bool reject_step = 5; bool stop_enabled = 6; }
+message Submit { string batch = 1; uint32 count = 2; int64 not_before = 3; uint32 reject_after = 4; bool reject_step = 5; bool stop_enabled = 6; uint32 break_after = 7; }
 message Handle { bytes id = 1; }
 message Step { string batch = 1; uint32 index = 2; bool reject = 3; }
 message StopRequest { string batch = 1; bytes task_id = 2; }
@@ -35,6 +35,7 @@ service LedgerWorkMethods {
  rpc Observe(Empty) returns (Ledger) { option (rbt.v1alpha1.method).reader = {}; }
  rpc ObserveBatch(Batch) returns (Ledger) { option (rbt.v1alpha1.method) = { reader: {} errors: ["BatchMismatch"] }; }
  rpc StopBatch(StopRequest) returns (Ledger) { option (rbt.v1alpha1.method) = { writer: {} errors: ["StopDenied"] }; }
+ rpc FinishDecision(Step) returns (Ledger) { option (rbt.v1alpha1.method).writer = {}; }
  rpc FinishStopped(Step) returns (Ledger) { option (rbt.v1alpha1.method).writer = {}; }
  rpc TryCheckpoint(Step) returns (Ledger) { option (rbt.v1alpha1.method) = { writer: {} errors: ["StepRejected"] }; }
  rpc Checkpoint(Step) returns (Ledger) { option (rbt.v1alpha1.method).writer = {}; }

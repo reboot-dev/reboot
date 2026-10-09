@@ -287,6 +287,20 @@ def listed(task_uuid, phase, due=None):
           and fields[5:] == ['0', '0'])
 
 
+def finite_decision_value(raw):
+    # Evidence decoder for the private runtime envelope, never a fabricated result.
+    from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
+    descriptor=descriptor_pb2.FileDescriptorProto(name='finite_decision_evidence.proto',package='acceptance',syntax='proto3')
+    message=descriptor.message_type.add(name='FiniteDecisionEvidence')
+    for name,number,kind in [('response',1,12),('response_type',2,9),('break_loop',3,8)]:
+        message.field.add(name=name,number=number,type=kind,label=1)
+    pool=descriptor_pool.DescriptorPool();pool.Add(descriptor)
+    klass=message_factory.MessageFactory(pool).GetPrototype(pool.FindMessageTypeByName('acceptance.FiniteDecisionEvidence'))
+    value=klass.FromString(raw)
+    assert value.response_type=='type.googleapis.com/batch_ledger.v1.Ledger'
+    return value,proto.Ledger.FromString(value.response)
+
+
 def native(session, task_uuid=None):
     with grpc.insecure_channel(f'127.0.0.1:{session.database_port}') as channel:
         stub = db_grpc.DatabaseStub(channel)
@@ -301,11 +315,25 @@ def native(session, task_uuid=None):
             for iteration in range(request.count):
                 for response in stub.RecoverIdempotentMutations(db.RecoverIdempotentMutationsRequest(state_type='batch_ledger.v1.Ledger', state_ref=reference, workflow_id=tasks[0].task_uuid, workflow_iteration=iteration), timeout=3):
                     mutations.extend(response.idempotent_mutations)
+            if os.environ.get('RUST_BATCH_LOOP_DECISION_ONLY'):
+                for response in stub.RecoverIdempotentMutations(db.RecoverIdempotentMutationsRequest(state_type='batch_ledger.v1.Ledger',state_ref=reference,workflow_id=tasks[0].task_uuid),timeout=3):
+                    mutations.extend(m for m in response.idempotent_mutations if not m.HasField('workflow_iteration'))
             for mutation in mutations:
                 assert mutation.workflow_id == tasks[0].task_uuid and mutation.request_fingerprint
                 from google.protobuf.any_pb2 import Any
                 response = Any.FromString(mutation.response)
-                if response.type_url == 'type.googleapis.com/google.rpc.Status':
+                if os.environ.get('RUST_BATCH_LOOP_DECISION_ONLY') and response.type_url=='type.googleapis.com/reboot.runtime.FiniteLoopDecision.v1':
+                    value,observed=finite_decision_value(response.value)
+                    assert mutation.HasField('workflow_iteration')
+                    assert observed.batch==request.batch and observed.completed==mutation.workflow_iteration+1
+                    assert observed.break_after==request.break_after and value.break_loop==(observed.completed>=request.break_after)
+                    import uuid
+                    name=b'batch-v1';alias=b'control'
+                    namespace=uuid.uuid5(uuid.UUID(task_uuid),'reboot.finite.decision.v1')
+                    encoded=len(name).to_bytes(8,'big')+name+mutation.workflow_iteration.to_bytes(8,'big')+len(alias).to_bytes(8,'big')+alias
+                    digest=bytearray(hashlib.sha1(namespace.bytes+encoded).digest()[:16]);digest[6]=(digest[6]&15)|80;digest[8]=(digest[8]&63)|128
+                    assert mutation.key==bytes(digest)
+                elif response.type_url == 'type.googleapis.com/google.rpc.Status':
                     from google.rpc.status_pb2 import Status
                     rich = Status.FromString(response.value)
                     assert rich.code == grpc.StatusCode.UNKNOWN.value[0] and len(rich.details) == 1
@@ -364,6 +392,18 @@ watch = None
 task_watch = None
 try:
     command([RBT, 'init', '--backend=rust', '--frontend=none', '--application-name=batch_ledger', '--rust-sdk=' + str(ROOT / 'reboot/rust'), '--rust-example=batch-ledger'])
+    if os.environ.get('RUST_BATCH_LOOP_DECISION_ONLY'):
+        lib=APP/'backend/src/lib.rs'
+        text=lib.read_text()
+        needle='move |state| state.completed >= threshold,'
+        assert text.count(needle)==1
+        text=text.replace(needle,'move |state| { event("finite-decision-evaluated"); state.completed >= threshold },')
+        needle='std::ops::ControlFlow::Break(_) => {\n                        break;\n                    }'
+        replacement='std::ops::ControlFlow::Break(_) => {\n                        if let Some(path)=std::env::var_os("RBT_RUST_FINITE_DECISION_PROBE") {\n                            let path=std::path::PathBuf::from(path);\n                            event("finite-break-before-after-loop");\n                            std::fs::write(&path,b"saved Break accepted; after-loop writer not entered")\n                                .map_err(|e|tonic::Status::internal(e.to_string()))?;\n                            while !path.with_extension("release").exists() {\n                                tokio::time::sleep(std::time::Duration::from_millis(10)).await;\n                            }\n                        }\n                        break;\n                    }'
+        assert text.count(needle)==1
+        lib.write_text(text.replace(needle,replacement))
+        command(['cargo','fmt','--manifest-path','backend/Cargo.toml'])
+        evidence['finite_handler_sha256']=hashlib.sha256(lib.read_bytes()).hexdigest()
     if os.environ.get('RUST_BATCH_MAP_LIFETIME_ONLY'):
         # Generated-handler overlay only: poll a real map reader to its native
         # await after a real eager insert, then drop it and try returning success.
@@ -457,6 +497,61 @@ try:
     reference = str(StateRef.from_id('batch_ledger.v1.Ledger', 'ledger'))
     map_ref = str(StateRef.from_id('rbt.std.collections.v1.SortedMap', 'approvals'))
     archive_ref = str(StateRef.from_id('rbt.std.collections.v1.SortedMap', 'archived-approvals'))
+    if os.environ.get('RUST_BATCH_LOOP_DECISION_ONLY'):
+        marker=STAGE/'accepted-break'
+        ENV['RBT_RUST_FINITE_DECISION_PROBE']=str(marker)
+        current=Session('finite-decision-start')
+        until(lambda:'actor state must be constructed' in client('work-unary','finite',ok=False)[0],'finite public admission available')
+        client('create')
+        baseline=client('read')[0]
+        error,_=client('submit-break','bad-threshold','2','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','0','3',ok=False)
+        check('finite out-of-bound threshold is rejected without app mutation','threshold' in error and client('read')[0]==baseline)
+        error,_=client('decision-finish-direct','finite','2',ok=False)
+        check('after-loop writer denies public direct invocation even with admin','PermissionDenied' in error and client('read')[0]==baseline)
+        uuid,_=client('submit-break','finite','3','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','0','2')
+        client('approve','finite','0')
+        def continued():
+            data=native(current,uuid)
+            return data[0].completed==1 and len(data[3])==3
+        until(continued,'first iteration Continue persisted before second approval')
+        first=native(current,uuid)
+        check('Continue leaves real task Pending and next iteration parked',first[2].status==db.Task.PENDING and first[0].break_after==2 and not first[0].decision_finished and len(first[3])==3)
+        client('approve','finite','1')
+        until(lambda:marker.exists(),'saved Break before after-loop writer')
+        paused=native(current,uuid)
+        def snapshot(data):
+            return (data[0].SerializeToString(),data[1].SerializeToString(),data[2].SerializeToString(),sorted(m.SerializeToString() for m in data[3]),archive_rows(current).SerializeToString())
+        original=snapshot(paused)
+        check('Break is persisted while after-loop work and task completion are still Pending',paused[0].completed==2 and paused[0].approved==2 and not paused[0].decision_finished and paused[2].status==db.Task.PENDING and paused[2].iteration==0 and len(paused[3])==6)
+        def decisions(data):
+            from google.protobuf.any_pb2 import Any
+            return sorted(m.SerializeToString() for m in data[3] if Any.FromString(m.response).type_url=='type.googleapis.com/reboot.runtime.FiniteLoopDecision.v1')
+        originals=decisions(paused)
+        check('exactly two native saved Continue/Break envelopes exist',len(originals)==2)
+        check('callbacks evaluated once per real first/second observation',sum('finite-decision-evaluated' in event for event in events(current))==2)
+        error,_=client('approve','finite','2',ok=False)
+        check('break threshold blocks a third transaction before its map insert','InvalidArgument' in error and snapshot(native(current,uuid))==original)
+        error,_=client('decision-finish-direct','finite','2',ok=False)
+        check('public invocation cannot steal paused private continuation','PermissionDenied' in error and snapshot(native(current,uuid))==original)
+        current.close();current=None
+        current=Session('finite-decision-restart')
+        until(lambda:any('finite-break-before-after-loop' in event for event in events(current)),'restart resumes saved Break before after-loop work')
+        restored=native(current,uuid)
+        check('all app/map/task/checkpoint participants restore exact paused prefix',snapshot(restored)==original)
+        check('restart never recomputes either saved control callback',not any('finite-decision-evaluated' in event for event in events(current)) and decisions(restored)==originals)
+        marker.with_suffix('.release').write_text('allow private after-loop continuation')
+        check('canonical public Wait completes at the saved finite Break',client('wait',uuid,'10000')[0]=='finite 3 2 2 1')
+        finished=native(current,uuid)
+        check('after-loop work executes once and no third iteration is admitted',finished[0].decision_finished and finished[2].status==db.Task.COMPLETED and len(finished[3])==7 and logical_keys(finished[1])==['finite:0000','finite:0001'] and sum('after-loop-finite-2' in event for event in events(current))==1 and not any('checkpoint-finite-2' in event for event in events(current)))
+        final=snapshot(finished)
+        current.close();current=None
+        current=Session('finite-decision-terminal-restart')
+        until(lambda:native(current,uuid)[2].status==db.Task.COMPLETED,'terminal finite task restored')
+        check('terminal restart preserves exact after-loop state and receipts',snapshot(native(current,uuid))==final and client('wait',uuid,'3000')[0]=='finite 3 2 2 1')
+        check('terminal restart does not reenter body/decision/finalizer',not any(any(marker in event for marker in ('body-finite','finite-decision-evaluated','after-loop-finite')) for event in events(current)))
+        current.close();current=None
+        evidence['accepted']=True
+        raise SystemExit(0)
     if os.environ.get('RUST_BATCH_MAP_LIFETIME_ONLY'):
         current=Session('map-lifetime-baseline')
         until(lambda:'actor state must be constructed' in client('work-unary','lifetime',ok=False)[0],'map lifetime public admission')

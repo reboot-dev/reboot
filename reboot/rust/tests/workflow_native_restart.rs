@@ -14,6 +14,11 @@ fn generated_workflow_body_resumes_without_host_restart_and_fences_unsafe_failur
 fn generated_finite_iterations_and_reactive_decisions_survive_native_restart() {
     proof("prove_control_flow.py");
 }
+#[test]
+#[ignore = "requires real CXX/RocksDB and WORKFLOW_DECISION_STAGE/WORKFLOW_DECISION_EVIDENCE"]
+fn generated_finite_continue_break_and_after_loop_survive_state_flip_and_restart() {
+    proof("prove_loop_decision.py");
+}
 fn proof(script: &str) {
     let fixture =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/workflow_app");

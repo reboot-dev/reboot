@@ -42,7 +42,7 @@ proofs below retain their separate source snapshots and limits.
 | State/client runtime | Durable constructors/readers/writers, idempotent response replay, metadata/auth | General distributed ownership/fencing and arbitrary external effects |
 | Transactions | Legacy durable coordinator/participant paths and bounded supervised chains/star | General nested snapshots, reentrancy, intersecting subtrees, migration |
 | Tasks | Durable scheduled tasks, typed results/Wait, recovery, local admin list/stream and scheduled-workflow cancellation | Transactional targets, running/ordinary/distributed cancellation, aggregation, broad retry and dispatcher fencing |
-| Workflows | Finite typed named steps, finite indexed replay, saved reader decisions, typed declared business terminals; explicit local-body resumption | Python unbounded Task cursor/GC/Break, cross-actor composition, framework failure isolation |
+| Workflows | Finite typed named steps, finite indexed replay, saved reader observations and finite Continue/Break, typed declared business terminals; explicit local-body resumption | Python unbounded Task cursor/GC/Break, cross-actor composition, framework failure isolation |
 | Reactive readers | Typed bounded database/workflow/transaction-service ordinary reader subscriptions, commit invalidation and explicit same-query reconnect | Cross-actor/remote invalidation, transparent reconnect/durable resume, streaming/transaction RPC subscriptions |
 | SortedMap | Canonical empty constructor, serial same-host app/map transactions and public two-map atomic approval transfer | Public inbound adapter, nested/reusable siblings, distributed collection lifecycle |
 
@@ -935,11 +935,12 @@ approval of a rejected batch fails, while a new scheduled batch can proceed.
 
 `WorkflowContext::iteration(name, index, count)` mints explicit finite indexed
 replay scopes, with count bounded to 1..1024 and no nested scopes. This is **not**
-Python's unbounded canonical `Task.iteration` cursor, iteration GC, or persisted
-Continue/Break API: Task remains iteration zero and restart reruns the finite
-application body, loading each acknowledged typed decision/effect. There is no
-arbitrary-loop exit-decision guarantee; callers must keep the explicit finite
-count, indices, condition version and named calls stable across replay.
+Python's unbounded canonical `Task.iteration` cursor or iteration GC. Task remains
+iteration zero and restart reruns the finite application body, loading each
+acknowledged typed decision/effect. Explicit finite Continue/Break is now supported
+by the separate saved decision API below; this does not persist arbitrary Rust
+control flow. Keep the finite count, indices, condition version and named calls
+stable across replay.
 
 Generated `WorkflowSteps::<reader>_until` binds exact immutable reader descriptor,
 request/result types, explicit checkpoint alias and versioned named condition.
@@ -1018,6 +1019,77 @@ once, exhaustion, real transport/framework failures, cancellation, generation AB
 root-handoff Drop, and pending/terminal persistence through actual host/RocksDB
 restarts. Python comparison: [workflow API](../aio/workflows.py),
 [dispatcher](../aio/internals/tasks_dispatcher.py).
+
+### Finite saved Continue/Break and after-loop work (2026-10-09)
+
+`WorkflowContext::decide_reader` and generated `WorkflowSteps::<reader>_decide`
+save one same-actor immutable observation and its pure boolean classifier result
+as a typed `ControlFlow<Response, Response>`. Only explicit finite iteration
+scopes are admitted. Replay returns the saved branch and original snapshot before
+consulting live state or invoking the classifier. A named global writer after the
+loop is separately persisted; Break is not a workflow terminal. The classifier
+is trusted/pure and its condition name is the versioned semantic contract; a crash
+before Store acknowledgement can rerun it. No exactly-once callback claim.
+
+Decisions use their own `reboot.finite.decision.v1` UUIDv5 domain; an application
+response with the internal envelope's type URL cannot collide with ordinary waits.
+The fingerprint additionally binds decision kind and original reader response
+URL. Old writer/wait keys are unchanged. The envelope carries saved response bytes,
+original response type and branch; type/Prost decoding precedes attempt success.
+Generated `_until`/`_decide` helpers are checked against writer member names.
+Ordinary waits and decisions both recheck the actor uncertainty latch under the
+exclusive lease after queued admission, before recovery/read/checkpoint work.
+A controlled polled-reader/uncertain-writer regression verifies rejection and
+lease release; it is not new native lost-ACK injection.
+
+The public opt-in batch example adds `submit-break BATCH COUNT KEY DUE THRESHOLD`.
+A positive threshold no greater than count stops further approvals/iterations;
+`FinishDecision` persists private after-loop finalization, denied to ordinary
+public callers even with admin metadata. Existing ordinary batches, stop and
+business rejection retain their contracts. Python `context.loop()` instead advances
+canonical Task.iteration on Continue and does not persist a distinct Break enum in
+its finally path; this separate finite application contract is not that cursor/GC.
+
+**Executed:** `/tmp/reboot-rust-loop-decision-sdk-1791525682443676332`: **434 Rust tests passed, 130 ignored**, strict all-target
+SDK Clippy, and one explicitly executed ignored real CXX/RocksDB generated fixture.
+It saved Continue then Break, mutated the live actor via a real public writer so
+recomputed Break would differ, restarted host and Database, returned the original
+snapshot, executed one after-loop writer, and retained state/receipts through a
+second terminal restart. Eighteen commands, six owned processes reaped. Classifier
+traces prove callback omission; reader omission is additionally source-backed,
+not an independent reader-entry trace in that fixture.
+
+Public Cargo/`rbt` execution: `/tmp/reboot-rust-loop-decision-cli-1791525909015345513`: **19 checks**, strict/fmt and
+nonzero generated-consumer tests plus 24 CLI tests. Canonical inspection decodes
+actual saved envelopes, validates original URL/branch/snapshot and decision UUID
+keys, Pending Task.iteration zero, exact restored app/map/task/checkpoint prefix,
+then canonical Wait and one after-loop record, no third iteration, and terminal
+restart without body/classifier/finalizer redispatch. Public direct continuation
+and out-of-bound thresholds are rejected without mutation. The public case
+preserves observed state; the separate native fixture above supplies state-flip
+coverage. Receipt fingerprints are asserted present and stable, not independently
+recomputed by this inspector.
+
+Retained generated-consumer strict Clippy: `/tmp/reboot-rust-http-request-preflight-1791526214679215542`. Full unchanged public
+batch regression: `/tmp/reboot-rust-batch-ledger-acceptance-1791526290123700900` (**162 checks**). Native greeting/HTTP/health/hot-rebuild/
+restart/cleanup: `/tmp/reboot-rust-loop-decision-greeting-1791527037529943302` (**26 HTTP exchanges**, SERVING -> NOT_SERVING -> EOF).
+Frozen manifests, database identity, resource limits and recorded PID absence
+were audited before canonical digest refresh. A prior CLI harness timeout compared
+an unprefixed event against whole prefixed log lines; its saved Break was parked,
+its retained CLI was gracefully stopped without releasing continuation, and fresh
+isolated acceptance was required. No uncertain mutation was retried.
+
+**Remaining:** unbounded canonical cursor/GC, nested/cross-actor composition,
+general durable catch/failure isolation, new decision Store/CompleteTask lost-ACK
+or malformed-envelope process injection, full-bound saturation and distributed
+fencing. Existing operation/authority/uncertainty guards remain; compile/unit tests
+are not those native negative proofs. Overall parity remains incomplete.
+
+Sources: [decision API](src/workflow_context.rs), [durable keys/Store](src/workflow_store.rs),
+[generated helper validation](src/workflow_codegen.rs),
+[native state-flip proof](tests/fixtures/workflow_app/prove_loop_decision.py),
+[Python loop source](../aio/state_managers.py),
+[public CLI acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
 
 ## Local reactive readers
 
@@ -1866,7 +1938,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: b1287fe9e9d6e986d27d2bd6f9bf9b038b4bcde664cbf4acbc17e617f80b1751 -->
+<!-- parity-source-sha256: a7874198c73e80c01b60eaf52482ab6a684d9473f93e44e2da9046eeb93f2afa -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

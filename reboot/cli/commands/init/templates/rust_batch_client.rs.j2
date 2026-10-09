@@ -112,6 +112,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
         "submit"
+        | "submit-break"
         | "submit-rejecting"
         | "submit-step-reject"
         | "submit-stoppable"
@@ -131,6 +132,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     command,
                     "submit-stoppable" | "submit-stoppable-step-reject"
                 ),
+                break_after: if command == "submit-break" {
+                    arg(5)?.parse()?
+                } else {
+                    0
+                },
                 reject_after: if command == "submit-rejecting" {
                     arg(5)?.parse()?
                 } else {
@@ -186,7 +192,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
-        "stop-finish-direct" => {
+        "stop-finish-direct" | "decision-finish-direct" => {
             let mut client =
                 proto::ledger_work_methods_client::LedgerWorkMethodsClient::new(channel);
             let mut request = context.writer(proto::Step {
@@ -200,7 +206,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .insert("authorization", format!("Bearer {token}").parse()?);
             }
             request.set_timeout(Duration::from_secs(3));
-            show(client.finish_stopped(request).await?.into_inner());
+            if command == "decision-finish-direct" {
+                show(client.finish_decision(request).await?.into_inner());
+            } else {
+                show(client.finish_stopped(request).await?.into_inner());
+            }
         }
         "reader-target-error" | "index-target-error" => {
             let mut client =

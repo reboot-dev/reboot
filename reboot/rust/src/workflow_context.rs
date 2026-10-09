@@ -1,3 +1,44 @@
+async fn workflow_reader_lease(
+    gate: &crate::runtime::ActorGate,
+    revisions: &mut tokio::sync::watch::Receiver<(u64, bool)>,
+) -> Result<crate::runtime::ExclusiveActorLease, Status> {
+    let lease = gate.exclusive().await;
+    // A writer can lose its Store ACK while this reader is queued for admission.
+    // Recheck under the acquired lease before any scope Load, reader or checkpoint.
+    if revisions.borrow_and_update().1 {
+        return Err(Status::unavailable("actor commit outcome uncertain"));
+    }
+    Ok(lease)
+}
+#[cfg(test)]
+mod loop_decision_admission_tests {
+    use super::*;
+    #[tokio::test]
+    async fn queued_reader_cannot_cross_a_preceding_uncertain_commit() {
+        let gate = crate::runtime::ActorGate::new();
+        let writer = gate.exclusive().await;
+        let mut revisions = gate.committed_revisions();
+        assert!(!revisions.borrow_and_update().1);
+        let reader = workflow_reader_lease(&gate, &mut revisions);
+        tokio::pin!(reader);
+        std::future::poll_fn(|cx| match reader.as_mut().poll(cx) {
+            std::task::Poll::Pending => std::task::Poll::Ready(()),
+            std::task::Poll::Ready(_) => panic!("reader bypassed held writer admission"),
+        })
+        .await;
+        drop(gate.commit_attempt());
+        drop(writer);
+        let error = match reader.await {
+            Err(error) => error,
+            Ok(_) => panic!("reader admitted after preceding uncertain commit"),
+        };
+        assert_eq!(error.code(), tonic::Code::Unavailable);
+        // The failed admission itself must release its owned lease.
+        tokio::time::timeout(std::time::Duration::from_secs(1), gate.exclusive())
+            .await
+            .unwrap();
+    }
+}
 #[cfg(test)]
 mod workflow_admission_tests {
     use super::*;
@@ -104,50 +145,38 @@ mod workflow_admission_tests {
             "type.googleapis.com/tests.Rejected",
             crate::proto::Counter::default().encode_to_vec(),
         );
-        assert!(
-            context
-                .validate_writer_step_error("tests.Service.Step", &valid)
-                .is_err()
-        );
+        assert!(context
+            .validate_writer_step_error("tests.Service.Step", &valid)
+            .is_err());
         let operation = attempt.operation();
         context
             .validate_writer_step_error("tests.Service.Step", &valid)
             .unwrap();
-        assert!(
-            context
-                .validate_writer_step_error("tests.Service.Foreign", &valid)
-                .is_err()
-        );
-        assert!(
-            context
-                .validate_writer_step_error(
-                    "tests.Service.Step",
-                    &error("type.googleapis.com/tests.Foreign", vec![])
-                )
-                .is_err()
-        );
-        assert!(
-            context
-                .validate_writer_step_error(
-                    "tests.Service.Step",
-                    &error("type.googleapis.com/tests.Rejected", vec![255])
-                )
-                .is_err()
-        );
+        assert!(context
+            .validate_writer_step_error("tests.Service.Foreign", &valid)
+            .is_err());
+        assert!(context
+            .validate_writer_step_error(
+                "tests.Service.Step",
+                &error("type.googleapis.com/tests.Foreign", vec![])
+            )
+            .is_err());
+        assert!(context
+            .validate_writer_step_error(
+                "tests.Service.Step",
+                &error("type.googleapis.com/tests.Rejected", vec![255])
+            )
+            .is_err());
         let peer = attempt.operation();
-        assert!(
-            context
-                .validate_writer_step_error("tests.Service.Step", &valid)
-                .is_err()
-        );
+        assert!(context
+            .validate_writer_step_error("tests.Service.Step", &valid)
+            .is_err());
         peer.acknowledged();
         let failed = attempt.operation();
         drop(failed);
-        assert!(
-            context
-                .validate_writer_step_error("tests.Service.Step", &valid)
-                .is_err()
-        );
+        assert!(context
+            .validate_writer_step_error("tests.Service.Step", &valid)
+            .is_err());
         operation.acknowledged();
     }
     #[tokio::test]
@@ -260,6 +289,7 @@ mod workflow_admission_tests {
             context.checkpoint_key(seed, &legacy_alias, None),
             scoped.checkpoint_key(seed, "gate", None),
             scoped.checkpoint_key(seed, "gate", Some("condition.v1")),
+            scoped.checkpoint_decision_key(seed, "gate"),
             context.checkpoint_key(seed, "gate", Some("condition.v1")),
             context
                 .iteration("a", 1, 3)
@@ -465,20 +495,17 @@ mod workflow_admission_tests {
             )],
         )
         .unwrap();
-        assert!(
-            legacy_reader
-                .validate_workflow_writer::<D, crate::proto::Counter, crate::proto::Counter>(
-                    "tests.Service.Apply"
-                )
-                .is_err()
-        );
+        assert!(legacy_reader
+            .validate_workflow_writer::<D, crate::proto::Counter, crate::proto::Counter>(
+                "tests.Service.Apply"
+            )
+            .is_err());
         assert!(rw.workflow_running_admission().is_err());
-        assert!(
-            rw.validate_workflow_writer::<D, crate::proto::Counter, crate::proto::Counter>(
+        assert!(rw
+            .validate_workflow_writer::<D, crate::proto::Counter, crate::proto::Counter>(
                 "tests.Service.Run"
             )
-            .is_err()
-        );
+            .is_err());
     }
 }
 
@@ -581,6 +608,15 @@ enum WorkflowOutcome {
     Terminal(db::task::ResponseOrError),
     PreStoreBodyFailure(Status),
 }
+#[derive(Clone, prost::Message)]
+struct LoopDecisionCheckpoint {
+    #[prost(bytes = "vec", tag = "1")]
+    response: Vec<u8>,
+    #[prost(string, tag = "2")]
+    response_type: String,
+    #[prost(bool, tag = "3")]
+    break_loop: bool,
+}
 impl<'a> WorkflowContext<'a> {
     /// Explicit finite replay scope, not an unbounded Task cursor. Restart replays
     /// the bounded body; acknowledged typed decisions/effects are loaded, never
@@ -644,6 +680,20 @@ impl<'a> WorkflowContext<'a> {
             encoded.extend_from_slice(name.as_bytes());
             encoded.extend_from_slice(&index.to_be_bytes());
         }
+        encoded.extend_from_slice(&(alias.len() as u64).to_be_bytes());
+        encoded.extend_from_slice(alias.as_bytes());
+        uuid::Uuid::new_v5(&namespace, &encoded)
+    }
+    pub(crate) fn checkpoint_decision_key(&self, seed: uuid::Uuid, alias: &str) -> uuid::Uuid {
+        let namespace = uuid::Uuid::new_v5(&seed, b"reboot.finite.decision.v1");
+        let (name, index, _) = self
+            .iteration
+            .as_ref()
+            .expect("decision requires validated finite scope");
+        let mut encoded = Vec::new();
+        encoded.extend_from_slice(&(name.len() as u64).to_be_bytes());
+        encoded.extend_from_slice(name.as_bytes());
+        encoded.extend_from_slice(&index.to_be_bytes());
         encoded.extend_from_slice(&(alias.len() as u64).to_be_bytes());
         encoded.extend_from_slice(alias.as_bytes());
         uuid::Uuid::new_v5(&namespace, &encoded)
@@ -754,7 +804,7 @@ impl<'a> WorkflowContext<'a> {
             self.wait_test_pause("REBOOT_TEST_WORKFLOW_WAIT_BEFORE_READ")
                 .await?;
             let result = {
-                let _lease = gate.exclusive().await;
+                let _lease = workflow_reader_lease(&gate, &mut revisions).await?;
                 reader_scope.check()?;
                 self.validate_scope().await?;
                 self.tasks
@@ -795,6 +845,156 @@ impl<'a> WorkflowContext<'a> {
                 changed=revisions.changed()=>changed.map_err(|_|Status::unavailable("actor revision owner lost"))?,
             }
             self.validate_scope().await?;
+        }
+    }
+
+    /// Save a typed same-actor reader result and pure Continue/Break decision
+    /// in one acknowledged checkpoint. Replay loads both without invoking the
+    /// reader or decision callback. `condition` is the versioned trusted decision
+    /// contract: change it if callback semantics change. This requires an explicit
+    /// finite iteration, does not advance Task.iteration or garbage-collect records,
+    /// and does not implement Python's unbounded control-loop cursor.
+    pub async fn decide_reader<D, Q, R, F, P>(
+        &self,
+        name: WorkflowWaitName<'_>,
+        method: &'static str,
+        response_type: &'static str,
+        request: Q,
+        read: F,
+        should_break: P,
+    ) -> Result<std::ops::ControlFlow<R, R>, Status>
+    where
+        D: crate::runtime::DurableStateDeclaration + 'static,
+        Q: prost::Message + Default + Clone + Send + 'static,
+        R: prost::Message + Default + Clone + Send + 'static,
+        F: for<'s> Fn(
+                &'s D::State,
+                Q,
+            ) -> std::pin::Pin<
+                Box<dyn std::future::Future<Output = Result<R, Status>> + Send + 's>,
+            > + Send
+            + Sync
+            + 'static,
+        P: Fn(&R) -> bool + Send + Sync + 'static,
+    {
+        let operation = self.attempt.operation();
+        if self.iteration.is_none() {
+            return Err(Status::failed_precondition(
+                "loop decision requires finite iteration scope",
+            ));
+        }
+        let WorkflowWaitName { alias, condition } = name;
+        if alias.is_empty()
+            || alias.len() > 256
+            || alias.chars().any(char::is_control)
+            || condition.is_empty()
+            || condition.len() > 256
+            || condition.chars().any(char::is_control)
+        {
+            return Err(Status::invalid_argument(
+                "wait requires bounded explicit checkpoint and condition names",
+            ));
+        }
+        let id = self
+            .task
+            .task_id
+            .as_ref()
+            .ok_or_else(|| Status::failed_precondition("missing workflow ID"))?;
+        let declaration = self
+            .tasks
+            .inner
+            .declarations
+            .iter()
+            .find(|d| d.method == method)
+            .ok_or_else(|| Status::failed_precondition("unregistered workflow reader"))?;
+        let probe = db::Task {
+            method: method.rsplit('.').next().unwrap_or("").to_owned(),
+            ..self.task.clone()
+        };
+        if !declaration.workflow_reader_wait
+            || declaration.workflow
+            || declaration.workflow_writer_step
+            || declaration.declaration != std::any::TypeId::of::<D>()
+            || declaration.request != std::any::TypeId::of::<Q>()
+            || declaration.response != std::any::TypeId::of::<R>()
+            || declaration.response_type != response_type
+            || id.state_type != D::STATE_TYPE
+            || self.tasks.inner.binding.is_writer(&probe)
+        {
+            return Err(Status::failed_precondition(
+                "workflow reader descriptor mismatch",
+            ));
+        }
+        let gate = self
+            .tasks
+            .inner
+            .store
+            .actor_gate(&id.state_type, &id.state_ref);
+        let mut revisions = gate.committed_revisions();
+        let reader_scope = crate::reactive::ReaderScope::new(self.cancel.clone());
+        reader_scope.check()?;
+        let read = Arc::new(read);
+        let should_break = Arc::new(should_break);
+        {
+            reader_scope.check()?;
+            if revisions.borrow_and_update().1 {
+                return Err(Status::unavailable("actor commit outcome uncertain"));
+            }
+            #[cfg(feature = "test-support")]
+            self.wait_test_pause("REBOOT_TEST_WORKFLOW_WAIT_BEFORE_READ")
+                .await?;
+            let result = {
+                let _lease = workflow_reader_lease(&gate, &mut revisions).await?;
+                reader_scope.check()?;
+                self.validate_scope().await?;
+                self.tasks
+                    .inner
+                    .store
+                    .workflow_reader_decision_step::<D, Q, LoopDecisionCheckpoint, _>(
+                        self,
+                        (alias, Some(condition)),
+                        method,
+                        (
+                            "type.googleapis.com/reboot.runtime.FiniteLoopDecision.v1",
+                            response_type,
+                        ),
+                        request.clone(),
+                        {
+                            let read = read.clone();
+                            let should_break = should_break.clone();
+                            move |state, request| {
+                                Box::pin(async move {
+                                    let response = read(state, request).await?;
+                                    Ok(Some(LoopDecisionCheckpoint {
+                                        response: response.encode_to_vec(),
+                                        response_type: response_type.to_owned(),
+                                        break_loop: should_break(&response),
+                                    }))
+                                })
+                            }
+                        },
+                    )
+                    .await?
+            };
+            reader_scope.check()?;
+            if let Some(result) = result {
+                if result.response_type != response_type {
+                    return Err(Status::failed_precondition(
+                        "loop decision response type collision",
+                    ));
+                }
+                let response = R::decode(result.response.as_slice())
+                    .map_err(|_| Status::data_loss("malformed saved loop decision response"))?;
+                operation.acknowledged();
+                return Ok(if result.break_loop {
+                    std::ops::ControlFlow::Break(response)
+                } else {
+                    std::ops::ControlFlow::Continue(response)
+                });
+            }
+            Err(Status::data_loss(
+                "loop decision checkpoint omitted its result",
+            ))
         }
     }
 
@@ -855,21 +1055,21 @@ impl<'a> WorkflowContext<'a> {
         {
             let _owner = admission.lock()?;
         }
-        let loaded =
-            self.tasks
-                .inner
-                .store
-                .task_database()
-                .load(db::LoadRequest {
-                    actors: vec![],
-                    task_ids: vec![
-                        self.task.task_id.clone().ok_or_else(|| {
-                            Status::failed_precondition("missing workflow identity")
-                        })?,
-                    ],
-                })
-                .await?
-                .into_inner();
+        let loaded = self
+            .tasks
+            .inner
+            .store
+            .task_database()
+            .load(db::LoadRequest {
+                actors: vec![],
+                task_ids: vec![self
+                    .task
+                    .task_id
+                    .clone()
+                    .ok_or_else(|| Status::failed_precondition("missing workflow identity"))?],
+            })
+            .await?
+            .into_inner();
         {
             let _owner = admission.lock()?;
         }
@@ -1047,7 +1247,7 @@ impl<'a> WorkflowContext<'a> {
                 .store
                 .workflow_step_outcome::<D, Q, R, _>(
                     self,
-                    (alias, None),
+                    (alias, None, None),
                     method,
                     response_type,
                     request,

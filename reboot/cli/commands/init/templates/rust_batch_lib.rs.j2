@@ -79,8 +79,20 @@ impl generated::LedgerWorkMethodsDatabaseHandler for Ledger {
                 "cooperative stop requires an immediate batch",
             ));
         }
-        if state.completed < state.count && !state.rejected && !state.stopped {
+        if state.completed < state.count
+            && !state.rejected
+            && !state.stopped
+            && !state.decision_finished
+        {
             return Err(tonic::Status::failed_precondition("previous batch pending"));
+        }
+        if request.break_after > request.count
+            || (request.break_after != 0
+                && (request.stop_enabled || request.reject_step || request.reject_after != 0))
+        {
+            return Err(tonic::Status::invalid_argument(
+                "finite break threshold exceeds count or conflicts with stop/rejection",
+            ));
         }
         if request.reject_after > request.count {
             return Err(tonic::Status::invalid_argument(
@@ -106,6 +118,8 @@ impl generated::LedgerWorkMethodsDatabaseHandler for Ledger {
         state.stop_enabled = request.stop_enabled;
         state.stop_requested = false;
         state.stopped = false;
+        state.decision_finished = false;
+        state.break_after = request.break_after;
         state.workflow_id = if request.stop_enabled {
             id.clone()
         } else {
@@ -163,6 +177,38 @@ impl generated::LedgerWorkMethodsDatabaseHandler for Ledger {
         }
         state.stop_requested = true;
         Ok(state.clone())
+    }
+    async fn finish_decision(
+        &self,
+        state: &mut proto::Ledger,
+        request: proto::Step,
+    ) -> Result<proto::Ledger, tonic::Status> {
+        if state.batch != request.batch
+            || state.break_after == 0
+            || state.completed != state.break_after
+            || request.index != state.completed
+            || state.decision_finished
+            || state.rejected
+            || state.stop_enabled
+            || request.reject
+        {
+            return Err(tonic::Status::failed_precondition(
+                "finite decision finalizer identity/progress mismatch",
+            ));
+        }
+        event(&format!("after-loop-{}-{}", request.batch, request.index));
+        state.decision_finished = true;
+        Ok(state.clone())
+    }
+    async fn finish_decision_scheduled(
+        &self,
+        _: &mut proto::Ledger,
+        _: proto::Step,
+        _: String,
+    ) -> Result<TransactionExecution<proto::Ledger>, tonic::Status> {
+        Err(tonic::Status::permission_denied(
+            "finite decision finalizer requires private workflow authority",
+        ))
     }
     async fn finish_stopped(
         &self,
@@ -281,6 +327,15 @@ impl generated::LedgerWorkMethodsDatabaseHandler for Ledger {
         request: proto::Submit,
     ) -> Result<proto::Ledger, generated::LedgerWorkMethodsRunBatchError> {
         validate_batch(&request.batch, request.count)?;
+        if request.break_after > request.count
+            || (request.break_after != 0
+                && (request.stop_enabled || request.reject_step || request.reject_after != 0))
+        {
+            return Err(tonic::Status::invalid_argument(
+                "finite break threshold exceeds count or conflicts with stop/rejection",
+            )
+            .into());
+        }
         if request.reject_after > request.count {
             return Err(tonic::Status::invalid_argument("reject_after exceeds count").into());
         }
@@ -357,6 +412,26 @@ impl generated::LedgerWorkMethodsDatabaseHandler for Ledger {
                 },
             )
             .await?;
+            if request.break_after != 0 {
+                let threshold = request.break_after;
+                let decision = generated::LedgerWorkMethodsWorkflowSteps::observe_batch_decide(
+                    &iteration,
+                    Arc::new(self.clone()),
+                    "control",
+                    "completed-at-threshold.v1",
+                    proto::Batch {
+                        batch: request.batch.clone(),
+                    },
+                    move |state| state.completed >= threshold,
+                )
+                .await?;
+                match decision {
+                    std::ops::ControlFlow::Continue(_) => {}
+                    std::ops::ControlFlow::Break(_) => {
+                        break;
+                    }
+                }
+            }
             if result.rejected {
                 return Err(generated::LedgerWorkMethodsRunBatchError::BatchRejected(
                     proto::BatchRejected {
@@ -366,6 +441,19 @@ impl generated::LedgerWorkMethodsDatabaseHandler for Ledger {
                     },
                 ));
             }
+        }
+        if request.break_after != 0 {
+            result = generated::LedgerWorkMethodsWorkflowSteps::finish_decision(
+                context,
+                Arc::new(self.clone()),
+                "after-loop",
+                proto::Step {
+                    batch: request.batch,
+                    index: result.completed,
+                    reject: false,
+                },
+            )
+            .await?;
         }
         Ok(result)
     }
@@ -422,6 +510,8 @@ impl generated::LedgerIndexMethodsTransactionHandler for Index {
         if state.rejected
             || state.stop_requested
             || state.stopped
+            || state.decision_finished
+            || (state.break_after != 0 && request.index >= state.break_after)
             || state.batch != request.batch
             || request.index != state.approved
             || request.index >= state.count

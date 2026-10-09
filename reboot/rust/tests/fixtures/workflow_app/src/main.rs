@@ -117,6 +117,9 @@ impl generated::LedgerMethodsDatabaseHandler for Ledger {
             .await
             .map_err(|e| match e {
                 reboot::one_shot_tasks::WorkflowBodyError::Failed(error) => error,
+                reboot::one_shot_tasks::WorkflowBodyError::Declared(_) => {
+                    tonic::Status::failed_precondition("fixture Run declares no business errors")
+                }
                 reboot::one_shot_tasks::WorkflowBodyError::RetryLocal(message) => {
                     tonic::Status::internal(message)
                 }
@@ -128,6 +131,41 @@ impl generated::LedgerMethodsDatabaseHandler for Ledger {
         request: proto::Step,
     ) -> Result<proto::Result, reboot::one_shot_tasks::WorkflowBodyError> {
         event("body");
+        if std::env::var("WORKFLOW_BODY_MODE").as_deref() == Ok("decision") {
+            let count = u64::try_from(request.amount)
+                .map_err(|_| tonic::Status::invalid_argument("negative finite count"))?;
+            if !(1..=3).contains(&count) {
+                return Err(tonic::Status::invalid_argument("decision fixture count must be 1..=3").into());
+            }
+            let mut observed_first = 0;
+            for index in 0..count {
+                let iteration = context.iteration("decision", index, count)?;
+                generated::LedgerMethodsWorkflowSteps::first(
+                    &iteration, Arc::new(self.clone()), "effect", proto::Step { amount: 1 }
+                ).await?;
+                let decision = generated::LedgerMethodsWorkflowSteps::query_decide(
+                    &iteration, Arc::new(self.clone()), "control", "break-first-at-least-two.v1", proto::Empty {},
+                    move |state| { event(&format!("decision-evaluate-{index}")); state.first >= 2 }
+                ).await?;
+                event(&format!("decision-{index}-ack"));
+                match decision {
+                    std::ops::ControlFlow::Continue(state) => { observed_first = state.first; }
+                    std::ops::ControlFlow::Break(state) => {
+                        observed_first = state.first;
+                        event("decision-break");
+                        if std::env::var("DECISION_PAUSE_AFTER_BREAK").as_deref() == Ok("1") {
+                            event("decision-parked"); std::future::pending::<()>().await;
+                        }
+                        break;
+                    }
+                }
+            }
+            let after = generated::LedgerMethodsWorkflowSteps::second(
+                context, Arc::new(self.clone()), "after-loop", proto::Step { amount: 100 }
+            ).await?;
+            event("after-loop-ack");
+            return Ok(proto::Result { first: observed_first, second: after.value });
+        }
         if std::env::var("WORKFLOW_BODY_MODE").as_deref() == Ok("control") {
             let count = u64::try_from(request.amount)
                 .map_err(|_| tonic::Status::invalid_argument("negative finite count"))?;

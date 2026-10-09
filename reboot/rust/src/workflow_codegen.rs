@@ -2,6 +2,46 @@
 mod workflow_emission_tests {
     use super::*;
     #[test]
+    fn workflow_generated_reader_helpers_reject_writer_collisions() {
+        for name in ["ObserveDecide", "ObserveUntil"] {
+            let method = |name: &str| MethodDescriptorProto {
+                name: Some(name.into()),
+                input_type: Some(".demo.Q".into()),
+                output_type: Some(".demo.R".into()),
+                ..Default::default()
+            };
+            let descriptor = ServiceDescriptorProto {
+                name: Some("Methods".into()),
+                method: vec![method("Observe"), method(name)],
+                ..Default::default()
+            };
+            let annotation = DurableService {
+                state: "demo.State".into(),
+                default_constructible: false,
+                methods: [
+                    ("Observe".into(), DurableKind::Reader),
+                    (
+                        name.into(),
+                        DurableKind::Writer(WriterMetadata { constructor: false }),
+                    ),
+                ]
+                .into(),
+                declared_errors: HashMap::new(),
+            };
+            let error = emit_workflow_service(
+                &mut String::new(),
+                &descriptor,
+                &annotation,
+                "Methods",
+                "State",
+                "reboot",
+                "demo",
+            )
+            .unwrap_err();
+            assert!(error.contains("collision"), "{name}: {error}");
+        }
+    }
+    #[test]
     fn workflow_declared_reader_does_not_grant_constructor_errors() {
         let service = ServiceDescriptorProto {
             name: Some("Methods".into()),
@@ -21,19 +61,17 @@ mod workflow_emission_tests {
                 methods: [("Observe".into(), kind)].into(),
                 declared_errors: [("Observe".into(), vec!["Rejected".into()])].into(),
             };
-            assert!(
-                emit_workflow_service(
-                    &mut String::new(),
-                    &service,
-                    &annotation,
-                    "Methods",
-                    "State",
-                    "reboot",
-                    "demo"
-                )
-                .unwrap_err()
-                .contains("constructors are unsupported")
-            );
+            assert!(emit_workflow_service(
+                &mut String::new(),
+                &service,
+                &annotation,
+                "Methods",
+                "State",
+                "reboot",
+                "demo"
+            )
+            .unwrap_err()
+            .contains("constructors are unsupported"));
         }
     }
     #[test]
@@ -134,10 +172,8 @@ mod workflow_emission_tests {
         .unwrap();
         assert!(declared_writer.contains("writer_step_declared"));
         assert!(declared_writer.contains("DeclaredTaskError::new::<proto::Rejected>"));
-        assert!(
-            declared_writer
-                .contains("TaskHandlerError::Failed(status)=>MethodsApplyError::Grpc(status)")
-        );
+        assert!(declared_writer
+            .contains("TaskHandlerError::Failed(status)=>MethodsApplyError::Grpc(status)"));
         let mut with_reader = annotation.clone();
         with_reader
             .methods
@@ -185,6 +221,26 @@ mod workflow_emission_tests {
             .unwrap_err();
             assert!(error.contains("reserved local reader helper"));
         }
+        for conflict in ["ObserveUntil", "ObserveDecide"] {
+            let mut bad_service = mixed_service.clone();
+            bad_service.method.push(method(conflict));
+            let mut bad = with_reader.clone();
+            bad.methods.insert(
+                conflict.into(),
+                DurableKind::Writer(WriterMetadata { constructor: false }),
+            );
+            let error = emit_workflow_service(
+                &mut String::new(),
+                &bad_service,
+                &bad,
+                "Methods",
+                "State",
+                "reboot",
+                "demo",
+            )
+            .unwrap_err();
+            assert!(error.contains("workflow step helper"), "{error}");
+        }
         for conflict in ["ObserveWithTimeout", "ObserveConnect"] {
             let mut conflict_service = mixed_service.clone();
             conflict_service.method.push(method(conflict));
@@ -192,19 +248,17 @@ mod workflow_emission_tests {
             conflict_annotation
                 .methods
                 .insert(conflict.into(), DurableKind::Reader);
-            assert!(
-                emit_workflow_service(
-                    &mut String::new(),
-                    &conflict_service,
-                    &conflict_annotation,
-                    "Methods",
-                    "State",
-                    "reboot",
-                    "demo"
-                )
-                .unwrap_err()
-                .contains("reactive helper")
-            );
+            assert!(emit_workflow_service(
+                &mut String::new(),
+                &conflict_service,
+                &conflict_annotation,
+                "Methods",
+                "State",
+                "reboot",
+                "demo"
+            )
+            .unwrap_err()
+            .contains("reactive helper"));
         }
         with_reader
             .declared_errors
@@ -238,18 +292,16 @@ mod workflow_emission_tests {
                 factory: false,
             }),
         );
-        assert!(
-            emit_workflow_service(
-                &mut String::new(),
-                &service,
-                &mixed,
-                "Methods",
-                "State",
-                "reboot",
-                "demo"
-            )
-            .is_err()
-        );
+        assert!(emit_workflow_service(
+            &mut String::new(),
+            &service,
+            &mixed,
+            "Methods",
+            "State",
+            "reboot",
+            "demo"
+        )
+        .is_err());
     }
 }
 // Bounded standalone workflow services. Mixed transaction/workflow services are
@@ -308,6 +360,23 @@ fn emit_workflow_service(
     let tasks = format!("{service_name}Tasks");
     let server = format!("{}_server", snake_case(service_name));
     let declaration = format!("{state}DurableState");
+    let mut generated_steps = std::collections::HashMap::new();
+    for method in &service.method {
+        let name = method.name.as_deref().unwrap();
+        let rust = snake_case(name);
+        let names = match annotation.methods.get(name).unwrap() {
+            DurableKind::Reader => vec![format!("{rust}_until"), format!("{rust}_decide")],
+            DurableKind::Writer(WriterMetadata { constructor: false }) => vec![rust],
+            _ => vec![],
+        };
+        for helper in names {
+            if let Some(previous) = generated_steps.insert(helper.clone(), name) {
+                return Err(format!(
+                    "workflow step helper {helper} collision: {previous} and {name}"
+                ));
+            }
+        }
+    }
     let mut declarations = String::from("vec![");
     let mut validations = String::new();
     let mut responses = String::new();
@@ -438,6 +507,7 @@ fn emit_workflow_service(
                 if matches!(kind, DurableKind::Reader) {
                     declarations.push_str(&format!("{runtime_module}::one_shot_tasks::TaskMethodDeclaration::new::<{declaration},proto::{request},proto::{response}>(\"{identity}\",\"{response_type}\",vec![]).workflow_reader_wait(),"));
                     step_methods.push_str(&format!("pub async fn {rust}_until<H:{handler},P:Fn(&proto::{response})->bool+Send+Sync+'static>(context:&{runtime_module}::one_shot_tasks::WorkflowContext<'_>,handler:std::sync::Arc<H>,alias:&str,condition:&str,request:proto::{request},predicate:P)->Result<proto::{response},tonic::Status> {{ context.wait_reader::<{declaration},proto::{request},proto::{response},_,_>({runtime_module}::one_shot_tasks::WorkflowWaitName{{alias,condition}},\"{identity}\",\"{response_type}\",request,move |state,request| {{ let handler=handler.clone(); Box::pin(async move {{handler.{rust}(state,request).await{error_map}}}) }},predicate).await }}\n"));
+                    step_methods.push_str(&format!("pub async fn {rust}_decide<H:{handler},P:Fn(&proto::{response})->bool+Send+Sync+'static>(context:&{runtime_module}::one_shot_tasks::WorkflowContext<'_>,handler:std::sync::Arc<H>,alias:&str,condition:&str,request:proto::{request},should_break:P)->Result<std::ops::ControlFlow<proto::{response},proto::{response}>,tonic::Status> {{ context.decide_reader::<{declaration},proto::{request},proto::{response},_,_>({runtime_module}::one_shot_tasks::WorkflowWaitName{{alias,condition}},\"{identity}\",\"{response_type}\",request,move |state,request| {{ let handler=handler.clone(); Box::pin(async move {{handler.{rust}(state,request).await{error_map}}}) }},should_break).await }}\n"));
                 }
                 let mutable = matches!(kind, DurableKind::Writer(_));
                 let reference = if mutable { "&mut" } else { "&" };

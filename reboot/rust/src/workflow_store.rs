@@ -216,7 +216,47 @@ impl DatabaseActorStore {
         let result = self
             .workflow_step_outcome::<D, Q, R, _>(
                 scope,
-                (alias, condition),
+                (alias, condition, None),
+                method,
+                response_type,
+                request,
+                move |state, request| {
+                    let future = invoke(state, request);
+                    Box::pin(async move { future.await.map(|response| response.map(Ok)) })
+                },
+            )
+            .await?;
+        match result {
+            Some(Ok(response)) => Ok(Some(response)),
+            None => Ok(None),
+            Some(Err(_)) => Err(Status::failed_precondition(
+                "declared checkpoint requires typed writer step",
+            )),
+        }
+    }
+    pub(crate) async fn workflow_reader_decision_step<D, Q, R, F>(
+        &self,
+        scope: &crate::one_shot_tasks::WorkflowContext<'_>,
+        (alias, condition): (&str, Option<&str>),
+        method: &'static str,
+        (response_type, reader_response_type): (&'static str, &'static str),
+        request: Q,
+        invoke: F,
+    ) -> Result<Option<R>, Status>
+    where
+        D: DurableStateDeclaration + 'static,
+        Q: Message + Default + Send + 'static,
+        R: Message + Default + Clone + Send + 'static,
+        F: for<'a> FnOnce(
+            &'a mut D::State,
+            Q,
+        )
+            -> Pin<Box<dyn Future<Output = Result<Option<R>, Status>> + Send + 'a>>,
+    {
+        let result = self
+            .workflow_step_outcome::<D, Q, R, _>(
+                scope,
+                (alias, condition, Some(reader_response_type)),
                 method,
                 response_type,
                 request,
@@ -237,7 +277,11 @@ impl DatabaseActorStore {
     pub(crate) async fn workflow_step_outcome<D, Q, R, F>(
         &self,
         scope: &crate::one_shot_tasks::WorkflowContext<'_>,
-        (alias, condition): (&str, Option<&str>),
+        (alias, condition, decision_reader_response_type): (
+            &str,
+            Option<&str>,
+            Option<&'static str>,
+        ),
         method: &'static str,
         response_type: &'static str,
         request: Q,
@@ -267,7 +311,10 @@ impl DatabaseActorStore {
             .map_err(|_| Status::failed_precondition("invalid workflow UUID"))?;
         let iteration = scope.checkpoint_iteration();
         let scoped_alias = scope.checkpoint_alias(alias);
-        let key = scope.checkpoint_key(seed, alias, condition);
+        let key = match decision_reader_response_type {
+            Some(_) => scope.checkpoint_decision_key(seed, alias),
+            None => scope.checkpoint_key(seed, alias, condition),
+        };
         // Pin workflow method/request, alias, writer method, response type and
         // canonical writer request. No legacy/incomplete record is accepted.
         let mut identity = format!(
@@ -289,6 +336,13 @@ impl DatabaseActorStore {
                 ":wait-condition={}:{}",
                 condition.len(),
                 condition
+            ));
+        }
+        if let Some(reader_response_type) = decision_reader_response_type {
+            identity.push_str(&format!(
+                ":decision-kind=finite.v1:reader-response={}:{}",
+                reader_response_type.len(),
+                reader_response_type
             ));
         }
         let fingerprint = request_fingerprint(&identity, &request);
