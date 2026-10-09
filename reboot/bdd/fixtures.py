@@ -28,7 +28,7 @@ def reboot_event_loop() -> Iterator[EventLoopThread]:
     # the loop's thread, where starting an Envoy in Docker would
     # otherwise install them and fail.
     signals.initialize()
-    signals.install_cleanup(signals.DEFAULT_SIGNALS)
+    signals.install_cleanup(signals.TERMINATING_SIGNALS_FOR_SERVERS)
     event_loop = start_event_loop()
     try:
         yield event_loop

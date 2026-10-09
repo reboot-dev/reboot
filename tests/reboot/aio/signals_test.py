@@ -252,14 +252,14 @@ class SignalsTest(unittest.TestCase):
         )
 
     def test_cleanup_runs_for_every_terminating_signal(self) -> None:
-        for signum in signals.TERMINATING_SIGNALS:
+        for signum in signals.TERMINATING_SIGNALS_FOR_CLIS:
             name = signal.Signals(signum).name
             with self.subTest(name):
                 self._assert_run(
                     f'''
                     signals.initialize()
                     signals.install_cleanup(
-                        signals.TERMINATING_SIGNALS,
+                        signals.TERMINATING_SIGNALS_FOR_CLIS,
                         lambda: print("cleanup", flush=True),
                     )
                     os.kill(os.getpid(), signal.{name})
@@ -296,20 +296,20 @@ class SignalsTest(unittest.TestCase):
 
     def test_signal_cancels_task_within_cancel_on_signal(self) -> None:
         # What `rbt` does.
-        for signum in signals.TERMINATING_SIGNALS:
+        for signum in signals.TERMINATING_SIGNALS_FOR_CLIS:
             name = signal.Signals(signum).name
             with self.subTest(name):
                 self._assert_run(
                     f'''
                     signals.initialize()
                     signals.install_cleanup(
-                        signals.TERMINATING_SIGNALS,
+                        signals.TERMINATING_SIGNALS_FOR_CLIS,
                         lambda: print("cleanup", flush=True),
                     )
 
                     async def main():
                         async with cancel_on_signal_and_raise_system_exit(
-                            signals.TERMINATING_SIGNALS
+                            signals.TERMINATING_SIGNALS_FOR_CLIS
                         ):
                             # While the event loop has nothing to do.
                             threading.Timer(

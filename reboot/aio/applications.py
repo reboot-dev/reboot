@@ -1127,7 +1127,7 @@ class Application:
         # us right after the cleanup handlers; once we have exited it
         # terminates us.
         async with reboot.aio.signals.cancel_on_signal_and_raise_system_exit(
-            reboot.aio.signals.DEFAULT_SIGNALS
+            reboot.aio.signals.TERMINATING_SIGNALS_FOR_SERVERS
         ):
             await self._run()
 
