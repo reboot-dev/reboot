@@ -9,5 +9,6 @@ export default {
     environment: "jsdom",
     hookTimeout: 60000,
     testTimeout: 60000,
+    setupFiles: ["./enableLocalStorage.mjs"],
   },
 };
