@@ -1396,6 +1396,58 @@ Sources: [map sessions](src/sorted_map.rs), [admitted root cache](src/runtime.rs
 
 ## Local reactive readers
 
+### Standalone reader authority boundary (2026-10-09)
+
+Public LocalReaders subscriptions (registry and direct single-owner entrypoints)
+and configured ordinary composed unary readers now share a fail-closed boundary
+before routing, admission, snapshot Load, authorization or handler invocation.
+Raw presence of transaction IDs, either coordinator identity field, retry age,
+workflow ID/iteration, idempotency key, task schedule/method or coordinator
+read-only-aware metadata returns FailedPrecondition. Empty, malformed and repeated
+values are rejected as authority envelopes, not interpreted as absent fields.
+This also applies before an explicitly allowlisted legacy unary fallback on a
+configured adapter. Actor identity ambiguity still returns InvalidArgument first.
+Normal credentials, trusted host identity, caller metadata and deadlines retain
+the existing reader paths; no parser normalization or new authority is introduced.
+
+This is a concrete prerequisite for external unary composition on workflow-bearing
+and mixed reader/transaction services, not implementation of those generated
+contracts. Internal workflow waits/decisions, checkpointed declared outcomes,
+transaction execution, task dispatch and their recovery owners are unchanged.
+Database-only, same-host/exact endpoint, eight direct dependencies and one-hop
+limits remain; this is not Python's broader transitive reader-context parity.
+
+The pre-fix native run `/tmp/reboot-rust-unary-composition-cli-1791575250893249512`
+returned a composed value despite a coordinator-state-type header, failing the
+new rejection assertion. Its child cleanup completed. The new runtime matrix
+exercises all ten keys in empty/malformed/repeated forms through unary, registry
+subscription and direct subscription entrypoints, asserting no binding entry or
+permit retention; a clean control read still succeeds.
+
+**Executed native GREEN:** `/tmp/reboot-rust-unary-composition-cli-1791575813295421886` passed
+107 composition checks, including 60 envelope
+rejections across actual generated unary and reserved subscription RPCs. The
+fixture observed no authorization or composed handler entries for those requests,
+unchanged canonical root/source actor bytes, and a succeeding normal read. Existing
+selection, target authorization, shared capacity, duplicate identity, public
+mutation/replay, RocksDB restart and child-cleanup checks remained green. This does
+not prove every native cancellation or durable uncertainty window.
+
+SDK `/tmp/reboot-rust-unary-composition-sdk-1791575530521316632`: 472 passed/131 ignored,
+strict all-target Clippy and both explicit native restart prerequisites passed.
+Generated consumer strict Clippy/fmt passed. Retained registry `/tmp/reboot-rust-reader-registry-cli-1791576514255158795` (29),
+map `/tmp/reboot-rust-map-reentry-cli-1791576897721512912` (18), batch `/tmp/reboot-rust-batch-ledger-acceptance-1791577176342562146` (162), nested `/tmp/reboot-rust-nested-cli-1791577937243187674` (26),
+pagination `/tmp/reboot-rust-pagination-cli-1791578308055122875` (22), preflight `/tmp/reboot-rust-http-request-preflight-1791576818046713080` and greeting/HTTP
+`/tmp/reboot-rust-loop-decision-greeting-1791576130257918559` (26 exchanges) passed. Frozen source/Database identities,
+resource bounds and owned-process absence were audited before updating this ledger.
+No CI certification or full Rust parity is claimed.
+
+Sources: [standalone boundary](src/reactive.rs),
+[runtime matrix](src/reactive_composition_tests.rs),
+[public native fixture](../../tests/reboot/cli/fixtures/rust_reader_composition_fixture.py),
+[Python header contract](../aio/headers.py).
+
+
 ### Bounded ordinary unary reader composition (2026-10-09)
 
 Ordinary generated database reader RPCs can opt into the same one-hop local
@@ -2462,7 +2514,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 3a37f6763b6518b40725df46809b44904ac144b6757091c39a1a26de4facd5ec -->
+<!-- parity-source-sha256: 57ca91c96e5a9cfa10ce6b778c7309ab285263d799e3462551ff34eee9761008 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

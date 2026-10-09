@@ -92,9 +92,47 @@ class ReaderCompositionFixture:
         if not self.unary: return
         try:
             self.unary_rpc(ref, metadata)
-            raise AssertionError('ordinary unary unexpectedly returned partial/fallback value')
+            raise AssertionError('ordinary unary unexpectedly returned partial/fallback value: ' + label)
         except grpc.RpcError as error:
             self.check('ordinary unary ' + label, error.code() == expected)
+
+    def standalone_envelope_rejection(self, session):
+        if not self.unary:
+            return
+        refs = [self.selector, self.a, self.b]
+        before = [self.state(session, ref).SerializeToString() for ref in refs]
+        auth_before = self.auth_trace.read_bytes() if self.auth_trace.exists() else b''
+        handler_before = self.trace.read_bytes()
+        forbidden = [
+            'x-reboot-transaction-coordinator-state-type',
+            'x-reboot-task-method',
+            'x-reboot-transaction-ids',
+            'x-reboot-transaction-coordinator-state-ref',
+            'x-reboot-transaction-retry-age',
+            'x-reboot-workflow-id',
+            'x-reboot-workflow-iteration',
+            'x-reboot-idempotency-key',
+            'x-reboot-task-schedule',
+            'x-reboot-transaction-coordinator-read-only-aware',
+        ]
+        for key in forbidden:
+            for label, values in [('empty', ['']), ('malformed', ['invalid']), ('repeated', ['true', 'false'])]:
+                metadata = [(key, value) for value in values] + [('cookie', 'envelope-observer')]
+                self.unary_error('forbidden envelope ' + key + ' ' + label, self.selector, grpc.StatusCode.FAILED_PRECONDITION, metadata)
+                stream = self.base.wire_grpc.LocalReadersStub(self.base.channel).Subscribe(
+                    self.base.wire.Query(method='rust_greetings.v1.HelloWorldMethods.NumGreetings', request=b''),
+                    metadata=[('x-reboot-state-ref', self.selector), *metadata], timeout=3)
+                try:
+                    snapshot = next(stream)
+                    raise AssertionError('forbidden subscription envelope published ' + key + ': ' + snapshot.response.hex())
+                except grpc.RpcError as error:
+                    self.check('subscription forbidden envelope ' + key + ' ' + label, error.code() == grpc.StatusCode.FAILED_PRECONDITION)
+                finally:
+                    stream.cancel()
+        self.check('forbidden envelopes reject before root or target authorization', (self.auth_trace.read_bytes() if self.auth_trace.exists() else b'') == auth_before)
+        self.check('forbidden envelopes reject before composed handler', self.trace.read_bytes() == handler_before)
+        self.check('forbidden envelopes preserve canonical actors', [self.state(session, ref).SerializeToString() for ref in refs] == before)
+        self.unary_read('clean read after forbidden envelopes', 2)
 
     def unary_capacity_auth(self, session):
         if not self.unary: return
@@ -194,6 +232,7 @@ class ReaderCompositionFixture:
         self.select(b,'44444444-4444-4444-8444-444444444450')
         self.open_baseline()
         self.unary_capacity_auth(session)
+        self.standalone_envelope_rejection(session)
         if self.unary: self.open_baseline()
 
     def open_baseline(self):

@@ -702,16 +702,60 @@ mod composition_tests {
                 .contains_unary_root::<Declaration, _>(&unknown)
                 .is_err()
         );
-        registry.validate_legacy_unary_roots(&["hello".to_owned()]).unwrap();
-        assert!(registry.validate_legacy_unary_roots(std::slice::from_ref(&root.owner.inner.state_ref)).is_err());
-        assert!(registry.validate_legacy_unary_roots(&["hello".to_owned(), "hello".to_owned()]).is_err());
-        assert!(registry.validate_legacy_unary_roots(&[String::new()]).is_err());
-        let mut duplicated=unary_query(&root);duplicated.metadata_mut().append("x-reboot-state-ref", "hello".parse().unwrap());assert_eq!(registry.contains_unary_root::<Declaration,_>(&duplicated).unwrap_err().code(),tonic::Code::InvalidArgument);assert_eq!(registry.evaluate_unary::<_,Value>(duplicated,"value").await.unwrap_err().code(),tonic::Code::InvalidArgument);
-        let mut duplicate=query(&root);duplicate.metadata_mut().append("x-reboot-state-ref","hello".parse().unwrap());
-        match registry.subscribe(duplicate).await { Err(status)=>assert_eq!(status.code(),tonic::Code::InvalidArgument), Ok(_)=>panic!("registry admitted ambiguous authority") };
-        let mut duplicate=query(&root);duplicate.metadata_mut().append("x-reboot-state-ref","hello".parse().unwrap());
-        match root.service.subscribe(duplicate).await { Err(status)=>assert_eq!(status.code(),tonic::Code::InvalidArgument), Ok(_)=>panic!("direct reader admitted ambiguous authority") };
-        assert_eq!(registry.active_subscriptions(),0);
+        registry
+            .validate_legacy_unary_roots(&["hello".to_owned()])
+            .unwrap();
+        assert!(
+            registry
+                .validate_legacy_unary_roots(std::slice::from_ref(&root.owner.inner.state_ref))
+                .is_err()
+        );
+        assert!(
+            registry
+                .validate_legacy_unary_roots(&["hello".to_owned(), "hello".to_owned()])
+                .is_err()
+        );
+        assert!(
+            registry
+                .validate_legacy_unary_roots(&[String::new()])
+                .is_err()
+        );
+        let mut duplicated = unary_query(&root);
+        duplicated
+            .metadata_mut()
+            .append("x-reboot-state-ref", "hello".parse().unwrap());
+        assert_eq!(
+            registry
+                .contains_unary_root::<Declaration, _>(&duplicated)
+                .unwrap_err()
+                .code(),
+            tonic::Code::InvalidArgument
+        );
+        assert_eq!(
+            registry
+                .evaluate_unary::<_, Value>(duplicated, "value")
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::InvalidArgument
+        );
+        let mut duplicate = query(&root);
+        duplicate
+            .metadata_mut()
+            .append("x-reboot-state-ref", "hello".parse().unwrap());
+        match registry.subscribe(duplicate).await {
+            Err(status) => assert_eq!(status.code(), tonic::Code::InvalidArgument),
+            Ok(_) => panic!("registry admitted ambiguous authority"),
+        };
+        let mut duplicate = query(&root);
+        duplicate
+            .metadata_mut()
+            .append("x-reboot-state-ref", "hello".parse().unwrap());
+        match root.service.subscribe(duplicate).await {
+            Err(status) => assert_eq!(status.code(), tonic::Code::InvalidArgument),
+            Ok(_) => panic!("direct reader admitted ambiguous authority"),
+        };
+        assert_eq!(registry.active_subscriptions(), 0);
         let plain = LocalReaderRegistry::new();
         assert!(
             plain
@@ -773,6 +817,80 @@ mod composition_tests {
                 .code(),
             tonic::Code::FailedPrecondition
         );
+    }
+    #[tokio::test]
+    async fn standalone_readers_reject_raw_mutation_authority_before_admission() {
+        let root = actor("http://127.0.0.1:9");
+        let (registry, _) = registry(&[&root]).await;
+        let forbidden = [
+            "x-reboot-transaction-ids",
+            "x-reboot-transaction-coordinator-state-type",
+            "x-reboot-transaction-coordinator-state-ref",
+            "x-reboot-transaction-retry-age",
+            "x-reboot-workflow-id",
+            "x-reboot-workflow-iteration",
+            "x-reboot-idempotency-key",
+            "x-reboot-task-schedule",
+            "x-reboot-task-method",
+            "x-reboot-transaction-coordinator-read-only-aware",
+        ];
+        for key in forbidden {
+            // Presence, not the parsed final value, is authority. Empty,
+            // malformed and repeated values must not bypass the boundary.
+            for values in [&[""][..], &["invalid"][..], &["true", "false"][..]] {
+                let mut unary = unary_query(&root);
+                let mut subscription = query(&root);
+                let mut direct = query(&root);
+                for value in values {
+                    unary.metadata_mut().append(key, value.parse().unwrap());
+                    subscription
+                        .metadata_mut()
+                        .append(key, value.parse().unwrap());
+                    direct.metadata_mut().append(key, value.parse().unwrap());
+                }
+                assert_eq!(
+                    registry
+                        .evaluate_unary::<_, Value>(unary, "value")
+                        .await
+                        .unwrap_err()
+                        .code(),
+                    tonic::Code::FailedPrecondition,
+                    "unary {key} {values:?}"
+                );
+                match registry.subscribe(subscription).await {
+                    Err(status) => assert_eq!(
+                        status.code(),
+                        tonic::Code::FailedPrecondition,
+                        "registry {key} {values:?}"
+                    ),
+                    Ok(_) => panic!("registry admitted {key} {values:?}"),
+                }
+                match root.service.subscribe(direct).await {
+                    Err(status) => assert_eq!(
+                        status.code(),
+                        tonic::Code::FailedPrecondition,
+                        "direct {key} {values:?}"
+                    ),
+                    Ok(_) => panic!("direct reader admitted {key} {values:?}"),
+                }
+                assert_eq!(registry.active_subscriptions(), 0);
+                assert_eq!(root.owner.active_subscriptions(), 0);
+                assert_eq!(root.calls.load(Ordering::SeqCst), 0);
+                assert!(root.escaped.lock().unwrap().is_none());
+            }
+        }
+        // Ordinary credentials and caller metadata retain normal behavior.
+        assert_eq!(
+            registry
+                .evaluate_unary::<_, Value>(unary_query(&root), "value")
+                .await
+                .unwrap()
+                .into_inner()
+                .value,
+            0
+        );
+        assert_eq!(root.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(registry.active_subscriptions(), 0);
     }
     #[tokio::test]
     async fn unary_absolute_deadline_cancels_wait_and_rejects_late_ready_result() {
@@ -839,8 +957,18 @@ mod composition_tests {
     }
     #[tokio::test]
     async fn unary_uncertainty_remains_unavailable_but_cannot_trigger_generated_reader_retry() {
-        let root=actor("http://127.0.0.1:9");let (registry,_)=registry(&[&root]).await;drop(root.owner.inner.gate.commit_attempt());
-        let status=registry.evaluate_unary::<_,Value>(unary_query(&root),"value").await.unwrap_err();assert_eq!(status.code(),tonic::Code::Unavailable);assert!(is_terminal_unary_evaluation(&status));assert!(!is_terminal_unary_evaluation(&Status::unavailable("disconnected transport")));assert_eq!(registry.active_subscriptions(),0);
+        let root = actor("http://127.0.0.1:9");
+        let (registry, _) = registry(&[&root]).await;
+        drop(root.owner.inner.gate.commit_attempt());
+        let status = registry
+            .evaluate_unary::<_, Value>(unary_query(&root), "value")
+            .await
+            .unwrap_err();
+        assert_eq!(status.code(), tonic::Code::Unavailable);
+        assert!(is_terminal_unary_evaluation(&status));
+        assert!(!is_terminal_unary_evaluation(&Status::unavailable(
+            "disconnected transport"
+        )));
+        assert_eq!(registry.active_subscriptions(), 0);
     }
-
 }

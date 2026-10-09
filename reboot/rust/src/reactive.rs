@@ -295,7 +295,7 @@ impl LocalReaderRegistry {
                 "unary reader requires one unambiguous root identity",
             ));
         }
-        Ok(())
+        reject_standalone_reader_authority(request)
     }
     #[doc(hidden)]
     pub fn validate_legacy_unary_roots(&self, roots: &[String]) -> Result<(), Status> {
@@ -367,21 +367,8 @@ impl LocalReaderRegistry {
         }
         self.validate_unary_metadata(&request)?;
         let deadline = crate::durable_participant::prepare_request_deadline(&request)?;
-        let headers = crate::RebootHeaders::from_request(&request)
+        crate::RebootHeaders::from_request(&request)
             .map_err(|e| Status::invalid_argument(e.to_string()))?;
-        if headers.transaction_ids.is_some()
-            || headers.workflow_id.is_some()
-            || headers.workflow_iteration.is_some()
-            || headers.idempotency_key.is_some()
-            || headers.task_schedule.is_some()
-            || headers.transaction_coordinator_state_ref.is_some()
-            || headers.transaction_retry_age.is_some()
-            || headers.coordinator_read_only_aware
-        {
-            return Err(Status::failed_precondition(
-                "unary composition cannot inherit mutation/transaction authority",
-            ));
-        }
         if deadline.is_some_and(|at| tokio::time::Instant::now() >= at) {
             return Err(Status::deadline_exceeded("unary reader deadline expired"));
         }
@@ -471,6 +458,7 @@ impl wire::local_readers_server::LocalReaders for LocalReaderRegistry {
         request: Request<wire::Query>,
     ) -> Result<tonic::Response<Self::SubscribeStream>, Status> {
         crate::runtime::reject_ambiguous_metadata(&request, "x-reboot-state-ref")?;
+        reject_standalone_reader_authority(&request)?;
         let reference = request
             .metadata()
             .get("x-reboot-state-ref")
@@ -500,6 +488,32 @@ pub fn is_terminal_unary_evaluation(status: &Status) -> bool {
         .metadata()
         .get("x-reboot-terminal-reader-evaluation")
         .is_some_and(|value| value == "1")
+}
+
+// Standalone local readers never enlist in a caller's mutation, workflow or
+// task. Check raw presence before parsing: empty/malformed/repeated values are
+// still an attempted authority envelope, not an absent optional field. Internal
+// workflow wait/decision helpers retain their distinct checkpointed paths.
+fn reject_standalone_reader_authority<Q>(request: &Request<Q>) -> Result<(), Status> {
+    for key in [
+        crate::TRANSACTION_IDS_HEADER,
+        crate::TRANSACTION_COORDINATOR_STATE_TYPE_HEADER,
+        crate::TRANSACTION_COORDINATOR_STATE_REF_HEADER,
+        crate::TRANSACTION_RETRY_AGE_HEADER,
+        crate::WORKFLOW_ID_HEADER,
+        crate::WORKFLOW_ITERATION_HEADER,
+        crate::IDEMPOTENCY_KEY_HEADER,
+        crate::TASK_SCHEDULE_HEADER,
+        "x-reboot-task-method",
+        crate::TRANSACTION_COORDINATOR_READ_ONLY_AWARE_HEADER,
+    ] {
+        if request.metadata().contains_key(key) {
+            return Err(Status::failed_precondition(
+                "standalone reader cannot inherit mutation/workflow/task authority",
+            ));
+        }
+    }
+    Ok(())
 }
 
 type ReaderEntries = std::collections::BTreeMap<String, Arc<dyn RegisteredReader>>;
@@ -1044,6 +1058,7 @@ impl<B: ReaderBinding> LocalReaderService<B> {
         resolver: Option<Arc<ReaderEntries>>,
     ) -> Result<tonic::Response<ReaderStream<B>>, Status> {
         crate::runtime::reject_ambiguous_metadata(&request, "x-reboot-state-ref")?;
+        reject_standalone_reader_authority(&request)?;
         let state_ref = request
             .metadata()
             .get("x-reboot-state-ref")
