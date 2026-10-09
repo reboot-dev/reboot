@@ -3,7 +3,7 @@
 //! This API is in-process, not a public-header-authorized Tonic adapter. A host
 //! injects the native store/participant and registers its control route. Only
 //! an active generated root with explicit cancellation ownership can join it.
-//! Network inbound children, reusable siblings and distributed placement are
+//! Network inbound children, nested sibling paths and distributed placement are
 //! deliberately outside this bounded library. Sessions and every call future
 //! MUST remain serial and handler-awaited; no escaping/detached calls are
 //! supported. Every polled admission/call now reserves root work through its
@@ -19,6 +19,15 @@ use crate::{
 use std::sync::Arc;
 use tonic::Status;
 use uuid::Uuid;
+
+pub(crate) type RetainedMapGuard = Arc<StartedLocalTransaction<TonicParticipantSidecar>>;
+// Admission-scoped, not handle/global-scoped. No TransactionContext is stored in
+// this cache, so retaining the exact participant incarnation creates no cycle.
+pub(crate) type RetainedMapSessions = Arc<
+    std::sync::Mutex<
+        std::collections::BTreeMap<crate::durable_coordinator::ParticipantTarget, RetainedMapGuard>,
+    >,
+>;
 
 const MAP: &str = "rbt.std.collections.v1.SortedMap";
 
@@ -75,6 +84,8 @@ impl SortedMapHandle {
     }
     /// Join a genuinely admitted generated app root. Validation precedes actor
     /// admission and native IO; map membership is recorded before eager Store.
+    /// Serial reopening under this exact admitted root reuses its retained native
+    /// participant. It does not introduce a child path, snapshot or rollback scope.
     pub async fn in_transaction(
         &self,
         context: &TransactionContext,
@@ -84,6 +95,16 @@ impl SortedMapHandle {
             .inspect_err(|status| context.doom(status.clone()))?;
         let result: Result<SortedMapSession, Status> = async {
             let target = self.participant.actor_target();
+            if let Some(guard) = context.retained_builtin_map(&self.endpoint, &target)? {
+                // Reuse the exact root-owned native participant/owner rather than
+                // reentering its actor gate or recreating its eager transaction.
+                return Ok(SortedMapSession {
+                    guard,
+                    context: context.clone(),
+                    endpoint: self.endpoint.clone(),
+                });
+            }
+            let cache_target = target.clone();
             let guard = self
                 .participant
                 .start_local(
@@ -109,6 +130,8 @@ impl SortedMapHandle {
             // race its root's terminal handoff and gain new map authority.
             context.validate_builtin_map_admission(&self.endpoint)?;
             guard.enlist_sorted_map(context).await?;
+            let guard = Arc::new(guard);
+            context.retain_builtin_map(&self.endpoint, cache_target, guard.clone())?;
             Ok(SortedMapSession {
                 guard,
                 context: context.clone(),
@@ -139,7 +162,7 @@ impl SortedMapHandle {
 /// blocks root completion; unfinished Drop retains uncertainty. This lifetime
 /// fence does not certify task provenance or enable concurrent map operations.
 pub struct SortedMapSession {
-    guard: StartedLocalTransaction<TonicParticipantSidecar>,
+    guard: RetainedMapGuard,
     context: TransactionContext,
     endpoint: String,
 }

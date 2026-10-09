@@ -290,6 +290,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             request.set_timeout(Duration::from_secs(5));
             show(client.approve(request).await?.into_inner());
         }
+        "archive-many" | "archive-many-invalid" => {
+            let mut client =
+                proto::ledger_index_methods_client::LedgerIndexMethodsClient::new(channel);
+            let mut request = context.writer(proto::ArchiveEntriesRequest {
+                keys: arg(1)?.split(',').map(str::to_owned).collect(),
+                invalid_range: command == "archive-many-invalid",
+            })?;
+            request.metadata_mut().remove("x-reboot-idempotency-key");
+            request.set_timeout(Duration::from_secs(5));
+            let result = client.archive_entries(request).await?.into_inner();
+            println!("ARCHIVED_MANY {} {}", result.entries.len(), result.archived);
+        }
         "archive" | "archive-invalid" => {
             use prost::Message;
             let mut client =

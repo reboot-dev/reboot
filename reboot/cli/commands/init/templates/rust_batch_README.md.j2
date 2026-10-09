@@ -78,8 +78,8 @@ current app state and collection contents change.
 
 This is a serial handler-awaited fresh exclusive app root with two DISTINCT
 same-host map actors; both maps restore ownership before coordinator/task
-recovery and readiness. It is not same-map reentry, nested/reusable sibling
-paths, a public/network builtin adapter or distributed placement. Automatic
+recovery and readiness. Serial reopening of the same map under this exact root reuses its native
+participant. This is not nested/reusable sibling transaction paths, a public/network builtin adapter or distributed placement. Automatic
 root idempotency remains disabled for direct-map calls; duplicate transfer
 returns source-absent rejection. No status retries or external exactly-once
 claim. This acceptance is not a new multi-map lost-ACK/crash-at-Prepare proof.
@@ -276,3 +276,20 @@ remains separate. This demonstrates finite same-actor saved-decision branching,
 not Python unbounded cursor/Break/GC parity, running/distributed task cancellation,
 or external-effects exactly-once semantics. Ordinary batches keep their existing
 condition identity and behavior; opt-in waits use `approved-or-stop.v1`.
+
+## Atomic multi-entry archive
+
+`client archive-many batch-001:0000,batch-001:0001` transfers 1..100 unique,
+nonempty keys in one exclusive app transaction. Each entry reopens the two map
+sessions under the same root and preserves present-empty byte values. All source
+removals, archive insertions and cumulative counter changes commit together.
+A missing later source or occupied destination aborts earlier transfers too;
+there is no per-entry commit or compensating rollback. `archive-many-invalid`
+exercises caught invalid range failure after the final transfer and must abort
+all participants.
+
+This reuses the exact root-owned same-host map incarnation, not nested child
+transaction snapshots, distributed siblings or a public map adapter. Commands
+send once without root idempotency or status retry; an uncertain result is not
+permission to send it again. Restart restores app and both map owners before
+coordinator/task recovery and public readiness.

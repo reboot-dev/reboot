@@ -616,7 +616,7 @@ impl generated::LedgerIndexMethodsTransactionHandler for Index {
         request: proto::ArchiveRequest,
     ) -> Result<TransactionExecution<proto::ArchiveResult>, tonic::Status> {
         // Serial, handler-awaited admission of two distinct map actors. Do not
-        // reenter the same map or escape/spawn any of these sessions/futures.
+        // escape/spawn any of these sessions/futures. Serial root-owned reuse is safe.
         let source = self.map.in_transaction(context).await?;
         let value = source
             .get(reboot::sorted_map_proto::GetRequest {
@@ -689,6 +689,35 @@ impl generated::LedgerIndexMethodsTransactionHandler for Index {
             archived: state.archived,
         }))
     }
+    async fn archive_entries(
+        &self,
+        context: &TransactionContext,
+        state: &mut proto::Ledger,
+        request: proto::ArchiveEntriesRequest,
+    ) -> Result<TransactionExecution<proto::ArchiveEntriesResult>, tonic::Status> {
+        validate_archive_keys(&request.keys).map_err(|error| *error)?;
+        let mut entries = Vec::with_capacity(request.keys.len());
+        let last = request.keys.len() - 1;
+        for (index, key) in request.keys.into_iter().enumerate() {
+            // Reopens each map per logical transfer, reusing the exact native
+            // root participant. No independent child commits or compensations.
+            let moved = self
+                .archive_entry(
+                    context,
+                    state,
+                    proto::ArchiveRequest {
+                        key,
+                        invalid_range: request.invalid_range && index == last,
+                    },
+                )
+                .await?;
+            entries.push(moved.response);
+        }
+        Ok(TransactionExecution::new(proto::ArchiveEntriesResult {
+            entries,
+            archived: state.archived,
+        }))
+    }
     async fn archive_history(
         &self,
         context: &TransactionContext,
@@ -728,8 +757,41 @@ impl generated::LedgerIndexMethodsTransactionHandler for Index {
         }))
     }
 }
+fn validate_archive_keys(keys: &[String]) -> Result<(), Box<tonic::Status>> {
+    if keys.is_empty() || keys.len() > 100 {
+        return Err(Box::new(archive_rejection(
+            String::new(),
+            "archive requires 1..=100 keys",
+        )));
+    }
+    let mut unique = std::collections::BTreeSet::new();
+    for key in keys {
+        if key.is_empty() || !unique.insert(key) {
+            return Err(Box::new(archive_rejection(
+                key.clone(),
+                "archive keys must be nonempty and unique",
+            )));
+        }
+    }
+    Ok(())
+}
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn bulk_archive_admission_is_bounded_and_unique() {
+        assert!(super::validate_archive_keys(&[]).is_err());
+        assert!(super::validate_archive_keys(&[String::new()]).is_err());
+        assert!(super::validate_archive_keys(&["entry".into(), "entry".into()]).is_err());
+        assert!(
+            super::validate_archive_keys(&(0..101).map(|i| i.to_string()).collect::<Vec<_>>())
+                .is_err()
+        );
+        assert!(
+            super::validate_archive_keys(&(0..100).map(|i| i.to_string()).collect::<Vec<_>>())
+                .is_ok()
+        );
+    }
+
     #[tokio::test]
     async fn audit_fallback_is_private_and_binds_exact_business_payload() {
         use generated::LedgerWorkMethodsDatabaseHandler as _;

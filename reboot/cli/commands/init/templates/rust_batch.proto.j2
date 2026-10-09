@@ -26,6 +26,8 @@ message Batch { string batch = 1; }
 message HistoryResult { repeated string keys = 1; }
 message BatchMismatch { string expected = 1; string actual = 2; }
 message ArchiveRequest { string key = 1; bool invalid_range = 2; }
+message ArchiveEntriesRequest { repeated string keys = 1; bool invalid_range = 2; }
+message ArchiveEntriesResult { repeated ArchiveResult entries = 1; uint64 archived = 2; }
 message ArchiveResult { string key = 1; bytes value = 2; uint64 archived = 3; }
 message ArchiveRejected { string key = 1; string reason = 2; }
 service LedgerWorkMethods {
@@ -47,6 +49,7 @@ service LedgerIndexMethods {
  rpc ApprovalSnapshot(Batch) returns (Ledger) { option (rbt.v1alpha1.method) = { reader: {} errors: ["BatchMismatch"] }; }
  rpc Approve(Approval) returns (Ledger) { option (rbt.v1alpha1.method).transaction = { exclusive: {} }; }
  rpc ArchiveEntry(ArchiveRequest) returns (ArchiveResult) { option (rbt.v1alpha1.method) = { transaction: { exclusive: {} } errors: ["ArchiveRejected"] }; }
+ rpc ArchiveEntries(ArchiveEntriesRequest) returns (ArchiveEntriesResult) { option (rbt.v1alpha1.method) = { transaction: { exclusive: {} } errors: ["ArchiveRejected"] }; }
  rpc ArchiveHistory(Batch) returns (HistoryResult) { option (rbt.v1alpha1.method).transaction = { exclusive: {} }; }
  rpc History(Batch) returns (HistoryResult) { option (rbt.v1alpha1.method).transaction = { exclusive: {} }; }
 }

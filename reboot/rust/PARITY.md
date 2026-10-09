@@ -44,7 +44,7 @@ proofs below retain their separate source snapshots and limits.
 | Tasks | Durable scheduled tasks, typed results/Wait, recovery, local admin list/stream and scheduled-workflow cancellation | Transactional targets, running/ordinary/distributed cancellation, aggregation, broad retry and dispatcher fencing |
 | Workflows | Finite typed named steps, finite indexed replay, saved reader observations and finite Continue/Break, typed declared business terminals; explicit local-body resumption | Python unbounded Task cursor/GC/Break, cross-actor composition, framework failure isolation |
 | Reactive readers | Typed bounded database/workflow/transaction-service ordinary reader subscriptions, commit invalidation and explicit same-query reconnect | Cross-actor/remote invalidation, transparent reconnect/durable resume, streaming/transaction RPC subscriptions |
-| SortedMap | Canonical empty constructor, serial same-host app/map transactions and public two-map atomic approval transfer | Public inbound adapter, nested/reusable siblings, distributed collection lifecycle |
+| SortedMap | Canonical empty constructor, serial same-host app/map transactions, same-root session reopening and atomic multi-entry approval transfer | Public inbound adapter, nested/reusable siblings, distributed collection lifecycle |
 
 ## Local app development
 
@@ -1163,6 +1163,62 @@ Sources: [reader outcomes/attempt fences](src/workflow_context.rs),
 [Python memoize](../aio/memoize.py),
 [public acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
 
+### Same-root map reopening and atomic multi-entry archive (2026-10-09)
+
+`SortedMapHandle::in_transaction` now permits serial reopening under the exact
+same admitted fresh exclusive application root. Its private BuiltinMapAdmission
+retains the original native participant guard by canonical map identity. Context
+clones share that admission/cache; a newly admitted root gets a new cache. There
+is no global handle cache and no context-to-session reference cycle. Reopening
+reuses the exact native transaction/local owner rather than reacquiring its own
+actor gate, duplicating eager Store or creating a replacement transaction.
+
+Every opening and call still reserves counted root work and revalidates active
+root owner, exact endpoint, fresh exclusive path and certain/unsealed membership.
+Competing, failed or dropped operations retain existing doom/uncertainty evidence.
+Retained guard lifetime does not delay terminal ACK releasing Pending/the actor
+lease; delayed guard Drop still matches the exact root/local incarnation. This
+adds no network ingress, child transaction path, per-call snapshot/rollback,
+shared/factory authority, status retry or root idempotency.
+
+Public `ArchiveEntries` / `client archive-many KEY,KEY,...` moves 1..100 unique
+nonempty approval keys through repeated source/archive session openings in one
+app transaction. Present-empty bytes remain existing values. All source removals,
+destination insertions and app counter changes commit together. A later missing
+source/occupied destination rejects the entire root; a caught invalid map range
+also dooms all enrolled app/map participants. There are no individual entry commits
+or compensations. `archive-many-invalid` exercises that latter path after all moves.
+
+**Executed public native Cargo/rbt:** `/tmp/reboot-rust-map-reentry-cli-1791537054939395043` (**18 checks**), generated strict
+Clippy/fmt and **12 consumer tests**, plus 24 CLI tests. Three real approval entries
+were created through generated public transactions and completed canonical Wait.
+Duplicate/empty requests retained exact app, two maps, task and workflow receipts.
+A second missing key rolled back a first eager transfer; a caught invalid range
+after three repeated transfers rolled back both maps and all tentative counters.
+A fresh bulk root then committed all three present-empty entries. Full Database/
+RocksDB and host restart retained exact app/map/task/checkpoint bytes without
+workflow redispatch. A repeated command rejected absent sources; a new batch,
+approval and bulk transfer after restart exercised independent root ownership.
+Three-entry and singleton cases are executed; full-bound 100-key saturation is not.
+
+SDK `/tmp/reboot-rust-map-reentry-sdk-1791537326595919669`: **438 passed, 131 ignored**, strict all-target Clippy and retained
+explicit native declared-reader state-flip/fail-closed proof. HTTP/generated
+preflight `/tmp/reboot-rust-http-request-preflight-1791536980308505015` passed. Retained reader-outcome public proof `/tmp/reboot-rust-reader-outcome-cli-1791537557282691243`
+(**18 checks**), finite decision `/tmp/reboot-rust-loop-decision-cli-1791537870843153717` (**19 checks**), full baseline batch
+`/tmp/reboot-rust-batch-ledger-acceptance-1791538178111660431` (**162 checks**), greeting/HTTP/rebuild/health/restart/cleanup `/tmp/reboot-rust-loop-decision-greeting-1791538911173424673`
+(**26 HTTP exchanges**). Frozen source, canonical Database identity, resource
+limits and recorded owned PID absence were audited before digest refresh.
+
+**Remaining:** native admission-cancellation/Store/Prepare/terminal lost-ACK crash
+windows for reentry, full-bound saturation, reusable network sibling paths/nested
+snapshots and distributed placement. Same-root session reopening is not ordinary
+transaction-sibling rollback parity. Overall parity remains incomplete.
+
+Sources: [map sessions](src/sorted_map.rs), [admitted root cache](src/runtime.rs),
+[participant ownership](src/durable_participant.rs),
+[public example](../cli/commands/init/templates/rust_batch_lib.rs.j2),
+[native acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
+
 ## Local reactive readers
 
 Database-only generated services expose an exact-actor lifecycle owner plus
@@ -1594,7 +1650,7 @@ not change. The client validates exact single-detail declared payload/Unknown st
   "no business errors" here describes the ordinary ApprovalSnapshot reader.
 
 **Limits:** a bounded serial distinct-actor/direct-root collection application,
-not same-map reentry, reusable sibling/nested paths, a header-authorized public
+not reusable sibling/nested paths or a header-authorized public
 builtin/network adapter, distributed placement or general collection migration.
 At that checkpoint sessions/futures remained handler-awaited and nonescaping; no
 root-operation reservation or cancellation-overlap safety was implied. Empty values are exercised,
@@ -2012,7 +2068,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 659a0d91c0ae5c1109d14525cbd7b85a1384823de3dd5dde1c26ee0f0f7627af -->
+<!-- parity-source-sha256: 1a034c5baa3988a6e15d62bbc70e07bb7ab646a970733cceaf77dbeb812ce171 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

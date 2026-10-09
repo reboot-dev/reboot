@@ -188,6 +188,7 @@ struct BuiltinMapAdmission {
     endpoint: String,
     active: Arc<std::sync::atomic::AtomicBool>,
     owner: crate::explicit_abort::ExplicitAbortOwner,
+    maps: crate::sorted_map::RetainedMapSessions,
 }
 
 impl std::fmt::Debug for BuiltinMapAdmission {
@@ -1485,7 +1486,47 @@ impl TransactionContext {
             endpoint: endpoint.to_owned(),
             active,
             owner,
+            maps: Default::default(),
         });
+    }
+
+    pub(crate) fn retained_builtin_map(
+        &self,
+        endpoint: &str,
+        target: &crate::durable_coordinator::ParticipantTarget,
+    ) -> Result<Option<crate::sorted_map::RetainedMapGuard>, Status> {
+        self.validate_builtin_map_admission(endpoint)?;
+        Ok(self
+            .builtin_map_admission
+            .as_ref()
+            .unwrap()
+            .maps
+            .lock()
+            .expect("retained map mutex poisoned")
+            .get(target)
+            .cloned())
+    }
+    pub(crate) fn retain_builtin_map(
+        &self,
+        endpoint: &str,
+        target: crate::durable_coordinator::ParticipantTarget,
+        guard: crate::sorted_map::RetainedMapGuard,
+    ) -> Result<(), Status> {
+        self.validate_builtin_map_admission(endpoint)?;
+        let mut maps = self
+            .builtin_map_admission
+            .as_ref()
+            .unwrap()
+            .maps
+            .lock()
+            .expect("retained map mutex poisoned");
+        if maps.contains_key(&target) || maps.len() >= 1024 {
+            return Err(Status::failed_precondition(
+                "duplicate or excessive retained map admission",
+            ));
+        }
+        maps.insert(target, guard);
+        Ok(())
     }
 
     pub(crate) fn begin_builtin_map_operation(
