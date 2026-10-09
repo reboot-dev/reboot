@@ -9,6 +9,7 @@ import {
 import { useOrderedMap } from "@reboot-dev/reboot-std-api/collections/ordered_map/v1/ordered_map_rbt_react";
 import {
   RebootClientProvider,
+  useMcpApp,
   useRebootClient,
   useRefreshBearerToken,
   useSignIn,
@@ -857,6 +858,50 @@ const WithToken: FC<{ children: ReactNode }> = ({ children }) => {
     return <div className="loading-token">Loading...</div>;
   }
   return <>{children}</>;
+};
+
+// How an MCP host shows the page: in the conversation, over its whole
+// window, or in a small window of its own.
+type DisplayMode = "inline" | "fullscreen" | "pip";
+
+// Asks an MCP host for fullscreen: an inline frame is small for a whole
+// page. Keeps the `mcp-host-sized` class on `html`, which
+// `dashboard.css` reads, equal to whether the host gives the frame its
+// height.
+const useFullscreenInHost = (): void => {
+  const mcpApp = useMcpApp();
+  useEffect(() => {
+    if (mcpApp === null) {
+      return;
+    }
+    const sized = (mode: DisplayMode | undefined): void => {
+      document.documentElement.classList.toggle(
+        "mcp-host-sized",
+        mode === "fullscreen" || mode === "pip"
+      );
+    };
+    // The host sends the whole context on connecting and only what
+    // changed afterwards.
+    const changed = (context: { displayMode?: DisplayMode }): void => {
+      if (context.displayMode !== undefined) {
+        sized(context.displayMode);
+      }
+    };
+    const context: {
+      displayMode?: DisplayMode;
+      availableDisplayModes?: DisplayMode[];
+    } = mcpApp.getHostContext() ?? {};
+    changed(context);
+    mcpApp.addEventListener("hostcontextchanged", changed);
+    // A host that does not list its modes may still offer fullscreen.
+    if (context.availableDisplayModes?.includes("fullscreen") ?? true) {
+      mcpApp.requestDisplayMode({ mode: "fullscreen" }).then(
+        (result) => sized(result.mode),
+        (error) => console.warn("The host refused fullscreen:", error)
+      );
+    }
+    return () => mcpApp.removeEventListener("hostcontextchanged", changed);
+  }, [mcpApp]);
 };
 
 const RebootBrand: FC<{ live: boolean }> = ({ live }) => (
@@ -4505,6 +4550,8 @@ const App: FC = () => {
     id: PREFERENCES_ID,
   });
   const { response } = useGet();
+
+  useFullscreenInHost();
 
   const onSeen = useCallback(
     (seen: Seen): void => {
