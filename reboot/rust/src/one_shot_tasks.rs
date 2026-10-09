@@ -701,6 +701,7 @@ impl OneShotTasks {
             server_id: server_id.into(),
             placement,
             admin: None,
+            wait_policy: None,
         })
     }
     // Called only while the registry owns this actor's DispatchOwner claim.
@@ -1219,6 +1220,16 @@ pub(crate) struct RunningTaskAdmission {
 }
 impl RunningTaskAdmission {
     pub(crate) fn lock(&self) -> Result<std::sync::MutexGuard<'_, Option<Arc<()>>>, Status> {
+        self.lock_owner(true)
+    }
+    // Result lookup never obtains singleton scheduling/capacity authority.
+    fn lock_result(&self) -> Result<std::sync::MutexGuard<'_, Option<Arc<()>>>, Status> {
+        self.lock_owner(false)
+    }
+    fn lock_owner(
+        &self,
+        singleton: bool,
+    ) -> Result<std::sync::MutexGuard<'_, Option<Arc<()>>>, Status> {
         let owner = self
             .tasks
             .inner
@@ -1238,13 +1249,14 @@ impl RunningTaskAdmission {
                 .inner
                 .active
                 .load(std::sync::atomic::Ordering::Acquire)
-            || self
-                .tasks
-                .inner
-                .recovery_request
-                .lock()
-                .expect("task recovery mutex poisoned")
-                .is_none()
+            || (singleton
+                && self
+                    .tasks
+                    .inner
+                    .recovery_request
+                    .lock()
+                    .expect("task recovery mutex poisoned")
+                    .is_none())
         {
             return Err(Status::failed_precondition(
                 "task dispatcher running owner changed during admission",
@@ -1703,6 +1715,7 @@ pub struct ReaderTaskWaitService {
     server_id: String,
     placement: crate::legacy_placement::PlanOnlyLegacyPlacement,
     admin: Option<crate::auth::AuthorizationPolicy>,
+    wait_policy: Option<crate::auth::AuthorizationPolicy>,
 }
 impl ReaderTaskWaitService {
     /// Register exact actor identities once before mounting this PUBLIC service.
@@ -1740,6 +1753,7 @@ impl ReaderTaskWaitService {
             server_id,
             placement,
             admin: None,
+            wait_policy: None,
         })
     }
     /// Enable local task administration with an explicit application policy.
@@ -1765,6 +1779,44 @@ impl ReaderTaskWaitService {
             Some(authorizer),
         ));
         self
+    }
+    /// Protect canonical result lookup with a separate application-owned policy.
+    /// Without this opt-in, Wait retains its existing public development contract.
+    /// Both policies are required. Each pre-Load and post-Load observation verifies
+    /// the original credential and authorizes the exact encoded WaitRequest, with
+    /// actor type/ref and server-owned app/server identity, but no actor snapshot.
+    /// Pending waits retain the original dispatcher generation across policy awaits.
+    /// Denial never returns task existence/status/result, and performs no task write.
+    /// This is not Python middleware equivalence or automatic task-creator ownership.
+    pub fn with_wait_authorization(
+        mut self,
+        verifier: Arc<dyn crate::auth::TokenVerifier>,
+        authorizer: Arc<dyn crate::auth::Authorizer>,
+    ) -> Self {
+        self.wait_policy = Some(crate::auth::AuthorizationPolicy::new(
+            Some(verifier),
+            Some(authorizer),
+        ));
+        self
+    }
+    async fn authorize_wait(
+        &self,
+        headers: &crate::RebootHeaders,
+        id: &db::TaskId,
+        encoded_request: &[u8],
+    ) -> Result<(), Status> {
+        if let Some(policy) = &self.wait_policy {
+            let mut headers = headers.clone();
+            headers.server_id = Some(self.server_id.clone());
+            headers.application_id = Some(self.application.as_str().to_owned());
+            let (context, principal) = policy
+                .verify(headers, &id.state_type, "rbt.v1alpha1.Tasks.Wait")
+                .await?;
+            policy
+                .authorize(&context, principal.as_ref(), None, encoded_request)
+                .await?;
+        }
+        Ok(())
     }
     fn require_authority(&self, state_ref: &str) -> Result<(), Status> {
         let route = self.placement.route(&self.application, state_ref)?;
@@ -1882,6 +1934,8 @@ impl db::tasks_server::Tasks for ReaderTaskWaitService {
             .map(|value| value.to_str().map(str::to_owned))
             .transpose()
             .map_err(|_| Status::invalid_argument("invalid expected task method"))?;
+        use prost::Message;
+        let encoded_request = request.get_ref().encode_to_vec();
         let id = request
             .into_inner()
             .task_id
@@ -1893,8 +1947,24 @@ impl db::tasks_server::Tasks for ReaderTaskWaitService {
         }
         let tasks = self
             .tasks
-            .get(&(id.state_type.clone(), id.state_ref.clone()))
-            .ok_or_else(|| Status::invalid_argument("task actor is not registered"))?;
+            .get(&(id.state_type.clone(), id.state_ref.clone()));
+        // Capture before any policy await. A stopped/replaced dispatcher cannot
+        // lend its replacement generation to an already-pending protected Wait.
+        let admission = tasks.and_then(|tasks| {
+            tasks
+                .inner
+                .running_owner
+                .lock()
+                .expect("task owner mutex poisoned")
+                .clone()
+                .map(|generation| RunningTaskAdmission {
+                    tasks: tasks.clone(),
+                    generation,
+                })
+        });
+        self.authorize_wait(&headers, &id, &encoded_request).await?;
+        let tasks =
+            tasks.ok_or_else(|| Status::invalid_argument("task actor is not registered"))?;
         if uuid::Uuid::from_slice(&id.task_uuid).map_or(true, |id| {
             id.get_version_num() != 4 || id.get_variant() != uuid::Variant::RFC4122
         }) {
@@ -1903,6 +1973,14 @@ impl db::tasks_server::Tasks for ReaderTaskWaitService {
             ));
         }
         loop {
+            self.authorize_wait(&headers, &id, &encoded_request).await?;
+            if self.wait_policy.is_some() {
+                let _owner = admission
+                    .as_ref()
+                    .ok_or_else(|| Status::unavailable("task dispatcher is not active"))?
+                    .lock_result()
+                    .map_err(|error| Status::unavailable(error.message().to_owned()))?;
+            }
             self.require_authority(&id.state_ref)?;
             if !tasks
                 .inner
@@ -1966,60 +2044,79 @@ impl db::tasks_server::Tasks for ReaderTaskWaitService {
                     parked.armed = false;
                 }
             }
-            // Loading can await while a newer plan moves this actor. Never
-            // return a result under the authority checked before that await.
-            self.require_authority(&id.state_ref)?;
-            if loaded.tasks.is_empty() {
-                return Err(Status::not_found("task not found"));
-            }
-            if loaded.tasks.len() != 1 || loaded.tasks[0].task_id.as_ref() != Some(&id) {
-                return Err(Status::data_loss(
-                    "task lookup returned a different identity",
-                ));
-            }
-            let task = &loaded.tasks[0];
-            if expected_method.as_ref().is_some_and(|expected| {
-                tasks
-                    .declaration(task)
-                    .map(|declaration| declaration.method)
-                    != Some(expected.as_str())
-            }) {
-                return Err(Status::failed_precondition(
-                    "task belongs to another generated method",
-                ));
-            }
-            if task.iteration != 0 {
-                return Err(Status::failed_precondition(
-                    "task iterations are unsupported",
-                ));
-            }
-            scheduled_at(task)?;
-            tasks.inner.binding.validate(task)?;
-            match db::task::Status::try_from(task.status) {
-                Ok(db::task::Status::Pending) => tasks.validate(std::slice::from_ref(task))?,
-                Ok(db::task::Status::Completed) => {
-                    tasks.validate_terminal(
-                        task,
-                        task.response_or_error
+            // Policy may be revoked during Load or its own await. Check again
+            // before revealing existence or a terminal, then original ownership
+            // and current placement. No actor lease is held across policy IO.
+            self.authorize_wait(&headers, &id, &encoded_request).await?;
+            {
+                // Retain the original owner through the synchronous disclosure decision.
+                // Uncertainty is rechecked here, not linearized with policy or transport.
+                let _publication = if self.wait_policy.is_some() {
+                    Some(
+                        admission
                             .as_ref()
-                            .ok_or_else(|| Status::data_loss("completed task has no result"))?,
-                    )?;
-                    let result = match task.response_or_error.clone() {
-                        Some(db::task::ResponseOrError::Response(response)) => {
-                            db::task_response_or_error::ResponseOrError::Response(response)
-                        }
-                        Some(db::task::ResponseOrError::Error(error)) => {
-                            db::task_response_or_error::ResponseOrError::Error(error)
-                        }
-                        None => return Err(Status::data_loss("completed task has no result")),
-                    };
-                    return Ok(tonic::Response::new(db::WaitResponse {
-                        response_or_error: Some(db::TaskResponseOrError {
-                            response_or_error: Some(result),
-                        }),
-                    }));
+                            .ok_or_else(|| Status::unavailable("task dispatcher is not active"))?
+                            .lock_result()
+                            .map_err(|error| Status::unavailable(error.message().to_owned()))?,
+                    )
+                } else {
+                    None
+                };
+                // Loading can await while a newer plan moves this actor. Never
+                // return a result under the authority checked before that await.
+                self.require_authority(&id.state_ref)?;
+                if loaded.tasks.is_empty() {
+                    return Err(Status::not_found("task not found"));
                 }
-                _ => return Err(Status::failed_precondition("unsupported task status")),
+                if loaded.tasks.len() != 1 || loaded.tasks[0].task_id.as_ref() != Some(&id) {
+                    return Err(Status::data_loss(
+                        "task lookup returned a different identity",
+                    ));
+                }
+                let task = &loaded.tasks[0];
+                if expected_method.as_ref().is_some_and(|expected| {
+                    tasks
+                        .declaration(task)
+                        .map(|declaration| declaration.method)
+                        != Some(expected.as_str())
+                }) {
+                    return Err(Status::failed_precondition(
+                        "task belongs to another generated method",
+                    ));
+                }
+                if task.iteration != 0 {
+                    return Err(Status::failed_precondition(
+                        "task iterations are unsupported",
+                    ));
+                }
+                scheduled_at(task)?;
+                tasks.inner.binding.validate(task)?;
+                match db::task::Status::try_from(task.status) {
+                    Ok(db::task::Status::Pending) => tasks.validate(std::slice::from_ref(task))?,
+                    Ok(db::task::Status::Completed) => {
+                        tasks.validate_terminal(
+                            task,
+                            task.response_or_error
+                                .as_ref()
+                                .ok_or_else(|| Status::data_loss("completed task has no result"))?,
+                        )?;
+                        let result = match task.response_or_error.clone() {
+                            Some(db::task::ResponseOrError::Response(response)) => {
+                                db::task_response_or_error::ResponseOrError::Response(response)
+                            }
+                            Some(db::task::ResponseOrError::Error(error)) => {
+                                db::task_response_or_error::ResponseOrError::Error(error)
+                            }
+                            None => return Err(Status::data_loss("completed task has no result")),
+                        };
+                        return Ok(tonic::Response::new(db::WaitResponse {
+                            response_or_error: Some(db::TaskResponseOrError {
+                                response_or_error: Some(result),
+                            }),
+                        }));
+                    }
+                    _ => return Err(Status::failed_precondition("unsupported task status")),
+                }
             }
             // The RPC future owns this read-only wait. Tonic deadlines and host
             // failed-readiness cancellation drop it; no detached waiter or write.
@@ -2415,6 +2512,193 @@ mod tests {
         async fn execute(&self, _: &db::Task) -> Result<prost_types::Any, Status> {
             unreachable!("ownership-only test")
         }
+    }
+    struct WaitPolicy(std::sync::atomic::AtomicBool);
+    impl crate::auth::TokenVerifier for WaitPolicy {
+        fn verify<'a>(
+            &'a self,
+            context: &'a crate::auth::AuthorizationContext,
+            token: Option<&'a str>,
+        ) -> crate::auth::VerifyFuture<'a> {
+            Box::pin(async move {
+                assert_eq!(
+                    context.headers.application_id.as_deref(),
+                    Some("application")
+                );
+                assert_eq!(context.headers.server_id.as_deref(), Some("server"));
+                assert_eq!(context.state_type, "test.WaitPolicy");
+                assert_eq!(context.method, "rbt.v1alpha1.Tasks.Wait");
+                if token == Some("valid") {
+                    crate::auth::TokenVerification::Authenticated(crate::auth::Auth::new(
+                        serde_json::json!({"valid":true}),
+                    ))
+                } else {
+                    crate::auth::TokenVerification::Unauthenticated {
+                        message: "denied".into(),
+                    }
+                }
+            })
+        }
+    }
+    impl crate::auth::Authorizer for WaitPolicy {
+        fn authorize<'a>(
+            &'a self,
+            context: &'a crate::auth::AuthorizationContext,
+            auth: Option<&'a crate::auth::Auth>,
+            state: Option<&'a [u8]>,
+            request: &'a [u8],
+        ) -> crate::auth::AuthorizeFuture<'a> {
+            Box::pin(async move {
+                use prost::Message;
+                assert!(state.is_none());
+                assert!(auth.is_some_and(|auth| auth.payload()["valid"] == true));
+                let id = db::WaitRequest::decode(request).unwrap().task_id.unwrap();
+                assert_eq!(id.state_ref, context.headers.state_ref);
+                if self.0.load(std::sync::atomic::Ordering::Acquire) {
+                    crate::auth::AuthorizationDecision::Allow
+                } else {
+                    crate::auth::AuthorizationDecision::PermissionDenied {
+                        message: "revoked".into(),
+                    }
+                }
+            })
+        }
+    }
+    #[tokio::test]
+    async fn protected_wait_policy_checks_exact_request_trusted_identity_and_revocation() {
+        use prost::Message;
+        let tasks = OneShotTasks::new(
+            DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(),
+            "test.WaitPolicy".into(),
+            "actor".into(),
+            Binding,
+        )
+        .unwrap();
+        let policy = Arc::new(WaitPolicy(std::sync::atomic::AtomicBool::new(true)));
+        let service = ReaderTaskWaitService::new(
+            [tasks],
+            crate::legacy_placement::LegacyApplicationId::new("application").unwrap(),
+            "server",
+            crate::legacy_placement::PlanOnlyLegacyPlacement::new(),
+        )
+        .unwrap()
+        .with_wait_authorization(policy.clone(), policy.clone());
+        let id = db::TaskId {
+            state_type: "test.WaitPolicy".into(),
+            state_ref: "actor".into(),
+            task_uuid: uuid::Uuid::new_v4().as_bytes().to_vec(),
+        };
+        let encoded = db::WaitRequest {
+            task_id: Some(id.clone()),
+        }
+        .encode_to_vec();
+        let mut headers = crate::RebootHeaders::new("actor");
+        headers.state_ref = "actor".into();
+        headers.application_id = Some("spoofed".into());
+        headers.server_id = Some("spoofed".into());
+        assert_eq!(
+            service
+                .authorize_wait(&headers, &id, &encoded)
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::Unauthenticated
+        );
+        headers.bearer_token = Some("valid".into());
+        service
+            .authorize_wait(&headers, &id, &encoded)
+            .await
+            .unwrap();
+        policy.0.store(false, std::sync::atomic::Ordering::Release);
+        assert_eq!(
+            service
+                .authorize_wait(&headers, &id, &encoded)
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::PermissionDenied
+        );
+    }
+    #[tokio::test]
+    async fn protected_wait_denial_hides_unknown_actor_before_database_or_dispatcher_checks() {
+        use db::tasks_server::Tasks;
+        let tasks = OneShotTasks::new(
+            DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(),
+            "test.WaitPolicy".into(),
+            "actor".into(),
+            Binding,
+        )
+        .unwrap();
+        let policy = Arc::new(WaitPolicy(std::sync::atomic::AtomicBool::new(true)));
+        let service = ReaderTaskWaitService::new(
+            [tasks],
+            crate::legacy_placement::LegacyApplicationId::new("application").unwrap(),
+            "server",
+            crate::legacy_placement::PlanOnlyLegacyPlacement::new(),
+        )
+        .unwrap()
+        .with_wait_authorization(policy.clone(), policy);
+        for reference in ["actor", "unknown"] {
+            let mut request = tonic::Request::new(db::WaitRequest {
+                task_id: Some(db::TaskId {
+                    state_type: "test.WaitPolicy".into(),
+                    state_ref: reference.into(),
+                    task_uuid: uuid::Uuid::new_v4().as_bytes().to_vec(),
+                }),
+            });
+            request
+                .metadata_mut()
+                .insert(crate::STATE_REF_HEADER, reference.parse().unwrap());
+            assert_eq!(
+                service.wait(request).await.unwrap_err().code(),
+                tonic::Code::Unauthenticated
+            );
+        }
+    }
+    #[tokio::test]
+    async fn protected_wait_read_owner_rejects_aba_uncertainty_without_granting_scheduling() {
+        let tasks = OneShotTasks::new(
+            DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(),
+            "test.ResultOwner".into(),
+            "actor".into(),
+            Binding,
+        )
+        .unwrap();
+        let owner = DispatchOwner::claim(tasks.clone()).unwrap();
+        tasks
+            .inner
+            .active
+            .store(true, std::sync::atomic::Ordering::Release);
+        let admission = RunningTaskAdmission {
+            tasks: tasks.clone(),
+            generation: tasks.inner.running_owner.lock().unwrap().clone().unwrap(),
+        };
+        assert!(admission.lock_result().is_ok());
+        assert!(
+            admission.lock().is_err(),
+            "read owner must not grant scheduling authority"
+        );
+        drop(owner);
+        let replacement = DispatchOwner::claim(tasks.clone()).unwrap();
+        tasks
+            .inner
+            .active
+            .store(true, std::sync::atomic::Ordering::Release);
+        assert!(
+            admission.lock_result().is_err(),
+            "old Wait must not adopt replacement"
+        );
+        let current = RunningTaskAdmission {
+            tasks: tasks.clone(),
+            generation: tasks.inner.running_owner.lock().unwrap().clone().unwrap(),
+        };
+        assert!(current.lock_result().is_ok());
+        tasks.inner.uncertain.send_replace(true);
+        assert_eq!(
+            current.lock_result().unwrap_err().code(),
+            tonic::Code::Unavailable
+        );
+        drop(replacement);
     }
     #[tokio::test]
     async fn wait_authority_without_plan_fails_closed() {

@@ -20,7 +20,7 @@ prost-types = "0.13"
 tonic = "0.12"
 tonic-health = "0.12"
 uuid = { version = "1", features = ["v4"] }
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"{% if example == "batch-ledger" %}, "time", "sync"{% endif %}] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"{% if example == "batch-ledger" %}, "time", "sync", "fs", "io-util"{% endif %}] }
 
 [build-dependencies]
 reboot = { package = "reboot-rust-schema", path = {{ sdk_path }}, features = ["build"] }

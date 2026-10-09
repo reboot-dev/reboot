@@ -41,7 +41,7 @@ proofs below retain their separate source snapshots and limits.
 | Schema/codegen | Explicit schema DSL, Prost/Tonic bindings and concrete typed adapters | Rust derive/reflection and complete schema/tooling contract |
 | State/client runtime | Durable constructors/readers/writers, idempotent response replay, metadata/auth | General distributed ownership/fencing and arbitrary external effects |
 | Transactions | Legacy durable coordinator/participant paths and bounded supervised chains/star | General nested snapshots, reentrancy, intersecting subtrees, migration |
-| Tasks | Durable scheduled tasks, typed results/Wait, recovery, local admin list/stream and scheduled-workflow cancellation | Transactional targets, running/ordinary/distributed cancellation, aggregation, broad retry and dispatcher fencing |
+| Tasks | Durable scheduled tasks, typed results/Wait with opt-in result policy, recovery, local admin list/stream and scheduled-workflow cancellation | Transactional targets, running/ordinary/distributed cancellation, aggregation, broad retry and dispatcher fencing |
 | Workflows | Finite typed named steps, finite indexed replay, saved reader observations and finite Continue/Break, typed declared business terminals; explicit local-body resumption | Python unbounded Task cursor/GC/Break, cross-actor composition, framework failure isolation |
 | Reactive readers | Typed bounded database/workflow/transaction-service ordinary reader subscriptions, commit invalidation and explicit same-query reconnect | Cross-actor/remote invalidation, transparent reconnect/durable resume, streaming/transaction RPC subscriptions |
 | SortedMap | Canonical empty constructor, serial same-host app/map transactions, same-root session reopening and atomic multi-entry approval transfer | Public inbound adapter, nested/reusable siblings, distributed collection lifecycle |
@@ -718,7 +718,7 @@ admission. Generated batch `tasks-watch` supplies bearer/server scope and an RPC
 deadline; reconnect creates a new current snapshot, without a resume cursor.
 
 **Missing:** transactional task targets, running/ordinary/distributed cancellation and full aggregated listing,
-task-result authorization, broad retry policies, distributed dispatcher fencing and
+automatic task-creator ACLs, broad retry policies, distributed dispatcher fencing and
 migration, arbitrary shared/factory/idempotent tree scheduling. Workflow methods
 have their separate context/result contract below, not ordinary declared-task
 error semantics.
@@ -1162,6 +1162,65 @@ Sources: [reader outcomes/attempt fences](src/workflow_context.rs),
 [native proof](tests/fixtures/workflow_app/prove_reader_outcome.py),
 [Python memoize](../aio/memoize.py),
 [public acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
+
+### Opt-in canonical task-result authorization (2026-10-09)
+
+`ReaderTaskWaitService::with_wait_authorization` installs an application-owned
+verifier/authorizer pair independently of task administration. Without this
+explicit opt-in, Wait preserves its public development behavior. The policies
+receive the exact encoded WaitRequest, actor type/routed ref and server-owned
+application/server identity, with no actor snapshot or task result. This is a
+Rust application security extension: Python TasksServicer.Wait itself checks
+routing/placement and retrieves cache/storage, without these policy calls.
+It is not an automatic task-creator ACL or built-in identity provider.
+
+Protected Wait captures the original dispatcher generation before policy awaits,
+reverifies/reauthorizes before and after every canonical Load, and checks original
+owner/activity/uncertainty plus current placement before disclosure. The final
+owner guard remains held through synchronous result/diagnostic construction and
+is dropped before any pending sleep. Read-only owner validation does not obtain
+singleton scheduling authority; shared-reader recovery_request remains absent.
+Failed policy reveals no task existence/status/result and writes no task state.
+Pending polling observes revocation; dropping/deadlining Wait does not cancel the
+durable task. No detached task waiter or status retry is added. Policy/uncertainty
+transitions and transport delivery are not one linearizable revocation operation.
+
+The generated batch host optionally uses a trusted local regular-file JSON grant
+via RBT_RUST_TASK_RESULT_GRANT. Its separate token/task UUID grant is bounded to
+4096 bytes with async read-only IO; absent/malformed/ungranted credentials fail
+closed. `client wait` forwards RBT_RUST_TASK_RESULT_TOKEN as bearer metadata
+through the generated typed helper without replacing its deadline. This local
+development example is not hostile-path filesystem isolation or production IAM.
+Tokio may finish bounded read-only filesystem work after future drop; it cannot
+publish a task mutation or result on behalf of that dropped Wait.
+
+**Executed native public Cargo/rbt:** `/tmp/reboot-rust-task-result-auth-cli-1791540791349700882` (**14 checks**), generated strict
+Clippy/fmt, **12 consumer tests**, 24 CLI tests. Real public submission/approval
+created Pending and Completed workflow records. Missing/invalid/admin-only and
+ungranted task credentials denied without mutation; a live pending Wait observed
+revocation, and the generated protected pending deadline retained Pending bytes.
+Actual post-Load authorization was parked, then revoked before release, rejecting
+completed disclosure. Restored grants retrieved the exact terminal; malformed
+grants denied; real RocksDB/host restart retained policy, terminal and no workflow
+redispatch. This proof exercises a success terminal. Protected declared-error/
+Cancelled terminals, shared-registry host execution and suspended-policy owner
+replacement remain separate acceptance gaps; their existing unprotected native
+contracts and read-owner unit vectors do not certify those protected shapes.
+
+SDK `/tmp/reboot-rust-task-result-auth-sdk-1791541080222047185`: **441 passed, 131 ignored**, strict all-target Clippy and retained
+explicit native reader outcome state-flip/fail-closed proof. HTTP/generated
+preflight `/tmp/reboot-rust-http-request-preflight-1791540717430497691` passed. Same-root maps `/tmp/reboot-rust-map-reentry-cli-1791541309024809130` (**18 checks**), full
+baseline batch `/tmp/reboot-rust-batch-ledger-acceptance-1791541574776710814` (**162 checks**) and greeting/HTTP/rebuild/health/restart/
+cleanup `/tmp/reboot-rust-loop-decision-greeting-1791542298246798496` (**26 HTTP exchanges**) passed. Frozen source, canonical
+Database identity, resource limits and owned PID absence audited before digest
+refresh. Three protected-Wait source tests exercise exact request/trusted
+identity/revocation, unknown actor denial, and read-owner ABA/uncertainty without
+scheduling authority. Overall Rust parity remains incomplete.
+
+Sources: [canonical Wait](src/one_shot_tasks.rs), [policy](src/auth.rs),
+[Python Wait](../aio/internals/tasks_servicer.py),
+[public host](../cli/commands/init/templates/rust_batch_host.rs.j2),
+[native acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
 
 ### Same-root map reopening and atomic multi-entry archive (2026-10-09)
 
@@ -2068,7 +2127,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 1a034c5baa3988a6e15d62bbc70e07bb7ab646a970733cceaf77dbeb812ce171 -->
+<!-- parity-source-sha256: 2f2ba352e5182ac18b5dea1c87b17b88784352f5eec50f2ea493ad037da7d247 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

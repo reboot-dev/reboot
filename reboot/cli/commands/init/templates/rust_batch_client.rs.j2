@@ -427,6 +427,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 task_uuid: id.as_bytes().to_vec(),
             });
             request.set_timeout(Duration::from_millis(arg(2)?.parse()?));
+            if let Ok(token) = std::env::var("RBT_RUST_TASK_RESULT_TOKEN") {
+                request
+                    .metadata_mut()
+                    .insert("authorization", format!("Bearer {token}").parse()?);
+            }
             match generated::LedgerWorkMethodsTasksWait::run_batch(channel, request).await {
                 Ok(state) => show(state),
                 Err(generated::LedgerWorkMethodsRunBatchError::BatchRejected(error)) => println!(

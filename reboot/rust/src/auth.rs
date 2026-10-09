@@ -5,9 +5,11 @@
 //! first, then authorize against a transaction-free metadata projection and
 //! immutable encoded snapshots of the request and loaded state. It deliberately
 //! does not establish trusted internal-call provenance; transaction, workflow,
-//! streaming, HTTP/OAuth, and task-result authorization remain outside this slice.
+//! streaming and HTTP/OAuth have separate owning contracts.
 //! Server-local Tasks.ListTasks separately reuses both explicit policies with an
 //! encoded administrative request and no actor snapshot; it has no default allow.
+//! Tasks.Wait can opt into an independent policy on the exact result request,
+//! reverified before and after each canonical Load without actor state.
 
 use crate::RebootHeaders;
 use std::future::Future;

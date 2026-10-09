@@ -510,6 +510,15 @@ try:
         lib.write_text(text.replace(needle, overlay + needle))
         command(['cargo', 'fmt', '--manifest-path', 'backend/Cargo.toml'])
         evidence['caught_handler_sha256'] = hashlib.sha256(lib.read_bytes()).hexdigest()
+    if os.environ.get('RUST_BATCH_TASK_RESULT_AUTH_ONLY'):
+        host=APP/'backend/src/host.rs'
+        text=host.read_text()
+        needle='            use prost::Message;\n            let grant = self.grant().await;\n            let allowed = (|| {'
+        pause='            use prost::Message;\n            if let Some(path) = std::env::var_os("RBT_RUST_TASK_RESULT_POLICY_PROBE") {\n                static CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);\n                let call=CALLS.fetch_add(1,std::sync::atomic::Ordering::SeqCst)+1;\n                let path=std::path::PathBuf::from(path);\n                std::fs::write(path.with_extension("count"),call.to_string()).unwrap();\n                if std::fs::read_to_string(path.with_extension("arm")).ok().as_deref()==Some(call.to_string().as_str()) {\n                    std::fs::write(&path,"authorizer parked after real Load").unwrap();\n                    while !path.with_extension("release").exists() {\n                        tokio::time::sleep(std::time::Duration::from_millis(5)).await;\n                    }\n                }\n            }\n            let grant = self.grant().await;\n            let allowed = (|| {'
+        assert text.count(needle)==1
+        host.write_text(text.replace(needle,pause))
+        command(['cargo','fmt','--manifest-path','backend/Cargo.toml'])
+        evidence['task_result_policy_probe_sha256']=hashlib.sha256(host.read_bytes()).hexdigest()
     check('workflow reader composition removes duplicate view schema' , 'LedgerViewMethods' not in (APP / 'api/batch_ledger/v1/batch.proto').read_text())
     command(['cargo', 'clippy', '--manifest-path', 'backend/Cargo.toml', '--all-targets', '--', '-D', 'warnings'])
     command(['cargo', 'fmt', '--manifest-path', 'backend/Cargo.toml', '--', '--check'])
@@ -529,6 +538,70 @@ try:
     reference = str(StateRef.from_id('batch_ledger.v1.Ledger', 'ledger'))
     map_ref = str(StateRef.from_id('rbt.std.collections.v1.SortedMap', 'approvals'))
     archive_ref = str(StateRef.from_id('rbt.std.collections.v1.SortedMap', 'archived-approvals'))
+    if os.environ.get('RUST_BATCH_TASK_RESULT_AUTH_ONLY'):
+        import uuid as uuid_module
+        grant=STAGE/'task-result-grant.json'; grant.touch(mode=0o600)
+        token=str(uuid_module.uuid4());probe=STAGE/'task-result-policy-probe'
+        ENV['RBT_RUST_TASK_RESULT_GRANT']=str(grant)
+        ENV['RBT_RUST_TASK_RESULT_POLICY_PROBE']=str(probe)
+        def allow(task):
+            grant.write_text(json.dumps({'token':token,'task_uuid':task}))
+        def rpc_wait(task,credential=None,seconds=3):
+            request=tasks_pb2.WaitRequest(task_id=tasks_pb2.TaskId(state_type='batch_ledger.v1.Ledger',state_ref=reference,task_uuid=uuid_module.UUID(task).bytes))
+            metadata=[('x-reboot-state-ref',reference),('x-reboot-application-id','spoofed'),('x-reboot-server-id','spoofed')]
+            if credential is not None:metadata.append(('authorization','Bearer '+credential))
+            channel=grpc.insecure_channel(f'127.0.0.1:{PORT}')
+            return channel,tasks_pb2_grpc.TasksStub(channel).Wait.future(request,metadata=metadata,timeout=seconds)
+        def denied(task,code,credential=None):
+            channel,future=rpc_wait(task,credential)
+            try:
+                future.result();raise AssertionError('Wait leaked task result')
+            except grpc.RpcError as error:assert error.code()==code,error
+            finally:channel.close()
+        current=Session('task-result-start')
+        until(lambda:'actor state must be constructed' in client('work-unary','private',ok=False)[0],'result policy public readiness')
+        client('create');task,_=client('submit','private','1',str(uuid_module.uuid4()))
+        allow(task)
+        before=native(current,task)[2].SerializeToString()
+        denied(task,grpc.StatusCode.UNAUTHENTICATED)
+        denied(task,grpc.StatusCode.UNAUTHENTICATED,'wrong')
+        denied(task,grpc.StatusCode.UNAUTHENTICATED,ENV['RBT_RUST_TASK_ADMIN_TOKEN'])
+        denied(str(uuid_module.uuid4()),grpc.StatusCode.PERMISSION_DENIED,token)
+        check('result policy denies missing invalid admin and ungranted UUID credentials without task mutation',native(current,task)[2].SerializeToString()==before)
+        # Pending Wait must observe revocation without cancelling the workflow.
+        count=int(probe.with_suffix('.count').read_text());channel,future=rpc_wait(task,token,5)
+        until(lambda:int(probe.with_suffix('.count').read_text())>count+2,'protected pending Wait observed')
+        allow(str(uuid_module.uuid4()))
+        try:future.result();raise AssertionError('pending Wait ignored revocation')
+        except grpc.RpcError as error:assert error.code()==grpc.StatusCode.PERMISSION_DENIED,error
+        finally:channel.close()
+        check('pending Wait revocation returns denial and preserves canonical Pending',native(current,task)[2].SerializeToString()==before)
+        allow(task);ENV['RBT_RUST_TASK_RESULT_TOKEN']=token
+        text,code=client('wait',task,'250',ok=False)
+        check('generated protected pending Wait preserves deadline',code!=0 and ('DeadlineExceeded' in text or 'Cancelled' in text) and native(current,task)[2].SerializeToString()==before)
+        client('approve','private','0')
+        check('generated protected Wait returns actual completed result',client('wait',task,'10000')[0]=='private 1 1 1 1')
+        final=native(current,task)[2].SerializeToString()
+        # First call entry, second pre-Load, third post-Load: park authorizer there.
+        count=int(probe.with_suffix('.count').read_text());probe.with_suffix('.arm').write_text(str(count+3))
+        channel,future=rpc_wait(task,token,5)
+        until(lambda:probe.exists(),'post-Load result authorizer parked')
+        allow(str(uuid_module.uuid4()));probe.with_suffix('.release').write_text('release')
+        try:future.result();raise AssertionError('post-Load revoked result disclosed')
+        except grpc.RpcError as error:assert error.code()==grpc.StatusCode.PERMISSION_DENIED,error
+        finally:channel.close()
+        check('revocation during post-Load policy await blocks durable result disclosure',native(current,task)[2].SerializeToString()==final)
+        allow(task)
+        check('restored grant retrieves same canonical result without replay',client('wait',task,'3000')[0]=='private 1 1 1 1' and native(current,task)[2].SerializeToString()==final)
+        grant.write_text('{malformed');denied(task,grpc.StatusCode.UNAUTHENTICATED,token)
+        check('malformed grant fails closed without durable task changes',native(current,task)[2].SerializeToString()==final)
+        allow(task);current.close();current=None
+        current=Session('task-result-restart')
+        check('Database host restart preserves protected result and exact terminal',client('wait',task,'3000')[0]=='private 1 1 1 1' and native(current,task)[2].SerializeToString()==final)
+        check('protected completed retrieval does not redispatch workflow',not any('body' in event for event in events(current)))
+        denied(task,grpc.StatusCode.UNAUTHENTICATED)
+        check('restart retains result access policy',native(current,task)[2].SerializeToString()==final)
+        current.close();current=None;evidence['accepted']=True;raise SystemExit(0)
     if os.environ.get('RUST_BATCH_MAP_REENTRY_ONLY'):
         current=Session('map-reentry-start')
         until(lambda:'actor state must be constructed' in client('work-unary','multi',ok=False)[0],'bulk archive public admission')

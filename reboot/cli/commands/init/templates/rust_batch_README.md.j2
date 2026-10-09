@@ -293,3 +293,21 @@ transaction snapshots, distributed siblings or a public map adapter. Commands
 send once without root idempotency or status retry; an uncertain result is not
 permission to send it again. Restart restores app and both map owners before
 coordinator/task recovery and public readiness.
+
+## Task result access
+
+Wait remains public for local development unless `RBT_RUST_TASK_RESULT_GRANT`
+is configured on the host. This opt-in file contains JSON `token` and `task_uuid`
+strings; create it outside the repository with private permissions and use a
+fresh credential. Canonical and generated Wait calls must provide that bearer
+credential and the granted task UUID. Task-admin credentials are independent.
+Missing, malformed or revoked grants fail closed; the host rechecks before and
+after canonical task loads and while a pending Wait polls. Revoking the file
+ends pending Wait without cancelling or changing the task. Restore the grant
+to retrieve its durable result, including after host/Database restart.
+
+This is a local-development policy example, not an identity provider, automatic
+task-creator ACL, Python middleware equivalence or an atomic policy-revocation
+transaction. Production applications supply their own verifier/authorizer through
+`ReaderTaskWaitService::with_wait_authorization`. Policies receive the exact
+encoded Wait request and actor identity, not the actor state or task result.
