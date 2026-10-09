@@ -1322,10 +1322,12 @@ fn emit_durable(
     // adapter implementing every declared method. Database-only services keep
     // their smaller adapter; mixed services are emitted below.
     if !database_methods.is_empty() && !has_transactions {
-        if database_methods
-            .iter()
-            .any(|(_, method, _, _, _)| method == "new" || method == "local_readers")
-        {
+        if database_methods.iter().any(|(_, method, _, _, _)| {
+            method == "new"
+                || method == "local_readers"
+                || method == "with_reader_registry"
+                || method == "with_legacy_unary_roots"
+        }) {
             return Err(format!(
                 "{service_name}: method collides with reserved local reader helper"
             ));
@@ -1380,7 +1382,7 @@ fn emit_durable(
             }
         }
         output.push_str("}\n\n");
-        output.push_str(&format!("pub struct {adapter}<H> {{ store: {runtime_module}::runtime::DatabaseActorStore, handler: std::sync::Arc<H>, authorization: {runtime_module}::auth::AuthorizationPolicy }}\nimpl<H> Clone for {adapter}<H> {{ fn clone(&self) -> Self {{ Self {{ store: self.store.clone(), handler: self.handler.clone(), authorization: self.authorization.clone() }} }} }}\nimpl<H> {adapter}<H> {{ pub fn new(store: {runtime_module}::runtime::DatabaseActorStore, handler: H) -> Self {{ Self {{ store, handler: std::sync::Arc::new(handler), authorization: {runtime_module}::auth::AuthorizationPolicy::default() }} }} pub fn with_authorization(mut self, authorization: {runtime_module}::auth::AuthorizationPolicy) -> Self {{ self.authorization = authorization; self }} }}\n\n"));
+        output.push_str(&format!("pub struct {adapter}<H> {{ store: {runtime_module}::runtime::DatabaseActorStore, handler: std::sync::Arc<H>, authorization: {runtime_module}::auth::AuthorizationPolicy, reader_registry: Option<{runtime_module}::reactive::LocalReaderRegistry>, legacy_reader_roots: Vec<String>, reader_binding_id: std::sync::Arc<()> }}\nimpl<H> Clone for {adapter}<H> {{ fn clone(&self) -> Self {{ Self {{ store: self.store.clone(), handler: self.handler.clone(), authorization: self.authorization.clone(), reader_registry: self.reader_registry.clone(), legacy_reader_roots: self.legacy_reader_roots.clone(), reader_binding_id: self.reader_binding_id.clone() }} }} }}\nimpl<H> {adapter}<H> {{ pub fn new(store: {runtime_module}::runtime::DatabaseActorStore, handler: H) -> Self {{ Self {{ store, handler: std::sync::Arc::new(handler), authorization: {runtime_module}::auth::AuthorizationPolicy::default(), reader_registry: None, legacy_reader_roots: Vec::new(), reader_binding_id: std::sync::Arc::new(()) }} }} /// Configure authorization before registering readers. Reconfiguration detaches a stale registry and rotates its binding identity.\npub fn with_authorization(mut self, authorization: {runtime_module}::auth::AuthorizationPolicy) -> Self {{ self.authorization = authorization; self.reader_registry = None; self.legacy_reader_roots.clear(); self.reader_binding_id = std::sync::Arc::new(()); self }} /// Attach the completed registry used by this adapter's registered owners.\npub fn with_reader_registry(mut self, registry: {runtime_module}::reactive::LocalReaderRegistry) -> Result<Self, Box<tonic::Status>> {{ registry.validate_unary_binding::<{declaration}>(self.store.database_endpoint(), &self.reader_binding_id)?; self.reader_registry = Some(registry); self.legacy_reader_roots.clear(); Ok(self) }} /// Explicit exact legacy roots only; never a fallback for registered evaluation errors.\npub fn with_legacy_unary_roots(mut self, roots: Vec<String>) -> Result<Self, Box<tonic::Status>> {{ self.reader_registry.as_ref().ok_or_else(|| tonic::Status::failed_precondition(\"legacy unary roots require attached registry\"))?.validate_legacy_unary_roots(&roots)?; self.legacy_reader_roots = roots; Ok(self) }} }}\n\n"));
         output.push_str("#[tonic::async_trait]\n");
         output.push_str(&format!(
             "impl<H: {handler}> proto::{server}::{service_name} for {adapter}<H> {{\n"
@@ -1432,7 +1434,14 @@ fn emit_durable(
                 } else {
                     ".map_err(|error| error.into_status())".to_owned()
                 };
-            output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n        let handler = self.handler.clone();\n        self.store.{envelope}::<{declaration}, _, _, _>(\n            {prefix}request, move |state, request| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ handler.{method}(state, request).await{map_declared_error} }})\n            }},\n        ).await\n    }}\n"));
+            let unary_composition = if matches!(**kind, DurableKind::Reader) {
+                format!(
+                    "        if let Some(registry) = &self.reader_registry {{ registry.validate_unary_metadata(&request)?; if !request.metadata().get(\"x-reboot-state-ref\").and_then(|value| value.to_str().ok()).is_some_and(|reference| self.legacy_reader_roots.iter().any(|root| root == reference)) && registry.contains_unary_root::<{declaration}, _>(&request)? {{ return registry.evaluate_unary::<proto::{request}, proto::{response}>(request, \"{method_identity}\").await; }} }}\n"
+                )
+            } else {
+                String::new()
+            };
+            output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n{unary_composition}        let handler = self.handler.clone();\n        self.store.{envelope}::<{declaration}, _, _, _>(\n            {prefix}request, move |state, request| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ handler.{method}(state, request).await{map_declared_error} }})\n            }},\n        ).await\n    }}\n"));
         }
         output.push_str("}\n\n");
         emit_local_readers(
@@ -1650,12 +1659,12 @@ fn emit_external_client(
                 let declared_errors = declared_database_errors(annotation, kind, method_identity);
                 if declared_errors.is_empty() {
                     output.push_str(&format!(
-                        "    pub async fn {method}(&mut self, request: proto::{request}) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{ let original_request = prost::Message::encode_to_vec(&request); let mut retry_backoff = {runtime_module}::ExternalUnaryRetryBackoff::new(); loop {{ let request = <proto::{request} as prost::Message>::decode(original_request.as_slice()).map_err(|error| tonic::Status::internal(error.to_string()))?; let request = self.context.reader(request).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?; match self.client.{method}(request).await {{ Err(status) if {runtime_module}::is_retryable_status(&status) => {{ retry_backoff.wait().await; continue }}, result => return result, }} }} }}\n"
+                        "    pub async fn {method}(&mut self, request: proto::{request}) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{ let original_request = prost::Message::encode_to_vec(&request); let mut retry_backoff = {runtime_module}::ExternalUnaryRetryBackoff::new(); loop {{ let request = <proto::{request} as prost::Message>::decode(original_request.as_slice()).map_err(|error| tonic::Status::internal(error.to_string()))?; let request = self.context.reader(request).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?; match self.client.{method}(request).await {{ Err(status) if {runtime_module}::is_retryable_status(&status) && !{runtime_module}::reactive::is_terminal_unary_evaluation(&status) => {{ retry_backoff.wait().await; continue }}, result => return result, }} }} }}\n"
                     ));
                 } else {
                     let error = declared_error_type(service_name, method);
                     output.push_str(&format!(
-                        "    pub async fn {method}(&mut self, request: proto::{request}) -> Result<tonic::Response<proto::{response}>, {error}> {{ let original_request = prost::Message::encode_to_vec(&request); let mut retry_backoff = {runtime_module}::ExternalUnaryRetryBackoff::new(); loop {{ let request = <proto::{request} as prost::Message>::decode(original_request.as_slice()).map_err(|error| {error}::Grpc(tonic::Status::internal(error.to_string())))?; let request = self.context.reader(request).map_err(|error| {error}::Grpc(tonic::Status::invalid_argument(error.to_string())))?; match self.client.{method}(request).await {{ Ok(response) => return Ok(response), Err(status) if {runtime_module}::is_retryable_status(&status) => {{ retry_backoff.wait().await; continue }}, Err(status) => return Err({error}::from_status(status)), }} }} }}\n"
+                        "    pub async fn {method}(&mut self, request: proto::{request}) -> Result<tonic::Response<proto::{response}>, {error}> {{ let original_request = prost::Message::encode_to_vec(&request); let mut retry_backoff = {runtime_module}::ExternalUnaryRetryBackoff::new(); loop {{ let request = <proto::{request} as prost::Message>::decode(original_request.as_slice()).map_err(|error| {error}::Grpc(tonic::Status::internal(error.to_string())))?; let request = self.context.reader(request).map_err(|error| {error}::Grpc(tonic::Status::invalid_argument(error.to_string())))?; match self.client.{method}(request).await {{ Ok(response) => return Ok(response), Err(status) if {runtime_module}::is_retryable_status(&status) && !{runtime_module}::reactive::is_terminal_unary_evaluation(&status) => {{ retry_backoff.wait().await; continue }}, Err(status) => return Err({error}::from_status(status)), }} }} }}\n"
                     ));
                 }
             }

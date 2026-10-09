@@ -9,7 +9,12 @@ mod composition_tests {
         #[prost(uint64, tag = "1")]
         value: u64,
     }
+    #[derive(Clone)]
+    struct CallerMarker(Arc<AtomicU64>);
+    #[derive(Clone)]
+    struct SlowCallback(std::time::Duration);
     struct Binding {
+        identity: Arc<()>,
         store: DatabaseActorStore,
         value: Arc<AtomicU64>,
         selected: Arc<Mutex<Vec<String>>>,
@@ -19,10 +24,16 @@ mod composition_tests {
     }
     #[tonic::async_trait]
     impl ReaderBinding for Binding {
+        fn unary_binding_id(&self) -> Option<Arc<()>> {
+            Some(self.identity.clone())
+        }
         fn validate_owner(&self, owner: &LocalReaderOwner) -> Result<(), Status> {
             owner.validate_generated_store(&self.store, "unit.Compose")
         }
         async fn read(&self, request: Request<wire::Query>) -> Result<Vec<u8>, Status> {
+            if let Some(marker) = request.extensions().get::<CallerMarker>() {
+                marker.0.fetch_add(1000, Ordering::SeqCst);
+            }
             if request
                 .metadata()
                 .get("authorization")
@@ -47,6 +58,12 @@ mod composition_tests {
             request: Request<wire::Query>,
             context: LocalReaderContext,
         ) -> Result<Vec<u8>, Status> {
+            if let Some(marker) = request.extensions().get::<CallerMarker>() {
+                marker.0.fetch_add(1, Ordering::SeqCst);
+            }
+            if let Some(delay) = request.extensions().get::<SlowCallback>() {
+                std::thread::sleep(delay.0);
+            }
             let selected = self.selected.lock().unwrap().clone();
             *self.escaped.lock().unwrap() = Some(context.clone());
             if selected.is_empty() {
@@ -86,6 +103,7 @@ mod composition_tests {
         let escaped = Arc::new(Mutex::new(None));
         let service = LocalReaderService::new(
             Binding {
+                identity: Arc::new(()),
                 store,
                 value: value.clone(),
                 selected: selected.clone(),
@@ -275,6 +293,7 @@ mod composition_tests {
         let root = actor("http://127.0.0.1:9");
         let service = LocalReaderService::new(
             CatchingBinding(Binding {
+                identity: Arc::new(()),
                 store: root.service.binding.store.clone(),
                 value: root.value.clone(),
                 selected: root.selected.clone(),
@@ -351,6 +370,7 @@ mod composition_tests {
         *root.selected.lock().unwrap() = vec![source.owner.inner.state_ref.clone()];
         let service = LocalReaderService::new(
             CancellingBinding(Binding {
+                identity: Arc::new(()),
                 store: root.service.binding.store.clone(),
                 value: root.value.clone(),
                 selected: root.selected.clone(),
@@ -509,4 +529,318 @@ mod composition_tests {
         drop(stream);
         assert_eq!(registry.active_subscriptions(), 0);
     }
+    struct Declaration;
+    impl crate::runtime::DurableStateDeclaration for Declaration {
+        type State = Value;
+        const STATE_TYPE: &'static str = "unit.Compose";
+    }
+    struct WrongDeclaration;
+    impl crate::runtime::DurableStateDeclaration for WrongDeclaration {
+        type State = Value;
+        const STATE_TYPE: &'static str = "unit.Wrong";
+    }
+    fn unary_query(root: &Actor) -> Request<Value> {
+        query(root).map(|_| Value { value: 0 })
+    }
+    #[tokio::test]
+    async fn unary_composed_snapshot_is_fresh_authorized_and_leaves_no_watcher() {
+        let root = actor("http://127.0.0.1:9");
+        let source = actor("http://127.0.0.1:9");
+        *root.selected.lock().unwrap() = vec![source.owner.inner.state_ref.clone()];
+        source.value.store(3, Ordering::SeqCst);
+        let (registry, _) = registry(&[&root, &source]).await;
+        assert_eq!(
+            registry
+                .evaluate_unary::<_, Value>(unary_query(&root), "value")
+                .await
+                .unwrap()
+                .into_inner()
+                .value,
+            3
+        );
+        assert_eq!(registry.active_subscriptions(), 0);
+        source.value.store(5, Ordering::SeqCst);
+        source.owner.inner.gate.committed();
+        assert_eq!(
+            registry
+                .evaluate_unary::<_, Value>(unary_query(&root), "value")
+                .await
+                .unwrap()
+                .into_inner()
+                .value,
+            5
+        );
+        assert_eq!(registry.active_subscriptions(), 0);
+        let mut rejected = unary_query(&root);
+        rejected
+            .metadata_mut()
+            .insert("authorization", "Bearer denied".parse().unwrap());
+        assert_eq!(
+            registry
+                .evaluate_unary::<_, Value>(rejected, "value")
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::PermissionDenied
+        );
+        assert_eq!(registry.active_subscriptions(), 0);
+        #[derive(Clone, PartialEq, Message)]
+        struct Incompatible {
+            #[prost(string, tag = "1")]
+            value: String,
+        }
+
+        assert_eq!(
+            registry
+                .evaluate_unary::<_, Incompatible>(unary_query(&root), "value")
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::Internal
+        );
+        assert_eq!(registry.active_subscriptions(), 0);
+    }
+    #[tokio::test]
+    async fn unary_evaluation_shares_capacity_and_drop_cancels_pending_admission() {
+        let root = actor("http://127.0.0.1:9");
+        let source = actor("http://127.0.0.1:9");
+        *root.selected.lock().unwrap() = vec![source.owner.inner.state_ref.clone()];
+        let (registry, _) = registry(&[&root, &source]).await;
+        let mut streams = Vec::new();
+        for _ in 0..64 {
+            streams.push(registry.subscribe(query(&root)).await.unwrap().into_inner());
+        }
+        assert_eq!(
+            registry
+                .evaluate_unary::<_, Value>(unary_query(&root), "value")
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::ResourceExhausted
+        );
+        streams.pop();
+        registry
+            .evaluate_unary::<_, Value>(unary_query(&root), "value")
+            .await
+            .unwrap();
+        assert_eq!(registry.active_subscriptions(), 63);
+        drop(streams);
+        let lease = source.owner.inner.gate.exclusive().await;
+        let mut evaluation =
+            Box::pin(registry.evaluate_unary::<_, Value>(unary_query(&root), "value"));
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(20), &mut evaluation)
+                .await
+                .is_err()
+        );
+        assert_eq!(registry.active_subscriptions(), 1);
+        drop(evaluation);
+        assert_eq!(registry.active_subscriptions(), 0);
+        drop(lease);
+        registry
+            .evaluate_unary::<_, Value>(unary_query(&root), "value")
+            .await
+            .unwrap();
+        assert_eq!(registry.active_subscriptions(), 0);
+    }
+    #[tokio::test]
+    async fn unary_binding_rejects_wrong_policy_handler_endpoint_type_and_missing_roots() {
+        let root = actor("http://127.0.0.1:9");
+        let mut source = actor("http://127.0.0.1:9");
+        Arc::get_mut(&mut source.service.binding).unwrap().identity =
+            root.service.binding.identity.clone();
+        let (registry, _) = registry(&[&root, &source]).await;
+        registry
+            .validate_unary_binding::<Declaration>(
+                &root.owner.inner.endpoint,
+                &root.service.binding.identity,
+            )
+            .unwrap();
+        assert_eq!(
+            registry
+                .validate_unary_binding::<Declaration>(
+                    "http://127.0.0.1:10",
+                    &root.service.binding.identity
+                )
+                .unwrap_err()
+                .code(),
+            tonic::Code::FailedPrecondition
+        );
+        assert_eq!(
+            registry
+                .validate_unary_binding::<Declaration>(&root.owner.inner.endpoint, &Arc::new(()))
+                .unwrap_err()
+                .code(),
+            tonic::Code::FailedPrecondition
+        );
+        assert_eq!(
+            registry
+                .validate_unary_binding::<WrongDeclaration>(
+                    &root.owner.inner.endpoint,
+                    &root.service.binding.identity
+                )
+                .unwrap_err()
+                .code(),
+            tonic::Code::FailedPrecondition
+        );
+        assert!(
+            registry
+                .contains_unary_root::<Declaration, _>(&unary_query(&root))
+                .unwrap()
+        );
+        assert!(
+            registry
+                .contains_unary_root::<WrongDeclaration, _>(&unary_query(&root))
+                .is_err()
+        );
+        let mut unknown = unary_query(&root);
+        unknown
+            .metadata_mut()
+            .insert("x-reboot-state-ref", "unknown".parse().unwrap());
+        assert!(
+            registry
+                .contains_unary_root::<Declaration, _>(&unknown)
+                .is_err()
+        );
+        registry.validate_legacy_unary_roots(&["hello".to_owned()]).unwrap();
+        assert!(registry.validate_legacy_unary_roots(std::slice::from_ref(&root.owner.inner.state_ref)).is_err());
+        assert!(registry.validate_legacy_unary_roots(&["hello".to_owned(), "hello".to_owned()]).is_err());
+        assert!(registry.validate_legacy_unary_roots(&[String::new()]).is_err());
+        let mut duplicated=unary_query(&root);duplicated.metadata_mut().append("x-reboot-state-ref", "hello".parse().unwrap());assert_eq!(registry.contains_unary_root::<Declaration,_>(&duplicated).unwrap_err().code(),tonic::Code::InvalidArgument);assert_eq!(registry.evaluate_unary::<_,Value>(duplicated,"value").await.unwrap_err().code(),tonic::Code::InvalidArgument);
+        let mut duplicate=query(&root);duplicate.metadata_mut().append("x-reboot-state-ref","hello".parse().unwrap());
+        match registry.subscribe(duplicate).await { Err(status)=>assert_eq!(status.code(),tonic::Code::InvalidArgument), Ok(_)=>panic!("registry admitted ambiguous authority") };
+        let mut duplicate=query(&root);duplicate.metadata_mut().append("x-reboot-state-ref","hello".parse().unwrap());
+        match root.service.subscribe(duplicate).await { Err(status)=>assert_eq!(status.code(),tonic::Code::InvalidArgument), Ok(_)=>panic!("direct reader admitted ambiguous authority") };
+        assert_eq!(registry.active_subscriptions(),0);
+        let plain = LocalReaderRegistry::new();
+        assert!(
+            plain
+                .validate_unary_binding::<Declaration>(
+                    &root.owner.inner.endpoint,
+                    &root.service.binding.identity
+                )
+                .is_err()
+        );
+    }
+    #[tokio::test]
+    async fn unary_requires_registered_owner_readiness_before_loading_state() {
+        let actor = actor("http://127.0.0.1:9");
+        let owner = actor.owner.clone();
+        let service = actor.service;
+        let mut registry = LocalReaderRegistry::new().with_reader_composition();
+        registry.register(service).unwrap();
+        let mut request = Request::new(Value { value: 0 });
+        request
+            .metadata_mut()
+            .insert("x-reboot-state-ref", owner.inner.state_ref.parse().unwrap());
+        assert_eq!(
+            registry
+                .evaluate_unary::<_, Value>(request, "value")
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::FailedPrecondition
+        );
+        assert_eq!(registry.active_subscriptions(), 0);
+    }
+    #[tokio::test]
+    async fn unary_preserves_root_extensions_without_delegating_arbitrary_capabilities() {
+        let root = actor("http://127.0.0.1:9");
+        let source = actor("http://127.0.0.1:9");
+        *root.selected.lock().unwrap() = vec![source.owner.inner.state_ref.clone()];
+        let (registry, _) = registry(&[&root, &source]).await;
+        let observed = Arc::new(AtomicU64::new(0));
+        let mut request = unary_query(&root);
+        request
+            .extensions_mut()
+            .insert(CallerMarker(observed.clone()));
+        registry
+            .evaluate_unary::<_, Value>(request, "value")
+            .await
+            .unwrap();
+        assert_eq!(observed.load(Ordering::SeqCst), 1);
+        assert_eq!(registry.active_subscriptions(), 0);
+        let mut request = unary_query(&root);
+        request.metadata_mut().insert(
+            "x-reboot-idempotency-key",
+            uuid::Uuid::new_v4().to_string().parse().unwrap(),
+        );
+        assert_eq!(
+            registry
+                .evaluate_unary::<_, Value>(request, "value")
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::FailedPrecondition
+        );
+    }
+    #[tokio::test]
+    async fn unary_absolute_deadline_cancels_wait_and_rejects_late_ready_result() {
+        let root = actor("http://127.0.0.1:9");
+        let source = actor("http://127.0.0.1:9");
+        *root.selected.lock().unwrap() = vec![source.owner.inner.state_ref.clone()];
+        let (registry, _) = registry(&[&root, &source]).await;
+        let held = source.owner.inner.gate.exclusive().await;
+        let mut request = unary_query(&root);
+        request
+            .metadata_mut()
+            .insert("grpc-timeout", "20m".parse().unwrap());
+        assert_eq!(
+            registry
+                .evaluate_unary::<_, Value>(request, "value")
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::DeadlineExceeded
+        );
+        assert_eq!(registry.active_subscriptions(), 0);
+        drop(held);
+        let mut request = unary_query(&root);
+        request
+            .metadata_mut()
+            .insert("grpc-timeout", "invalid".parse().unwrap());
+        assert_eq!(
+            registry
+                .evaluate_unary::<_, Value>(request, "value")
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::InvalidArgument
+        );
+        let mut request = unary_query(&root);
+        request
+            .metadata_mut()
+            .insert("grpc-timeout", "0n".parse().unwrap());
+        assert_eq!(
+            registry
+                .evaluate_unary::<_, Value>(request, "value")
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::DeadlineExceeded
+        );
+        assert_eq!(registry.active_subscriptions(), 0);
+        let mut request = unary_query(&root);
+        request
+            .metadata_mut()
+            .insert("grpc-timeout", "1m".parse().unwrap());
+        request
+            .extensions_mut()
+            .insert(SlowCallback(std::time::Duration::from_millis(20)));
+        assert_eq!(
+            registry
+                .evaluate_unary::<_, Value>(request, "value")
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::DeadlineExceeded
+        );
+        assert_eq!(registry.active_subscriptions(), 0);
+    }
+    #[tokio::test]
+    async fn unary_uncertainty_remains_unavailable_but_cannot_trigger_generated_reader_retry() {
+        let root=actor("http://127.0.0.1:9");let (registry,_)=registry(&[&root]).await;drop(root.owner.inner.gate.commit_attempt());
+        let status=registry.evaluate_unary::<_,Value>(unary_query(&root),"value").await.unwrap_err();assert_eq!(status.code(),tonic::Code::Unavailable);assert!(is_terminal_unary_evaluation(&status));assert!(!is_terminal_unary_evaluation(&Status::unavailable("disconnected transport")));assert_eq!(registry.active_subscriptions(),0);
+    }
+
 }

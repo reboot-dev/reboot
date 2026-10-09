@@ -70,6 +70,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         registry = registry.with_reader_composition();
     }
+    // Register baseline clones first; ordinary RPCs use the same immutable
+    // owners/policy, without recursively wiring serving adapters into entries.
+    let adapter = if composition {
+        adapter
+            .with_reader_registry(registry.clone())?
+            .with_legacy_unary_roots(vec!["hello".to_owned()])?
+    } else {
+        adapter
+    };
     let host = ApplicationHost::new(application).add_public_service(
         proto::hello_world_methods_server::HelloWorldMethodsServer::new(adapter),
     );

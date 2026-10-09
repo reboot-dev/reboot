@@ -85,7 +85,7 @@ impl generated::HelloWorldMethodsDatabaseHandler for HelloWorld {
     ) -> Result<proto::NumGreetingsResponse, tonic::Status> {
         if !state.selected_source.is_empty() {
             return Err(tonic::Status::failed_precondition(
-                "selected-source view requires a composed reactive scope",
+                "selected-source view requires a composed reader scope",
             ));
         }
         Ok(proto::NumGreetingsResponse {

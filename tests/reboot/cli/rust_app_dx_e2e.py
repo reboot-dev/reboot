@@ -166,8 +166,8 @@ def durable_count(session):
 
 http_fixture = None
 reader_registry_fixture = None
-if os.environ.get('RUST_DX_READER_REGISTRY_ONLY') or os.environ.get('RUST_DX_READER_COMPOSITION_ONLY'):
-    composed = bool(os.environ.get('RUST_DX_READER_COMPOSITION_ONLY'))
+if os.environ.get('RUST_DX_READER_REGISTRY_ONLY') or os.environ.get('RUST_DX_READER_COMPOSITION_ONLY') or os.environ.get('RUST_DX_UNARY_COMPOSITION_ONLY'):
+    composed = bool(os.environ.get('RUST_DX_READER_COMPOSITION_ONLY') or os.environ.get('RUST_DX_UNARY_COMPOSITION_ONLY'))
     fixture_path = REPOSITORY / 'tests/reboot/cli/fixtures' / ('rust_reader_composition_fixture.py' if composed else 'rust_reader_registry_fixture.py')
     spec = importlib.util.spec_from_file_location('reader_registry_fixture', fixture_path)
     module = importlib.util.module_from_spec(spec)

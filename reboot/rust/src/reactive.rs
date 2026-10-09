@@ -26,6 +26,11 @@ pub mod wire {
 #[tonic::async_trait]
 pub trait ReaderBinding: Send + Sync + 'static {
     fn validate_owner(&self, owner: &LocalReaderOwner) -> Result<(), Status>;
+    /// Opaque adapter identity binds ordinary RPC routing to the registered
+    /// handler and authorization policy; unsupported bindings cannot opt in.
+    fn unary_binding_id(&self) -> Option<Arc<()>> {
+        None
+    }
     async fn read(&self, request: Request<wire::Query>) -> Result<Vec<u8>, Status>;
     /// Generated database readers can opt into bounded same-host composition.
     async fn read_with_context(
@@ -163,6 +168,7 @@ pub struct LocalReaderRegistry {
 #[tonic::async_trait]
 trait RegisteredReader: Send + Sync {
     fn owner(&self) -> LocalReaderOwner;
+    fn unary_binding_id(&self) -> Option<Arc<()>>;
     async fn read_registered(&self, request: Request<wire::Query>) -> Result<Vec<u8>, Status>;
     async fn subscribe_registered(
         &self,
@@ -180,6 +186,9 @@ impl<B: ReaderBinding> RegisteredReader for LocalReaderService<B> {
     }
     fn owner(&self) -> LocalReaderOwner {
         self.owner.clone()
+    }
+    fn unary_binding_id(&self) -> Option<Arc<()>> {
+        self.binding.unary_binding_id()
     }
     async fn subscribe_registered(
         &self,
@@ -232,6 +241,188 @@ impl LocalReaderRegistry {
         self.composition = true;
         self
     }
+    /// Attach only to the same generated adapter/authorization version and
+    /// exact Database endpoint used to register this type's root actors.
+    #[doc(hidden)]
+    pub fn validate_unary_binding<D: crate::runtime::DurableStateDeclaration>(
+        &self,
+        endpoint: &str,
+        binding: &Arc<()>,
+    ) -> Result<(), Status> {
+        if !self.composition {
+            return Err(Status::failed_precondition(
+                "unary composition requires composed registry",
+            ));
+        }
+        self.owners()?;
+        let mut roots = 0;
+        for entry in self.entries.values() {
+            let owner = entry.owner();
+            if owner.inner.endpoint != endpoint {
+                return Err(Status::failed_precondition(
+                    "unary registry Database endpoint mismatch",
+                ));
+            }
+            if owner.inner.state_type == D::STATE_TYPE {
+                roots += 1;
+                if !entry
+                    .unary_binding_id()
+                    .is_some_and(|id| Arc::ptr_eq(&id, binding))
+                {
+                    return Err(Status::failed_precondition(
+                        "unary registry handler/authorization binding mismatch",
+                    ));
+                }
+            }
+        }
+        if roots == 0 {
+            return Err(Status::failed_precondition(
+                "unary registry has no roots for this state type",
+            ));
+        }
+        Ok(())
+    }
+    #[doc(hidden)]
+    pub fn validate_unary_metadata<Q>(&self, request: &Request<Q>) -> Result<(), Status> {
+        if request
+            .metadata()
+            .get_all("x-reboot-state-ref")
+            .iter()
+            .count()
+            != 1
+        {
+            return Err(Status::invalid_argument(
+                "unary reader requires one unambiguous root identity",
+            ));
+        }
+        Ok(())
+    }
+    #[doc(hidden)]
+    pub fn validate_legacy_unary_roots(&self, roots: &[String]) -> Result<(), Status> {
+        if roots.len() > 64 {
+            return Err(Status::resource_exhausted(
+                "legacy unary root allowlist exceeds 64",
+            ));
+        }
+        let mut unique = std::collections::BTreeSet::new();
+        for root in roots {
+            if root.is_empty()
+                || root.len() > 4096
+                || !root.bytes().all(|c| (32..=126).contains(&c))
+                || !unique.insert(root)
+            {
+                return Err(Status::invalid_argument(
+                    "invalid or duplicate exact legacy unary root",
+                ));
+            }
+            if self.entries.contains_key(root) {
+                return Err(Status::failed_precondition(
+                    "legacy unary root cannot shadow registered composition",
+                ));
+            }
+        }
+        Ok(())
+    }
+    /// A configured adapter requires an exact registered root. There is no
+    /// fallback after routing, authorization, or evaluation failure.
+    #[doc(hidden)]
+    pub fn contains_unary_root<D: crate::runtime::DurableStateDeclaration, Q>(
+        &self,
+        request: &Request<Q>,
+    ) -> Result<bool, Status> {
+        self.validate_unary_metadata(request)?;
+        let Some(reference) = request.metadata().get("x-reboot-state-ref") else {
+            return Err(Status::failed_precondition(
+                "unary reader actor is not registered",
+            ));
+        };
+        let reference = reference
+            .to_str()
+            .map_err(|_| Status::invalid_argument("invalid state reference metadata"))?;
+        let Some(entry) = self.entries.get(reference) else {
+            return Err(Status::failed_precondition(
+                "unary reader actor is not registered",
+            ));
+        };
+        if entry.owner().inner.state_type != D::STATE_TYPE {
+            return Err(Status::failed_precondition(
+                "unary registry root state type mismatch",
+            ));
+        }
+        Ok(true)
+    }
+    /// Evaluate one fresh snapshot through the same authorized, bounded cursor
+    /// used for subscriptions. The cursor and all dependency scopes are dropped
+    /// before returning; this creates no long-lived watcher or producer task.
+    #[doc(hidden)]
+    pub async fn evaluate_unary<Q: Message, R: Message + Default>(
+        &self,
+        request: Request<Q>,
+        method: &'static str,
+    ) -> Result<tonic::Response<R>, Status> {
+        if !self.composition {
+            return Err(Status::failed_precondition(
+                "unary composition requires composed registry",
+            ));
+        }
+        self.validate_unary_metadata(&request)?;
+        let deadline = crate::durable_participant::prepare_request_deadline(&request)?;
+        let headers = crate::RebootHeaders::from_request(&request)
+            .map_err(|e| Status::invalid_argument(e.to_string()))?;
+        if headers.transaction_ids.is_some()
+            || headers.workflow_id.is_some()
+            || headers.workflow_iteration.is_some()
+            || headers.idempotency_key.is_some()
+            || headers.task_schedule.is_some()
+            || headers.transaction_coordinator_state_ref.is_some()
+            || headers.transaction_retry_age.is_some()
+            || headers.coordinator_read_only_aware
+        {
+            return Err(Status::failed_precondition(
+                "unary composition cannot inherit mutation/transaction authority",
+            ));
+        }
+        if deadline.is_some_and(|at| tokio::time::Instant::now() >= at) {
+            return Err(Status::deadline_exceeded("unary reader deadline expired"));
+        }
+        let evaluation = async {
+            let query = request.map(|body| wire::Query {
+                method: method.to_owned(),
+                request: body.encode_to_vec(),
+            });
+            let mut stream = wire::local_readers_server::LocalReaders::subscribe(self, query)
+                .await?
+                .into_inner();
+            let snapshot = std::future::poll_fn(|cx| {
+                tokio_stream::Stream::poll_next(Pin::new(&mut stream), cx)
+            })
+            .await;
+            drop(stream);
+            let snapshot = snapshot
+                .ok_or_else(|| Status::unavailable("unary reader ended before first snapshot"))??;
+            let response = R::decode(snapshot.response.as_slice())
+                .map_err(|_| Status::internal("malformed unary composed response"))?;
+            Ok(tonic::Response::new(response))
+        };
+        let result = if let Some(at) = deadline {
+            tokio::select! { biased; _ = tokio::time::sleep_until(at) => Err(Status::deadline_exceeded("unary reader deadline expired")), result = evaluation => result }
+        } else {
+            evaluation.await
+        };
+        if deadline.is_some_and(|at| tokio::time::Instant::now() >= at) {
+            return Err(Status::deadline_exceeded("unary reader deadline expired"));
+        }
+        result.map_err(|mut status: Status| {
+            if status.code() == tonic::Code::Unavailable {
+                status.metadata_mut().insert(
+                    "x-reboot-terminal-reader-evaluation",
+                    "1".parse().expect("static marker"),
+                );
+            }
+            status
+        })
+    }
+
     pub fn active_subscriptions(&self) -> usize {
         64 - self.slots.available_permits()
     }
@@ -279,6 +470,7 @@ impl wire::local_readers_server::LocalReaders for LocalReaderRegistry {
         &self,
         request: Request<wire::Query>,
     ) -> Result<tonic::Response<Self::SubscribeStream>, Status> {
+        crate::runtime::reject_ambiguous_metadata(&request, "x-reboot-state-ref")?;
         let reference = request
             .metadata()
             .get("x-reboot-state-ref")
@@ -298,6 +490,16 @@ impl wire::local_readers_server::LocalReaders for LocalReaderRegistry {
             permit: Some(permit),
         }))
     }
+}
+
+/// Distinguishes a terminal evaluated reader failure from a disconnected
+/// transport; this must not create an implicit fresh evaluation/retry.
+#[doc(hidden)]
+pub fn is_terminal_unary_evaluation(status: &Status) -> bool {
+    status
+        .metadata()
+        .get("x-reboot-terminal-reader-evaluation")
+        .is_some_and(|value| value == "1")
 }
 
 type ReaderEntries = std::collections::BTreeMap<String, Arc<dyn RegisteredReader>>;
@@ -666,7 +868,7 @@ struct Cursor<B> {
     lifecycle: RecoveryCancellation,
     revision: tokio::sync::watch::Receiver<(u64, bool)>,
     metadata: tonic::metadata::MetadataMap,
-    trusted: Option<crate::application_host::TrustedApplicationContext>,
+    extensions: tonic::Extensions,
     scope: ReaderScope,
     query: wire::Query,
     previous: Option<Vec<u8>>,
@@ -719,7 +921,10 @@ impl<B: ReaderBinding> Cursor<B> {
                 root: self.owner.inner.state_ref.clone(),
                 metadata: self.metadata.clone(),
                 scope: self.scope.clone(),
-                trusted: self.trusted.clone(),
+                trusted: self
+                    .extensions
+                    .get::<crate::application_host::TrustedApplicationContext>()
+                    .cloned(),
                 dependencies: Arc::new(Mutex::new(std::collections::BTreeMap::new())),
                 evaluation: Evaluation::new(),
                 dependency_changes: tokio::sync::watch::channel(0).0,
@@ -737,9 +942,7 @@ impl<B: ReaderBinding> Cursor<B> {
                 self.scope.check()?;
                 let mut request = Request::new(self.query.clone());
                 *request.metadata_mut() = self.metadata.clone();
-                if let Some(trusted) = &self.trusted {
-                    request.extensions_mut().insert(trusted.clone());
-                }
+                *request.extensions_mut() = self.extensions.clone();
                 request.extensions_mut().insert(self.scope.clone());
                 if let Some(context) = &context {
                     request.extensions_mut().insert(SnapshotReader);
@@ -840,6 +1043,7 @@ impl<B: ReaderBinding> LocalReaderService<B> {
         request: Request<wire::Query>,
         resolver: Option<Arc<ReaderEntries>>,
     ) -> Result<tonic::Response<ReaderStream<B>>, Status> {
+        crate::runtime::reject_ambiguous_metadata(&request, "x-reboot-state-ref")?;
         let state_ref = request
             .metadata()
             .get("x-reboot-state-ref")
@@ -867,10 +1071,7 @@ impl<B: ReaderBinding> LocalReaderService<B> {
             lifecycle: lifecycle.clone(),
             revision: self.owner.inner.gate.committed_revisions(),
             metadata: request.metadata().clone(),
-            trusted: request
-                .extensions()
-                .get::<crate::application_host::TrustedApplicationContext>()
-                .cloned(),
+            extensions: request.extensions().clone(),
             scope: ReaderScope::new(lifecycle.clone()),
             query: request.into_inner(),
             previous: None,

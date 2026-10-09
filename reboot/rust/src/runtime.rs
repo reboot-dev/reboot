@@ -4131,7 +4131,21 @@ fn database_status(error: tonic::Status) -> Status {
     )
 }
 
+// State/snapshot authority must not use the first header while authorization
+// parses the final one. Apply the same guard to every required identity field.
+pub(crate) fn reject_ambiguous_metadata(
+    request: &Request<impl Sized>,
+    name: &'static str,
+) -> Result<(), Status> {
+    if request.metadata().get_all(name).iter().count() > 1 {
+        return Err(Status::invalid_argument(format!(
+            "ambiguous identity metadata `{name}`"
+        )));
+    }
+    Ok(())
+}
 fn required_metadata(request: &Request<impl Sized>, name: &'static str) -> Result<String, Status> {
+    reject_ambiguous_metadata(request, name)?;
     let value = request
         .metadata()
         .get(name)
@@ -7233,6 +7247,42 @@ mod writer_checkpoint_tests {
             .unwrap_err()
             .code(),
             tonic::Code::FailedPrecondition
+        );
+    }
+}
+
+#[cfg(test)]
+mod identity_metadata_regression {
+    use super::*;
+    #[test]
+    fn duplicate_required_identity_is_rejected_without_repairing_single_values() {
+        for name in ["x-reboot-state-ref", "x-reboot-idempotency-key"] {
+            let mut request = Request::new(());
+            request
+                .metadata_mut()
+                .append(name, "first".parse().unwrap());
+            request.metadata_mut().append(name, "last".parse().unwrap());
+            assert_eq!(
+                required_metadata(&request, name).unwrap_err().code(),
+                tonic::Code::InvalidArgument
+            );
+        }
+        let mut request = Request::new(());
+        request
+            .metadata_mut()
+            .insert("x-reboot-state-ref", "hello".parse().unwrap());
+        assert_eq!(
+            required_metadata(&request, "x-reboot-state-ref").unwrap(),
+            "hello"
+        );
+        request
+            .metadata_mut()
+            .append("x-reboot-state-ref", "hello".parse().unwrap());
+        assert_eq!(
+            required_metadata(&request, "x-reboot-state-ref")
+                .unwrap_err()
+                .code(),
+            tonic::Code::InvalidArgument
         );
     }
 }

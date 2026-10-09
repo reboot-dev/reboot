@@ -1396,6 +1396,79 @@ Sources: [map sessions](src/sorted_map.rs), [admitted root cache](src/runtime.rs
 
 ## Local reactive readers
 
+### Bounded ordinary unary reader composition (2026-10-09)
+
+Ordinary generated database reader RPCs can opt into the same one-hop local
+composition used by subscriptions. `with_reader_registry` attaches a complete
+composed registry to the serving adapter; exact Database endpoint and opaque
+handler/authorization-version identity must match the registered roots. Finalize
+policy before cloning bindings. Policy changes detach the old registry and legacy
+list and rotate binding identity. Configuration builders box their setup errors;
+Tonic method and declared-error contracts remain unchanged.
+
+Registered unary roots dispatch through the original generated authorized snapshot
+binding and context hook, with the actual request metadata/extensions. Each call
+consumes exactly the first snapshot and drops its cursor before returning. It
+retains no subscription, uses the same shared 64-slot admission pool, preserves
+root extensions, and delegates only fresh target scope/trusted provenance. Its
+one inbound timeout becomes an absolute deadline through admission, snapshot Load,
+dependencies and response decode; a late ready result is still rejected. Drop or
+expiry seals escaped contexts and reclaims admission. Mutation/transaction/workflow
+root authority is rejected. There is no selected-root fallback after routing,
+authorization, dependency, cancellation or uncertainty failure.
+
+Custom adapters are strict by default. `with_legacy_unary_roots` explicitly allows
+at most 64 exact non-composed identities and cannot shadow registered roots.
+The scaffold deliberately retains its existing raw `hello` actor: no canonical
+reference repair or hidden actor creation occurs. Same-host, same-endpoint,
+database-only and eight direct dependency/one-hop limits remain. Separate Loads
+are not an atomic cross-actor snapshot; remote/transitive invalidation, nested
+DAGs, durable resume and mixed/workflow root contexts remain missing.
+
+An evaluated Unavailable keeps its code and receives a terminal SDK metadata
+marker; generated reader retry guards do not reinterpret that evaluation as a
+fresh transport attempt. Unmarked disconnected transport classification and
+mutation retry/recovery behavior are unchanged. Focused runtime tests cover this
+marker, deadline/cancellation, extension delegation, binding identity and capacity;
+these do not establish all real-sidecar uncertainty or cancellation windows.
+
+**Identity-boundary regression:** a real generated Cargo/rbt/CXX run at
+`/tmp/reboot-rust-unary-composition-cli-1791571007492137824` reproduced unauthorized
+beta snapshot `0802` (count 2) through duplicate actor headers: first-header routing
+and snapshot Load disagreed with last-header authorization. Both subscription
+entry points now reject duplicate actor identity before routing/admission. The
+store boundary rejects duplicates for every required identity field, including
+actor and idempotency identity; identical repeats reject too. Single identifiers
+are preserved literally. No parser normalization or synthetic authority was added.
+
+**Executed public native acceptance:** `/tmp/reboot-rust-unary-composition-cli-1791571772637877079` passed
+43 checks. The ordinary generated client read
+returned selected source values after commits, equal-result switching and retirement,
+then restored the selected baseline after real RocksDB restart and selection replay.
+Root/leaf authorization observed original cookie, trusted application identity,
+actual loaded snapshots and request bytes; denied dependency reads produced no
+fallback and did not mutate canonical records. Unary and subscription duplicate
+identity negatives rejected. Sixty-four simultaneous root streams excluded unary
+admission; releasing a stream enabled an ordinary read. Typed watching, self/unknown/
+nested failures, failed-build rejection and host/Database/child cleanup were retained.
+The fixture only adds test authorization and observation through public generated
+interfaces; it does not replace the production evaluator or seed native state.
+
+SDK `/tmp/reboot-rust-unary-composition-sdk-1791571498306860543`: 471 passed/131 ignored, strict all-target
+Clippy and both explicit native restart prerequisites passed. Nineteen composition
+runtime tests plus the common required-identity regression passed. Retained fresh
+registry `/tmp/reboot-rust-reader-registry-cli-1791572469702351692` (29), map `/tmp/reboot-rust-map-reentry-cli-1791572855098756881` (18), batch `/tmp/reboot-rust-batch-ledger-acceptance-1791573141400303145` (162), nested `/tmp/reboot-rust-nested-cli-1791573901349112273`
+(26), pagination `/tmp/reboot-rust-pagination-cli-1791574266941211314` (22), preflight `/tmp/reboot-rust-http-request-preflight-1791572775659570425` and greeting/HTTP `/tmp/reboot-rust-loop-decision-greeting-1791572088433356911`
+(26 exchanges) passed. Frozen source/Database identities, resource bounds and owned
+process absence were audited before updating this ledger. No CI certification or
+full Rust parity is claimed.
+
+Sources: [evaluator](src/reactive.rs), [snapshot/identity boundary](src/runtime.rs),
+[ordinary adapters/reader retries](src/codegen.rs), [typed bindings](src/reactive_codegen.rs),
+[tests](src/reactive_composition_tests.rs),
+[native fixture](../../tests/reboot/cli/fixtures/rust_reader_composition_fixture.py).
+
+
 ### Bounded one-hop local reader composition (2026-10-09)
 
 Opt-in `LocalReaderRegistry::with_reader_composition` enables generated database
@@ -1434,7 +1507,8 @@ proof of all failure windows.
 The greeting scaffold opts in with `RBT_RUST_REACTIVE_COMPOSITION=1` plus its
 actor allowlist. Public `select-source` persists a canonical source on a selector
 actor; typed `watch` follows that source. Clearing selection restores local reads.
-Ordinary unary reads of selected-source views reject absent composed scope;
+At that checkpoint, ordinary selected-source reads required a subscription scope;
+the bounded ordinary unary integration above supersedes that limitation.
 selected-source leaves reject nesting rather than recursively resolving a DAG.
 Default greeting behavior without composition remains exercised separately.
 
@@ -2388,7 +2462,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: ec9424ca792c087f35eca787c00b10b8a9b5301e6097b2edc6ac5bb242fea212 -->
+<!-- parity-source-sha256: 3a37f6763b6518b40725df46809b44904ac144b6757091c39a1a26de4facd5ec -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

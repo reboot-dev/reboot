@@ -106,3 +106,41 @@ an evaluation cancels escaped in-flight reads.
 
 This is a same-host, same-Database, non-atomic view—not a recursive DAG,
 distributed invalidation, transparent retry or durable stream-resume contract.
+
+### Ordinary composed reader RPCs
+
+With composition enabled, the ordinary generated `NumGreetings` unary RPC and
+`client read <selector-ref>` evaluate the same authorized one-hop view as watch.
+Each request takes one fresh snapshot and drops its cursor before returning;
+there is no retained subscription or background dependency producer.
+
+A configured adapter requires exact registered roots. Unknown/type-mismatched
+roots, routing/auth/dependency failures and expired deadlines reject; they never
+retry through the ordinary local getter. Without registry attachment, legacy
+ordinary reader behavior is unchanged. Include every desired unary root in the
+explicit allowlist. The scaffold explicitly permits its existing raw `hello`
+actor as an authorized legacy unary root; it does not reinterpret `hello` as
+a canonical actor reference or automatically create/register an actor.
+
+For custom apps, finalize authorization on the baseline adapter, register its
+`local_readers` clones, enable registry composition, then attach a completed
+registry clone with `adapter.with_reader_registry(registry.clone())?` before
+serving; install the original registry on `ApplicationHost` as well. Attachment
+checks the exact Database endpoint and opaque generated handler/policy version.
+For deliberately retained non-composed roots, an explicit bounded exact list
+can be configured using `with_legacy_unary_roots`; registered roots cannot be
+shadowed by that list. Default custom adapter attachment is strict.
+Changing adapter authorization detaches an old registry and rotates its identity;
+re-register/re-attach the updated adapter rather than serving stale policies.
+Transaction/workflow root composition remains unsupported.
+
+Unary evaluations share the host-wide 64-slot stream/evaluation admission pool.
+The inbound gRPC timeout is parsed once and enforced as an absolute deadline over
+admission, authenticated snapshot Load, dependencies and result decoding. Drop or
+deadline cancellation releases permits and seals escaped reader contexts. Root
+extensions are retained; only existing trusted provenance and explicit target
+scope are delegated to leaf readers. A terminal evaluated `Unavailable` retains
+its status code and an SDK marker so generated reader clients do not reinterpret
+it as a disconnected transport and automatically start a new evaluation. Mutation/transaction metadata cannot grant
+composed reader authority. Separate actor Loads are not an atomic multi-actor
+snapshot. Remote invalidation, nested DAGs and durable resume remain unavailable.

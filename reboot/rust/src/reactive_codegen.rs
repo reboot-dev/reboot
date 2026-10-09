@@ -62,6 +62,7 @@ fn emit_local_readers(
         "_ => Err(tonic::Status::unimplemented(\"not a generated local unary reader\")), } }\n",
     );
     if !transactions && !annotation.methods.values().any(|kind| matches!(kind, DurableKind::Workflow)) {
+        output.push_str("fn unary_binding_id(&self) -> Option<std::sync::Arc<()>> { Some(self.reader_binding_id.clone()) }\n");
         output.push_str(&format!("async fn read_with_context(&self, request: tonic::Request<{runtime}::reactive::wire::Query>, context: {runtime}::reactive::LocalReaderContext) -> Result<Vec<u8>, tonic::Status> {{ match request.get_ref().method.as_str() {{\n"));
         for (kind, method, request, _response, identity) in &readers {
             let error = if declared_database_errors(annotation, kind, identity).is_empty() {
