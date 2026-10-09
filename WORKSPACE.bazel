@@ -73,6 +73,9 @@ http_archive(
 load("@aspect_rules_ts//ts:repositories.bzl", "rules_ts_dependencies")
 
 rules_ts_dependencies(
+    # `rules_ts` 2.3.0 only ships hashes for TypeScript <= 5.4.5, so
+    # name the integrity of the version `package.json` asks for.
+    ts_integrity = "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==",
     ts_version_from = "//:package.json",
 )
 
