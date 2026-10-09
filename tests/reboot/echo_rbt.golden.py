@@ -21184,7 +21184,12 @@ class Echo:
                 __request_or_options__: IMPORT_typing.Optional[Echo.ReplayRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_typing.AsyncIterator[tuple[Echo.ReplayResponse, None] | tuple[None, Echo.ReplayAborted]]:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='reactively',
+                    method='replay',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.ReplayRequest)
@@ -21376,7 +21381,12 @@ class Echo:
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> IMPORT_typing.AsyncIterator[tuple[Echo.WaitForResponse, None] | tuple[None, Echo.WaitForAborted]]:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='reactively',
+                    method='wait_for',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.WaitForRequest)
@@ -22853,9 +22863,11 @@ class Echo:
                 self,
                 context: IMPORT_reboot_aio_contexts.WorkflowContext,
             ) -> Echo.WeakReference._UntilChangesSatisfies[Echo.State]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     context,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='read',
                 )
 
                 async def callable():
@@ -22898,9 +22910,11 @@ class Echo:
                 __request_or_options__: IMPORT_typing.Optional[Echo.ReplayRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Echo.WeakReference._UntilChangesSatisfies[Echo.ReplayResponse]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     __context__,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='replay',
                 )
 
                 __request__: IMPORT_typing.Optional[Echo.ReplayRequest] = None
@@ -22971,9 +22985,11 @@ class Echo:
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> Echo.WeakReference._UntilChangesSatisfies[Echo.WaitForResponse]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     __context__,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='wait_for',
                 )
 
                 __request__: IMPORT_typing.Optional[Echo.WaitForRequest] = None
@@ -23069,7 +23085,14 @@ class Echo:
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='reply',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.ReplyRequest)
@@ -23151,7 +23174,14 @@ class Echo:
                 __request_or_options__: IMPORT_typing.Optional[Echo.ReplayRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='replay',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.ReplayRequest)
@@ -23235,7 +23265,14 @@ class Echo:
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='wait_for',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.WaitForRequest)
@@ -23323,7 +23360,14 @@ class Echo:
                 search: IMPORT_typing.Optional[str] | Unset = UNSET,
                 replace: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='search_and_replace',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.SearchAndReplaceRequest)
@@ -23411,7 +23455,14 @@ class Echo:
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='fail_once_should_be_retried',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.FailOnceShouldBeRetriedRequest)
@@ -23497,7 +23548,14 @@ class Echo:
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='fail_once_should_be_retried_workflow',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.FailOnceShouldBeRetriedWorkflowRequest)
@@ -23579,7 +23637,14 @@ class Echo:
                 __request_or_options__: IMPORT_typing.Optional[Echo.TooManyTasksRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='too_many_tasks',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.TooManyTasksRequest)
@@ -23659,7 +23724,14 @@ class Echo:
                 __request_or_options__: IMPORT_typing.Optional[Echo.HangingRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='hanging',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.HangingRequest)
@@ -23739,7 +23811,14 @@ class Echo:
                 __request_or_options__: IMPORT_typing.Optional[Echo.ReactiveWorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='reactive_workflow',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.ReactiveWorkflowRequest)
@@ -23819,7 +23898,14 @@ class Echo:
                 __request_or_options__: IMPORT_typing.Optional[Echo.ControlLoopRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='control_loop',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.ControlLoopRequest)
@@ -23899,7 +23985,14 @@ class Echo:
                 __request_or_options__: IMPORT_typing.Optional[Echo.AtMostOnceWorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='at_most_once_workflow',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.AtMostOnceWorkflowRequest)
@@ -23983,7 +24076,14 @@ class Echo:
                 *,
                 call_workflow: IMPORT_typing.Optional[bool] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='workflow_calling_workflow',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.WorkflowCallingWorkflowRequest)
@@ -24065,7 +24165,14 @@ class Echo:
                 __request_or_options__: IMPORT_typing.Optional[Echo.RaiseValueErrorRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='raise_value_error',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.RaiseValueErrorRequest)
@@ -24145,7 +24252,14 @@ class Echo:
                 __request_or_options__: IMPORT_typing.Optional[Echo.RaiseSpecifiedErrorRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='raise_specified_error',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.RaiseSpecifiedErrorRequest)
@@ -24229,7 +24343,14 @@ class Echo:
                 *,
                 failure_message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='failing_workflow',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.FailingWorkflowRequest)
@@ -24338,9 +24459,14 @@ class Echo:
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='reply',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -24430,9 +24556,14 @@ class Echo:
                 __request_or_options__: IMPORT_typing.Optional[Echo.ReplayRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='replay',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -24524,9 +24655,14 @@ class Echo:
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='wait_for',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -24622,9 +24758,14 @@ class Echo:
                 search: IMPORT_typing.Optional[str] | Unset = UNSET,
                 replace: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='search_and_replace',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -24720,9 +24861,14 @@ class Echo:
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='fail_once_should_be_retried',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -24816,9 +24962,14 @@ class Echo:
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='fail_once_should_be_retried_workflow',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -24908,9 +25059,14 @@ class Echo:
                 __request_or_options__: IMPORT_typing.Optional[Echo.TooManyTasksRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='too_many_tasks',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -24998,9 +25154,14 @@ class Echo:
                 __request_or_options__: IMPORT_typing.Optional[Echo.HangingRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='hanging',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -25088,9 +25249,14 @@ class Echo:
                 __request_or_options__: IMPORT_typing.Optional[Echo.ReactiveWorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='reactive_workflow',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -25178,9 +25344,14 @@ class Echo:
                 __request_or_options__: IMPORT_typing.Optional[Echo.ControlLoopRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='control_loop',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -25268,9 +25439,14 @@ class Echo:
                 __request_or_options__: IMPORT_typing.Optional[Echo.AtMostOnceWorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='at_most_once_workflow',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -25362,9 +25538,14 @@ class Echo:
                 *,
                 call_workflow: IMPORT_typing.Optional[bool] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='workflow_calling_workflow',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -25454,9 +25635,14 @@ class Echo:
                 __request_or_options__: IMPORT_typing.Optional[Echo.RaiseValueErrorRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='raise_value_error',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -25544,9 +25730,14 @@ class Echo:
                 __request_or_options__: IMPORT_typing.Optional[Echo.RaiseSpecifiedErrorRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='raise_specified_error',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -25638,9 +25829,14 @@ class Echo:
                 *,
                 failure_message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='failing_workflow',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -25774,7 +25970,14 @@ class Echo:
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> Echo.ReplyTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='reply',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.ReplyRequest)
@@ -25859,7 +26062,14 @@ class Echo:
                 __request_or_options__: IMPORT_typing.Optional[Echo.ReplayRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Echo.ReplayTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='replay',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.ReplayRequest)
@@ -25946,7 +26156,14 @@ class Echo:
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> Echo.WaitForTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='wait_for',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.WaitForRequest)
@@ -26037,7 +26254,14 @@ class Echo:
                 search: IMPORT_typing.Optional[str] | Unset = UNSET,
                 replace: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> Echo.SearchAndReplaceTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='search_and_replace',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.SearchAndReplaceRequest)
@@ -26128,7 +26352,14 @@ class Echo:
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> Echo.FailOnceShouldBeRetriedTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='fail_once_should_be_retried',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.FailOnceShouldBeRetriedRequest)
@@ -26217,7 +26448,14 @@ class Echo:
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> Echo.FailOnceShouldBeRetriedWorkflowTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='fail_once_should_be_retried_workflow',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.FailOnceShouldBeRetriedWorkflowRequest)
@@ -26302,7 +26540,14 @@ class Echo:
                 __request_or_options__: IMPORT_typing.Optional[Echo.TooManyTasksRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Echo.TooManyTasksTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='too_many_tasks',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.TooManyTasksRequest)
@@ -26385,7 +26630,14 @@ class Echo:
                 __request_or_options__: IMPORT_typing.Optional[Echo.HangingRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Echo.HangingTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='hanging',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.HangingRequest)
@@ -26468,7 +26720,14 @@ class Echo:
                 __request_or_options__: IMPORT_typing.Optional[Echo.ReactiveWorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Echo.ReactiveWorkflowTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='reactive_workflow',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.ReactiveWorkflowRequest)
@@ -26551,7 +26810,14 @@ class Echo:
                 __request_or_options__: IMPORT_typing.Optional[Echo.ControlLoopRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Echo.ControlLoopTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='control_loop',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.ControlLoopRequest)
@@ -26634,7 +26900,14 @@ class Echo:
                 __request_or_options__: IMPORT_typing.Optional[Echo.AtMostOnceWorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Echo.AtMostOnceWorkflowTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='at_most_once_workflow',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.AtMostOnceWorkflowRequest)
@@ -26721,7 +26994,14 @@ class Echo:
                 *,
                 call_workflow: IMPORT_typing.Optional[bool] | Unset = UNSET,
             ) -> Echo.WorkflowCallingWorkflowTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='workflow_calling_workflow',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.WorkflowCallingWorkflowRequest)
@@ -26806,7 +27086,14 @@ class Echo:
                 __request_or_options__: IMPORT_typing.Optional[Echo.RaiseValueErrorRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Echo.RaiseValueErrorTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='raise_value_error',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.RaiseValueErrorRequest)
@@ -26889,7 +27176,14 @@ class Echo:
                 __request_or_options__: IMPORT_typing.Optional[Echo.RaiseSpecifiedErrorRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Echo.RaiseSpecifiedErrorTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='raise_specified_error',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.RaiseSpecifiedErrorRequest)
@@ -26976,7 +27270,14 @@ class Echo:
                 *,
                 failure_message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> Echo.FailingWorkflowTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='failing_workflow',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.FailingWorkflowRequest)
