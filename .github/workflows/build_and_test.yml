@@ -282,7 +282,7 @@ jobs:
         with:
           # Docusaurus >= 3.9 requires Node >= 20. Pinned to match
           # the Bazel toolchain (`node_version` in WORKSPACE.bazel).
-          node-version: "20.19.0"
+          node-version: "26.11.1"
       - name: Install dependencies
         working-directory: ./documentation
         run: npm install
