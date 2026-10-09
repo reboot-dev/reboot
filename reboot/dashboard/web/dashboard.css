@@ -47,6 +47,12 @@ html.mcp-host body {
   min-height: 800px;
 }
 
+/* In fullscreen or picture-in-picture the host gives the frame its
+   height; `useFullscreenInHost` keeps the class current. */
+html.mcp-host.mcp-host-sized body {
+  min-height: 0;
+}
+
 body {
   font-family: ui-sans-serif, system-ui, sans-serif;
   background: hsl(var(--background));
