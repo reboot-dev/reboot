@@ -2386,9 +2386,12 @@ fn emit_transactions(
     if database_methods
         .iter()
         .any(|(kind, _, _, _, _)| matches!(kind, DurableKind::Reader))
-        && methods
-            .iter()
-            .any(|(_, method, _, _, _)| method == "new" || method == "local_readers")
+        && methods.iter().any(|(_, method, _, _, _)| {
+            matches!(
+                method.as_str(),
+                "new" | "local_readers" | "with_reader_registry" | "with_legacy_unary_roots"
+            )
+        })
     {
         return Err(format!(
             "{service_name}: method collides with reserved local reader helper"
@@ -2408,6 +2411,25 @@ fn emit_transactions(
         };
         output.push_str(&format!("    async fn {method}(&self, state: {}proto::{state}, request: proto::{request}) -> Result<proto::{response}, {error}>;\n", if matches!(**kind, DurableKind::Writer(_)) { "&mut " } else { "&" }));
     }
+    // Backward-compatible optional composed snapshot hook. Ordinary unary
+    // readers keep their original handlers and envelopes.
+    for (kind, method, request, response, identity) in database_methods {
+        if matches!(**kind, DurableKind::Reader) {
+            let hook = format!("{method}_with_reader_context");
+            if methods.iter().any(|(_, other, _, _, _)| other == &hook) {
+                return Err(format!(
+                    "{service_name}: composed reader hook `{hook}` collides"
+                ));
+            }
+            let error = if declared_database_errors(annotation, kind, identity).is_empty() {
+                "tonic::Status".to_owned()
+            } else {
+                declared_error_type(service_name, method)
+            };
+            output.push_str(&format!("    async fn {hook}(&self, state: &proto::{state}, request: proto::{request}, _context: {runtime_module}::reactive::LocalReaderContext) -> Result<proto::{response}, {error}> {{ self.{method}(state, request).await }}\n"));
+        }
+    }
+
     for (kind, method, request, response, method_identity) in &transactions {
         let metadata = match kind {
             DurableKind::Transaction(metadata) => metadata,
@@ -2452,7 +2474,13 @@ fn emit_transactions(
                 "let participant = participant.with_database_actor_gate(&store); ".to_owned(),
             )
         };
-    output.push_str(&format!("/// Executable Tonic adapter for one fresh, same-actor exclusive root transaction or one validated inbound nested transaction.\n///\n/// The host must inject the participant sidecar, coordinator sidecar, resolver,\n/// and transaction-start factory. Inbound calls receive a host-supplied child ID,\n/// stage only their local participant, and return it through the successful trailer seam; they never drive the root coordinator. This adapter does not choose routing, placement, a clock, or a transaction UUID.\npub struct {adapter}<H, P, C, R, F> where P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{ {store_field}supervised_tree: bool, sequential_root_star: bool, sequential_reusable: bool, live_participant: Option<{runtime_module}::live_participant::LiveParticipantOwner>, explicit_abort: Option<{runtime_module}::explicit_abort::ExplicitAbortOwner>, tasks: Option<{runtime_module}::one_shot_tasks::OneShotTasks>, handler: std::sync::Arc<H>, authorization: {runtime_module}::auth::AuthorizationPolicy, participant: {runtime_module}::durable_participant::DurableActorParticipant<P>, coordinator: {runtime_module}::durable_coordinator::DurableRootCoordinator<C, R>, root_start: std::sync::Arc<F> }}\nimpl<H, P, C, R, F> Clone for {adapter}<H, P, C, R, F> where P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{ fn clone(&self) -> Self {{ Self {{ {store_clone}supervised_tree: self.supervised_tree, sequential_root_star: self.sequential_root_star, sequential_reusable: self.sequential_reusable, live_participant: self.live_participant.clone(), explicit_abort: self.explicit_abort.clone(), tasks: self.tasks.clone(), handler: self.handler.clone(), authorization: self.authorization.clone(), participant: self.participant.clone(), coordinator: self.coordinator.clone(), root_start: self.root_start.clone() }} }} }}\nimpl<H, P, C, R, F> {adapter}<H, P, C, R, F> where P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{ pub fn new({store_argument}participant: {runtime_module}::durable_participant::DurableActorParticipant<P>, coordinator: {runtime_module}::durable_coordinator::DurableRootCoordinator<C, R>, root_start: F, handler: H) -> Self {{ {participant_bind}let coordinator = coordinator.with_identity(participant.actor_target()); Self {{ {store_init}supervised_tree: false, sequential_root_star: false, sequential_reusable: false, live_participant: None, explicit_abort: None, tasks: None, handler: std::sync::Arc::new(handler), authorization: {runtime_module}::auth::AuthorizationPolicy::default(), participant, coordinator, root_start: std::sync::Arc::new(root_start) }} }} /// Opt in to supervised bounded descendant trees; actual active ownership is checked at execution.\n    pub fn with_supervised_transaction_tree(mut self) -> Self {{ self.supervised_tree = true; self }}\n    /// Host-selected sequential distinct root-star; actual guards install authority.\n    pub fn with_sequential_root_star(mut self) -> Self {{ self.supervised_tree = true; self.sequential_root_star = true; self.sequential_reusable = false; self }} pub fn with_sequential_reusable_participants(mut self) -> Self {{ self.supervised_tree = true; self.sequential_root_star = false; self.sequential_reusable = true; self }} pub fn with_live_participant_owner(mut self, owner: {runtime_module}::live_participant::LiveParticipantOwner) -> Self {{ self.live_participant = Some(owner); self }} pub fn live_participant_recovery_registration(&self) -> Result<{runtime_module}::live_participant::LiveParticipantRecovery, Box<tonic::Status>> {{ self.live_participant.as_ref().map(|owner| owner.recovery_registration()).ok_or_else(|| Box::new(tonic::Status::failed_precondition(\"no live participant owner attached\"))) }} pub fn with_explicit_abort_owner(mut self, owner: {runtime_module}::explicit_abort::ExplicitAbortOwner) -> Self {{ self.explicit_abort = Some(owner); self }} pub fn explicit_abort_recovery_registration(&self) -> Result<{runtime_module}::explicit_abort::ExplicitAbortRecovery, Box<tonic::Status>> {{ self.explicit_abort.as_ref().map(|owner| owner.recovery_registration()).ok_or_else(|| Box::new(tonic::Status::failed_precondition(\"no explicit Abort owner attached\"))) }} pub fn with_authorization(mut self, authorization: {runtime_module}::auth::AuthorizationPolicy) -> Self {{ self.authorization = authorization; self }}\n    /// Exposes the existing injected local participant as the legacy control service.\n    pub fn legacy_participant_control_service(&self) -> {runtime_module}::database_proto::participant_server::ParticipantServer<{runtime_module}::durable_participant::DurableActorParticipantHost<P>> {{ {runtime_module}::database_proto::participant_server::ParticipantServer::new({runtime_module}::durable_participant::DurableActorParticipantHost::new(self.participant.clone())) }}\n    /// Exposes a durable legacy Coordinator.Watch service for the exact supplied coordinator identity.\n    pub fn legacy_coordinator_control_service(&self, coordinator_state_type: impl Into<String>, coordinator_state_ref: impl Into<String>) -> Result<{runtime_module}::database_proto::coordinator_server::CoordinatorServer<{runtime_module}::legacy_coordinator::DurableCoordinatorWatchHost<C>>, Box<tonic::Status>> {{ Ok({runtime_module}::database_proto::coordinator_server::CoordinatorServer::new({runtime_module}::legacy_coordinator::DurableCoordinatorWatchHost::new(self.coordinator.sidecar(), coordinator_state_type, coordinator_state_ref)?)) }}\n    /// Registers recovery using only this adapter's injected participant and coordinator.\n    pub fn legacy_recovery_registration<W: {runtime_module}::legacy_coordinator::CoordinatorWatchEndpoint>(&self, metadata: {runtime_module}::application_host::LegacyRecoveryMetadata, watch: std::sync::Arc<W>) -> Result<{runtime_module}::application_host::LegacyDurableRecovery<P, C, R, W>, Box<tonic::Status>> {{ {runtime_module}::application_host::LegacyDurableRecovery::new(self.participant.clone(), self.coordinator.clone(), metadata, watch).map_err(Box::new) }}\n}}\n\n"));
+    output.push_str(&format!("/// Executable Tonic adapter for one fresh, same-actor exclusive root transaction or one validated inbound nested transaction.\n///\n/// The host must inject the participant sidecar, coordinator sidecar, resolver,\n/// and transaction-start factory. Inbound calls receive a host-supplied child ID,\n/// stage only their local participant, and return it through the successful trailer seam; they never drive the root coordinator. This adapter does not choose routing, placement, a clock, or a transaction UUID.\npub struct {adapter}<H, P, C, R, F> where P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{ {store_field}supervised_tree: bool, sequential_root_star: bool, sequential_reusable: bool, live_participant: Option<{runtime_module}::live_participant::LiveParticipantOwner>, explicit_abort: Option<{runtime_module}::explicit_abort::ExplicitAbortOwner>, tasks: Option<{runtime_module}::one_shot_tasks::OneShotTasks>, handler: std::sync::Arc<H>, authorization: {runtime_module}::auth::AuthorizationPolicy, reader_registry: Option<{runtime_module}::reactive::LocalReaderRegistry>, legacy_reader_roots: Vec<String>, reader_binding_id: std::sync::Arc<()>, participant: {runtime_module}::durable_participant::DurableActorParticipant<P>, coordinator: {runtime_module}::durable_coordinator::DurableRootCoordinator<C, R>, root_start: std::sync::Arc<F> }}\nimpl<H, P, C, R, F> Clone for {adapter}<H, P, C, R, F> where P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{ fn clone(&self) -> Self {{ Self {{ {store_clone}supervised_tree: self.supervised_tree, sequential_root_star: self.sequential_root_star, sequential_reusable: self.sequential_reusable, live_participant: self.live_participant.clone(), explicit_abort: self.explicit_abort.clone(), tasks: self.tasks.clone(), handler: self.handler.clone(), authorization: self.authorization.clone(), reader_registry: self.reader_registry.clone(), legacy_reader_roots: self.legacy_reader_roots.clone(), reader_binding_id: self.reader_binding_id.clone(), participant: self.participant.clone(), coordinator: self.coordinator.clone(), root_start: self.root_start.clone() }} }} }}\nimpl<H, P, C, R, F> {adapter}<H, P, C, R, F> where P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{ pub fn new({store_argument}participant: {runtime_module}::durable_participant::DurableActorParticipant<P>, coordinator: {runtime_module}::durable_coordinator::DurableRootCoordinator<C, R>, root_start: F, handler: H) -> Self {{ {participant_bind}let coordinator = coordinator.with_identity(participant.actor_target()); Self {{ {store_init}supervised_tree: false, sequential_root_star: false, sequential_reusable: false, live_participant: None, explicit_abort: None, tasks: None, handler: std::sync::Arc::new(handler), authorization: {runtime_module}::auth::AuthorizationPolicy::default(), reader_registry: None, legacy_reader_roots: Vec::new(), reader_binding_id: std::sync::Arc::new(()), participant, coordinator, root_start: std::sync::Arc::new(root_start) }} }} /// Opt in to supervised bounded descendant trees; actual active ownership is checked at execution.\n    pub fn with_supervised_transaction_tree(mut self) -> Self {{ self.supervised_tree = true; self }}\n    /// Host-selected sequential distinct root-star; actual guards install authority.\n    pub fn with_sequential_root_star(mut self) -> Self {{ self.supervised_tree = true; self.sequential_root_star = true; self.sequential_reusable = false; self }} pub fn with_sequential_reusable_participants(mut self) -> Self {{ self.supervised_tree = true; self.sequential_root_star = false; self.sequential_reusable = true; self }} pub fn with_live_participant_owner(mut self, owner: {runtime_module}::live_participant::LiveParticipantOwner) -> Self {{ self.live_participant = Some(owner); self }} pub fn live_participant_recovery_registration(&self) -> Result<{runtime_module}::live_participant::LiveParticipantRecovery, Box<tonic::Status>> {{ self.live_participant.as_ref().map(|owner| owner.recovery_registration()).ok_or_else(|| Box::new(tonic::Status::failed_precondition(\"no live participant owner attached\"))) }} pub fn with_explicit_abort_owner(mut self, owner: {runtime_module}::explicit_abort::ExplicitAbortOwner) -> Self {{ self.explicit_abort = Some(owner); self }} pub fn explicit_abort_recovery_registration(&self) -> Result<{runtime_module}::explicit_abort::ExplicitAbortRecovery, Box<tonic::Status>> {{ self.explicit_abort.as_ref().map(|owner| owner.recovery_registration()).ok_or_else(|| Box::new(tonic::Status::failed_precondition(\"no explicit Abort owner attached\"))) }} pub fn with_authorization(mut self, authorization: {runtime_module}::auth::AuthorizationPolicy) -> Self {{ self.authorization = authorization; self.reader_registry = None; self.legacy_reader_roots.clear(); self.reader_binding_id = std::sync::Arc::new(()); self }}\n    /// Exposes the existing injected local participant as the legacy control service.\n    pub fn legacy_participant_control_service(&self) -> {runtime_module}::database_proto::participant_server::ParticipantServer<{runtime_module}::durable_participant::DurableActorParticipantHost<P>> {{ {runtime_module}::database_proto::participant_server::ParticipantServer::new({runtime_module}::durable_participant::DurableActorParticipantHost::new(self.participant.clone())) }}\n    /// Exposes a durable legacy Coordinator.Watch service for the exact supplied coordinator identity.\n    pub fn legacy_coordinator_control_service(&self, coordinator_state_type: impl Into<String>, coordinator_state_ref: impl Into<String>) -> Result<{runtime_module}::database_proto::coordinator_server::CoordinatorServer<{runtime_module}::legacy_coordinator::DurableCoordinatorWatchHost<C>>, Box<tonic::Status>> {{ Ok({runtime_module}::database_proto::coordinator_server::CoordinatorServer::new({runtime_module}::legacy_coordinator::DurableCoordinatorWatchHost::new(self.coordinator.sidecar(), coordinator_state_type, coordinator_state_ref)?)) }}\n    /// Registers recovery using only this adapter's injected participant and coordinator.\n    pub fn legacy_recovery_registration<W: {runtime_module}::legacy_coordinator::CoordinatorWatchEndpoint>(&self, metadata: {runtime_module}::application_host::LegacyRecoveryMetadata, watch: std::sync::Arc<W>) -> Result<{runtime_module}::application_host::LegacyDurableRecovery<P, C, R, W>, Box<tonic::Status>> {{ {runtime_module}::application_host::LegacyDurableRecovery::new(self.participant.clone(), self.coordinator.clone(), metadata, watch).map_err(Box::new) }}\n}}\n\n"));
+    if database_methods
+        .iter()
+        .any(|(kind, _, _, _, _)| matches!(**kind, DurableKind::Reader))
+    {
+        output.push_str(&format!("impl<H, P, C, R, F> {adapter}<H, P, C, R, F> where P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{ /// Attach the completed registry used by this adapter's registered owners.\npub fn with_reader_registry(mut self, registry: {runtime_module}::reactive::LocalReaderRegistry) -> Result<Self, Box<tonic::Status>> {{ registry.validate_unary_binding::<{declaration}>(self.store.database_endpoint(), &self.reader_binding_id)?; self.reader_registry = Some(registry); self.legacy_reader_roots.clear(); Ok(self) }} /// Explicit exact legacy roots only; never a fallback for registered evaluation errors.\npub fn with_legacy_unary_roots(mut self, roots: Vec<String>) -> Result<Self, Box<tonic::Status>> {{ self.reader_registry.as_ref().ok_or_else(|| tonic::Status::failed_precondition(\"legacy unary roots require attached registry\"))?.validate_legacy_unary_roots(&roots)?; self.legacy_reader_roots = roots; Ok(self) }}\n}}\n"));
+    }
     output.push_str("#[tonic::async_trait]\n");
     output.push_str(&format!("impl<H, P, C, R, F> proto::{server}::{service_name} for {adapter}<H, P, C, R, F> where H: {handler}, P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{\n"));
     let requires_constructor = !database_methods.is_empty()
@@ -2504,7 +2532,14 @@ fn emit_transactions(
         } else {
             ".map_err(|error| error.into_status())"
         };
-        output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n        let handler = self.handler.clone();\n        self.store.{envelope}::<{declaration}, _, _, _>(\n            {prefix}request, move |state, request| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ handler.{method}(state, request).await{error_map} }})\n            }},\n        ).await\n    }}\n"));
+        let unary_composition = if matches!(**kind, DurableKind::Reader) {
+            format!(
+                "        if let Some(registry) = &self.reader_registry {{ registry.validate_unary_metadata(&request)?; if !request.metadata().get(\"x-reboot-state-ref\").and_then(|value| value.to_str().ok()).is_some_and(|reference| self.legacy_reader_roots.iter().any(|root| root == reference)) && registry.contains_unary_root::<{declaration}, _>(&request)? {{ return registry.evaluate_unary::<proto::{request}, proto::{response}>(request, \"{method_identity}\").await; }} }}\n"
+            )
+        } else {
+            String::new()
+        };
+        output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n{unary_composition}        let handler = self.handler.clone();\n        self.store.{envelope}::<{declaration}, _, _, _>(\n            {prefix}request, move |state, request| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ handler.{method}(state, request).await{error_map} }})\n            }},\n        ).await\n    }}\n"));
     }
     for (kind, method, request, response, method_identity) in transactions {
         let metadata = match kind {
@@ -5174,6 +5209,35 @@ mod tests {
             .unwrap();
         assert!(dispatch.contains("CounterWritesMethods.Increment"));
         assert!(!dispatch.contains("CounterWritesMethods.Transaction"));
+        assert!(dispatch.contains("unary_binding_id"));
+        assert!(dispatch.contains("handler.increment_with_reader_context"));
+        assert!(content.contains("pub fn with_reader_registry"));
+        assert!(content.contains("reader_binding_id: self.reader_binding_id.clone()"));
+        assert!(content.contains(
+            "self.legacy_reader_roots.clear(); self.reader_binding_id = std::sync::Arc::new(())"
+        ));
+        let unary = content
+            .rsplit("async fn increment(&self, request: tonic::Request")
+            .next()
+            .unwrap()
+            .split("async fn transaction(")
+            .next()
+            .unwrap();
+        assert!(unary.contains("registry.validate_unary_metadata(&request)?"));
+        assert!(
+            unary.contains(
+                "registry.evaluate_unary::<proto::IncrementRequest, proto::CounterValue>"
+            )
+        );
+        let transaction = content
+            .rsplit("async fn transaction(&self, request: tonic::Request")
+            .next()
+            .unwrap()
+            .split("impl<H, P, C, R, F>")
+            .next()
+            .unwrap();
+        assert!(!transaction.contains("evaluate_unary"));
+
         let mut symbol = value.clone();
         let mut extra = symbol.proto_file[0].service[0].clone();
         extra.name = Some("CounterWritesMethodsReactive".into());
@@ -5195,6 +5259,9 @@ mod tests {
         for method in [
             "IncrementWithTimeout",
             "IncrementConnect",
+            "IncrementWithReaderContext",
+            "WithReaderRegistry",
+            "WithLegacyUnaryRoots",
             "LocalReaders",
             "New",
         ] {

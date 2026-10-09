@@ -431,9 +431,9 @@ watch = None
 task_watch = None
 try:
     command([RBT, 'init', '--backend=rust', '--frontend=none', '--application-name=batch_ledger', '--rust-sdk=' + str(ROOT / 'reboot/rust'), '--rust-example=batch-ledger'])
-    if os.environ.get('RUST_BATCH_WORKFLOW_COMPOSITION_ONLY'):
+    if (os.environ.get('RUST_BATCH_WORKFLOW_COMPOSITION_ONLY') or os.environ.get('RUST_BATCH_TRANSACTION_COMPOSITION_ONLY')):
         import importlib.util
-        spec = importlib.util.spec_from_file_location('workflow_composition_fixture', ROOT / 'tests/reboot/cli/fixtures/rust_workflow_reader_composition_fixture.py')
+        spec = importlib.util.spec_from_file_location('workflow_composition_fixture', ROOT / ('tests/reboot/cli/fixtures/rust_transaction_reader_composition_fixture.py' if os.environ.get('RUST_BATCH_TRANSACTION_COMPOSITION_ONLY') else 'tests/reboot/cli/fixtures/rust_workflow_reader_composition_fixture.py'))
         composition_fixture = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(composition_fixture)
         composition_fixture.prepare(globals())
@@ -543,9 +543,9 @@ try:
     command(['cargo', 'clippy', '--manifest-path', 'backend/Cargo.toml', '--all-targets', '--', '-D', 'warnings'])
     command(['cargo', 'fmt', '--manifest-path', 'backend/Cargo.toml', '--', '--check'])
     tests, _ = command(['cargo', 'test', '--manifest-path', 'backend/Cargo.toml', '--all-targets'])
-    consumer_tests = 15 if os.environ.get('RUST_BATCH_WORKFLOW_COMPOSITION_ONLY') else 13
+    consumer_tests = 15 if (os.environ.get('RUST_BATCH_WORKFLOW_COMPOSITION_ONLY') or os.environ.get('RUST_BATCH_TRANSACTION_COMPOSITION_ONLY')) else 13
     check('generated consumer strict Clippy/fmt and nonzero tests', f'test result: ok. {consumer_tests} passed; 0 failed' in tests)
-    if os.environ.get('RUST_BATCH_WORKFLOW_COMPOSITION_ONLY'):
+    if (os.environ.get('RUST_BATCH_WORKFLOW_COMPOSITION_ONLY') or os.environ.get('RUST_BATCH_TRANSACTION_COMPOSITION_ONLY')):
         for case in ['clones_preserve_binding_but_authorization_reconfiguration_does_not', 'workflow_owner_reconfiguration_detaches_stale_reader_binding']:
             check('generated workflow registry configuration ' + case, case + ' ... ok' in tests)
     command(['cargo', 'build', '--manifest-path', 'backend/Cargo.toml', '--bins'])
@@ -562,7 +562,7 @@ try:
     reference = str(StateRef.from_id('batch_ledger.v1.Ledger', 'ledger'))
     map_ref = str(StateRef.from_id('rbt.std.collections.v1.SortedMap', 'approvals'))
     archive_ref = str(StateRef.from_id('rbt.std.collections.v1.SortedMap', 'archived-approvals'))
-    if os.environ.get('RUST_BATCH_WORKFLOW_COMPOSITION_ONLY'):
+    if (os.environ.get('RUST_BATCH_WORKFLOW_COMPOSITION_ONLY') or os.environ.get('RUST_BATCH_TRANSACTION_COMPOSITION_ONLY')):
         composition_fixture.run(globals())
         raise SystemExit(0)
     if os.environ.get('RUST_BATCH_TASK_RESULT_AUTH_ONLY'):

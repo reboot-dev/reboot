@@ -43,7 +43,7 @@ proofs below retain their separate source snapshots and limits.
 | Transactions | Legacy durable coordinator/participant paths and bounded supervised chains/star | General nested snapshots, reentrancy, intersecting subtrees, migration |
 | Tasks | Durable scheduled tasks, typed results/Wait with opt-in result policy, recovery, local admin list/stream and scheduled-workflow cancellation | Transactional targets, running/ordinary/distributed cancellation, aggregation, broad retry and dispatcher fencing |
 | Workflows | Finite typed named steps, bounded nested indexed replay, saved reader observations and finite Continue/Break, typed declared business terminals; explicit local-body resumption | Python unbounded Task cursor/GC/Break, cross-actor composition, framework failure isolation |
-| Reactive readers | Typed bounded database/workflow/transaction-service ordinary reader subscriptions, plain-database/workflow-bearing external unary composition, allowlisted multi-actor routing, bounded one-hop composition, commit invalidation and explicit same-query reconnect | Mixed transaction-adapter contextual composition, same-actor service aggregation, remote/transitive invalidation, transparent reconnect/durable resume, streaming/transaction RPC subscriptions |
+| Reactive readers | Typed bounded database/workflow/transaction-service ordinary reader subscriptions, plain-database/workflow-bearing/mixed-transaction external unary composition, allowlisted multi-actor routing, bounded one-hop composition, commit invalidation and explicit same-query reconnect | Transactional-context composition, same-actor service aggregation, remote/transitive invalidation, transparent reconnect/durable resume, streaming/transaction RPC subscriptions |
 | SortedMap | Canonical empty constructor, serial same-host app/map transactions, same-root session reopening, live keyset pages and atomic multi-entry approval transfer | Public inbound adapter, nested/reusable siblings, distributed collection lifecycle |
 
 ## Local app development
@@ -1396,6 +1396,55 @@ Sources: [map sessions](src/sorted_map.rs), [admitted root cache](src/runtime.rs
 
 ## Local reactive readers
 
+### Mixed reader/transaction external composition (2026-10-10)
+
+Generated TransactionAdapters with ordinary reader RPCs now expose optional
+reader-context hooks, opaque clone-stable binding identity, checked registry
+attachment and explicit exact legacy-root configuration. Registered external unary
+readers evaluate the first bounded snapshot; reserved LocalReaders subscriptions
+use the contextual binding. Reader policy reconfiguration detaches the registry,
+clears legacy roots and rotates identity. Context-hook collisions include all
+service methods, including transaction RPCs. Registered errors never fall through.
+
+Transaction method emission, inbound participant metadata, sticky doom/uncertainty,
+commit/abort paths, task handoff and internal checkpointed readers remain unchanged.
+Unconfigured unary admission retains its baseline; registered contextual readers
+require existing actors. External composition rejects raw transaction/workflow/task
+mutation authority rather than stripping it or pretending to enter a transaction.
+
+**Executed public native vertical:** `/tmp/reboot-rust-transaction-composition-cli-1791585540360573380` initialized a real Cargo/rbt
+batch-ledger app. The fixture registered only its mixed LedgerIndexMethods binding
+and a distinct ViewSource actor, never the same-root Work binding or CombinedReaders.
+A fixture-only ObserveView reader projects source count into a copied Ledger, not
+persisted application state. All 41 checks passed: ordinary generated
+unary composition; root/leaf credentials and trusted identity; denial; rich declared
+reader error through the existing ApprovalSnapshot subscription; raw-authority and
+identity rejection; self/unknown target rejection; deadline cleanup; contextual
+subscription/source commit updates; genuine approval transaction/map progression
+and scheduled workflow completion; exact sampled record restoration; canonical
+Wait terminal replay after a second restart without redispatch.
+
+Before/after comparisons establish equality of sampled canonical records, not
+absence of transient writes, inspection of all Database records or atomic snapshots.
+Consumer strict all-target Clippy/fmt and 15 tests passed; the retained configuration
+tests exercise workflow adapters, not new native mixed-binding configuration cases.
+Three sessions and all recorded processes exited. SDK: 474 passed /
+131 ignored, strict Clippy and both native restart prerequisites.
+Eleven frozen gates retained workflow composition (41), ordinary composition (107),
+map (18), batch (162), nested (26), pagination (22), registry, greeting/HTTP and CLI
+regressions. Source/binary identity, resource budgets and process absence were audited.
+
+This is external one-hop composition on a mixed service, not transactional reader
+composition. Same-host/exact Database endpoint, eight distinct direct dependencies,
+sequential one-hop reads and existing stream budgets remain. No same-actor aggregate,
+transitive/distributed invalidation, atomic multi-actor snapshots, inherited transaction
+authority, durable resume or native lost-ACK/crash-window parity is implied.
+
+Sources: [generator](src/codegen.rs), [typed binding](src/reactive_codegen.rs),
+[native fixture](../../tests/reboot/cli/fixtures/rust_transaction_reader_composition_fixture.py),
+[public harness](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
+
+
 ### Workflow-bearing external reader composition (2026-10-10)
 
 Generated workflow-bearing DatabaseAdapters now expose default reader-context
@@ -2570,7 +2619,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 47cd578ebf09de5610d1bf184307f683c927b615c98655892e38d2f0f591aa08 -->
+<!-- parity-source-sha256: 66602f6b23368986e71984050bb96b3a558e2a68883790ba6d773bc023c69151 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,
