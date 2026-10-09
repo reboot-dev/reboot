@@ -1,1 +1,3 @@
 mypy==1.18.1  # Keep in sync with your workstation's mypy version.
+types-protobuf>=5.29,<5.30  # Stubs for the `protobuf` in `reboot/requirements.in`.
+pydantic==2.12.5  # Keep in sync with `reboot/requirements_lock.txt`.

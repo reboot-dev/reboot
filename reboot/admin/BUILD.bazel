@@ -19,6 +19,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":export_import_converters_py",
+        "//reboot:protobuf_py",
         "//reboot/aio:aborted_py",
         "//reboot/aio:headers_py",
         "//reboot/aio:state_managers_py",

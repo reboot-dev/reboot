@@ -1,7 +1,6 @@
 import asyncio
 import grpc
 from google.protobuf import json_format, struct_pb2
-from google.protobuf.message import Message
 from rbt.v1alpha1 import database_pb2
 from rbt.v1alpha1.admin import export_import_pb2_grpc
 from rbt.v1alpha1.admin.export_import_pb2 import (
@@ -23,6 +22,7 @@ from reboot.aio.internals.middleware import Middleware
 from reboot.aio.placement import PlacementClient
 from reboot.aio.state_managers import StateManager
 from reboot.aio.types import ApplicationId, ServerId, StateRef, StateTypeName
+from reboot.protobuf import MessageT
 from reboot.server.database import (
     SORTED_MAP_ENTRY_TYPE_NAME,
     SORTED_MAP_TYPE_NAME,
@@ -39,8 +39,8 @@ _QUEUE_MAX = 100
 
 def _maybe_parse_if_backwards_compatible(
     struct: struct_pb2.Struct,
-    message: Message,
-) -> Message:
+    message: MessageT,
+) -> MessageT:
     """Parse `struct` into `message`, raising a clearer error when the
     imported types are not backwards compatible."""
     try:

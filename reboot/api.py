@@ -1260,6 +1260,12 @@ class API(pydantic.BaseModel):
     # fields in '__init__(**types)'.
     model_config = pydantic.ConfigDict(extra='allow')
 
+    if typing.TYPE_CHECKING:
+        # The types are extra fields, e.g. `api.Shop`, which pydantic
+        # serves from a `__getattr__` it only defines at runtime.
+        def __getattr__(self, name: str) -> Type:
+            ...
+
     def __init__(self, **types: Optional[Type]):
         for type_name, data_type in types.items():
             if data_type is None:
