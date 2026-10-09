@@ -1251,8 +1251,8 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     headers=headers, method='Greet'
                 )
 
-                request = tests.reboot.greeter_pb2.GreetRequest()
-                request.ParseFromString(request_bytes)
+                greet_request = tests.reboot.greeter_pb2.GreetRequest()
+                greet_request.ParseFromString(request_bytes)
 
                 async with self._state_manager.reactively(
                     context,
@@ -1261,7 +1261,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                         method_name='tests.reboot.GreeterMethods.Greet',
                         headers=headers,
                         auth=context.auth,
-                        request=request,
+                        request=greet_request,
                     ),
                 ) as states:
                     async for (state, idempotency_keys) in states:
@@ -1275,7 +1275,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                             return await self.__Greet(
                                 context,
                                 state,
-                                request,
+                                greet_request,
                                 validating_effects=validating_effects,
                             )
 
@@ -1344,8 +1344,8 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     headers=headers, method='TryToConstructContext'
                 )
 
-                request = google.protobuf.empty_pb2.Empty()
-                request.ParseFromString(request_bytes)
+                try_to_construct_context_request = google.protobuf.empty_pb2.Empty()
+                try_to_construct_context_request.ParseFromString(request_bytes)
 
                 async with self._state_manager.reactively(
                     context,
@@ -1354,7 +1354,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                         method_name='tests.reboot.GreeterMethods.TryToConstructContext',
                         headers=headers,
                         auth=context.auth,
-                        request=request,
+                        request=try_to_construct_context_request,
                     ),
                 ) as states:
                     async for (state, idempotency_keys) in states:
@@ -1368,7 +1368,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                             return await self.__TryToConstructContext(
                                 context,
                                 state,
-                                request,
+                                try_to_construct_context_request,
                                 validating_effects=validating_effects,
                             )
 
@@ -1401,8 +1401,8 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     headers=headers, method='TryToConstructExternalContext'
                 )
 
-                request = google.protobuf.empty_pb2.Empty()
-                request.ParseFromString(request_bytes)
+                try_to_construct_external_context_request = google.protobuf.empty_pb2.Empty()
+                try_to_construct_external_context_request.ParseFromString(request_bytes)
 
                 async with self._state_manager.reactively(
                     context,
@@ -1411,7 +1411,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                         method_name='tests.reboot.GreeterMethods.TryToConstructExternalContext',
                         headers=headers,
                         auth=context.auth,
-                        request=request,
+                        request=try_to_construct_external_context_request,
                     ),
                 ) as states:
                     async for (state, idempotency_keys) in states:
@@ -1425,7 +1425,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                             return await self.__TryToConstructExternalContext(
                                 context,
                                 state,
-                                request,
+                                try_to_construct_external_context_request,
                                 validating_effects=validating_effects,
                             )
 
@@ -1458,8 +1458,8 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     headers=headers, method='TestLongRunningFetch'
                 )
 
-                request = tests.reboot.greeter_pb2.TestLongRunningFetchRequest()
-                request.ParseFromString(request_bytes)
+                test_long_running_fetch_request = tests.reboot.greeter_pb2.TestLongRunningFetchRequest()
+                test_long_running_fetch_request.ParseFromString(request_bytes)
 
                 async with self._state_manager.reactively(
                     context,
@@ -1468,7 +1468,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                         method_name='tests.reboot.GreeterMethods.TestLongRunningFetch',
                         headers=headers,
                         auth=context.auth,
-                        request=request,
+                        request=test_long_running_fetch_request,
                     ),
                 ) as states:
                     async for (state, idempotency_keys) in states:
@@ -1482,7 +1482,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                             return await self.__TestLongRunningFetch(
                                 context,
                                 state,
-                                request,
+                                test_long_running_fetch_request,
                                 validating_effects=validating_effects,
                             )
 
@@ -1533,8 +1533,8 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     headers=headers, method='GetWholeState'
                 )
 
-                request = tests.reboot.greeter_pb2.GetWholeStateRequest()
-                request.ParseFromString(request_bytes)
+                get_whole_state_request = tests.reboot.greeter_pb2.GetWholeStateRequest()
+                get_whole_state_request.ParseFromString(request_bytes)
 
                 async with self._state_manager.reactively(
                     context,
@@ -1543,7 +1543,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                         method_name='tests.reboot.GreeterMethods.GetWholeState',
                         headers=headers,
                         auth=context.auth,
-                        request=request,
+                        request=get_whole_state_request,
                     ),
                 ) as states:
                     async for (state, idempotency_keys) in states:
@@ -1557,7 +1557,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                             return await self.__GetWholeState(
                                 context,
                                 state,
-                                request,
+                                get_whole_state_request,
                                 validating_effects=validating_effects,
                             )
 
@@ -1590,8 +1590,8 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     headers=headers, method='FailWithException'
                 )
 
-                request = google.protobuf.empty_pb2.Empty()
-                request.ParseFromString(request_bytes)
+                fail_with_exception_request = google.protobuf.empty_pb2.Empty()
+                fail_with_exception_request.ParseFromString(request_bytes)
 
                 async with self._state_manager.reactively(
                     context,
@@ -1600,7 +1600,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                         method_name='tests.reboot.GreeterMethods.FailWithException',
                         headers=headers,
                         auth=context.auth,
-                        request=request,
+                        request=fail_with_exception_request,
                     ),
                 ) as states:
                     async for (state, idempotency_keys) in states:
@@ -1614,7 +1614,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                             return await self.__FailWithException(
                                 context,
                                 state,
-                                request,
+                                fail_with_exception_request,
                                 validating_effects=validating_effects,
                             )
 
@@ -1647,8 +1647,8 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     headers=headers, method='FailWithAborted'
                 )
 
-                request = google.protobuf.empty_pb2.Empty()
-                request.ParseFromString(request_bytes)
+                fail_with_aborted_request = google.protobuf.empty_pb2.Empty()
+                fail_with_aborted_request.ParseFromString(request_bytes)
 
                 async with self._state_manager.reactively(
                     context,
@@ -1657,7 +1657,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                         method_name='tests.reboot.GreeterMethods.FailWithAborted',
                         headers=headers,
                         auth=context.auth,
-                        request=request,
+                        request=fail_with_aborted_request,
                     ),
                 ) as states:
                     async for (state, idempotency_keys) in states:
@@ -1671,7 +1671,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                             return await self.__FailWithAborted(
                                 context,
                                 state,
-                                request,
+                                fail_with_aborted_request,
                                 validating_effects=validating_effects,
                             )
 
@@ -1758,8 +1758,8 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     headers=headers, method='ReadRecursiveMessage'
                 )
 
-                request = tests.reboot.greeter_pb2.ReadRecursiveMessageRequest()
-                request.ParseFromString(request_bytes)
+                read_recursive_message_request = tests.reboot.greeter_pb2.ReadRecursiveMessageRequest()
+                read_recursive_message_request.ParseFromString(request_bytes)
 
                 async with self._state_manager.reactively(
                     context,
@@ -1768,7 +1768,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                         method_name='tests.reboot.GreeterMethods.ReadRecursiveMessage',
                         headers=headers,
                         auth=context.auth,
-                        request=request,
+                        request=read_recursive_message_request,
                     ),
                 ) as states:
                     async for (state, idempotency_keys) in states:
@@ -1782,7 +1782,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                             return await self.__ReadRecursiveMessage(
                                 context,
                                 state,
-                                request,
+                                read_recursive_message_request,
                                 validating_effects=validating_effects,
                             )
 
@@ -1837,8 +1837,8 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
         """Returns the response of calling 'method' given a message
         deserialized from the provided 'request_bytes'."""
         if method == 'Create':
-            request = tests.reboot.greeter_pb2.CreateRequest()
-            request.ParseFromString(request_bytes)
+            create_request = tests.reboot.greeter_pb2.CreateRequest()
+            create_request.ParseFromString(request_bytes)
 
             # NOTE: we automatically retry mutations that come through
             # React when we get a `IMPORT_grpc.StatusCode.UNAVAILABLE` to
@@ -1871,7 +1871,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     )
                 )
                 call = stub.Create(
-                    request=request,
+                    request=create_request,
                     metadata=headers.to_grpc_metadata(),
                 )
                 try:
@@ -1947,8 +1947,8 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 message=f"Method '{method}' is invalid"
             )
         elif method == 'SetAdjective':
-            request = tests.reboot.greeter_pb2.SetAdjectiveRequest()
-            request.ParseFromString(request_bytes)
+            set_adjective_request = tests.reboot.greeter_pb2.SetAdjectiveRequest()
+            set_adjective_request.ParseFromString(request_bytes)
 
             # NOTE: we automatically retry mutations that come through
             # React when we get a `IMPORT_grpc.StatusCode.UNAVAILABLE` to
@@ -1981,7 +1981,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     )
                 )
                 call = stub.SetAdjective(
-                    request=request,
+                    request=set_adjective_request,
                     metadata=headers.to_grpc_metadata(),
                 )
                 try:
@@ -2041,8 +2041,8 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                      ) from None
 
         elif method == 'TransactionSetAdjective':
-            request = tests.reboot.greeter_pb2.SetAdjectiveRequest()
-            request.ParseFromString(request_bytes)
+            transaction_set_adjective_request = tests.reboot.greeter_pb2.SetAdjectiveRequest()
+            transaction_set_adjective_request.ParseFromString(request_bytes)
 
             # NOTE: we automatically retry mutations that come through
             # React when we get a `IMPORT_grpc.StatusCode.UNAVAILABLE` to
@@ -2075,7 +2075,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     )
                 )
                 call = stub.TransactionSetAdjective(
-                    request=request,
+                    request=transaction_set_adjective_request,
                     metadata=headers.to_grpc_metadata(),
                 )
                 try:
@@ -2183,8 +2183,8 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 message=f"Method '{method}' is invalid"
             )
         elif method == 'TestLongRunningWriter':
-            request = google.protobuf.empty_pb2.Empty()
-            request.ParseFromString(request_bytes)
+            test_long_running_writer_request = google.protobuf.empty_pb2.Empty()
+            test_long_running_writer_request.ParseFromString(request_bytes)
 
             # NOTE: we automatically retry mutations that come through
             # React when we get a `IMPORT_grpc.StatusCode.UNAVAILABLE` to
@@ -2217,7 +2217,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     )
                 )
                 call = stub.TestLongRunningWriter(
-                    request=request,
+                    request=test_long_running_writer_request,
                     metadata=headers.to_grpc_metadata(),
                 )
                 try:
@@ -2331,8 +2331,8 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 f"Method 'Workflow' can not be called via React (for now)"
             )
         elif method == 'DangerousFields':
-            request = tests.reboot.greeter_pb2.DangerousFieldsRequest()
-            request.ParseFromString(request_bytes)
+            dangerous_fields_request = tests.reboot.greeter_pb2.DangerousFieldsRequest()
+            dangerous_fields_request.ParseFromString(request_bytes)
 
             # NOTE: we automatically retry mutations that come through
             # React when we get a `IMPORT_grpc.StatusCode.UNAVAILABLE` to
@@ -2365,7 +2365,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     )
                 )
                 call = stub.DangerousFields(
-                    request=request,
+                    request=dangerous_fields_request,
                     metadata=headers.to_grpc_metadata(),
                 )
                 try:
@@ -2425,8 +2425,8 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                      ) from None
 
         elif method == 'StoreRecursiveMessage':
-            request = tests.reboot.greeter_pb2.StoreRecursiveMessageRequest()
-            request.ParseFromString(request_bytes)
+            store_recursive_message_request = tests.reboot.greeter_pb2.StoreRecursiveMessageRequest()
+            store_recursive_message_request.ParseFromString(request_bytes)
 
             # NOTE: we automatically retry mutations that come through
             # React when we get a `IMPORT_grpc.StatusCode.UNAVAILABLE` to
@@ -2459,7 +2459,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     )
                 )
                 call = stub.StoreRecursiveMessage(
-                    request=request,
+                    request=store_recursive_message_request,
                     metadata=headers.to_grpc_metadata(),
                 )
                 try:
@@ -2535,8 +2535,8 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 message=f"Method '{method}' is invalid"
             )
         elif method == 'ConstructAndStoreRecursiveMessage':
-            request = tests.reboot.greeter_pb2.ConstructAndStoreRecursiveMessageRequest()
-            request.ParseFromString(request_bytes)
+            construct_and_store_recursive_message_request = tests.reboot.greeter_pb2.ConstructAndStoreRecursiveMessageRequest()
+            construct_and_store_recursive_message_request.ParseFromString(request_bytes)
 
             # NOTE: we automatically retry mutations that come through
             # React when we get a `IMPORT_grpc.StatusCode.UNAVAILABLE` to
@@ -2569,7 +2569,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     )
                 )
                 call = stub.ConstructAndStoreRecursiveMessage(
-                    request=request,
+                    request=construct_and_store_recursive_message_request,
                     metadata=headers.to_grpc_metadata(),
                 )
                 try:
@@ -3989,32 +3989,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Greeter.Create') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -4497,32 +4471,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Greeter.Greet') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -4985,32 +4933,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Greeter.SetAdjective') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -5493,32 +5415,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Greeter.TransactionSetAdjective') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -6003,32 +5899,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Greeter.TryToConstructContext') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -6486,32 +6356,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Greeter.TryToConstructExternalContext') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -6969,32 +6813,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Greeter.TestLongRunningFetch') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -7457,32 +7275,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Greeter.TestLongRunningWriter') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -7965,32 +7757,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Greeter.GetWholeState') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -8448,32 +8214,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Greeter.FailWithException') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -9828,32 +9568,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Greeter.DangerousFields') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -10341,32 +10055,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Greeter.StoreRecursiveMessage') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -10849,32 +10537,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Greeter.ReadRecursiveMessage') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -11332,32 +10994,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Greeter.ConstructAndStoreRecursiveMessage') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -18309,7 +17945,7 @@ class Greeter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.CreateResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.greeter_pb2.CreateResponse:
+            async def wait_for_task() -> Greeter.CreateResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -18397,36 +18033,36 @@ class Greeter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -18494,7 +18130,10 @@ class Greeter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class GreetTask:
@@ -18538,7 +18177,7 @@ class Greeter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.GreetResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.greeter_pb2.GreetResponse:
+            async def wait_for_task() -> Greeter.GreetResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -18625,36 +18264,36 @@ class Greeter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -18722,7 +18361,10 @@ class Greeter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class SetAdjectiveTask:
@@ -18766,7 +18408,7 @@ class Greeter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.SetAdjectiveResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.greeter_pb2.SetAdjectiveResponse:
+            async def wait_for_task() -> Greeter.SetAdjectiveResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -18854,36 +18496,36 @@ class Greeter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -18951,7 +18593,10 @@ class Greeter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class TransactionSetAdjectiveTask:
@@ -18995,7 +18640,7 @@ class Greeter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.TransactionSetAdjectiveResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.greeter_pb2.SetAdjectiveResponse:
+            async def wait_for_task() -> Greeter.TransactionSetAdjectiveResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -19082,36 +18727,36 @@ class Greeter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -19179,7 +18824,10 @@ class Greeter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class TryToConstructContextTask:
@@ -19223,7 +18871,7 @@ class Greeter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.TryToConstructContextResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> google.protobuf.empty_pb2.Empty:
+            async def wait_for_task() -> Greeter.TryToConstructContextResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -19310,36 +18958,36 @@ class Greeter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -19407,7 +19055,10 @@ class Greeter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class TryToConstructExternalContextTask:
@@ -19451,7 +19102,7 @@ class Greeter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.TryToConstructExternalContextResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> google.protobuf.empty_pb2.Empty:
+            async def wait_for_task() -> Greeter.TryToConstructExternalContextResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -19538,36 +19189,36 @@ class Greeter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -19635,7 +19286,10 @@ class Greeter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class TestLongRunningFetchTask:
@@ -19679,7 +19333,7 @@ class Greeter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.TestLongRunningFetchResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> google.protobuf.empty_pb2.Empty:
+            async def wait_for_task() -> Greeter.TestLongRunningFetchResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -19766,36 +19420,36 @@ class Greeter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -19863,7 +19517,10 @@ class Greeter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class TestLongRunningWriterTask:
@@ -19907,7 +19564,7 @@ class Greeter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.TestLongRunningWriterResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> google.protobuf.empty_pb2.Empty:
+            async def wait_for_task() -> Greeter.TestLongRunningWriterResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -19995,36 +19652,36 @@ class Greeter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -20092,7 +19749,10 @@ class Greeter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class GetWholeStateTask:
@@ -20136,7 +19796,7 @@ class Greeter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.GetWholeStateResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.greeter_pb2.Greeter:
+            async def wait_for_task() -> Greeter.GetWholeStateResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -20223,36 +19883,36 @@ class Greeter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -20320,7 +19980,10 @@ class Greeter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class FailWithExceptionTask:
@@ -20364,7 +20027,7 @@ class Greeter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.FailWithExceptionResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> google.protobuf.empty_pb2.Empty:
+            async def wait_for_task() -> Greeter.FailWithExceptionResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -20451,36 +20114,36 @@ class Greeter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -20548,7 +20211,10 @@ class Greeter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class FailWithAbortedTask:
@@ -20592,7 +20258,7 @@ class Greeter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.FailWithAbortedResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> google.protobuf.empty_pb2.Empty:
+            async def wait_for_task() -> Greeter.FailWithAbortedResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -20683,17 +20349,7 @@ class Greeter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-            tests.reboot.greeter_pb2.ErrorWithValue        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             tests.reboot.greeter_pb2.ErrorWithValue,
             IMPORT_reboot.aio.aborted.GrpcError,
@@ -20701,19 +20357,29 @@ class Greeter:
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            tests.reboot.greeter_pb2.ErrorWithValue        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error: MethodError |  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodError | MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -20781,7 +20447,12 @@ class Greeter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> IMPORT_typing.TypeGuard[MethodError]:
+            if isinstance(error, IMPORT_reboot.api.Model):
+                return False
             if error.DESCRIPTOR.full_name == 'tests.reboot.ErrorWithValue':
                 return True
             return False
@@ -20827,7 +20498,7 @@ class Greeter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.WorkflowResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.greeter_pb2.WorkflowResponse:
+            async def wait_for_task() -> Greeter.WorkflowResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -20918,17 +20589,7 @@ class Greeter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-            tests.reboot.greeter_pb2.ErrorWithValue        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             tests.reboot.greeter_pb2.ErrorWithValue,
             IMPORT_reboot.aio.aborted.GrpcError,
@@ -20936,19 +20597,29 @@ class Greeter:
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            tests.reboot.greeter_pb2.ErrorWithValue        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error: MethodError |  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodError | MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -21016,7 +20687,12 @@ class Greeter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> IMPORT_typing.TypeGuard[MethodError]:
+            if isinstance(error, IMPORT_reboot.api.Model):
+                return False
             if error.DESCRIPTOR.full_name == 'tests.reboot.ErrorWithValue':
                 return True
             return False
@@ -21062,7 +20738,7 @@ class Greeter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.DangerousFieldsResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> google.protobuf.empty_pb2.Empty:
+            async def wait_for_task() -> Greeter.DangerousFieldsResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -21150,36 +20826,36 @@ class Greeter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -21247,7 +20923,10 @@ class Greeter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class StoreRecursiveMessageTask:
@@ -21291,7 +20970,7 @@ class Greeter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.StoreRecursiveMessageResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.greeter_pb2.StoreRecursiveMessageResponse:
+            async def wait_for_task() -> Greeter.StoreRecursiveMessageResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -21379,36 +21058,36 @@ class Greeter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -21476,7 +21155,10 @@ class Greeter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class ReadRecursiveMessageTask:
@@ -21520,7 +21202,7 @@ class Greeter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.ReadRecursiveMessageResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.greeter_pb2.ReadRecursiveMessageResponse:
+            async def wait_for_task() -> Greeter.ReadRecursiveMessageResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -21607,36 +21289,36 @@ class Greeter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -21704,7 +21386,10 @@ class Greeter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class ConstructAndStoreRecursiveMessageTask:
@@ -21748,7 +21433,7 @@ class Greeter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.ConstructAndStoreRecursiveMessageResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.greeter_pb2.ConstructAndStoreRecursiveMessageResponse:
+            async def wait_for_task() -> Greeter.ConstructAndStoreRecursiveMessageResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -21835,36 +21520,36 @@ class Greeter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -21932,7 +21617,10 @@ class Greeter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
 

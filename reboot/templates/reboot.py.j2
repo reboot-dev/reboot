@@ -10,9 +10,9 @@ reported in user code. #}
 # mypy: disable-error-code="func-returns-value"
 {# Which API this was generated from, for whoever compares: the fifth
 line, after the four above, which are always written, and which
-`yapf` wants first. `reboot/dashboard/implementation_watcher.py`
-reads that line back, and spells it the same, so the two have to
-change together. #}
+`yapf` wants first. `reboot/dashboard/backend/code_watcher.py` reads
+that line back, and spells it the same, so the two have to change
+together. #}
 {% if options.proto.api_digest %}
 # Generated from an API digesting to {{ options.proto.api_digest }}.
 {% endif %}
@@ -600,8 +600,8 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                     headers=headers, method='{{ method.proto.name }}'
                 )
 
-                request = {{ method.input_type }}()
-                request.ParseFromString(request_bytes)
+                {{ method.proto.name | to_snake }}_request = {{ method.input_type }}()
+                {{ method.proto.name | to_snake }}_request.ParseFromString(request_bytes)
 
                 async with self._state_manager.reactively(
                     context,
@@ -610,7 +610,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                         method_name='{{ method.proto.full_name }}',
                         headers=headers,
                         auth=context.auth,
-                        request=request,
+                        request={{ method.proto.name | to_snake }}_request,
                     ),
                 ) as states:
                     async for (state, idempotency_keys) in states:
@@ -624,7 +624,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                             return await self.__{{ method.proto.name }}(
                                 context,
                                 state,
-                                request,
+                                {{ method.proto.name | to_snake }}_request,
                                 validating_effects=validating_effects,
                             )
 
@@ -714,8 +714,8 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 f"Method '{{ method.proto.name }}' can not be called via React (for now)"
             )
             {% elif method.options.proto.kind in ['writer', 'transaction'] %}
-            request = {{ method.input_type }}()
-            request.ParseFromString(request_bytes)
+            {{ method.proto.name | to_snake }}_request = {{ method.input_type }}()
+            {{ method.proto.name | to_snake }}_request.ParseFromString(request_bytes)
 
             # NOTE: we automatically retry mutations that come through
             # React when we get a `IMPORT_grpc.StatusCode.UNAVAILABLE` to
@@ -748,7 +748,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                     )
                 )
                 call = stub.{{ method.proto.name }}(
-                    request=request,
+                    request={{ method.proto.name | to_snake }}_request,
                     metadata=headers.to_grpc_metadata(),
                 )
                 try:
@@ -1174,6 +1174,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                     message=f"unhandled (in '{{ state.proto.full_name }}.{{ method.proto.name }}') {aborted}"
                 )
             else:
+                {% if method.options.errors|length > 0 %}
                 if (
                     aborted_type is not None and
                     not isinstance(aborted, aborted_type) and
@@ -1201,6 +1202,9 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                         message=aborted.message,
                     ) from aborted
                 elif (
+                {% else %}
+                if (
+                {% endif %}
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -2584,7 +2588,7 @@ class {{ state.proto.name }}Authorizer(
                 {% endif %}
                 {% if not (method.options.proto.kind == 'reader' and method.proto.client_streaming) and method.has_non_none_request %}
                 {% if options.proto.pydantic %}
-                request={{ state.proto.name }}{{ method.proto.name }}RequestFromProto(request) if request is not None else request,
+                request={{ state.proto.name }}{{ method.proto.name }}RequestFromProto(IMPORT_typing.cast({{ method.input_type }}, request)) if request is not None else None,
                 {% else %}
                 request=IMPORT_typing.cast({{ method.input_type }}, request),
                 {% endif %}
@@ -4647,14 +4651,14 @@ class {{ client.proto.state_name }}:
     {# Since we do a dynamic dictionary lookup here, 'mypy' can't verify
     that the result of the lookup is indeed a type, so we use 'cast' to
     convince 'mypy' that it is indeed a type. #}
-    {{ method.proto.name }}Request: IMPORT_typing.TypeAlias = {% if options.proto.pydantic %}IMPORT_typing.cast(type, IMPORT_api.{{ client.proto.state_name }}.methods['{{ method.proto.name | to_snake }}'].request){% else %}{{ method.input_type }}{% endif %}
+    {{ method.proto.name }}Request: IMPORT_typing.TypeAlias = {% if options.proto.pydantic %}IMPORT_typing.cast(type, IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.{{ client.proto.state_name }}.methods['{{ method.proto.name | to_snake }}']).request){% else %}{{ method.input_type }}{% endif %}
     {% endif %}
 
     {% if method.has_non_none_response %}
     {# Since we do a dynamic dictionary lookup here, 'mypy' can't verify
     that the result of the lookup is indeed a type, so we use 'cast' to
     convince 'mypy' that it is indeed a type. #}
-    {{ method.proto.name }}Response: IMPORT_typing.TypeAlias = {% if options.proto.pydantic %}IMPORT_typing.cast(type, IMPORT_api.{{ client.proto.state_name }}.methods['{{ method.proto.name | to_snake }}'].response){% else %}{{ method.output_type }}{% endif %}
+    {{ method.proto.name }}Response: IMPORT_typing.TypeAlias = {% if options.proto.pydantic %}IMPORT_typing.cast(type, IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.{{ client.proto.state_name }}.methods['{{ method.proto.name | to_snake }}']).response){% else %}{{ method.output_type }}{% endif %}
     {% endif %}
 
     {% endfor %}
@@ -4720,7 +4724,7 @@ class {{ client.proto.state_name }}:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, {% if method.has_non_none_response %}{{ client.proto.state_name }}.{{ method.proto.name }}Response{% else %}None{% endif %}]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> {{ method.output_type }}:
+            async def wait_for_task() -> {% if method.has_non_none_response %}{{ client.proto.state_name }}.{{ method.proto.name }}Response{% else %}None{% endif %}:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -4826,19 +4830,9 @@ class {{ client.proto.state_name }}:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-            {% for error, type in method.options.errors.items() %}
-            {{ type }}{% if not loop.last %}, {% endif %}
-            {% endfor %}
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
-        _error: Error
+        {# For a pydantic API `error` is in the pydantic shape when
+        it is declared and the protobuf shape otherwise. #}
+        _error: Error{% if options.proto.pydantic %} | MethodProtobufError{% endif %}
 
         MethodProtobufError = IMPORT_typing.Union[
             {% for error, type in method.options.errors.items() %}
@@ -4849,19 +4843,32 @@ class {{ client.proto.state_name }}:
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            {% for error, type in method.options.errors.items() %}
+            {{ type }}{% if not loop.last %}, {% endif %}
+            {% endfor %}
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error: {% if method.options.errors|length > 0 %}MethodError | {% endif %} IMPORT_reboot.aio.aborted.GrpcError,
+            error: {% if method.options.errors|length > 0 %}MethodError | {% endif %}MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -4959,12 +4966,12 @@ class {{ client.proto.state_name }}:
                     ) + (
                         f"Original error: {error.model_dump_json()}\n"
                     ) + message if message is not None else ""
-
-                # Store both formats so users can access the error via
-                # `aborted.error` and the Protobuf version
-                # will be used to send the error over the wire.
-                self._error = error
-                self._method_protobuf_error = error
+                else:
+                    # Store both formats so users can access the error via
+                    # `aborted.error` and the Protobuf version
+                    # will be used to send the error over the wire.
+                    self._error = error
+                    self._method_protobuf_error = error
             {% else %}
             {# Preemptively store the error for Protobuf schema, so we
             can have the same type validation code below and users can access the Pydantic
@@ -5034,10 +5041,16 @@ class {{ client.proto.state_name }}:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message{% if options.proto.pydantic %} | IMPORT_reboot.api.Model{% endif %}) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> {% if method.options.errors|length > 0 %}IMPORT_typing.TypeGuard[MethodError{% if options.proto.pydantic %}{% for error, type in method.options.errors.items() %} | {{ type }}{% endfor %}{% endif %}]{% else %}bool{% endif %}:
             {% if options.proto.pydantic %}
             if isinstance(error, IMPORT_reboot.api.Model):
-                return type(error) in IMPORT_api.{{ client.proto.state_name }}.methods['{{ method.proto.name | to_snake }}'].errors
+                return type(error) in IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.{{ client.proto.state_name }}.methods['{{ method.proto.name | to_snake }}']).errors
+            {% elif method.options.errors|length > 0 %}
+            if isinstance(error, IMPORT_reboot.api.Model):
+                return False
             {% endif %}
             {% for name in method.options.errors.keys() %}
             {% if loop.first %}
