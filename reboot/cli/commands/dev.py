@@ -74,6 +74,7 @@ from reboot.settings import (
     ENVVAR_LOCAL_ENVOY_TLS_KEY_PATH,
     ENVVAR_LOCAL_ENVOY_USE_TLS,
     ENVVAR_RBT_DEV,
+    ENVVAR_RBT_DEV_PORTLESS_ORIGIN,
     ENVVAR_RBT_EFFECT_VALIDATION,
     ENVVAR_RBT_FRONTEND_DIST_PATH,
     ENVVAR_RBT_FRONTEND_HOST,
@@ -93,6 +94,7 @@ from reboot.settings import (
 )
 from reboot.version import REBOOT_VERSION
 from typing import Any, Awaitable, Callable, Optional, TextIO, TypeVar
+from urllib.parse import urlsplit
 
 TLS_CERTIFICATE_BEGINNING = "-----BEGIN CERTIFICATE-----"
 TLS_PRIVATE_KEY_BEGINNING = "-----BEGIN PRIVATE KEY-----"
@@ -242,6 +244,17 @@ def _register_dev_run(parser: ArgumentParser):
         type=int,
         help='port on which the Reboot app will serve traffic; defaults to '
         f'{DEFAULT_LOCAL_ENVOY_PORT}',
+    )
+
+    parser.subcommand('dev run').add_argument(
+        '--portless',
+        type=str,
+        help=(
+            'register this application name with the local Portless HTTPS '
+            'proxy and allow its resulting origin for development OAuth '
+            'CORS requests'
+        ),
+        non_empty_string=True,
     )
 
     parser.subcommand('dev run').add_argument(
@@ -430,6 +443,69 @@ async def _run_background_command(
             terminal.warn(
                 f"Background command '{background_command}' exited without errors"
             )
+
+
+async def _run_portless(
+    subprocesses: Subprocesses,
+    *args: str,
+) -> str:
+    """Run Portless and return its combined output, or stop with its error."""
+    async with subprocesses.exec(
+        'portless',
+        *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    ) as process:
+        stdout, _ = await process.communicate()
+        output = stdout.decode().strip() if stdout is not None else ''
+        if process.returncode != 0:
+            terminal.fail(
+                f"Portless command `portless {' '.join(args)}` failed:\n\n"
+                f"{output or '<no output>'}"
+            )
+        return output
+
+
+def _portless_https_origin(output: str) -> str:
+    """Normalize Portless `get` output to an HTTPS origin for CORS."""
+    parsed_origin = urlsplit(output)
+    if (
+        parsed_origin.scheme != 'https' or
+        not parsed_origin.netloc or
+        parsed_origin.username is not None or
+        parsed_origin.password is not None or
+        parsed_origin.path not in ('', '/') or
+        parsed_origin.query or
+        parsed_origin.fragment
+    ):
+        raise ValueError(output)
+    return output.rstrip('/')
+
+
+async def _configure_portless(
+    *,
+    name: str,
+    app_port: int,
+    subprocesses: Subprocesses,
+) -> str:
+    """Register the fixed local Envoy port and return Portless's HTTPS origin."""
+    if name.startswith('-'):
+        terminal.fail("`--portless` must be an application name, not an option.")
+
+    await _run_portless(subprocesses, 'proxy', 'start', '--https')
+    await _run_portless(subprocesses, 'alias', name, str(app_port), '--force')
+    origin = await _run_portless(subprocesses, 'get', name, '--no-worktree')
+
+    # Portless's `get` output is deliberately the source of truth: its proxy
+    # may be configured with a non-default TLD or port.  The CORS allow-list
+    # takes origins, not arbitrary URLs.
+    try:
+        return _portless_https_origin(origin)
+    except ValueError:
+        terminal.fail(
+            "Portless did not return an HTTPS origin for "
+            f"'{name}': {origin or '<no output>'}"
+        )
 
 
 @reboot.aio.tracing.asynccontextmanager_span(set_status_on_exception=False)
@@ -1534,6 +1610,7 @@ async def __dev_run(
     # We make a copy of the environment so that we don't change
     # our environment variables which might cause an issue.
     env = os.environ.copy()
+    portless_origin: Optional[str] = None
 
     env[ENVVAR_RBT_DEV] = 'true'
 
@@ -1624,6 +1701,14 @@ async def __dev_run(
     env[ENVVAR_REBOOT_LOCAL_ENVOY_PORT] = str(
         args.port or DEFAULT_LOCAL_ENVOY_PORT
     )
+
+    if args.portless is not None:
+        portless_origin = await _configure_portless(
+            name=args.portless,
+            app_port=int(env[ENVVAR_REBOOT_LOCAL_ENVOY_PORT]),
+            subprocesses=subprocesses,
+        )
+        terminal.info(f"Portless HTTPS URL: {portless_origin}\n")
 
     try:
         validate_num_servers(args.servers, "servers")
@@ -1718,6 +1803,12 @@ async def __dev_run(
         # Also include all environment variables from '--env='.
         for (key, value) in args.env or []:
             composed[key] = value
+
+        # The CLI discovered this origin from the Portless route it just
+        # registered. It must not be replaced by an app's `.env` or `--env`,
+        # which could make the browser CORS policy describe a different host.
+        if portless_origin is not None:
+            composed[ENVVAR_RBT_DEV_PORTLESS_ORIGIN] = portless_origin
 
         # If 'PYTHONPATH' is not explicitly set, we'll set it to the
         # specified generated code directory.
