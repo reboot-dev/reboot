@@ -769,9 +769,19 @@ fn is_legacy_control_service(service_name: &str) -> bool {
 /// not open the listener. Once a listener has stopped, `shutdown` runs for all
 /// initialized components in registration order.
 ///
-/// This is deliberately a generic host hook, not Reboot durable recovery:
-/// there is not yet an ApplicationHost connection to the actor sidecar,
-/// placement, or generated adapters needed to invoke their recovery APIs.
+/// The gRPC RunningApplicationHost interrupts an awaiting initialize/recover
+/// hook on shutdown by dropping its future
+/// before cleanup. Only successfully initialized components receive shutdown;
+/// an incomplete initialize must release partial resources through RAII. Hooks
+/// must not detach work that outlives their owned resources. Cleanup runs every
+/// initialized component even if an earlier shutdown fails; a primary lifecycle
+/// hook or bind failure is retained. HTTP hosts have a separate startup/cleanup
+/// implementation and do not yet provide these guarantees. Cleanup hooks
+/// themselves are not forcibly cancelled. Shutdown wins simultaneous readiness
+/// with a hook result. Interrupted recover must also tolerate future Drop.
+///
+/// These are generic pre-listen hooks, not durable actor recovery. Use the
+/// separate HostRecovery registrations for sidecar/placement/control recovery.
 #[tonic::async_trait]
 pub trait ApplicationLifecycle: Send + Sync + 'static {
     /// Construct non-serving application resources.
@@ -1274,13 +1284,22 @@ impl RunningApplicationHost {
                     .map_err(ApplicationHostError::Reflection)?,
             )
         };
-        Self::start_lifecycle(&lifecycle).await?;
+        tokio::pin!(shutdown);
+        if !Self::start_lifecycle(&lifecycle, &mut shutdown, &readiness).await? {
+            return Ok(());
+        }
         // Bind before recovery so peers can reach the fixed Participant and
         // Coordinator control routes while public generated routes remain
         // gated by `RecoveryIngressLayer`.
-        let listener = tokio::net::TcpListener::bind(address)
-            .await
-            .map_err(ApplicationHostError::Bind)?;
+        let listener = match tokio::net::TcpListener::bind(address).await {
+            Ok(listener) => listener,
+            Err(source) => {
+                readiness.send_replace(RecoveryState::Failed);
+                // Cleanup must not mask the primary bind failure.
+                let _ = Self::shutdown_lifecycle(&lifecycle).await;
+                return Err(ApplicationHostError::Bind(source));
+            }
+        };
         let mut cancel = RecoveryCancellation::new();
         cancel.readiness = Some(readiness.subscribe());
         cancel.failure = Some(readiness.clone());
@@ -1303,7 +1322,6 @@ impl RunningApplicationHost {
             ChildFailure(tonic::Status),
         }
         let mut supervisor = vec![JoinSet::new()];
-        tokio::pin!(shutdown);
         for (component, registration) in recovery.iter().enumerate() {
             // Startup can await a remote Recover stream indefinitely. Keep the
             // same shutdown future live before Ready; dropping this start future
@@ -1328,7 +1346,7 @@ impl RunningApplicationHost {
                     cancel.cancel();
                     Self::join_cancelled_recovery(&mut supervisor).await;
                     let _ = serving.await;
-                    Self::shutdown_lifecycle(&lifecycle).await?;
+                    let _ = Self::shutdown_lifecycle(&lifecycle).await;
                     return Err(ApplicationHostError::RecoveryTask(source));
                 }
             };
@@ -1337,15 +1355,15 @@ impl RunningApplicationHost {
                 cancel.cancel();
                 Self::join_cancelled_recovery(&mut supervisor).await;
                 let serving = serving.await.expect("application serving task panicked");
-                Self::shutdown_lifecycle(&lifecycle).await?;
-                return Self::shutdown_result(&cancel, serving);
+                let cleanup = Self::shutdown_lifecycle(&lifecycle).await;
+                return Self::shutdown_result(&cancel, serving).and(cleanup);
             };
             if let Err(source) = started {
                 readiness.send_replace(RecoveryState::Failed);
                 cancel.cancel();
                 Self::join_cancelled_recovery(&mut supervisor).await;
                 let _ = serving.await;
-                Self::shutdown_lifecycle(&lifecycle).await?;
+                let _ = Self::shutdown_lifecycle(&lifecycle).await;
                 return Err(ApplicationHostError::Lifecycle {
                     phase: ApplicationLifecyclePhase::Recover,
                     component,
@@ -1382,14 +1400,18 @@ impl RunningApplicationHost {
             }
         });
         tokio::select! {
-            _ = &mut shutdown => cancel.cancel(),
+            _ = &mut shutdown => {
+                // Revoke readiness before the router can observe cancellation.
+                readiness.send_replace(RecoveryState::Failed);
+                cancel.cancel();
+            },
             result = Self::next_recovery_child(&mut supervisor), if supervisor.iter().any(|group| !group.is_empty()) => {
                 let source = Self::recovery_child_failure(result);
                 readiness.send_replace(RecoveryState::Failed);
                 cancel.cancel();
                 Self::join_cancelled_recovery(&mut supervisor).await;
                 let _ = serving.await;
-                Self::shutdown_lifecycle(&lifecycle).await?;
+                let _ = Self::shutdown_lifecycle(&lifecycle).await;
                 return Err(ApplicationHostError::RecoveryTask(source));
             }
             result = &mut serving => {
@@ -1397,15 +1419,15 @@ impl RunningApplicationHost {
                 cancel.cancel();
                 Self::join_cancelled_recovery(&mut supervisor).await;
                 let result = result.expect("application serving task panicked");
-                Self::shutdown_lifecycle(&lifecycle).await?;
-                return Self::shutdown_result(&cancel, result);
+                let cleanup = Self::shutdown_lifecycle(&lifecycle).await;
+                return Self::shutdown_result(&cancel, result).and(cleanup);
             }
         }
         readiness.send_replace(RecoveryState::Failed);
         Self::join_cancelled_recovery(&mut supervisor).await;
         let serving = serving.await.expect("application serving task panicked");
-        Self::shutdown_lifecycle(&lifecycle).await?;
-        Self::shutdown_result(&cancel, serving)
+        let cleanup = Self::shutdown_lifecycle(&lifecycle).await;
+        Self::shutdown_result(&cancel, serving).and(cleanup)
     }
 
     // Check after work destruction on every otherwise successful host exit,
@@ -1479,33 +1501,80 @@ impl RunningApplicationHost {
         }
     }
 
-    pub(crate) async fn start_lifecycle(
+    // Returns false after an observed shutdown. Each select owns its hook future:
+    // interruption drops its RAII resources before any cleanup await begins.
+    async fn start_lifecycle<F>(
         lifecycle: &[Arc<dyn ApplicationLifecycle>],
-    ) -> Result<(), ApplicationHostError> {
+        shutdown: &mut Pin<&mut F>,
+        readiness: &tokio::sync::watch::Sender<RecoveryState>,
+    ) -> Result<bool, ApplicationHostError>
+    where
+        F: Future<Output = ()> + Send,
+    {
+        // Also honor an already-ready shutdown when there are no lifecycle hooks.
+        let stopped = tokio::select! {
+            biased;
+            _ = shutdown.as_mut() => true,
+            _ = std::future::ready(()) => false,
+        };
+        if stopped {
+            readiness.send_replace(RecoveryState::Failed);
+            return Ok(false);
+        }
         let mut initialized = 0;
-        for (component, component_lifecycle) in lifecycle.iter().enumerate() {
-            if let Err(source) = component_lifecycle.initialize().await {
-                Self::shutdown_initialized(lifecycle, initialized).await?;
-                return Err(ApplicationHostError::Lifecycle {
-                    phase: ApplicationLifecyclePhase::Initialize,
-                    component,
-                    source,
-                });
+        for phase in [
+            ApplicationLifecyclePhase::Initialize,
+            ApplicationLifecyclePhase::Recover,
+        ] {
+            for (component, component_lifecycle) in lifecycle.iter().enumerate() {
+                let result = tokio::select! {
+                    biased;
+                    _ = shutdown.as_mut() => None,
+                    result = async {
+                        match phase {
+                            ApplicationLifecyclePhase::Initialize => component_lifecycle.initialize().await,
+                            ApplicationLifecyclePhase::Recover => component_lifecycle.recover().await,
+                            ApplicationLifecyclePhase::Shutdown => unreachable!(),
+                        }
+                    } => Some(result),
+                };
+                match result {
+                    None => {
+                        readiness.send_replace(RecoveryState::Failed);
+                        Self::shutdown_initialized(lifecycle, initialized).await?;
+                        return Ok(false);
+                    }
+                    Some(Err(source)) => {
+                        readiness.send_replace(RecoveryState::Failed);
+                        // Drain every initialized component, retaining the primary error.
+                        let _ = Self::shutdown_initialized(lifecycle, initialized).await;
+                        return Err(ApplicationHostError::Lifecycle {
+                            phase,
+                            component,
+                            source,
+                        });
+                    }
+                    Some(Ok(())) => {
+                        if phase == ApplicationLifecyclePhase::Initialize {
+                            initialized += 1;
+                        }
+                    }
+                }
             }
-            initialized += 1;
         }
-
-        for (component, component_lifecycle) in lifecycle.iter().enumerate() {
-            if let Err(source) = component_lifecycle.recover().await {
-                Self::shutdown_initialized(lifecycle, initialized).await?;
-                return Err(ApplicationHostError::Lifecycle {
-                    phase: ApplicationLifecyclePhase::Recover,
-                    component,
-                    source,
-                });
-            }
+        // A final hook can make shutdown ready while itself completing. Recheck
+        // before binding, including the empty-registration boundary.
+        let stopped = tokio::select! {
+            biased;
+            _ = shutdown.as_mut() => true,
+            _ = std::future::ready(()) => false,
+        };
+        if stopped {
+            readiness.send_replace(RecoveryState::Failed);
+            Self::shutdown_initialized(lifecycle, initialized).await?;
+            return Ok(false);
         }
-        Ok(())
+        Ok(true)
     }
 
     async fn shutdown_lifecycle(
@@ -1518,16 +1587,20 @@ impl RunningApplicationHost {
         lifecycle: &[Arc<dyn ApplicationLifecycle>],
         initialized: usize,
     ) -> Result<(), ApplicationHostError> {
+        let mut first_error = None;
         for (component, component_lifecycle) in lifecycle.iter().take(initialized).enumerate() {
-            component_lifecycle.shutdown().await.map_err(|source| {
-                ApplicationHostError::Lifecycle {
+            if let Err(source) = component_lifecycle.shutdown().await {
+                first_error.get_or_insert(ApplicationHostError::Lifecycle {
                     phase: ApplicationLifecyclePhase::Shutdown,
                     component,
                     source,
-                }
-            })?;
+                });
+            }
         }
-        Ok(())
+        match first_error {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
     }
 }
 
@@ -1560,6 +1633,67 @@ mod writer_failure_lifecycle_tests {
         );
         let host =
             ApplicationHost::new("sticky-writer-failure").with_host_recovery(FailDuringStart);
+        let mut readiness = host.readiness.subscribe();
+        let host = host.add_public_service(service);
+        let (shutdown, stopped) = tokio::sync::oneshot::channel();
+        let serving = tokio::spawn(host.serve_with_shutdown(address, async {
+            let _ = stopped.await;
+        }));
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while *readiness.borrow_and_update() != RecoveryState::Failed {
+                readiness.changed().await.unwrap();
+            }
+        })
+        .await
+        .unwrap();
+        // The registration returned Ok; the real host now executes its Ready
+        // transition. Sticky Failed must survive that startup path.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert_eq!(*readiness.borrow(), RecoveryState::Failed);
+        let channel = tonic::transport::Endpoint::from_shared(format!("http://{address}"))
+            .unwrap()
+            .connect()
+            .await
+            .unwrap();
+        let mut client = crate::proto::echo_methods_client::EchoMethodsClient::new(channel);
+        assert_eq!(
+            client
+                .last_message(crate::proto::Empty {})
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::Unavailable
+        );
+        shutdown.send(()).unwrap();
+        assert!(
+            matches!(serving.await.unwrap(), Err(ApplicationHostError::RecoveryTask(status)) if status.code() == tonic::Code::Unavailable)
+        );
+        assert!(tokio::net::TcpStream::connect(address).await.is_err());
+    }
+    struct FailedCleanup;
+    #[tonic::async_trait]
+    impl ApplicationLifecycle for FailedCleanup {
+        async fn initialize(&self) -> Result<(), tonic::Status> {
+            Ok(())
+        }
+        async fn recover(&self) -> Result<(), tonic::Status> {
+            Ok(())
+        }
+        async fn shutdown(&self) -> Result<(), tonic::Status> {
+            Err(tonic::Status::internal("cleanup failed"))
+        }
+    }
+    #[tokio::test]
+    async fn writer_uncertainty_remains_primary_when_lifecycle_cleanup_fails() {
+        let socket = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = socket.local_addr().unwrap();
+        drop(socket);
+        let service = crate::proto::echo_methods_server::EchoMethodsServer::new(
+            crate::runtime::InMemoryHost::default(),
+        );
+        let host = ApplicationHost::new("sticky-writer-failure")
+            .with_host_recovery(FailDuringStart)
+            .with_lifecycle(FailedCleanup);
         let mut readiness = host.readiness.subscribe();
         let host = host.add_public_service(service);
         let (shutdown, stopped) = tokio::sync::oneshot::channel();

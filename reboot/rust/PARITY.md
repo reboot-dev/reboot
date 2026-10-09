@@ -226,8 +226,9 @@ Shutdown during a parked `HostRecovery::start` drops startup ownership, revokes
 readiness, cancels/joins prior owned children and closes ingress. Earlier completed
 registrations' child failures can interrupt a later parked start. Children created
 by the currently pending start are not independently polled until it returns.
-Earlier lifecycle initialize/recover hooks are outside that startup cancellation
-slice. Trusted host registration/handler/router composition is not a sandbox
+Pre-listen lifecycle initialize/recover hooks also observe the same caller shutdown
+future in the gRPC host, with cancellation-safe RAII and initialized-prefix cleanup.
+The separate HTTP host lifecycle path is outside that cancellation guarantee. Trusted host registration/handler/router composition is not a sandbox
 against a malicious application registrar. Public metadata cannot manufacture
 private task, workflow, map or supervised-root authority.
 
@@ -424,6 +425,68 @@ backpressure shutdown guarantees are not implemented or proved. Native placement
 revocation/failure transitions are not credited by the default greeting shutdown
 observer; those require separate live-placement/fault acceptance. Overall parity
 remains incomplete.
+
+### Pre-listen lifecycle shutdown and cleanup (2026-10-09)
+
+The gRPC `RunningApplicationHost` polls one pinned caller shutdown future before
+and during every pre-listen initialize/recover hook, then reuses it for host
+recovery and serving. Shutdown wins simultaneous hook readiness. Interruption
+drops the actual awaited hook future before revoking readiness and awaiting
+cleanup; no later hook, recovery registration or listener starts on that path.
+A final-hook/empty-registry boundary check prevents a shutdown made ready by the
+last hook from reaching bind. An incomplete initialize is not treated as
+initialized: it must own partial resources through cancellation-safe RAII.
+Interrupted recover receives cleanup because initialization already succeeded.
+Trusted callbacks must not detach unowned work.
+
+Every successfully initialized component is cleaned in registration order, even
+if an earlier cleanup returns an error. Primary hook, bind, recovery-registration,
+recovery-child, transport and sticky durable-uncertainty failures are not replaced
+by cleanup errors. Otherwise the first cleanup error is reported. Normal ready
+shutdown publishes Failed before signaling router cancellation; the publication
+order is source-backed, not an assertion of universal remote final-frame delivery.
+
+Five original-source regressions failed at baseline `0945e0b3`: parked initialize
+and recover ignored shutdown, precompleted shutdown ran hooks, bind failure
+skipped cleanup, and a cleanup error masked the primary lifecycle failure.
+Result record: `/tmp/reboot-rust-lifecycle-startup-red-1791514597429512892/result.json`
+(process `proc_5e2469e62677`, exit 101; one existing test passed, five failed).
+Current tests additionally cover shutdown becoming ready in the last hook,
+precompleted empty registry, recovery-registration/child primary failures and
+sticky uncertainty surviving cleanup failure. These are actual host/RAII/wire
+lifecycle tests, not new C++ transaction-cancellation or durable recovery proof.
+
+**Executed final revision:** `/tmp/reboot-rust-lifecycle-startup-final-gates-1791516077707479328`:
+21 host integration tests, **424 Rust tests passed, 129 ignored**
+(including 31 nested generated-consumer checks), 24 CLI tests and strict SDK
+Clippy. Native generated greeting/HTTP acceptance preserves 26 exchanges,
+authorization/replay, real RocksDB restart, rebuild/supervision and owned-child
+cleanup; its Health.Watch still receives SERVING -> NOT_SERVING -> EOF.
+Whole generated batch-consumer strict Clippy: `/tmp/reboot-rust-http-request-preflight-1791516677539529570`.
+Full **162-check** native persisted batch regression: `/tmp/reboot-rust-batch-ledger-acceptance-1791517288056386300`.
+Frozen manifests were read back against the final source before ledger refresh.
+A preceding final-revision batch run at
+`/tmp/reboot-rust-batch-ledger-acceptance-1791516751240757543` stopped after 92 checks
+when explicit read-only reconnect returned Unavailable after restart instead of
+the requested snapshot; that failed run is not acceptance. A fresh public reader
+on its still-running host returned `batch-001 3 1 1 1`. Normal CLI SIGINT shutdown
+closed the recorded CLI/Database/host PIDs before the isolated rerun above.
+No uncertain mutation was retried. The reconnect failure's exact transport cause
+is not established; first-attempt reconnect robustness remains an unresolved
+fixture observation, not transparent reconnect or new retry authority.
+
+**Scope/remaining:** the independent HTTP host startup/cleanup implementation is
+not repaired here. Cleanup hooks are not forcibly timed out; hanging hooks,
+panics, externally aborting the entire host future and detached callback effects
+are not certified. Generic hooks do not infer Abort or erase sidecar uncertainty.
+No new distributed cancellation, lost-ACK recovery, per-service health, actor
+ownership or exactly-once external-effect guarantee is claimed. Overall parity
+remains incomplete.
+
+Sources: [host](src/application_host.rs),
+[host integration tests](tests/application_host.rs),
+[native greeting/HTTP regression](../../tests/reboot/cli/rust_app_dx_e2e.py),
+[persisted batch regression](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
 
 ## Legacy transactions and ownership
 
@@ -1759,7 +1822,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 4dc54a4fcbabf165dbc3e5f0ab62812682509c84af84d34f6ce93b70cdcbaa7b -->
+<!-- parity-source-sha256: 712347a0265dfebf77b293ea0e736c5016aca2d385569bf3d57fc5a5ef46a00d -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,
