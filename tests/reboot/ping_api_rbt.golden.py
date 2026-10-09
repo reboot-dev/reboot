@@ -40,7 +40,7 @@ import traceback as IMPORT_traceback
 import uuid as IMPORT_uuid
 import pickle as IMPORT_pickle
 import reboot as IMPORT_reboot
-import log.log as IMPORT_log_log   # type: ignore[import]
+import log.log as IMPORT_log_log
 import typing as IMPORT_typing
 import reboot.aio.backoff as IMPORT_reboot_aio_backoff
 import functools as IMPORT_functools
@@ -946,8 +946,8 @@ class PingServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     headers=headers, method='Describe'
                 )
 
-                request = google.protobuf.empty_pb2.Empty()
-                request.ParseFromString(request_bytes)
+                describe_request = google.protobuf.empty_pb2.Empty()
+                describe_request.ParseFromString(request_bytes)
 
                 async with self._state_manager.reactively(
                     context,
@@ -956,7 +956,7 @@ class PingServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         method_name='reboot.ping.PingMethods.Describe',
                         headers=headers,
                         auth=context.auth,
-                        request=request,
+                        request=describe_request,
                     ),
                 ) as states:
                     async for (state, idempotency_keys) in states:
@@ -970,7 +970,7 @@ class PingServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                             return await self.__Describe(
                                 context,
                                 state,
-                                request,
+                                describe_request,
                                 validating_effects=validating_effects,
                             )
 
@@ -1003,8 +1003,8 @@ class PingServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     headers=headers, method='NumPings'
                 )
 
-                request = google.protobuf.empty_pb2.Empty()
-                request.ParseFromString(request_bytes)
+                num_pings_request = google.protobuf.empty_pb2.Empty()
+                num_pings_request.ParseFromString(request_bytes)
 
                 async with self._state_manager.reactively(
                     context,
@@ -1013,7 +1013,7 @@ class PingServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         method_name='reboot.ping.PingMethods.NumPings',
                         headers=headers,
                         auth=context.auth,
-                        request=request,
+                        request=num_pings_request,
                     ),
                 ) as states:
                     async for (state, idempotency_keys) in states:
@@ -1027,7 +1027,7 @@ class PingServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                             return await self.__NumPings(
                                 context,
                                 state,
-                                request,
+                                num_pings_request,
                                 validating_effects=validating_effects,
                             )
 
@@ -1064,8 +1064,8 @@ class PingServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         """Returns the response of calling 'method' given a message
         deserialized from the provided 'request_bytes'."""
         if method == 'DoPing':
-            request = google.protobuf.empty_pb2.Empty()
-            request.ParseFromString(request_bytes)
+            do_ping_request = google.protobuf.empty_pb2.Empty()
+            do_ping_request.ParseFromString(request_bytes)
 
             # NOTE: we automatically retry mutations that come through
             # React when we get a `IMPORT_grpc.StatusCode.UNAVAILABLE` to
@@ -1098,7 +1098,7 @@ class PingServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     )
                 )
                 call = stub.DoPing(
-                    request=request,
+                    request=do_ping_request,
                     metadata=headers.to_grpc_metadata(),
                 )
                 try:
@@ -1646,32 +1646,6 @@ class PingServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'reboot.ping.Ping.DoPing') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -2156,32 +2130,6 @@ class PingServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'reboot.ping.Ping.DoPingPeriodically') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -2566,32 +2514,6 @@ class PingServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'reboot.ping.Ping.Describe') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -3050,32 +2972,6 @@ class PingServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'reboot.ping.Ping.NumPings') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -3752,8 +3648,8 @@ class PongServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     headers=headers, method='NumPongs'
                 )
 
-                request = google.protobuf.empty_pb2.Empty()
-                request.ParseFromString(request_bytes)
+                num_pongs_request = google.protobuf.empty_pb2.Empty()
+                num_pongs_request.ParseFromString(request_bytes)
 
                 async with self._state_manager.reactively(
                     context,
@@ -3762,7 +3658,7 @@ class PongServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         method_name='reboot.ping.PongMethods.NumPongs',
                         headers=headers,
                         auth=context.auth,
-                        request=request,
+                        request=num_pongs_request,
                     ),
                 ) as states:
                     async for (state, idempotency_keys) in states:
@@ -3776,7 +3672,7 @@ class PongServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                             return await self.__NumPongs(
                                 context,
                                 state,
-                                request,
+                                num_pongs_request,
                                 validating_effects=validating_effects,
                             )
 
@@ -3813,8 +3709,8 @@ class PongServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         """Returns the response of calling 'method' given a message
         deserialized from the provided 'request_bytes'."""
         if method == 'DoPong':
-            request = google.protobuf.empty_pb2.Empty()
-            request.ParseFromString(request_bytes)
+            do_pong_request = google.protobuf.empty_pb2.Empty()
+            do_pong_request.ParseFromString(request_bytes)
 
             # NOTE: we automatically retry mutations that come through
             # React when we get a `IMPORT_grpc.StatusCode.UNAVAILABLE` to
@@ -3847,7 +3743,7 @@ class PongServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     )
                 )
                 call = stub.DoPong(
-                    request=request,
+                    request=do_pong_request,
                     metadata=headers.to_grpc_metadata(),
                 )
                 try:
@@ -4191,32 +4087,6 @@ class PongServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'reboot.ping.Pong.DoPong') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -4369,10 +4239,7 @@ class PongServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
 
                 await writer.complete(effects)
 
-                # TODO: We need a single `Effects` superclass for all methods, so we
-                # would need to make it "partially" generic (with per-method subclasses
-                # filling out the rest of the generic parameters) in order to fix this.
-                return effects.response  # type: ignore[return-value]
+                return effects.response
 
     async def _schedule_DoPong(
         self,
@@ -4700,32 +4567,6 @@ class PongServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'reboot.ping.Pong.NumPongs') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -5405,8 +5246,8 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     headers=headers, method='ListCounters'
                 )
 
-                request = google.protobuf.empty_pb2.Empty()
-                request.ParseFromString(request_bytes)
+                list_counters_request = google.protobuf.empty_pb2.Empty()
+                list_counters_request.ParseFromString(request_bytes)
 
                 async with self._state_manager.reactively(
                     context,
@@ -5415,7 +5256,7 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         method_name='reboot.ping.UserMethods.ListCounters',
                         headers=headers,
                         auth=context.auth,
-                        request=request,
+                        request=list_counters_request,
                     ),
                 ) as states:
                     async for (state, idempotency_keys) in states:
@@ -5429,7 +5270,7 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                             return await self.__ListCounters(
                                 context,
                                 state,
-                                request,
+                                list_counters_request,
                                 validating_effects=validating_effects,
                             )
 
@@ -5462,8 +5303,8 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     headers=headers, method='Whoami'
                 )
 
-                request = google.protobuf.empty_pb2.Empty()
-                request.ParseFromString(request_bytes)
+                whoami_request = google.protobuf.empty_pb2.Empty()
+                whoami_request.ParseFromString(request_bytes)
 
                 async with self._state_manager.reactively(
                     context,
@@ -5472,7 +5313,7 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         method_name='reboot.ping.UserMethods.Whoami',
                         headers=headers,
                         auth=context.auth,
-                        request=request,
+                        request=whoami_request,
                     ),
                 ) as states:
                     async for (state, idempotency_keys) in states:
@@ -5486,7 +5327,7 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                             return await self.__Whoami(
                                 context,
                                 state,
-                                request,
+                                whoami_request,
                                 validating_effects=validating_effects,
                             )
 
@@ -5559,8 +5400,8 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         """Returns the response of calling 'method' given a message
         deserialized from the provided 'request_bytes'."""
         if method == 'CreateCounter':
-            request = reboot.ping.ping_api_pb2.UserCreateCounterRequest()
-            request.ParseFromString(request_bytes)
+            create_counter_request = reboot.ping.ping_api_pb2.UserCreateCounterRequest()
+            create_counter_request.ParseFromString(request_bytes)
 
             # NOTE: we automatically retry mutations that come through
             # React when we get a `IMPORT_grpc.StatusCode.UNAVAILABLE` to
@@ -5593,7 +5434,7 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     )
                 )
                 call = stub.CreateCounter(
-                    request=request,
+                    request=create_counter_request,
                     metadata=headers.to_grpc_metadata(),
                 )
                 try:
@@ -5685,8 +5526,8 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 message=f"Method '{method}' is invalid"
             )
         elif method == 'Create':
-            request = google.protobuf.empty_pb2.Empty()
-            request.ParseFromString(request_bytes)
+            create_request = google.protobuf.empty_pb2.Empty()
+            create_request.ParseFromString(request_bytes)
 
             # NOTE: we automatically retry mutations that come through
             # React when we get a `IMPORT_grpc.StatusCode.UNAVAILABLE` to
@@ -5719,7 +5560,7 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     )
                 )
                 call = stub.Create(
-                    request=request,
+                    request=create_request,
                     metadata=headers.to_grpc_metadata(),
                 )
                 try:
@@ -5779,8 +5620,8 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                      ) from None
 
         elif method == 'SetClaims':
-            request = reboot.ping.ping_api_pb2.UserSetClaimsRequest()
-            request.ParseFromString(request_bytes)
+            set_claims_request = reboot.ping.ping_api_pb2.UserSetClaimsRequest()
+            set_claims_request.ParseFromString(request_bytes)
 
             # NOTE: we automatically retry mutations that come through
             # React when we get a `IMPORT_grpc.StatusCode.UNAVAILABLE` to
@@ -5813,7 +5654,7 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     )
                 )
                 call = stub.SetClaims(
-                    request=request,
+                    request=set_claims_request,
                     metadata=headers.to_grpc_metadata(),
                 )
                 try:
@@ -6357,32 +6198,6 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'reboot.ping.User.CreateCounter') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -6870,32 +6685,6 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'reboot.ping.User.ListCounters') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -7354,32 +7143,6 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'reboot.ping.User.Whoami') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -7842,32 +7605,6 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'reboot.ping.User.Create') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -8358,32 +8095,6 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'reboot.ping.User.SetClaims') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -9130,8 +8841,8 @@ class CounterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     headers=headers, method='Value'
                 )
 
-                request = google.protobuf.empty_pb2.Empty()
-                request.ParseFromString(request_bytes)
+                value_request = google.protobuf.empty_pb2.Empty()
+                value_request.ParseFromString(request_bytes)
 
                 async with self._state_manager.reactively(
                     context,
@@ -9140,7 +8851,7 @@ class CounterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                         method_name='reboot.ping.CounterMethods.Value',
                         headers=headers,
                         auth=context.auth,
-                        request=request,
+                        request=value_request,
                     ),
                 ) as states:
                     async for (state, idempotency_keys) in states:
@@ -9154,7 +8865,7 @@ class CounterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                             return await self.__Value(
                                 context,
                                 state,
-                                request,
+                                value_request,
                                 validating_effects=validating_effects,
                             )
 
@@ -9187,8 +8898,8 @@ class CounterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     headers=headers, method='Description'
                 )
 
-                request = google.protobuf.empty_pb2.Empty()
-                request.ParseFromString(request_bytes)
+                description_request = google.protobuf.empty_pb2.Empty()
+                description_request.ParseFromString(request_bytes)
 
                 async with self._state_manager.reactively(
                     context,
@@ -9197,7 +8908,7 @@ class CounterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                         method_name='reboot.ping.CounterMethods.Description',
                         headers=headers,
                         auth=context.auth,
-                        request=request,
+                        request=description_request,
                     ),
                 ) as states:
                     async for (state, idempotency_keys) in states:
@@ -9211,7 +8922,7 @@ class CounterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                             return await self.__Description(
                                 context,
                                 state,
-                                request,
+                                description_request,
                                 validating_effects=validating_effects,
                             )
 
@@ -9248,8 +8959,8 @@ class CounterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
         """Returns the response of calling 'method' given a message
         deserialized from the provided 'request_bytes'."""
         if method == 'Create':
-            request = reboot.ping.ping_api_pb2.CounterCreateRequest()
-            request.ParseFromString(request_bytes)
+            create_request = reboot.ping.ping_api_pb2.CounterCreateRequest()
+            create_request.ParseFromString(request_bytes)
 
             # NOTE: we automatically retry mutations that come through
             # React when we get a `IMPORT_grpc.StatusCode.UNAVAILABLE` to
@@ -9282,7 +8993,7 @@ class CounterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     )
                 )
                 call = stub.Create(
-                    request=request,
+                    request=create_request,
                     metadata=headers.to_grpc_metadata(),
                 )
                 try:
@@ -9342,8 +9053,8 @@ class CounterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                      ) from None
 
         elif method == 'Increment':
-            request = google.protobuf.empty_pb2.Empty()
-            request.ParseFromString(request_bytes)
+            increment_request = google.protobuf.empty_pb2.Empty()
+            increment_request.ParseFromString(request_bytes)
 
             # NOTE: we automatically retry mutations that come through
             # React when we get a `IMPORT_grpc.StatusCode.UNAVAILABLE` to
@@ -9376,7 +9087,7 @@ class CounterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     )
                 )
                 call = stub.Increment(
-                    request=request,
+                    request=increment_request,
                     metadata=headers.to_grpc_metadata(),
                 )
                 try:
@@ -9887,32 +9598,6 @@ class CounterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'reboot.ping.Counter.Create') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -10065,10 +9750,7 @@ class CounterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
 
                 await writer.complete(effects)
 
-                # TODO: We need a single `Effects` superclass for all methods, so we
-                # would need to make it "partially" generic (with per-method subclasses
-                # filling out the rest of the generic parameters) in order to fix this.
-                return effects.response  # type: ignore[return-value]
+                return effects.response
 
     async def _schedule_Create(
         self,
@@ -10411,32 +10093,6 @@ class CounterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'reboot.ping.Counter.Increment') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -10589,10 +10245,7 @@ class CounterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
 
                 await writer.complete(effects)
 
-                # TODO: We need a single `Effects` superclass for all methods, so we
-                # would need to make it "partially" generic (with per-method subclasses
-                # filling out the rest of the generic parameters) in order to fix this.
-                return effects.response  # type: ignore[return-value]
+                return effects.response
 
     async def _schedule_Increment(
         self,
@@ -10920,32 +10573,6 @@ class CounterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'reboot.ping.Counter.Value') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -11404,32 +11031,6 @@ class CounterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'reboot.ping.Counter.Description') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -12381,9 +11982,9 @@ class PingTasksStub(_PingStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('reboot.ping.Ping'),
@@ -12434,9 +12035,9 @@ class PingTasksStub(_PingStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('reboot.ping.Ping'),
@@ -12485,9 +12086,9 @@ class PingTasksStub(_PingStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('reboot.ping.Ping'),
@@ -12536,9 +12137,9 @@ class PingTasksStub(_PingStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('reboot.ping.Ping'),
@@ -13011,9 +12612,9 @@ class PongTasksStub(_PongStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('reboot.ping.Pong'),
@@ -13062,9 +12663,9 @@ class PongTasksStub(_PongStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('reboot.ping.Pong'),
@@ -13665,9 +13266,9 @@ class UserTasksStub(_UserStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('reboot.ping.User'),
@@ -13716,9 +13317,9 @@ class UserTasksStub(_UserStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('reboot.ping.User'),
@@ -13767,9 +13368,9 @@ class UserTasksStub(_UserStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('reboot.ping.User'),
@@ -13820,9 +13421,9 @@ class UserTasksStub(_UserStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('reboot.ping.User'),
@@ -14521,9 +14122,9 @@ class CounterTasksStub(_CounterStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('reboot.ping.Counter'),
@@ -14572,9 +14173,9 @@ class CounterTasksStub(_CounterStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('reboot.ping.Counter'),
@@ -14623,9 +14224,9 @@ class CounterTasksStub(_CounterStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('reboot.ping.Counter'),
@@ -14858,7 +14459,7 @@ class PingAuthorizer(
             return await self.DoPingPeriodically(
                 context=context,
                 state=PingFromProto(state, is_initial_state=(context.state_id in states_being_constructed)) if state is not None else state,
-                request=PingDoPingPeriodicallyRequestFromProto(request) if request is not None else request,
+                request=PingDoPingPeriodicallyRequestFromProto(IMPORT_typing.cast(reboot.ping.ping_api_pb2.PingDoPingPeriodicallyRequest, request)) if request is not None else None,
             )
         elif method_name == 'reboot.ping.PingMethods.Describe':
             return await self.Describe(
@@ -15180,7 +14781,7 @@ class UserAuthorizer(
             return await self.CreateCounter(
                 context=context,
                 state=UserFromProto(state, is_initial_state=(context.state_id in states_being_constructed)) if state is not None else state,
-                request=UserCreateCounterRequestFromProto(request) if request is not None else request,
+                request=UserCreateCounterRequestFromProto(IMPORT_typing.cast(reboot.ping.ping_api_pb2.UserCreateCounterRequest, request)) if request is not None else None,
             )
         elif method_name == 'reboot.ping.UserMethods.ListCounters':
             return await self.ListCounters(
@@ -15200,7 +14801,7 @@ class UserAuthorizer(
             return await self.SetClaims(
                 context=context,
                 state=UserFromProto(state, is_initial_state=(context.state_id in states_being_constructed)) if state is not None else state,
-                request=UserSetClaimsRequestFromProto(request) if request is not None else request,
+                request=UserSetClaimsRequestFromProto(IMPORT_typing.cast(reboot.ping.ping_api_pb2.UserSetClaimsRequest, request)) if request is not None else None,
             )
         else:
             return IMPORT_rbt_v1alpha1.errors_pb2.PermissionDenied()
@@ -15388,7 +14989,7 @@ class CounterAuthorizer(
         if method_name == 'reboot.ping.CounterMethods.Create':
             return await self.Create(
                 context=context,
-                request=CounterCreateRequestFromProto(request) if request is not None else request,
+                request=CounterCreateRequestFromProto(IMPORT_typing.cast(reboot.ping.ping_api_pb2.CounterCreateRequest, request)) if request is not None else None,
             )
         elif method_name == 'reboot.ping.CounterMethods.Increment':
             return await self.Increment(
@@ -16882,6 +16483,8 @@ class PongBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
     # For 'reboot.ping.PongMethods.DoPong'.
     class DoPongEffects(Effects):
+        response: reboot.ping.ping_api_pb2.PongDoPongResponse
+
         def __init__(
             self,
             *,
@@ -19375,6 +18978,8 @@ class CounterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
     # For 'reboot.ping.CounterMethods.Create'.
     class CreateEffects(Effects):
+        response: google.protobuf.empty_pb2.Empty
+
         def __init__(
             self,
             *,
@@ -19391,6 +18996,8 @@ class CounterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
     # For 'reboot.ping.CounterMethods.Increment'.
     class IncrementEffects(Effects):
+        response: reboot.ping.ping_api_pb2.CounterIncrementResponse
+
         def __init__(
             self,
             *,
@@ -20452,16 +20059,16 @@ class Ping:
     State: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_api.Ping.state)
 
 
-    DoPingResponse: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_api.Ping.methods['do_ping'].response)
+    DoPingResponse: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.Ping.methods['do_ping']).response)
 
-    DoPingPeriodicallyRequest: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_api.Ping.methods['do_ping_periodically'].request)
-    DoPingPeriodicallyResponse: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_api.Ping.methods['do_ping_periodically'].response)
-
-
-    DescribeResponse: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_api.Ping.methods['describe'].response)
+    DoPingPeriodicallyRequest: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.Ping.methods['do_ping_periodically']).request)
+    DoPingPeriodicallyResponse: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.Ping.methods['do_ping_periodically']).response)
 
 
-    NumPingsResponse: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_api.Ping.methods['num_pings'].response)
+    DescribeResponse: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.Ping.methods['describe']).response)
+
+
+    NumPingsResponse: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.Ping.methods['num_pings']).response)
 
     __state_type_name__ = IMPORT_reboot_aio_types.StateTypeName("reboot.ping.Ping")
 
@@ -20506,7 +20113,7 @@ class Ping:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Ping.DoPingResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> reboot.ping.ping_api_pb2.PingDoPingResponse:
+            async def wait_for_task() -> Ping.DoPingResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -20593,36 +20200,36 @@ class Ping:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
-        _error: Error
-
+        _error: Error | MethodProtobufError
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -20671,12 +20278,12 @@ class Ping:
                     ) + (
                         f"Original error: {error.model_dump_json()}\n"
                     ) + message if message is not None else ""
-
-                # Store both formats so users can access the error via
-                # `aborted.error` and the Protobuf version
-                # will be used to send the error over the wire.
-                self._error = error
-                self._method_protobuf_error = error
+                else:
+                    # Store both formats so users can access the error via
+                    # `aborted.error` and the Protobuf version
+                    # will be used to send the error over the wire.
+                    self._error = error
+                    self._method_protobuf_error = error
 
             IMPORT_reboot_aio_types.assert_type(self._protobuf_error, error_types)
 
@@ -20736,9 +20343,12 @@ class Ping:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             if isinstance(error, IMPORT_reboot.api.Model):
-                return type(error) in IMPORT_api.Ping.methods['do_ping'].errors
+                return type(error) in IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.Ping.methods['do_ping']).errors
             return False
 
     class DoPingPeriodicallyTask:
@@ -20782,7 +20392,7 @@ class Ping:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Ping.DoPingPeriodicallyResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> reboot.ping.ping_api_pb2.PingDoPingPeriodicallyResponse:
+            async def wait_for_task() -> Ping.DoPingPeriodicallyResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -20869,36 +20479,36 @@ class Ping:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
-        _error: Error
-
+        _error: Error | MethodProtobufError
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -20947,12 +20557,12 @@ class Ping:
                     ) + (
                         f"Original error: {error.model_dump_json()}\n"
                     ) + message if message is not None else ""
-
-                # Store both formats so users can access the error via
-                # `aborted.error` and the Protobuf version
-                # will be used to send the error over the wire.
-                self._error = error
-                self._method_protobuf_error = error
+                else:
+                    # Store both formats so users can access the error via
+                    # `aborted.error` and the Protobuf version
+                    # will be used to send the error over the wire.
+                    self._error = error
+                    self._method_protobuf_error = error
 
             IMPORT_reboot_aio_types.assert_type(self._protobuf_error, error_types)
 
@@ -21012,9 +20622,12 @@ class Ping:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             if isinstance(error, IMPORT_reboot.api.Model):
-                return type(error) in IMPORT_api.Ping.methods['do_ping_periodically'].errors
+                return type(error) in IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.Ping.methods['do_ping_periodically']).errors
             return False
 
     class DescribeTask:
@@ -21058,7 +20671,7 @@ class Ping:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Ping.DescribeResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> reboot.ping.ping_api_pb2.PingDescribeResponse:
+            async def wait_for_task() -> Ping.DescribeResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -21145,36 +20758,36 @@ class Ping:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
-        _error: Error
-
+        _error: Error | MethodProtobufError
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -21223,12 +20836,12 @@ class Ping:
                     ) + (
                         f"Original error: {error.model_dump_json()}\n"
                     ) + message if message is not None else ""
-
-                # Store both formats so users can access the error via
-                # `aborted.error` and the Protobuf version
-                # will be used to send the error over the wire.
-                self._error = error
-                self._method_protobuf_error = error
+                else:
+                    # Store both formats so users can access the error via
+                    # `aborted.error` and the Protobuf version
+                    # will be used to send the error over the wire.
+                    self._error = error
+                    self._method_protobuf_error = error
 
             IMPORT_reboot_aio_types.assert_type(self._protobuf_error, error_types)
 
@@ -21288,9 +20901,12 @@ class Ping:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             if isinstance(error, IMPORT_reboot.api.Model):
-                return type(error) in IMPORT_api.Ping.methods['describe'].errors
+                return type(error) in IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.Ping.methods['describe']).errors
             return False
 
     class NumPingsTask:
@@ -21334,7 +20950,7 @@ class Ping:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Ping.NumPingsResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> reboot.ping.ping_api_pb2.PingNumPingsResponse:
+            async def wait_for_task() -> Ping.NumPingsResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -21421,36 +21037,36 @@ class Ping:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
-        _error: Error
-
+        _error: Error | MethodProtobufError
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -21499,12 +21115,12 @@ class Ping:
                     ) + (
                         f"Original error: {error.model_dump_json()}\n"
                     ) + message if message is not None else ""
-
-                # Store both formats so users can access the error via
-                # `aborted.error` and the Protobuf version
-                # will be used to send the error over the wire.
-                self._error = error
-                self._method_protobuf_error = error
+                else:
+                    # Store both formats so users can access the error via
+                    # `aborted.error` and the Protobuf version
+                    # will be used to send the error over the wire.
+                    self._error = error
+                    self._method_protobuf_error = error
 
             IMPORT_reboot_aio_types.assert_type(self._protobuf_error, error_types)
 
@@ -21564,9 +21180,12 @@ class Ping:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             if isinstance(error, IMPORT_reboot.api.Model):
-                return type(error) in IMPORT_api.Ping.methods['num_pings'].errors
+                return type(error) in IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.Ping.methods['num_pings']).errors
             return False
 
 
@@ -21598,7 +21217,7 @@ class Ping:
         def state_id(self) -> IMPORT_reboot_aio_types.StateId:
             return self._state_ref.id
 
-        def _reader(
+        def _get_reader_stub(
             self,
             context: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
         ) -> PingReaderStub:
@@ -21621,7 +21240,7 @@ class Ping:
                 )
             return self._reader_stub
 
-        def _writer(
+        def _get_writer_stub(
             self,
             context: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
         ) -> PingWriterStub:
@@ -21644,7 +21263,7 @@ class Ping:
                 )
             return self._writer_stub
 
-        def _workflow(
+        def _get_workflow_stub(
             self,
             context: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
         ) -> PingWorkflowStub:
@@ -21704,7 +21323,7 @@ class Ping:
                 self._bearer_token = bearer_token
 
 
-            async def Describe( # type: ignore[misc]
+            async def Describe(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -21861,7 +21480,7 @@ class Ping:
             # the new code.
             describe = Describe
 
-            async def NumPings( # type: ignore[misc]
+            async def NumPings(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -22111,7 +21730,7 @@ class Ping:
                 )
 
 
-            async def DoPing( # type: ignore[misc]
+            async def DoPing(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -22156,7 +21775,7 @@ class Ping:
             ) -> Ping.DoPingPeriodicallyResponse:
                 ...
 
-            async def DoPingPeriodically( # type: ignore[misc]
+            async def DoPingPeriodically(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -22227,7 +21846,7 @@ class Ping:
             # the new code.
             do_ping_periodically = DoPingPeriodically
 
-            async def Describe( # type: ignore[misc]
+            async def Describe(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -22253,7 +21872,7 @@ class Ping:
             # the new code.
             describe = Describe
 
-            async def NumPings( # type: ignore[misc]
+            async def NumPings(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -22413,7 +22032,7 @@ class Ping:
                 )
 
 
-            def Describe( # type: ignore[misc]
+            def Describe(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -22452,7 +22071,7 @@ class Ping:
             # the new code.
             describe = Describe
 
-            def NumPings( # type: ignore[misc]
+            def NumPings(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -22521,7 +22140,7 @@ class Ping:
 
             # Ping callable tasks:
 
-            async def DoPing( # type: ignore[misc]
+            async def DoPing(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -22591,7 +22210,7 @@ class Ping:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def DoPingPeriodically( # type: ignore[misc]
+            async def DoPingPeriodically(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Ping.DoPingPeriodicallyRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -22669,7 +22288,7 @@ class Ping:
             # the new code.
             do_ping_periodically = DoPingPeriodically
 
-            async def Describe( # type: ignore[misc]
+            async def Describe(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -22720,7 +22339,7 @@ class Ping:
             # the new code.
             describe = Describe
 
-            async def NumPings( # type: ignore[misc]
+            async def NumPings(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -22794,7 +22413,7 @@ class Ping:
 
             # Ping callable tasks:
 
-            async def DoPing( # type: ignore[misc]
+            async def DoPing(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -22871,7 +22490,7 @@ class Ping:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def DoPingPeriodically( # type: ignore[misc]
+            async def DoPingPeriodically(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Ping.DoPingPeriodicallyRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -22957,7 +22576,7 @@ class Ping:
             # the new code.
             do_ping_periodically = DoPingPeriodically
 
-            async def Describe( # type: ignore[misc]
+            async def Describe(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -23015,7 +22634,7 @@ class Ping:
             # the new code.
             describe = Describe
 
-            async def NumPings( # type: ignore[misc]
+            async def NumPings(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -23113,7 +22732,7 @@ class Ping:
 
             # Ping callable tasks:
 
-            async def DoPing( # type: ignore[misc]
+            async def DoPing(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -23185,7 +22804,7 @@ class Ping:
             ) -> Ping.DoPingPeriodicallyTask:
                 ...
 
-            async def DoPingPeriodically( # type: ignore[misc]
+            async def DoPingPeriodically(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Ping.DoPingPeriodicallyRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -23266,7 +22885,7 @@ class Ping:
             # the new code.
             do_ping_periodically = DoPingPeriodically
 
-            async def Describe( # type: ignore[misc]
+            async def Describe(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -23319,7 +22938,7 @@ class Ping:
             # the new code.
             describe = Describe
 
-            async def NumPings( # type: ignore[misc]
+            async def NumPings(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -23412,7 +23031,7 @@ class Ping:
 
         # Ping specific methods:
 
-        async def DoPing( # type: ignore[misc]
+        async def DoPing(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -23450,7 +23069,7 @@ class Ping:
                     __bearer_token__ = __options__.bearer_token
 
             return PingDoPingResponseFromProto(
-                await __this__._workflow(__context__).DoPing(
+                await __this__._get_workflow_stub(__context__).DoPing(
                     idempotency=__idempotency__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
@@ -23481,7 +23100,7 @@ class Ping:
         ) -> Ping.DoPingPeriodicallyResponse:
             ...
 
-        async def DoPingPeriodically( # type: ignore[misc]
+        async def DoPingPeriodically(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -23550,7 +23169,7 @@ class Ping:
         # the new code.
         do_ping_periodically = DoPingPeriodically
 
-        async def Describe( # type: ignore[misc]
+        async def Describe(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -23593,7 +23212,7 @@ class Ping:
                 if __options__.bearer_token is not None:
                     __bearer_token__ = __options__.bearer_token
             return PingDescribeResponseFromProto(
-                await __this__._reader(__context__).Describe(
+                await __this__._get_reader_stub(__context__).Describe(
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                     idempotency=__idempotency__,
@@ -23604,7 +23223,7 @@ class Ping:
         # the new code.
         describe = Describe
 
-        async def NumPings( # type: ignore[misc]
+        async def NumPings(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -23647,7 +23266,7 @@ class Ping:
                 if __options__.bearer_token is not None:
                     __bearer_token__ = __options__.bearer_token
             return PingNumPingsResponseFromProto(
-                await __this__._reader(__context__).NumPings(
+                await __this__._get_reader_stub(__context__).NumPings(
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                     idempotency=__idempotency__,
@@ -23699,7 +23318,7 @@ class Ping:
             self._ids = ids
 
 
-        async def DoPing( # type: ignore[misc]
+        async def DoPing(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -23728,7 +23347,7 @@ class Ping:
         # the new code.
         do_ping = DoPing
 
-        async def Describe( # type: ignore[misc]
+        async def Describe(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -23757,7 +23376,7 @@ class Ping:
         # the new code.
         describe = Describe
 
-        async def NumPings( # type: ignore[misc]
+        async def NumPings(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -23920,10 +23539,10 @@ class Pong:
     State: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_api.Pong.state)
 
 
-    DoPongResponse: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_api.Pong.methods['do_pong'].response)
+    DoPongResponse: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.Pong.methods['do_pong']).response)
 
 
-    NumPongsResponse: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_api.Pong.methods['num_pongs'].response)
+    NumPongsResponse: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.Pong.methods['num_pongs']).response)
 
     __state_type_name__ = IMPORT_reboot_aio_types.StateTypeName("reboot.ping.Pong")
 
@@ -23968,7 +23587,7 @@ class Pong:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Pong.DoPongResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> reboot.ping.ping_api_pb2.PongDoPongResponse:
+            async def wait_for_task() -> Pong.DoPongResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -24056,36 +23675,36 @@ class Pong:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
-        _error: Error
-
+        _error: Error | MethodProtobufError
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -24134,12 +23753,12 @@ class Pong:
                     ) + (
                         f"Original error: {error.model_dump_json()}\n"
                     ) + message if message is not None else ""
-
-                # Store both formats so users can access the error via
-                # `aborted.error` and the Protobuf version
-                # will be used to send the error over the wire.
-                self._error = error
-                self._method_protobuf_error = error
+                else:
+                    # Store both formats so users can access the error via
+                    # `aborted.error` and the Protobuf version
+                    # will be used to send the error over the wire.
+                    self._error = error
+                    self._method_protobuf_error = error
 
             IMPORT_reboot_aio_types.assert_type(self._protobuf_error, error_types)
 
@@ -24199,9 +23818,12 @@ class Pong:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             if isinstance(error, IMPORT_reboot.api.Model):
-                return type(error) in IMPORT_api.Pong.methods['do_pong'].errors
+                return type(error) in IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.Pong.methods['do_pong']).errors
             return False
 
     class NumPongsTask:
@@ -24245,7 +23867,7 @@ class Pong:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Pong.NumPongsResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> reboot.ping.ping_api_pb2.PongNumPongsResponse:
+            async def wait_for_task() -> Pong.NumPongsResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -24332,36 +23954,36 @@ class Pong:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
-        _error: Error
-
+        _error: Error | MethodProtobufError
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -24410,12 +24032,12 @@ class Pong:
                     ) + (
                         f"Original error: {error.model_dump_json()}\n"
                     ) + message if message is not None else ""
-
-                # Store both formats so users can access the error via
-                # `aborted.error` and the Protobuf version
-                # will be used to send the error over the wire.
-                self._error = error
-                self._method_protobuf_error = error
+                else:
+                    # Store both formats so users can access the error via
+                    # `aborted.error` and the Protobuf version
+                    # will be used to send the error over the wire.
+                    self._error = error
+                    self._method_protobuf_error = error
 
             IMPORT_reboot_aio_types.assert_type(self._protobuf_error, error_types)
 
@@ -24475,9 +24097,12 @@ class Pong:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             if isinstance(error, IMPORT_reboot.api.Model):
-                return type(error) in IMPORT_api.Pong.methods['num_pongs'].errors
+                return type(error) in IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.Pong.methods['num_pongs']).errors
             return False
 
 
@@ -24509,7 +24134,7 @@ class Pong:
         def state_id(self) -> IMPORT_reboot_aio_types.StateId:
             return self._state_ref.id
 
-        def _reader(
+        def _get_reader_stub(
             self,
             context: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
         ) -> PongReaderStub:
@@ -24532,7 +24157,7 @@ class Pong:
                 )
             return self._reader_stub
 
-        def _writer(
+        def _get_writer_stub(
             self,
             context: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
         ) -> PongWriterStub:
@@ -24555,7 +24180,7 @@ class Pong:
                 )
             return self._writer_stub
 
-        def _workflow(
+        def _get_workflow_stub(
             self,
             context: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
         ) -> PongWorkflowStub:
@@ -24615,7 +24240,7 @@ class Pong:
                 self._bearer_token = bearer_token
 
 
-            async def NumPongs( # type: ignore[misc]
+            async def NumPongs(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -24865,7 +24490,7 @@ class Pong:
                 )
 
 
-            async def DoPong( # type: ignore[misc]
+            async def DoPong(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -24891,7 +24516,7 @@ class Pong:
             # the new code.
             do_pong = DoPong
 
-            async def NumPongs( # type: ignore[misc]
+            async def NumPongs(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -25051,7 +24676,7 @@ class Pong:
                 )
 
 
-            def NumPongs( # type: ignore[misc]
+            def NumPongs(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -25120,7 +24745,7 @@ class Pong:
 
             # Pong callable tasks:
 
-            async def DoPong( # type: ignore[misc]
+            async def DoPong(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -25171,7 +24796,7 @@ class Pong:
             # the new code.
             do_pong = DoPong
 
-            async def NumPongs( # type: ignore[misc]
+            async def NumPongs(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -25245,7 +24870,7 @@ class Pong:
 
             # Pong callable tasks:
 
-            async def DoPong( # type: ignore[misc]
+            async def DoPong(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -25303,7 +24928,7 @@ class Pong:
             # the new code.
             do_pong = DoPong
 
-            async def NumPongs( # type: ignore[misc]
+            async def NumPongs(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -25401,7 +25026,7 @@ class Pong:
 
             # Pong callable tasks:
 
-            async def DoPong( # type: ignore[misc]
+            async def DoPong(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -25454,7 +25079,7 @@ class Pong:
             # the new code.
             do_pong = DoPong
 
-            async def NumPongs( # type: ignore[misc]
+            async def NumPongs(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -25547,7 +25172,7 @@ class Pong:
 
         # Pong specific methods:
 
-        async def DoPong( # type: ignore[misc]
+        async def DoPong(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -25585,7 +25210,7 @@ class Pong:
                     __bearer_token__ = __options__.bearer_token
 
             return PongDoPongResponseFromProto(
-                await __this__._writer(__context__).DoPong(
+                await __this__._get_writer_stub(__context__).DoPong(
                     idempotency=__idempotency__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
@@ -25597,7 +25222,7 @@ class Pong:
         # the new code.
         do_pong = DoPong
 
-        async def NumPongs( # type: ignore[misc]
+        async def NumPongs(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -25640,7 +25265,7 @@ class Pong:
                 if __options__.bearer_token is not None:
                     __bearer_token__ = __options__.bearer_token
             return PongNumPongsResponseFromProto(
-                await __this__._reader(__context__).NumPongs(
+                await __this__._get_reader_stub(__context__).NumPongs(
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                     idempotency=__idempotency__,
@@ -25692,7 +25317,7 @@ class Pong:
             self._ids = ids
 
 
-        async def DoPong( # type: ignore[misc]
+        async def DoPong(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -25721,7 +25346,7 @@ class Pong:
         # the new code.
         do_pong = DoPong
 
-        async def NumPongs( # type: ignore[misc]
+        async def NumPongs(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -25883,19 +25508,19 @@ class User:
 
     State: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_api.User.state)
 
-    CreateCounterRequest: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_api.User.methods['create_counter'].request)
-    CreateCounterResponse: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_api.User.methods['create_counter'].response)
+    CreateCounterRequest: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.User.methods['create_counter']).request)
+    CreateCounterResponse: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.User.methods['create_counter']).response)
 
 
-    ListCountersResponse: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_api.User.methods['list_counters'].response)
+    ListCountersResponse: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.User.methods['list_counters']).response)
 
 
-    WhoamiResponse: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_api.User.methods['whoami'].response)
+    WhoamiResponse: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.User.methods['whoami']).response)
 
 
 
 
-    SetClaimsRequest: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_api.User.methods['set_claims'].request)
+    SetClaimsRequest: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.User.methods['set_claims']).request)
 
 
     __state_type_name__ = IMPORT_reboot_aio_types.StateTypeName("reboot.ping.User")
@@ -25941,7 +25566,7 @@ class User:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, User.CreateCounterResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> reboot.ping.ping_api_pb2.UserCreateCounterResponse:
+            async def wait_for_task() -> User.CreateCounterResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -26028,36 +25653,36 @@ class User:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
-        _error: Error
-
+        _error: Error | MethodProtobufError
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -26106,12 +25731,12 @@ class User:
                     ) + (
                         f"Original error: {error.model_dump_json()}\n"
                     ) + message if message is not None else ""
-
-                # Store both formats so users can access the error via
-                # `aborted.error` and the Protobuf version
-                # will be used to send the error over the wire.
-                self._error = error
-                self._method_protobuf_error = error
+                else:
+                    # Store both formats so users can access the error via
+                    # `aborted.error` and the Protobuf version
+                    # will be used to send the error over the wire.
+                    self._error = error
+                    self._method_protobuf_error = error
 
             IMPORT_reboot_aio_types.assert_type(self._protobuf_error, error_types)
 
@@ -26171,9 +25796,12 @@ class User:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             if isinstance(error, IMPORT_reboot.api.Model):
-                return type(error) in IMPORT_api.User.methods['create_counter'].errors
+                return type(error) in IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.User.methods['create_counter']).errors
             return False
 
     class ListCountersTask:
@@ -26217,7 +25845,7 @@ class User:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, User.ListCountersResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> reboot.ping.ping_api_pb2.UserListCountersResponse:
+            async def wait_for_task() -> User.ListCountersResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -26304,36 +25932,36 @@ class User:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
-        _error: Error
-
+        _error: Error | MethodProtobufError
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -26382,12 +26010,12 @@ class User:
                     ) + (
                         f"Original error: {error.model_dump_json()}\n"
                     ) + message if message is not None else ""
-
-                # Store both formats so users can access the error via
-                # `aborted.error` and the Protobuf version
-                # will be used to send the error over the wire.
-                self._error = error
-                self._method_protobuf_error = error
+                else:
+                    # Store both formats so users can access the error via
+                    # `aborted.error` and the Protobuf version
+                    # will be used to send the error over the wire.
+                    self._error = error
+                    self._method_protobuf_error = error
 
             IMPORT_reboot_aio_types.assert_type(self._protobuf_error, error_types)
 
@@ -26447,9 +26075,12 @@ class User:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             if isinstance(error, IMPORT_reboot.api.Model):
-                return type(error) in IMPORT_api.User.methods['list_counters'].errors
+                return type(error) in IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.User.methods['list_counters']).errors
             return False
 
     class WhoamiTask:
@@ -26493,7 +26124,7 @@ class User:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, User.WhoamiResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> reboot.ping.ping_api_pb2.UserWhoamiResponse:
+            async def wait_for_task() -> User.WhoamiResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -26580,36 +26211,36 @@ class User:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
-        _error: Error
-
+        _error: Error | MethodProtobufError
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -26658,12 +26289,12 @@ class User:
                     ) + (
                         f"Original error: {error.model_dump_json()}\n"
                     ) + message if message is not None else ""
-
-                # Store both formats so users can access the error via
-                # `aborted.error` and the Protobuf version
-                # will be used to send the error over the wire.
-                self._error = error
-                self._method_protobuf_error = error
+                else:
+                    # Store both formats so users can access the error via
+                    # `aborted.error` and the Protobuf version
+                    # will be used to send the error over the wire.
+                    self._error = error
+                    self._method_protobuf_error = error
 
             IMPORT_reboot_aio_types.assert_type(self._protobuf_error, error_types)
 
@@ -26723,9 +26354,12 @@ class User:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             if isinstance(error, IMPORT_reboot.api.Model):
-                return type(error) in IMPORT_api.User.methods['whoami'].errors
+                return type(error) in IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.User.methods['whoami']).errors
             return False
 
     class CreateTask:
@@ -26769,7 +26403,7 @@ class User:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, None]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> google.protobuf.empty_pb2.Empty:
+            async def wait_for_task() -> None:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -26856,36 +26490,36 @@ class User:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
-        _error: Error
-
+        _error: Error | MethodProtobufError
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -26934,12 +26568,12 @@ class User:
                     ) + (
                         f"Original error: {error.model_dump_json()}\n"
                     ) + message if message is not None else ""
-
-                # Store both formats so users can access the error via
-                # `aborted.error` and the Protobuf version
-                # will be used to send the error over the wire.
-                self._error = error
-                self._method_protobuf_error = error
+                else:
+                    # Store both formats so users can access the error via
+                    # `aborted.error` and the Protobuf version
+                    # will be used to send the error over the wire.
+                    self._error = error
+                    self._method_protobuf_error = error
 
             IMPORT_reboot_aio_types.assert_type(self._protobuf_error, error_types)
 
@@ -26999,9 +26633,12 @@ class User:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             if isinstance(error, IMPORT_reboot.api.Model):
-                return type(error) in IMPORT_api.User.methods['create'].errors
+                return type(error) in IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.User.methods['create']).errors
             return False
 
     class SetClaimsTask:
@@ -27045,7 +26682,7 @@ class User:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, None]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> google.protobuf.empty_pb2.Empty:
+            async def wait_for_task() -> None:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -27132,36 +26769,36 @@ class User:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
-        _error: Error
-
+        _error: Error | MethodProtobufError
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -27210,12 +26847,12 @@ class User:
                     ) + (
                         f"Original error: {error.model_dump_json()}\n"
                     ) + message if message is not None else ""
-
-                # Store both formats so users can access the error via
-                # `aborted.error` and the Protobuf version
-                # will be used to send the error over the wire.
-                self._error = error
-                self._method_protobuf_error = error
+                else:
+                    # Store both formats so users can access the error via
+                    # `aborted.error` and the Protobuf version
+                    # will be used to send the error over the wire.
+                    self._error = error
+                    self._method_protobuf_error = error
 
             IMPORT_reboot_aio_types.assert_type(self._protobuf_error, error_types)
 
@@ -27275,9 +26912,12 @@ class User:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             if isinstance(error, IMPORT_reboot.api.Model):
-                return type(error) in IMPORT_api.User.methods['set_claims'].errors
+                return type(error) in IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.User.methods['set_claims']).errors
             return False
 
 
@@ -27309,7 +26949,7 @@ class User:
         def state_id(self) -> IMPORT_reboot_aio_types.StateId:
             return self._state_ref.id
 
-        def _reader(
+        def _get_reader_stub(
             self,
             context: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
         ) -> UserReaderStub:
@@ -27332,7 +26972,7 @@ class User:
                 )
             return self._reader_stub
 
-        def _writer(
+        def _get_writer_stub(
             self,
             context: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
         ) -> UserWriterStub:
@@ -27355,7 +26995,7 @@ class User:
                 )
             return self._writer_stub
 
-        def _workflow(
+        def _get_workflow_stub(
             self,
             context: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
         ) -> UserWorkflowStub:
@@ -27415,7 +27055,7 @@ class User:
                 self._bearer_token = bearer_token
 
 
-            async def ListCounters( # type: ignore[misc]
+            async def ListCounters(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -27572,7 +27212,7 @@ class User:
             # the new code.
             list_counters = ListCounters
 
-            async def Whoami( # type: ignore[misc]
+            async def Whoami(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -27840,7 +27480,7 @@ class User:
             ) -> User.CreateCounterResponse:
                 ...
 
-            async def CreateCounter( # type: ignore[misc]
+            async def CreateCounter(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -27891,7 +27531,7 @@ class User:
             # the new code.
             create_counter = CreateCounter
 
-            async def ListCounters( # type: ignore[misc]
+            async def ListCounters(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -27917,7 +27557,7 @@ class User:
             # the new code.
             list_counters = ListCounters
 
-            async def Whoami( # type: ignore[misc]
+            async def Whoami(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -27961,7 +27601,7 @@ class User:
             ) -> None:
                 ...
 
-            async def SetClaims( # type: ignore[misc]
+            async def SetClaims(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -28146,7 +27786,7 @@ class User:
                 )
 
 
-            def ListCounters( # type: ignore[misc]
+            def ListCounters(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -28185,7 +27825,7 @@ class User:
             # the new code.
             list_counters = ListCounters
 
-            def Whoami( # type: ignore[misc]
+            def Whoami(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -28272,7 +27912,7 @@ class User:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def CreateCounter( # type: ignore[misc]
+            async def CreateCounter(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[User.CreateCounterRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -28347,7 +27987,7 @@ class User:
             # the new code.
             create_counter = CreateCounter
 
-            async def ListCounters( # type: ignore[misc]
+            async def ListCounters(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -28398,7 +28038,7 @@ class User:
             # the new code.
             list_counters = ListCounters
 
-            async def Whoami( # type: ignore[misc]
+            async def Whoami(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -28467,7 +28107,7 @@ class User:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def SetClaims( # type: ignore[misc]
+            async def SetClaims(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[User.SetClaimsRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -28583,7 +28223,7 @@ class User:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def CreateCounter( # type: ignore[misc]
+            async def CreateCounter(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[User.CreateCounterRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -28666,7 +28306,7 @@ class User:
             # the new code.
             create_counter = CreateCounter
 
-            async def ListCounters( # type: ignore[misc]
+            async def ListCounters(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -28724,7 +28364,7 @@ class User:
             # the new code.
             list_counters = ListCounters
 
-            async def Whoami( # type: ignore[misc]
+            async def Whoami(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -28800,7 +28440,7 @@ class User:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def SetClaims( # type: ignore[misc]
+            async def SetClaims(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[User.SetClaimsRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -28941,7 +28581,7 @@ class User:
             ) -> User.CreateCounterTask:
                 ...
 
-            async def CreateCounter( # type: ignore[misc]
+            async def CreateCounter(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[User.CreateCounterRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -29019,7 +28659,7 @@ class User:
             # the new code.
             create_counter = CreateCounter
 
-            async def ListCounters( # type: ignore[misc]
+            async def ListCounters(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -29072,7 +28712,7 @@ class User:
             # the new code.
             list_counters = ListCounters
 
-            async def Whoami( # type: ignore[misc]
+            async def Whoami(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -29143,7 +28783,7 @@ class User:
             ) -> User.SetClaimsTask:
                 ...
 
-            async def SetClaims( # type: ignore[misc]
+            async def SetClaims(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[User.SetClaimsRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -29282,7 +28922,7 @@ class User:
         ) -> User.CreateCounterResponse:
             ...
 
-        async def CreateCounter( # type: ignore[misc]
+        async def CreateCounter(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[User.CreateCounterRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -29344,7 +28984,7 @@ class User:
                     __bearer_token__ = __options__.bearer_token
 
             return UserCreateCounterResponseFromProto(
-                await __this__._workflow(__context__).CreateCounter(
+                await __this__._get_workflow_stub(__context__).CreateCounter(
                     __request__,
                     idempotency=__idempotency__,
                     metadata=__metadata__,
@@ -29357,7 +28997,7 @@ class User:
         # the new code.
         create_counter = CreateCounter
 
-        async def ListCounters( # type: ignore[misc]
+        async def ListCounters(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -29400,7 +29040,7 @@ class User:
                 if __options__.bearer_token is not None:
                     __bearer_token__ = __options__.bearer_token
             return UserListCountersResponseFromProto(
-                await __this__._reader(__context__).ListCounters(
+                await __this__._get_reader_stub(__context__).ListCounters(
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                     idempotency=__idempotency__,
@@ -29411,7 +29051,7 @@ class User:
         # the new code.
         list_counters = ListCounters
 
-        async def Whoami( # type: ignore[misc]
+        async def Whoami(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -29454,7 +29094,7 @@ class User:
                 if __options__.bearer_token is not None:
                     __bearer_token__ = __options__.bearer_token
             return UserWhoamiResponseFromProto(
-                await __this__._reader(__context__).Whoami(
+                await __this__._get_reader_stub(__context__).Whoami(
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                     idempotency=__idempotency__,
@@ -29486,7 +29126,7 @@ class User:
         ) -> None:
             ...
 
-        async def SetClaims( # type: ignore[misc]
+        async def SetClaims(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[User.SetClaimsRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -29548,7 +29188,7 @@ class User:
                     __bearer_token__ = __options__.bearer_token
 
             return UserSetClaimsResponseFromProto(
-                await __this__._workflow(__context__).SetClaims(
+                await __this__._get_workflow_stub(__context__).SetClaims(
                     __request__,
                     idempotency=__idempotency__,
                     metadata=__metadata__,
@@ -29620,7 +29260,7 @@ class User:
         ) -> list[User.CreateCounterResponse]:
             ...
 
-        async def CreateCounter( # type: ignore[misc]
+        async def CreateCounter(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -29677,7 +29317,7 @@ class User:
         # the new code.
         create_counter = CreateCounter
 
-        async def ListCounters( # type: ignore[misc]
+        async def ListCounters(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -29706,7 +29346,7 @@ class User:
         # the new code.
         list_counters = ListCounters
 
-        async def Whoami( # type: ignore[misc]
+        async def Whoami(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -29753,7 +29393,7 @@ class User:
         ) -> list[None]:
             ...
 
-        async def SetClaims( # type: ignore[misc]
+        async def SetClaims(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -29869,7 +29509,7 @@ class User:
 
 
     @classmethod
-    async def Create( # type: ignore[misc]
+    async def Create(
         __cls__,
         __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
         __state_id__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.StateId] = None,
@@ -29938,7 +29578,7 @@ class User:
         __reference__ = User.ref(
             __state_id__, bearer_token=__bearer_token__
         )
-        __stub__ = __reference__._workflow(__context__)
+        __stub__ = __reference__._get_workflow_stub(__context__)
         return (
             __reference__,
             UserCreateResponseFromProto(
@@ -30010,7 +29650,7 @@ class User:
         _idempotency: IMPORT_reboot_aio_idempotency.Idempotency
 
 
-        async def Create( # type: ignore[misc]
+        async def Create(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __state_id__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.StateId] = None,
@@ -30065,17 +29705,17 @@ class Counter:
 
     State: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_api.Counter.state)
 
-    CreateRequest: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_api.Counter.methods['create'].request)
+    CreateRequest: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.Counter.methods['create']).request)
 
 
 
-    IncrementResponse: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_api.Counter.methods['increment'].response)
+    IncrementResponse: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.Counter.methods['increment']).response)
 
 
-    ValueResponse: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_api.Counter.methods['value'].response)
+    ValueResponse: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.Counter.methods['value']).response)
 
 
-    DescriptionResponse: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_api.Counter.methods['description'].response)
+    DescriptionResponse: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.Counter.methods['description']).response)
 
     ShowClickerProps: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_api.Counter.methods['show_clicker'].request)
     __state_type_name__ = IMPORT_reboot_aio_types.StateTypeName("reboot.ping.Counter")
@@ -30121,7 +29761,7 @@ class Counter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, None]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> google.protobuf.empty_pb2.Empty:
+            async def wait_for_task() -> None:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -30209,36 +29849,36 @@ class Counter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
-        _error: Error
-
+        _error: Error | MethodProtobufError
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -30287,12 +29927,12 @@ class Counter:
                     ) + (
                         f"Original error: {error.model_dump_json()}\n"
                     ) + message if message is not None else ""
-
-                # Store both formats so users can access the error via
-                # `aborted.error` and the Protobuf version
-                # will be used to send the error over the wire.
-                self._error = error
-                self._method_protobuf_error = error
+                else:
+                    # Store both formats so users can access the error via
+                    # `aborted.error` and the Protobuf version
+                    # will be used to send the error over the wire.
+                    self._error = error
+                    self._method_protobuf_error = error
 
             IMPORT_reboot_aio_types.assert_type(self._protobuf_error, error_types)
 
@@ -30352,9 +29992,12 @@ class Counter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             if isinstance(error, IMPORT_reboot.api.Model):
-                return type(error) in IMPORT_api.Counter.methods['create'].errors
+                return type(error) in IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.Counter.methods['create']).errors
             return False
 
     class IncrementTask:
@@ -30398,7 +30041,7 @@ class Counter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Counter.IncrementResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> reboot.ping.ping_api_pb2.CounterIncrementResponse:
+            async def wait_for_task() -> Counter.IncrementResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -30486,36 +30129,36 @@ class Counter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
-        _error: Error
-
+        _error: Error | MethodProtobufError
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -30564,12 +30207,12 @@ class Counter:
                     ) + (
                         f"Original error: {error.model_dump_json()}\n"
                     ) + message if message is not None else ""
-
-                # Store both formats so users can access the error via
-                # `aborted.error` and the Protobuf version
-                # will be used to send the error over the wire.
-                self._error = error
-                self._method_protobuf_error = error
+                else:
+                    # Store both formats so users can access the error via
+                    # `aborted.error` and the Protobuf version
+                    # will be used to send the error over the wire.
+                    self._error = error
+                    self._method_protobuf_error = error
 
             IMPORT_reboot_aio_types.assert_type(self._protobuf_error, error_types)
 
@@ -30629,9 +30272,12 @@ class Counter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             if isinstance(error, IMPORT_reboot.api.Model):
-                return type(error) in IMPORT_api.Counter.methods['increment'].errors
+                return type(error) in IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.Counter.methods['increment']).errors
             return False
 
     class ValueTask:
@@ -30675,7 +30321,7 @@ class Counter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Counter.ValueResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> reboot.ping.ping_api_pb2.CounterValueResponse:
+            async def wait_for_task() -> Counter.ValueResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -30762,36 +30408,36 @@ class Counter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
-        _error: Error
-
+        _error: Error | MethodProtobufError
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -30840,12 +30486,12 @@ class Counter:
                     ) + (
                         f"Original error: {error.model_dump_json()}\n"
                     ) + message if message is not None else ""
-
-                # Store both formats so users can access the error via
-                # `aborted.error` and the Protobuf version
-                # will be used to send the error over the wire.
-                self._error = error
-                self._method_protobuf_error = error
+                else:
+                    # Store both formats so users can access the error via
+                    # `aborted.error` and the Protobuf version
+                    # will be used to send the error over the wire.
+                    self._error = error
+                    self._method_protobuf_error = error
 
             IMPORT_reboot_aio_types.assert_type(self._protobuf_error, error_types)
 
@@ -30905,9 +30551,12 @@ class Counter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             if isinstance(error, IMPORT_reboot.api.Model):
-                return type(error) in IMPORT_api.Counter.methods['value'].errors
+                return type(error) in IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.Counter.methods['value']).errors
             return False
 
     class DescriptionTask:
@@ -30951,7 +30600,7 @@ class Counter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Counter.DescriptionResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> reboot.ping.ping_api_pb2.CounterDescriptionResponse:
+            async def wait_for_task() -> Counter.DescriptionResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -31038,36 +30687,36 @@ class Counter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
-        _error: Error
-
+        _error: Error | MethodProtobufError
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -31116,12 +30765,12 @@ class Counter:
                     ) + (
                         f"Original error: {error.model_dump_json()}\n"
                     ) + message if message is not None else ""
-
-                # Store both formats so users can access the error via
-                # `aborted.error` and the Protobuf version
-                # will be used to send the error over the wire.
-                self._error = error
-                self._method_protobuf_error = error
+                else:
+                    # Store both formats so users can access the error via
+                    # `aborted.error` and the Protobuf version
+                    # will be used to send the error over the wire.
+                    self._error = error
+                    self._method_protobuf_error = error
 
             IMPORT_reboot_aio_types.assert_type(self._protobuf_error, error_types)
 
@@ -31181,9 +30830,12 @@ class Counter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             if isinstance(error, IMPORT_reboot.api.Model):
-                return type(error) in IMPORT_api.Counter.methods['description'].errors
+                return type(error) in IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.Counter.methods['description']).errors
             return False
 
 
@@ -31215,7 +30867,7 @@ class Counter:
         def state_id(self) -> IMPORT_reboot_aio_types.StateId:
             return self._state_ref.id
 
-        def _reader(
+        def _get_reader_stub(
             self,
             context: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
         ) -> CounterReaderStub:
@@ -31238,7 +30890,7 @@ class Counter:
                 )
             return self._reader_stub
 
-        def _writer(
+        def _get_writer_stub(
             self,
             context: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
         ) -> CounterWriterStub:
@@ -31261,7 +30913,7 @@ class Counter:
                 )
             return self._writer_stub
 
-        def _workflow(
+        def _get_workflow_stub(
             self,
             context: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
         ) -> CounterWorkflowStub:
@@ -31321,7 +30973,7 @@ class Counter:
                 self._bearer_token = bearer_token
 
 
-            async def Value( # type: ignore[misc]
+            async def Value(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -31478,7 +31130,7 @@ class Counter:
             # the new code.
             value = Value
 
-            async def Description( # type: ignore[misc]
+            async def Description(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -31728,7 +31380,7 @@ class Counter:
                 )
 
 
-            async def Increment( # type: ignore[misc]
+            async def Increment(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -31754,7 +31406,7 @@ class Counter:
             # the new code.
             increment = Increment
 
-            async def Value( # type: ignore[misc]
+            async def Value(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -31780,7 +31432,7 @@ class Counter:
             # the new code.
             value = Value
 
-            async def Description( # type: ignore[misc]
+            async def Description(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -31940,7 +31592,7 @@ class Counter:
                 )
 
 
-            def Value( # type: ignore[misc]
+            def Value(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -31979,7 +31631,7 @@ class Counter:
             # the new code.
             value = Value
 
-            def Description( # type: ignore[misc]
+            def Description(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -32048,7 +31700,7 @@ class Counter:
 
             # Counter callable tasks:
 
-            async def Increment( # type: ignore[misc]
+            async def Increment(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -32099,7 +31751,7 @@ class Counter:
             # the new code.
             increment = Increment
 
-            async def Value( # type: ignore[misc]
+            async def Value(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -32150,7 +31802,7 @@ class Counter:
             # the new code.
             value = Value
 
-            async def Description( # type: ignore[misc]
+            async def Description(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -32224,7 +31876,7 @@ class Counter:
 
             # Counter callable tasks:
 
-            async def Increment( # type: ignore[misc]
+            async def Increment(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -32282,7 +31934,7 @@ class Counter:
             # the new code.
             increment = Increment
 
-            async def Value( # type: ignore[misc]
+            async def Value(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -32340,7 +31992,7 @@ class Counter:
             # the new code.
             value = Value
 
-            async def Description( # type: ignore[misc]
+            async def Description(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -32438,7 +32090,7 @@ class Counter:
 
             # Counter callable tasks:
 
-            async def Increment( # type: ignore[misc]
+            async def Increment(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -32491,7 +32143,7 @@ class Counter:
             # the new code.
             increment = Increment
 
-            async def Value( # type: ignore[misc]
+            async def Value(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -32544,7 +32196,7 @@ class Counter:
             # the new code.
             value = Value
 
-            async def Description( # type: ignore[misc]
+            async def Description(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -32637,7 +32289,7 @@ class Counter:
 
         # Counter specific methods:
 
-        async def Increment( # type: ignore[misc]
+        async def Increment(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -32675,7 +32327,7 @@ class Counter:
                     __bearer_token__ = __options__.bearer_token
 
             return CounterIncrementResponseFromProto(
-                await __this__._writer(__context__).Increment(
+                await __this__._get_writer_stub(__context__).Increment(
                     idempotency=__idempotency__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
@@ -32687,7 +32339,7 @@ class Counter:
         # the new code.
         increment = Increment
 
-        async def Value( # type: ignore[misc]
+        async def Value(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -32730,7 +32382,7 @@ class Counter:
                 if __options__.bearer_token is not None:
                     __bearer_token__ = __options__.bearer_token
             return CounterValueResponseFromProto(
-                await __this__._reader(__context__).Value(
+                await __this__._get_reader_stub(__context__).Value(
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                     idempotency=__idempotency__,
@@ -32741,7 +32393,7 @@ class Counter:
         # the new code.
         value = Value
 
-        async def Description( # type: ignore[misc]
+        async def Description(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -32784,7 +32436,7 @@ class Counter:
                 if __options__.bearer_token is not None:
                     __bearer_token__ = __options__.bearer_token
             return CounterDescriptionResponseFromProto(
-                await __this__._reader(__context__).Description(
+                await __this__._get_reader_stub(__context__).Description(
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                     idempotency=__idempotency__,
@@ -32836,7 +32488,7 @@ class Counter:
             self._ids = ids
 
 
-        async def Increment( # type: ignore[misc]
+        async def Increment(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -32865,7 +32517,7 @@ class Counter:
         # the new code.
         increment = Increment
 
-        async def Value( # type: ignore[misc]
+        async def Value(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -32894,7 +32546,7 @@ class Counter:
         # the new code.
         value = Value
 
-        async def Description( # type: ignore[misc]
+        async def Description(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -33007,7 +32659,7 @@ class Counter:
         ...
 
     @classmethod
-    async def Create( # type: ignore[misc]
+    async def Create(
         __cls__,
         __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
         __state_id_or_request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.StateId | Counter.CreateRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -33123,7 +32775,7 @@ class Counter:
         __reference__ = Counter.ref(
             __state_id__, bearer_token=__bearer_token__
         )
-        __stub__ = __reference__._writer(__context__)
+        __stub__ = __reference__._get_writer_stub(__context__)
         return (
             __reference__,
             CounterCreateResponseFromProto(
@@ -33217,7 +32869,7 @@ class Counter:
         ) -> tuple[Counter.WeakReference, None]:
             ...
 
-        async def Create( # type: ignore[misc]
+        async def Create(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __state_id_or_request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.StateId | Counter.CreateRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -33305,7 +32957,7 @@ class Counter:
 
 class PingWeakReferenceNodeAdaptor(Ping.WeakReference):
 
-    async def _call(  # type: ignore[override]
+    async def _call(
         self,
         *,
         callable: IMPORT_typing.Callable[[IMPORT_google_protobuf_message.Message], IMPORT_typing.Awaitable],
@@ -33352,7 +33004,7 @@ class PingWeakReferenceNodeAdaptor(Ping.WeakReference):
                 }
             )
 
-    async def _schedule(  # type: ignore[override]
+    async def _schedule(
         self,
         *,
         method: str,
@@ -33400,7 +33052,7 @@ class PingWeakReferenceNodeAdaptor(Ping.WeakReference):
             }
         )
 
-    async def _reader(  # type: ignore[override]
+    async def _reader(
         self,
         method: str,
         context: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
@@ -33426,7 +33078,7 @@ class PingWeakReferenceNodeAdaptor(Ping.WeakReference):
             )
 
         method_handle = IMPORT_functools.partial(
-            getattr(super()._reader(context), method),
+            getattr(super()._get_reader_stub(context), method),
             bearer_token=options.get("bearerToken"),
             idempotency=idempotency,
         )
@@ -33439,7 +33091,7 @@ class PingWeakReferenceNodeAdaptor(Ping.WeakReference):
             json_request=json_request,
         )
 
-    async def _writer(  # type: ignore[override]
+    async def _writer(
         self,
         method: str,
         context: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
@@ -33477,7 +33129,7 @@ class PingWeakReferenceNodeAdaptor(Ping.WeakReference):
             )
 
         method_handle = IMPORT_functools.partial(
-            getattr(super()._writer(context), method),
+            getattr(super()._get_writer_stub(context), method),
             idempotency=idempotency,
             bearer_token=options.get("bearerToken"),
         )
@@ -33490,7 +33142,7 @@ class PingWeakReferenceNodeAdaptor(Ping.WeakReference):
             json_request=json_request,
         )
 
-    async def _transaction(  # type: ignore[override]
+    async def _transaction(
         self,
         method: str,
         context: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
@@ -33528,7 +33180,7 @@ class PingWeakReferenceNodeAdaptor(Ping.WeakReference):
             )
 
         method_handle = IMPORT_functools.partial(
-            getattr(super()._workflow(context), method),
+            getattr(super()._get_workflow_stub(context), method),
             idempotency=idempotency,
             bearer_token=options.get("bearerToken"),
         )
@@ -33541,7 +33193,7 @@ class PingWeakReferenceNodeAdaptor(Ping.WeakReference):
             json_request=json_request,
         )
 
-    async def _workflow(  # type: ignore[override]
+    async def _workflow(
         self,
         method: str,
         context: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
@@ -33582,7 +33234,7 @@ class PingWeakReferenceNodeAdaptor(Ping.WeakReference):
 
 class PongWeakReferenceNodeAdaptor(Pong.WeakReference):
 
-    async def _call(  # type: ignore[override]
+    async def _call(
         self,
         *,
         callable: IMPORT_typing.Callable[[IMPORT_google_protobuf_message.Message], IMPORT_typing.Awaitable],
@@ -33629,7 +33281,7 @@ class PongWeakReferenceNodeAdaptor(Pong.WeakReference):
                 }
             )
 
-    async def _schedule(  # type: ignore[override]
+    async def _schedule(
         self,
         *,
         method: str,
@@ -33677,7 +33329,7 @@ class PongWeakReferenceNodeAdaptor(Pong.WeakReference):
             }
         )
 
-    async def _reader(  # type: ignore[override]
+    async def _reader(
         self,
         method: str,
         context: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
@@ -33703,7 +33355,7 @@ class PongWeakReferenceNodeAdaptor(Pong.WeakReference):
             )
 
         method_handle = IMPORT_functools.partial(
-            getattr(super()._reader(context), method),
+            getattr(super()._get_reader_stub(context), method),
             bearer_token=options.get("bearerToken"),
             idempotency=idempotency,
         )
@@ -33716,7 +33368,7 @@ class PongWeakReferenceNodeAdaptor(Pong.WeakReference):
             json_request=json_request,
         )
 
-    async def _writer(  # type: ignore[override]
+    async def _writer(
         self,
         method: str,
         context: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
@@ -33754,7 +33406,7 @@ class PongWeakReferenceNodeAdaptor(Pong.WeakReference):
             )
 
         method_handle = IMPORT_functools.partial(
-            getattr(super()._writer(context), method),
+            getattr(super()._get_writer_stub(context), method),
             idempotency=idempotency,
             bearer_token=options.get("bearerToken"),
         )
@@ -33767,7 +33419,7 @@ class PongWeakReferenceNodeAdaptor(Pong.WeakReference):
             json_request=json_request,
         )
 
-    async def _transaction(  # type: ignore[override]
+    async def _transaction(
         self,
         method: str,
         context: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
@@ -33805,7 +33457,7 @@ class PongWeakReferenceNodeAdaptor(Pong.WeakReference):
             )
 
         method_handle = IMPORT_functools.partial(
-            getattr(super()._workflow(context), method),
+            getattr(super()._get_workflow_stub(context), method),
             idempotency=idempotency,
             bearer_token=options.get("bearerToken"),
         )
@@ -33818,7 +33470,7 @@ class PongWeakReferenceNodeAdaptor(Pong.WeakReference):
             json_request=json_request,
         )
 
-    async def _workflow(  # type: ignore[override]
+    async def _workflow(
         self,
         method: str,
         context: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
@@ -33859,7 +33511,7 @@ class PongWeakReferenceNodeAdaptor(Pong.WeakReference):
 
 class UserWeakReferenceNodeAdaptor(User.WeakReference):
 
-    async def _call(  # type: ignore[override]
+    async def _call(
         self,
         *,
         callable: IMPORT_typing.Callable[[IMPORT_google_protobuf_message.Message], IMPORT_typing.Awaitable],
@@ -33906,7 +33558,7 @@ class UserWeakReferenceNodeAdaptor(User.WeakReference):
                 }
             )
 
-    async def _schedule(  # type: ignore[override]
+    async def _schedule(
         self,
         *,
         method: str,
@@ -33954,7 +33606,7 @@ class UserWeakReferenceNodeAdaptor(User.WeakReference):
             }
         )
 
-    async def _reader(  # type: ignore[override]
+    async def _reader(
         self,
         method: str,
         context: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
@@ -33980,7 +33632,7 @@ class UserWeakReferenceNodeAdaptor(User.WeakReference):
             )
 
         method_handle = IMPORT_functools.partial(
-            getattr(super()._reader(context), method),
+            getattr(super()._get_reader_stub(context), method),
             bearer_token=options.get("bearerToken"),
             idempotency=idempotency,
         )
@@ -33993,7 +33645,7 @@ class UserWeakReferenceNodeAdaptor(User.WeakReference):
             json_request=json_request,
         )
 
-    async def _writer(  # type: ignore[override]
+    async def _writer(
         self,
         method: str,
         context: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
@@ -34031,7 +33683,7 @@ class UserWeakReferenceNodeAdaptor(User.WeakReference):
             )
 
         method_handle = IMPORT_functools.partial(
-            getattr(super()._writer(context), method),
+            getattr(super()._get_writer_stub(context), method),
             idempotency=idempotency,
             bearer_token=options.get("bearerToken"),
         )
@@ -34044,7 +33696,7 @@ class UserWeakReferenceNodeAdaptor(User.WeakReference):
             json_request=json_request,
         )
 
-    async def _transaction(  # type: ignore[override]
+    async def _transaction(
         self,
         method: str,
         context: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
@@ -34082,7 +33734,7 @@ class UserWeakReferenceNodeAdaptor(User.WeakReference):
             )
 
         method_handle = IMPORT_functools.partial(
-            getattr(super()._workflow(context), method),
+            getattr(super()._get_workflow_stub(context), method),
             idempotency=idempotency,
             bearer_token=options.get("bearerToken"),
         )
@@ -34095,7 +33747,7 @@ class UserWeakReferenceNodeAdaptor(User.WeakReference):
             json_request=json_request,
         )
 
-    async def _workflow(  # type: ignore[override]
+    async def _workflow(
         self,
         method: str,
         context: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
@@ -34136,7 +33788,7 @@ class UserWeakReferenceNodeAdaptor(User.WeakReference):
 
 class CounterWeakReferenceNodeAdaptor(Counter.WeakReference):
 
-    async def _call(  # type: ignore[override]
+    async def _call(
         self,
         *,
         callable: IMPORT_typing.Callable[[IMPORT_google_protobuf_message.Message], IMPORT_typing.Awaitable],
@@ -34183,7 +33835,7 @@ class CounterWeakReferenceNodeAdaptor(Counter.WeakReference):
                 }
             )
 
-    async def _schedule(  # type: ignore[override]
+    async def _schedule(
         self,
         *,
         method: str,
@@ -34231,7 +33883,7 @@ class CounterWeakReferenceNodeAdaptor(Counter.WeakReference):
             }
         )
 
-    async def _reader(  # type: ignore[override]
+    async def _reader(
         self,
         method: str,
         context: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
@@ -34257,7 +33909,7 @@ class CounterWeakReferenceNodeAdaptor(Counter.WeakReference):
             )
 
         method_handle = IMPORT_functools.partial(
-            getattr(super()._reader(context), method),
+            getattr(super()._get_reader_stub(context), method),
             bearer_token=options.get("bearerToken"),
             idempotency=idempotency,
         )
@@ -34270,7 +33922,7 @@ class CounterWeakReferenceNodeAdaptor(Counter.WeakReference):
             json_request=json_request,
         )
 
-    async def _writer(  # type: ignore[override]
+    async def _writer(
         self,
         method: str,
         context: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
@@ -34308,7 +33960,7 @@ class CounterWeakReferenceNodeAdaptor(Counter.WeakReference):
             )
 
         method_handle = IMPORT_functools.partial(
-            getattr(super()._writer(context), method),
+            getattr(super()._get_writer_stub(context), method),
             idempotency=idempotency,
             bearer_token=options.get("bearerToken"),
         )
@@ -34321,7 +33973,7 @@ class CounterWeakReferenceNodeAdaptor(Counter.WeakReference):
             json_request=json_request,
         )
 
-    async def _transaction(  # type: ignore[override]
+    async def _transaction(
         self,
         method: str,
         context: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
@@ -34359,7 +34011,7 @@ class CounterWeakReferenceNodeAdaptor(Counter.WeakReference):
             )
 
         method_handle = IMPORT_functools.partial(
-            getattr(super()._workflow(context), method),
+            getattr(super()._get_workflow_stub(context), method),
             idempotency=idempotency,
             bearer_token=options.get("bearerToken"),
         )
@@ -34372,7 +34024,7 @@ class CounterWeakReferenceNodeAdaptor(Counter.WeakReference):
             json_request=json_request,
         )
 
-    async def _workflow(  # type: ignore[override]
+    async def _workflow(
         self,
         method: str,
         context: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
