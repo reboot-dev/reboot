@@ -227,8 +227,7 @@ readiness, cancels/joins prior owned children and closes ingress. Earlier comple
 registrations' child failures can interrupt a later parked start. Children created
 by the currently pending start are not independently polled until it returns.
 Pre-listen lifecycle initialize/recover hooks also observe the same caller shutdown
-future in the gRPC host, with cancellation-safe RAII and initialized-prefix cleanup.
-The separate HTTP host lifecycle path is outside that cancellation guarantee. Trusted host registration/handler/router composition is not a sandbox
+future in both gRPC and HTTP hosts, with cancellation-safe RAII and initialized-prefix cleanup. Trusted host registration/handler/router composition is not a sandbox
 against a malicious application registrar. Public metadata cannot manufacture
 private task, workflow, map or supervised-root authority.
 
@@ -475,8 +474,8 @@ No uncertain mutation was retried. The reconnect failure's exact transport cause
 is not established; first-attempt reconnect robustness remains an unresolved
 fixture observation, not transparent reconnect or new retry authority.
 
-**Scope/remaining:** the independent HTTP host startup/cleanup implementation is
-not repaired here. Cleanup hooks are not forcibly timed out; hanging hooks,
+**Scope at this gRPC checkpoint:** the independent HTTP host startup/cleanup
+implementation was not repaired here; the later HTTP checkpoint below extends it. Cleanup hooks are not forcibly timed out; hanging hooks,
 panics, externally aborting the entire host future and detached callback effects
 are not certified. Generic hooks do not infer Abort or erase sidecar uncertainty.
 No new distributed cancellation, lost-ACK recovery, per-service health, actor
@@ -487,6 +486,51 @@ Sources: [host](src/application_host.rs),
 [host integration tests](tests/application_host.rs),
 [native greeting/HTTP regression](../../tests/reboot/cli/rust_app_dx_e2e.py),
 [persisted batch regression](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
+
+### HTTP lifecycle startup cancellation and cleanup (2026-10-09)
+
+The external-only `HttpApplicationHost` now pins one caller shutdown future
+before initialize/recover and moves that same owned pinned future into Axum's
+graceful shutdown. Initial and final-hook/empty-registry boundary probes prevent
+already-observed shutdown from running hooks or reaching bind. Biased selection
+interrupts a parked hook; its owned future drops before cleanup. Only completed
+initialization joins the cleanup prefix. All initialized hooks are cleaned in
+registration order despite returned errors. Primary hook/bind/HTTP transport
+errors survive cleanup; otherwise the first cleanup error is returned. This
+repairs the former `result.or(cleanup)` false-success/error-masking behavior.
+
+Six original-source HTTP regressions failed against `eb08bc98` (process
+`proc_18f533ee9313`, exit 101): parked initialize/recover ignored shutdown,
+precompleted shutdown ran hooks, startup cleanup masked its primary error,
+bind cleanup stopped early, and normal cleanup failure returned success.
+Two boundary tests already passed. All eight HTTP lifecycle integration tests
+pass in the final revision; parked tests assert RAII drop-before-cleanup, exact
+initialized-prefix traces and absent listener. These are direct HTTP host tests,
+not new native sidecar transaction-cancellation evidence. Transport precedence
+is source-backed, not a new forced transport-error regression.
+
+**Executed final revision:** `/tmp/reboot-rust-http-lifecycle-final-gates-1791519078351082710`: eight HTTP lifecycle tests,
+**432 Rust tests passed, 129 ignored**, 24 CLI tests and strict SDK
+Clippy. Native generated public CLI greeting/HTTP/health/restart/cleanup retains
+26 exchanges and SERVING -> NOT_SERVING -> EOF. The HTTP-only listener hook trace
+is exactly initialize/recover/shutdown once per recorded normally stopped host PID,
+including the two hot-rebuild hosts; abrupt whole-future drops are not credited; it owns no app,
+map, task or sidecar recovery participants. Whole generated batch-consumer strict
+Clippy: `/tmp/reboot-rust-http-request-preflight-1791519671124187273`; native persisted **162-check** batch: `/tmp/reboot-rust-batch-ledger-acceptance-1791519744444676826`.
+Frozen manifests, database identity and recorded PID absence were audited before
+canonical fingerprint refresh.
+
+**Limits:** trusted hooks must own partial resources via cancellation-safe RAII;
+cleanup can still wait indefinitely, panics and externally aborting the whole
+serving future are not asynchronous cleanup guarantees. No routing authority,
+retry, NoAuth, durable Abort or external-exactly-once semantics are expanded.
+Overall parity remains incomplete. This extends the previous gRPC-only checkpoint;
+its historical HTTP exclusion no longer describes the current host.
+
+Sources: [HTTP host](src/http_host.rs),
+[HTTP lifecycle regressions](tests/http_application_lifecycle.rs),
+[native HTTP fixture](../../tests/reboot/cli/fixtures/rust_http_request_host.rs),
+[native lifecycle inspector](../../tests/reboot/cli/fixtures/rust_http_request_fixture.py).
 
 ## Legacy transactions and ownership
 
@@ -1822,7 +1866,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 712347a0265dfebf77b293ea0e736c5016aca2d385569bf3d57fc5a5ef46a00d -->
+<!-- parity-source-sha256: b1287fe9e9d6e986d27d2bd6f9bf9b038b4bcde664cbf4acbc17e617f80b1751 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

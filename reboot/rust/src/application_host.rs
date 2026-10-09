@@ -764,19 +764,18 @@ fn is_legacy_control_service(service_name: &str) -> bool {
 /// A host-owned lifecycle component.
 ///
 /// Components run in registration order. The host runs every `initialize`,
-/// then every `recover`, before binding the gRPC listener. If either phase
+/// then every `recover`, before binding the gRPC or HTTP listener. If either phase
 /// fails, it runs `shutdown` for the components that were initialized and does
 /// not open the listener. Once a listener has stopped, `shutdown` runs for all
 /// initialized components in registration order.
 ///
-/// The gRPC RunningApplicationHost interrupts an awaiting initialize/recover
+/// Both the gRPC RunningApplicationHost and HTTP host interrupt an awaiting initialize/recover
 /// hook on shutdown by dropping its future
 /// before cleanup. Only successfully initialized components receive shutdown;
 /// an incomplete initialize must release partial resources through RAII. Hooks
 /// must not detach work that outlives their owned resources. Cleanup runs every
 /// initialized component even if an earlier shutdown fails; a primary lifecycle
-/// hook or bind failure is retained. HTTP hosts have a separate startup/cleanup
-/// implementation and do not yet provide these guarantees. Cleanup hooks
+/// hook or bind failure is retained. Cleanup hooks
 /// themselves are not forcibly cancelled. Shutdown wins simultaneous readiness
 /// with a hook result. Interrupted recover must also tolerate future Drop.
 ///

@@ -16,7 +16,10 @@ use axum::{
 
 use crate::{
     ExternalContext,
-    application_host::{ApplicationHostError, ApplicationLifecycle, TrustedApplicationContext},
+    application_host::{
+        ApplicationHostError, ApplicationLifecycle, ApplicationLifecyclePhase,
+        TrustedApplicationContext,
+    },
 };
 
 /// Server-owned identity and untrusted external caller context for one HTTP
@@ -137,8 +140,12 @@ impl HttpApplicationHost {
         self
     }
 
-    /// Runs the host lifecycle before accepting HTTP and shuts it down after
-    /// graceful server termination.
+    /// Runs cancellable lifecycle startup before accepting HTTP, reusing one
+    /// caller shutdown future through graceful server termination. An interrupted
+    /// hook is dropped before cleanup; only completed initialization is cleaned.
+    /// Hooks must be cancellation-safe and own partial initialization via RAII.
+    /// Cleanup visits every initialized component despite returned errors, but
+    /// uncooperative cleanup and external abort of this future are not bounded.
     pub async fn serve_with_shutdown<F>(
         self,
         address: SocketAddr,
@@ -147,7 +154,11 @@ impl HttpApplicationHost {
     where
         F: Future<Output = ()> + Send + 'static,
     {
-        start_lifecycle(&self.lifecycle).await?;
+        // Own one pinned caller shutdown future from the first hook through serving.
+        let mut shutdown = Box::pin(shutdown);
+        if !start_lifecycle(&self.lifecycle, &mut shutdown.as_mut()).await? {
+            return Ok(());
+        }
         let result = async move {
             let listener = tokio::net::TcpListener::bind(address)
                 .await
@@ -159,36 +170,79 @@ impl HttpApplicationHost {
         }
         .await;
         let cleanup = shutdown_lifecycle(&self.lifecycle).await;
-        result.or(cleanup)
+        result.and(cleanup)
     }
 }
 
-async fn start_lifecycle(
+// Returns false after an observed shutdown. Each select owns its hook future:
+// interruption drops its RAII resources before any cleanup await begins.
+async fn start_lifecycle<F>(
     lifecycle: &[Arc<dyn ApplicationLifecycle>],
-) -> Result<(), ApplicationHostError> {
+    shutdown: &mut std::pin::Pin<&mut F>,
+) -> Result<bool, ApplicationHostError>
+where
+    F: Future<Output = ()> + Send,
+{
+    // Also honor an already-ready shutdown when there are no lifecycle hooks.
+    let stopped = tokio::select! {
+        biased;
+        _ = shutdown.as_mut() => true,
+        _ = std::future::ready(()) => false,
+    };
+    if stopped {
+        return Ok(false);
+    }
     let mut initialized = 0;
-    for (component, entry) in lifecycle.iter().enumerate() {
-        if let Err(source) = entry.initialize().await {
-            shutdown_initialized(lifecycle, initialized).await?;
-            return Err(ApplicationHostError::Lifecycle {
-                phase: crate::application_host::ApplicationLifecyclePhase::Initialize,
-                component,
-                source,
-            });
+    for phase in [
+        ApplicationLifecyclePhase::Initialize,
+        ApplicationLifecyclePhase::Recover,
+    ] {
+        for (component, component_lifecycle) in lifecycle.iter().enumerate() {
+            let result = tokio::select! {
+                biased;
+                _ = shutdown.as_mut() => None,
+                result = async {
+                    match phase {
+                        ApplicationLifecyclePhase::Initialize => component_lifecycle.initialize().await,
+                        ApplicationLifecyclePhase::Recover => component_lifecycle.recover().await,
+                        ApplicationLifecyclePhase::Shutdown => unreachable!(),
+                    }
+                } => Some(result),
+            };
+            match result {
+                None => {
+                    shutdown_initialized(lifecycle, initialized).await?;
+                    return Ok(false);
+                }
+                Some(Err(source)) => {
+                    // Drain every initialized component, retaining the primary error.
+                    let _ = shutdown_initialized(lifecycle, initialized).await;
+                    return Err(ApplicationHostError::Lifecycle {
+                        phase,
+                        component,
+                        source,
+                    });
+                }
+                Some(Ok(())) => {
+                    if phase == ApplicationLifecyclePhase::Initialize {
+                        initialized += 1;
+                    }
+                }
+            }
         }
-        initialized += 1;
     }
-    for (component, entry) in lifecycle.iter().enumerate() {
-        if let Err(source) = entry.recover().await {
-            shutdown_initialized(lifecycle, initialized).await?;
-            return Err(ApplicationHostError::Lifecycle {
-                phase: crate::application_host::ApplicationLifecyclePhase::Recover,
-                component,
-                source,
-            });
-        }
+    // A final hook can make shutdown ready while itself completing. Recheck
+    // before binding, including the empty-registration boundary.
+    let stopped = tokio::select! {
+        biased;
+        _ = shutdown.as_mut() => true,
+        _ = std::future::ready(()) => false,
+    };
+    if stopped {
+        shutdown_initialized(lifecycle, initialized).await?;
+        return Ok(false);
     }
-    Ok(())
+    Ok(true)
 }
 
 async fn shutdown_lifecycle(
@@ -201,17 +255,20 @@ async fn shutdown_initialized(
     lifecycle: &[Arc<dyn ApplicationLifecycle>],
     initialized: usize,
 ) -> Result<(), ApplicationHostError> {
-    for (component, entry) in lifecycle.iter().take(initialized).enumerate() {
-        entry
-            .shutdown()
-            .await
-            .map_err(|source| ApplicationHostError::Lifecycle {
-                phase: crate::application_host::ApplicationLifecyclePhase::Shutdown,
+    let mut first_error = None;
+    for (component, component_lifecycle) in lifecycle.iter().take(initialized).enumerate() {
+        if let Err(source) = component_lifecycle.shutdown().await {
+            first_error.get_or_insert(ApplicationHostError::Lifecycle {
+                phase: ApplicationLifecyclePhase::Shutdown,
                 component,
                 source,
-            })?;
+            });
+        }
     }
-    Ok(())
+    match first_error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
 }
 
 fn wrap_handler<F, Fut>(

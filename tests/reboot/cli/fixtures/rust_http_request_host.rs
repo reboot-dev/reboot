@@ -7,6 +7,24 @@ use axum::{
 use reboot::{ExternalContext, http_host::HttpRequestContext};
 use std::{net::SocketAddr, time::Duration};
 
+// HTTP-only listener resources; not a second owner of application participants.
+struct HttpFixtureLifecycle;
+impl HttpFixtureLifecycle {
+    fn record(phase: &str) -> std::io::Result<()> {
+        use std::io::Write;
+        let path = std::env::var("RUST_DX_HTTP_LIFECYCLE_TRACE_FILE")
+            .map_err(std::io::Error::other)?;
+        std::fs::OpenOptions::new().create(true).append(true).open(path)
+            .and_then(|mut file| writeln!(file, "{}:{phase}", std::process::id()))
+    }
+}
+#[tonic::async_trait]
+impl reboot::application_host::ApplicationLifecycle for HttpFixtureLifecycle {
+    async fn initialize(&self) -> Result<(), tonic::Status> { Self::record("initialize").map_err(|error| tonic::Status::internal(error.to_string())) }
+    async fn recover(&self) -> Result<(), tonic::Status> { Self::record("recover").map_err(|error| tonic::Status::internal(error.to_string())) }
+    async fn shutdown(&self) -> Result<(), tonic::Status> { Self::record("shutdown").map_err(|error| tonic::Status::internal(error.to_string())) }
+}
+
 struct FixtureVerifier;
 impl reboot::auth::TokenVerifier for FixtureVerifier {
     fn verify<'a>(
@@ -237,7 +255,7 @@ async fn http_service(
     let address: SocketAddr = std::env::var("RUST_DX_HTTP_ADDR")?.parse()?;
     let get_endpoint = endpoint.clone();
     let post_endpoint = endpoint;
-    ApplicationHost::new(application).http()
+    ApplicationHost::new(application).with_lifecycle(HttpFixtureLifecycle).http()
         .get_with_request("/actors/:actor", move |context, request| http_request(context, request, get_endpoint.clone()))
         .post_with_request("/actors/:actor/:operation", move |context, request| http_request(context, request, post_endpoint.clone()))
         .options_with_request("/actors/:actor", |context, request| async move {

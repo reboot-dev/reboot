@@ -19,6 +19,8 @@ class HttpRequestFixture:
         environment['RUST_DX_HTTP_ADDR'] = f'127.0.0.1:{self.port}'
         self.role = app.parent / 'http-role-grant'
         self.role.write_text('allow')
+        self.lifecycle_trace = app.parent / 'http-lifecycle-trace.txt'
+        environment['RUST_DX_HTTP_LIFECYCLE_TRACE_FILE'] = str(self.lifecycle_trace)
         self.trace = app.parent / 'http-auth-trace.jsonl'
         environment['RUST_DX_HTTP_AUTH_TRACE_FILE'] = str(self.trace)
         self.slow_socket = None
@@ -56,6 +58,24 @@ class HttpRequestFixture:
         text = manifest.read_text()
         assert '[build-dependencies]' in text
         manifest.write_text(text.replace('[build-dependencies]', 'axum = "0.7"\nserde_json = "1"\n\n[build-dependencies]', 1))
+
+    def audit_lifecycle(self, session):
+        by_pid = {}
+        if self.lifecycle_trace.exists():
+            for line in self.lifecycle_trace.read_text().splitlines():
+                pid, phase = line.split(':', 1)
+                by_pid.setdefault(int(pid), []).append(phase)
+        # Watch rebuilds produce multiple real hosts inside one CLI session.
+        # Abrupt try_join failure can drop the HTTP future, so only normal
+        # cooperative sessions receive complete cleanup credit.
+        normal = session.data['name'] in {'first', 'restart'}
+        hosts = session.children[1:]
+        observations = {str(pid): by_pid.get(pid, []) for pid in hosts}
+        if normal:
+            assert all(by_pid.get(pid) == ['initialize', 'recover', 'shutdown'] for pid in hosts), observations
+            self.record('PASS native HTTP normal/rebuilt hosts initialize, recover and clean once per recorded PID')
+        self.evidence.setdefault('http_lifecycle_audits', []).append({
+            'session': session.data['name'], 'normal_cleanup_required': normal, 'hosts': observations})
 
     def request(self, method, path, body=None, headers=None) -> tuple[int, Any]:
         data = json.dumps(body).encode() if isinstance(body, dict) else body

@@ -121,6 +121,7 @@ class Session:
         assert self.data['children_absent'], self.data
         if http_fixture:
             http_fixture.closed()
+            http_fixture.audit_lifecycle(self)
         return status
 
 
