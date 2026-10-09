@@ -20,5 +20,6 @@
     "venv.ts",
     "version.ts",
     "workspaces.ts"
-  ]
+  ],
+  "exclude": []
 }
