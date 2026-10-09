@@ -93,5 +93,6 @@ class NestedDiscriminatedUnionTestServicer(
         context: ReaderContext,
     ) -> NestedTestResponse:
         assert isinstance(self.state, NestedState)
+        assert self.state.current_variant is not None
 
         return NestedTestResponse(result=self.state.current_variant)

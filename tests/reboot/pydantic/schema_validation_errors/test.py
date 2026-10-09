@@ -303,7 +303,7 @@ class TypeValidationErrorsTest(unittest.TestCase):
         """State must be a subclass of Model."""
         with self.assertRaises(UserPydanticError) as error:
             Type(
-                state=PlainPydanticModel,
+                state=PlainPydanticModel,  # type: ignore[arg-type]
                 methods=Methods(),
             )
 
