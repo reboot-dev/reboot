@@ -67,6 +67,22 @@ async def main():
     ).run()
 ```
 
+Without an argument every method of the three allows every caller.
+To gate them, pass `authorizer=`: a rule applied to every method of
+all three, or a per-method `Authorizer`. An application whose users
+sign in, and whose own code (its `initialize`, its workflows) also
+calls them, says so with the framework's predicates:
+
+```python
+from reboot.aio.auth.authorizers import (
+    allow_if, has_verified_token, is_app_internal,
+)
+
+servicers=[MyServicer] + presence.servicers(
+    authorizer=allow_if(any=[is_app_internal, has_verified_token]),
+),
+```
+
 ### Connection Lifecycle
 
 The intended dance, per the type's docs:

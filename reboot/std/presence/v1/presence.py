@@ -30,9 +30,10 @@ from rbt.std.presence.v1.presence_rbt import (
     WatchResponse,
 )
 from rbt.v1alpha1.errors_pb2 import AlreadyExists, FailedPrecondition, NotFound
-from reboot.aio.auth.authorizers import allow
+from reboot.aio.auth.authorizers import Authorizer, AuthorizerRule, allow
 from reboot.aio.contexts import ReaderContext, WorkflowContext, WriterContext
 from reboot.aio.workflows import until
+from typing import Optional
 
 
 class Event:
@@ -65,7 +66,12 @@ class Event:
 
 class PresenceServicer(Presence.singleton.Servicer):
 
+    # The authorizer `servicers()` was given; see there.
+    _authorizer: Optional[Authorizer | AuthorizerRule] = None
+
     def authorizer(self):
+        if self._authorizer is not None:
+            return self._authorizer
         return allow()
 
     async def Create(
@@ -140,7 +146,12 @@ class SubscriberServicer(Subscriber.singleton.Servicer):
 
     _disconnect_events: dict[str, Event] = {}
 
+    # The authorizer `servicers()` was given; see there.
+    _authorizer: Optional[Authorizer | AuthorizerRule] = None
+
     def authorizer(self):
+        if self._authorizer is not None:
+            return self._authorizer
         return allow()
 
     async def Create(
@@ -240,7 +251,12 @@ class SubscriberServicer(Subscriber.singleton.Servicer):
 
 class MousePositionServicer(MousePosition.singleton.Servicer):
 
+    # The authorizer `servicers()` was given; see there.
+    _authorizer: Optional[Authorizer | AuthorizerRule] = None
+
     def authorizer(self):
+        if self._authorizer is not None:
+            return self._authorizer
         return allow()
 
     async def Update(
@@ -267,7 +283,23 @@ class MousePositionServicer(MousePosition.singleton.Servicer):
         return PositionResponse(left=state.left, top=state.top)
 
 
-def servicers():
+def servicers(
+    authorizer: Optional[Authorizer | AuthorizerRule] = None,
+) -> list[type]:
+    """The three servicers, each answering to `authorizer` when one is
+    given: a rule such as `allow_if(any=[is_app_internal,
+    has_verified_token])` applied to every method of all three, or a
+    per-method `Authorizer`. Without one, every method allows every
+    caller, which suits an application that is open to its callers or
+    gates them elsewhere.
+
+    Set on the servicer classes rather than by subclassing them, the
+    way `ordered_map_library` does; see the discussion at
+    https://github.com/reboot-dev/mono/pull/5140#issuecomment-3667592432.
+    """
+    PresenceServicer._authorizer = authorizer
+    SubscriberServicer._authorizer = authorizer
+    MousePositionServicer._authorizer = authorizer
     return [
         PresenceServicer,
         SubscriberServicer,
