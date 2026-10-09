@@ -73,8 +73,10 @@ pub trait TokenVerifier: Send + Sync {
 
 /// Authorizes immutable protobuf snapshots. `state` is absent only when the
 /// adapter has no loaded state to expose; generated reader/writer adapters pass
-/// the loaded state (default state when absent durably), exactly as their
-/// handler will observe it.
+/// immutable persisted protobuf bytes (encoded default state when absent).
+/// Authorization precedes state admission/decoding, so rejected callers cannot
+/// distinguish absence or a schema diagnostic. Constructor snapshots stay absent
+/// when no state exists. Transaction/streaming adapters have separate contracts.
 pub trait Authorizer: Send + Sync {
     fn authorize<'a>(
         &'a self,

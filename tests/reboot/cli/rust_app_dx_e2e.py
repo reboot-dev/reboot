@@ -119,6 +119,8 @@ class Session:
         self.data['children_absent'] = all(not Path(f'/proc/{pid}').exists() for pid in self.children)
         record(f'SESSION {self.data["name"]}: CLI exit={status}, children absent={self.data["children_absent"]}')
         assert self.data['children_absent'], self.data
+        if http_fixture:
+            http_fixture.closed()
         return status
 
 
@@ -159,6 +161,26 @@ def durable_count(session):
     return state.number_of_greetings
 
 
+http_fixture = None
+if os.environ.get('RUST_DX_HTTP_REQUEST_ONLY'):
+    fixture_path = REPOSITORY / 'tests/reboot/cli/fixtures/rust_http_request_fixture.py'
+    spec = importlib.util.spec_from_file_location('http_request_fixture', fixture_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    def http_native_state(session):
+        with grpc.insecure_channel(f'127.0.0.1:{session.data["database_port"]}') as channel:
+            response = database_pb2_grpc.DatabaseStub(channel).Load(database_pb2.LoadRequest(
+                actors=[database_pb2.Actor(state_type='rust_greetings.v1.HelloWorld', state_ref='http-item')]), timeout=3)
+        assert len(response.actors) == 1 and response.actors[0].HasField('state'), response
+        state = response.actors[0].state
+        evidence.setdefault('http_native_reads', []).append({'session': session.data['name'], 'state': state.hex()})
+        return state
+    for fixture in [fixture_path, fixture_path.with_name('rust_http_request_host.rs'), Path(__file__)]:
+        evidence['source_hashes'][str(fixture)] = hashlib.sha256(fixture.read_bytes()).hexdigest()
+    http_fixture = module.HttpRequestFixture(APP, ENV, PORT, REPOSITORY, evidence, record, http_native_state)
+    evidence['http_address'] = ENV['RUST_DX_HTTP_ADDR']
+    command(['cargo', 'fmt', '--manifest-path', APP / 'backend/Cargo.toml'], timeout=30)
+
 current = None
 try:
     # Release-quality checks exercise the consumer's own annotated emission.
@@ -167,6 +189,8 @@ try:
     command(['cargo', 'fmt', '--manifest-path', manifest, '--', '--check'], timeout=30)
     command(['cargo', 'test', '--manifest-path', manifest, '--all-targets'], timeout=240)
     current = Session('first')
+    if http_fixture:
+        http_fixture.first(current)
     assert command([TARGET / 'debug/client', 'create']) == '0'
     assert command([TARGET / 'debug/client', 'greet', 'hello', '11111111-1111-4111-8111-111111111111']) == '1'
     assert command([TARGET / 'debug/client', 'greet', 'hello', '11111111-1111-4111-8111-111111111111']) == '1'
@@ -202,13 +226,19 @@ try:
         record(f'WATCH {phase}: new actual generated host PID={hosts[-1]}, Database PID unchanged={current.children[0]}, emitted probe={phase == "added"}')
         assert command([TARGET / 'debug/client', 'read']) == '1'
         assert durable_count(current) == 1
+        if http_fixture:
+            http_fixture.restored(current)
         old_host = hosts[-1]
         if phase == 'added':
             prior_ready = current.path.read_text().count('SERVING (canonical gRPC health check)')
             proto_path.write_text(original)
+    if http_fixture:
+        http_fixture.begin_slow_body()
     assert current.close(signal.SIGTERM) == 143
     current = None
     current = Session('restart')
+    if http_fixture:
+        http_fixture.restored(current)
     assert command([TARGET / 'debug/client', 'read']) == '1'
     assert durable_count(current) == 1
     assert command([TARGET / 'debug/client', 'greet', 'hello', '11111111-1111-4111-8111-111111111111']) == '1'

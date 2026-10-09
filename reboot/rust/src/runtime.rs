@@ -2775,6 +2775,19 @@ pub enum StateAdmission {
     RequireExisting,
 }
 
+fn decode_persisted_state<State: Message + Default>(
+    state: Option<Vec<u8>>,
+    state_type: &str,
+) -> Result<Option<State>, Status> {
+    state
+        .map(|bytes| {
+            State::decode(bytes.as_slice()).map_err(|error| {
+                Status::internal(format!("invalid persisted {state_type} state: {error}"))
+            })
+        })
+        .transpose()
+}
+
 fn admit_state<State: Default>(
     state: Option<State>,
     admission: StateAdmission,
@@ -3087,6 +3100,19 @@ impl DatabaseActorStore {
         state_type: &str,
         state_ref: &str,
     ) -> Result<Option<State>, Status> {
+        decode_persisted_state(
+            self.load_state_bytes(state_type, state_ref).await?,
+            state_type,
+        )
+    }
+
+    // Authorization consumes the immutable persisted wire snapshot before
+    // admission or decoding can disclose actor existence/schema diagnostics.
+    async fn load_state_bytes(
+        &self,
+        state_type: &str,
+        state_ref: &str,
+    ) -> Result<Option<Vec<u8>>, Status> {
         let mut database = self.database.clone();
         let response = database
             .load(database::LoadRequest {
@@ -3100,15 +3126,11 @@ impl DatabaseActorStore {
             .await
             .map_err(database_status)?
             .into_inner();
-        let Some(actor) = response.actors.into_iter().next() else {
-            return Ok(None);
-        };
-        let Some(state) = actor.state else {
-            return Ok(None);
-        };
-        State::decode(state.as_slice()).map(Some).map_err(|error| {
-            Status::internal(format!("invalid persisted {state_type} state: {error}"))
-        })
+        Ok(response
+            .actors
+            .into_iter()
+            .next()
+            .and_then(|actor| actor.state))
     }
 
     /// Loads a generated state snapshot. The caller owns actor admission.
@@ -3481,8 +3503,8 @@ impl DatabaseActorStore {
     }
 
     /// Runs a generated non-constructor writer with bounded external bearer
-    /// authentication and authorization. The policy is evaluated before the
-    /// handler and persistence; replay remains ahead of state authorization.
+    /// authentication and authorization. Current state authorization precedes
+    /// receipt replay, handler execution and persistence under the same gate.
     pub async fn writer_async_for_method_with_admission_authorized<
         Declaration,
         RequestBody,
@@ -3556,24 +3578,38 @@ impl DatabaseActorStore {
         let key = idempotency_key(&request)?;
         let lock = self.lock_for_type(state_type, &state_ref);
         let _guard = lock.exclusive().await;
+        // Replayed receipts are data disclosure too. Evaluate current policy
+        // against a freshly loaded immutable state while holding the same gate.
+        // Unauthenticated compatibility calls retain their historical replay path.
+        let authorized_state =
+            if let (Some(policy), Some((context, auth))) = (authorization, verified.as_ref()) {
+                let state_bytes = self.load_state_bytes(state_type, &state_ref).await?;
+                let default_bytes = State::default().encode_to_vec();
+                policy
+                    .authorize(
+                        context,
+                        auth.as_ref(),
+                        Some(state_bytes.as_deref().unwrap_or(&default_bytes)),
+                        &request.get_ref().encode_to_vec(),
+                    )
+                    .await?;
+                Some(admit_state(
+                    decode_persisted_state::<State>(state_bytes, state_type)?,
+                    admission,
+                )?)
+            } else {
+                None
+            };
         if let Some(response) = self
             .replay_type(state_type, &state_ref, key, Some(&fingerprint))
             .await?
         {
             return Ok(Response::new(response));
         }
-        let mut state: State =
-            admit_state(self.load_type(state_type, &state_ref).await?, admission)?;
-        if let (Some(policy), Some((context, auth))) = (authorization, verified.as_ref()) {
-            policy
-                .authorize(
-                    context,
-                    auth.as_ref(),
-                    Some(&state.encode_to_vec()),
-                    &request.get_ref().encode_to_vec(),
-                )
-                .await?;
-        }
+        let mut state: State = match authorized_state {
+            Some(state) => state,
+            None => admit_state(self.load_type(state_type, &state_ref).await?, admission)?,
+        };
         let response = invoke(&mut state, request.into_inner()).await?;
         self.store_type(
             state_type,
@@ -3780,16 +3816,9 @@ impl DatabaseActorStore {
         let key = idempotency_key(&request)?;
         let lock = self.lock_for_type(Declaration::STATE_TYPE, &state_ref);
         let _guard = lock.exclusive().await;
-        if let Some(response) = self
-            .replay_type(Declaration::STATE_TYPE, &state_ref, key, Some(&fingerprint))
-            .await?
-        {
-            return Ok(Response::new(response));
-        }
-        let state = self
-            .load_type::<Declaration::State>(Declaration::STATE_TYPE, &state_ref)
+        let state_bytes = self
+            .load_state_bytes(Declaration::STATE_TYPE, &state_ref)
             .await?;
-        let state_bytes = state.as_ref().map(prost::Message::encode_to_vec);
         authorization
             .authorize(
                 &context,
@@ -3798,7 +3827,13 @@ impl DatabaseActorStore {
                 &request.get_ref().encode_to_vec(),
             )
             .await?;
-        if state.is_some() {
+        if let Some(response) = self
+            .replay_type(Declaration::STATE_TYPE, &state_ref, key, Some(&fingerprint))
+            .await?
+        {
+            return Ok(Response::new(response));
+        }
+        if state_bytes.is_some() {
             return Err(Status::failed_precondition(
                 "actor state has already been constructed",
             ));
@@ -3942,21 +3977,24 @@ impl DatabaseActorStore {
             .await?;
         crate::reactive::check_reader_scope(&request)?;
         let state_ref = required_metadata(&request, STATE_REF_HEADER)?;
-        let state = admit_state(
-            self.load_type::<Declaration::State>(Declaration::STATE_TYPE, &state_ref)
-                .await?,
-            admission,
-        )?;
+        let state_bytes = self
+            .load_state_bytes(Declaration::STATE_TYPE, &state_ref)
+            .await?;
+        let default_bytes = Declaration::State::default().encode_to_vec();
         crate::reactive::check_reader_scope(&request)?;
         authorization
             .authorize(
                 &context,
                 auth.as_ref(),
-                Some(&state.encode_to_vec()),
+                Some(state_bytes.as_deref().unwrap_or(&default_bytes)),
                 &request.get_ref().encode_to_vec(),
             )
             .await?;
         crate::reactive::check_reader_scope(&request)?;
+        let state = admit_state(
+            decode_persisted_state::<Declaration::State>(state_bytes, Declaration::STATE_TYPE)?,
+            admission,
+        )?;
         let scope = request
             .extensions()
             .get::<crate::reactive::ReaderScope>()

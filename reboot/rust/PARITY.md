@@ -203,12 +203,18 @@ Server-owned application identity is not a caller header. Generated adapters
 support scoped bearer verification/immutable-state authorization and rich
 method-declared/system error handling. Canonical Health.Check and opt-in descriptor reflection plus a bounded separate
 external HTTP route host exist. Health.Watch is unimplemented; reflection requires
-explicit descriptor sets and is not Rust derive reflection. The HTTP route context
-does not expose a general body/parameter API or gRPC multiplexing/readiness.
+explicit descriptor sets and is not Rust derive reflection. Request-aware
+GET/POST/OPTIONS handlers receive the original Axum request (URI/query, headers,
+extensions and body) alongside immutable untrusted external metadata and
+server-owned identity. Legacy context-only handlers remain compatible. This is
+not automatic HTTP protobuf dispatch, gRPC multiplexing, or an HTTP readiness API.
 
 **Authorization boundary:** default `AuthorizationPolicy` allows when no
 verifier/authorizer is configured. Configured generated database methods and
-fresh exclusive roots enforce their policies; shared/inbound/task/workflow paths
+fresh exclusive roots enforce their policies on new execution. Ordinary database
+writer/constructor receipts now require fresh authorization before replay; cached
+transaction-root replies still bypass the current authorizer and remain a known
+security prerequisite, not covered by the ordinary-receipt fix. Shared/inbound/task/workflow paths
 do not gain universal policy coverage. No built-in JWT/OIDC provider, default-deny
 policy or complete HTTP authorization/web/middleware contract is claimed.
 
@@ -225,6 +231,61 @@ private task, workflow, map or supervised-root authority.
 [generated authorization](src/codegen.rs), [placement](src/legacy_placement.rs).
 **Coverage:** host lifecycle tests in [application_host.rs](src/application_host.rs),
 [generated native fixture](tests/fixtures/generated_cxx_database_process/src/main.rs).
+
+### Request-aware HTTP and ordinary receipt authorization (2026-10-09)
+
+`get_with_request`, `post_with_request` and `options_with_request` preserve the
+request while deriving HTTP name/token metadata before handler entry. Caller
+identity stays untrusted; raw header/URI mutation cannot replace the immutable
+snapshot or select application identity. Handlers own body size/time bounds and
+JSON validation; no default authorization, CORS, multipart/WebSocket or streaming
+RPC protocol is supplied by these route builders.
+
+A real generated greeting consumer hosts a loopback HTTP-to-public-gRPC adapter,
+not a native Database proxy. Its explicit fixture verifier/authorizer rejects
+unknown/missing credentials and revoked grants before saved writer/constructor
+responses. Authorization sees the current persisted actor bytes under the same
+exclusive gate as receipt lookup. Ordinary protected readers/writers authorize
+immutable raw/default protobuf state before state admission/decoding; constructors
+preserve absent versus present-empty state and authorize before existence errors.
+Unauthenticated owner-side compatibility APIs retain their historical replay path.
+
+Native proof covers create/write/read, cached replay, header spoof isolation,
+invalid JSON/UUID/oversized bodies, missing-actor authorization before admission,
+revoked writer **and constructor** keys with observed current count 1 and exact
+unchanged actor bytes `0801`, watch regeneration, restart and cached constructor
+response 0 despite current state 1. A deliberately incomplete body receives 408
+while the generated host drains shutdown; no RPC mutation occurs, listeners and
+owned descendants close. These are ordinary local application routes, not a
+production JWT/OIDC provider, arbitrary transaction gateway, distributed authority,
+or lost-ACK/cancelled in-flight mutation proof. No default scaffold HTTP listener
+or new public CLI HTTP option is claimed.
+
+**Executed:** preflight `/tmp/reboot-rust-http-request-preflight-1791504298517132096`
+passed all four HTTP unit tests and generated batch strict Clippy. Broad
+`/tmp/reboot-rust-http-request-final-gates-1791504369366316353` passed strict SDK
+Clippy, **408 SDK tests, 128 ignored**, generated HTTP consumer strict Clippy and
+its verifier unit test, plus 26 recorded HTTP exchanges and native greeting
+restart/regeneration/supervision/cleanup. Full batch regression
+`/tmp/reboot-rust-batch-ledger-acceptance-1791504888009235674` passed **162 checks**.
+Both accepted manifests confirm sources unchanged during execution. Earlier
+unconfigured-verifier negative was an invalid test expectation; a corrected
+explicit-policy native red then reproduced receipt-before-authorizer disclosure.
+Only corrected green evidence is acceptance. Static review is not execution proof.
+
+**Sources/evidence:** [routes](src/http_host.rs), [ordinary store](src/runtime.rs),
+[policy](src/auth.rs), [native harness](../../tests/reboot/cli/rust_app_dx_e2e.py),
+[fixture adapter](../../tests/reboot/cli/fixtures/rust_http_request_host.rs),
+[HTTP checks](../../tests/reboot/cli/fixtures/rust_http_request_fixture.py).
+
+**Next security gate:** generated transaction-root immediate/pre-admission and
+post-admission cached-success paths in `src/codegen.rs` return before current
+state authorization. Require fresh gate-protected participant admission and
+current-state policy before replay disclosure, while retaining old-root ownership,
+uncertainty and factory-retry semantics. Do not substitute an ungated Load or cached
+reply/default state for canonical authorization. No native transaction-root
+revocation/recovery proof is claimed here; transaction declared replies are not
+currently stored as automatic root receipts.
 
 ## Legacy transactions and ownership
 
@@ -1560,7 +1621,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 37cce3b22b8d32ac3d75979bf713304a50ee73a8c1832e64cf5205c81bac183e -->
+<!-- parity-source-sha256: 9072dfd69ec75ab5e7810baf58ec371bef22fef41fae411d085a712f5b75556b -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

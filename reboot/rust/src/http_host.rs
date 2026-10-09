@@ -41,7 +41,8 @@ impl HttpRequestContext {
 }
 
 type BoxHandlerFuture = Pin<Box<dyn Future<Output = Response> + Send>>;
-type HttpHandler = Arc<dyn Fn(HttpRequestContext) -> BoxHandlerFuture + Send + Sync>;
+type HttpRequestHandler =
+    Arc<dyn Fn(HttpRequestContext, Request) -> BoxHandlerFuture + Send + Sync>;
 
 /// An `ApplicationHost` configured with bounded external HTTP routes.
 pub struct HttpApplicationHost {
@@ -90,6 +91,45 @@ impl HttpApplicationHost {
     {
         let application_id = self.application_id.clone();
         self.route(path, options(wrap_handler(application_id, handler)))
+    }
+
+    /// Registers an external GET route with its original request.
+    /// Headers, URI, extensions and streaming body remain untrusted. Only the
+    /// companion context carries host-selected identity; bound body consumption
+    /// explicitly (for example with `axum::body::to_bytes(body, limit)`).
+    pub fn get_with_request<F, Fut>(self, path: &str, handler: F) -> Self
+    where
+        F: Fn(HttpRequestContext, Request) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Response> + Send + 'static,
+    {
+        let application_id = self.application_id.clone();
+        self.route(path, get(wrap_request_handler(application_id, handler)))
+    }
+
+    /// Registers an external POST route with its original request.
+    /// Headers, URI, extensions and streaming body remain untrusted. Only the
+    /// companion context carries host-selected identity; bound body consumption
+    /// explicitly (for example with `axum::body::to_bytes(body, limit)`).
+    pub fn post_with_request<F, Fut>(self, path: &str, handler: F) -> Self
+    where
+        F: Fn(HttpRequestContext, Request) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Response> + Send + 'static,
+    {
+        let application_id = self.application_id.clone();
+        self.route(path, post(wrap_request_handler(application_id, handler)))
+    }
+
+    /// Registers an external OPTIONS route with its original request.
+    /// Headers, URI, extensions and streaming body remain untrusted. Only the
+    /// companion context carries host-selected identity; bound body consumption
+    /// explicitly (for example with `axum::body::to_bytes(body, limit)`).
+    pub fn options_with_request<F, Fut>(self, path: &str, handler: F) -> Self
+    where
+        F: Fn(HttpRequestContext, Request) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Response> + Send + 'static,
+    {
+        let application_id = self.application_id.clone();
+        self.route(path, options(wrap_request_handler(application_id, handler)))
     }
 
     fn route(mut self, path: &str, method_router: axum::routing::MethodRouter) -> Self {
@@ -182,7 +222,19 @@ where
     F: Fn(HttpRequestContext) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = Response> + Send + 'static,
 {
-    let handler: HttpHandler = Arc::new(move |context| Box::pin(handler(context)));
+    wrap_request_handler(application_id, move |context, _request| handler(context))
+}
+
+fn wrap_request_handler<F, Fut>(
+    application_id: String,
+    handler: F,
+) -> impl Fn(Request) -> BoxHandlerFuture + Clone
+where
+    F: Fn(HttpRequestContext, Request) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = Response> + Send + 'static,
+{
+    let handler: HttpRequestHandler =
+        Arc::new(move |context, request| Box::pin(handler(context, request)));
     move |request: Request| {
         let handler = handler.clone();
         let application = TrustedApplicationContext::for_host(application_id.clone());
@@ -194,10 +246,13 @@ where
             .and_then(|value| value.to_str().ok())
             .and_then(parse_bearer_token);
         Box::pin(async move {
-            handler(HttpRequestContext {
-                application,
-                external: ExternalContext::for_http(&method, &path, bearer_token),
-            })
+            handler(
+                HttpRequestContext {
+                    application,
+                    external: ExternalContext::for_http(&method, &path, bearer_token),
+                },
+                request,
+            )
             .await
         })
     }
@@ -320,6 +375,136 @@ mod tests {
         );
         shutdown_tx.send(()).unwrap();
         server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn request_wrapper_preserves_body_uri_extensions_and_identity_snapshot() {
+        let wrapped =
+            super::wrap_request_handler("real-app".into(), |context, mut request| async move {
+                assert_eq!(context.application().application_id(), "real-app");
+                assert_eq!(context.external().headers().caller_id, None);
+                assert_eq!(
+                    context.external().headers().bearer_token.as_deref(),
+                    Some("original")
+                );
+                assert_eq!(request.method(), "POST");
+                assert_eq!(request.uri().path(), "/records/item");
+                assert_eq!(request.uri().query(), Some("mode=exact"));
+                assert_eq!(request.extensions().get::<u32>(), Some(&42));
+                request
+                    .headers_mut()
+                    .insert("authorization", "Bearer replacement".parse().unwrap());
+                request
+                    .headers_mut()
+                    .insert("x-reboot-application-id", "spoof".parse().unwrap());
+                assert_eq!(
+                    context.external().headers().bearer_token.as_deref(),
+                    Some("original")
+                );
+                assert_eq!(context.application().application_id(), "real-app");
+                *request.method_mut() = http::Method::GET;
+                *request.uri_mut() = "/spoofed?identity=wrong".parse().unwrap();
+                assert_eq!(context.external().name(), Some("HTTP POST '/records/item'"));
+                let body = axum::body::to_bytes(request.into_body(), 1024)
+                    .await
+                    .unwrap();
+                assert_eq!(body.as_ref(), b"payload");
+                Response::new(Body::from("preserved"))
+            });
+        let mut request = Request::builder()
+            .method("POST")
+            .uri("/records/item?mode=exact")
+            .header("authorization", "bEaReR original")
+            .header("x-reboot-caller-id", "admin")
+            .body(Body::from("payload"))
+            .unwrap();
+        request.extensions_mut().insert(42_u32);
+        let response = wrapped(request).await;
+        assert_eq!(
+            response.into_body().collect().await.unwrap().to_bytes(),
+            "preserved"
+        );
+    }
+
+    #[tokio::test]
+    async fn request_aware_routes_reach_get_post_options_and_enforce_explicit_body_bound() {
+        let address = unused_local_address();
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+        let handler = |context: super::HttpRequestContext, request: axum::extract::Request| async move {
+            let method = request.method().as_str().to_owned();
+            let query = request.uri().query().unwrap_or("").to_owned();
+            match axum::body::to_bytes(request.into_body(), 4).await {
+                Ok(body) => Response::new(Body::from(format!(
+                    "{}|{}|{}|{}",
+                    context.application().application_id(),
+                    method,
+                    query,
+                    String::from_utf8_lossy(&body)
+                ))),
+                Err(_) => Response::builder().status(413).body(Body::empty()).unwrap(),
+            }
+        };
+        let host = ApplicationHost::new("owned")
+            .http()
+            .get_with_request("/records/:item", handler)
+            .post_with_request("/records/:item", handler)
+            .options_with_request("/records/:item", handler);
+        let server = tokio::spawn(async move {
+            host.serve_with_shutdown(address, async move {
+                let _ = shutdown_rx.await;
+            })
+            .await
+            .unwrap();
+        });
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while tokio::net::TcpStream::connect(address).await.is_err() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        for method in ["GET", "POST", "OPTIONS"] {
+            let (status, body) =
+                request_payload(address, method, "/records/a?view=raw", "data").await;
+            assert_eq!(status, 200);
+            assert_eq!(body, format!("owned|{method}|view=raw|data"));
+        }
+        assert_eq!(
+            request_payload(address, "POST", "/records/a", "too-large")
+                .await
+                .0,
+            413
+        );
+        assert_eq!(
+            request_payload(address, "DELETE", "/records/a", "").await.0,
+            405
+        );
+        shutdown_tx.send(()).unwrap();
+        server.await.unwrap();
+    }
+
+    async fn request_payload(
+        address: SocketAddr,
+        method: &str,
+        uri: &str,
+        body: &str,
+    ) -> (u16, String) {
+        let stream = tokio::net::TcpStream::connect(address).await.unwrap();
+        let (mut sender, connection) = http1::handshake(TokioIo::new(stream)).await.unwrap();
+        tokio::spawn(async move {
+            let _ = connection.await;
+        });
+        let request = Request::builder()
+            .method(method)
+            .uri(format!("http://{address}{uri}"))
+            .body(http_body_util::Full::new(bytes::Bytes::copy_from_slice(
+                body.as_bytes(),
+            )))
+            .unwrap();
+        let response = sender.send_request(request).await.unwrap();
+        let status = response.status().as_u16();
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        (status, String::from_utf8(bytes.to_vec()).unwrap())
     }
 
     fn context_response(context: super::HttpRequestContext) -> Response {
