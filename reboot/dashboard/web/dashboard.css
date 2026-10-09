@@ -47,6 +47,12 @@ html.mcp-host body {
   min-height: 800px;
 }
 
+/* In fullscreen or picture-in-picture the host gives the frame its
+   height, which the page fills, however short the host's window is. */
+html.mcp-host.mcp-host-sized body {
+  min-height: 0;
+}
+
 body {
   font-family: ui-sans-serif, system-ui, sans-serif;
   background: hsl(var(--background));
@@ -239,6 +245,58 @@ nav {
   display: flex;
   flex-direction: column;
   gap: 3px;
+}
+
+/* The control that chooses how an MCP host shows the page, above the
+   checks. */
+.display-mode {
+  background: hsl(var(--sidebar));
+  border-right: 1px solid hsl(var(--border));
+  padding: 8px 18px;
+}
+
+.display-mode-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.display-mode-button {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 4px 8px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+  background: none;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+}
+
+.display-mode-button:hover:not(:disabled) {
+  color: hsl(var(--foreground));
+  border-color: hsl(var(--border-strong));
+}
+
+/* The mode the host is showing the page in. */
+.display-mode-button[aria-pressed="true"] {
+  color: hsl(var(--foreground));
+  border-color: hsl(var(--foreground));
+}
+
+/* A mode the host says it does not offer. */
+.display-mode-button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* What the host did with a request it did not grant. */
+.display-mode-notice {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 9.5px;
+  color: hsl(var(--muted-foreground));
+  margin-top: 6px;
+  overflow-wrap: anywhere;
 }
 
 .check {
