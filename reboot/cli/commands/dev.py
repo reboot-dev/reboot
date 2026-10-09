@@ -1,4 +1,5 @@
 import aiofiles.os
+import aiohttp
 import argparse
 import asyncio
 import functools
@@ -93,6 +94,7 @@ from reboot.settings import (
 )
 from reboot.version import REBOOT_VERSION
 from typing import Any, Awaitable, Callable, Optional, TextIO, TypeVar
+from urllib.parse import urljoin, urlparse
 
 TLS_CERTIFICATE_BEGINNING = "-----BEGIN CERTIFICATE-----"
 TLS_PRIVATE_KEY_BEGINNING = "-----BEGIN PRIVATE KEY-----"
@@ -453,13 +455,61 @@ async def _run(
     application_started_event.clear()
 
 
+async def _dashboard_context(dashboard_url: str) -> ExternalContext:
+    """An `ExternalContext` signed in to the dashboard at
+    `dashboard_url`: every RPC to the dashboard needs the access
+    token its sign-in mints, and `rbt dev run` runs on the one
+    machine the dashboard signs in from, with no questions asked (see
+    `reboot/dashboard/backend/auth.py`).
+
+    The sign-in is the browser's: a chain of redirects from
+    `/__/oauth/start` that ends with the session in cookies, which
+    `/__/oauth/whoami` then answers with the access token. Followed by
+    hand, because the cookies are marked `Secure`, which a browser
+    honours on `http://127.0.0.1` but a cookie jar here would not.
+    """
+    cookies: dict[str, str] = {}
+    async with aiohttp.ClientSession() as client:
+        url = f'{dashboard_url}/__/oauth/start?return_to=/'
+        for _ in range(8):
+            async with client.get(
+                url, cookies=cookies, allow_redirects=False
+            ) as response:
+                cookies.update(
+                    {
+                        name: morsel.value
+                        for name, morsel in response.cookies.items()
+                    }
+                )
+                if response.status != 302:
+                    raise RuntimeError(
+                        f'Dashboard sign-in failed ({response.status}) at {url}'
+                    )
+                url = urljoin(url, response.headers['Location'])
+            if urlparse(url).path == '/':
+                break
+        else:
+            raise RuntimeError('Dashboard sign-in did not finish')
+        async with client.get(
+            f'{dashboard_url}/__/oauth/whoami', cookies=cookies
+        ) as response:
+            session = await response.json()
+    if not session.get('authenticated'):
+        raise RuntimeError('Dashboard sign-in left nobody signed in')
+    return ExternalContext(
+        name="dev-run-open-dashboard",
+        url=dashboard_url,
+        bearer_token=session['access_token'],
+    )
+
+
 async def _viewers(dashboard_url: str) -> list[str]:
     """The subscriber ids of everyone looking at a dashboard.
 
     The dashboard constructs the `Presence` instance, empty, when it
     initializes, so there is an answer from the moment it is up.
     """
-    context = ExternalContext(name="dev-run-open-dashboard", url=dashboard_url)
+    context = await _dashboard_context(dashboard_url)
     response = await Presence.ref(PRESENCE_ID).List(context)
     return list(response.subscriber_ids)
 
@@ -472,7 +522,7 @@ async def _open_on_restart(dashboard_url: str) -> bool:
     writes the default when it initializes, so nobody ever clicking
     means a dashboard opens.
     """
-    context = ExternalContext(name="dev-run-open-dashboard", url=dashboard_url)
+    context = await _dashboard_context(dashboard_url)
     response = await Preferences.ref(PREFERENCES_ID).Get(context)
     return not response.suppress_open_on_restart
 

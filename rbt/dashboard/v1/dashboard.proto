@@ -13,7 +13,24 @@ import "rbt/v1alpha1/bdd/feature.proto";
 
 // What the dashboard has read from the developer's API files.
 message Dashboard {
+  // `uis` is the dashboard's page as an MCP App, which an MCP host
+  // such as Claude opens by calling the `dashboard_show` tool. Both
+  // paths are relative to this directory, which the `.rbtrc` beside
+  // this file marks as the root they resolve against, in the source
+  // tree and in the installed package alike. `artifact_path` holds
+  // the page built into one file; see `ui_dist` in `BUILD.bazel`.
   option (rbt.v1alpha1.state) = {
+    uis: [ {
+      name: "show",
+      title: "Reboot dashboard",
+      description: "Opens the Reboot developer dashboard for the application "
+                   "being developed: its state types and their methods, the "
+                   "call graph between them, its features and its changelog. "
+                   "There is one dashboard: pass 'dashboard' as dashboard_id.",
+      path: "ui",
+      // No Vite dist directory to find the built page under; it is here.
+      artifact_path: "ui",
+    } ],
   };
 
   // The API directory as the developer spelled it to `rbt dashboard`,

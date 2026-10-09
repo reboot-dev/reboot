@@ -3,3 +3,5 @@ filegroup(
     srcs = ["install.sh"],
     visibility = ["//visibility:public"],
 )
+
+exports_files(["lib/install_cloudflared.sh"], visibility = ["//visibility:public"])

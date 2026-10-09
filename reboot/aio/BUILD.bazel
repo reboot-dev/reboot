@@ -203,6 +203,7 @@ py_library(
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
+        "//reboot/routing:cors_settings_py",
         requirement("fastapi"),
         requirement("uvicorn"),
         ":caller_id_py",

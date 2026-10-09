@@ -79,3 +79,37 @@ py_test(
         "//reboot/ping:ping_py",
     ],
 )
+
+py_test(
+    name = "require_oauth_token_test_py",
+    size = "small",
+    timeout = "short",
+    srcs = ["require_oauth_token_test.py"],
+    main = "require_oauth_token_test.py",
+    deps = [
+        "//reboot/aio:applications_py",
+        "//reboot/aio:exceptions_py",
+        "//reboot/aio:tests_py",
+        "//reboot/aio/auth:oauth_providers_py",
+        "//reboot/aio/auth:oauth_py",
+        "//reboot/ping:ping_py",
+        requirement("httpx"),
+        requirement("starlette"),
+    ],
+)
+
+py_test(
+    name = "oauth_hosts_test_py",
+    size = "small",
+    timeout = "short",
+    srcs = ["oauth_hosts_test.py"],
+    main = "oauth_hosts_test.py",
+    deps = [
+        "//reboot/aio:applications_py",
+        "//reboot/aio:tests_py",
+        "//reboot/aio/auth:oauth_providers_py",
+        "//reboot/aio/auth:oauth_py",
+        "//reboot/ping:ping_py",
+        requirement("httpx"),
+    ],
+)

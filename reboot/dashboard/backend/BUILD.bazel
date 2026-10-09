@@ -208,13 +208,16 @@ py_library(
     srcs = ["main.py"],
     data = [
         ":dashboard_dist",
+        "//rbt/dashboard/v1:ui",
     ],
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
         ":api_watcher_py",
+        ":auth_py",
         ":constants_py",
         ":servicers_py",
+        "//reboot/aio/auth:oauth_py",
         "//rbt/dashboard/v1:dashboard_py_reboot",
         "//rbt/std/collections/ordered_map/v1:ordered_map_py_reboot",
         "//reboot/aio:applications_py",
@@ -231,12 +234,15 @@ py_binary(
     srcs = ["main.py"],
     data = [
         ":dashboard_dist",
+        "//rbt/dashboard/v1:ui",
     ],
     main = "main.py",
     visibility = ["//visibility:public"],
     deps = [
+        ":auth_py",
         ":constants_py",
         ":servicers_py",
+        "//reboot/aio/auth:oauth_py",
         "//rbt/dashboard/v1:dashboard_py_reboot",
         "//rbt/std/collections/ordered_map/v1:ordered_map_py_reboot",
         "//reboot/aio:applications_py",
@@ -245,5 +251,18 @@ py_binary(
         "//reboot/aio/backoff:python",
         "//reboot/bdd:recordings_py",
         requirement("starlette"),
+    ],
+)
+
+py_library(
+    name = "auth_py",
+    srcs = ["auth.py"],
+    visibility = ["//tests/reboot/dashboard:__pkg__"],
+    deps = [
+        "//reboot/aio:contexts_py",
+        "//reboot/aio/auth:__init___py",
+        "//reboot/aio/auth:oauth_providers_py",
+        "//reboot/aio/auth:token_verifiers_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:errors_py_proto",
     ],
 )

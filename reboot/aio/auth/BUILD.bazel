@@ -109,6 +109,7 @@ py_library(
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
+        "//reboot/routing:cors_settings_py",
         ":__init___py",
         ":allowed_origins_py",
         ":oauth_providers_py",

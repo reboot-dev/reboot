@@ -4,3 +4,9 @@ export const PRESENCE_ID = "dashboard";
 export const DASHBOARD_ID = "dashboard";
 export const PREFERENCES_ID = "preferences";
 export const CHANGELOG_ID = "changelog";
+
+// Whether an MCP host shows the page, which the application says the
+// same way.
+export const IN_MCP_HOST: boolean =
+  (globalThis as { REBOOT_MCP_UI_TITLE?: string }).REBOOT_MCP_UI_TITLE !==
+  undefined;

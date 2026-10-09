@@ -8,6 +8,7 @@ that any server process can handle any request.
 from __future__ import annotations
 
 import base64
+import functools
 import hashlib
 import json
 import jwt
@@ -39,6 +40,7 @@ from reboot.aio.contexts import ReaderContext
 from reboot.aio.external import ExternalContext
 from reboot.aio.http import PythonWebFramework, external_context
 from reboot.crypto import root_keys
+from reboot.routing.cors_settings import permissive_cors_headers
 from starlette.requests import Request
 from starlette.responses import (
     HTMLResponse,
@@ -107,13 +109,13 @@ _WHOAMI_PATH = WHOAMI_PATH
 _BROWSER_CLIENT_TYPE = "browser-client"
 
 # CORS headers for browser-based MCP clients (e.g. MCPJam, MCP
-# Inspector). Allow any origin since the server is an OAuth
-# Authorization Server that public clients talk to.
-_CORS_HEADERS = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, MCP-Protocol-Version",
-}
+# Inspector). Any origin, since the server is an OAuth Authorization
+# Server that public clients talk to, and never credentialed; see
+# `permissive_cors_headers`.
+_CORS_HEADERS = permissive_cors_headers(
+    methods=("GET", "POST"),
+    headers=("content-type", "mcp-protocol-version"),
+)
 
 # HKDF `info` (domain separator) for the OAuth server's token-signing key.
 _SIGNING_INFO = b"reboot.oauth.signing"
@@ -341,6 +343,7 @@ class OAuthServer:
         claims_changed: Optional[ClaimsChanged] = None,
         allowed_origins: Optional[Sequence[str]] = None,
         skip_consent_for_redirect_uris: Optional[Sequence[str]] = None,
+        hosts: Optional[Sequence[str]] = None,
     ):
         """`authenticated`, if given, runs right after each fresh
         access token is minted for a user, receiving an app-internal
@@ -369,8 +372,13 @@ class OAuthServer:
         the redirect URIs whose clients the application already
         trusts; a client registering only such URIs skips the
         consent screen.
+
+        `hosts` is `OAuth(hosts=...)`: the hostnames this server
+        answers under, or `None` for any; see there.
         """
         self._provider = provider
+        self._hosts: Optional[frozenset[str]
+                             ] = (None if hosts is None else frozenset(hosts))
         self._protected_resources = protected_resources
         self._application_title = application_title
         self._allowed_origins: list[str] = list(allowed_origins or [])
@@ -391,6 +399,44 @@ class OAuthServer:
         # The consent page template, compiled lazily on first render so
         # only apps that actually serve an OAuth flow pay for it.
         self._consent_page_template: Optional[Template] = None
+
+    def verify_token(self, request: Request) -> Optional[UserId]:
+        """The user `request` is signed in as, by the access JWT in
+        its `Authorization: Bearer` header or, failing that, by the
+        one in its session cookie, which a browser sends on a
+        same-origin navigation; `None` when neither is present and
+        valid. What a `require_oauth_token=True` HTTP route asks."""
+        token = _bearer_token(request)
+        if token is not None:
+            decoded = self._verify_jwt(token, "access")
+            if decoded is None or not decoded.get("sub"):
+                return None
+            return UserId(decoded["sub"])
+        return self._verify_session_cookie(request)
+
+    def _served(self, handler: Callable[[Request], Awaitable[Response]]):
+        """`handler`, refusing a request under a `Host` not in `hosts`;
+        see `OAuth.hosts`. The whole server is mounted this way, so
+        no endpoint of it, metadata included, answers under another
+        name."""
+        if self._hosts is None:
+            return handler
+        hosts = self._hosts
+
+        @functools.wraps(handler)
+        async def served(request: Request) -> Response:
+            if request.url.hostname not in hosts:
+                return _oauth_error(
+                    error="access_denied",
+                    description=(
+                        "This application signs users in only under " +
+                        ", ".join(sorted(hosts)) + "."
+                    ),
+                    status_code=403,
+                )
+            return await handler(request)
+
+        return served
 
     @property
     def token_verifier(self) -> OAuthTokenVerifier:
@@ -414,28 +460,31 @@ class OAuthServer:
         # RFC 9728: Protected Resource Metadata. MCP
         # clients discover auth servers through this.
         # Register both root-level and per-resource paths.
+        served = self._served
         http.get("/.well-known/oauth-protected-resource")(
-            self.protected_resource_metadata
+            served(self.protected_resource_metadata)
         )
         for resource in self._protected_resources:
             path = resource.strip("/")
             http.get(f"/.well-known/oauth-protected-resource/{path}")(
-                self.protected_resource_metadata
+                served(self.protected_resource_metadata)
             )
 
         # RFC 8414: Authorization Server Metadata.
-        http.get("/.well-known/oauth-authorization-server")(self.metadata)
+        http.get("/.well-known/oauth-authorization-server")(
+            served(self.metadata)
+        )
 
         # RFC 7591: Dynamic Client Registration.
-        http.post(_REGISTER_PATH)(self.register)
-        http.options(_REGISTER_PATH)(self.cors_preflight)
+        http.post(_REGISTER_PATH)(served(self.register))
+        http.options(_REGISTER_PATH)(served(self.cors_preflight))
 
         # Authorization and token endpoints.
-        http.get(_AUTHORIZE_PATH)(self.authorize)
+        http.get(_AUTHORIZE_PATH)(served(self.authorize))
         # The consent screen `/authorize` renders POSTs the user's
         # decision here (same-origin form submission, so no CORS
         # preflight is needed).
-        http.post(_CONSENT_PATH)(self.consent)
+        http.post(_CONSENT_PATH)(served(self.consent))
         # The callback persists the provider's tokens (when
         # `store_tokens=True`) via the app-internal-only `Ciphertext` /
         # `OrderedMap` servicers, so it opts in to an app-internal context
@@ -443,9 +492,9 @@ class OAuthServer:
         # runs only after the identity provider has redirected back with an
         # authorization code that we exchange and validate before doing any
         # app-internal work.
-        http.get(_CALLBACK_PATH, app_internal=True)(self.callback)
-        http.post(_TOKEN_PATH, app_internal=True)(self.token)
-        http.options(_TOKEN_PATH)(self.cors_preflight)
+        http.get(_CALLBACK_PATH, app_internal=True)(served(self.callback))
+        http.post(_TOKEN_PATH, app_internal=True)(served(self.token))
+        http.options(_TOKEN_PATH)(served(self.cors_preflight))
 
         # Browser-flow endpoints. Envoy's CORS filter (configured in
         # `reboot/routing/envoy_config.py`) echoes the request's
@@ -453,11 +502,11 @@ class OAuthServer:
         # for these paths, so a cross-origin SPA can complete the
         # `credentials: "include"` flow without per-route headers
         # here.
-        http.get(_START_PATH)(self.start)
-        http.get(_FINISH_PATH, app_internal=True)(self.finish)
-        http.post(_REFRESH_PATH, app_internal=True)(self.refresh)
-        http.post(_SIGNOUT_PATH)(self.signout)
-        http.get(_WHOAMI_PATH)(self.whoami)
+        http.get(_START_PATH)(served(self.start))
+        http.get(_FINISH_PATH, app_internal=True)(served(self.finish))
+        http.post(_REFRESH_PATH, app_internal=True)(served(self.refresh))
+        http.post(_SIGNOUT_PATH)(served(self.signout))
+        http.get(_WHOAMI_PATH)(served(self.whoami))
 
         # Let the provider register any additional routes it needs,
         # wiring in the set-claims-if-exists entrypoint first so those

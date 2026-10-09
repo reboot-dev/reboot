@@ -13,9 +13,15 @@ from rbt.dashboard.v1.dashboard_rbt import Dashboard, Preferences
 from rbt.std.collections.ordered_map.v1.ordered_map_rbt import OrderedMap
 from rbt.std.presence.v1.presence_rbt import Presence
 from reboot.aio.applications import Application
-from reboot.aio.auth.authorizers import allow, allow_if, is_app_internal
+from reboot.aio.auth.authorizers import (
+    allow_if,
+    has_verified_token,
+    is_app_internal,
+)
+from reboot.aio.auth.oauth import OAuth
 from reboot.aio.external import InitializeContext
 from reboot.bdd import recordings
+from reboot.dashboard.backend.auth import DeveloperSelector
 from reboot.dashboard.backend.constants import (
     CHANGELOG_ID,
     DASHBOARD_ID,
@@ -74,20 +80,36 @@ def _recording(directory: Path, relative: str) -> Path:
 def application() -> Application:
     """The dashboard application, with its page mounted."""
     application = Application(
+        # Whoever is at this machine is the developer, and every
+        # servicer's authorizer admits the developer and the
+        # application itself and nobody else; see `auth.py`.
+        oauth=OAuth(
+            provider=DeveloperSelector(),
+            # The page is served from this application's own origin,
+            # which is always allowed; no other origin may carry the
+            # session cookie.
+            allowed_origins=[],
+            hosts=['localhost', '127.0.0.1'],
+        ),
         servicers=[
             DashboardServicer,
             PreferencesServicer,
-        ] + presence.servicers(),
+        ] + presence.servicers(
+            authorizer=allow_if(any=[is_app_internal, has_verified_token]),
+        ),
         libraries=[
             ordered_map_library(
-                # The page reads the changelog straight from the
-                # browser; only the dashboard itself records what
-                # changed.
+                # The developer's page reads the changelog; only the
+                # dashboard itself records what changed.
                 OrderedMap.Authorizer(
-                    search=allow(),
-                    range=allow(),
-                    reverse_range=allow(),
-                    stringify=allow(),
+                    search=allow_if(any=[is_app_internal, has_verified_token]),
+                    range=allow_if(any=[is_app_internal, has_verified_token]),
+                    reverse_range=allow_if(
+                        any=[is_app_internal, has_verified_token]
+                    ),
+                    stringify=allow_if(
+                        any=[is_app_internal, has_verified_token]
+                    ),
                     create=allow_if(all=[is_app_internal]),
                     insert=allow_if(all=[is_app_internal]),
                     remove=allow_if(all=[is_app_internal]),
@@ -100,7 +122,11 @@ def application() -> Application:
         root=DASHBOARD_PATH + '/',
     )
 
-    @application.http.get(RECORDINGS_PATH + '/{relative:path}')
+    # Signed-in callers only: recordings are the developer's own
+    # screenshots and videos, and the tunnel can reach this path.
+    @application.http.get(
+        RECORDINGS_PATH + '/{relative:path}', require_oauth_token=True
+    )
     async def recording(relative: str) -> FileResponse:
         """A scenario's video or a step's screenshot, from beside the
         feature file under the working directory."""

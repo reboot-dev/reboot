@@ -618,6 +618,15 @@ the full read-path and in-`Workflow` call recipe (shared with web apps)
 is in
 [`python/references/auth-external-api-calls.md`](../python/references/auth-external-api-calls.md).
 
+**Files the UI fetches from the backend.** A plain HTTP route — an
+image or video the UI shows, a download — has no authorizer. Mark
+it `require_oauth_token=True` and it serves only a request carrying
+the bearer the tool result delivered, from any origin, which is what
+a host's sandbox needs; an `<img src>` cannot carry a bearer, so the
+UI fetches with `useRebootClient().bearerToken` and shows an object
+URL. Recipe, backend and page side, in
+[`python/references/auth-http-routes.md`](../python/references/auth-http-routes.md).
+
 ### Declarative, Not Decorator
 
 All MCP surface is defined in the API file. `main.py` is minimal. No

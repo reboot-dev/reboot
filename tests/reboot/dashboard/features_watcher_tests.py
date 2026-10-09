@@ -86,7 +86,9 @@ class FeaturesWatcherTest(unittest.IsolatedAsyncioTestCase):
     async def _wait_for_features(self, satisfied):
         """Returns the recorded features once they satisfy, reading
         again whenever they change."""
-        context = self.rbt.create_external_context(name=self.id())
+        context = self.rbt.create_external_context(
+            name=self.id(), app_internal=True
+        )
 
         async for response, aborted in Dashboard.ref(DASHBOARD_ID).reactively(
         ).Get(context):
@@ -255,12 +257,18 @@ class FeaturesWatcherTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def _fetch(self, path: str) -> Optional[bytes]:
-        """What the dashboard serves at the given path, and `None` for
-        a path it does not serve."""
+        """What the dashboard serves at the given path to the page,
+        which carries the developer's access token, and `None` for a
+        path it does not serve."""
+        token = await self.rbt.make_valid_oauth_access_token()
 
         def fetch() -> Optional[bytes]:
+            request = urllib.request.Request(
+                self.rbt.url(path),
+                headers={'Authorization': f'Bearer {token}'},
+            )
             try:
-                with urllib.request.urlopen(self.rbt.url(path)) as response:
+                with urllib.request.urlopen(request) as response:
                     return response.read()
             except urllib.error.HTTPError as error:
                 if error.code == 404:
