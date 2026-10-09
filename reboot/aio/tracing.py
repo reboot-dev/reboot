@@ -28,9 +28,9 @@ from opentelemetry.sdk.environment_variables import (
 from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from reboot.aio import signals
 from reboot.aio.headers import TRACEPARENT_HEADER, TRACESTATE_HEADER, Headers
 from reboot.aio.once import Once
-from reboot.aio.signals import initialize, install_cleanup
 from reboot.run_environments import application_name
 from reboot.settings import ENVVAR_REBOOT_NODEJS, ENVVAR_REBOOT_TRACE_LEVEL
 from typing import Any, AsyncIterator, Callable, Optional
@@ -178,7 +178,7 @@ def _start(process_name: str):
     # not every process terminates right after its cleanup handlers:
     # `rbt` first finishes what it is doing, and every span that ends
     # after a shutdown is dropped, with a warning.
-    install_cleanup([signal.SIGTERM], _force_flush_on_signal)
+    signals.install_cleanup([signal.SIGTERM], _force_flush_on_signal)
 
 
 # We're using a global here because we only want to initialize the
@@ -324,7 +324,7 @@ def main_span(name: Optional[str] = None, **span_kwargs) -> Callable:
             # We are the entry point of a process, so nothing else has
             # initialized signals yet, which starting tracing requires
             # in order to install its cleanup handler.
-            initialize()
+            signals.initialize()
             start(name)
             global _process_name
             assert _process_name is not None

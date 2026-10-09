@@ -11,10 +11,9 @@ def main():
         import asyncio
         import os
         import platform
-        import reboot.aio.signals
         import reboot.aio.tracing
         import sys
-        from reboot.aio.signals import cancel_on_signal_and_raise_system_exit
+        from reboot.aio import signals
         from reboot.cli.common.cli import cli
 
         # Every signal that would terminate us instead cancels `cli()`
@@ -24,7 +23,7 @@ def main():
         #
         # NOTE: we initialize before anything installs a cleanup
         # handler, tracing included.
-        reboot.aio.signals.initialize()
+        signals.initialize()
 
         reboot.aio.tracing.start("reboot cli")
 
@@ -59,8 +58,8 @@ def main():
         async def cancellable_cli() -> int:
             # A signal cancels `cli()`, and once it has finished, and
             # we have exited, terminates us.
-            async with cancel_on_signal_and_raise_system_exit(
-                reboot.aio.signals.TERMINATING_SIGNALS
+            async with signals.cancel_on_signal_and_raise_system_exit(
+                signals.TERMINATING_SIGNALS_FOR_CLIS
             ):
                 return await cli()
 

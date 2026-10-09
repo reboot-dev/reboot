@@ -190,12 +190,13 @@ async def cancel_on_signal_and_raise_system_exit(
             atexit.register(_raise_with_default_handler, _raised_signal)
 
 
-# The signals whose default action terminates the process: Ctrl-C
-# (SIGINT), Ctrl-\ (SIGQUIT), the parent terminal going away (SIGHUP),
-# a reader like `head` closing our output pipe early (SIGPIPE), and
-# whatever runs a process in the background (IDEs, agents, process
-# managers, Kubernetes) stopping it (SIGTERM).
-TERMINATING_SIGNALS: list[int] = [
+# The signals that a CLI like `rbt` handles: every signal whose default
+# action terminates the process, i.e., Ctrl-C (SIGINT), Ctrl-\ (SIGQUIT),
+# the parent terminal going away (SIGHUP), a reader like `head` closing
+# our output pipe early (SIGPIPE), and whatever runs a process in the
+# background (IDEs, agents, process managers, Kubernetes) stopping it
+# (SIGTERM).
+TERMINATING_SIGNALS_FOR_CLIS: list[int] = [
     signal.SIGINT,
     signal.SIGQUIT,
     signal.SIGHUP,
@@ -213,7 +214,7 @@ TERMINATING_SIGNALS: list[int] = [
 # it so that writing to a socket or pipe whose reader has gone raises
 # `BrokenPipeError`; handling it would instead terminate a server every
 # time a client disconnects in the middle of a response.
-DEFAULT_SIGNALS: list[int] = [signal.SIGTERM, signal.SIGQUIT]
+TERMINATING_SIGNALS_FOR_SERVERS: list[int] = [signal.SIGTERM, signal.SIGQUIT]
 
 
 def _custom_signal_handler_message(signum: int) -> str:
