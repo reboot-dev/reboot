@@ -1877,20 +1877,27 @@ fn emit_transaction_flow(output: &mut String, flow: TransactionFlow<'_>) {
     } else {
         format!("None::<{runtime_module}::explicit_abort::RegisteredRoot<C, R>>")
     };
-    let disarm_condition = if read_only || factory {
+    let disarm_condition = if factory {
+        "false"
+    } else if read_only {
         "!self.supervised_tree && (self.live_participant.is_none() || context.transaction_ids().len() == 1)"
     } else {
         "!self.supervised_tree && context.transaction_ids().len() != 1 && self.live_participant.is_none()"
     };
-    output.push_str(&format!("{prefix}{context}\n{prefix}{read_only_setup}\n{prefix}if self.supervised_tree {{ context.validate_tree_scope()?; }}\n{prefix}let automatic_idempotency = {automatic_idempotency} {{ Some(context.idempotency(\"{method_identity}\", request.get_ref())?) }} else {{ None }};\n{prefix}if let Some(idempotency) = &automatic_idempotency {{ let recovered = self.participant.sidecar().recover_idempotent_mutations({runtime_module}::database_proto::RecoverIdempotentMutationsRequest {{ state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone(), idempotency_key: Some(idempotency.key().as_bytes().to_vec()), workflow_id: None, workflow_iteration: None }}).await?; for recovered in recovered {{ for mutation in recovered.idempotent_mutations {{ if let Some(response) = idempotency.replay::<proto::{response}>(&mutation)? {{ return Ok(tonic::Response::new(response)); }} }} }} }}\n"));
-    output.push_str(&format!("{prefix}let participant_metadata = {participant_metadata};\n{prefix}let registered_root = {root_registration};\n{prefix}let mut local = self.participant.start_local_reusable({runtime_module}::durable_participant::ActorTransactionStart {{ transaction_ids: context.transaction_ids().to_vec(), transaction_path: {transaction_path}, coordinator_state_type: context.transaction_coordinator_state_type().to_owned(), coordinator_state_ref: context.transaction_coordinator_state_ref().to_owned(), mode: {runtime_module}::runtime::TransactionMode::{mode}, read_only: {read_only}, factory: {factory}, state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone() }}, {runtime_module}::durable_participant::ParticipantStartMode::Exclusive, self.sequential_reusable).await?;\n{prefix}let loaded = local.state_bytes();\n{prefix}if {disarm_condition} {{ local.disarm_after_durable_prepare(); }}\n{prefix}let local = if let Some(registration) = registered_root {{ registration.admitted(local).await? }} else {{ {runtime_module}::explicit_abort::RootHandlerGuard::before_handler(local, context.clone(), self.coordinator.clone(), self.explicit_abort.as_ref()).await? }};\n{prefix}let local = if self.sequential_reusable {{ local.with_sequential_reusable_participants(&mut context, self.live_participant.as_ref()).await? }} else if self.sequential_root_star {{ local.with_sequential_root_star(&mut context, self.live_participant.as_ref()).await? }} else if self.supervised_tree {{ local.with_supervised_tree(&mut context, self.live_participant.as_ref()).await? }} else {{ local.with_live_inbound(&mut context, self.live_participant.as_ref()).await? }};\n{prefix}let local = local.with_builtin_map_context(&mut context)?;\n{prefix}// A duplicate may have waited for local actor admission while the original\n{prefix}// root transaction committed. Re-check durable replay before invoking the handler.\n{prefix}if let Some(idempotency) = &automatic_idempotency {{ let replay_after_admission = async {{ let recovered = self.participant.sidecar().recover_idempotent_mutations({runtime_module}::database_proto::RecoverIdempotentMutationsRequest {{ state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone(), idempotency_key: Some(idempotency.key().as_bytes().to_vec()), workflow_id: None, workflow_iteration: None }}).await?; for recovered in recovered {{ for mutation in recovered.idempotent_mutations {{ if let Some(response) = idempotency.replay::<proto::{response}>(&mutation)? {{ return Ok(Some(response)); }} }} }} Ok::<Option<proto::{response}>, tonic::Status>(None) }}.await; match replay_after_admission {{ Ok(Some(response)) => {{ local.abort_local().await?; return Ok(tonic::Response::new(response)); }}, Ok(None) => {{}}, Err(error) => {{ local.abort_local().await?; return Err(error); }} }} }}\n{prefix}let mut state = match loaded.as_ref() {{ Some(bytes) => match <proto::{state} as prost::Message>::decode(bytes.as_slice()) {{ Ok(state) => state, Err(error) => {{ local.abort_local().await?; return Err(tonic::Status::failed_precondition(format!(\"stored actor state is not a valid {state}: {{error}}\"))); }} }}, None if {factory} => proto::{state}::default(), None => {{ local.abort_local().await?; return Err(tonic::Status::failed_precondition(\"non-factory transaction requires an existing actor state\")); }} }};\n"));
+    output.push_str(&format!("{prefix}{context}\n{prefix}{read_only_setup}\n{prefix}if self.supervised_tree {{ context.validate_tree_scope()?; }}\n{prefix}let automatic_idempotency = {automatic_idempotency} {{ Some(context.idempotency(\"{method_identity}\", request.get_ref())?) }} else {{ None }};\n"));
+    output.push_str(&format!("{prefix}let participant_metadata = {participant_metadata};\n{prefix}let registered_root = {root_registration};\n{prefix}let mut local = self.participant.start_local_reusable({runtime_module}::durable_participant::ActorTransactionStart {{ transaction_ids: context.transaction_ids().to_vec(), transaction_path: {transaction_path}, coordinator_state_type: context.transaction_coordinator_state_type().to_owned(), coordinator_state_ref: context.transaction_coordinator_state_ref().to_owned(), mode: {runtime_module}::runtime::TransactionMode::{mode}, read_only: {read_only}, factory: {factory}, state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone() }}, {runtime_module}::durable_participant::ParticipantStartMode::Exclusive, self.sequential_reusable).await?;\n{prefix}let loaded = local.state_bytes();\n{prefix}if {disarm_condition} {{ local.disarm_after_durable_prepare(); }}\n{prefix}let local = if let Some(registration) = registered_root {{ registration.admitted(local).await? }} else {{ {runtime_module}::explicit_abort::RootHandlerGuard::before_handler(local, context.clone(), self.coordinator.clone(), self.explicit_abort.as_ref()).await? }};\n{prefix}let local = if self.sequential_reusable {{ local.with_sequential_reusable_participants(&mut context, self.live_participant.as_ref()).await? }} else if self.sequential_root_star {{ local.with_sequential_root_star(&mut context, self.live_participant.as_ref()).await? }} else if self.supervised_tree {{ local.with_supervised_tree(&mut context, self.live_participant.as_ref()).await? }} else {{ local.with_live_inbound(&mut context, self.live_participant.as_ref()).await? }};\n{prefix}let local = local.with_builtin_map_context(&mut context)?;\n"));
+    if authorize_after_load {
+        output.push_str(&format!("{prefix}// Authorize the fresh participant-owned wire snapshot before receipt or state disclosure.\n{prefix}if let Err(error) = self.authorization.authorize(&authorization_context, authorization_auth.as_ref(), loaded.as_deref(), &<proto::{request} as prost::Message>::encode_to_vec(request.get_ref())).await {{ local.abort_local().await?; return Err(error); }}\n"));
+    }
+    output.push_str(&format!("{prefix}// A duplicate may have waited for local actor admission while the original\n{prefix}// root transaction committed. Re-check durable replay before invoking the handler.\n{prefix}if let Some(idempotency) = &automatic_idempotency {{ let replay_after_admission = async {{ let recovered = self.participant.sidecar().recover_idempotent_mutations({runtime_module}::database_proto::RecoverIdempotentMutationsRequest {{ state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone(), idempotency_key: Some(idempotency.key().as_bytes().to_vec()), workflow_id: None, workflow_iteration: None }}).await?; for recovered in recovered {{ for mutation in recovered.idempotent_mutations {{ if let Some(response) = idempotency.replay::<proto::{response}>(&mutation)? {{ return Ok(Some(response)); }} }} }} Ok::<Option<proto::{response}>, tonic::Status>(None) }}.await; match replay_after_admission {{ Ok(Some(response)) => {{ local.abort_local().await?; return Ok(tonic::Response::new(response)); }}, Ok(None) => {{}}, Err(error) => {{ local.abort_local().await?; return Err(error); }} }} }}\n"));
+    output.push_str(&format!("{prefix}let mut state = match loaded.as_ref() {{ Some(bytes) => match <proto::{state} as prost::Message>::decode(bytes.as_slice()) {{ Ok(state) => state, Err(error) => {{ local.abort_local().await?; return Err(tonic::Status::failed_precondition(format!(\"stored actor state is not a valid {state}: {{error}}\"))); }} }}, None if {factory} => proto::{state}::default(), None => {{ local.abort_local().await?; return Err(tonic::Status::failed_precondition(\"non-factory transaction requires an existing actor state\")); }} }};\n"));
     let factory_existing_check = if factory {
         "if loaded.is_some() { local.abort_local().await?; return Err(tonic::Status::failed_precondition(\"factory transaction requires an absent actor state\")); }"
     } else {
         ""
     };
     if authorize_after_load {
-        output.push_str(&format!("{prefix}let authorization_state = match loaded.as_ref() {{ Some(bytes) => match <proto::{state} as prost::Message>::decode(bytes.as_slice()) {{ Ok(state) => Some(state), Err(error) => {{ local.abort_local().await?; return Err(tonic::Status::failed_precondition(format!(\"stored actor state is not a valid {state}: {{error}}\"))); }} }}, None => None }};\n{prefix}if let Err(error) = self.authorization.authorize(&authorization_context, authorization_auth.as_ref(), authorization_state.as_ref().map(<proto::{state} as prost::Message>::encode_to_vec).as_deref(), &<proto::{request} as prost::Message>::encode_to_vec(request.get_ref())).await {{ local.abort_local().await?; return Err(error); }}\n{prefix}{factory_existing_check}\n"));
+        output.push_str(&format!("{prefix}{factory_existing_check}\n"));
     }
     // Python transaction.state owns the mutated state for both root and inbound
     // exclusive execution. An explicit envelope override remains authoritative.
@@ -1946,6 +1953,11 @@ fn emit_transaction_flow(output: &mut String, flow: TransactionFlow<'_>) {
     } else {
         &format!("None::<{runtime_module}::one_shot_tasks::SchedulingRootHandoff>")
     };
+    if factory {
+        output.push_str(&format!(
+            "{prefix}let local = local.with_legacy_factory_handler_retention()?;\n"
+        ));
+    }
     output.push_str(&format!("{prefix}let execution = match self.handler.{handler_method}(&context, &mut state, request.into_inner()).await{handler_error_map} {{ Ok(execution) => execution, Err(error) => {{ {rollback_error} if {abort_condition} {{ local.abort_explicit().await?; }} else {{ local.abort_local().await?; }} return Err(error); }} }};\n{prefix}if let Some(status) = context.doomed_status() {{ if {abort_condition} {{ local.abort_explicit().await?; }} else {{ local.abort_local().await?; }} return Err(status); }}\n{prefix}if automatic_idempotency.is_some() && !execution.idempotent_mutations.is_empty() {{ if {abort_condition} {{ local.abort_explicit().await?; }} else {{ local.abort_local().await?; }} return Err(tonic::Status::failed_precondition(\"root-local idempotency stages exactly one automatic mutation\")); }}\n{prefix}let returned_participants = {returned_participants};\n{prefix}if !execution.task_upserts.is_empty() {{ let validation = if {task_rejection} {{ Err(tonic::Status::failed_precondition(\"tasks require a fresh same-actor exclusive non-factory root with cancellation ownership for remote participants\")) }} else {{ let validation = self.tasks.as_ref().ok_or_else(|| tonic::Status::failed_precondition(\"no host-owned task dispatcher registered\")); match validation {{ Ok(tasks) => {{ if self.supervised_tree {{ match local.validate_tree_tasks(tasks).await {{ Ok(()) => local.validate_staged_tasks(tasks, &execution.task_upserts).await, Err(error) => Err(error) }} }} else if {writer_task_rejection} {{ Err(tonic::Status::failed_precondition(\"writer tasks require root-local execution\")) }} else {{ tasks.validate_staged(&execution.task_upserts).await }} }}, Err(error) => Err(error) }} }}; if let Err(error) = validation {{ if {abort_condition} {{ local.abort_explicit().await?; }} else {{ local.abort_local().await?; }} return Err(error); }} }}\n{prefix}let automatic_mutations = automatic_idempotency.as_ref().map(|idempotency| idempotency.mutation(<{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, context.headers().state_ref.clone(), &execution.response)).into_iter().collect::<Vec<_>>();\n{prefix}if let Err(error) = local.stage_effects({runtime_module}::durable_participant::PendingActorEffects {{ state: {final_state}, task_upserts: execution.task_upserts.clone(), idempotent_mutations: if automatic_idempotency.is_some() {{ automatic_mutations }} else {{ execution.idempotent_mutations.clone() }} }}).await {{ if {abort_condition} {{ local.abort_explicit().await?; }} else {{ local.abort_local().await?; }} return Err(error); }}\n"));
     if shared_root_ownership_seam {
         output.push_str(&format!("{prefix}// Local-only shared-root ownership is intentionally not activated: the\n{prefix}// current coordinator accepts only the read-only shared classification.\n"));
@@ -4877,32 +4889,37 @@ mod tests {
         assert!(content.contains("factory transactions must be exclusive root transactions"));
         assert!(content.contains("factory transaction requires an absent actor state"));
         assert!(content.contains("self.authorization.verify(headers.clone()"));
-        assert!(content.contains("authorization_state = match loaded.as_ref()"));
+        assert!(content.contains("authorization_auth.as_ref(), loaded.as_deref()"));
         assert!(content.contains("if loaded.is_some()"));
         assert!(content.contains(
             "let automatic_idempotency = if !inbound && context.headers().idempotency_key.is_some()"
         ));
-        assert_eq!(content.matches("recover_idempotent_mutations(").count(), 2);
-        assert!(content.contains("idempotency.replay::<proto::CounterValue>"));
-        let first_recovery = content.find("recover_idempotent_mutations(").unwrap();
+        assert_eq!(content.matches("recover_idempotent_mutations(").count(), 1);
         let admission = content
             .find("let mut local = self.participant.start_local_reusable(")
             .unwrap();
-        let second_recovery = content.rfind("recover_idempotent_mutations(").unwrap();
-        let handler = content[second_recovery..]
-            .find("self.handler.increment(")
-            .map(|offset| second_recovery + offset)
+        let authorization = content
+            .find("self.authorization.authorize(&authorization_context")
             .unwrap();
-        assert!(first_recovery < admission);
-        assert!(admission < second_recovery);
-        assert!(second_recovery < handler);
-        assert!(content[admission..handler].contains("let replay_after_admission = async"));
+        let recovery = content.find("recover_idempotent_mutations(").unwrap();
+        let decoding = content
+            .find("let mut state = match loaded.as_ref()")
+            .unwrap();
+        let existence = content.find("if loaded.is_some()").unwrap();
+        let handler = content[existence..]
+            .find("self.handler.increment(")
+            .map(|offset| existence + offset)
+            .unwrap();
+        assert!(admission < authorization && authorization < recovery);
+        assert!(recovery < decoding && decoding < existence && existence < handler);
+        let retention = content
+            .find("let local = local.with_legacy_factory_handler_retention()?")
+            .unwrap();
+        assert!(existence < retention && retention < handler);
+        assert!(content.contains("if false { local.disarm_after_durable_prepare(); }"));
+        assert!(content[authorization..recovery].contains("loaded.as_deref()"));
         assert!(
-            content[second_recovery..handler]
-                .contains("Err(error) => { local.abort_local().await?; return Err(error); }")
-        );
-        assert!(
-            content[second_recovery..handler]
+            content[recovery..handler]
                 .contains("local.abort_local().await?; return Ok(tonic::Response::new(response))")
         );
         assert!(content.contains("root-local idempotency stages exactly one automatic mutation"));

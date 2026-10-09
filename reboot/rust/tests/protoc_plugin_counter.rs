@@ -551,6 +551,7 @@ impl transaction_generated::TransactionCounterWritesMethodsTransactionHandler fo
         request: proto::TransactionIncrementRequest,
     ) -> Result<reboot::runtime::TransactionExecution<proto::TransactionCounterValue>, transaction_generated::TransactionCounterWritesMethodsFactoryIncrementError> {
         self.trace.lock().unwrap().push("factory handler");
+        if request.amount == -808 { std::future::pending::<()>().await; }
         if request.amount == 13 {
             return Err(transaction_generated::TransactionCounterWritesMethodsFactoryIncrementError::TransactionLimitExceeded(proto::TransactionLimitExceeded { limit: request.amount }));
         }
@@ -646,7 +647,12 @@ impl reboot::durable_participant::ParticipantSidecar for TransactionParticipantS
     }
     fn recover_idempotent_mutations(&self, _: reboot::database_proto::RecoverIdempotentMutationsRequest) -> Pin<Box<dyn Future<Output = Result<Vec<reboot::database_proto::RecoverIdempotentMutationsResponse>, tonic::Status>> + Send + '_>> {
         let response = self.idempotent_recovery.lock().unwrap().pop_front().unwrap_or(Ok(Vec::new()));
-        Box::pin(async move { response })
+        let park = response.as_ref().is_err_and(|error| error.code() == tonic::Code::Cancelled && error.message() == "fixture park receipt lookup");
+        let trace = Arc::clone(&self.trace);
+        Box::pin(async move {
+            if park { trace.lock().unwrap().push("participant recovery parked"); std::future::pending::<()>().await; }
+            response
+        })
     }
 }
 
@@ -1145,8 +1151,86 @@ async fn generated_fresh_exclusive_factory_transaction_authorization_uses_absent
     server.abort();
 }
 
+
 #[tokio::test]
-async fn generated_fresh_non_factory_exclusive_transaction_replays_durably_after_verification_before_authorization_or_admission() {
+async fn generated_factory_authorization_cancellation_releases_pre_handler_incarnation() {
+    use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
+    struct ParkFirst(AtomicUsize);
+    impl reboot::auth::Authorizer for ParkFirst {
+        fn authorize<'a>(&'a self, _: &'a reboot::auth::AuthorizationContext, _: Option<&'a reboot::auth::Auth>, _: Option<&'a [u8]>, _: &'a [u8]) -> reboot::auth::AuthorizeFuture<'a> {
+            Box::pin(async move {
+                if self.0.fetch_add(1, Ordering::SeqCst) == 0 { std::future::pending::<()>().await; }
+                AuthorizationDecision::Allow
+            })
+        }
+    }
+    fn request() -> tonic::Request<proto::TransactionIncrementRequest> {
+        let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 3 });
+        let mut headers = reboot::RebootHeaders::new("transaction-counter");
+        headers.idempotency_key = Some(Uuid::from_u128(407));
+        *request.metadata_mut() = headers.to_metadata().unwrap();
+        request
+    }
+    let policy = Arc::new(ParkFirst(AtomicUsize::new(0)));
+    let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let adapter = factory_transaction_adapter(Arc::clone(&trace), None, Arc::new(std::sync::Mutex::new(Vec::new())), false, None)
+        .with_authorization(AuthorizationPolicy::new(None, Some(policy.clone())));
+    assert!(tokio::time::timeout(std::time::Duration::from_millis(50), TransactionCounterWritesMethods::factory_increment(&adapter, request())).await.is_err());
+    assert_eq!(policy.0.load(Ordering::SeqCst), 1, "actual policy await must have been polled");
+    assert_eq!(*trace.lock().unwrap(), ["participant load"], "no handler or durable RPC before cancellation");
+    let reply = tokio::time::timeout(std::time::Duration::from_secs(2), TransactionCounterWritesMethods::factory_increment(&adapter, request())).await.expect("cancelled pre-handler factory must release actor admission").unwrap();
+    assert_eq!(reply.into_inner().value, 3);
+    assert_eq!(policy.0.load(Ordering::SeqCst), 2);
+    assert_eq!(trace.lock().unwrap().iter().filter(|event| **event == "factory handler").count(), 1);
+}
+
+#[tokio::test]
+async fn generated_cached_factory_recovery_cancellation_releases_pre_handler_incarnation() {
+    use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
+    let key = Uuid::from_u128(408);
+    let recovery = reboot::database_proto::RecoverIdempotentMutationsResponse {
+        idempotent_mutations: vec![reboot::database_proto::IdempotentMutation {
+            state_type: "tests.reboot.protoc.TransactionCounter".into(), state_ref: "transaction-counter".into(),
+            key: key.as_bytes().to_vec(), response: proto::TransactionCounterValue { value: 99 }.encode_to_vec(),
+            request_fingerprint: Some(reboot::runtime::request_fingerprint("tests.reboot.protoc.TransactionCounterWritesMethods.FactoryIncrement", &proto::TransactionIncrementRequest { amount: 3 })),
+            ..Default::default()
+        }], ..Default::default()
+    };
+    let recoveries = Arc::new(std::sync::Mutex::new(VecDeque::from([
+        Err(tonic::Status::cancelled("fixture park receipt lookup")), Ok(vec![recovery]),
+    ])));
+    let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let adapter = transaction_adapter_with_idempotent_recovery(Arc::clone(&trace), false, Arc::clone(&recoveries));
+    let request = || {
+        let mut headers = reboot::RebootHeaders::new("transaction-counter"); headers.idempotency_key = Some(key);
+        let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 3 });
+        *request.metadata_mut() = headers.to_metadata().unwrap(); request
+    };
+    assert!(tokio::time::timeout(std::time::Duration::from_millis(50), TransactionCounterWritesMethods::factory_increment(&adapter, request())).await.is_err());
+    assert_eq!(*trace.lock().unwrap(), ["participant load", "participant recovery parked"]);
+    assert_eq!(recoveries.lock().unwrap().len(), 1);
+    let reply = tokio::time::timeout(std::time::Duration::from_secs(2), TransactionCounterWritesMethods::factory_increment(&adapter, request())).await.expect("cancelled cached-factory admission must release").unwrap();
+    assert_eq!(reply.into_inner().value, 99);
+    assert_eq!(*trace.lock().unwrap(), ["participant load", "participant recovery parked", "participant load", "participant abort"]);
+}
+
+#[tokio::test]
+async fn generated_factory_handler_cancellation_retains_legacy_ownership() {
+    use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
+    let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let adapter = factory_transaction_adapter(Arc::clone(&trace), None, Arc::new(std::sync::Mutex::new(Vec::new())), false, None);
+    let request = |amount| {
+        let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount });
+        *request.metadata_mut() = reboot::RebootHeaders::new("transaction-counter").to_metadata().unwrap(); request
+    };
+    assert!(tokio::time::timeout(std::time::Duration::from_millis(50), TransactionCounterWritesMethods::factory_increment(&adapter, request(-808))).await.is_err());
+    assert_eq!(*trace.lock().unwrap(), ["participant load", "factory handler"]);
+    assert!(tokio::time::timeout(std::time::Duration::from_millis(100), TransactionCounterWritesMethods::factory_increment(&adapter, request(3))).await.is_err(), "handler cancellation must not reopen unresolved legacy effects");
+    assert_eq!(*trace.lock().unwrap(), ["participant load", "factory handler"]);
+}
+
+#[tokio::test]
+async fn generated_fresh_non_factory_exclusive_transaction_replay_requires_current_authorization_and_admission() {
     use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
 
     fn probe() -> Arc<AuthProbe> {
@@ -1223,11 +1307,24 @@ async fn generated_fresh_non_factory_exclusive_transaction_replays_durably_after
             .value,
         99
     );
+    let denied_recovery = Arc::new(std::sync::Mutex::new(VecDeque::from([Ok(vec![recovery(key)])])));
+    let denied_trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let mut denied_probe = Arc::try_unwrap(probe()).ok().unwrap();
+    denied_probe.decision = AuthorizationDecision::PermissionDenied { message: "revoked".into() };
+    let denied = Arc::new(denied_probe);
+    let denied_adapter = transaction_adapter_with_idempotent_recovery(Arc::clone(&denied_trace), false, Arc::clone(&denied_recovery))
+        .with_authorization(AuthorizationPolicy::new(Some(denied.clone()), Some(denied.clone())));
+    assert_eq!(TransactionCounterWritesMethods::increment(&denied_adapter, request("allow", key)).await.unwrap_err().code(), tonic::Code::PermissionDenied);
+    assert_eq!(denied.authorizer_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(denied_recovery.lock().unwrap().len(), 1, "denial must precede receipt lookup");
+    assert_eq!(*denied_trace.lock().unwrap(), ["participant load", "participant abort"]);
+    // The allowed retry below must inspect loaded state, never cached response bytes.
     assert_eq!(replay.verifier_calls.load(Ordering::SeqCst), 1);
-    assert_eq!(replay.authorizer_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(replay.authorizer_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(replay.snapshots.lock().unwrap()[0].0, Some(proto::TransactionCounter { value: 4 }.encode_to_vec()));
     assert_eq!(replay.handler_calls.load(Ordering::SeqCst), 0);
     assert!(replay_recovery.lock().unwrap().is_empty(), "matching durable replay must be consumed");
-    assert!(replay_trace.lock().unwrap().is_empty(), "replay must bypass participant admission and handler execution");
+    assert_eq!(*replay_trace.lock().unwrap(), ["participant load", "participant abort"], "replay must release only the newly admitted local participant");
 }
 
 struct AdmissionMustNotResolve;
@@ -1351,7 +1448,6 @@ async fn generated_transaction_adapter_aborts_and_releases_lease_when_post_admis
 
     let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
     let idempotent_recovery = Arc::new(std::sync::Mutex::new(VecDeque::from([
-        Ok(Vec::new()),
         Err(tonic::Status::unavailable("post-admission idempotency recovery failed")),
     ])));
     let adapter = transaction_adapter_with_idempotent_recovery(

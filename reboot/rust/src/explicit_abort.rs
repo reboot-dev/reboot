@@ -323,6 +323,19 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
             builtin_map_active: None,
         })
     }
+    /// Generated legacy factories retain ownership once handler effects may begin.
+    /// This is the historical handler-lifetime boundary, not an acknowledged Prepare.
+    /// Keep pre-handler policy/receipt admission Drop armed until this synchronous call.
+    #[doc(hidden)]
+    pub fn with_legacy_factory_handler_retention(mut self) -> Result<Self, Status> {
+        if self.reservation.is_some() || self.registration.is_some() || self.inbound.is_some() {
+            return Err(Status::failed_precondition(
+                "legacy factory retention cannot replace owned cancellation or inbound authority",
+            ));
+        }
+        self.local.as_mut().unwrap().disarm_after_durable_prepare();
+        Ok(self)
+    }
     /// Installs host-only builtin authority after real root/cancellation admission.
     /// No inbound or public metadata can enable this capability.
     #[doc(hidden)]

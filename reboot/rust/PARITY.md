@@ -212,9 +212,10 @@ not automatic HTTP protobuf dispatch, gRPC multiplexing, or an HTTP readiness AP
 **Authorization boundary:** default `AuthorizationPolicy` allows when no
 verifier/authorizer is configured. Configured generated database methods and
 fresh exclusive roots enforce their policies on new execution. Ordinary database
-writer/constructor receipts now require fresh authorization before replay; cached
-transaction-root replies still bypass the current authorizer and remain a known
-security prerequisite, not covered by the ordinary-receipt fix. Shared/inbound/task/workflow paths
+writer/constructor and generated external exclusive-root/factory receipts require
+fresh current-state authorization before replay disclosure. Transaction roots use
+fresh gate-protected participant snapshots rather than an ungated receipt fast
+path. Shared/inbound/task/workflow paths
 do not gain universal policy coverage. No built-in JWT/OIDC provider, default-deny
 policy or complete HTTP authorization/web/middleware contract is claimed.
 
@@ -278,14 +279,86 @@ Only corrected green evidence is acceptance. Static review is not execution proo
 [fixture adapter](../../tests/reboot/cli/fixtures/rust_http_request_host.rs),
 [HTTP checks](../../tests/reboot/cli/fixtures/rust_http_request_fixture.py).
 
-**Next security gate:** generated transaction-root immediate/pre-admission and
-post-admission cached-success paths in `src/codegen.rs` return before current
-state authorization. Require fresh gate-protected participant admission and
-current-state policy before replay disclosure, while retaining old-root ownership,
-uncertainty and factory-retry semantics. Do not substitute an ungated Load or cached
-reply/default state for canonical authorization. No native transaction-root
-revocation/recovery proof is claimed here; transaction declared replies are not
-currently stored as automatic root receipts.
+### Transaction-root receipt authorization (2026-10-09)
+
+Generated external exclusive roots, including factories, verify credentials and
+obtain fresh participant admission before authorizing immutable raw optional
+state. Only then may the one gate-protected receipt lookup validate a fingerprint
+or return a cached success. There is no pre-admission receipt fast path. Execution
+state decoding, missing-state diagnostics and factory-existing rejection follow
+policy and replay, so a permitted factory retry can return its original response
+against a newer existing state without invoking the factory again. Inbound/shared
+branches do not acquire universal policy coverage from this change.
+
+Replay now depends on current admission/Load and acknowledged cleanup, rather
+than receipt availability alone. It waits behind retained/restored ownership;
+restoration must settle before fresh admission. An absent snapshot is preserved
+as None, not replaced with a cached response or fabricated state. Cleanup remains bound to
+the newly admitted root/local-owner incarnation. Failed or cancelled terminal
+ACKs retain uncertainty; they do not manufacture a successful denial/replay or
+permission to reopen the original transaction. Receipt decoding occurs after
+policy; current state is not decoded by generated execution on a successful
+replay. Authorizers must handle raw bytes safely themselves.
+
+Factory pre-handler policy and receipt awaits keep undurable Drop armed. A
+synchronous generated guard transition immediately before handler invocation
+restores the historical retained-handler lifetime, including all disarm flags.
+It refuses owned cancellation/registration/inbound composition. This is not an
+acknowledged Prepare and does not grant factory explicit-Abort authority. Handler
+cancellation retains the existing uncertainty behavior; it is not newly supported
+factory cancellation.
+
+The real C++/RocksDB public generated-service test creates an absent actor with
+factory response **7**, advances it through an exclusive writer to **12**, then
+retries both original keys. A current-state ceiling of 10 denies both with
+PermissionDenied; an allowing policy returns the original factory **7** and
+writer **12** while the actor remains **080c**. Each invocation must freshly trace
+current state 12. Exact original receipts and state survive denial, permitted
+replay and restart of the same RocksDB directory. No direct storage seeding is
+used by this new acceptance. This fixture uses an explicit state-sensitive app
+policy, not a production identity provider or distinct-principal proof.
+
+Generated-consumer cancellation tests reproduced the pre-handler retained-lease
+bug before deferred disarm: authorization cancellation and cached-factory receipt
+cancellation both prevented bounded re-admission. The repaired tests prove actual
+parked awaits, no handler/terminal work before cancellation, subsequent admission,
+and unchanged legacy handler-cancellation retention. These use fake sidecars;
+they are not native cancellation, concurrent duplicate admission, lost-ACK,
+malformed-state/receipt, or multi-participant proof. Existing exact-incarnation
+and prepared-ownership regression gates remain required. Automatic root receipts
+still store successful protobuf replies, not declared transaction errors.
+
+**Sources/coverage:** [generator](src/codegen.rs),
+[guard ownership](src/explicit_abort.rs), [participant](src/durable_participant.rs),
+[generated consumer checks](tests/protoc_plugin_counter.rs),
+[native public-service acceptance](tests/generated_cxx_database_process.rs),
+[native fixture](tests/fixtures/generated_cxx_database_process/src/main.rs).
+
+**Executed acceptance:** immutable final native root
+`/tmp/reboot-rust-transaction-replay-final-native-1791510718240817276` ran three
+nonzero ignored native tests: current-state receipt authorization, factory replay
+collision, and post-decision factory recovery. SDK/all-targets and its nested
+consumer: **411 passed, 129 ignored**, including **31 generated-consumer tests**;
+strict SDK Clippy passed. The final invoker adjustment separates a bounded
+read-only readiness probe from one tested mutation/replay and clears the probe's
+authorization trace before that RPC. No status-based mutation retry is credited.
+
+SDK/generator/guard sources are identical to the full CLI/HTTP proof at
+`/tmp/reboot-rust-batch-ledger-acceptance-1791509285544767756` (**162 checks**) and
+`/tmp/reboot-rust-http-request-final-gates-1791509982153855278` (**26 HTTP exchanges**,
+ordinary replay/privacy, real restart/regeneration and partial-body shutdown),
+with whole generated batch-consumer strict Clippy at
+`/tmp/reboot-rust-http-request-preflight-1791509213659158995`.
+Only the native fixture invoker changed afterward; the final native/SDK rerun
+above freezes and verifies that adjustment. Earlier native exclusive-root
+idempotency and post-decision recovery also passed at
+`/tmp/reboot-rust-transaction-replay-regression-1791509057181156168`.
+
+**Remaining scope:** native factory cancellation, concurrent duplicate admission,
+malformed snapshots/receipts, unknown-ACK cleanup and multi-participant authorization
+remain unproved. Shared/inbound/task/workflow policy coverage and automatic durable
+transaction-declared replies remain separate contracts. This closes the bounded
+external-exclusive/factory cache-authorizer bypass, not broad authorization parity.
 
 ## Legacy transactions and ownership
 
@@ -1621,7 +1694,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 9072dfd69ec75ab5e7810baf58ec371bef22fef41fae411d085a712f5b75556b -->
+<!-- parity-source-sha256: 8362bd096c7f0294f5ce854e50422bb1c62f8daba5e27ab57bdb9e9f0e483a39 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

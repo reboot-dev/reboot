@@ -1172,6 +1172,150 @@ fn generated_root_declared_outbound_errors_commit_or_abort_durably_through_real_
 
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
+fn generated_transaction_replay_authorizes_current_native_state_before_cached_factory_and_root_reply()
+ {
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/generated_cxx_database_process");
+    assert!(
+        Command::new("cargo")
+            .args(["build", "--locked"])
+            .current_dir(&fixture)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let binary = generated_host_binary(&fixture);
+    let mut db = CxxDatabase::start(std::env::var("REBOOT_NATIVE2PC_CXX_DATABASE").unwrap());
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let state_ref = "authorized-replay";
+    let factory_key = Uuid::new_v4();
+    let writer_key = Uuid::new_v4();
+    // All changes below enter the generated public transaction service. No storage seeding.
+    let invoke = |database: &str,
+                  key: Uuid,
+                  amount: i64,
+                  factory: bool,
+                  ceiling: i64,
+                  denied: bool,
+                  expected: i64,
+                  snapshot: &str| {
+        let listen = port();
+        let plan = legacy_plan_for(&[(state_ref, listen)]);
+        let trace = directory.path().join("authorization");
+        std::fs::write(&trace, "").unwrap();
+        let mut command = Command::new(&binary);
+        command.args([
+            "--role",
+            "target",
+            "--listen",
+            &format!("127.0.0.1:{listen}"),
+            "--database",
+            database,
+            "--legacy-placement-plan",
+            &plan,
+            "--root-id",
+            "00000000-0000-0000-0000-000000000106",
+            "--state-ref",
+            state_ref,
+            "--invoke",
+            "--exit-after-invoke",
+            "--idempotency-key",
+            &key.to_string(),
+            "--amount",
+            &amount.to_string(),
+            "--replay-auth-ceiling",
+            &ceiling.to_string(),
+            "--replay-auth-trace",
+            trace.to_str().unwrap(),
+            "--expect-response",
+            &expected.to_string(),
+        ]);
+        if factory {
+            command.arg("--factory-invoke");
+        }
+        if denied {
+            command.arg("--expect-replay-denied");
+        }
+        assert!(command.status().unwrap().success());
+        assert!(std::fs::read_to_string(trace).unwrap().ends_with(snapshot));
+    };
+    invoke(&db.endpoint(), factory_key, 7, true, 100, false, 7, ":None");
+    invoke(
+        &db.endpoint(),
+        writer_key,
+        5,
+        false,
+        100,
+        false,
+        12,
+        ":Some(7)",
+    );
+    let saved_factory = runtime.block_on(recover_idempotent_mutations(
+        &db.endpoint(),
+        state_ref,
+        factory_key,
+    ));
+    let saved_writer = runtime.block_on(recover_idempotent_mutations(
+        &db.endpoint(),
+        state_ref,
+        writer_key,
+    ));
+    assert_eq!(saved_factory.len(), 1);
+    assert_eq!(saved_writer.len(), 1);
+    for restart in [false, true] {
+        if restart {
+            db.restart();
+        }
+        for (key, amount, factory, expected) in
+            [(factory_key, 7, true, 7), (writer_key, 5, false, 12)]
+        {
+            invoke(
+                &db.endpoint(),
+                key,
+                amount,
+                factory,
+                10,
+                true,
+                expected,
+                ":Some(12)",
+            );
+            invoke(
+                &db.endpoint(),
+                key,
+                amount,
+                factory,
+                100,
+                false,
+                expected,
+                ":Some(12)",
+            );
+        }
+        assert_eq!(
+            runtime.block_on(load_state(&db.endpoint(), state_ref)),
+            Some(vec![0x08, 12])
+        );
+        assert_eq!(
+            runtime.block_on(recover_idempotent_mutations(
+                &db.endpoint(),
+                state_ref,
+                factory_key
+            )),
+            saved_factory
+        );
+        assert_eq!(
+            runtime.block_on(recover_idempotent_mutations(
+                &db.endpoint(),
+                state_ref,
+                writer_key
+            )),
+            saved_writer
+        );
+    }
+}
+
+#[test]
+#[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE=path/to/bazel-bin/reboot/server/database"]
 fn generated_root_exclusive_idempotency_is_durable_replayed_and_collision_safe() {
     let database_binary =
         std::env::var("REBOOT_NATIVE2PC_CXX_DATABASE").expect("Bazel //reboot/server:database");

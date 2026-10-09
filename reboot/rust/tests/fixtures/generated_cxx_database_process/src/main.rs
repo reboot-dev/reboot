@@ -1615,6 +1615,37 @@ async fn shared_barrier(transaction_id: Uuid) -> Result<(), tonic::Status> {
     ))
 }
 
+// Explicit state-sensitive policy for real public transaction replay acceptance.
+struct ReplayStatePolicy {
+    ceiling: i64,
+    trace: std::path::PathBuf,
+}
+impl reboot::auth::Authorizer for ReplayStatePolicy {
+    fn authorize<'a>(
+        &'a self,
+        context: &'a reboot::auth::AuthorizationContext,
+        _: Option<&'a reboot::auth::Auth>,
+        state: Option<&'a [u8]>,
+        _: &'a [u8],
+    ) -> reboot::auth::AuthorizeFuture<'a> {
+        Box::pin(async move {
+            let value = state.map(|bytes| {
+                proto::TransactionCounter::decode(bytes)
+                    .expect("fixture state")
+                    .value
+            });
+            std::fs::write(&self.trace, format!("{}:{value:?}", context.method)).unwrap();
+            if value.is_some_and(|value| value > self.ceiling) {
+                reboot::auth::AuthorizationDecision::PermissionDenied {
+                    message: "current state revoked replay".into(),
+                }
+            } else {
+                reboot::auth::AuthorizationDecision::Allow
+            }
+        })
+    }
+}
+
 #[tokio::main(worker_threads = 4)]
 async fn main() {
     let role = arg("--role");
@@ -1969,6 +2000,17 @@ async fn main() {
         starts,
         handler,
     );
+    let adapter = if let Some(ceiling) = optional_arg("--replay-auth-ceiling") {
+        adapter.with_authorization(reboot::auth::AuthorizationPolicy::new(
+            None,
+            Some(Arc::new(ReplayStatePolicy {
+                ceiling: ceiling.parse().expect("auth ceiling"),
+                trace: arg("--replay-auth-trace").into(),
+            })),
+        ))
+    } else {
+        adapter
+    };
     let (adapter, tasks) = if (role == "tasks"
         || has("--root-reader-task")
         || has("--remote-reader-task")
@@ -2519,6 +2561,31 @@ async fn main() {
             .map(|key| Uuid::parse_str(&key).expect("--idempotency-key must be a UUID"));
         let expected_response = optional_arg("--expect-response")
             .map(|value| value.parse::<i64>().expect("--expect-response must be i64"));
+        let replay_authorization_probe = optional_arg("--replay-auth-ceiling").is_some();
+        if replay_authorization_probe {
+            // Retry only a read-only public readiness probe; tested mutations run once.
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                loop {
+                    let mut probe =
+                        tonic::Request::new(proto::TransactionIncrementRequest { amount: 0 });
+                    *probe.metadata_mut() = reboot::RebootHeaders::new(&state_ref)
+                        .to_metadata()
+                        .unwrap();
+                    match client.query(probe).await {
+                        Ok(_) => break,
+                        Err(status) if status.code() == tonic::Code::PermissionDenied => break,
+                        Err(status) if status.code() == tonic::Code::Unavailable => {
+                            tokio::time::sleep(std::time::Duration::from_millis(10)).await
+                        }
+                        Err(status) => panic!("replay readiness probe: {status}"),
+                    }
+                }
+            })
+            .await
+            .expect("replay host readiness");
+            // Do not let the readiness authorizer trace stand in for tested RPC authorization.
+            std::fs::write(arg("--replay-auth-trace"), "").unwrap();
+        }
         if has("--writer-tasks") {
             tokio::time::timeout(std::time::Duration::from_secs(5), async {
                 loop {
@@ -2578,6 +2645,18 @@ async fn main() {
             } else {
                 client.increment(request).await
             };
+            if has("--expect-replay-denied") {
+                assert_eq!(result.unwrap_err().code(), tonic::Code::PermissionDenied);
+                break;
+            }
+            if replay_authorization_probe {
+                let response = result.expect("single tested transaction/replay RPC");
+                assert_eq!(
+                    response.into_inner().value,
+                    expected_response.expect("replay response")
+                );
+                break;
+            }
             match result {
                 Err(_)
                     if [
