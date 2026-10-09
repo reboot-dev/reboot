@@ -39,6 +39,7 @@ from reboot.aio.contexts import ReaderContext
 from reboot.aio.external import ExternalContext
 from reboot.aio.http import PythonWebFramework, external_context
 from reboot.crypto import root_keys
+from reboot.routing.cors_settings import permissive_cors_headers
 from starlette.requests import Request
 from starlette.responses import (
     HTMLResponse,
@@ -107,13 +108,13 @@ _WHOAMI_PATH = WHOAMI_PATH
 _BROWSER_CLIENT_TYPE = "browser-client"
 
 # CORS headers for browser-based MCP clients (e.g. MCPJam, MCP
-# Inspector). Allow any origin since the server is an OAuth
-# Authorization Server that public clients talk to.
-_CORS_HEADERS = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, MCP-Protocol-Version",
-}
+# Inspector). Any origin, since the server is an OAuth Authorization
+# Server that public clients talk to, and never credentialed; see
+# `permissive_cors_headers`.
+_CORS_HEADERS = permissive_cors_headers(
+    methods=("GET", "POST"),
+    headers=("content-type", "mcp-protocol-version"),
+)
 
 # HKDF `info` (domain separator) for the OAuth server's token-signing key.
 _SIGNING_INFO = b"reboot.oauth.signing"
@@ -391,6 +392,20 @@ class OAuthServer:
         # The consent page template, compiled lazily on first render so
         # only apps that actually serve an OAuth flow pay for it.
         self._consent_page_template: Optional[Template] = None
+
+    def verify_token(self, request: Request) -> Optional[UserId]:
+        """The user `request` is signed in as, by the access JWT in
+        its `Authorization: Bearer` header or, failing that, by the
+        one in its session cookie, which a browser sends on a
+        same-origin navigation; `None` when neither is present and
+        valid. What a `require_oauth_token=True` HTTP route asks."""
+        token = _bearer_token(request)
+        if token is not None:
+            decoded = self._verify_jwt(token, "access")
+            if decoded is None or not decoded.get("sub"):
+                return None
+            return UserId(decoded["sub"])
+        return self._verify_session_cookie(request)
 
     @property
     def token_verifier(self) -> OAuthTokenVerifier:

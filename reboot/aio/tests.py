@@ -277,6 +277,7 @@ class Reboot(reboot.aio.reboot.Reboot):
         local_envoy_tls: Optional[bool] = None,
         servers: Optional[int] = None,
         effect_validation: Optional[EffectValidation] = None,
+        inject_oauth: bool = True,
     ) -> ApplicationRevision:
         ...
 
@@ -337,7 +338,21 @@ class Reboot(reboot.aio.reboot.Reboot):
         servers: Optional[int] = None,
         effect_validation: Optional[EffectValidation] = None,
         revision: Optional[ApplicationRevision] = None,
+        inject_oauth: bool = True,
     ) -> ApplicationRevision:
+        """Serves `application`.
+
+        `inject_oauth` is whether an application that configured no
+        `oauth=` of its own is given a test OAuth server, which is what
+        lets `make_valid_oauth_access_token` and
+        `create_external_context_as` work for any application. Pass
+        `False` to serve an application as it serves in production
+        without one: an injected server also makes the application's
+        MCP endpoint demand a Reboot-minted access JWT, which an
+        application that authenticates with a `token_verifier=` alone
+        never demands, so a test of such an endpoint needs the server
+        left out.
+        """
 
         if revision is not None and application is not None:
             raise ValueError(
@@ -407,7 +422,7 @@ class Reboot(reboot.aio.reboot.Reboot):
         # provider (and `create_external_context_as` stays
         # Python-app-only for now).
         if (
-            application._oauth is None and
+            inject_oauth and application._oauth is None and
             not isinstance(application, NodeApplication)
         ):
             application._oauth = OAuth(

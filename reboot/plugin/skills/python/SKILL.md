@@ -394,6 +394,12 @@ with "unknown actor type."
   state; the developer's own service keys are env-var secrets instead).
   Host-agnostic (MCP UIs and web apps). Pairs with
   `stdlib-oauth-tokens.md` (the `OAuthTokenManager` type).
+- `references/auth-http-routes.md` — **a plain HTTP route only a
+  signed-in user may call** (a file download, an image or video the
+  page shows, an export): `require_oauth_token=True` on
+  `application.http.get(...)`, and the page-side fetch-with-bearer
+  pattern that replaces `<img src>` / `<a href>`. Read it before
+  checking a bearer or writing CORS headers in a route by hand.
 
 ### Testing
 
@@ -522,6 +528,7 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/auth-built-in-predicates.md`
 - `references/auth-custom-predicates.md`
 - `references/auth-external-api-calls.md`
+- `references/auth-http-routes.md`
 
 **RPC** (`rpc-`):
 
