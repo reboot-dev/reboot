@@ -16,7 +16,7 @@
   },
   "license": "Apache-2.0",
   "devDependencies": {
-    "@types/node": "^22.7.4"
+    "@types/node": "^26.6.4"
   },
   "exports": {
     "./package.json": "./package.json",
