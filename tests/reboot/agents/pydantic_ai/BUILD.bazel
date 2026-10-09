@@ -8,6 +8,7 @@ py_test(
     main = "agent_tests.py",
     tags = ["macos-nightly-only"],
     deps = [
+        requirement("anyio"),
         requirement("mcp"),
         requirement("pydantic-ai-slim"),
         "//reboot/agents/pydantic_ai:python",
