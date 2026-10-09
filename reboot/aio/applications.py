@@ -462,11 +462,14 @@ class Application:
         # allow-list (possibly empty) applies.
         self._allowed_origins: Optional[list[str]] = None
         self._skip_consent_for_redirect_uris: list[str] = []
+        self._oauth_hosts: Optional[list[str]] = None
         if oauth is not None:
             self._allowed_origins = list(oauth.allowed_origins or [])
             self._skip_consent_for_redirect_uris = list(
                 oauth.skip_consent_for_redirect_uris
             )
+            if oauth.hosts is not None:
+                self._oauth_hosts = list(oauth.hosts)
         self._title = title or application_name()
         self._description = description
         self._example_prompts = example_prompts or []
@@ -738,6 +741,7 @@ class Application:
                 skip_consent_for_redirect_uris=(
                     self._skip_consent_for_redirect_uris
                 ),
+                hosts=self._oauth_hosts,
             )
             self._oauth_server = oauth_server
             if self._token_verifier is not None:
