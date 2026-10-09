@@ -311,3 +311,24 @@ task-creator ACL, Python middleware equivalence or an atomic policy-revocation
 transaction. Production applications supply their own verifier/authorizer through
 `ReaderTaskWaitService::with_wait_authorization`. Policies receive the exact
 encoded Wait request and actor identity, not the actor state or task result.
+
+## Live paginated history export
+
+`client history-page false 25 false - - -` reads the approval index. Use `true`
+for the archive index. Arguments are archive, page size (1..100), reverse,
+optional inclusive start, optional exclusive end, and optional continuation;
+`-` means absent. The JSON response contains ordered key/value entries and a
+nullable continuation. Repeat the original map/bounds/direction with that token;
+page size may change. Forward bounds increase, reverse bounds decrease.
+Unlike the legacy batch history command's 100-key cap, unbounded key ranges can
+browse every batch through bounded pages. Empty values remain byte arrays.
+
+Continuation uses the first unreturned key, not a fabricated key successor.
+It is versioned query data bound to map identity, original bounds and direction,
+not a credential or authorization token. Malformed/foreign-query tokens fail.
+This is **live keyset traversal, not a snapshot across RPCs**: changes between
+pages can appear or disappear; inserts before the resume key are not revisited.
+An unchanged dataset can resume after host/Database restart. Each page uses the
+existing serial exclusive app/map transaction and sends once; no automatic root
+idempotency, status retry, distributed map ingress or uncertain-outcome retry is
+introduced.

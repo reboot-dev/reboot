@@ -356,6 +356,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
+        "history-page" => {
+            let optional = |index: usize| {
+                args.get(index)
+                    .filter(|value| value.as_str() != "-")
+                    .cloned()
+            };
+            let mut client =
+                proto::ledger_index_methods_client::LedgerIndexMethodsClient::new(channel);
+            let mut request = context.writer(proto::HistoryPageRequest {
+                archive: arg(1)?.parse()?,
+                limit: arg(2)?.parse()?,
+                reverse: arg(3)?.parse()?,
+                start_key: optional(4),
+                end_key: optional(5),
+                continuation: optional(6),
+            })?;
+            request.metadata_mut().remove("x-reboot-idempotency-key");
+            request.set_timeout(Duration::from_secs(5));
+            let page = client.history_page(request).await?.into_inner();
+            let entries: Vec<_> = page
+                .entries
+                .into_iter()
+                .map(|entry| {
+                    serde_json::json!({
+                        "key": entry.key, "value": entry.value,
+                    })
+                })
+                .collect();
+            println!(
+                "{}",
+                serde_json::json!({"entries": entries, "continuation": page.continuation})
+            );
+        }
         "history" | "archive-history" => {
             let mut client =
                 proto::ledger_index_methods_client::LedgerIndexMethodsClient::new(channel);

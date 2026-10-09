@@ -602,6 +602,58 @@ try:
         denied(task,grpc.StatusCode.UNAUTHENTICATED)
         check('restart retains result access policy',native(current,task)[2].SerializeToString()==final)
         current.close();current=None;evidence['accepted']=True;raise SystemExit(0)
+    if os.environ.get('RUST_BATCH_PAGINATION_ONLY'):
+        current=Session('pagination-start')
+        until(lambda:'actor state must be constructed' in client('work-unary','pages',ok=False)[0],'pagination public admission')
+        client('create')
+        ids=[]; expected=[]
+        for number,batch in enumerate(['pages','pages-long']):
+            task_id,_=client('submit',batch,'51',str(__import__('uuid').UUID(int=(1<<126)+(4<<76)+(2<<62)+number+1)))
+            ids.append(task_id)
+            for index in range(51):client('approve',batch,str(index))
+            check('pagination dataset workflow '+batch+' completed',client('wait',task_id,'15000')[0]==f'{batch} 51 51 51 {number+1}')
+            expected.extend([f'{batch}:{index:04d}' for index in range(51)])
+        expected=sorted(expected)
+        def snap():
+            data=native(current,ids[-1])
+            return (data[0].SerializeToString(),data[1].SerializeToString(),tuple(native(current,task)[2].SerializeToString() for task in ids),sorted(m.SerializeToString() for m in data[3]),archive_rows(current).SerializeToString())
+        def page(limit=17,reverse=False,start=None,end=None,token=None,archive=False):
+            return json.loads(client('history-page',str(archive).lower(),str(limit),str(reverse).lower(),start or '-',end or '-',token or '-')[0])
+        before=snap()
+        first=page()
+        check('first bounded page has exact ordered bytes and continuation',first['entries']==[{'key':key,'value':[]} for key in expected[:17]] and bool(first['continuation']))
+        token=first['continuation']
+        current.close();current=None
+        current=Session('pagination-restart')
+        until(lambda:native(current,ids[-1])[0].completed==51,'pagination restored ownership')
+        check('paging and restart preserve durable app map tasks checkpoints',snap()==before)
+        def collect(reverse=False,start=None,end=None,initial=None):
+            rows=[];token=initial;seen=set()
+            for _ in range(120):
+                value=page(reverse=reverse,start=start,end=end,token=token)
+                rows.extend(value['entries']);token=value['continuation']
+                if token is None:return rows
+                if token in seen:raise AssertionError('non-progressing continuation')
+                seen.add(token)
+            raise AssertionError('pagination failed to terminate')
+        remaining=collect(initial=token)
+        check('continuation resumes after real RocksDB restart without skip or duplicate',first['entries']+remaining==[{'key':key,'value':[]} for key in expected])
+        reverse=collect(reverse=True)
+        check('reverse traversal exactly reverses all 102 keys and bytes',reverse==[{'key':key,'value':[]} for key in reversed(expected)])
+        bounded=collect(start='pages:0010',end='pages:0041')
+        check('forward inclusive start exclusive end retained across pages',[row['key'] for row in bounded]==[f'pages:{i:04d}' for i in range(10,41)])
+        bounded=collect(reverse=True,start='pages:0041',end='pages:0010')
+        check('reverse inclusive start exclusive end retained across pages',[row['key'] for row in bounded]==[f'pages:{i:04d}' for i in range(41,10,-1)])
+        check('empty archive page and exhausted range have no cursor',page(archive=True)=={'entries':[],'continuation':None} and page(start='zz')=={'entries':[],'continuation':None})
+        check('exact-size page and partial last page terminate truthfully',page(limit=10,start='pages:0010',end='pages:0020')['continuation'] is None and len(page(limit=17,start=expected[-3])['entries'])==3 and page(limit=17,start=expected[-3])['continuation'] is None)
+        for limit,direction,start,end,cursor,archive in [(0,False,None,None,None,False),(101,False,None,None,None,False),(17,False,None,None,'{',False),(17,False,None,None,token,True),(17,True,None,None,token,False),(17,False,'pages:',None,token,False)]:
+            error,_=client('history-page',str(archive).lower(),str(limit),str(direction).lower(),start or '-',end or '-',cursor or '-',ok=False)
+            check('invalid or foreign query cursor rejects without durable mutation','InvalidArgument' in error and snap()==before)
+        check('all paging leaves durable records unchanged',snap()==before)
+        check('fresh writer admission after paged read roots',client('submit','fresh-page','1','90909090-9090-4090-8090-909090909090')[0]!='')
+        current.close();current=None
+        evidence['accepted']=True
+        raise SystemExit(0)
     if os.environ.get('RUST_BATCH_MAP_REENTRY_ONLY'):
         current=Session('map-reentry-start')
         until(lambda:'actor state must be constructed' in client('work-unary','multi',ok=False)[0],'bulk archive public admission')

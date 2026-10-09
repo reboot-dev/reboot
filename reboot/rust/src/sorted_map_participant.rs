@@ -36,7 +36,7 @@ fn sorted_map_key(key: &str) -> Result<(), Status> {
         .map_err(|error| Status::invalid_argument(error.to_string()))
 }
 
-fn sorted_map_bounds(
+pub(crate) fn sorted_map_bounds(
     start: &Option<String>,
     end: &Option<String>,
     limit: u32,
@@ -310,6 +310,15 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
         }) {
             current.native_uncertain = true;
             return Err(Status::data_loss("native range ordering mismatch"));
+        }
+        // A leaked leading row can consume a native limit and fabricate page
+        // exhaustion. Reject it instead of filtering it. End-bound leakage is
+        // trailing in a strictly ordered scan, so no eligible row follows it.
+        if entries.iter().any(|entry| logical_start.as_ref().is_some_and(|start| {
+            if reverse { entry.key > *start } else { entry.key < *start }
+        })) {
+            current.native_uncertain = true;
+            return Err(Status::data_loss("native range leaked a leading row"));
         }
         // Transaction iterators can expose staged keys at the native lower
         // bound despite iterate_lower_bound; enforce canonical wire bounds too.

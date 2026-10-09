@@ -23,6 +23,9 @@ message StepRejected { string batch = 1; uint32 index = 2; string reason = 3; }
 message BatchRejected { string batch = 1; uint32 completed = 2; string reason = 3; }
 message Approval { string batch = 1; uint32 index = 2; bool invalid_range = 3; }
 message Batch { string batch = 1; }
+message HistoryPageRequest { bool archive = 1; optional string start_key = 2; optional string end_key = 3; bool reverse = 4; uint32 limit = 5; optional string continuation = 6; }
+message HistoryPageEntry { string key = 1; bytes value = 2; }
+message HistoryPageResult { repeated HistoryPageEntry entries = 1; optional string continuation = 2; }
 message HistoryResult { repeated string keys = 1; }
 message BatchMismatch { string expected = 1; string actual = 2; }
 message ArchiveRequest { string key = 1; bool invalid_range = 2; }
@@ -50,6 +53,7 @@ service LedgerIndexMethods {
  rpc Approve(Approval) returns (Ledger) { option (rbt.v1alpha1.method).transaction = { exclusive: {} }; }
  rpc ArchiveEntry(ArchiveRequest) returns (ArchiveResult) { option (rbt.v1alpha1.method) = { transaction: { exclusive: {} } errors: ["ArchiveRejected"] }; }
  rpc ArchiveEntries(ArchiveEntriesRequest) returns (ArchiveEntriesResult) { option (rbt.v1alpha1.method) = { transaction: { exclusive: {} } errors: ["ArchiveRejected"] }; }
+ rpc HistoryPage(HistoryPageRequest) returns (HistoryPageResult) { option (rbt.v1alpha1.method).transaction = { exclusive: {} }; }
  rpc ArchiveHistory(Batch) returns (HistoryResult) { option (rbt.v1alpha1.method).transaction = { exclusive: {} }; }
  rpc History(Batch) returns (HistoryResult) { option (rbt.v1alpha1.method).transaction = { exclusive: {} }; }
 }

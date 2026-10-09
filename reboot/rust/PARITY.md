@@ -44,7 +44,7 @@ proofs below retain their separate source snapshots and limits.
 | Tasks | Durable scheduled tasks, typed results/Wait with opt-in result policy, recovery, local admin list/stream and scheduled-workflow cancellation | Transactional targets, running/ordinary/distributed cancellation, aggregation, broad retry and dispatcher fencing |
 | Workflows | Finite typed named steps, finite indexed replay, saved reader observations and finite Continue/Break, typed declared business terminals; explicit local-body resumption | Python unbounded Task cursor/GC/Break, cross-actor composition, framework failure isolation |
 | Reactive readers | Typed bounded database/workflow/transaction-service ordinary reader subscriptions, commit invalidation and explicit same-query reconnect | Cross-actor/remote invalidation, transparent reconnect/durable resume, streaming/transaction RPC subscriptions |
-| SortedMap | Canonical empty constructor, serial same-host app/map transactions, same-root session reopening and atomic multi-entry approval transfer | Public inbound adapter, nested/reusable siblings, distributed collection lifecycle |
+| SortedMap | Canonical empty constructor, serial same-host app/map transactions, same-root session reopening, live keyset pages and atomic multi-entry approval transfer | Public inbound adapter, nested/reusable siblings, distributed collection lifecycle |
 
 ## Local app development
 
@@ -1163,6 +1163,63 @@ Sources: [reader outcomes/attempt fences](src/workflow_context.rs),
 [Python memoize](../aio/memoize.py),
 [public acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
 
+### Live bounded public collection pagination (2026-10-09)
+
+`SortedMapSession::page` admits page sizes 1..100 and fetches one extra eligible
+row under one existing root-work lifetime reservation. Versioned JSON continuation
+binds a fixed-size SHA256 digest of full canonical map identity, original bounds
+and direction. Even deeply colocated identities cannot expand its size unboundedly. It resumes at the
+first unreturned inclusive key without fabricating successors at the 128-byte key
+limit. This token is query data, not authorization or a snapshot capability.
+The page size may change between requests. Each generated HistoryPage transaction
+owns a fresh serial exclusive app/map root. No public inbound SortedMap adapter,
+root idempotency, automatic retry or cross-request snapshot is introduced.
+
+Original bounds and cursor query identity are validated before native scan. The
+native page remains cardinality/order/identity checked. Any out-of-start leading
+row fails closed with DataLoss and uncertainty rather than being filtered after
+consuming a native limit. End-only out-of-range rows are trailing in the strict
+ordering and remain excluded. Thus end leakage cannot hide another eligible row.
+This is not transparent repair/retry of a faulty native scan.
+
+Generated `HistoryPage`/`client history-page` returns key/value bytes and nullable
+continuation for approval or archive maps, in forward/reverse order and optional
+inclusive-start/exclusive-end ranges. It traverses the whole multi-batch index,
+unlike the legacy per-batch history command's fixed 100-row cap. JSON cursor bytes
+are capped at 4096, admitting worst escaped supported ASCII bounds/next keys.
+Malformed/foreign map, bounds or direction rejects; changed datasets use live
+keyset semantics (insertions before the resume key are not revisited).
+
+**Executed public native Cargo/rbt:** `/tmp/reboot-rust-pagination-cli-1791546886462649186` (**22 checks**) constructed 102
+entries through public workflow submission/approval, with no private seeding.
+Programmatic forward and reverse traversal proved exact key/value bytes, no skip
+or duplicate and termination. Bound-limited traversal covered multiple pages,
+inclusive starts/exclusive ends, empty/exact/partial exhaustion. Real host and
+RocksDB restart between pages resumed the saved token on unchanged data. Invalid
+sizes, malformed and foreign-query cursors rejected without durable mutation;
+app/map/task/checkpoint bytes stayed unchanged; a following writer admitted.
+Generated strict Clippy/fmt and nonzero consumer tests plus 24 CLI tests passed.
+
+SDK `/tmp/reboot-rust-pagination-sdk-1791547173836221968`: **446 passed, 131 ignored**, strict all-target Clippy; explicit
+native reader outcome state-flip/fail-closed restart proof and native staged-map
+visibility/range/commit/abort/restart prerequisite both passed. Five page unit
+vectors cover max-key first-unreturned lookup, query binding/version, empty/exact
+exhaustion, escaped 128-byte ASCII key roundtrip/zero-limit status, and bounded full-identity
+binding for deeply colocated maps.
+HTTP/generated preflight `/tmp/reboot-rust-http-request-preflight-1791546813527300342`, retained same-root map public checks
+`/tmp/reboot-rust-map-reentry-cli-1791547441705197405` (**18**), full batch `/tmp/reboot-rust-batch-ledger-acceptance-1791547720277324457` (**162**) and greeting/HTTP/rebuild/health/
+restart/cleanup `/tmp/reboot-rust-loop-decision-greeting-1791548467354204666` (**26 HTTP exchanges**) passed. Frozen sources,
+canonical Database identity, resource bounds and owned PID absence audited before
+digest refresh. Concurrent cross-request collection mutation, hostile cursor
+integrity, distributed routing and cross-request snapshots are not certified.
+Overall Rust parity remains incomplete.
+
+Sources: [page/session](src/sorted_map.rs), [native bounds](src/sorted_map_participant.rs),
+[canonical range schema](../../rbt/std/collections/v1/sorted_map.proto),
+[public schema](../cli/commands/init/templates/rust_batch.proto.j2),
+[public handler](../cli/commands/init/templates/rust_batch_lib.rs.j2),
+[native acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
+
 ### Opt-in canonical task-result authorization (2026-10-09)
 
 `ReaderTaskWaitService::with_wait_authorization` installs an application-owned
@@ -1431,7 +1488,8 @@ constructor test. Existing map Store-lost-ACK recovery is a different test.
 newline are rejected. Forward ranges are `[start,end)` with `start < end`;
 reverse ranges include start/exclude end with `start > end`. Limits must be
 nonzero. Invalid ordering/zero limit produces declared `InvalidRangeError`; invalid
-key characters produce InvalidArgument. There is no cursor or cross-RPC snapshot
+key characters produce InvalidArgument. Canonical Range has no cursor field; the
+SDK page operation adds live keyset continuation, not a cross-RPC snapshot
 guarantee.
 
 **Sources:** [library/session](src/sorted_map.rs),
@@ -2127,7 +2185,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 2f2ba352e5182ac18b5dea1c87b17b88784352f5eec50f2ea493ad037da7d247 -->
+<!-- parity-source-sha256: ce1163921f79e43e44492eb39c18e40b4d37666e0ecc6b45b6706c53603bc83b -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

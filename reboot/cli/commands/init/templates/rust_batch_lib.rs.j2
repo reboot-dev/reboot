@@ -718,6 +718,39 @@ impl generated::LedgerIndexMethodsTransactionHandler for Index {
             archived: state.archived,
         }))
     }
+    async fn history_page(
+        &self,
+        context: &TransactionContext,
+        _: &mut proto::Ledger,
+        request: proto::HistoryPageRequest,
+    ) -> Result<TransactionExecution<proto::HistoryPageResult>, tonic::Status> {
+        let map = if request.archive {
+            &self.archive
+        } else {
+            &self.map
+        };
+        let session = map.in_transaction(context).await?;
+        let page = session
+            .page(reboot::sorted_map::PageRequest {
+                start_key: request.start_key,
+                end_key: request.end_key,
+                reverse: request.reverse,
+                limit: request.limit,
+                continuation: request.continuation,
+            })
+            .await?;
+        Ok(TransactionExecution::new(proto::HistoryPageResult {
+            entries: page
+                .entries
+                .into_iter()
+                .map(|entry| proto::HistoryPageEntry {
+                    key: entry.key,
+                    value: entry.value,
+                })
+                .collect(),
+            continuation: page.continuation,
+        }))
+    }
     async fn archive_history(
         &self,
         context: &TransactionContext,
