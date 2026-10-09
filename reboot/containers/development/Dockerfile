@@ -204,7 +204,7 @@ RUN echo "export PATH=/home/$USERNAME/.local/bin:\$PATH" >> /home/$USERNAME/.bas
 # versions), following these instructions:
 #   https://github.com/nvm-sh/nvm#installing-and-updating
 ARG NVM_VERSION=0.39.5
-ARG NODE_MAJOR_VERSION=20
+ARG NODE_MAJOR_VERSION=26
 ARG NVM_DIR=/usr/local/nvm
 
 RUN mkdir $NVM_DIR && \
