@@ -42,6 +42,115 @@ mod workflow_emission_tests {
         }
     }
     #[test]
+    fn workflow_external_reader_composition_preserves_declared_and_checkpoint_contracts() {
+        let method = |name: &str| MethodDescriptorProto {
+            name: Some(name.into()),
+            input_type: Some(".demo.Q".into()),
+            output_type: Some(".demo.R".into()),
+            ..Default::default()
+        };
+        let service = ServiceDescriptorProto {
+            name: Some("Methods".into()),
+            method: vec![method("Run"), method("Observe")],
+            ..Default::default()
+        };
+        let annotation = DurableService {
+            state: "demo.State".into(),
+            default_constructible: false,
+            methods: [
+                ("Run".into(), DurableKind::Workflow),
+                ("Observe".into(), DurableKind::Reader),
+            ]
+            .into(),
+            declared_errors: [("Observe".into(), vec!["Rejected".into()])].into(),
+        };
+        let mut output = String::new();
+        emit_workflow_service(
+            &mut output,
+            &service,
+            &annotation,
+            "Methods",
+            "State",
+            "reboot",
+            "demo",
+        )
+        .unwrap();
+        for expected in [
+            "observe_with_reader_context",
+            "LocalReaderContext)->Result<proto::R,MethodsObserveError>",
+            "reader_binding_id",
+            "with_reader_registry",
+            "with_legacy_unary_roots",
+            "validate_unary_metadata(&request)",
+            "evaluate_unary::<proto::Q,proto::R>",
+            "unary_binding_id(&self)",
+            "wait_reader_declared",
+            "TaskHandlerError::Failed(status)=>MethodsObserveError::Grpc(status)",
+        ] {
+            assert!(output.contains(expected), "missing {expected}");
+        }
+        assert!(output.contains("handler.observe_with_reader_context(state, body, context).await.map_err(|error| error.into_status())"));
+        assert!(output.contains(
+            "handler.observe(state,request).await.map_err(|error|error.into_task_handler_error())"
+        ));
+        assert!(output.contains("self.tasks=Some(tasks.clone());self.reader_registry=None;self.legacy_reader_roots.clear();self.reader_binding_id=std::sync::Arc::new(())"));
+        // The private checkpointed workflow helper still uses the baseline
+        // handler, never the external composition hook.
+        let checkpointed = output
+            .split("pub async fn observe_try_until")
+            .nth(1)
+            .unwrap()
+            .split("pub async fn observe_until")
+            .next()
+            .unwrap();
+        assert!(!checkpointed.contains("with_reader_context"));
+    }
+    #[test]
+    fn workflow_reader_configuration_and_hook_symbols_are_reserved() {
+        for name in [
+            "WithReaderRegistry",
+            "WithLegacyUnaryRoots",
+            "ObserveWithReaderContext",
+        ] {
+            let method = |name: &str| MethodDescriptorProto {
+                name: Some(name.into()),
+                input_type: Some(".demo.Q".into()),
+                output_type: Some(".demo.R".into()),
+                ..Default::default()
+            };
+            let service = ServiceDescriptorProto {
+                name: Some("Methods".into()),
+                method: vec![method("Run"), method("Observe"), method(name)],
+                ..Default::default()
+            };
+            let annotation = DurableService {
+                state: "demo.State".into(),
+                default_constructible: false,
+                methods: [
+                    ("Run".into(), DurableKind::Workflow),
+                    ("Observe".into(), DurableKind::Reader),
+                    (
+                        name.into(),
+                        DurableKind::Writer(WriterMetadata { constructor: false }),
+                    ),
+                ]
+                .into(),
+                declared_errors: HashMap::new(),
+            };
+            let error = emit_workflow_service(
+                &mut String::new(),
+                &service,
+                &annotation,
+                "Methods",
+                "State",
+                "reboot",
+                "demo",
+            )
+            .unwrap_err();
+            assert!(error.contains("collid"), "{name}: {error}");
+        }
+    }
+    #[test]
     fn workflow_declared_reader_does_not_grant_constructor_errors() {
         let service = ServiceDescriptorProto {
             name: Some("Methods".into()),
@@ -61,17 +170,19 @@ mod workflow_emission_tests {
                 methods: [("Observe".into(), kind)].into(),
                 declared_errors: [("Observe".into(), vec!["Rejected".into()])].into(),
             };
-            assert!(emit_workflow_service(
-                &mut String::new(),
-                &service,
-                &annotation,
-                "Methods",
-                "State",
-                "reboot",
-                "demo"
-            )
-            .unwrap_err()
-            .contains("constructors are unsupported"));
+            assert!(
+                emit_workflow_service(
+                    &mut String::new(),
+                    &service,
+                    &annotation,
+                    "Methods",
+                    "State",
+                    "reboot",
+                    "demo"
+                )
+                .unwrap_err()
+                .contains("constructors are unsupported")
+            );
         }
     }
     #[test]
@@ -172,8 +283,10 @@ mod workflow_emission_tests {
         .unwrap();
         assert!(declared_writer.contains("writer_step_declared"));
         assert!(declared_writer.contains("DeclaredTaskError::new::<proto::Rejected>"));
-        assert!(declared_writer
-            .contains("TaskHandlerError::Failed(status)=>MethodsApplyError::Grpc(status)"));
+        assert!(
+            declared_writer
+                .contains("TaskHandlerError::Failed(status)=>MethodsApplyError::Grpc(status)")
+        );
         let mut with_reader = annotation.clone();
         with_reader
             .methods
@@ -248,17 +361,19 @@ mod workflow_emission_tests {
             conflict_annotation
                 .methods
                 .insert(conflict.into(), DurableKind::Reader);
-            assert!(emit_workflow_service(
-                &mut String::new(),
-                &conflict_service,
-                &conflict_annotation,
-                "Methods",
-                "State",
-                "reboot",
-                "demo"
-            )
-            .unwrap_err()
-            .contains("reactive helper"));
+            assert!(
+                emit_workflow_service(
+                    &mut String::new(),
+                    &conflict_service,
+                    &conflict_annotation,
+                    "Methods",
+                    "State",
+                    "reboot",
+                    "demo"
+                )
+                .unwrap_err()
+                .contains("reactive helper")
+            );
         }
         with_reader
             .declared_errors
@@ -292,16 +407,18 @@ mod workflow_emission_tests {
                 factory: false,
             }),
         );
-        assert!(emit_workflow_service(
-            &mut String::new(),
-            &service,
-            &mixed,
-            "Methods",
-            "State",
-            "reboot",
-            "demo"
-        )
-        .is_err());
+        assert!(
+            emit_workflow_service(
+                &mut String::new(),
+                &service,
+                &mixed,
+                "Methods",
+                "State",
+                "reboot",
+                "demo"
+            )
+            .is_err()
+        );
     }
 }
 // Bounded standalone workflow services. Mixed transaction/workflow services are
@@ -531,7 +648,26 @@ fn emit_workflow_service(
                     format!("{runtime_module}::runtime::StateAdmission::RequireExisting,")
                 };
                 output.push_str(&format!("async fn {rust}(&self,state:{reference} proto::{state},request:proto::{request})->Result<proto::{response},{handler_error}>;\n"));
-                rpc_methods.push_str(&format!("async fn {rust}(&self,request:tonic::Request<proto::{request}>)->Result<tonic::Response<proto::{response}>,tonic::Status> {{ let handler=self.handler.clone(); self.store.{envelope}::<{declaration},_,_,_>(\"{identity}\",{admission}&self.authorization,request,move |state,request|Box::pin(async move {{handler.{rust}(state,request).await{error_map}}})).await }}\n"));
+                let unary_composition = if matches!(kind, DurableKind::Reader) {
+                    let hook = format!("{rust}_with_reader_context");
+                    if service
+                        .method
+                        .iter()
+                        .any(|other| snake_case(other.name.as_deref().unwrap()) == hook)
+                    {
+                        return Err(format!(
+                            "{service_name}: composed reader hook `{hook}` collides"
+                        ));
+                    }
+                    output.push_str(&format!("async fn {hook}(&self,state:&proto::{state},request:proto::{request},_context:{runtime_module}::reactive::LocalReaderContext)->Result<proto::{response},{handler_error}> {{self.{rust}(state,request).await}}\n"));
+                    format!(
+                        "if let Some(registry)=&self.reader_registry {{ registry.validate_unary_metadata(&request)?; if !request.metadata().get(\"x-reboot-state-ref\").and_then(|value|value.to_str().ok()).is_some_and(|reference|self.legacy_reader_roots.iter().any(|root|root==reference)) && registry.contains_unary_root::<{declaration},_>(&request)? {{return registry.evaluate_unary::<proto::{request},proto::{response}>(request,\"{identity}\").await;}} }}"
+                    )
+                } else {
+                    String::new()
+                };
+
+                rpc_methods.push_str(&format!("async fn {rust}(&self,request:tonic::Request<proto::{request}>)->Result<tonic::Response<proto::{response}>,tonic::Status> {{ {unary_composition} let handler=self.handler.clone(); self.store.{envelope}::<{declaration},_,_,_>(\"{identity}\",{admission}&self.authorization,request,move |state,request|Box::pin(async move {{handler.{rust}(state,request).await{error_map}}})).await }}\n"));
             }
             DurableKind::Transaction(_) => unreachable!(),
         }
@@ -540,7 +676,8 @@ fn emit_workflow_service(
     let writers = writers.strip_suffix(" | ").unwrap_or("\"\"");
     declarations.push(']');
     output.push_str(&format!("pub struct {tasks}; impl {tasks} {{ {scheduling} }}\npub struct {tasks}Wait; impl {tasks}Wait {{ {waits} }}\npub struct {steps}; impl {steps} {{ {step_methods} }}\n"));
-    output.push_str(&format!("pub struct {adapter}<H> {{store:{runtime_module}::runtime::DatabaseActorStore,handler:std::sync::Arc<H>,authorization:{runtime_module}::auth::AuthorizationPolicy,tasks:Option<{runtime_module}::one_shot_tasks::OneShotTasks>}}\nimpl<H> Clone for {adapter}<H> {{ fn clone(&self)->Self {{ Self {{ store:self.store.clone(),handler:self.handler.clone(),authorization:self.authorization.clone(),tasks:self.tasks.clone() }} }} }}\nimpl<H:{handler}> {adapter}<H> {{ pub fn new(store:{runtime_module}::runtime::DatabaseActorStore,handler:H)->Self {{Self{{store,handler:std::sync::Arc::new(handler),authorization:Default::default(),tasks:None}}}} pub fn with_authorization(mut self,authorization:{runtime_module}::auth::AuthorizationPolicy)->Self {{self.authorization=authorization;self}} #[allow(clippy::result_large_err)] pub fn with_workflows(mut self,state_ref:&str)->Result<(Self,{runtime_module}::one_shot_tasks::OneShotTasks),tonic::Status> {{ let tasks={runtime_module}::one_shot_tasks::OneShotTasks::new_with_declarations(self.store.clone(),<{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(),state_ref.to_owned(),{binding}{{handler:self.handler.clone()}},{declarations})?;self.tasks=Some(tasks.clone());Ok((self,tasks)) }} }}\n#[tonic::async_trait]\nimpl<H:{handler}> proto::{server}::{service_name} for {adapter}<H> {{ {rpc_methods} }}\n"));
+    output.push_str(&format!("pub struct {adapter}<H> {{ store: {runtime_module}::runtime::DatabaseActorStore, handler: std::sync::Arc<H>, authorization: {runtime_module}::auth::AuthorizationPolicy, tasks: Option<{runtime_module}::one_shot_tasks::OneShotTasks>, reader_registry: Option<{runtime_module}::reactive::LocalReaderRegistry>, legacy_reader_roots: Vec<String>, reader_binding_id: std::sync::Arc<()> }}\nimpl<H> Clone for {adapter}<H> {{ fn clone(&self) -> Self {{ Self {{ store: self.store.clone(), handler: self.handler.clone(), authorization: self.authorization.clone(), tasks: self.tasks.clone(), reader_registry: self.reader_registry.clone(), legacy_reader_roots: self.legacy_reader_roots.clone(), reader_binding_id: self.reader_binding_id.clone() }} }} }}\nimpl<H> {adapter}<H> {{ pub fn new(store: {runtime_module}::runtime::DatabaseActorStore, handler: H) -> Self {{ Self {{ store, handler: std::sync::Arc::new(handler), authorization: {runtime_module}::auth::AuthorizationPolicy::default(), tasks: None, reader_registry: None, legacy_reader_roots: Vec::new(), reader_binding_id: std::sync::Arc::new(()) }} }} /// Configure authorization before registering readers. Reconfiguration detaches a stale registry and rotates its binding identity.\npub fn with_authorization(mut self, authorization: {runtime_module}::auth::AuthorizationPolicy) -> Self {{ self.authorization = authorization; self.reader_registry = None; self.legacy_reader_roots.clear(); self.reader_binding_id = std::sync::Arc::new(()); self }} /// Attach the completed registry used by this adapter's registered owners.\npub fn with_reader_registry(mut self, registry: {runtime_module}::reactive::LocalReaderRegistry) -> Result<Self, Box<tonic::Status>> {{ registry.validate_unary_binding::<{declaration}>(self.store.database_endpoint(), &self.reader_binding_id)?; self.reader_registry = Some(registry); self.legacy_reader_roots.clear(); Ok(self) }} /// Explicit exact legacy roots only; never a fallback for registered evaluation errors.\npub fn with_legacy_unary_roots(mut self, roots: Vec<String>) -> Result<Self, Box<tonic::Status>> {{ self.reader_registry.as_ref().ok_or_else(|| tonic::Status::failed_precondition(\"legacy unary roots require attached registry\"))?.validate_legacy_unary_roots(&roots)?; self.legacy_reader_roots = roots; Ok(self) }} }}\n\n"));
+    output.push_str(&format!("impl<H:{handler}> {adapter}<H> {{ #[allow(clippy::result_large_err)] pub fn with_workflows(mut self,state_ref:&str)->Result<(Self,{runtime_module}::one_shot_tasks::OneShotTasks),tonic::Status> {{ let tasks={runtime_module}::one_shot_tasks::OneShotTasks::new_with_declarations(self.store.clone(),<{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(),state_ref.to_owned(),{binding}{{handler:self.handler.clone()}},{declarations})?;self.tasks=Some(tasks.clone());self.reader_registry=None;self.legacy_reader_roots.clear();self.reader_binding_id=std::sync::Arc::new(());Ok((self,tasks)) }} }}\n#[tonic::async_trait]\nimpl<H:{handler}> proto::{server}::{service_name} for {adapter}<H> {{ {rpc_methods} }}\n"));
     let error_dispatch = if error_validations.is_empty() {
         "let _ = (task, error); Err(tonic::Status::data_loss(\"workflow method does not declare errors\"))".to_owned()
     } else {
@@ -566,10 +703,17 @@ fn emit_workflow_service(
         })
         .collect::<Result<Vec<_>, String>>()?;
     let methods = methods.iter().collect::<Vec<_>>();
-    if methods
-        .iter()
-        .any(|(_, method, _, _, _)| method == "new" || method == "local_readers")
-    {
+    if methods.iter().any(|(_, method, _, _, _)| {
+        matches!(
+            method.as_str(),
+            "new"
+                | "local_readers"
+                | "with_reader_registry"
+                | "with_legacy_unary_roots"
+                | "with_workflows"
+                | "with_authorization"
+        )
+    }) {
         return Err(format!(
             "{service_name}: method collides with reserved local reader helper"
         ));

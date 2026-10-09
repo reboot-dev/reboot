@@ -43,7 +43,7 @@ proofs below retain their separate source snapshots and limits.
 | Transactions | Legacy durable coordinator/participant paths and bounded supervised chains/star | General nested snapshots, reentrancy, intersecting subtrees, migration |
 | Tasks | Durable scheduled tasks, typed results/Wait with opt-in result policy, recovery, local admin list/stream and scheduled-workflow cancellation | Transactional targets, running/ordinary/distributed cancellation, aggregation, broad retry and dispatcher fencing |
 | Workflows | Finite typed named steps, bounded nested indexed replay, saved reader observations and finite Continue/Break, typed declared business terminals; explicit local-body resumption | Python unbounded Task cursor/GC/Break, cross-actor composition, framework failure isolation |
-| Reactive readers | Typed bounded database/workflow/transaction-service ordinary reader subscriptions, allowlisted multi-actor routing, bounded one-hop composition, commit invalidation and explicit same-query reconnect | Remote/transitive invalidation, transparent reconnect/durable resume, streaming/transaction RPC subscriptions |
+| Reactive readers | Typed bounded database/workflow/transaction-service ordinary reader subscriptions, plain-database/workflow-bearing external unary composition, allowlisted multi-actor routing, bounded one-hop composition, commit invalidation and explicit same-query reconnect | Mixed transaction-adapter contextual composition, same-actor service aggregation, remote/transitive invalidation, transparent reconnect/durable resume, streaming/transaction RPC subscriptions |
 | SortedMap | Canonical empty constructor, serial same-host app/map transactions, same-root session reopening, live keyset pages and atomic multi-entry approval transfer | Public inbound adapter, nested/reusable siblings, distributed collection lifecycle |
 
 ## Local app development
@@ -1396,6 +1396,62 @@ Sources: [map sessions](src/sorted_map.rs), [admitted root cache](src/runtime.rs
 
 ## Local reactive readers
 
+### Workflow-bearing external reader composition (2026-10-10)
+
+Generated workflow-bearing DatabaseAdapters now expose default reader-context
+hooks, typed binding identity and explicit registry/legacy-root configuration.
+Ordinary external unary readers evaluate the registered first snapshot with the
+same bounded one-hop engine as plain database adapters. Reserved LocalReaders
+subscriptions use the contextual binding as well. All ordinary reader entrypoints
+retain the standalone raw-authority boundary, exact actor/endpoint/binding checks,
+accepted-request validation, original credentials and trusted host identity.
+
+Internal workflow reader checkpoints, waits, decisions, writer steps, task dispatch
+and canonical Wait remain their existing baseline paths. Reader-context hooks do
+not receive workflow/task mutation authority. Reconfiguring authorization or
+with_workflows clears attached registry/legacy roots and rotates binding identity;
+clones retain it. Configure final adapters before registering baseline clones,
+then attach serving adapters to avoid registry cycles. Contextual hook and helper
+name collisions fail generation; declared reader errors retain their typed details.
+
+**Executed public native vertical:** `/tmp/reboot-rust-workflow-composition-cli-1791581246575727540` used a real Cargo/rbt batch-ledger
+app with its scheduled RunBatch workflow, coupled sorted maps and a distinct
+registered ViewSource actor created/updated only through public generated writers.
+Its application overlay computes a read-only projection in a copied Ledger's
+archived field; canonical app/task/checkpoint/map bytes do not store that projection.
+41 checks passed: composed ordinary reads; root/source credentials and
+trusted identity; root/leaf denial; declared errors; authority/identity rejection;
+self/unregistered target rejection; deadline/control read; contextual subscription
+and source-commit reevaluation; pending checkpoint progression; exact RocksDB
+restoration; canonical workflow completion; terminal replay after a second restart
+without redispatch, while new source commits still change external views.
+Before/after comparisons prove equality of sampled canonical records, not absence
+of transient writes, inspection of every Database record or atomic cross-actor snapshots.
+All three sessions and recorded owned processes exited. Consumer strict all-target
+Clippy/fmt and 15 tests passed, including real generated adapter configuration tests
+for cloned, authorization-reconfigured and workflow-owner-reconfigured bindings.
+Those configuration tests use lazy transport and are not native Database proofs.
+
+SDK `/tmp/reboot-rust-unary-composition-sdk-1791580969911386764`: 474 passed/131 ignored, strict Clippy and
+both explicit native restart prerequisites passed. Ten frozen gates retained
+ordinary composition (107), registry (29),
+map (18), batch (162), nested (26), pagination (22), greeting/HTTP (26 exchanges)
+and CLI/preflight regressions. Source/Database identity, resource bounds and owned
+process absence were audited before updating this canonical ledger.
+
+This extends composed external readers to workflow-bearing database adapters;
+mixed reader/transaction adapters still lack contextual registry wiring. Same-host,
+exact Database endpoint, eight distinct direct dependencies and one-hop limits
+remain. No transitive/distributed snapshots, cross-application authority, durable
+resume, native lost-ACK/crash-window coverage, CI certification or full Rust parity
+is implied by this vertical. Same-actor mixed-service aggregation is not proved.
+
+Sources: [workflow generator](src/workflow_codegen.rs),
+[typed reactive bindings](src/reactive_codegen.rs),
+[native workflow fixture](../../tests/reboot/cli/fixtures/rust_workflow_reader_composition_fixture.py),
+[public acceptance harness](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
+
+
 ### Standalone reader authority boundary (2026-10-09)
 
 Public LocalReaders subscriptions (registry and direct single-owner entrypoints)
@@ -2514,7 +2570,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 57ca91c96e5a9cfa10ce6b778c7309ab285263d799e3462551ff34eee9761008 -->
+<!-- parity-source-sha256: 47cd578ebf09de5610d1bf184307f683c927b615c98655892e38d2f0f591aa08 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,
