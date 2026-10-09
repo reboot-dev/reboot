@@ -202,8 +202,11 @@ recovery or after host failure; internal recovery/control paths are separate.
 Server-owned application identity is not a caller header. Generated adapters
 support scoped bearer verification/immutable-state authorization and rich
 method-declared/system error handling. Canonical Health.Check and opt-in descriptor reflection plus a bounded separate
-external HTTP route host exist. Health.Watch is unimplemented; reflection requires
-explicit descriptor sets and is not Rust derive reflection. Request-aware
+external HTTP route host exist. Host-wide Health.Watch observes recovery and
+required-placement readiness, coalesces duplicate/current updates and ends on
+observed failure/shutdown. Check follows the same gate. Neither performs Python's
+websocket probe or per-service health discovery. Reflection requires explicit
+descriptor sets and is not Rust derive reflection. Request-aware
 GET/POST/OPTIONS handlers receive the original Axum request (URI/query, headers,
 extensions and body) alongside immutable untrusted external metadata and
 server-owned identity. Legacy context-only handlers remain compatible. This is
@@ -359,6 +362,68 @@ malformed snapshots/receipts, unknown-ACK cleanup and multi-participant authoriz
 remain unproved. Shared/inbound/task/workflow policy coverage and automatic durable
 transaction-declared replies remain separate contracts. This closes the bounded
 external-exclusive/factory cache-authorizer bypass, not broad authorization parity.
+
+### Host-wide lifecycle health observations (2026-10-09)
+
+Canonical `grpc.health.v1.Health.Check` and `Watch` share host readiness:
+SERVING requires recovery Ready and all opted-in placement declarations. Required
+placement loss is NOT_SERVING, even if recovery alone is Ready. Health remains
+read-only control ingress available before public actor readiness; observing it
+neither grants actor/transaction authority nor relaxes dispatch gates.
+
+Watch sends a current initial observation and changed statuses. Its stream owns
+only watch receivers and a boxed pending change future, without detached producers,
+queues, database calls, polling timers or extra dependencies. Snapshot versions
+are marked before constructing change waits, so a notification between sampling
+and polling is retained. Duplicate and fast/slow-client observations coalesce;
+this is not a durable transition log, readiness lease or retry authorization.
+
+Observed Failed or owner-channel closure emits NOT_SERVING (unless already the
+last observed status) and ends. Once polled, termination on host failure/shutdown stops the observer waiting
+for another source change during graceful router shutdown. Arbitrarily stalled
+transport/backpressure shutdown is not newly certified. Transport loss
+can prevent delivery; no universal final-message delivery is promised. Dropping
+or cancelling the stream releases its pending receivers synchronously.
+
+Requests are intentionally host-wide: service names are ignored like the existing
+custom Check contract, not per-service SERVICE_UNKNOWN discovery. This additive
+Rust Watch does not claim Python parity: Python Watch is unimplemented, and its
+Check includes a websocket probe that Rust does not implement.
+
+Sources: [host](src/application_host.rs), [wire lifecycle tests](tests/application_host.rs),
+[native CLI observer](../../tests/reboot/cli/fixtures/rust_http_request_fixture.py).
+
+**Executed acceptance:** `/tmp/reboot-rust-health-watch-preflight-1791511880749185669`
+ran three direct health stream tests and all twelve real-wire host tests, including
+recovering NOT_SERVING -> Ready SERVING -> shutdown NOT_SERVING -> EOF. Placement
+revocation/regain, duplicate/slow observations, owner closure and receiver release
+are directly exercised. Whole generated batch-consumer strict Clippy passed at
+`/tmp/reboot-rust-http-request-preflight-1791511962500090882`.
+
+Final native/SDK proof:
+`/tmp/reboot-rust-health-watch-final-gates-1791513399274396552`;
+**414 Rust tests passed, 129 ignored** (including 31 nested generated-consumer
+checks), strict SDK Clippy and 26 real HTTP exchanges. The ordinary native CLI
+consumer holds a public Health.Watch during shutdown and receives exactly
+**SERVING, NOT_SERVING, EOF**, while the parked HTTP body drains with 408 and
+listeners/process groups close. Caller-resource fault tests cover failed Watch
+creation, first-frame failure and shutdown observation; channel/call/partial-body
+socket cleanup is not counted as native status delivery. Current CLI unit gate
+also passed. Only those fixture/CLI test files changed after the broad batch run;
+SDK/host/generator sources remained identical and final native/SDK acceptance
+froze the final harness.
+
+The full **162-check** native persisted batch regression passed at
+`/tmp/reboot-rust-batch-ledger-acceptance-1791512596767606765`, preserving app/map
+restoration, tasks/replay/cancellation, restart and watcher cleanup. No dependency,
+lockfile, new producer, timer or second application owner was added.
+
+**Remaining:** per-service health discovery, websocket/end-to-end storage health,
+transparent reconnect/resume, a durable transition log and arbitrary transport
+backpressure shutdown guarantees are not implemented or proved. Native placement
+revocation/failure transitions are not credited by the default greeting shutdown
+observer; those require separate live-placement/fault acceptance. Overall parity
+remains incomplete.
 
 ## Legacy transactions and ownership
 
@@ -1694,7 +1759,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 8362bd096c7f0294f5ce854e50422bb1c62f8daba5e27ab57bdb9e9f0e483a39 -->
+<!-- parity-source-sha256: 4dc54a4fcbabf165dbc3e5f0ab62812682509c84af84d34f6ce93b70cdcbaa7b -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

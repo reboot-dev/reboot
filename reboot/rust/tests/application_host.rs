@@ -476,15 +476,16 @@ async fn public_ingress_is_unavailable_until_host_recovery_succeeds() {
             .status,
         ServingStatus::NotServing as i32
     );
+    let mut health_watch = health
+        .watch(HealthCheckRequest {
+            service: "host-wide".into(),
+        })
+        .await
+        .unwrap()
+        .into_inner();
     assert_eq!(
-        health
-            .watch(HealthCheckRequest {
-                service: String::new(),
-            })
-            .await
-            .unwrap_err()
-            .code(),
-        tonic::Code::Unimplemented
+        health_watch.message().await.unwrap().unwrap().status,
+        ServingStatus::NotServing as i32
     );
     let mut client = proto::echo_methods_client::EchoMethodsClient::connect(endpoint)
         .await
@@ -512,6 +513,15 @@ async fn public_ingress_is_unavailable_until_host_recovery_succeeds() {
             .status,
         ServingStatus::Serving as i32
     );
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(2), health_watch.message())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap()
+            .status,
+        ServingStatus::Serving as i32
+    );
     let mut open = Request::new(proto::Text {
         content: "open".into(),
     });
@@ -522,7 +532,20 @@ async fn public_ingress_is_unavailable_until_host_recovery_succeeds() {
         "server-owned-app;spoof-visible=false"
     );
     shutdown_tx.send(()).unwrap();
-    server.await.unwrap();
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(2), health_watch.message())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap()
+            .status,
+        ServingStatus::NotServing as i32
+    );
+    assert!(health_watch.message().await.unwrap().is_none());
+    tokio::time::timeout(Duration::from_secs(2), server)
+        .await
+        .unwrap()
+        .unwrap();
 }
 
 #[tokio::test]

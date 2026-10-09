@@ -276,5 +276,62 @@ class RuntimeTest(unittest.IsolatedAsyncioTestCase):
             await asyncio.wait_for(wait_for_change(patterns, previous), 1)
 
 
+
+class HealthObserverCleanupTest(unittest.TestCase):
+    """Fault injection checks resource cleanup, not native status delivery."""
+    def fixture(self):
+        spec = importlib.util.spec_from_file_location('health_fixture_cleanup', ROOT / 'tests/reboot/cli/fixtures/rust_http_request_fixture.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        obj = module.HttpRequestFixture.__new__(module.HttpRequestFixture)
+        obj.grpc_port = 1
+        obj.health_channel = obj.health_watch = obj.slow_socket = None
+        obj.evidence = {}
+        return obj
+
+    def test_failed_watch_creation_and_first_frame_close_owned_channel(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock, MagicMock
+        for failure in ['creation', 'first_frame']:
+            with self.subTest(failure=failure):
+                obj = self.fixture()
+                channel = Mock()
+                call = MagicMock()
+                call.__next__ = Mock(side_effect=RuntimeError('injected first-frame failure'))
+                stub = Mock()
+                stub.Watch.side_effect = RuntimeError('injected creation failure') if failure == 'creation' else None
+                stub.Watch.return_value = call
+                modules = {
+                    'grpc': SimpleNamespace(insecure_channel=Mock(return_value=channel)),
+                    'grpc_health': SimpleNamespace(),
+                    'grpc_health.v1': SimpleNamespace(health_pb2=SimpleNamespace(HealthCheckRequest=Mock()), health_pb2_grpc=SimpleNamespace(HealthStub=Mock(return_value=stub))),
+                }
+                with patch.dict(sys.modules, modules), self.assertRaises(RuntimeError):
+                    obj.begin_slow_body()
+                channel.close.assert_called_once()
+                if failure == 'first_frame':
+                    call.cancel.assert_called_once()
+                self.assertIsNone(obj.health_channel)
+                self.assertIsNone(obj.health_watch)
+
+    def test_failed_shutdown_observation_closes_channel_and_partial_body_socket(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock, MagicMock
+        obj = self.fixture()
+        channel, sock = Mock(), Mock()
+        call = MagicMock()
+        call.__iter__.side_effect = RuntimeError('injected watch shutdown failure')
+        obj.health_channel, obj.health_watch, obj.slow_socket = channel, call, sock
+        modules = {'grpc_health': SimpleNamespace(), 'grpc_health.v1': SimpleNamespace(health_pb2=SimpleNamespace())}
+        with patch.dict(sys.modules, modules), self.assertRaises(RuntimeError):
+            obj.closed()
+        channel.close.assert_called_once()
+        call.cancel.assert_called_once()
+        sock.close.assert_called_once()
+        self.assertIsNone(obj.health_channel)
+        self.assertIsNone(obj.health_watch)
+        self.assertIsNone(obj.slow_socket)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

@@ -74,11 +74,88 @@ impl RecoveryReadiness {
     }
 }
 
-/// The Python health servicer reports the host's lifecycle readiness for any
-/// `Check` request. It deliberately does not implement streaming `Watch`.
+/// Host-wide health follows recovery and required placement, like public ingress.
+/// Watch observes current status without a detached producer; Failed terminates it.
 #[derive(Clone, Debug)]
 struct HostHealth {
     readiness: RecoveryReadiness,
+    placement: tokio::sync::watch::Receiver<bool>,
+}
+impl HostHealth {
+    fn terminal(&self) -> bool {
+        self.readiness.state() == RecoveryState::Failed
+            || self.readiness.state.has_changed().is_err()
+            || self.placement.has_changed().is_err()
+    }
+    fn status(&self) -> ServingStatus {
+        if !self.terminal()
+            && self.readiness.state() == RecoveryState::Ready
+            && *self.placement.borrow()
+        {
+            ServingStatus::Serving
+        } else {
+            ServingStatus::NotServing
+        }
+    }
+}
+
+// Own the receivers inside the pending future, rather than spawn a producer or
+// require another dependency/feature in every generated consumer lockfile.
+struct HostHealthWatch {
+    health: Option<HostHealth>,
+    pending: Option<Pin<Box<dyn Future<Output = HostHealth> + Send>>>,
+    last: Option<ServingStatus>,
+    finished: bool,
+}
+impl tokio_stream::Stream for HostHealthWatch {
+    type Item = Result<HealthCheckResponse, tonic::Status>;
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        if self.finished {
+            return Poll::Ready(None);
+        }
+        if let Some(pending) = self.pending.as_mut() {
+            match pending.as_mut().poll(cx) {
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(health) => {
+                    self.health = Some(health);
+                    self.pending = None;
+                }
+            }
+        }
+        let health = self.health.as_mut().expect("watch owns receivers");
+        let terminal = health.terminal();
+        // Mark exactly the versions sampled below, BEFORE creating changed()
+        // futures. Changes between sampling and polling therefore cannot be lost.
+        let recovery = *health.readiness.state.borrow_and_update();
+        let placement = *health.placement.borrow_and_update();
+        let terminal = terminal || recovery == RecoveryState::Failed;
+        let status = if !terminal && recovery == RecoveryState::Ready && placement {
+            ServingStatus::Serving
+        } else {
+            ServingStatus::NotServing
+        };
+        self.finished = terminal;
+        if self.last != Some(status) {
+            self.last = Some(status);
+            return Poll::Ready(Some(Ok(HealthCheckResponse {
+                status: status as i32,
+            })));
+        }
+        if terminal {
+            return Poll::Ready(None);
+        }
+        let mut health = self.health.take().expect("watch owns receivers");
+        self.pending = Some(Box::pin(async move {
+            tokio::select! {
+                _ = health.readiness.state.changed() => {},
+                _ = health.placement.changed() => {},
+            }
+            health
+        }));
+        // Bounded work per poll, including duplicate/coalesced updates.
+        cx.waker().wake_by_ref();
+        Poll::Pending
+    }
 }
 
 #[tonic::async_trait]
@@ -87,10 +164,7 @@ impl Health for HostHealth {
         &self,
         _: Request<HealthCheckRequest>,
     ) -> Result<tonic::Response<HealthCheckResponse>, tonic::Status> {
-        let status = match self.readiness.state() {
-            RecoveryState::Ready => ServingStatus::Serving,
-            RecoveryState::Recovering | RecoveryState::Failed => ServingStatus::NotServing,
-        };
+        let status = self.status();
         Ok(tonic::Response::new(HealthCheckResponse {
             status: status as i32,
         }))
@@ -108,9 +182,13 @@ impl Health for HostHealth {
         &self,
         _: Request<HealthCheckRequest>,
     ) -> Result<tonic::Response<Self::WatchStream>, tonic::Status> {
-        Err(tonic::Status::unimplemented(
-            "health watch is not implemented",
-        ))
+        let stream = HostHealthWatch {
+            health: Some(self.clone()),
+            pending: None,
+            last: None,
+            finished: false,
+        };
+        Ok(tonic::Response::new(Box::pin(stream)))
     }
 }
 
@@ -889,6 +967,7 @@ impl ApplicationHost {
             readiness: RecoveryReadiness {
                 state: state.clone(),
             },
+            placement: placement_gate.state.clone(),
         });
         Self {
             router: Server::builder()
@@ -1517,5 +1596,102 @@ mod writer_failure_lifecycle_tests {
             matches!(serving.await.unwrap(), Err(ApplicationHostError::RecoveryTask(status)) if status.code() == tonic::Code::Unavailable)
         );
         assert!(tokio::net::TcpStream::connect(address).await.is_err());
+    }
+}
+
+#[cfg(test)]
+mod health_watch_tests {
+    use super::*;
+    use std::time::Duration;
+    use tokio_stream::StreamExt;
+    fn health(
+        state: &tokio::sync::watch::Sender<RecoveryState>,
+        placement: &tokio::sync::watch::Sender<bool>,
+    ) -> HostHealth {
+        HostHealth {
+            readiness: RecoveryReadiness {
+                state: state.subscribe(),
+            },
+            placement: placement.subscribe(),
+        }
+    }
+    async fn next(stream: &mut <HostHealth as Health>::WatchStream) -> i32 {
+        tokio::time::timeout(Duration::from_secs(1), stream.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap()
+            .status
+    }
+    #[tokio::test]
+    async fn check_and_watch_follow_placement_and_failure_without_producer() {
+        let (state, _) = tokio::sync::watch::channel(RecoveryState::Ready);
+        let (placement, _) = tokio::sync::watch::channel(false);
+        let health = health(&state, &placement);
+        assert_eq!(
+            health
+                .check(Request::new(HealthCheckRequest::default()))
+                .await
+                .unwrap()
+                .into_inner()
+                .status,
+            ServingStatus::NotServing as i32
+        );
+        let before = (state.receiver_count(), placement.receiver_count());
+        let mut stream = health
+            .watch(Request::new(HealthCheckRequest::default()))
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(next(&mut stream).await, ServingStatus::NotServing as i32);
+        placement.send_replace(true);
+        assert_eq!(next(&mut stream).await, ServingStatus::Serving as i32);
+        placement.send_replace(false);
+        assert_eq!(next(&mut stream).await, ServingStatus::NotServing as i32);
+        placement.send_replace(true);
+        assert_eq!(next(&mut stream).await, ServingStatus::Serving as i32);
+        state.send_replace(RecoveryState::Failed);
+        assert_eq!(next(&mut stream).await, ServingStatus::NotServing as i32);
+        assert!(stream.next().await.is_none());
+        drop(stream);
+        assert_eq!((state.receiver_count(), placement.receiver_count()), before);
+    }
+    #[tokio::test]
+    async fn duplicate_and_slow_observations_coalesce_and_drop_releases_receivers() {
+        let (state, _) = tokio::sync::watch::channel(RecoveryState::Ready);
+        let (placement, _) = tokio::sync::watch::channel(true);
+        let health = health(&state, &placement);
+        let before = (state.receiver_count(), placement.receiver_count());
+        let mut stream = health
+            .watch(Request::new(HealthCheckRequest::default()))
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(next(&mut stream).await, ServingStatus::Serving as i32);
+        placement.send_replace(false);
+        placement.send_replace(true);
+        state.send_replace(RecoveryState::Ready);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(30), stream.next())
+                .await
+                .is_err()
+        );
+        drop(stream);
+        assert_eq!((state.receiver_count(), placement.receiver_count()), before);
+    }
+    #[tokio::test]
+    async fn dropped_owner_never_leaves_a_serving_stream() {
+        let (state, _) = tokio::sync::watch::channel(RecoveryState::Ready);
+        let (placement, _) = tokio::sync::watch::channel(true);
+        let health = health(&state, &placement);
+        let mut stream = health
+            .watch(Request::new(HealthCheckRequest::default()))
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(next(&mut stream).await, ServingStatus::Serving as i32);
+        drop(state);
+        assert_eq!(next(&mut stream).await, ServingStatus::NotServing as i32);
+        assert!(stream.next().await.is_none());
     }
 }

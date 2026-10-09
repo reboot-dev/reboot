@@ -9,6 +9,9 @@ from typing import Any
 class HttpRequestFixture:
     def __init__(self, app, environment, grpc_port, repository, evidence, record, native_read):
         self.app = app
+        self.grpc_port = grpc_port
+        self.health_channel = None
+        self.health_watch = None
         self.port = grpc_port + 1
         self.evidence = evidence
         self.record = record
@@ -133,11 +136,46 @@ class HttpRequestFixture:
         self.record('PASS request-aware HTTP reads and idempotent writer replay survive real RocksDB restart')
 
     def begin_slow_body(self):
+        import grpc
+        from grpc_health.v1 import health_pb2, health_pb2_grpc
+        self.health_channel = grpc.insecure_channel(f'127.0.0.1:{self.grpc_port}')
+        try:
+            self.health_watch = health_pb2_grpc.HealthStub(self.health_channel).Watch(health_pb2.HealthCheckRequest(service='host-wide'), timeout=15)
+            status = next(self.health_watch).status
+            assert status == health_pb2.HealthCheckResponse.SERVING
+            self.evidence['health_watch_statuses'] = [status]
+        except BaseException:
+            self._close_health()
+            raise
         self.slow_socket = socket.create_connection(('127.0.0.1', self.port), timeout=4)
         self.slow_socket.sendall(b'POST /actors/http-item/greet HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer fixture-credential\r\nContent-Length: 1000\r\nConnection: close\r\n\r\n{')
         time.sleep(0.1)
 
+    def _close_health(self):
+        watch, self.health_watch = self.health_watch, None
+        channel, self.health_channel = self.health_channel, None
+        try:
+            if watch is not None:
+                watch.cancel()
+        finally:
+            if channel is not None:
+                channel.close()
+
     def closed(self):
+        if self.health_watch is not None:
+            from grpc_health.v1 import health_pb2
+            try:
+                statuses = [reply.status for reply in self.health_watch]
+                assert statuses == [health_pb2.HealthCheckResponse.NOT_SERVING], statuses
+                self.evidence['health_watch_statuses'].extend(statuses)
+                self.record('PASS native host Health.Watch SERVING to NOT_SERVING then EOF without blocking shutdown')
+            except BaseException:
+                if self.slow_socket is not None:
+                    self.slow_socket.close()
+                    self.slow_socket = None
+                raise
+            finally:
+                self._close_health()
         if self.slow_socket is not None:
             try:
                 reply = b''
