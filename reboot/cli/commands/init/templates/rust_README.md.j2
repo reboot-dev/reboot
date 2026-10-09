@@ -69,3 +69,40 @@ The default scaffold without this environment variable is unchanged. This is
 local routing for independent unary readers, not cross-actor dependency tracking,
 atomic multi-actor snapshots, distributed watches or durable stream resume.
 Dropping a stream releases admission; restart requires an explicit fresh watch.
+
+### Opt-in selected-source view
+
+Set `RBT_RUST_REACTIVE_COMPOSITION=1` alongside the actor allowlist to enable
+bounded one-hop composition. Register source actors plus a selector, construct
+them through the public client, then select a source:
+
+```sh
+SELECTOR=$(cargo run --quiet --manifest-path backend/Cargo.toml --bin client -- state-ref selector)
+export RBT_RUST_REACTIVE_ACTORS="$ALPHA,$BETA,$SELECTOR"
+export RBT_RUST_REACTIVE_COMPOSITION=1
+rbt dev run --rust-allow-insecure-database
+# In another shell after startup:
+cargo run --manifest-path backend/Cargo.toml --bin client -- create "$SELECTOR"
+cargo run --manifest-path backend/Cargo.toml --bin client -- select-source "$SELECTOR" "$ALPHA"
+cargo run --manifest-path backend/Cargo.toml --bin client -- watch "$SELECTOR" 2
+# Greet ALPHA in another shell to update the selector's view.
+```
+
+The selector persists its source. `select-source "$SELECTOR" -` clears it.
+A selected-source view requires a composed reactive scope; its ordinary unary
+reader fails rather than silently returning the selector's local count. Selecting
+a source that is itself a view rejects nested composition. Unknown/unregistered,
+self and mismatched-type dependencies fail closed. Reconnect starts a fresh view
+from persisted state; it is not event replay.
+
+SDK handlers can override the generated `{reader}_with_reader_context` hook and
+call generated `{reader}_read_local` helpers. Each evaluation retains at most
+eight distinct direct dependencies, registers revisions before reading, and
+retires unused actors even when its output is unchanged. Target authorization is
+rerun with original credentials. Snapshot leases are released before composed
+callbacks, preventing cross-actor lease cycles. Read errors or canceled reads
+poison the evaluation even if application code catches them; closing or dropping
+an evaluation cancels escaped in-flight reads.
+
+This is a same-host, same-Database, non-atomic view—not a recursive DAG,
+distributed invalidation, transparent retry or durable stream-resume contract.

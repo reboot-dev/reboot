@@ -21,6 +21,7 @@ fn emit_local_readers(
             method.clone(),
             format!("{method}_with_timeout"),
             format!("{method}_connect"),
+            format!("{method}_read_local"),
         ] {
             if let Some(previous) = symbols.insert(symbol.clone(), identity.clone()) {
                 return Err(format!(
@@ -58,8 +59,23 @@ fn emit_local_readers(
         output.push_str(&format!("\"{identity}\" => {{ let body = <proto::{request} as prost::Message>::decode(request.get_ref().request.as_slice()).map_err(|_| tonic::Status::invalid_argument(\"malformed typed reader request\"))?; let (metadata, extensions, _) = request.into_parts(); let request = tonic::Request::from_parts(metadata, extensions, body); let handler = self.handler.clone(); let response = self.store.reader_async_for_with_admission_authorized::<{declaration}, _, _, _>(\"{identity}\", {runtime}::runtime::StateAdmission::RequireExisting, &self.authorization, request, move |state, body| Box::pin(async move {{ handler.{method}(state, body).await{error} }})).await?; Ok(prost::Message::encode_to_vec(response.get_ref())) }},\n"));
     }
     output.push_str(
-        "_ => Err(tonic::Status::unimplemented(\"not a generated local unary reader\")), } } }\n",
+        "_ => Err(tonic::Status::unimplemented(\"not a generated local unary reader\")), } }\n",
     );
+    if !transactions && !annotation.methods.values().any(|kind| matches!(kind, DurableKind::Workflow)) {
+        output.push_str(&format!("async fn read_with_context(&self, request: tonic::Request<{runtime}::reactive::wire::Query>, context: {runtime}::reactive::LocalReaderContext) -> Result<Vec<u8>, tonic::Status> {{ match request.get_ref().method.as_str() {{\n"));
+        for (kind, method, request, _response, identity) in &readers {
+            let error = if declared_database_errors(annotation, kind, identity).is_empty() {
+                ""
+            } else {
+                ".map_err(|error| error.into_status())"
+            };
+            output.push_str(&format!("\"{identity}\" => {{ let body = <proto::{request} as prost::Message>::decode(request.get_ref().request.as_slice()).map_err(|_| tonic::Status::invalid_argument(\"malformed typed reader request\"))?; let (metadata, extensions, _) = request.into_parts(); let request = tonic::Request::from_parts(metadata, extensions, body); let handler = self.handler.clone(); let response = self.store.reader_async_for_with_admission_authorized::<{declaration}, _, _, _>(\"{identity}\", {runtime}::runtime::StateAdmission::RequireExisting, &self.authorization, request, move |state, body| Box::pin(async move {{ handler.{method}_with_reader_context(state, body, context).await{error} }})).await?; Ok(prost::Message::encode_to_vec(response.get_ref())) }},\n"));
+        }
+        output.push_str(
+            "_ => Err(tonic::Status::unimplemented(\"not a generated local unary reader\")), } }\n",
+        );
+    }
+    output.push_str("}\n");
     output.push_str(&format!("/// Typed Rust-only subscription client. No automatic stream retries/reconnect.\npub struct {service}ReactiveClient {{ channel: tonic::transport::Channel, context: {runtime}::ExternalContext }}\nimpl {service}ReactiveClient {{ pub fn new(channel: tonic::transport::Channel, context: {runtime}::ExternalContext) -> Self {{ Self {{ channel, context }} }}\n"));
     for (kind, method, request, response, identity) in readers {
         let (error, decode) = if declared_database_errors(annotation, kind, identity).is_empty() {
@@ -76,6 +92,12 @@ fn emit_local_readers(
         } else {
             format!("{decode}(tonic::Status::invalid_argument(e.to_string()))")
         };
+        let local_decode = if error == "tonic::Status" {
+            String::new()
+        } else {
+            format!(".map_err({decode})")
+        };
+        output.push_str(&format!("/// One-hop typed read inside a registered root evaluation.\npub async fn {method}_read_local(context: &{runtime}::reactive::LocalReaderContext, state_ref: &str, request: proto::{request}) -> Result<proto::{response}, {error}> {{ context.read(state_ref, <{declaration} as {runtime}::runtime::DurableStateDeclaration>::STATE_TYPE, \"{identity}\", request).await{local_decode} }}\n"));
         output.push_str(&format!("pub async fn {method}(&mut self, request: proto::{request}) -> Result<{runtime}::reactive::TypedSubscription<proto::{response}, {error}>, {error}> {{ self.{method}_connect(request, None).await }}\n pub async fn {method}_with_timeout(&mut self, request: proto::{request}, timeout: std::time::Duration) -> Result<{runtime}::reactive::TypedSubscription<proto::{response}, {error}>, {error}> {{ self.{method}_connect(request, Some(timeout)).await }}\n async fn {method}_connect(&self, request: proto::{request}, timeout: Option<std::time::Duration>) -> Result<{runtime}::reactive::TypedSubscription<proto::{response}, {error}>, {error}> {{ let mut request = self.context.reader({runtime}::reactive::wire::Query {{ method: \"{identity}\".to_owned(), request: prost::Message::encode_to_vec(&request) }}).map_err(|e| {input_error})?; if let Some(timeout) = timeout {{ request.set_timeout(timeout); }} {runtime}::reactive::TypedSubscription::connect(self.channel.clone(), request, {decode}).await }}\n"));
     }
     output.push_str("}\n");

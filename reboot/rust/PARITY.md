@@ -43,7 +43,7 @@ proofs below retain their separate source snapshots and limits.
 | Transactions | Legacy durable coordinator/participant paths and bounded supervised chains/star | General nested snapshots, reentrancy, intersecting subtrees, migration |
 | Tasks | Durable scheduled tasks, typed results/Wait with opt-in result policy, recovery, local admin list/stream and scheduled-workflow cancellation | Transactional targets, running/ordinary/distributed cancellation, aggregation, broad retry and dispatcher fencing |
 | Workflows | Finite typed named steps, bounded nested indexed replay, saved reader observations and finite Continue/Break, typed declared business terminals; explicit local-body resumption | Python unbounded Task cursor/GC/Break, cross-actor composition, framework failure isolation |
-| Reactive readers | Typed bounded database/workflow/transaction-service ordinary reader subscriptions, allowlisted multi-actor routing, commit invalidation and explicit same-query reconnect | Cross-actor/remote invalidation, transparent reconnect/durable resume, streaming/transaction RPC subscriptions |
+| Reactive readers | Typed bounded database/workflow/transaction-service ordinary reader subscriptions, allowlisted multi-actor routing, bounded one-hop composition, commit invalidation and explicit same-query reconnect | Remote/transitive invalidation, transparent reconnect/durable resume, streaming/transaction RPC subscriptions |
 | SortedMap | Canonical empty constructor, serial same-host app/map transactions, same-root session reopening, live keyset pages and atomic multi-entry approval transfer | Public inbound adapter, nested/reusable siblings, distributed collection lifecycle |
 
 ## Local app development
@@ -1396,6 +1396,80 @@ Sources: [map sessions](src/sorted_map.rs), [admitted root cache](src/runtime.rs
 
 ## Local reactive readers
 
+### Bounded one-hop local reader composition (2026-10-09)
+
+Opt-in `LocalReaderRegistry::with_reader_composition` enables generated database
+reader snapshot hooks and typed `{reader}_read_local` calls to registered actors.
+The registry enforces one exact canonical Database endpoint. Each evaluation may
+use at most eight distinct direct dependencies. Self, unknown/type-mismatched
+actors and unsupported bindings fail closed. Leaf dispatch invokes ordinary
+unary readers, not another composed context or Subscribe producer. There are no
+detached dependency streams, recursive DAGs or cross-actor atomic snapshots.
+
+Revision receivers register and mark their baseline before admission/Load.
+Repeated reads retain the earliest baseline so racing commits remain pending.
+Successful evaluation replaces dependencies before output deduplication, retiring
+unused sources even for equal output. Active evaluation watches root uncertainty
+and dynamically registered dependency uncertainty/revocation. Sticky uncertain
+commit outcomes terminate the stream; no status-based retries or synthetic abort.
+
+The authorized root envelope holds a shared lease for immutable snapshot Load,
+authorization and decode, then releases it before invoking the composed callback.
+Direct leaf reads retain original credential/caller metadata with only the exact
+target reference substituted, preserve lifecycle scope, and rerun the target's
+existing verifier/authorizer against its state/request. This same-host trusted
+mutation-owner contract does not grant cross-application internal authority.
+
+Evaluation admission, completion/failure and finalization share one mutex.
+A canceled/dropped dependency poisons the evaluation even if its handler catches
+or times it out. Failure records precede active-read decrement. Finalization seals
+new reads atomically and rejects unfinished calls. A closure watch wakes escaped
+in-flight reads; RAII stream Drop cancels the callback/dependency futures and
+reclaims admission. Twelve focused tests exercise selection/retirement, racing
+revision/uncertainty, actor bounds/auth denial, caught errors, canceled fallback,
+root/dependency uncertainty during lease waits, closed contexts, escaped-read
+wake/cleanup and atomic finalization. These are local runtime tests, not native
+proof of all failure windows.
+
+The greeting scaffold opts in with `RBT_RUST_REACTIVE_COMPOSITION=1` plus its
+actor allowlist. Public `select-source` persists a canonical source on a selector
+actor; typed `watch` follows that source. Clearing selection restores local reads.
+Ordinary unary reads of selected-source views reject absent composed scope;
+selected-source leaves reject nesting rather than recursively resolving a DAG.
+Default greeting behavior without composition remains exercised separately.
+
+**Executed public Cargo/rbt/native:** `/tmp/reboot-rust-reader-composition-cli-1791563149582223716` passed
+21 checks through public constructors, selection
+writers and a generated typed watcher: selected-source commits updated the view,
+equal-result source switch retired alpha before beta updates, self/unknown/nested
+queries failed without partial publication, canonical CXX Load matched persisted
+selector/source states, and real RocksDB restart restored the selected baseline.
+Replaying an old selection key did not restore its old dependency. Shutdown,
+failed build, actual host/Database exit and owned-child cleanup passed. The fixture
+adds only a handler-entry trace for retirement observation; application logic and
+all mutations use the actual generated public paths. Its finite quiet-window
+trace check is not a proof of arbitrary future inactivity.
+
+SDK `/tmp/reboot-rust-reader-composition-sdk-1791562880330177302`: 463 passed/131 ignored, strict all-target
+Clippy and explicit native reader-outcome/staged-map restart gates. Generated
+consumer Clippy/fmt passed. Retained registry `/tmp/reboot-rust-reader-registry-cli-1791563835759141764` (29), map `/tmp/reboot-rust-map-reentry-cli-1791564217652716283` (18),
+batch `/tmp/reboot-rust-batch-ledger-acceptance-1791564499153902931` (162), nested `/tmp/reboot-rust-nested-cli-1791565258524672068` (26), pagination `/tmp/reboot-rust-pagination-cli-1791565634139742496` (22), preflight
+`/tmp/reboot-rust-http-request-preflight-1791564137556504604`, and default greeting/HTTP `/tmp/reboot-rust-loop-decision-greeting-1791563460499733936` (26 exchanges) all passed.
+Frozen hashes, Database identity, resources and owned-process absence audited.
+
+Python [reader interception](../aio/stubs.py) and
+[reactive manager](../aio/state_managers.py) have broader transitive semantics.
+Remote invalidation/migration, nested dependency DAGs, canonical React wire,
+atomic multi-actor snapshots and durable resume remain missing. Native target-auth,
+commit-uncertainty/cancellation and racing first-Load composition windows are not
+claimed by the selected-source acceptance. Overall Rust parity is incomplete.
+
+Sources: [runtime](src/reactive.rs), [authorized snapshots](src/runtime.rs),
+[generated hooks](src/codegen.rs), [typed calls](src/reactive_codegen.rs),
+[focused tests](src/reactive_composition_tests.rs),
+[native fixture](../../tests/reboot/cli/fixtures/rust_reader_composition_fixture.py).
+
+
 ### Allowlisted multi-actor local reader routing (2026-10-09)
 
 `LocalReaderRegistry` installs one reserved LocalReaders route for an explicit
@@ -2314,7 +2388,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 8f04ff0a14338280cf564ccf31f7a95c190a0ceb8517042cc5fa8df827747ef6 -->
+<!-- parity-source-sha256: ec9424ca792c087f35eca787c00b10b8a9b5301e6097b2edc6ac5bb242fea212 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

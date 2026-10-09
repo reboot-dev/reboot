@@ -58,6 +58,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             registry.register(readers)?;
         }
     }
+    let composition = match std::env::var("RBT_RUST_REACTIVE_COMPOSITION") {
+        Ok(value) if value == "1" => true,
+        Ok(_) => return Err("RBT_RUST_REACTIVE_COMPOSITION must be 1 when present".into()),
+        Err(std::env::VarError::NotPresent) => false,
+        Err(error) => return Err(error.into()),
+    };
+    if composition {
+        if configured.is_none() {
+            return Err("composed readers require an actor allowlist".into());
+        }
+        registry = registry.with_reader_composition();
+    }
     let host = ApplicationHost::new(application).add_public_service(
         proto::hello_world_methods_server::HelloWorldMethodsServer::new(adapter),
     );

@@ -1358,6 +1358,27 @@ fn emit_durable(
                 output.push_str(&format!("    async fn {method}(&self, state: {}proto::{state}, request: proto::{request}) -> Result<proto::{response}, {error}>;\n", if matches!(**kind, DurableKind::Writer(_)) { "&mut " } else { "&" }));
             }
         }
+        // Backward-compatible optional composed snapshot hook. Ordinary unary
+        // readers keep their original handlers and envelopes.
+        for (kind, method, request, response, identity) in &database_methods {
+            if matches!(**kind, DurableKind::Reader) {
+                let hook = format!("{method}_with_reader_context");
+                if database_methods
+                    .iter()
+                    .any(|(_, other, _, _, _)| other == &hook)
+                {
+                    return Err(format!(
+                        "{service_name}: composed reader hook `{hook}` collides"
+                    ));
+                }
+                let error = if declared_database_errors(annotation, kind, identity).is_empty() {
+                    "tonic::Status".to_owned()
+                } else {
+                    declared_error_type(service_name, method)
+                };
+                output.push_str(&format!("    async fn {hook}(&self, state: &proto::{state}, request: proto::{request}, _context: {runtime_module}::reactive::LocalReaderContext) -> Result<proto::{response}, {error}> {{ self.{method}(state, request).await }}\n"));
+            }
+        }
         output.push_str("}\n\n");
         output.push_str(&format!("pub struct {adapter}<H> {{ store: {runtime_module}::runtime::DatabaseActorStore, handler: std::sync::Arc<H>, authorization: {runtime_module}::auth::AuthorizationPolicy }}\nimpl<H> Clone for {adapter}<H> {{ fn clone(&self) -> Self {{ Self {{ store: self.store.clone(), handler: self.handler.clone(), authorization: self.authorization.clone() }} }} }}\nimpl<H> {adapter}<H> {{ pub fn new(store: {runtime_module}::runtime::DatabaseActorStore, handler: H) -> Self {{ Self {{ store, handler: std::sync::Arc::new(handler), authorization: {runtime_module}::auth::AuthorizationPolicy::default() }} }} pub fn with_authorization(mut self, authorization: {runtime_module}::auth::AuthorizationPolicy) -> Self {{ self.authorization = authorization; self }} }}\n\n"));
         output.push_str("#[tonic::async_trait]\n");

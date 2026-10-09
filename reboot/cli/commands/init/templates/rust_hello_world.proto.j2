@@ -4,6 +4,7 @@ import "rbt/v1alpha1/options.proto";
 message HelloWorld {
   option (rbt.v1alpha1.state) = { implements: ["{{ name }}.v1.HelloWorldMethods"] };
   int32 number_of_greetings = 1;
+  string selected_source = 2;
 }
 service HelloWorldMethods {
   option (rbt.v1alpha1.service) = { state: "{{ name }}.v1.HelloWorld" };
@@ -11,6 +12,9 @@ service HelloWorldMethods {
     option (rbt.v1alpha1.method).writer = { constructor: {} };
   }
   rpc Greet(GreetRequest) returns (GreetResponse) {
+    option (rbt.v1alpha1.method).writer = {};
+  }
+  rpc SelectSource(SelectSourceRequest) returns (NumGreetingsResponse) {
     option (rbt.v1alpha1.method).writer = {};
   }
   rpc NumGreetings(NumGreetingsRequest) returns (NumGreetingsResponse) {
@@ -22,3 +26,4 @@ message GreetRequest {}
 message GreetResponse { int32 number_of_greetings = 1; }
 message NumGreetingsRequest {}
 message NumGreetingsResponse { int32 number_of_greetings = 1; }
+message SelectSourceRequest { string state_ref = 1; }

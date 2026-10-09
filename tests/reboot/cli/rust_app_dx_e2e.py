@@ -166,14 +166,16 @@ def durable_count(session):
 
 http_fixture = None
 reader_registry_fixture = None
-if os.environ.get('RUST_DX_READER_REGISTRY_ONLY'):
-    fixture_path = REPOSITORY / 'tests/reboot/cli/fixtures/rust_reader_registry_fixture.py'
+if os.environ.get('RUST_DX_READER_REGISTRY_ONLY') or os.environ.get('RUST_DX_READER_COMPOSITION_ONLY'):
+    composed = bool(os.environ.get('RUST_DX_READER_COMPOSITION_ONLY'))
+    fixture_path = REPOSITORY / 'tests/reboot/cli/fixtures' / ('rust_reader_composition_fixture.py' if composed else 'rust_reader_registry_fixture.py')
     spec = importlib.util.spec_from_file_location('reader_registry_fixture', fixture_path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     for fixture in [fixture_path, Path(__file__)]:
         evidence['source_hashes'][str(fixture)] = hashlib.sha256(fixture.read_bytes()).hexdigest()
-    reader_registry_fixture = module.ReaderRegistryFixture(APP, ENV, PORT, REPOSITORY, evidence, record, command, database_pb2, database_pb2_grpc, proto)
+    fixture_class = module.ReaderCompositionFixture if composed else module.ReaderRegistryFixture
+    reader_registry_fixture = fixture_class(APP, ENV, PORT, REPOSITORY, evidence, record, command, database_pb2, database_pb2_grpc, proto)
 if os.environ.get('RUST_DX_HTTP_REQUEST_ONLY'):
     fixture_path = REPOSITORY / 'tests/reboot/cli/fixtures/rust_http_request_fixture.py'
     spec = importlib.util.spec_from_file_location('http_request_fixture', fixture_path)

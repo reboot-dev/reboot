@@ -4018,6 +4018,22 @@ impl DatabaseActorStore {
             .await?;
         crate::reactive::check_reader_scope(&request)?;
         let state_ref = required_metadata(&request, STATE_REF_HEADER)?;
+        // Composed callbacks receive an owned immutable snapshot, not a lease.
+        // Hold shared admission through Load+authorization, then release before
+        // any dependency call so FIFO writers cannot form cross-actor cycles.
+        let snapshot_lease = if request
+            .extensions()
+            .get::<crate::reactive::SnapshotReader>()
+            .is_some()
+        {
+            Some(
+                self.actor_gate(Declaration::STATE_TYPE, &state_ref)
+                    .shared()
+                    .await,
+            )
+        } else {
+            None
+        };
         let state_bytes = self
             .load_state_bytes(Declaration::STATE_TYPE, &state_ref)
             .await?;
@@ -4040,6 +4056,7 @@ impl DatabaseActorStore {
             .extensions()
             .get::<crate::reactive::ReaderScope>()
             .cloned();
+        drop(snapshot_lease);
         let response = invoke(&state, request.into_inner()).await?;
         if let Some(scope) = scope {
             scope.check()?;

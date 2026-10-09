@@ -6,7 +6,7 @@ use std::time::Duration;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
     let command = args.get(1).ok_or(
-        "usage: client <create|greet|read|watch|state-ref|health> [state-ref] [idempotency-key]",
+        "usage: client <create|greet|select-source|read|watch|state-ref|health> [state-ref] [idempotency-key]",
     )?;
     if command == "state-ref" {
         println!(
@@ -79,6 +79,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .unwrap_or_else(uuid::Uuid::new_v4);
                 client
                     .greet_with_key(proto::GreetRequest {}, key)
+                    .await?
+                    .into_inner()
+                    .number_of_greetings
+            }
+            "select-source" => {
+                let source = args
+                    .get(3)
+                    .ok_or("missing source reference (or - to clear)")?;
+                let source = if source == "-" {
+                    String::new()
+                } else {
+                    source.clone()
+                };
+                let key = args
+                    .get(4)
+                    .map(|v| uuid::Uuid::parse_str(v))
+                    .transpose()?
+                    .unwrap_or_else(uuid::Uuid::new_v4);
+                client
+                    .select_source_with_key(proto::SelectSourceRequest { state_ref: source }, key)
                     .await?
                     .into_inner()
                     .number_of_greetings

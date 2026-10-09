@@ -1,5 +1,6 @@
 //! Rust-only local reactive readers. One trusted host owns all mutations to
-//! the sidecar; no distributed watch, dependency tracking or Python React wire.
+//! the sidecar; optional bounded one-hop local dependencies, no distributed watch
+//! or Python React wire.
 //! Invalidations follow acknowledged durable commits, not polling. Streams are
 //! pull-driven: no spawned subscriber children, one coalescing revision cursor,
 //! and a fixed admission limit. Dropping a stream drops its in-flight reader.
@@ -26,11 +27,23 @@ pub mod wire {
 pub trait ReaderBinding: Send + Sync + 'static {
     fn validate_owner(&self, owner: &LocalReaderOwner) -> Result<(), Status>;
     async fn read(&self, request: Request<wire::Query>) -> Result<Vec<u8>, Status>;
+    /// Generated database readers can opt into bounded same-host composition.
+    async fn read_with_context(
+        &self,
+        request: Request<wire::Query>,
+        _context: LocalReaderContext,
+    ) -> Result<Vec<u8>, Status> {
+        let _ = request;
+        Err(Status::unimplemented(
+            "binding does not support composed snapshots",
+        ))
+    }
 }
 struct Inner {
     gate: ActorGate,
     state_ref: String,
     state_type: String,
+    endpoint: String,
     lifecycle: Mutex<Option<RecoveryCancellation>>,
     slots: Arc<tokio::sync::Semaphore>,
 }
@@ -59,6 +72,7 @@ impl LocalReaderOwner {
                 gate: store.actor_gate(state_type, state_ref),
                 state_ref: state_ref.to_owned(),
                 state_type: state_type.to_owned(),
+                endpoint: store.database_endpoint().to_owned(),
                 lifecycle: Mutex::new(None),
                 slots: Arc::new(tokio::sync::Semaphore::new(64)),
             }),
@@ -137,19 +151,23 @@ impl<B: ReaderBinding> LocalReaderService<B> {
 }
 /// An immutable-at-installation allowlist of at most 64 exact local actors.
 /// Each entry keeps its generated binding, authorization, gate and stream scope.
-/// This routes independent subscriptions; it does not track read dependencies.
+/// Independent routing by default; opt-in database reader composition tracks
+/// at most eight direct same-endpoint dependencies per evaluation.
 #[derive(Clone)]
 pub struct LocalReaderRegistry {
     entries: std::collections::BTreeMap<String, Arc<dyn RegisteredReader>>,
     slots: Arc<tokio::sync::Semaphore>,
+    composition: bool,
 }
 
 #[tonic::async_trait]
 trait RegisteredReader: Send + Sync {
     fn owner(&self) -> LocalReaderOwner;
+    async fn read_registered(&self, request: Request<wire::Query>) -> Result<Vec<u8>, Status>;
     async fn subscribe_registered(
         &self,
         request: Request<wire::Query>,
+        resolver: Option<Arc<ReaderEntries>>,
     ) -> Result<
         Pin<Box<dyn tokio_stream::Stream<Item = Result<wire::Snapshot, Status>> + Send>>,
         Status,
@@ -157,18 +175,23 @@ trait RegisteredReader: Send + Sync {
 }
 #[tonic::async_trait]
 impl<B: ReaderBinding> RegisteredReader for LocalReaderService<B> {
+    async fn read_registered(&self, request: Request<wire::Query>) -> Result<Vec<u8>, Status> {
+        self.binding.read(request).await
+    }
     fn owner(&self) -> LocalReaderOwner {
         self.owner.clone()
     }
     async fn subscribe_registered(
         &self,
         request: Request<wire::Query>,
+        resolver: Option<Arc<ReaderEntries>>,
     ) -> Result<
         Pin<Box<dyn tokio_stream::Stream<Item = Result<wire::Snapshot, Status>> + Send>>,
         Status,
     > {
-        use wire::local_readers_server::LocalReaders;
-        Ok(Box::pin(self.subscribe(request).await?.into_inner()))
+        Ok(Box::pin(
+            self.subscribe_inner(request, resolver).await?.into_inner(),
+        ))
     }
 }
 impl Default for LocalReaderRegistry {
@@ -181,6 +204,7 @@ impl LocalReaderRegistry {
         Self {
             entries: std::collections::BTreeMap::new(),
             slots: Arc::new(tokio::sync::Semaphore::new(64)),
+            composition: false,
         }
     }
     /// Explicit host configuration only: client metadata cannot register actors.
@@ -202,6 +226,12 @@ impl LocalReaderRegistry {
         self.entries.insert(key, Arc::new(service));
         Ok(())
     }
+    /// Enable one-hop reads of registered actors, with at most eight dependencies
+    /// per evaluation. This is not an atomic cross-actor snapshot.
+    pub fn with_reader_composition(mut self) -> Self {
+        self.composition = true;
+        self
+    }
     pub fn active_subscriptions(&self) -> usize {
         64 - self.slots.available_permits()
     }
@@ -210,6 +240,18 @@ impl LocalReaderRegistry {
             return Err(Status::failed_precondition(
                 "local reactive registry is empty",
             ));
+        }
+        if self.composition {
+            let endpoint = &self.entries.values().next().unwrap().owner().inner.endpoint;
+            if self
+                .entries
+                .values()
+                .any(|entry| entry.owner().inner.endpoint != *endpoint)
+            {
+                return Err(Status::failed_precondition(
+                    "composed readers require one exact Database endpoint",
+                ));
+            }
         }
         Ok(self.entries.values().map(|entry| entry.owner()).collect())
     }
@@ -249,12 +291,334 @@ impl wire::local_readers_server::LocalReaders for LocalReaderRegistry {
         let permit = self.slots.clone().try_acquire_owned().map_err(|_| {
             Status::resource_exhausted("local reactive host capacity is 64 subscriptions")
         })?;
-        let inner = entry.subscribe_registered(request).await?;
+        let resolver = self.composition.then(|| Arc::new(self.entries.clone()));
+        let inner = entry.subscribe_registered(request, resolver).await?;
         Ok(tonic::Response::new(RegisteredReaderStream {
             inner,
             permit: Some(permit),
         }))
     }
+}
+
+type ReaderEntries = std::collections::BTreeMap<String, Arc<dyn RegisteredReader>>;
+#[derive(Clone)]
+struct ReadDependency {
+    revision: tokio::sync::watch::Receiver<(u64, bool)>,
+    scope: ReaderScope,
+}
+#[derive(Clone)]
+#[doc(hidden)]
+pub struct SnapshotReader;
+/// Evaluation-scoped, one-hop local read capability. It cannot create actors,
+/// forward transaction authority, or recursively invoke composed handlers.
+#[derive(Default)]
+struct EvaluationState {
+    closed: bool,
+    reads: usize,
+    failure: Option<Status>,
+}
+struct Evaluation {
+    state: Mutex<EvaluationState>,
+    closed: tokio::sync::watch::Sender<bool>,
+}
+impl Evaluation {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            state: Mutex::new(EvaluationState::default()),
+            closed: tokio::sync::watch::channel(false).0,
+        })
+    }
+    fn finish(&self) -> Result<(), Status> {
+        let mut state = self.state.lock().expect("reader evaluation poisoned");
+        state.closed = true;
+        if state.reads != 0 && state.failure.is_none() {
+            state.failure = Some(Status::failed_precondition(
+                "composed evaluation has unfinished dependency reads",
+            ));
+        }
+        self.closed.send_replace(true);
+        state.failure.clone().map_or(Ok(()), Err)
+    }
+    async fn cancelled(&self) {
+        let mut closed = self.closed.subscribe();
+        if !*closed.borrow() {
+            let _ = closed.changed().await;
+        }
+    }
+}
+struct EvaluationGuard(Arc<Evaluation>);
+impl Drop for EvaluationGuard {
+    fn drop(&mut self) {
+        let _ = self.0.finish();
+    }
+}
+struct DependencyReadGuard {
+    evaluation: Arc<Evaluation>,
+    active: bool,
+}
+impl DependencyReadGuard {
+    fn admit(evaluation: Arc<Evaluation>) -> Result<Self, Status> {
+        {
+            let mut state = evaluation.state.lock().expect("reader evaluation poisoned");
+            if state.closed {
+                return Err(Status::failed_precondition("reader evaluation is closed"));
+            }
+            if let Some(failure) = &state.failure {
+                return Err(failure.clone());
+            }
+            state.reads += 1;
+        }
+        Ok(Self {
+            evaluation,
+            active: true,
+        })
+    }
+    fn complete<T>(mut self, mut result: Result<T, Status>) -> Result<T, Status> {
+        let mut state = self
+            .evaluation
+            .state
+            .lock()
+            .expect("reader evaluation poisoned");
+        if state.closed && result.is_ok() {
+            result = Err(Status::failed_precondition("reader evaluation is closed"));
+        }
+        if let Err(status) = &result
+            && state.failure.is_none()
+        {
+            state.failure = Some(status.clone());
+        }
+        state.reads -= 1;
+        self.active = false;
+        result
+    }
+}
+impl Drop for DependencyReadGuard {
+    fn drop(&mut self) {
+        if self.active {
+            let mut state = self
+                .evaluation
+                .state
+                .lock()
+                .expect("reader evaluation poisoned");
+            if state.failure.is_none() {
+                state.failure = Some(Status::failed_precondition("dependency read was cancelled"));
+            }
+            state.reads -= 1;
+        }
+    }
+}
+#[derive(Clone)]
+pub struct LocalReaderContext {
+    entries: Arc<ReaderEntries>,
+    root: String,
+    metadata: tonic::metadata::MetadataMap,
+    scope: ReaderScope,
+    trusted: Option<crate::application_host::TrustedApplicationContext>,
+    dependencies: Arc<Mutex<std::collections::BTreeMap<String, ReadDependency>>>,
+    evaluation: Arc<Evaluation>,
+    dependency_changes: tokio::sync::watch::Sender<u64>,
+}
+impl LocalReaderContext {
+    fn check(&self) -> Result<(), Status> {
+        self.scope.check()?;
+        let state = self
+            .evaluation
+            .state
+            .lock()
+            .expect("reader evaluation poisoned");
+        if state.closed {
+            return Err(Status::failed_precondition("reader evaluation is closed"));
+        }
+        state.failure.clone().map_or(Ok(()), Err)
+    }
+    async fn failed(&self) -> Status {
+        let mut changes = self.dependency_changes.subscribe();
+        loop {
+            let dependencies = self
+                .dependencies
+                .lock()
+                .expect("reader dependencies poisoned")
+                .clone();
+            tokio::select! { biased;
+                _ = self.evaluation.cancelled() => return Status::failed_precondition("reader evaluation is closed"),
+                status = dependency_failed(&dependencies) => return status,
+                result = changes.changed() => if result.is_err() { return Status::unavailable("reader dependency owner closed"); },
+            }
+        }
+    }
+    /// Prefer generated typed helpers. Each call reauthorizes the target against
+    /// its current immutable state, using the original external credentials.
+    pub async fn read<Q: Message, R: Message + Default>(
+        &self,
+        state_ref: &str,
+        state_type: &str,
+        method: &str,
+        body: Q,
+    ) -> Result<R, Status> {
+        let guard = DependencyReadGuard::admit(self.evaluation.clone())?;
+        let result = self.read_inner(state_ref, state_type, method, body).await;
+        guard.complete(result)
+    }
+    async fn read_inner<Q: Message, R: Message + Default>(
+        &self,
+        state_ref: &str,
+        state_type: &str,
+        method: &str,
+        body: Q,
+    ) -> Result<R, Status> {
+        self.check()?;
+        self.check()?;
+        if state_ref == self.root {
+            return Err(Status::failed_precondition(
+                "composed reader cannot read its own root",
+            ));
+        }
+        let entry = self
+            .entries
+            .get(state_ref)
+            .ok_or_else(|| Status::failed_precondition("dependency actor is not registered"))?;
+        let owner = entry.owner();
+        if owner.inner.state_type != state_type {
+            return Err(Status::failed_precondition(
+                "typed dependency state type mismatch",
+            ));
+        }
+        let scope = ReaderScope::new(owner.lifecycle()?);
+        scope.check()?;
+        let mut revision = owner.inner.gate.committed_revisions();
+        if revision.borrow_and_update().1 {
+            return Err(Status::unavailable("dependency commit outcome uncertain"));
+        }
+        {
+            let mut dependencies = self
+                .dependencies
+                .lock()
+                .expect("reader dependencies poisoned");
+            if !dependencies.contains_key(state_ref) && dependencies.len() == 8 {
+                return Err(Status::resource_exhausted(
+                    "composed reader capacity is eight dependencies",
+                ));
+            }
+            // Retain the first pre-read revision even for repeated reads. A racing
+            // commit remains pending; never advance it after evaluating a target.
+            dependencies
+                .entry(state_ref.to_owned())
+                .or_insert(ReadDependency {
+                    revision: revision.clone(),
+                    scope: scope.clone(),
+                });
+            self.dependency_changes
+                .send_modify(|version| *version = version.wrapping_add(1));
+        }
+        let payload = body.encode_to_vec();
+        if payload.len() > 65536 {
+            return Err(Status::resource_exhausted(
+                "dependency request exceeds 64KiB",
+            ));
+        }
+        let mut request = Request::new(wire::Query {
+            method: method.to_owned(),
+            request: payload,
+        });
+        *request.metadata_mut() = self.metadata.clone();
+        // Only substitute the exact admitted target; preserve original caller/token/deadline.
+        request.metadata_mut().insert(
+            "x-reboot-state-ref",
+            state_ref
+                .parse()
+                .map_err(|_| Status::invalid_argument("invalid dependency actor reference"))?,
+        );
+        request.extensions_mut().insert(scope.clone());
+        if let Some(trusted) = &self.trusted {
+            request.extensions_mut().insert(trusted.clone());
+        }
+        let read = async {
+            let _lease = owner.inner.gate.shared().await;
+            self.check()?;
+            scope.check()?;
+            entry.read_registered(request).await
+        };
+        let used_dependencies = self
+            .dependencies
+            .lock()
+            .expect("reader dependencies poisoned")
+            .clone();
+        let bytes = tokio::select! { biased;
+            _ = self.evaluation.cancelled() => return Err(Status::failed_precondition("reader evaluation is closed")),
+            status = dependency_failed(&used_dependencies) => return Err(status),
+            _ = actor_uncertain(revision.clone()) => return Err(Status::unavailable("dependency commit outcome uncertain")),
+            _ = self.scope.revoked() => return Err(Status::unavailable("root reader authority revoked")),
+            _ = scope.revoked() => return Err(Status::unavailable("dependency reader authority revoked")),
+            result = read => result?,
+        };
+        self.check()?;
+        scope.check()?;
+        if revision.borrow().1 {
+            return Err(Status::unavailable("dependency commit outcome uncertain"));
+        }
+        if bytes.len() > 1048576 {
+            return Err(Status::resource_exhausted(
+                "dependency snapshot exceeds 1MiB",
+            ));
+        }
+        R::decode(bytes.as_slice())
+            .map_err(|_| Status::data_loss("invalid typed dependency snapshot"))
+    }
+}
+async fn context_failed(context: &Option<LocalReaderContext>) -> Status {
+    match context {
+        Some(context) => context.failed().await,
+        None => std::future::pending().await,
+    }
+}
+async fn actor_uncertain(mut revision: tokio::sync::watch::Receiver<(u64, bool)>) {
+    loop {
+        if revision.borrow().1 {
+            return;
+        }
+        if revision.changed().await.is_err() {
+            return;
+        }
+    }
+}
+async fn dependency_failed(
+    dependencies: &std::collections::BTreeMap<String, ReadDependency>,
+) -> Status {
+    let mut waits: Vec<Pin<Box<dyn Future<Output=Status> + Send>>> = dependencies.values().cloned().map(|d| Box::pin(async move {
+        if let Err(status) = d.scope.check() { return status; }
+        tokio::select! { biased;
+            _ = d.scope.revoked() => Status::unavailable("dependency reader authority revoked"),
+            _ = actor_uncertain(d.revision) => Status::unavailable("dependency commit outcome uncertain"),
+        }
+    }) as Pin<Box<dyn Future<Output=Status> + Send>>).collect();
+    std::future::poll_fn(move |cx| {
+        for wait in &mut waits {
+            if let Poll::Ready(result) = wait.as_mut().poll(cx) {
+                return Poll::Ready(result);
+            }
+        }
+        Poll::Pending
+    })
+    .await
+}
+type DependencyWait = Pin<Box<dyn Future<Output = Result<(), Status>> + Send>>;
+async fn dependency_changed(
+    dependencies: &std::collections::BTreeMap<String, ReadDependency>,
+) -> Result<(), Status> {
+    let mut waits: Vec<DependencyWait> = dependencies.values().cloned().map(|mut d| Box::pin(async move {
+        d.scope.check()?;
+        if d.revision.borrow().1 { return Err(Status::unavailable("dependency commit outcome uncertain")); }
+        tokio::select! { biased; _ = d.scope.revoked() => Err(Status::unavailable("dependency reader authority revoked")), result = d.revision.changed() => result.map_err(|_| Status::unavailable("dependency revision owner closed")) }
+    }) as Pin<Box<dyn Future<Output=Result<(),Status>> + Send>>).collect();
+    std::future::poll_fn(move |cx| {
+        for wait in &mut waits {
+            if let Poll::Ready(result) = wait.as_mut().poll(cx) {
+                return Poll::Ready(result);
+            }
+        }
+        Poll::Pending
+    })
+    .await
 }
 
 #[derive(Clone)]
@@ -306,6 +670,8 @@ struct Cursor<B> {
     scope: ReaderScope,
     query: wire::Query,
     previous: Option<Vec<u8>>,
+    resolver: Option<Arc<ReaderEntries>>,
+    dependencies: std::collections::BTreeMap<String, ReadDependency>,
     _permit: tokio::sync::OwnedSemaphorePermit,
 }
 impl<B: ReaderBinding> Cursor<B> {
@@ -318,7 +684,9 @@ impl<B: ReaderBinding> Cursor<B> {
                 tokio::select! {
                     biased;
                     _ = self.lifecycle.cancelled() => return (None, self),
+                _ = actor_uncertain(self.revision.clone()) => return (Some(Err(Status::unavailable("actor commit outcome uncertain"))), self),
                     _ = self.scope.revoked() => return (Some(Err(self.scope.check().err().unwrap_or_else(|| Status::unavailable("reader authority revoked")))), self),
+                    changed = dependency_changed(&self.dependencies) => if let Err(status) = changed { return (Some(Err(status)), self); },
                     changed = self.revision.changed() => if changed.is_err() { return (None, self); },
                 }
             }
@@ -333,9 +701,39 @@ impl<B: ReaderBinding> Cursor<B> {
                     self,
                 );
             }
+            for dependency in self.dependencies.values() {
+                if let Err(status) = dependency.scope.check() {
+                    return (Some(Err(status)), self);
+                }
+                if dependency.revision.borrow().1 {
+                    return (
+                        Some(Err(Status::unavailable(
+                            "dependency commit outcome uncertain",
+                        ))),
+                        self,
+                    );
+                }
+            }
+            let context = self.resolver.as_ref().map(|entries| LocalReaderContext {
+                entries: entries.clone(),
+                root: self.owner.inner.state_ref.clone(),
+                metadata: self.metadata.clone(),
+                scope: self.scope.clone(),
+                trusted: self.trusted.clone(),
+                dependencies: Arc::new(Mutex::new(std::collections::BTreeMap::new())),
+                evaluation: Evaluation::new(),
+                dependency_changes: tokio::sync::watch::channel(0).0,
+            });
+            let _evaluation_guard = context
+                .as_ref()
+                .map(|c| EvaluationGuard(c.evaluation.clone()));
             let read = async {
                 self.scope.check()?;
-                let _lease = self.owner.inner.gate.shared().await;
+                let _lease = if context.is_none() {
+                    Some(self.owner.inner.gate.shared().await)
+                } else {
+                    None
+                };
                 self.scope.check()?;
                 let mut request = Request::new(self.query.clone());
                 *request.metadata_mut() = self.metadata.clone();
@@ -343,10 +741,19 @@ impl<B: ReaderBinding> Cursor<B> {
                     request.extensions_mut().insert(trusted.clone());
                 }
                 request.extensions_mut().insert(self.scope.clone());
-                self.binding.read(request).await
+                if let Some(context) = &context {
+                    request.extensions_mut().insert(SnapshotReader);
+                    self.binding
+                        .read_with_context(request, context.clone())
+                        .await
+                } else {
+                    self.binding.read(request).await
+                }
             };
             let result = tokio::select! {
                 biased;
+                _ = actor_uncertain(self.revision.clone()) => return (Some(Err(Status::unavailable("actor commit outcome uncertain"))), self),
+                status = context_failed(&context) => return (Some(Err(status)), self),
                 _ = self.lifecycle.cancelled() => return (None, self),
                     _ = self.scope.revoked() => return (Some(Err(self.scope.check().err().unwrap_or_else(|| Status::unavailable("reader authority revoked")))), self),
                 result = read => result,
@@ -359,6 +766,29 @@ impl<B: ReaderBinding> Cursor<B> {
                     Some(Err(Status::unavailable("actor commit outcome uncertain"))),
                     self,
                 );
+            }
+            if let Some(context) = context {
+                if let Err(failure) = context.evaluation.finish() {
+                    return (Some(Err(failure)), self);
+                }
+                self.dependencies = context
+                    .dependencies
+                    .lock()
+                    .expect("reader dependencies poisoned")
+                    .clone();
+                for dependency in self.dependencies.values() {
+                    if let Err(status) = dependency.scope.check() {
+                        return (Some(Err(status)), self);
+                    }
+                    if dependency.revision.borrow().1 {
+                        return (
+                            Some(Err(Status::unavailable(
+                                "dependency commit outcome uncertain",
+                            ))),
+                            self,
+                        );
+                    }
+                }
             }
             match result {
                 Err(status) => return (Some(Err(status)), self),
@@ -404,13 +834,12 @@ impl<B: ReaderBinding> tokio_stream::Stream for ReaderStream<B> {
         }
     }
 }
-#[tonic::async_trait]
-impl<B: ReaderBinding> wire::local_readers_server::LocalReaders for LocalReaderService<B> {
-    type SubscribeStream = ReaderStream<B>;
-    async fn subscribe(
+impl<B: ReaderBinding> LocalReaderService<B> {
+    async fn subscribe_inner(
         &self,
         request: Request<wire::Query>,
-    ) -> Result<tonic::Response<Self::SubscribeStream>, Status> {
+        resolver: Option<Arc<ReaderEntries>>,
+    ) -> Result<tonic::Response<ReaderStream<B>>, Status> {
         let state_ref = request
             .metadata()
             .get("x-reboot-state-ref")
@@ -445,11 +874,23 @@ impl<B: ReaderBinding> wire::local_readers_server::LocalReaders for LocalReaderS
             scope: ReaderScope::new(lifecycle.clone()),
             query: request.into_inner(),
             previous: None,
+            resolver,
+            dependencies: std::collections::BTreeMap::new(),
             _permit: permit,
         };
         Ok(tonic::Response::new(ReaderStream {
             next: Some(Box::pin(cursor.next())),
         }))
+    }
+}
+#[tonic::async_trait]
+impl<B: ReaderBinding> wire::local_readers_server::LocalReaders for LocalReaderService<B> {
+    type SubscribeStream = ReaderStream<B>;
+    async fn subscribe(
+        &self,
+        request: Request<wire::Query>,
+    ) -> Result<tonic::Response<Self::SubscribeStream>, Status> {
+        self.subscribe_inner(request, None).await
     }
 }
 /// One typed local observation stream with explicit, caller-driven reconnection.
@@ -573,4 +1014,5 @@ impl<T: Message + Default, E> TypedSubscription<T, E> {
 }
 
 include!("reactive_tests.rs");
+include!("reactive_composition_tests.rs");
 include!("reactive_reconnect_tests.rs");
