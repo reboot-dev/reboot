@@ -329,22 +329,29 @@ def native(session, task_uuid=None):
             for iteration in range(request.count):
                 for response in stub.RecoverIdempotentMutations(db.RecoverIdempotentMutationsRequest(state_type='batch_ledger.v1.Ledger', state_ref=reference, workflow_id=tasks[0].task_uuid, workflow_iteration=iteration), timeout=3):
                     mutations.extend(response.idempotent_mutations)
-            if os.environ.get('RUST_BATCH_LOOP_DECISION_ONLY') or os.environ.get('RUST_BATCH_READER_OUTCOME_ONLY'):
+            if any(os.environ.get(flag) for flag in ['RUST_BATCH_LOOP_DECISION_ONLY','RUST_BATCH_READER_OUTCOME_ONLY','RUST_BATCH_NESTED_ONLY']):
                 for response in stub.RecoverIdempotentMutations(db.RecoverIdempotentMutationsRequest(state_type='batch_ledger.v1.Ledger',state_ref=reference,workflow_id=tasks[0].task_uuid),timeout=3):
                     mutations.extend(m for m in response.idempotent_mutations if not m.HasField('workflow_iteration'))
             for mutation in mutations:
                 assert mutation.workflow_id == tasks[0].task_uuid and mutation.request_fingerprint
                 from google.protobuf.any_pb2 import Any
                 response = Any.FromString(mutation.response)
-                if os.environ.get('RUST_BATCH_LOOP_DECISION_ONLY') and response.type_url=='type.googleapis.com/reboot.runtime.FiniteLoopDecision.v1':
+                if (os.environ.get('RUST_BATCH_LOOP_DECISION_ONLY') or os.environ.get('RUST_BATCH_NESTED_ONLY')) and response.type_url=='type.googleapis.com/reboot.runtime.FiniteLoopDecision.v1':
                     value,observed=finite_decision_value(response.value)
                     assert mutation.HasField('workflow_iteration')
-                    assert observed.batch==request.batch and observed.completed==mutation.workflow_iteration+1
+                    assert observed.batch==request.batch
+                    index=observed.completed-1
+                    assert mutation.workflow_iteration==(index % request.group_size if request.group_size else index)
                     assert observed.break_after==request.break_after and value.break_loop==(observed.completed>=request.break_after)
                     import uuid
                     name=b'batch-v1';alias=b'control'
                     namespace=uuid.uuid5(uuid.UUID(task_uuid),'reboot.finite.decision.v1')
-                    encoded=len(name).to_bytes(8,'big')+name+mutation.workflow_iteration.to_bytes(8,'big')+len(alias).to_bytes(8,'big')+alias
+                    encoded=b''
+                    if request.group_size:
+                        namespace=uuid.uuid5(namespace,'reboot.nested.scope.v1')
+                        parent=b'batch-groups-v1';name=b'group-items-v1'
+                        encoded=(1).to_bytes(8,'big')+len(parent).to_bytes(8,'big')+parent+(index//request.group_size).to_bytes(8,'big')
+                    encoded+=len(name).to_bytes(8,'big')+name+mutation.workflow_iteration.to_bytes(8,'big')+len(alias).to_bytes(8,'big')+alias
                     digest=bytearray(hashlib.sha1(namespace.bytes+encoded).digest()[:16]);digest[6]=(digest[6]&15)|80;digest[8]=(digest[8]&63)|128
                     assert mutation.key==bytes(digest)
                 elif os.environ.get('RUST_BATCH_READER_OUTCOME_ONLY') and response.type_url=='type.googleapis.com/reboot.runtime.ReaderOutcome.v1':
@@ -424,17 +431,24 @@ watch = None
 task_watch = None
 try:
     command([RBT, 'init', '--backend=rust', '--frontend=none', '--application-name=batch_ledger', '--rust-sdk=' + str(ROOT / 'reboot/rust'), '--rust-example=batch-ledger'])
-    if os.environ.get('RUST_BATCH_LOOP_DECISION_ONLY'):
+    if os.environ.get('RUST_BATCH_LOOP_DECISION_ONLY') or os.environ.get('RUST_BATCH_NESTED_ONLY'):
         lib=APP/'backend/src/lib.rs'
         text=lib.read_text()
         needle='move |state| state.completed >= threshold,'
         assert text.count(needle)==1
         text=text.replace(needle,'move |state| { event("finite-decision-evaluated"); state.completed >= threshold },')
-        needle='std::ops::ControlFlow::Break(_) => {\n                        break;\n                    }'
-        replacement='std::ops::ControlFlow::Break(_) => {\n                        if let Some(path)=std::env::var_os("RBT_RUST_FINITE_DECISION_PROBE") {\n                            let path=std::path::PathBuf::from(path);\n                            event("finite-break-before-after-loop");\n                            std::fs::write(&path,b"saved Break accepted; after-loop writer not entered")\n                                .map_err(|e|tonic::Status::internal(e.to_string()))?;\n                            while !path.with_extension("release").exists() {\n                                tokio::time::sleep(std::time::Duration::from_millis(10)).await;\n                            }\n                        }\n                        break;\n                    }'
+        needle="std::ops::ControlFlow::Break(_) => {\n                            break 'groups;\n                        }"
+        replacement='std::ops::ControlFlow::Break(_) => {\n                        if let Some(path)=std::env::var_os("RBT_RUST_FINITE_DECISION_PROBE") {\n                            let path=std::path::PathBuf::from(path);\n                            event("finite-break-before-after-loop");\n                            std::fs::write(&path,b"saved Break accepted; after-loop writer not entered")\n                                .map_err(|e|tonic::Status::internal(e.to_string()))?;\n                            while !path.with_extension("release").exists() {\n                                tokio::time::sleep(std::time::Duration::from_millis(10)).await;\n                            }\n                        }\n                        break \'groups;\n                    }'
         assert text.count(needle)==1
         lib.write_text(text.replace(needle,replacement))
         command(['cargo','fmt','--manifest-path','backend/Cargo.toml'])
+        if os.environ.get('RUST_BATCH_NESTED_ONLY'):
+            text=lib.read_text()
+            needle='u64::from(groups),'
+            assert text.count(needle)==1
+            text=text.replace(needle,'u64::from(groups) + u64::from(std::env::var_os("RBT_RUST_NESTED_BOUND_PROBE").is_some_and(|path| std::path::Path::new(&path).exists())),')
+            lib.write_text(text)
+            command(['cargo','fmt','--manifest-path','backend/Cargo.toml'])
         evidence['finite_handler_sha256']=hashlib.sha256(lib.read_bytes()).hexdigest()
     if os.environ.get('RUST_BATCH_MAP_LIFETIME_ONLY'):
         # Generated-handler overlay only: poll a real map reader to its native
@@ -523,7 +537,7 @@ try:
     command(['cargo', 'clippy', '--manifest-path', 'backend/Cargo.toml', '--all-targets', '--', '-D', 'warnings'])
     command(['cargo', 'fmt', '--manifest-path', 'backend/Cargo.toml', '--', '--check'])
     tests, _ = command(['cargo', 'test', '--manifest-path', 'backend/Cargo.toml', '--all-targets'])
-    check('generated consumer strict Clippy/fmt and nonzero tests', '12 passed' in tests)
+    check('generated consumer strict Clippy/fmt and nonzero tests', '13 passed' in tests)
     command(['cargo', 'build', '--manifest-path', 'backend/Cargo.toml', '--bins'])
     py = STAGE / 'generated-python'
     py.mkdir()
@@ -734,6 +748,84 @@ try:
         check('matching reader outcome completes without business fallback',client('wait',matched,'10000')[0]=='matched 1 1 1 2' and client('audit-read')[0]=='matched matched false')
         success=native(current,matched)
         check('matching outcome is a typed saved success not an error',success[2].status==db.Task.COMPLETED and len(success[3])==3)
+        current.close();current=None
+        evidence['accepted']=True
+        raise SystemExit(0)
+    if os.environ.get('RUST_BATCH_NESTED_ONLY'):
+        drift=STAGE/'changed-parent-bound'
+        ENV['RBT_RUST_NESTED_BOUND_PROBE']=str(drift)
+        marker=STAGE/'accepted-break'
+        ENV['RBT_RUST_FINITE_DECISION_PROBE']=str(marker)
+        current=Session('nested-finite-start')
+        until(lambda:'actor state must be constructed' in client('work-unary','finite',ok=False)[0],'finite public admission available')
+        client('create')
+        baseline=client('read')[0]
+        error,_=client('submit-grouped-break','bad-threshold','4','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','0','2','5',ok=False)
+        check('finite out-of-bound threshold is rejected without app mutation','threshold' in error and client('read')[0]==baseline)
+        error,_=client('decision-finish-direct','finite','3',ok=False)
+        check('after-loop writer denies public direct invocation even with admin','PermissionDenied' in error and client('read')[0]==baseline)
+        error,_=client('submit-grouped','bad-group','4','cccccccc-cccc-4ccc-8ccc-cccccccccccc','0','3',ok=False)
+        check('nondividing group rejected before scheduling/state mutation','group size' in error and client('read')[0]==baseline)
+        uuid,_=client('submit-grouped-break','finite','4','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','0','2','3')
+        client('approve','finite','0')
+        def continued():
+            data=native(current,uuid)
+            return data[0].completed==1 and len(data[3])==3
+        until(continued,'first iteration Continue persisted before second approval')
+        first=native(current,uuid)
+        check('Continue leaves real task Pending and next iteration parked',first[2].status==db.Task.PENDING and first[0].break_after==3 and not first[0].decision_finished and len(first[3])==3)
+        client('approve','finite','1')
+        until(lambda:(lambda data:data[0].completed==2 and len(data[3])==6)(native(current,uuid)),'first whole group saved, second group parked')
+        first_group=native(current,uuid)
+        check('two first-group leaf positions have six distinct durable checkpoints',len(first_group[3])==6 and len({m.key for m in first_group[3]})==6 and sorted(m.workflow_iteration for m in first_group[3])==[0,0,0,1,1,1])
+        client('approve','finite','2')
+        until(lambda:marker.exists(),'saved Break before after-loop writer')
+        paused=native(current,uuid)
+        def snapshot(data):
+            return (data[0].SerializeToString(),data[1].SerializeToString(),data[2].SerializeToString(),sorted(m.SerializeToString() for m in data[3]),archive_rows(current).SerializeToString())
+        original=snapshot(paused)
+        check('Break is persisted while after-loop work and task completion are still Pending',paused[0].completed==3 and paused[0].approved==3 and not paused[0].decision_finished and paused[2].status==db.Task.PENDING and paused[2].iteration==0 and len(paused[3])==9)
+        def decisions(data):
+            from google.protobuf.any_pb2 import Any
+            return sorted(m.SerializeToString() for m in data[3] if Any.FromString(m.response).type_url=='type.googleapis.com/reboot.runtime.FiniteLoopDecision.v1')
+        check('reused leaf zero across groups has disjoint checkpoint keys',len({m.key for m in paused[3]})==9 and sorted(m.workflow_iteration for m in paused[3])==[0,0,0,0,0,0,1,1,1])
+        originals=decisions(paused)
+        check('three nested native decisions bind full parent and leaf paths',len(originals)==3)
+        check('callbacks evaluated once per real first/second observation',sum('finite-decision-evaluated' in event for event in events(current))==3)
+        error,_=client('approve','finite','3',ok=False)
+        check('break threshold blocks a fourth transaction before its map insert','InvalidArgument' in error and snapshot(native(current,uuid))==original)
+        error,_=client('decision-finish-direct','finite','3',ok=False)
+        check('public invocation cannot steal paused private continuation','PermissionDenied' in error and snapshot(native(current,uuid))==original)
+        current.close();current=None
+        drift.write_text('change only parent bound; keys must collide with the original checkpoint')
+        failed,code=command([RBT,'dev','run','--rust-allow-insecure-database',f'--port={PORT}'],timeout=240,ok=False)
+        failed_log=evidence['commands'][-1]['log']
+        host_text=(APP/'.rbt/dev/batch_ledger/rust/host.log').read_text()
+        check('changed parent bound fails closed on canonical checkpoint collision',code!=0 and 'workflow step checkpoint identity/provenance collision' in host_text)
+        failed_children=[int(n) for n in re.findall(r'Rust (?:Database|app) PID=(\d+)',Path(failed_log).read_text())]
+        evidence['failed_parent_bound']={'log':failed_log,'children':failed_children,'exit':code}
+        check('failed parent-bound recovery reaps all supervised children',len(failed_children)==2 and all(not Path(f'/proc/{pid}').exists() for pid in failed_children))
+        drift.unlink()
+        current=Session('nested-finite-restart')
+        until(lambda:any('finite-break-before-after-loop' in event for event in events(current)),'restart resumes saved Break before after-loop work')
+        restored=native(current,uuid)
+        check('all app/map/task/checkpoint participants restore exact paused prefix',snapshot(restored)==original)
+        check('restart never recomputes either saved control callback',not any('finite-decision-evaluated' in event for event in events(current)) and decisions(restored)==originals)
+        marker.with_suffix('.release').write_text('allow private after-loop continuation')
+        check('canonical public Wait completes at the saved finite Break',client('wait',uuid,'10000')[0]=='finite 4 3 3 1')
+        finished=native(current,uuid)
+        check('after-loop work executes once and no fourth iteration is admitted',finished[0].decision_finished and finished[2].status==db.Task.COMPLETED and len(finished[3])==10 and logical_keys(finished[1])==['finite:0000','finite:0001','finite:0002'] and sum('after-loop-finite-3' in event for event in events(current))==1 and not any('checkpoint-finite-3' in event for event in events(current)))
+        final=snapshot(finished)
+        current.close();current=None
+        current=Session('nested-finite-terminal-restart')
+        until(lambda:native(current,uuid)[2].status==db.Task.COMPLETED,'terminal finite task restored')
+        check('terminal restart preserves exact after-loop state and receipts',snapshot(native(current,uuid))==final and client('wait',uuid,'3000')[0]=='finite 4 3 3 1')
+        check('terminal restart does not reenter body/decision/finalizer',not any(any(marker in event for marker in ('body-finite','finite-decision-evaluated','after-loop-finite')) for event in events(current)))
+        uuid2,_=client('submit-grouped','exhaust','4','dddddddd-dddd-4ddd-8ddd-dddddddddddd','0','2')
+        for index in range(4): client('approve','exhaust',str(index))
+        check('grouped body exhausts both groups through canonical Wait',client('wait',uuid2,'10000')[0]=='exhaust 4 4 4 2')
+        done=native(current,uuid2)
+        check('ordinary nested exhaustion stores distinct reader/writer checkpoints',len(done[3])==8 and len({m.key for m in done[3]})==8 and done[2].status==db.Task.COMPLETED)
         current.close();current=None
         evidence['accepted']=True
         raise SystemExit(0)

@@ -128,6 +128,7 @@ mod workflow_admission_tests {
             generation: Arc::new(()),
             attempt: &attempt,
             iteration: None,
+            parents: Vec::new(),
         };
         let error = |url: &str, value: Vec<u8>| prost_types::Any {
             type_url: "type.googleapis.com/google.rpc.Status".into(),
@@ -145,38 +146,50 @@ mod workflow_admission_tests {
             "type.googleapis.com/tests.Rejected",
             crate::proto::Counter::default().encode_to_vec(),
         );
-        assert!(context
-            .validate_writer_step_error("tests.Service.Step", &valid)
-            .is_err());
+        assert!(
+            context
+                .validate_writer_step_error("tests.Service.Step", &valid)
+                .is_err()
+        );
         let operation = attempt.operation();
         context
             .validate_writer_step_error("tests.Service.Step", &valid)
             .unwrap();
-        assert!(context
-            .validate_writer_step_error("tests.Service.Foreign", &valid)
-            .is_err());
-        assert!(context
-            .validate_writer_step_error(
-                "tests.Service.Step",
-                &error("type.googleapis.com/tests.Foreign", vec![])
-            )
-            .is_err());
-        assert!(context
-            .validate_writer_step_error(
-                "tests.Service.Step",
-                &error("type.googleapis.com/tests.Rejected", vec![255])
-            )
-            .is_err());
+        assert!(
+            context
+                .validate_writer_step_error("tests.Service.Foreign", &valid)
+                .is_err()
+        );
+        assert!(
+            context
+                .validate_writer_step_error(
+                    "tests.Service.Step",
+                    &error("type.googleapis.com/tests.Foreign", vec![])
+                )
+                .is_err()
+        );
+        assert!(
+            context
+                .validate_writer_step_error(
+                    "tests.Service.Step",
+                    &error("type.googleapis.com/tests.Rejected", vec![255])
+                )
+                .is_err()
+        );
         let peer = attempt.operation();
-        assert!(context
-            .validate_writer_step_error("tests.Service.Step", &valid)
-            .is_err());
+        assert!(
+            context
+                .validate_writer_step_error("tests.Service.Step", &valid)
+                .is_err()
+        );
         peer.acknowledged();
         let failed = attempt.operation();
         drop(failed);
-        assert!(context
-            .validate_writer_step_error("tests.Service.Step", &valid)
-            .is_err());
+        assert!(
+            context
+                .validate_writer_step_error("tests.Service.Step", &valid)
+                .is_err()
+        );
         operation.acknowledged();
     }
     #[tokio::test]
@@ -208,6 +221,7 @@ mod workflow_admission_tests {
             generation: Arc::new(()),
             attempt: &attempt,
             iteration: None,
+            parents: Vec::new(),
         };
         let error = |url: &str, value: Vec<u8>| prost_types::Any {
             type_url: "type.googleapis.com/google.rpc.Status".into(),
@@ -225,28 +239,36 @@ mod workflow_admission_tests {
             "type.googleapis.com/tests.Rejected",
             crate::proto::Counter::default().encode_to_vec(),
         );
-        assert!(context
-            .validate_reader_step_error("tests.Service.Step", &valid)
-            .is_err());
+        assert!(
+            context
+                .validate_reader_step_error("tests.Service.Step", &valid)
+                .is_err()
+        );
         let operation = attempt.operation();
         context
             .validate_reader_step_error("tests.Service.Step", &valid)
             .unwrap();
-        assert!(context
-            .validate_reader_step_error("tests.Service.Foreign", &valid)
-            .is_err());
-        assert!(context
-            .validate_reader_step_error(
-                "tests.Service.Step",
-                &error("type.googleapis.com/tests.Foreign", vec![])
-            )
-            .is_err());
-        assert!(context
-            .validate_reader_step_error(
-                "tests.Service.Step",
-                &error("type.googleapis.com/tests.Rejected", vec![255])
-            )
-            .is_err());
+        assert!(
+            context
+                .validate_reader_step_error("tests.Service.Foreign", &valid)
+                .is_err()
+        );
+        assert!(
+            context
+                .validate_reader_step_error(
+                    "tests.Service.Step",
+                    &error("type.googleapis.com/tests.Foreign", vec![])
+                )
+                .is_err()
+        );
+        assert!(
+            context
+                .validate_reader_step_error(
+                    "tests.Service.Step",
+                    &error("type.googleapis.com/tests.Rejected", vec![255])
+                )
+                .is_err()
+        );
         let saved = ReaderOutcomeCheckpoint {
             response_type: "type.googleapis.com/Counter".into(),
             outcome: Some(reader_outcome_checkpoint::Outcome::Error(valid.clone())),
@@ -258,37 +280,51 @@ mod workflow_admission_tests {
                 &saved.encode_to_vec(),
             )
             .unwrap();
-        assert!(context
-            .validate_reader_outcome(
-                "tests.Service.Step",
-                "type.googleapis.com/Foreign",
-                &saved.encode_to_vec()
-            )
-            .is_err());
-        assert!(context
-            .validate_reader_outcome(
-                "tests.Service.Step",
-                "type.googleapis.com/Counter",
-                &ReaderOutcomeCheckpoint {
-                    response_type: "type.googleapis.com/Counter".into(),
-                    outcome: None
-                }
-                .encode_to_vec()
-            )
-            .is_err());
-        assert!(context
-            .validate_reader_outcome("tests.Service.Step", "type.googleapis.com/Counter", &[255])
-            .is_err());
+        assert!(
+            context
+                .validate_reader_outcome(
+                    "tests.Service.Step",
+                    "type.googleapis.com/Foreign",
+                    &saved.encode_to_vec()
+                )
+                .is_err()
+        );
+        assert!(
+            context
+                .validate_reader_outcome(
+                    "tests.Service.Step",
+                    "type.googleapis.com/Counter",
+                    &ReaderOutcomeCheckpoint {
+                        response_type: "type.googleapis.com/Counter".into(),
+                        outcome: None
+                    }
+                    .encode_to_vec()
+                )
+                .is_err()
+        );
+        assert!(
+            context
+                .validate_reader_outcome(
+                    "tests.Service.Step",
+                    "type.googleapis.com/Counter",
+                    &[255]
+                )
+                .is_err()
+        );
         let peer = attempt.operation();
-        assert!(context
-            .validate_reader_step_error("tests.Service.Step", &valid)
-            .is_err());
+        assert!(
+            context
+                .validate_reader_step_error("tests.Service.Step", &valid)
+                .is_err()
+        );
         peer.acknowledged();
         let failed = attempt.operation();
         drop(failed);
-        assert!(context
-            .validate_reader_step_error("tests.Service.Step", &valid)
-            .is_err());
+        assert!(
+            context
+                .validate_reader_step_error("tests.Service.Step", &valid)
+                .is_err()
+        );
         operation.acknowledged();
     }
     #[tokio::test]
@@ -326,6 +362,7 @@ mod workflow_admission_tests {
                 generation: Arc::new(()),
                 attempt: &attempt,
                 iteration: None,
+                parents: Vec::new(),
             };
             let error = context
                 .finish::<D, crate::proto::Counter, crate::proto::Counter>(
@@ -393,6 +430,7 @@ mod workflow_admission_tests {
             generation: Arc::new(()),
             attempt: &attempt,
             iteration: None,
+            parents: Vec::new(),
         };
         let seed = uuid::Uuid::new_v4();
         let scoped = context.iteration("a:1", 0, 3).unwrap();
@@ -425,8 +463,68 @@ mod workflow_admission_tests {
             "condition changes must collide at same checkpoint key and fail fingerprint validation, never create a fresh decision"
         );
         assert!(attempt.clean());
-        assert!(scoped.iteration("nested", 0, 1).is_err());
+        let nested = scoped.iteration("nested", 0, 2).unwrap();
+        let sibling = context
+            .iteration("a:1", 1, 3)
+            .unwrap()
+            .iteration("nested", 0, 2)
+            .unwrap();
+        let deeper = nested.iteration("third", 0, 1).unwrap();
+        let keys = [
+            scoped.checkpoint_key(seed, "gate", None),
+            nested.checkpoint_key(seed, "gate", None),
+            sibling.checkpoint_key(seed, "gate", None),
+            deeper.checkpoint_key(seed, "gate", None),
+            nested.checkpoint_key(seed, "gate", Some("v1")),
+            nested.checkpoint_decision_key(seed, "gate"),
+            nested.checkpoint_reader_outcome_key(seed, "gate"),
+            context.checkpoint_key(seed, &nested.checkpoint_alias("gate"), None),
+        ];
+        assert_eq!(keys.iter().collect::<HashSet<_>>().len(), keys.len());
+        // Bound changes hit the existing record, not a fresh key. Its complete
+        // parent-bound fingerprint then rejects replay before a callback.
+        let changed = context
+            .iteration("a:1", 0, 4)
+            .unwrap()
+            .iteration("nested", 0, 2)
+            .unwrap();
+        assert_eq!(
+            nested.checkpoint_key(seed, "gate", None),
+            changed.checkpoint_key(seed, "gate", None)
+        );
+        assert_ne!(
+            nested.checkpoint_parent_bounds(),
+            changed.checkpoint_parent_bounds()
+        );
+        assert_eq!(nested.checkpoint_iteration(), Some(0));
+        assert_eq!(nested.checkpoint_bound(), 2);
+        // Legacy flat key remains byte-for-byte identical.
+        let namespace = uuid::Uuid::new_v5(&seed, b"reboot.finite.writer.v1");
+        let mut bytes = 3u64.to_be_bytes().to_vec();
+        bytes.extend_from_slice(b"a:1");
+        bytes.extend_from_slice(&0u64.to_be_bytes());
+        bytes.extend_from_slice(&4u64.to_be_bytes());
+        bytes.extend_from_slice(b"gate");
+        assert_eq!(
+            scoped.checkpoint_key(seed, "gate", None),
+            uuid::Uuid::new_v5(&namespace, &bytes)
+        );
+        let max = context
+            .iteration("outer", 0, 32)
+            .unwrap()
+            .iteration("inner", 0, 32)
+            .unwrap();
+        assert!(max.iteration("one", 0, 1).is_ok());
+        let mut deep = context.iteration("level", 0, 1).unwrap();
+        for _ in 1..8 {
+            deep = deep.iteration("level", 0, 1).unwrap();
+        }
+        assert!(attempt.clean());
+        assert!(deep.iteration("too-deep", 0, 1).is_err());
         assert!(!attempt.clean());
+        assert!(max.iteration("overflow", 0, 2).is_err());
+        assert!(max.iteration("zero", 0, 0).is_err());
+        assert!(max.iteration("index", 1, 1).is_err());
     }
     #[tokio::test]
     async fn declared_workflow_receipt_rejects_foreign_malformed_and_tainted_terminals_before_load()
@@ -481,6 +579,7 @@ mod workflow_admission_tests {
                 generation: Arc::new(()),
                 attempt: &attempt,
                 iteration: None,
+                parents: Vec::new(),
             };
             assert_eq!(
                 context
@@ -512,6 +611,7 @@ mod workflow_admission_tests {
                 generation: Arc::new(()),
                 attempt: &attempt,
                 iteration: scoped.then(|| ("loop".into(), 0, 1)),
+                parents: Vec::new(),
             };
             let denied = context
                 .body_failed(WorkflowBodyError::Declared(error.clone()))
@@ -609,17 +709,20 @@ mod workflow_admission_tests {
             )],
         )
         .unwrap();
-        assert!(legacy_reader
-            .validate_workflow_writer::<D, crate::proto::Counter, crate::proto::Counter>(
-                "tests.Service.Apply"
-            )
-            .is_err());
+        assert!(
+            legacy_reader
+                .validate_workflow_writer::<D, crate::proto::Counter, crate::proto::Counter>(
+                    "tests.Service.Apply"
+                )
+                .is_err()
+        );
         assert!(rw.workflow_running_admission().is_err());
-        assert!(rw
-            .validate_workflow_writer::<D, crate::proto::Counter, crate::proto::Counter>(
+        assert!(
+            rw.validate_workflow_writer::<D, crate::proto::Counter, crate::proto::Counter>(
                 "tests.Service.Run"
             )
-            .is_err());
+            .is_err()
+        );
     }
 }
 
@@ -782,9 +885,11 @@ mod declared_reader_serial_tests {
         assert!(reader.acknowledged_serial().is_err());
         assert!(!attempt.clean());
         assert_eq!(attempt.active.load(std::sync::atomic::Ordering::Acquire), 0);
-        assert!(!attempt
-            .serial_reader
-            .load(std::sync::atomic::Ordering::Acquire));
+        assert!(
+            !attempt
+                .serial_reader
+                .load(std::sync::atomic::Ordering::Acquire)
+        );
     }
     #[test]
     fn nested_authority_checks_preserve_failure_and_overlap_evidence() {
@@ -827,7 +932,7 @@ mod declared_reader_serial_tests {
 /// Private, dispatcher-minted workflow authority. Explicit named same-actor
 /// typed named writer steps and checkpointed immutable-reader waits. Explicit
 /// finite indexed replay scopes only; no unbounded Task cursor, external effects
-/// or cross-actor/nested calls.
+/// or cross-actor calls. Nested finite scopes do not create nested transactions.
 /// Construction is private, even to generated application consumers:
 /// ```compile_fail
 /// use reboot_rust_schema::one_shot_tasks::WorkflowContext;
@@ -841,6 +946,7 @@ pub struct WorkflowContext<'a> {
     generation: Arc<()>,
     attempt: &'a WorkflowAttempt,
     iteration: Option<(String, u64, u64)>,
+    parents: Vec<(String, u64, u64)>,
 }
 /// Consumed private receipt: user callbacks cannot manufacture completion.
 /// Explicit body disposition. Status propagation is always nonretryable, even
@@ -908,7 +1014,9 @@ impl<'a> WorkflowContext<'a> {
     /// Explicit finite replay scope, not an unbounded Task cursor. Restart replays
     /// the bounded body; acknowledged typed decisions/effects are loaded, never
     /// re-evaluated. Use the same loop name, count, indices and named calls on replay.
-    /// Nested scopes and more than 1024 iterations are rejected.
+    /// At most eight levels and 1024 Cartesian leaf positions are admitted.
+    /// Parent and leaf names/indices bind distinct replay identities; all bounds
+    /// bind fingerprints. This does not advance the canonical Task cursor.
     pub fn iteration(
         &self,
         alias: &str,
@@ -916,7 +1024,15 @@ impl<'a> WorkflowContext<'a> {
         count: u64,
     ) -> Result<WorkflowContext<'a>, Status> {
         let operation = self.attempt.operation();
-        if self.iteration.is_some()
+        let mut parents = self.parents.clone();
+        if let Some(parent) = &self.iteration {
+            parents.push(parent.clone());
+        }
+        let positions = parents
+            .iter()
+            .try_fold(count, |total, (_, _, bound)| total.checked_mul(*bound));
+        if parents.len() >= 8
+            || positions.is_none_or(|total| total > 1024)
             || alias.is_empty()
             || alias.len() > 256
             || alias.chars().any(char::is_control)
@@ -935,6 +1051,7 @@ impl<'a> WorkflowContext<'a> {
             generation: self.generation.clone(),
             attempt: self.attempt,
             iteration: Some((alias.to_owned(), index, count)),
+            parents,
         };
         operation.acknowledged();
         Ok(context)
@@ -961,7 +1078,12 @@ impl<'a> WorkflowContext<'a> {
             (false, false) => unreachable!(),
         };
         let namespace = uuid::Uuid::new_v5(&seed, domain);
-        let mut encoded = Vec::new();
+        let namespace = if self.parents.is_empty() {
+            namespace
+        } else {
+            uuid::Uuid::new_v5(&namespace, b"reboot.nested.scope.v1")
+        };
+        let mut encoded = self.parent_identity();
         if let Some((name, index, _)) = &self.iteration {
             encoded.extend_from_slice(&(name.len() as u64).to_be_bytes());
             encoded.extend_from_slice(name.as_bytes());
@@ -973,11 +1095,16 @@ impl<'a> WorkflowContext<'a> {
     }
     pub(crate) fn checkpoint_decision_key(&self, seed: uuid::Uuid, alias: &str) -> uuid::Uuid {
         let namespace = uuid::Uuid::new_v5(&seed, b"reboot.finite.decision.v1");
+        let namespace = if self.parents.is_empty() {
+            namespace
+        } else {
+            uuid::Uuid::new_v5(&namespace, b"reboot.nested.scope.v1")
+        };
         let (name, index, _) = self
             .iteration
             .as_ref()
             .expect("decision requires validated finite scope");
-        let mut encoded = Vec::new();
+        let mut encoded = self.parent_identity();
         encoded.extend_from_slice(&(name.len() as u64).to_be_bytes());
         encoded.extend_from_slice(name.as_bytes());
         encoded.extend_from_slice(&index.to_be_bytes());
@@ -993,7 +1120,38 @@ impl<'a> WorkflowContext<'a> {
         let namespace = uuid::Uuid::new_v5(&seed, b"reboot.reader.outcome.v1");
         self.checkpoint_key(namespace, alias, Some("reader-outcome.v1"))
     }
+    fn parent_identity(&self) -> Vec<u8> {
+        let mut encoded = Vec::new();
+        if !self.parents.is_empty() {
+            encoded.extend_from_slice(&(self.parents.len() as u64).to_be_bytes());
+            for (name, index, _) in &self.parents {
+                encoded.extend_from_slice(&(name.len() as u64).to_be_bytes());
+                encoded.extend_from_slice(name.as_bytes());
+                encoded.extend_from_slice(&index.to_be_bytes());
+            }
+        }
+        encoded
+    }
+    pub(crate) fn checkpoint_parent_bounds(&self) -> String {
+        self.parents
+            .iter()
+            .map(|(_, _, count)| format!(":{count}"))
+            .collect()
+    }
     pub(crate) fn checkpoint_alias(&self, alias: &str) -> String {
+        if !self.parents.is_empty() {
+            let path = self
+                .parent_identity()
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>();
+            let (name, index, _) = self.iteration.as_ref().expect("nested leaf");
+            return format!(
+                "reboot.nested:{path}:{}:{name}:{index}:{}:{alias}",
+                name.len(),
+                alias.len()
+            );
+        }
         match &self.iteration {
             None => alias.to_owned(),
             Some((name, index, _)) => format!(
@@ -1509,21 +1667,21 @@ impl<'a> WorkflowContext<'a> {
         {
             let _owner = admission.lock()?;
         }
-        let loaded = self
-            .tasks
-            .inner
-            .store
-            .task_database()
-            .load(db::LoadRequest {
-                actors: vec![],
-                task_ids: vec![self
-                    .task
-                    .task_id
-                    .clone()
-                    .ok_or_else(|| Status::failed_precondition("missing workflow identity"))?],
-            })
-            .await?
-            .into_inner();
+        let loaded =
+            self.tasks
+                .inner
+                .store
+                .task_database()
+                .load(db::LoadRequest {
+                    actors: vec![],
+                    task_ids: vec![
+                        self.task.task_id.clone().ok_or_else(|| {
+                            Status::failed_precondition("missing workflow identity")
+                        })?,
+                    ],
+                })
+                .await?
+                .into_inner();
         {
             let _owner = admission.lock()?;
         }
@@ -1994,6 +2152,7 @@ impl OneShotTasks {
             generation: generation.clone(),
             attempt: &attempt,
             iteration: None,
+            parents: Vec::new(),
         };
         {
             let id = task.task_id.clone().expect("validated workflow ID");
@@ -2074,6 +2233,7 @@ impl OneShotTasks {
             generation: generation.clone(),
             attempt: &attempt,
             iteration: None,
+            parents: Vec::new(),
         }
         .validate_scope()
         .await?;

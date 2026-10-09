@@ -332,3 +332,29 @@ An unchanged dataset can resume after host/Database restart. Each page uses the
 existing serial exclusive app/map transaction and sends once; no automatic root
 idempotency, status retry, distributed map ingress or uncertain-outcome retry is
 introduced.
+
+## Grouped finite workflow processing
+
+`client submit-grouped BATCH COUNT KEY DUE GROUP_SIZE` partitions a bounded batch
+into named outer groups and inner item scopes. `GROUP_SIZE` must divide `COUNT`;
+zero retains the original single-loop behavior. `submit-grouped-break` adds a
+final `BREAK_AFTER` argument: its saved decision exits the entire group loop,
+then executes the existing private after-loop finalizer.
+
+For example, submit four items in two groups of two, stopping after item three:
+
+```sh
+cargo run --manifest-path backend/Cargo.toml --bin client -- submit-grouped-break grouped 4 12345678-1234-4234-8234-123456789abc 0 2 3
+```
+
+Approvals keep their global item indices. A repeated inner index in a different
+group has a distinct durable checkpoint identity. On host/Database restart,
+acknowledged reader observations, writer outcomes and Continue/Break decisions
+replay without repeating their callbacks. Existing single-loop checkpoint keys
+are unchanged. SDK scopes admit at most eight levels and a Cartesian bound of
+1024 positions along a path; the scaffold retains its 100-item batch limit.
+
+This is same-actor finite replay composition, not nested transactions, automatic
+retry, cross-actor dispatch, Python's unbounded loop cursor/GC, or a snapshot of
+mutable state. Parent and inner bounds are part of the replay contract; changing
+them under an existing checkpoint fails closed.

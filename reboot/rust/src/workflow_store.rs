@@ -116,24 +116,28 @@ mod workflow_checkpoint_tests {
             .value,
             7
         );
-        assert!(decode_workflow_checkpoint::<proto::Counter>(
-            &scoped,
-            &id,
-            key,
-            &[1, 2],
-            "type.googleapis.com/Counter",
-            Some(1)
-        )
-        .is_err());
-        assert!(decode_workflow_checkpoint::<proto::Counter>(
-            &scoped,
-            &id,
-            key,
-            &[1, 2],
-            "type.googleapis.com/Counter",
-            None
-        )
-        .is_err());
+        assert!(
+            decode_workflow_checkpoint::<proto::Counter>(
+                &scoped,
+                &id,
+                key,
+                &[1, 2],
+                "type.googleapis.com/Counter",
+                Some(1)
+            )
+            .is_err()
+        );
+        assert!(
+            decode_workflow_checkpoint::<proto::Counter>(
+                &scoped,
+                &id,
+                key,
+                &[1, 2],
+                "type.googleapis.com/Counter",
+                None
+            )
+            .is_err()
+        );
         for vector in 0..10 {
             let mut bad = record.clone();
             match vector {
@@ -161,24 +165,28 @@ mod workflow_checkpoint_tests {
                 "vector {vector}"
             );
         }
-        assert!(decode_workflow_checkpoint::<proto::Counter>(
-            &record,
-            &id,
-            key,
-            &[],
-            "type.googleapis.com/Counter",
-            None
-        )
-        .is_err());
-        assert!(decode_workflow_checkpoint::<proto::Counter>(
-            &record,
-            &id,
-            key,
-            &[1, 2],
-            "type.googleapis.com/Other",
-            None
-        )
-        .is_err());
+        assert!(
+            decode_workflow_checkpoint::<proto::Counter>(
+                &record,
+                &id,
+                key,
+                &[],
+                "type.googleapis.com/Counter",
+                None
+            )
+            .is_err()
+        );
+        assert!(
+            decode_workflow_checkpoint::<proto::Counter>(
+                &record,
+                &id,
+                key,
+                &[1, 2],
+                "type.googleapis.com/Other",
+                None
+            )
+            .is_err()
+        );
     }
     #[test]
     fn explicit_named_key_matches_python_external_helper_not_typed_rpc_manager() {
@@ -388,6 +396,10 @@ impl DatabaseActorStore {
         );
         if scope.checkpoint_iteration().is_some() {
             identity.push_str(&format!(":finite-bound={}", scope.checkpoint_bound()));
+            let parents = scope.checkpoint_parent_bounds();
+            if !parents.is_empty() {
+                identity.push_str(&format!(":parent-bounds={parents}"));
+            }
         }
         if let Some(condition) = condition {
             identity.push_str(&format!(

@@ -20,6 +20,9 @@ pub const STATE_TYPE: &str = "{{ name }}.v1.Ledger";
 pub fn reference() -> Result<String, Box<dyn std::error::Error>> {
     Ok(reboot::state_ref::StateRef::from_id(STATE_TYPE, "ledger")?.to_string())
 }
+fn valid_groups(count: u32, group_size: u32) -> bool {
+    group_size == 0 || (group_size <= count && count.is_multiple_of(group_size))
+}
 #[allow(clippy::result_large_err)]
 fn validate_batch(batch: &str, count: u32) -> Result<(), tonic::Status> {
     if batch.is_empty()
@@ -74,6 +77,11 @@ impl generated::LedgerWorkMethodsDatabaseHandler for Ledger {
         state_ref: String,
     ) -> Result<TransactionExecution<proto::Handle>, tonic::Status> {
         validate_batch(&request.batch, request.count)?;
+        if !valid_groups(request.count, request.group_size) {
+            return Err(tonic::Status::invalid_argument(
+                "group size must divide the bounded count",
+            ));
+        }
         if request.stop_enabled && request.not_before != 0 {
             return Err(tonic::Status::invalid_argument(
                 "cooperative stop requires an immediate batch",
@@ -360,6 +368,12 @@ impl generated::LedgerWorkMethodsDatabaseHandler for Ledger {
         request: proto::Submit,
     ) -> Result<proto::Ledger, generated::LedgerWorkMethodsRunBatchError> {
         validate_batch(&request.batch, request.count)?;
+        if !valid_groups(request.count, request.group_size) {
+            return Err(tonic::Status::invalid_argument(
+                "group size must divide the bounded count",
+            )
+            .into());
+        }
         if request.break_after > request.count
             || (request.break_after != 0
                 && (request.stop_enabled || request.reject_step || request.reject_after != 0))
@@ -411,105 +425,129 @@ impl generated::LedgerWorkMethodsDatabaseHandler for Ledger {
             }
         }
         let mut result = proto::Ledger::default();
-        for index in 0..request.count {
-            let iteration =
-                context.iteration("batch-v1", u64::from(index), u64::from(request.count))?;
-            let batch = request.batch.clone();
-            let stop_enabled = request.stop_enabled;
-            let observed = generated::LedgerWorkMethodsWorkflowSteps::observe_batch_until(
-                &iteration,
-                Arc::new(self.clone()),
-                "approval",
-                if stop_enabled {
-                    "approved-or-stop.v1"
+        let groups = request.count.checked_div(request.group_size).unwrap_or(1);
+        let items = if request.group_size == 0 {
+            request.count
+        } else {
+            request.group_size
+        };
+        'groups: for group_index in 0..groups {
+            for item_index in 0..items {
+                let index = group_index * items + item_index;
+                // Explicit two-level finite composition. Reconstruct the parent on
+                // replay; a reused inner index in another group has a distinct key.
+                let group;
+                let iteration = if request.group_size == 0 {
+                    context.iteration("batch-v1", u64::from(index), u64::from(request.count))?
                 } else {
-                    "approved-through-index.v1"
-                },
-                proto::Batch { batch },
-                move |state| state.approved > index || (stop_enabled && state.stop_requested),
-            )
-            .await?;
-            if stop_enabled && observed.stop_requested {
-                return Ok(generated::LedgerWorkMethodsWorkflowSteps::finish_stopped(
+                    group = context.iteration(
+                        "batch-groups-v1",
+                        u64::from(group_index),
+                        u64::from(groups),
+                    )?;
+                    group.iteration(
+                        "group-items-v1",
+                        u64::from(item_index),
+                        u64::from(request.group_size),
+                    )?
+                };
+                let batch = request.batch.clone();
+                let stop_enabled = request.stop_enabled;
+                let observed = generated::LedgerWorkMethodsWorkflowSteps::observe_batch_until(
                     &iteration,
                     Arc::new(self.clone()),
-                    "stop",
-                    proto::Step {
-                        batch: request.batch.clone(),
-                        index,
-                        reject: false,
+                    "approval",
+                    if stop_enabled {
+                        "approved-or-stop.v1"
+                    } else {
+                        "approved-through-index.v1"
                     },
-                )
-                .await?);
-            }
-            if request.reject_step && index == 0 {
-                match generated::LedgerWorkMethodsWorkflowSteps::try_checkpoint(
-                    &iteration,
-                    Arc::new(self.clone()),
-                    "try-complete",
-                    proto::Step {
-                        batch: request.batch.clone(),
-                        index,
-                        reject: true,
-                    },
-                )
-                .await
-                {
-                    Err(generated::LedgerWorkMethodsTryCheckpointError::StepRejected(error))
-                        if error.batch == request.batch && error.index == index =>
-                    {
-                        event(&format!("caught-step-{}-{}", error.batch, error.index));
-                    }
-                    Err(generated::LedgerWorkMethodsTryCheckpointError::Grpc(error)) => {
-                        return Err(error.into());
-                    }
-                    _ => {
-                        return Err(tonic::Status::data_loss(
-                            "unexpected tentative checkpoint outcome",
-                        )
-                        .into());
-                    }
-                }
-            }
-            result = generated::LedgerWorkMethodsWorkflowSteps::checkpoint(
-                &iteration,
-                Arc::new(self.clone()),
-                "complete",
-                proto::Step {
-                    batch: request.batch.clone(),
-                    index,
-                    reject: request.reject_after == index + 1,
-                },
-            )
-            .await?;
-            if request.break_after != 0 {
-                let threshold = request.break_after;
-                let decision = generated::LedgerWorkMethodsWorkflowSteps::observe_batch_decide(
-                    &iteration,
-                    Arc::new(self.clone()),
-                    "control",
-                    "completed-at-threshold.v1",
-                    proto::Batch {
-                        batch: request.batch.clone(),
-                    },
-                    move |state| state.completed >= threshold,
+                    proto::Batch { batch },
+                    move |state| state.approved > index || (stop_enabled && state.stop_requested),
                 )
                 .await?;
-                match decision {
-                    std::ops::ControlFlow::Continue(_) => {}
-                    std::ops::ControlFlow::Break(_) => {
-                        break;
+                if stop_enabled && observed.stop_requested {
+                    return Ok(generated::LedgerWorkMethodsWorkflowSteps::finish_stopped(
+                        &iteration,
+                        Arc::new(self.clone()),
+                        "stop",
+                        proto::Step {
+                            batch: request.batch.clone(),
+                            index,
+                            reject: false,
+                        },
+                    )
+                    .await?);
+                }
+                if request.reject_step && index == 0 {
+                    match generated::LedgerWorkMethodsWorkflowSteps::try_checkpoint(
+                        &iteration,
+                        Arc::new(self.clone()),
+                        "try-complete",
+                        proto::Step {
+                            batch: request.batch.clone(),
+                            index,
+                            reject: true,
+                        },
+                    )
+                    .await
+                    {
+                        Err(generated::LedgerWorkMethodsTryCheckpointError::StepRejected(
+                            error,
+                        )) if error.batch == request.batch && error.index == index => {
+                            event(&format!("caught-step-{}-{}", error.batch, error.index));
+                        }
+                        Err(generated::LedgerWorkMethodsTryCheckpointError::Grpc(error)) => {
+                            return Err(error.into());
+                        }
+                        _ => {
+                            return Err(tonic::Status::data_loss(
+                                "unexpected tentative checkpoint outcome",
+                            )
+                            .into());
+                        }
                     }
                 }
-            }
-            if result.rejected {
-                return Err(generated::LedgerWorkMethodsRunBatchError::BatchRejected(
-                    proto::BatchRejected {
+                result = generated::LedgerWorkMethodsWorkflowSteps::checkpoint(
+                    &iteration,
+                    Arc::new(self.clone()),
+                    "complete",
+                    proto::Step {
                         batch: request.batch.clone(),
-                        completed: result.completed,
-                        reason: "rejected after acknowledged checkpoint".into(),
+                        index,
+                        reject: request.reject_after == index + 1,
                     },
-                ));
+                )
+                .await?;
+                if request.break_after != 0 {
+                    let threshold = request.break_after;
+                    let decision = generated::LedgerWorkMethodsWorkflowSteps::observe_batch_decide(
+                        &iteration,
+                        Arc::new(self.clone()),
+                        "control",
+                        "completed-at-threshold.v1",
+                        proto::Batch {
+                            batch: request.batch.clone(),
+                        },
+                        move |state| state.completed >= threshold,
+                    )
+                    .await?;
+                    match decision {
+                        std::ops::ControlFlow::Continue(_) => {}
+                        std::ops::ControlFlow::Break(_) => {
+                            break 'groups;
+                        }
+                    }
+                }
+                if result.rejected {
+                    return Err(generated::LedgerWorkMethodsRunBatchError::BatchRejected(
+                        proto::BatchRejected {
+                            batch: request.batch.clone(),
+                            completed: result.completed,
+                            reason: "rejected after acknowledged checkpoint".into(),
+                        },
+                    ));
+                }
             }
         }
         if request.break_after != 0 {
@@ -810,6 +848,14 @@ fn validate_archive_keys(keys: &[String]) -> Result<(), Box<tonic::Status>> {
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn grouped_counts_are_explicit_divisors_or_legacy_zero() {
+        assert!(super::valid_groups(4, 2));
+        assert!(super::valid_groups(4, 4));
+        assert!(super::valid_groups(4, 0));
+        assert!(!super::valid_groups(4, 3));
+        assert!(!super::valid_groups(4, 5));
+    }
     #[test]
     fn bulk_archive_admission_is_bounded_and_unique() {
         assert!(super::validate_archive_keys(&[]).is_err());

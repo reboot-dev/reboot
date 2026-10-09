@@ -42,7 +42,7 @@ proofs below retain their separate source snapshots and limits.
 | State/client runtime | Durable constructors/readers/writers, idempotent response replay, metadata/auth | General distributed ownership/fencing and arbitrary external effects |
 | Transactions | Legacy durable coordinator/participant paths and bounded supervised chains/star | General nested snapshots, reentrancy, intersecting subtrees, migration |
 | Tasks | Durable scheduled tasks, typed results/Wait with opt-in result policy, recovery, local admin list/stream and scheduled-workflow cancellation | Transactional targets, running/ordinary/distributed cancellation, aggregation, broad retry and dispatcher fencing |
-| Workflows | Finite typed named steps, finite indexed replay, saved reader observations and finite Continue/Break, typed declared business terminals; explicit local-body resumption | Python unbounded Task cursor/GC/Break, cross-actor composition, framework failure isolation |
+| Workflows | Finite typed named steps, bounded nested indexed replay, saved reader observations and finite Continue/Break, typed declared business terminals; explicit local-body resumption | Python unbounded Task cursor/GC/Break, cross-actor composition, framework failure isolation |
 | Reactive readers | Typed bounded database/workflow/transaction-service ordinary reader subscriptions, commit invalidation and explicit same-query reconnect | Cross-actor/remote invalidation, transparent reconnect/durable resume, streaming/transaction RPC subscriptions |
 | SortedMap | Canonical empty constructor, serial same-host app/map transactions, same-root session reopening, live keyset pages and atomic multi-entry approval transfer | Public inbound adapter, nested/reusable siblings, distributed collection lifecycle |
 
@@ -934,7 +934,8 @@ approval of a rejected batch fails, while a new scheduled batch can proceed.
 ### Implemented, bounded finite control-flow vertical
 
 `WorkflowContext::iteration(name, index, count)` mints explicit finite indexed
-replay scopes, with count bounded to 1..1024 and no nested scopes. This is **not**
+replay scopes, with count bounded to 1..1024. Bounded nested scopes are supported by the separate
+composition contract below (depth <=8; Cartesian bound <=1024 along each path). This is **not**
 Python's unbounded canonical `Task.iteration` cursor or iteration GC. Task remains
 iteration zero and restart reruns the finite application body, loading each
 acknowledged typed decision/effect. Explicit finite Continue/Break is now supported
@@ -1021,6 +1022,64 @@ root-handoff Drop, and pending/terminal persistence through actual host/RocksDB
 restarts. Python comparison: [workflow API](../aio/workflows.py),
 [dispatcher](../aio/internals/tasks_dispatcher.py).
 
+### Bounded nested finite workflow composition (2026-10-09)
+
+`WorkflowContext::iteration` composes same-actor finite scopes up to eight levels,
+with a checked Cartesian bound of at most 1024 leaf positions along a nested path.
+Names, nonzero bounds and indices are validated; rejection retains failed-attempt
+provenance. This bound is not a workflow-wide checkpoint quota. Every scope retains
+original dispatcher generation, cancellation and shared attempt fences.
+
+Flat scopes and global checkpoint identities remain byte-for-byte unchanged.
+Nested writer/wait/decision identities use a separate `reboot.nested.scope.v1`
+UUIDv5 namespace with length-delimited parent names/indices and existing leaf
+identity. Bounds stay out of keys and bind fingerprints (all parent bounds plus
+leaf bound): changing a bound hits the original record and fails closed, rather
+than creating a new effect. Canonical checkpoint workflow_iteration stores the
+local leaf index; UUID identity distinguishes repeated leaf indices under different
+parents. Canonical Task.iteration remains zero; there is no cursor advancement/GC.
+
+The generated batch application exposes `Submit.group_size`, `submit-grouped` and
+`submit-grouped-break`. A nonzero size must divide the bounded item count. Actual
+outer-group/inner-item loops reuse generated immutable reader waits, writer steps
+and saved Continue/Break decisions; Break exits the whole group loop before the
+existing private after-loop writer. Approvals retain global item indices. Zero
+retains the original single-loop path. Public direct private-finalizer calls and
+invalid group sizes reject before durable mutation.
+
+**Executed public Cargo/rbt/native:** `/tmp/reboot-rust-nested-cli-1791550478430403401` (26 checks) processed
+four items in two groups. Repeated leaf zero produced distinct checkpoints; three
+saved decision envelopes independently matched full-path UUIDs, response snapshots
+and Continue/Break. After saved Break, a generated-handler-only parent-bound drift
+made real recovery fail closed on the original checkpoint identity. Supervised
+children were reaped; restoring the bound then restarting real RocksDB/host
+retained exact app/map/Pending-task/checkpoint bytes, without callback reexecution.
+Canonical public Wait completed one private after-loop effect and no fourth item;
+terminal restart retained exact state and did not redispatch. A second ordinary
+grouped batch exhausted both groups through canonical Wait. Generated consumers
+passed strict Clippy/fmt and 13 tests; 24 CLI tests passed.
+
+SDK `/tmp/reboot-rust-nested-sdk-1791550840030951404`: 446 passed, 131 ignored, strict all-target Clippy. Admission vectors
+exercise nested namespace separation, siblings/depth, changed parent bound at the
+same key, exact legacy flat key, depth8/product1024 boundaries and tainted invalid
+scope admission. Explicit native reader-outcome and staged-map restart gates passed.
+Retained public map `/tmp/reboot-rust-map-reentry-cli-1791551104348889239` (18), batch `/tmp/reboot-rust-batch-ledger-acceptance-1791551380009232896` (162), pagination `/tmp/reboot-rust-pagination-cli-1791552132266523406` (22),
+generated/HTTP preflight `/tmp/reboot-rust-http-request-preflight-1791550403064564143`, and greeting/HTTP/rebuild/health/cleanup
+`/tmp/reboot-rust-loop-decision-greeting-1791552427706479774` (26 HTTP exchanges) passed. Frozen source/native Database identity,
+resource bounds and proof-owned PID absence audited before digest refresh.
+
+Python currently permits only one context.loop per workflow
+([state manager](../aio/state_managers.py)); this bounded nesting is a separate Rust
+application contract, not Python unbounded loop/cursor parity. No nested transaction,
+remote/cross-actor composition, concurrency, arbitrary durable catch, full-depth
+native saturation, new lost-ACK injection, automatic framework retry or external
+exactly-once guarantee is established. Overall Rust parity remains incomplete.
+
+Sources: [scope identity/fences](src/workflow_context.rs),
+[checkpoint fingerprint/replay](src/workflow_store.rs),
+[generated grouped body](../cli/commands/init/templates/rust_batch_lib.rs.j2),
+[public native acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
+
 ### Finite saved Continue/Break and after-loop work (2026-10-09)
 
 `WorkflowContext::decide_reader` and generated `WorkflowSteps::<reader>_decide`
@@ -1080,7 +1139,7 @@ an unprefixed event against whole prefixed log lines; its saved Break was parked
 its retained CLI was gracefully stopped without releasing continuation, and fresh
 isolated acceptance was required. No uncertain mutation was retried.
 
-**Remaining:** unbounded canonical cursor/GC, nested/cross-actor composition,
+**Remaining:** unbounded canonical cursor/GC, cross-actor composition,
 general durable catch/failure isolation, new decision Store/CompleteTask lost-ACK
 or malformed-envelope process injection, full-bound saturation and distributed
 fencing. Existing operation/authority/uncertainty guards remain; compile/unit tests
@@ -2185,7 +2244,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: ce1163921f79e43e44492eb39c18e40b4d37666e0ecc6b45b6706c53603bc83b -->
+<!-- parity-source-sha256: 077f0b95df1fe30ff10bb7853bd51944c9628a41528b16c6f31edb75e452079b -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

@@ -14,7 +14,7 @@ message Ledger {
  bytes workflow_id = 11; bool decision_finished = 12; uint32 break_after = 13; bool audit_mismatch = 14; string audit_requested = 15;
 }
 message Empty {}
-message Submit { string batch = 1; uint32 count = 2; int64 not_before = 3; uint32 reject_after = 4; bool reject_step = 5; bool stop_enabled = 6; uint32 break_after = 7; string audit_batch = 8; }
+message Submit { string batch = 1; uint32 count = 2; int64 not_before = 3; uint32 reject_after = 4; bool reject_step = 5; bool stop_enabled = 6; uint32 break_after = 7; string audit_batch = 8; uint32 group_size = 9; }
 message Handle { bytes id = 1; }
 message Step { string batch = 1; uint32 index = 2; bool reject = 3; }
 message StopRequest { string batch = 1; bytes task_id = 2; }

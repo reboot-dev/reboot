@@ -135,6 +135,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         "submit"
         | "submit-audited"
+        | "submit-grouped"
+        | "submit-grouped-break"
         | "submit-break"
         | "submit-rejecting"
         | "submit-step-reject"
@@ -144,6 +146,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 proto::ledger_work_methods_client::LedgerWorkMethodsClient::new(channel);
             let key = uuid::Uuid::parse_str(&arg(3)?)?;
             let mut request = context.writer(proto::Submit {
+                group_size: if matches!(command, "submit-grouped" | "submit-grouped-break") {
+                    arg(5)?.parse()?
+                } else {
+                    0
+                },
                 audit_batch: if command == "submit-audited" {
                     arg(5)?
                 } else {
@@ -160,7 +167,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     command,
                     "submit-stoppable" | "submit-stoppable-step-reject"
                 ),
-                break_after: if command == "submit-break" {
+                break_after: if command == "submit-grouped-break" {
+                    arg(6)?.parse()?
+                } else if command == "submit-break" {
                     arg(5)?.parse()?
                 } else {
                     0
