@@ -156,3 +156,16 @@ diff --git a/mypy.bzl b/mypy.bzl
              ]),
              "{SRCS}": " ".join([
                  shell.quote(f.path) if is_aspect else shell.quote(f.short_path)
+diff --git a/mypy/BUILD b/mypy/BUILD
+--- a/mypy/BUILD
++++ b/mypy/BUILD
+@@ -8,5 +8,9 @@
+     visibility = ["//visibility:public"],
+     deps = [
+         requirement("mypy"),
++        # Stub-only packages must be on mypy's own path: mypy only looks
++        # for `<package>-stubs` next to packages, never on `MYPYPATH`.
++        requirement("types-protobuf"),
++        requirement("pydantic"),
+     ],
+ )

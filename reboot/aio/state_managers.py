@@ -1226,6 +1226,9 @@ class StateManager(ABC):
             parent_transaction_ids = snapshot.transaction_ids[:index]
             for (transaction_ids, queue) in self.streaming_readers:
                 if transaction_ids == parent_transaction_ids:
+                    # A completed nested transaction leaves us with a
+                    # state, which the reader copies when it reads it.
+                    assert self.state is not None
                     # NOTE: we defer making a reader specific copy of
                     # this state until the reader actually reads it to
                     # reduce memory usage.
@@ -6544,6 +6547,8 @@ class SidecarStateManager(
                         assert self._states[state_type].get(state_ref) is None
 
                     if queues is not None:
+                        # Without a state there are no queues, see above.
+                        assert transaction.state is not None
                         for queue in queues:
                             # NOTE: we defer making a reader specific copy
                             # of this state until the reader actually
