@@ -1,3 +1,8 @@
+#[derive(Clone, Copy)]
+pub(crate) enum WorkflowReaderCheckpoint {
+    Decision(&'static str),
+    Outcome(&'static str),
+}
 #[derive(prost::Message)]
 struct WorkflowSchedulingCheckpoint {
     #[prost(bytes = "vec", tag = "1")]
@@ -256,7 +261,55 @@ impl DatabaseActorStore {
         let result = self
             .workflow_step_outcome::<D, Q, R, _>(
                 scope,
-                (alias, condition, Some(reader_response_type)),
+                (
+                    alias,
+                    condition,
+                    Some(WorkflowReaderCheckpoint::Decision(reader_response_type)),
+                ),
+                method,
+                response_type,
+                request,
+                move |state, request| {
+                    let future = invoke(state, request);
+                    Box::pin(async move { future.await.map(|response| response.map(Ok)) })
+                },
+            )
+            .await?;
+        match result {
+            Some(Ok(response)) => Ok(Some(response)),
+            None => Ok(None),
+            Some(Err(_)) => Err(Status::failed_precondition(
+                "declared checkpoint requires typed writer step",
+            )),
+        }
+    }
+    pub(crate) async fn workflow_reader_outcome_step<D, Q, R, F>(
+        &self,
+        scope: &crate::one_shot_tasks::WorkflowContext<'_>,
+        (alias, condition): (&str, Option<&str>),
+        method: &'static str,
+        (response_type, reader_response_type): (&'static str, &'static str),
+        request: Q,
+        invoke: F,
+    ) -> Result<Option<R>, Status>
+    where
+        D: DurableStateDeclaration + 'static,
+        Q: Message + Default + Send + 'static,
+        R: Message + Default + Clone + Send + 'static,
+        F: for<'a> FnOnce(
+            &'a mut D::State,
+            Q,
+        )
+            -> Pin<Box<dyn Future<Output = Result<Option<R>, Status>> + Send + 'a>>,
+    {
+        let result = self
+            .workflow_step_outcome::<D, Q, R, _>(
+                scope,
+                (
+                    alias,
+                    condition,
+                    Some(WorkflowReaderCheckpoint::Outcome(reader_response_type)),
+                ),
                 method,
                 response_type,
                 request,
@@ -280,7 +333,7 @@ impl DatabaseActorStore {
         (alias, condition, decision_reader_response_type): (
             &str,
             Option<&str>,
-            Option<&'static str>,
+            Option<WorkflowReaderCheckpoint>,
         ),
         method: &'static str,
         response_type: &'static str,
@@ -312,7 +365,12 @@ impl DatabaseActorStore {
         let iteration = scope.checkpoint_iteration();
         let scoped_alias = scope.checkpoint_alias(alias);
         let key = match decision_reader_response_type {
-            Some(_) => scope.checkpoint_decision_key(seed, alias),
+            Some(WorkflowReaderCheckpoint::Decision(_)) => {
+                scope.checkpoint_decision_key(seed, alias)
+            }
+            Some(WorkflowReaderCheckpoint::Outcome(_)) => {
+                scope.checkpoint_reader_outcome_key(seed, alias)
+            }
             None => scope.checkpoint_key(seed, alias, condition),
         };
         // Pin workflow method/request, alias, writer method, response type and
@@ -338,9 +396,13 @@ impl DatabaseActorStore {
                 condition
             ));
         }
-        if let Some(reader_response_type) = decision_reader_response_type {
+        if let Some(mode) = decision_reader_response_type {
+            let (kind, reader_response_type) = match mode {
+                WorkflowReaderCheckpoint::Decision(url) => ("decision-kind=finite.v1", url),
+                WorkflowReaderCheckpoint::Outcome(url) => ("reader-outcome=declared.v1", url),
+            };
             identity.push_str(&format!(
-                ":decision-kind=finite.v1:reader-response={}:{}",
+                ":{kind}:reader-response={}:{}",
                 reader_response_type.len(),
                 reader_response_type
             ));
@@ -376,6 +438,10 @@ impl DatabaseActorStore {
                     response_type,
                     iteration,
                 )?;
+                if let Some(WorkflowReaderCheckpoint::Outcome(url)) = decision_reader_response_type
+                {
+                    scope.validate_reader_outcome(method, url, &any.value)?;
+                }
                 saved = Some(if any.type_url == response_type {
                     Ok(R::decode(any.value.as_slice())
                         .map_err(|_| Status::data_loss("malformed workflow step result"))?)
@@ -452,6 +518,9 @@ impl DatabaseActorStore {
             },
             Err(error) => error.clone(),
         };
+        if let Some(WorkflowReaderCheckpoint::Outcome(url)) = decision_reader_response_type {
+            scope.validate_reader_outcome(method, url, &saved_response.value)?;
+        }
         let mut operation = scope.durable();
         let commit_attempt = self
             .actor_gate(&id.state_type, &id.state_ref)

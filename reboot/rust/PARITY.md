@@ -149,8 +149,8 @@ for arbitrary trusted effects. Request/state/declared-error protobuf shapes are
 bounded to supported same-package top-level models. Declared errors are supported
 for ordinary unary readers/writers, exclusive transactions, standalone workflow
 terminals, ordinary unary reader/writer errors on workflow-bearing services,
-and serial same-actor named writer business decisions. Workflow reader errors
-remain fatal framework step failures, not durable catchable error decisions.
+and serial same-actor named writer business decisions. The opt-in serial same-actor reader-outcome API supports typed durable declared
+errors; ordinary reader waits and framework errors remain fatal step failures.
 Shared transactions and workflow-service constructor errors remain unsupported. Metadata/StateRef helpers also remain a
 subset: the StateRef codec is not automatic migration of opaque durable keys;
 full per-call Options/context merge, timezone/DST parsing and cross-application
@@ -1001,7 +1001,8 @@ bounded corrections; terminal execution/hash/cleanup audit is separate evidence.
 
 **Missing:** Python unbounded cursor/GC and arbitrary durable Break semantics,
 remote/cross-actor steps, nested transactions, mixed transaction/workflow services,
-durably catchable declared reader step errors and full alias/seed semantics. No arbitrary external
+general durable reader failure isolation and full alias/seed semantics. The bounded
+opt-in declared-reader outcome API below does not supply arbitrary catch semantics. No arbitrary external
 side-effect exactly-once claim. New retry proof does not inject Store/CompleteTask
 lost ACK; existing uncertainty tests/source guards are separate evidence.
 
@@ -1090,6 +1091,77 @@ Sources: [decision API](src/workflow_context.rs), [durable keys/Store](src/workf
 [native state-flip proof](tests/fixtures/workflow_app/prove_loop_decision.py),
 [Python loop source](../aio/state_managers.py),
 [public CLI acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
+
+### Serial declared-reader outcomes and private audit fallback (2026-10-09)
+
+`WorkflowContext::wait_reader_declared` and generated `<reader>_try_until` wait
+for a matching response or return a saved method-declared typed business error.
+Ordinary `_until` and `_decide` keep their fatal error contract. Only generated
+explicit declared variants become catchable; Grpc/transport/framework failures,
+even rich statuses containing declared-looking details, remain failed operations.
+Python until/memoize stores successful callable returns, not thrown exceptions:
+this is explicit bounded typed outcome support, not blanket exception parity.
+
+The response/error oneof binds the original response URL, method, request,
+versioned predicate condition, actor/workflow identity and finite scope. A separate
+`reboot.reader.outcome.v1` UUID domain preserves older writer/wait/decision keys.
+Fresh and replayed errors must validate against immutable reader declarations,
+canonical non-OK rich Status, exact detail URL and decoded payload. No actor/task
+upsert occurs when saving a reader observation. Typed success decode precedes
+helper acknowledgment. Reader descriptors remain unschedulable.
+
+A clean serial-attempt reservation prevents preexisting or transient overlapping
+helpers from making a declared outcome catchable. Competing helper creation leaves
+sticky failure evidence; final acknowledgment and release share one admission
+mutex. Internal scope/authority checks have separately classified but still counted
+operations: failure/drop evidence is retained without self-tainting successful
+reader work. Three focused regressions cover preexisting/transient overlap, clean
+release and nested authority failure/drop accounting. They do not prove arbitrary
+concurrent native Store failure/cancellation interleavings.
+
+The public opt-in batch app adds `submit-audited` and a private named `RecordAudit`
+fallback. A saved ObserveBatch BatchMismatch can be caught, audited, and followed
+by ordinary approval/map effects and canonical Wait success. Public callers cannot
+invoke that fallback, including while the workflow is paused. Matching reader
+success is also exercised without the business-error fallback.
+
+**Executed:** `/tmp/reboot-rust-reader-outcome-sdk-1791534192426796030`: **438 SDK tests passed, 131 ignored**, strict all-target
+SDK Clippy, and the explicitly executed generated real CXX/RocksDB reader-outcome
+restart test. Its ten owned processes are absent. The fixture saves a declared
+threshold error, changes live actor state through a real public writer so a fresh
+reader would succeed, restarts Database/host and returns the original saved error
+payload without reader/predicate entry. One fallback persists, terminal restart
+retains records and omits body redispatch. A changed condition version causes a
+real nonzero recovery-host exit with unchanged canonical checkpoint/actor state.
+A deliberately caught rich Grpc failure also causes a nonzero supervised-host
+exit: Pending task, no outcome/error terminal or fallback, retained first-writer
+checkpoint. Negative state assertions use read-only Database Load after host exit.
+
+Public generated Cargo/`rbt`: `/tmp/reboot-rust-reader-outcome-cli-1791534422967915593` (**18 checks**), including
+exact restored Pending app/map/task/checkpoint bytes, typed error and success
+oneofs, deterministic outcome UUIDs, private continuation denial and terminal
+no-redispatch. Strict generated consumer Clippy/fmt and **11 consumer tests**;
+24 CLI tests. The public case does not change observed state between restarts;
+the separate native fixture supplies changed-state coverage. Fingerprints are
+required present/stable, not independently recomputed by the public inspector.
+
+Retained finite Continue/Break public proof: `/tmp/reboot-rust-loop-decision-cli-1791534730122747971` (**19 checks**).
+HTTP/generated strict preflight: `/tmp/reboot-rust-http-request-preflight-1791535035775536451`. Full batch regression: `/tmp/reboot-rust-batch-ledger-acceptance-1791535109434672631`
+(**162 checks**). Greeting/HTTP/health/rebuild/restart/cleanup: `/tmp/reboot-rust-loop-decision-greeting-1791535833156310151`
+(**26 HTTP exchanges**). Frozen-source manifests, database identity, resource
+budgets and owned PID absence were audited before canonical digest refresh.
+
+**Remaining:** arbitrary/nested/cross-actor catch and failure isolation, unbounded
+cursor/GC, malformed/foreign saved-error native injection, Store/authority lost-ACK
+and cancellation/concurrent-attempt native negatives. Trusted versioned predicate
+purity is not exactly-once callback execution before Store. Overall parity remains
+incomplete.
+
+Sources: [reader outcomes/attempt fences](src/workflow_context.rs),
+[checkpoint Store](src/workflow_store.rs), [generation](src/workflow_codegen.rs),
+[native proof](tests/fixtures/workflow_app/prove_reader_outcome.py),
+[Python memoize](../aio/memoize.py),
+[public acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
 
 ## Local reactive readers
 
@@ -1400,8 +1472,9 @@ writer exception or certify broader Python equivalence.
   evidence, not a second native persistence proof.
 
 **Limits:** serial same-actor finite named steps, not concurrent or remote writer
-composition. No durable catchable reader failures, constructor errors, new
-running cancellation, automatic Status retry or external exactly-once claim.
+composition. At this writer checkpoint reader failures were not catchable; the bounded
+reader-outcome API below supersedes that restriction only for explicit declared
+outcomes. Constructor errors, new running cancellation, automatic Status retry or external exactly-once claim.
 This new error-checkpoint proof does not inject Store lost ACK, dropped completion
 or arbitrary concurrent-operation races. Existing uncertainty controls are
 source/unit evidence, not those missing native fault cases. Full parity remains
@@ -1420,8 +1493,9 @@ errors. The public batch app adds `Work.ObserveBatch` with `BatchMismatch`,
 `work-unary`/`work-read`/`work-mismatch` and `watch-work-reconnect`. Unary and
 shared reactive paths preserve the typed rich-error payload. Internal reader
 waits use framework Status and retain empty task-business-error descriptors;
-this grants neither new task terminal authority nor durable catchable reader
-failure decisions. At this checkpoint ordinary writer/constructor declarations
+this checkpoint granted neither new task terminal authority nor durable catchable
+reader failure decisions. The later opt-in outcome API below adds only typed serial
+same-actor reader outcomes, not schedulable reader-task terminal authority. At this checkpoint ordinary writer/constructor declarations
 remained rejected; the subsequent writer-decision checkpoint below supersedes
 the writer restriction, not the constructor restriction.
 
@@ -1938,7 +2012,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: a7874198c73e80c01b60eaf52482ab6a684d9473f93e44e2da9046eeb93f2afa -->
+<!-- parity-source-sha256: 659a0d91c0ae5c1109d14525cbd7b85a1384823de3dd5dde1c26ee0f0f7627af -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

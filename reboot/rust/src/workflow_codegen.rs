@@ -3,7 +3,7 @@ mod workflow_emission_tests {
     use super::*;
     #[test]
     fn workflow_generated_reader_helpers_reject_writer_collisions() {
-        for name in ["ObserveDecide", "ObserveUntil"] {
+        for name in ["ObserveDecide", "ObserveUntil", "ObserveTryUntil"] {
             let method = |name: &str| MethodDescriptorProto {
                 name: Some(name.into()),
                 input_type: Some(".demo.Q".into()),
@@ -221,7 +221,7 @@ mod workflow_emission_tests {
             .unwrap_err();
             assert!(error.contains("reserved local reader helper"));
         }
-        for conflict in ["ObserveUntil", "ObserveDecide"] {
+        for conflict in ["ObserveUntil", "ObserveDecide", "ObserveTryUntil"] {
             let mut bad_service = mixed_service.clone();
             bad_service.method.push(method(conflict));
             let mut bad = with_reader.clone();
@@ -365,7 +365,11 @@ fn emit_workflow_service(
         let name = method.name.as_deref().unwrap();
         let rust = snake_case(name);
         let names = match annotation.methods.get(name).unwrap() {
-            DurableKind::Reader => vec![format!("{rust}_until"), format!("{rust}_decide")],
+            DurableKind::Reader => vec![
+                format!("{rust}_until"),
+                format!("{rust}_decide"),
+                format!("{rust}_try_until"),
+            ],
             DurableKind::Writer(WriterMetadata { constructor: false }) => vec![rust],
             _ => vec![],
         };
@@ -505,7 +509,12 @@ fn emit_workflow_service(
                     ""
                 };
                 if matches!(kind, DurableKind::Reader) {
-                    declarations.push_str(&format!("{runtime_module}::one_shot_tasks::TaskMethodDeclaration::new::<{declaration},proto::{request},proto::{response}>(\"{identity}\",\"{response_type}\",vec![]).workflow_reader_wait(),"));
+                    let reader_errors = declared_database_errors(annotation, kind, &identity);
+                    let error_descriptors=reader_errors.iter().map(|error|format!("{runtime_module}::one_shot_tasks::DeclaredTaskError::new::<proto::{}>(\"type.googleapis.com/{package}.{error}\")",error.to_upper_camel_case())).collect::<Vec<_>>().join(",");
+                    declarations.push_str(&format!("{runtime_module}::one_shot_tasks::TaskMethodDeclaration::new::<{declaration},proto::{request},proto::{response}>(\"{identity}\",\"{response_type}\",vec![{error_descriptors}]).workflow_reader_wait(),"));
+                    if declared {
+                        step_methods.push_str(&format!("pub async fn {rust}_try_until<H:{handler},P:Fn(&proto::{response})->bool+Send+Sync+'static>(context:&{runtime_module}::one_shot_tasks::WorkflowContext<'_>,handler:std::sync::Arc<H>,alias:&str,condition:&str,request:proto::{request},predicate:P)->Result<proto::{response},{handler_error}> {{ context.wait_reader_declared::<{declaration},proto::{request},proto::{response},_,_>({runtime_module}::one_shot_tasks::WorkflowWaitName{{alias,condition}},\"{identity}\",\"{response_type}\",request,move |state,request| {{ let handler=handler.clone(); Box::pin(async move {{handler.{rust}(state,request).await.map_err(|error|error.into_task_handler_error())}}) }},predicate).await.map_err(|error|match error {{ {runtime_module}::one_shot_tasks::TaskHandlerError::Declared(error)=>{handler_error}::from_status({runtime_module}::one_shot_tasks::TaskHandlerError::Declared(error).into_status()),{runtime_module}::one_shot_tasks::TaskHandlerError::Failed(status)=>{handler_error}::Grpc(status) }}) }}\n"));
+                    }
                     step_methods.push_str(&format!("pub async fn {rust}_until<H:{handler},P:Fn(&proto::{response})->bool+Send+Sync+'static>(context:&{runtime_module}::one_shot_tasks::WorkflowContext<'_>,handler:std::sync::Arc<H>,alias:&str,condition:&str,request:proto::{request},predicate:P)->Result<proto::{response},tonic::Status> {{ context.wait_reader::<{declaration},proto::{request},proto::{response},_,_>({runtime_module}::one_shot_tasks::WorkflowWaitName{{alias,condition}},\"{identity}\",\"{response_type}\",request,move |state,request| {{ let handler=handler.clone(); Box::pin(async move {{handler.{rust}(state,request).await{error_map}}}) }},predicate).await }}\n"));
                     step_methods.push_str(&format!("pub async fn {rust}_decide<H:{handler},P:Fn(&proto::{response})->bool+Send+Sync+'static>(context:&{runtime_module}::one_shot_tasks::WorkflowContext<'_>,handler:std::sync::Arc<H>,alias:&str,condition:&str,request:proto::{request},should_break:P)->Result<std::ops::ControlFlow<proto::{response},proto::{response}>,tonic::Status> {{ context.decide_reader::<{declaration},proto::{request},proto::{response},_,_>({runtime_module}::one_shot_tasks::WorkflowWaitName{{alias,condition}},\"{identity}\",\"{response_type}\",request,move |state,request| {{ let handler=handler.clone(); Box::pin(async move {{handler.{rust}(state,request).await{error_map}}}) }},should_break).await }}\n"));
                 }

@@ -120,6 +120,8 @@ impl generated::LedgerWorkMethodsDatabaseHandler for Ledger {
         state.stopped = false;
         state.decision_finished = false;
         state.break_after = request.break_after;
+        state.audit_mismatch = false;
+        state.audit_requested = request.audit_batch;
         state.workflow_id = if request.stop_enabled {
             id.clone()
         } else {
@@ -135,6 +137,9 @@ impl generated::LedgerWorkMethodsDatabaseHandler for Ledger {
         state: &proto::Ledger,
         request: proto::Batch,
     ) -> Result<proto::Ledger, generated::LedgerWorkMethodsObserveBatchError> {
+        if !state.audit_requested.is_empty() {
+            event("reader-audit-observe");
+        }
         if !request.batch.is_empty() && request.batch != state.batch {
             return Err(
                 generated::LedgerWorkMethodsObserveBatchError::BatchMismatch(
@@ -177,6 +182,34 @@ impl generated::LedgerWorkMethodsDatabaseHandler for Ledger {
         }
         state.stop_requested = true;
         Ok(state.clone())
+    }
+    async fn record_audit(
+        &self,
+        state: &mut proto::Ledger,
+        request: proto::BatchMismatch,
+    ) -> Result<proto::Ledger, tonic::Status> {
+        if state.batch != request.actual
+            || state.audit_requested != request.expected
+            || request.actual == request.expected
+            || state.audit_mismatch
+        {
+            return Err(tonic::Status::failed_precondition(
+                "audit identity mismatch or already recorded",
+            ));
+        }
+        event("reader-audit-fallback");
+        state.audit_mismatch = true;
+        Ok(state.clone())
+    }
+    async fn record_audit_scheduled(
+        &self,
+        _: &mut proto::Ledger,
+        _: proto::BatchMismatch,
+        _: String,
+    ) -> Result<TransactionExecution<proto::Ledger>, tonic::Status> {
+        Err(tonic::Status::permission_denied(
+            "audit continuation requires private workflow authority",
+        ))
     }
     async fn finish_decision(
         &self,
@@ -340,6 +373,43 @@ impl generated::LedgerWorkMethodsDatabaseHandler for Ledger {
             return Err(tonic::Status::invalid_argument("reject_after exceeds count").into());
         }
         event(&format!("body-{}", request.batch));
+        if !request.audit_batch.is_empty() {
+            match generated::LedgerWorkMethodsWorkflowSteps::observe_batch_try_until(
+                context,
+                Arc::new(self.clone()),
+                "audit-reader",
+                "audit-batch-identity.v1",
+                proto::Batch {
+                    batch: request.audit_batch.clone(),
+                },
+                |_| true,
+            )
+            .await
+            {
+                Ok(_) => {}
+                Err(generated::LedgerWorkMethodsObserveBatchError::BatchMismatch(error)) => {
+                    event("reader-audit-caught");
+                    if let Some(path) = std::env::var_os("RBT_RUST_READER_AUDIT_PROBE") {
+                        let path = std::path::PathBuf::from(path);
+                        std::fs::write(&path, b"declared reader error saved; fallback not entered")
+                            .map_err(|e| tonic::Status::internal(e.to_string()))?;
+                        while !path.with_extension("release").exists() {
+                            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                        }
+                    }
+                    generated::LedgerWorkMethodsWorkflowSteps::record_audit(
+                        context,
+                        Arc::new(self.clone()),
+                        "audit-fallback",
+                        error,
+                    )
+                    .await?;
+                }
+                Err(generated::LedgerWorkMethodsObserveBatchError::Grpc(error)) => {
+                    return Err(error.into());
+                }
+            }
+        }
         let mut result = proto::Ledger::default();
         for index in 0..request.count {
             let iteration =
@@ -660,6 +730,67 @@ impl generated::LedgerIndexMethodsTransactionHandler for Index {
 }
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn audit_fallback_is_private_and_binds_exact_business_payload() {
+        use generated::LedgerWorkMethodsDatabaseHandler as _;
+        let mut state = proto::Ledger {
+            batch: "actual".into(),
+            audit_requested: "expected".into(),
+            ..Default::default()
+        };
+        let error = proto::BatchMismatch {
+            actual: "actual".into(),
+            expected: "expected".into(),
+        };
+        let before = state.clone();
+        assert_eq!(
+            Ledger
+                .record_audit_scheduled(&mut state, error.clone(), "actor".into())
+                .await
+                .err()
+                .unwrap()
+                .code(),
+            tonic::Code::PermissionDenied
+        );
+        assert_eq!(state, before);
+        assert!(
+            Ledger
+                .record_audit(
+                    &mut state,
+                    proto::BatchMismatch {
+                        actual: "other".into(),
+                        ..error.clone()
+                    }
+                )
+                .await
+                .is_err()
+        );
+        assert_eq!(state, before);
+        assert!(
+            Ledger
+                .record_audit(
+                    &mut state,
+                    proto::BatchMismatch {
+                        expected: "other".into(),
+                        ..error.clone()
+                    }
+                )
+                .await
+                .is_err()
+        );
+        assert_eq!(state, before);
+        assert!(
+            Ledger
+                .record_audit(&mut state, error.clone())
+                .await
+                .unwrap()
+                .audit_mismatch
+        );
+        let once = state.clone();
+        assert!(Ledger.record_audit(&mut state, error).await.is_err());
+        assert_eq!(state, once);
+    }
+
     use super::*;
     #[test]
     fn archive_rejection_preserves_method_declared_payload() {

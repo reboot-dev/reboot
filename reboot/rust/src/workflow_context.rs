@@ -180,6 +180,118 @@ mod workflow_admission_tests {
         operation.acknowledged();
     }
     #[tokio::test]
+    async fn declared_reader_checkpoint_requires_exact_descriptor_and_clean_serial_attempt() {
+        let tasks = OneShotTasks::new_with_declarations(
+            DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(),
+            D::STATE_TYPE.into(),
+            "actor".into(),
+            Binding(true),
+            vec![
+                TaskMethodDeclaration::new::<D, crate::proto::Counter, crate::proto::Counter>(
+                    "tests.Service.Step",
+                    "type.googleapis.com/Counter",
+                    vec![DeclaredTaskError::new::<crate::proto::Counter>(
+                        "type.googleapis.com/tests.Rejected",
+                    )],
+                )
+                .workflow_reader_wait(),
+            ],
+        )
+        .unwrap();
+        let attempt = WorkflowAttempt::default();
+        let task = db::Task::default();
+        let cancel = RecoveryCancellation::new();
+        let context = WorkflowContext {
+            tasks: &tasks,
+            task: &task,
+            cancel: &cancel,
+            generation: Arc::new(()),
+            attempt: &attempt,
+            iteration: None,
+        };
+        let error = |url: &str, value: Vec<u8>| prost_types::Any {
+            type_url: "type.googleapis.com/google.rpc.Status".into(),
+            value: googleapis_tonic_google_rpc::google::rpc::Status {
+                code: tonic::Code::Unknown as i32,
+                message: "declined".into(),
+                details: vec![prost_types::Any {
+                    type_url: url.into(),
+                    value,
+                }],
+            }
+            .encode_to_vec(),
+        };
+        let valid = error(
+            "type.googleapis.com/tests.Rejected",
+            crate::proto::Counter::default().encode_to_vec(),
+        );
+        assert!(context
+            .validate_reader_step_error("tests.Service.Step", &valid)
+            .is_err());
+        let operation = attempt.operation();
+        context
+            .validate_reader_step_error("tests.Service.Step", &valid)
+            .unwrap();
+        assert!(context
+            .validate_reader_step_error("tests.Service.Foreign", &valid)
+            .is_err());
+        assert!(context
+            .validate_reader_step_error(
+                "tests.Service.Step",
+                &error("type.googleapis.com/tests.Foreign", vec![])
+            )
+            .is_err());
+        assert!(context
+            .validate_reader_step_error(
+                "tests.Service.Step",
+                &error("type.googleapis.com/tests.Rejected", vec![255])
+            )
+            .is_err());
+        let saved = ReaderOutcomeCheckpoint {
+            response_type: "type.googleapis.com/Counter".into(),
+            outcome: Some(reader_outcome_checkpoint::Outcome::Error(valid.clone())),
+        };
+        context
+            .validate_reader_outcome(
+                "tests.Service.Step",
+                "type.googleapis.com/Counter",
+                &saved.encode_to_vec(),
+            )
+            .unwrap();
+        assert!(context
+            .validate_reader_outcome(
+                "tests.Service.Step",
+                "type.googleapis.com/Foreign",
+                &saved.encode_to_vec()
+            )
+            .is_err());
+        assert!(context
+            .validate_reader_outcome(
+                "tests.Service.Step",
+                "type.googleapis.com/Counter",
+                &ReaderOutcomeCheckpoint {
+                    response_type: "type.googleapis.com/Counter".into(),
+                    outcome: None
+                }
+                .encode_to_vec()
+            )
+            .is_err());
+        assert!(context
+            .validate_reader_outcome("tests.Service.Step", "type.googleapis.com/Counter", &[255])
+            .is_err());
+        let peer = attempt.operation();
+        assert!(context
+            .validate_reader_step_error("tests.Service.Step", &valid)
+            .is_err());
+        peer.acknowledged();
+        let failed = attempt.operation();
+        drop(failed);
+        assert!(context
+            .validate_reader_step_error("tests.Service.Step", &valid)
+            .is_err());
+        operation.acknowledged();
+    }
+    #[tokio::test]
     async fn successful_finish_rejects_failed_dropped_and_live_framework_work_before_load() {
         let tasks = OneShotTasks::new(
             DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(),
@@ -290,6 +402,8 @@ mod workflow_admission_tests {
             scoped.checkpoint_key(seed, "gate", None),
             scoped.checkpoint_key(seed, "gate", Some("condition.v1")),
             scoped.checkpoint_decision_key(seed, "gate"),
+            scoped.checkpoint_reader_outcome_key(seed, "gate"),
+            context.checkpoint_reader_outcome_key(seed, "gate"),
             context.checkpoint_key(seed, "gate", Some("condition.v1")),
             context
                 .iteration("a", 1, 3)
@@ -516,15 +630,65 @@ mod workflow_admission_tests {
 struct WorkflowAttempt {
     failed: std::sync::atomic::AtomicBool,
     active: std::sync::atomic::AtomicUsize,
+    admission: std::sync::Mutex<()>,
+    serial_reader: std::sync::atomic::AtomicBool,
 }
 impl WorkflowAttempt {
     fn operation(&self) -> WorkflowAttemptOperation<'_> {
+        self.tracked_operation(true)
+    }
+    // Authority checks are nested framework work inside a helper, not a new
+    // competing helper. Their failure/drop evidence must still taint the attempt.
+    fn scope_operation(&self) -> WorkflowAttemptOperation<'_> {
+        self.tracked_operation(false)
+    }
+    fn tracked_operation(&self, competing: bool) -> WorkflowAttemptOperation<'_> {
+        let _admission = self
+            .admission
+            .lock()
+            .expect("workflow operation admission poisoned");
+        if competing
+            && self
+                .serial_reader
+                .load(std::sync::atomic::Ordering::Acquire)
+        {
+            // A competing helper must not make a saved reader business outcome
+            // catchable, even if it finishes before the reader's post-Store check.
+            self.failed
+                .store(true, std::sync::atomic::Ordering::Release);
+        }
         self.active
             .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
         WorkflowAttemptOperation {
             attempt: self,
             acknowledged: false,
+            serial: false,
+            released: false,
         }
+    }
+    fn serial_reader_operation(&self) -> Result<WorkflowAttemptOperation<'_>, Status> {
+        let _admission = self
+            .admission
+            .lock()
+            .expect("workflow operation admission poisoned");
+        if self.failed.load(std::sync::atomic::Ordering::Acquire)
+            || self.active.load(std::sync::atomic::Ordering::Acquire) != 0
+        {
+            self.failed
+                .store(true, std::sync::atomic::Ordering::Release);
+            return Err(Status::failed_precondition(
+                "declared reader requires exclusive serial attempt admission",
+            ));
+        }
+        self.active.store(1, std::sync::atomic::Ordering::Release);
+        self.serial_reader
+            .store(true, std::sync::atomic::Ordering::Release);
+        Ok(WorkflowAttemptOperation {
+            attempt: self,
+            acknowledged: false,
+            serial: true,
+            released: false,
+        })
     }
     fn clean(&self) -> bool {
         !self.failed.load(std::sync::atomic::Ordering::Acquire)
@@ -534,14 +698,58 @@ impl WorkflowAttempt {
 struct WorkflowAttemptOperation<'a> {
     attempt: &'a WorkflowAttempt,
     acknowledged: bool,
+    serial: bool,
+    released: bool,
 }
 impl WorkflowAttemptOperation<'_> {
     fn acknowledged(mut self) {
         self.acknowledged = true;
     }
+    fn acknowledged_serial(mut self) -> Result<(), Status> {
+        let _admission = self
+            .attempt
+            .admission
+            .lock()
+            .expect("workflow operation admission poisoned");
+        if !self.serial
+            || self
+                .attempt
+                .failed
+                .load(std::sync::atomic::Ordering::Acquire)
+            || self
+                .attempt
+                .active
+                .load(std::sync::atomic::Ordering::Acquire)
+                != 1
+        {
+            return Err(Status::failed_precondition(
+                "declared reader serial admission was interrupted",
+            ));
+        }
+        // Validate and release atomically with respect to helper creation. A new
+        // operation starts either inside this reservation (and taints it), or
+        // after this operation is complete. No check/acknowledge gap.
+        self.attempt
+            .active
+            .fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+        self.attempt
+            .serial_reader
+            .store(false, std::sync::atomic::Ordering::Release);
+        self.acknowledged = true;
+        self.released = true;
+        Ok(())
+    }
 }
 impl Drop for WorkflowAttemptOperation<'_> {
     fn drop(&mut self) {
+        if self.released {
+            return;
+        }
+        let _admission = self
+            .attempt
+            .admission
+            .lock()
+            .expect("workflow operation admission poisoned");
         if !self.acknowledged {
             self.attempt
                 .failed
@@ -550,6 +758,69 @@ impl Drop for WorkflowAttemptOperation<'_> {
         self.attempt
             .active
             .fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+        if self.serial {
+            self.attempt
+                .serial_reader
+                .store(false, std::sync::atomic::Ordering::Release);
+        }
+    }
+}
+#[cfg(test)]
+mod declared_reader_serial_tests {
+    use super::*;
+    #[test]
+    fn reservation_rejects_preexisting_and_transient_overlapping_helpers() {
+        let attempt = WorkflowAttempt::default();
+        let peer = attempt.operation();
+        assert!(attempt.serial_reader_operation().is_err());
+        peer.acknowledged();
+        assert!(!attempt.clean());
+        let attempt = WorkflowAttempt::default();
+        let reader = attempt.serial_reader_operation().unwrap();
+        let peer = attempt.operation();
+        peer.acknowledged();
+        assert!(reader.acknowledged_serial().is_err());
+        assert!(!attempt.clean());
+        assert_eq!(attempt.active.load(std::sync::atomic::Ordering::Acquire), 0);
+        assert!(!attempt
+            .serial_reader
+            .load(std::sync::atomic::Ordering::Acquire));
+    }
+    #[test]
+    fn nested_authority_checks_preserve_failure_and_overlap_evidence() {
+        let attempt = WorkflowAttempt::default();
+        let reader = attempt.serial_reader_operation().unwrap();
+        attempt.scope_operation().acknowledged();
+        reader.acknowledged_serial().unwrap();
+        assert!(attempt.clean());
+        let reader = attempt.serial_reader_operation().unwrap();
+        drop(attempt.scope_operation());
+        assert!(reader.acknowledged_serial().is_err());
+        assert!(!attempt.clean());
+        assert_eq!(attempt.active.load(std::sync::atomic::Ordering::Acquire), 0);
+        let attempt = WorkflowAttempt::default();
+        let reader = attempt.serial_reader_operation().unwrap();
+        let authority = attempt.scope_operation();
+        attempt.operation().acknowledged();
+        authority.acknowledged();
+        assert!(reader.acknowledged_serial().is_err());
+        assert!(!attempt.clean());
+        assert_eq!(attempt.active.load(std::sync::atomic::Ordering::Acquire), 0);
+    }
+    #[test]
+    fn complete_serial_reader_releases_admission_without_tainting_later_work() {
+        let attempt = WorkflowAttempt::default();
+        attempt
+            .serial_reader_operation()
+            .unwrap()
+            .acknowledged_serial()
+            .unwrap();
+        assert!(attempt.clean());
+        attempt.operation().acknowledged();
+        assert!(attempt.clean());
+        drop(attempt.serial_reader_operation().unwrap());
+        assert!(!attempt.clean());
+        assert_eq!(attempt.active.load(std::sync::atomic::Ordering::Acquire), 0);
     }
 }
 
@@ -616,6 +887,22 @@ struct LoopDecisionCheckpoint {
     response_type: String,
     #[prost(bool, tag = "3")]
     break_loop: bool,
+}
+#[derive(Clone, prost::Message)]
+pub(crate) struct ReaderOutcomeCheckpoint {
+    #[prost(string, tag = "1")]
+    response_type: String,
+    #[prost(oneof = "reader_outcome_checkpoint::Outcome", tags = "2, 3")]
+    outcome: Option<reader_outcome_checkpoint::Outcome>,
+}
+mod reader_outcome_checkpoint {
+    #[derive(Clone, prost::Oneof)]
+    pub enum Outcome {
+        #[prost(bytes, tag = "2")]
+        Response(Vec<u8>),
+        #[prost(message, tag = "3")]
+        Error(prost_types::Any),
+    }
 }
 impl<'a> WorkflowContext<'a> {
     /// Explicit finite replay scope, not an unbounded Task cursor. Restart replays
@@ -697,6 +984,14 @@ impl<'a> WorkflowContext<'a> {
         encoded.extend_from_slice(&(alias.len() as u64).to_be_bytes());
         encoded.extend_from_slice(alias.as_bytes());
         uuid::Uuid::new_v5(&namespace, &encoded)
+    }
+    pub(crate) fn checkpoint_reader_outcome_key(
+        &self,
+        seed: uuid::Uuid,
+        alias: &str,
+    ) -> uuid::Uuid {
+        let namespace = uuid::Uuid::new_v5(&seed, b"reboot.reader.outcome.v1");
+        self.checkpoint_key(namespace, alias, Some("reader-outcome.v1"))
     }
     pub(crate) fn checkpoint_alias(&self, alias: &str) -> String {
         match &self.iteration {
@@ -845,6 +1140,165 @@ impl<'a> WorkflowContext<'a> {
                 changed=revisions.changed()=>changed.map_err(|_|Status::unavailable("actor revision owner lost"))?,
             }
             self.validate_scope().await?;
+        }
+    }
+
+    /// Wait for a matching observation or save an exact declared business error.
+    /// Only acknowledged outcomes may be caught; framework/authority/Store failures
+    /// retain failed operation evidence. Named contract and finite scopes stay stable.
+    pub async fn wait_reader_declared<D, Q, R, F, P>(
+        &self,
+        name: WorkflowWaitName<'_>,
+        method: &'static str,
+        response_type: &'static str,
+        request: Q,
+        read: F,
+        predicate: P,
+    ) -> Result<R, TaskHandlerError>
+    where
+        D: crate::runtime::DurableStateDeclaration + 'static,
+        Q: prost::Message + Default + Clone + Send + 'static,
+        R: prost::Message + Default + Clone + Send + 'static,
+        F: for<'s> Fn(
+                &'s D::State,
+                Q,
+            ) -> std::pin::Pin<
+                Box<dyn std::future::Future<Output = Result<R, TaskHandlerError>> + Send + 's>,
+            > + Send
+            + Sync
+            + 'static,
+        P: Fn(&R) -> bool + Send + Sync + 'static,
+    {
+        let operation = self
+            .attempt
+            .serial_reader_operation()
+            .map_err(TaskHandlerError::Failed)?;
+        let result: Result<Result<R, prost_types::Any>, Status> = async {
+        let WorkflowWaitName { alias, condition } = name;
+        if alias.is_empty()
+            || alias.len() > 256
+            || alias.chars().any(char::is_control)
+            || condition.is_empty()
+            || condition.len() > 256
+            || condition.chars().any(char::is_control)
+        {
+            return Err(Status::invalid_argument(
+                "wait requires bounded explicit checkpoint and condition names",
+            ));
+        }
+        let id = self
+            .task
+            .task_id
+            .as_ref()
+            .ok_or_else(|| Status::failed_precondition("missing workflow ID"))?;
+        let declaration = self
+            .tasks
+            .inner
+            .declarations
+            .iter()
+            .find(|d| d.method == method)
+            .ok_or_else(|| Status::failed_precondition("unregistered workflow reader"))?;
+        let probe = db::Task {
+            method: method.rsplit('.').next().unwrap_or("").to_owned(),
+            ..self.task.clone()
+        };
+        if !declaration.workflow_reader_wait
+            || declaration.workflow
+            || declaration.workflow_writer_step
+            || declaration.declaration != std::any::TypeId::of::<D>()
+            || declaration.request != std::any::TypeId::of::<Q>()
+            || declaration.response != std::any::TypeId::of::<R>()
+            || declaration.response_type != response_type
+            || id.state_type != D::STATE_TYPE
+            || self.tasks.inner.binding.is_writer(&probe)
+        {
+            return Err(Status::failed_precondition(
+                "workflow reader descriptor mismatch",
+            ));
+        }
+        let gate = self
+            .tasks
+            .inner
+            .store
+            .actor_gate(&id.state_type, &id.state_ref);
+        let mut revisions = gate.committed_revisions();
+        let reader_scope = crate::reactive::ReaderScope::new(self.cancel.clone());
+        reader_scope.check()?;
+        let read = Arc::new(read);
+        let predicate = Arc::new(predicate);
+        loop {
+            reader_scope.check()?;
+            if revisions.borrow_and_update().1 {
+                return Err(Status::unavailable("actor commit outcome uncertain"));
+            }
+            #[cfg(feature = "test-support")]
+            self.wait_test_pause("REBOOT_TEST_WORKFLOW_WAIT_BEFORE_READ")
+                .await?;
+            let result = {
+                let _lease = workflow_reader_lease(&gate, &mut revisions).await?;
+                reader_scope.check()?;
+                self.validate_scope().await?;
+                self.tasks
+                    .inner
+                    .store
+                    .workflow_reader_outcome_step::<D, Q, ReaderOutcomeCheckpoint, _>(
+                        self,
+                        (alias, Some(condition)),
+                        method,
+                        ("type.googleapis.com/reboot.runtime.ReaderOutcome.v1", response_type),
+                        request.clone(),
+                        {
+                            let read = read.clone();
+                            let predicate = predicate.clone();
+                            move |state, request| {
+                                Box::pin(async move {
+                                    match read(state, request).await {
+                                        Ok(response) => Ok(predicate(&response).then(|| ReaderOutcomeCheckpoint {
+                                            response_type: response_type.to_owned(),
+                                            outcome: Some(reader_outcome_checkpoint::Outcome::Response(response.encode_to_vec())),
+                                        })),
+                                        Err(TaskHandlerError::Declared(error)) => Ok(Some(ReaderOutcomeCheckpoint {
+                                            response_type: response_type.to_owned(),
+                                            outcome: Some(reader_outcome_checkpoint::Outcome::Error(error)),
+                                        })),
+                                        Err(TaskHandlerError::Failed(error)) => Err(error),
+                                    }
+                                })
+                            }
+                        },
+                    )
+                    .await?
+            };
+            reader_scope.check()?;
+            if let Some(result) = result {
+                self.validate_reader_outcome(method, response_type, &result.encode_to_vec())?;
+                return match result.outcome {
+                    Some(reader_outcome_checkpoint::Outcome::Response(bytes)) => Ok(Ok(R::decode(bytes.as_slice()).map_err(|_|Status::data_loss("malformed saved reader response"))?)),
+                    Some(reader_outcome_checkpoint::Outcome::Error(error)) => Ok(Err(error)),
+                    None => Err(Status::data_loss("reader checkpoint omitted outcome")),
+                };
+            }
+            #[cfg(feature = "test-support")]
+            self.wait_test_pause("REBOOT_TEST_WORKFLOW_WAIT_AFTER_FALSE")
+                .await?;
+            // Do not mark after Load: a racing acknowledged commit stays pending.
+            tokio::select! {
+                biased;
+                _=self.cancel.cancelled()=>return Err(Status::cancelled("workflow wait cancelled")),
+                _=reader_scope.revoked()=>return Err(Status::unavailable("workflow reader authority revoked")),
+                changed=revisions.changed()=>changed.map_err(|_|Status::unavailable("actor revision owner lost"))?,
+            }
+            self.validate_scope().await?;
+        }
+        }.await;
+        match result {
+            Ok(response) => {
+                operation
+                    .acknowledged_serial()
+                    .map_err(TaskHandlerError::Failed)?;
+                response.map_err(TaskHandlerError::Declared)
+            }
+            Err(error) => Err(TaskHandlerError::Failed(error)),
         }
     }
 
@@ -1037,7 +1491,7 @@ impl<'a> WorkflowContext<'a> {
         })
     }
     pub(crate) async fn validate_scope(&self) -> Result<(), Status> {
-        let operation = self.attempt.operation();
+        let operation = self.attempt.scope_operation();
         if !self.tasks.is_workflow(self.task)
             || self.task.iteration != 0
             || self.task.status != db::task::Status::Pending as i32
@@ -1302,6 +1756,66 @@ impl<'a> WorkflowContext<'a> {
             .iter()
             .find(|d| d.method == method && d.workflow_writer_step)
             .ok_or_else(|| Status::failed_precondition("unregistered declared writer step"))?;
+        declaration.validate_terminal(&db::task::ResponseOrError::Error(error.clone()))
+    }
+    pub(crate) fn validate_reader_outcome(
+        &self,
+        method: &str,
+        response_type: &str,
+        bytes: &[u8],
+    ) -> Result<(), Status> {
+        let value = ReaderOutcomeCheckpoint::decode(bytes)
+            .map_err(|_| Status::data_loss("malformed reader outcome checkpoint"))?;
+        if value.response_type != response_type {
+            return Err(Status::failed_precondition(
+                "reader outcome response type collision",
+            ));
+        }
+        match value.outcome {
+            Some(reader_outcome_checkpoint::Outcome::Response(_)) => Ok(()),
+            Some(reader_outcome_checkpoint::Outcome::Error(error)) => {
+                self.validate_reader_step_error(method, &error)
+            }
+            None => Err(Status::data_loss("reader checkpoint omitted outcome")),
+        }
+    }
+    pub(crate) fn validate_reader_step_error(
+        &self,
+        method: &str,
+        error: &prost_types::Any,
+    ) -> Result<(), Status> {
+        if self
+            .attempt
+            .failed
+            .load(std::sync::atomic::Ordering::Acquire)
+            || self
+                .attempt
+                .active
+                .load(std::sync::atomic::Ordering::Acquire)
+                != 1
+        {
+            return Err(Status::failed_precondition(format!(
+                "declared reader decision requires clean serial attempt (active={}, failed={})",
+                self.attempt
+                    .active
+                    .load(std::sync::atomic::Ordering::Acquire),
+                self.attempt
+                    .failed
+                    .load(std::sync::atomic::Ordering::Acquire)
+            )));
+        }
+        let declaration = self
+            .tasks
+            .inner
+            .declarations
+            .iter()
+            .find(|d| {
+                d.method == method
+                    && d.workflow_reader_wait
+                    && !d.workflow_writer_step
+                    && !d.workflow
+            })
+            .ok_or_else(|| Status::failed_precondition("unregistered declared reader step"))?;
         declaration.validate_terminal(&db::task::ResponseOrError::Error(error.clone()))
     }
     pub(crate) fn durable(&self) -> DurableTaskOperation<'_> {

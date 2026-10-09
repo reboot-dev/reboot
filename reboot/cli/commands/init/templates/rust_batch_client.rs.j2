@@ -111,7 +111,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .into_inner(),
             );
         }
+        "audit-read" => {
+            let mut client =
+                proto::ledger_work_methods_client::LedgerWorkMethodsClient::new(channel);
+            let value = client
+                .observe(context.reader(proto::Empty {})?)
+                .await?
+                .into_inner();
+            println!(
+                "{} {} {}",
+                value.batch, value.audit_requested, value.audit_mismatch
+            );
+        }
+        "audit-direct" => {
+            let mut client =
+                proto::ledger_work_methods_client::LedgerWorkMethodsClient::new(channel);
+            let _ = client
+                .record_audit(context.writer(proto::BatchMismatch {
+                    actual: arg(1)?,
+                    expected: arg(2)?,
+                })?)
+                .await?;
+        }
         "submit"
+        | "submit-audited"
         | "submit-break"
         | "submit-rejecting"
         | "submit-step-reject"
@@ -121,6 +144,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 proto::ledger_work_methods_client::LedgerWorkMethodsClient::new(channel);
             let key = uuid::Uuid::parse_str(&arg(3)?)?;
             let mut request = context.writer(proto::Submit {
+                audit_batch: if command == "submit-audited" {
+                    arg(5)?
+                } else {
+                    String::new()
+                },
                 batch: arg(1)?,
                 count: arg(2)?.parse()?,
                 not_before: args.get(4).map(|s| s.parse()).transpose()?.unwrap_or(0),

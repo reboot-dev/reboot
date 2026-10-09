@@ -19,6 +19,11 @@ fn generated_finite_iterations_and_reactive_decisions_survive_native_restart() {
 fn generated_finite_continue_break_and_after_loop_survive_state_flip_and_restart() {
     proof("prove_loop_decision.py");
 }
+#[test]
+#[ignore = "requires real CXX/RocksDB and WORKFLOW_READER_STAGE/WORKFLOW_READER_EVIDENCE"]
+fn generated_declared_reader_outcome_and_fallback_survive_state_flip_and_restart() {
+    proof("prove_reader_outcome.py");
+}
 fn proof(script: &str) {
     let fixture =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/workflow_app");

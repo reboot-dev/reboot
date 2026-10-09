@@ -301,6 +301,20 @@ def finite_decision_value(raw):
     return value,proto.Ledger.FromString(value.response)
 
 
+def reader_outcome_value(raw):
+    from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
+    from google.protobuf.any_pb2 import Any
+    f=descriptor_pb2.FileDescriptorProto(name='reader_outcome_evidence.proto',package='acceptance',syntax='proto3',dependency=['google/protobuf/any.proto'])
+    m=f.message_type.add(name='ReaderOutcomeEvidence');m.oneof_decl.add(name='outcome')
+    m.field.add(name='response_type',number=1,type=9,label=1)
+    m.field.add(name='response',number=2,type=12,label=1,oneof_index=0)
+    m.field.add(name='error',number=3,type=11,type_name='.google.protobuf.Any',label=1,oneof_index=0)
+    pool=descriptor_pool.DescriptorPool();pool.AddSerializedFile(Any.DESCRIPTOR.file.serialized_pb);pool.Add(f)
+    value=message_factory.MessageFactory(pool).GetPrototype(pool.FindMessageTypeByName('acceptance.ReaderOutcomeEvidence')).FromString(raw)
+    assert value.response_type=='type.googleapis.com/batch_ledger.v1.Ledger' and value.WhichOneof('outcome') is not None
+    return value
+
+
 def native(session, task_uuid=None):
     with grpc.insecure_channel(f'127.0.0.1:{session.database_port}') as channel:
         stub = db_grpc.DatabaseStub(channel)
@@ -315,7 +329,7 @@ def native(session, task_uuid=None):
             for iteration in range(request.count):
                 for response in stub.RecoverIdempotentMutations(db.RecoverIdempotentMutationsRequest(state_type='batch_ledger.v1.Ledger', state_ref=reference, workflow_id=tasks[0].task_uuid, workflow_iteration=iteration), timeout=3):
                     mutations.extend(response.idempotent_mutations)
-            if os.environ.get('RUST_BATCH_LOOP_DECISION_ONLY'):
+            if os.environ.get('RUST_BATCH_LOOP_DECISION_ONLY') or os.environ.get('RUST_BATCH_READER_OUTCOME_ONLY'):
                 for response in stub.RecoverIdempotentMutations(db.RecoverIdempotentMutationsRequest(state_type='batch_ledger.v1.Ledger',state_ref=reference,workflow_id=tasks[0].task_uuid),timeout=3):
                     mutations.extend(m for m in response.idempotent_mutations if not m.HasField('workflow_iteration'))
             for mutation in mutations:
@@ -333,6 +347,24 @@ def native(session, task_uuid=None):
                     encoded=len(name).to_bytes(8,'big')+name+mutation.workflow_iteration.to_bytes(8,'big')+len(alias).to_bytes(8,'big')+alias
                     digest=bytearray(hashlib.sha1(namespace.bytes+encoded).digest()[:16]);digest[6]=(digest[6]&15)|80;digest[8]=(digest[8]&63)|128
                     assert mutation.key==bytes(digest)
+                elif os.environ.get('RUST_BATCH_READER_OUTCOME_ONLY') and response.type_url=='type.googleapis.com/reboot.runtime.ReaderOutcome.v1':
+                    value=reader_outcome_value(response.value)
+                    assert not mutation.HasField('workflow_iteration')
+                    import uuid
+                    namespace=uuid.uuid5(uuid.uuid5(uuid.UUID(task_uuid),'reboot.reader.outcome.v1'),'reboot.named.wait.v1')
+                    alias=b'audit-reader';encoded=len(alias).to_bytes(8,'big')+alias
+                    digest=bytearray(hashlib.sha1(namespace.bytes+encoded).digest()[:16]);digest[6]=(digest[6]&15)|80;digest[8]=(digest[8]&63)|128
+                    assert mutation.key==bytes(digest)
+                    if value.WhichOneof('outcome')=='error':
+                        from google.rpc.status_pb2 import Status
+                        rich=Status.FromString(value.error.value)
+                        assert value.error.type_url=='type.googleapis.com/google.rpc.Status' and rich.code==grpc.StatusCode.UNKNOWN.value[0] and len(rich.details)==1
+                        assert rich.details[0].type_url=='type.googleapis.com/batch_ledger.v1.BatchMismatch'
+                        error=proto.BatchMismatch.FromString(rich.details[0].value)
+                        assert error.expected==request.audit_batch and error.actual==request.batch and error.expected!=error.actual
+                    else:
+                        observed=proto.Ledger.FromString(value.response)
+                        assert observed.batch==request.batch==request.audit_batch and not observed.audit_mismatch
                 elif response.type_url == 'type.googleapis.com/google.rpc.Status':
                     from google.rpc.status_pb2 import Status
                     rich = Status.FromString(response.value)
@@ -482,7 +514,7 @@ try:
     command(['cargo', 'clippy', '--manifest-path', 'backend/Cargo.toml', '--all-targets', '--', '-D', 'warnings'])
     command(['cargo', 'fmt', '--manifest-path', 'backend/Cargo.toml', '--', '--check'])
     tests, _ = command(['cargo', 'test', '--manifest-path', 'backend/Cargo.toml', '--all-targets'])
-    check('generated consumer strict Clippy/fmt and nonzero tests', '10 passed' in tests)
+    check('generated consumer strict Clippy/fmt and nonzero tests', '11 passed' in tests)
     command(['cargo', 'build', '--manifest-path', 'backend/Cargo.toml', '--bins'])
     py = STAGE / 'generated-python'
     py.mkdir()
@@ -497,6 +529,49 @@ try:
     reference = str(StateRef.from_id('batch_ledger.v1.Ledger', 'ledger'))
     map_ref = str(StateRef.from_id('rbt.std.collections.v1.SortedMap', 'approvals'))
     archive_ref = str(StateRef.from_id('rbt.std.collections.v1.SortedMap', 'archived-approvals'))
+    if os.environ.get('RUST_BATCH_READER_OUTCOME_ONLY'):
+        marker=STAGE/'accepted-reader-error';ENV['RBT_RUST_READER_AUDIT_PROBE']=str(marker)
+        current=Session('reader-outcome-start')
+        until(lambda:'actor state must be constructed' in client('work-unary','audited',ok=False)[0],'reader outcome public admission')
+        client('create');baseline=client('read')[0]
+        error,_=client('audit-direct','audited','other',ok=False)
+        check('public audit fallback is denied before scheduling','PermissionDenied' in error and client('read')[0]==baseline)
+        uuid,_=client('submit-audited','audited','1','cccccccc-cccc-4ccc-8ccc-cccccccccccc','0','other')
+        until(lambda:marker.exists(),'declared reader error acknowledged before fallback')
+        def snap(data):
+            return (data[0].SerializeToString(),data[1].SerializeToString(),data[2].SerializeToString(),sorted(m.SerializeToString() for m in data[3]))
+        paused=native(current,uuid);original=snap(paused)
+        check('declared reader error saved without app/map effects or workflow terminal',paused[2].status==db.Task.PENDING and paused[2].iteration==0 and len(paused[3])==1 and not paused[0].audit_mismatch and paused[0].approved==paused[0].completed==0 and not logical_keys(paused[1]))
+        check('reader handler actually executed once',sum('reader-audit-observe' in event for event in events(current))==1)
+        error,_=client('audit-direct','audited','other',ok=False)
+        check('public caller cannot take private audit continuation','PermissionDenied' in error and snap(native(current,uuid))==original)
+        current.close();current=None
+        current=Session('reader-outcome-restart')
+        until(lambda:any('reader-audit-caught' in event for event in events(current)),'restart catches saved typed reader error')
+        restored=native(current,uuid)
+        check('restart restores exact Pending reader outcome and app/maps',snap(restored)==original)
+        check('saved reader error bypasses live handler and predicate',not any('reader-audit-observe' in event for event in events(current)))
+        marker.with_suffix('.release').write_text('allow private typed fallback')
+        until(lambda:native(current,uuid)[0].audit_mismatch,'fallback writer acknowledged')
+        check('typed audit fallback executes once',client('audit-read')[0]=='audited other true' and sum('reader-audit-fallback' in event for event in events(current))==1)
+        client('approve','audited','0')
+        check('catch and fallback retain canonical Wait success',client('wait',uuid,'10000')[0]=='audited 1 1 1 1')
+        finished=native(current,uuid);final=snap(finished)
+        check('reader error and fallback are durable alongside real approval map',finished[2].status==db.Task.COMPLETED and len(finished[3])==4 and logical_keys(finished[1])==['audited:0000'] and finished[0].audit_mismatch)
+        current.close();current=None
+        current=Session('reader-outcome-terminal-restart')
+        until(lambda:native(current,uuid)[2].status==db.Task.COMPLETED,'reader outcome terminal restored')
+        check('terminal restart retains exact app/task/map/reader/fallback bytes',snap(native(current,uuid))==final and client('wait',uuid,'3000')[0]=='audited 1 1 1 1')
+        check('terminal reader workflow never redispatches',not any(any(mark in event for mark in ['body-audited','reader-audit-observe','reader-audit-fallback']) for event in events(current)))
+        ENV.pop('RBT_RUST_READER_AUDIT_PROBE',None)
+        matched,_=client('submit-audited','matched','1','dddddddd-dddd-4ddd-8ddd-dddddddddddd','0','matched')
+        client('approve','matched','0')
+        check('matching reader outcome completes without business fallback',client('wait',matched,'10000')[0]=='matched 1 1 1 2' and client('audit-read')[0]=='matched matched false')
+        success=native(current,matched)
+        check('matching outcome is a typed saved success not an error',success[2].status==db.Task.COMPLETED and len(success[3])==3)
+        current.close();current=None
+        evidence['accepted']=True
+        raise SystemExit(0)
     if os.environ.get('RUST_BATCH_LOOP_DECISION_ONLY'):
         marker=STAGE/'accepted-break'
         ENV['RBT_RUST_FINITE_DECISION_PROBE']=str(marker)

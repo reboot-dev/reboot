@@ -50,6 +50,35 @@ impl generated::LedgerMethodsDatabaseHandler for Ledger {
     ) -> Result<proto::Empty, tonic::Status> {
         Ok(proto::Empty {})
     }
+    async fn query_threshold(
+        &self,
+        state: &proto::Ledger,
+        request: proto::Step,
+    ) -> Result<proto::Ledger, generated::LedgerMethodsQueryThresholdError> {
+        event("reader-threshold-invoked");
+        if std::env::var("READER_RICH_FRAMEWORK_ERROR").as_deref() == Ok("1") {
+            return Err(generated::LedgerMethodsQueryThresholdError::Grpc(
+                reboot::declared_error_status(
+                    tonic::Code::Unknown,
+                    "declared-looking framework failure",
+                    "type.googleapis.com/workflow.v1.BelowThreshold",
+                    &proto::BelowThreshold {
+                        required: request.amount,
+                        observed: state.first,
+                    },
+                ),
+            ));
+        }
+        if state.first < request.amount {
+            return Err(generated::LedgerMethodsQueryThresholdError::BelowThreshold(
+                proto::BelowThreshold {
+                    required: request.amount,
+                    observed: state.first,
+                },
+            ));
+        }
+        Ok(*state)
+    }
     async fn query(
         &self,
         state: &proto::Ledger,
@@ -131,40 +160,123 @@ impl generated::LedgerMethodsDatabaseHandler for Ledger {
         request: proto::Step,
     ) -> Result<proto::Result, reboot::one_shot_tasks::WorkflowBodyError> {
         event("body");
+        if std::env::var("WORKFLOW_BODY_MODE").as_deref() == Ok("reader-outcome") {
+            let _ = generated::LedgerMethodsWorkflowSteps::first(
+                context,
+                Arc::new(self.clone()),
+                "initial",
+                proto::Step { amount: 1 },
+            )
+            .await?;
+            let observed = match generated::LedgerMethodsWorkflowSteps::query_threshold_try_until(
+                context,
+                Arc::new(self.clone()),
+                "threshold",
+                &std::env::var("READER_CONDITION_VERSION")
+                    .unwrap_or_else(|_| "threshold-required-two.v1".into()),
+                proto::Step { amount: 2 },
+                |_| {
+                    event("reader-threshold-predicate");
+                    true
+                },
+            )
+            .await
+            {
+                Ok(value) => value.first,
+                Err(generated::LedgerMethodsQueryThresholdError::BelowThreshold(error)) => {
+                    event("reader-error-caught");
+                    if std::env::var("READER_PAUSE_AFTER_ERROR").as_deref() == Ok("1") {
+                        event("reader-error-parked");
+                        std::future::pending::<()>().await;
+                    }
+                    error.observed
+                }
+                Err(generated::LedgerMethodsQueryThresholdError::Grpc(error)) => {
+                    event("reader-framework-failed");
+                    if std::env::var("READER_RICH_FRAMEWORK_ERROR").as_deref() == Ok("1") {
+                        event("reader-rich-grpc-caught");
+                        // Deliberately bad application code: runtime must reject
+                        // false success after a caught framework operation.
+                        return Ok(proto::Result {
+                            first: 999,
+                            second: 999,
+                        });
+                    }
+                    return Err(error.into());
+                }
+            };
+            let after = generated::LedgerMethodsWorkflowSteps::second(
+                context,
+                Arc::new(self.clone()),
+                "reader-fallback",
+                proto::Step { amount: 100 },
+            )
+            .await?;
+            event("reader-fallback-ack");
+            return Ok(proto::Result {
+                first: observed,
+                second: after.value,
+            });
+        }
         if std::env::var("WORKFLOW_BODY_MODE").as_deref() == Ok("decision") {
             let count = u64::try_from(request.amount)
                 .map_err(|_| tonic::Status::invalid_argument("negative finite count"))?;
             if !(1..=3).contains(&count) {
-                return Err(tonic::Status::invalid_argument("decision fixture count must be 1..=3").into());
+                return Err(tonic::Status::invalid_argument(
+                    "decision fixture count must be 1..=3",
+                )
+                .into());
             }
             let mut observed_first = 0;
             for index in 0..count {
                 let iteration = context.iteration("decision", index, count)?;
                 generated::LedgerMethodsWorkflowSteps::first(
-                    &iteration, Arc::new(self.clone()), "effect", proto::Step { amount: 1 }
-                ).await?;
+                    &iteration,
+                    Arc::new(self.clone()),
+                    "effect",
+                    proto::Step { amount: 1 },
+                )
+                .await?;
                 let decision = generated::LedgerMethodsWorkflowSteps::query_decide(
-                    &iteration, Arc::new(self.clone()), "control", "break-first-at-least-two.v1", proto::Empty {},
-                    move |state| { event(&format!("decision-evaluate-{index}")); state.first >= 2 }
-                ).await?;
+                    &iteration,
+                    Arc::new(self.clone()),
+                    "control",
+                    "break-first-at-least-two.v1",
+                    proto::Empty {},
+                    move |state| {
+                        event(&format!("decision-evaluate-{index}"));
+                        state.first >= 2
+                    },
+                )
+                .await?;
                 event(&format!("decision-{index}-ack"));
                 match decision {
-                    std::ops::ControlFlow::Continue(state) => { observed_first = state.first; }
+                    std::ops::ControlFlow::Continue(state) => {
+                        observed_first = state.first;
+                    }
                     std::ops::ControlFlow::Break(state) => {
                         observed_first = state.first;
                         event("decision-break");
                         if std::env::var("DECISION_PAUSE_AFTER_BREAK").as_deref() == Ok("1") {
-                            event("decision-parked"); std::future::pending::<()>().await;
+                            event("decision-parked");
+                            std::future::pending::<()>().await;
                         }
                         break;
                     }
                 }
             }
             let after = generated::LedgerMethodsWorkflowSteps::second(
-                context, Arc::new(self.clone()), "after-loop", proto::Step { amount: 100 }
-            ).await?;
+                context,
+                Arc::new(self.clone()),
+                "after-loop",
+                proto::Step { amount: 100 },
+            )
+            .await?;
             event("after-loop-ack");
-            return Ok(proto::Result { first: observed_first, second: after.value });
+            return Ok(proto::Result {
+                first: observed_first,
+                second: after.value,
+            });
         }
         if std::env::var("WORKFLOW_BODY_MODE").as_deref() == Ok("control") {
             let count = u64::try_from(request.amount)
@@ -464,7 +576,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
         return Ok(());
     }
-    if mode == "inspect" || mode == "inspect-control" {
+    if mode == "inspect-state" {
+        let mut c = db::database_client::DatabaseClient::connect(arg(2)).await?;
+        let loaded = c
+            .load(db::LoadRequest {
+                actors: vec![db::Actor {
+                    state_type: "workflow.v1.Ledger".into(),
+                    state_ref: reference(),
+                    state: None,
+                }],
+                task_ids: vec![],
+            })
+            .await?
+            .into_inner();
+        let actor = loaded.actors.first().ok_or("missing canonical actor")?;
+        let state =
+            proto::Ledger::decode(actor.state.as_deref().ok_or("missing canonical state")?)?;
+        println!(
+            "{{\"first\":{},\"second\":{},\"schedules\":{}}}",
+            state.first, state.second, state.schedules
+        );
+        return Ok(());
+    }
+    if mode == "inspect" || mode == "inspect-control" || mode == "inspect-reader-outcome" {
         let mut c = db::database_client::DatabaseClient::connect(arg(2)).await?;
         let id = db::TaskId {
             state_type: "workflow.v1.Ledger".into(),
@@ -501,7 +635,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 assert_eq!(m.workflow_id, Some(id.task_uuid.clone()));
                 assert!(m.request_fingerprint.is_some());
                 let any = prost_types::Any::decode(m.response.as_slice())?;
-                if mode == "inspect-control" {
+                if mode == "inspect-reader-outcome" {
+                    assert_eq!(m.workflow_iteration, None);
+                    checkpoints.push(format!(
+                        "{{\"key\":\"{}\",\"type\":\"{}\",\"record\":\"{}\"}}",
+                        uuid::Uuid::from_slice(&m.key)?,
+                        any.type_url,
+                        m.encode_to_vec()
+                            .iter()
+                            .map(|b| format!("{b:02x}"))
+                            .collect::<String>()
+                    ));
+                } else if mode == "inspect-control" {
                     checkpoints.push(format!(
                         "{{\"iteration\":{},\"key\":\"{}\",\"type\":\"{}\"}}",
                         m.workflow_iteration.ok_or("missing iteration")?,
@@ -515,11 +660,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 count += 1;
             }
         }
-        if mode == "inspect-control" {
+        if mode == "inspect-control" || mode == "inspect-reader-outcome" {
             checkpoints.sort();
             println!(
-                "{{\"status\":{},\"checkpoints\":[{}]}}",
+                "{{\"status\":{},\"has_terminal\":{},\"checkpoints\":[{}]}}",
                 task.status,
+                task.response_or_error.is_some(),
                 checkpoints.join(",")
             );
             return Ok(());
