@@ -21,6 +21,8 @@ from reboot.settings import (
     ENVOY_PROXY_IMAGE,
     ENVVAR_LOCAL_ENVOY_DEBUG,
     EVERY_LOCAL_NETWORK_ADDRESS,
+    LOCAL_LISTEN_ADDRESS,
+    ONLY_LOCALHOST_NETWORK_ADDRESS,
     REBOOT_DISCORD_URL,
     REBOOT_GITHUB_ISSUES_URL,
     LocalEnvoyMode,
@@ -83,7 +85,7 @@ class DockerLocalEnvoy(LocalEnvoy):
             admin_port=ENVOY_ADMIN_PORT,
             # The xDS server will run outside the Docker container, so it must
             # accept connections from the Docker container.
-            xds_listen_host='0.0.0.0',
+            xds_listen_host=LOCAL_LISTEN_ADDRESS,
             xds_connect_host='host.docker.internal',
             # The trusted port will be accessed by the application
             # running outside the Docker container, so it must accept
@@ -139,7 +141,11 @@ class DockerLocalEnvoy(LocalEnvoy):
                 server.address.host == 'localhost' or
                 # The '0.0.0.0' address is also interpreted as
                 # "localhost" when used as a target.
-                server.address.host == EVERY_LOCAL_NETWORK_ADDRESS
+                server.address.host == EVERY_LOCAL_NETWORK_ADDRESS or
+                # Where the servers listen on macOS; Docker Desktop
+                # reaches the host's loopback through
+                # `host.docker.internal`.
+                server.address.host == ONLY_LOCALHOST_NETWORK_ADDRESS
             ):
                 server.address.host = 'host.docker.internal'
 
