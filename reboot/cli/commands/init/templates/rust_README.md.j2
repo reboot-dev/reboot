@@ -38,3 +38,34 @@ placement, cross-actor transactions, workflows or reactive-reader parity.
 Distributed placement is deliberately absent: all local actors use one shard.
 Python dev runtime switches are rejected, not silently ignored. Rust state is
 compatible with `rbt dev expunge --application-name={{ name }}`.
+
+## Independent reactive readers for multiple actors
+
+The ordinary greeting service can host an explicitly configured allowlist of
+reactive actors. Use the generated typed client to obtain canonical references:
+
+```sh
+ALPHA=$(cargo run --quiet --manifest-path backend/Cargo.toml --bin client -- state-ref alpha)
+BETA=$(cargo run --quiet --manifest-path backend/Cargo.toml --bin client -- state-ref beta)
+export RBT_RUST_REACTIVE_ACTORS="$ALPHA,$BETA"
+rbt dev run --rust-allow-insecure-database
+# Another shell: use the same references and RBT_RUST_URL when changing the port.
+cargo run --manifest-path backend/Cargo.toml --bin client -- create "$ALPHA"
+cargo run --manifest-path backend/Cargo.toml --bin client -- create "$BETA"
+cargo run --manifest-path backend/Cargo.toml --bin client -- watch "$ALPHA" 2
+# In another shell, greet ALPHA to deliver its next changed snapshot.
+cargo run --manifest-path backend/Cargo.toml --bin client -- greet "$ALPHA"
+```
+
+Each subscription receives an initial snapshot and changed values for its exact
+actor. Writes to BETA do not invalidate ALPHA. Owners start before readiness;
+a missing actor fails rather than constructing state. Unknown subscription
+references are denied even if ordinary RPCs may construct them. The registry
+admits at most 64 actors and 64 simultaneous subscriptions across the host;
+duplicate references, malformed configuration and an empty allowlist fail closed.
+The allowlist is read at startup; changing it requires restarting `rbt dev run`.
+
+The default scaffold without this environment variable is unchanged. This is
+local routing for independent unary readers, not cross-actor dependency tracking,
+atomic multi-actor snapshots, distributed watches or durable stream resume.
+Dropping a stream releases admission; restart requires an explicit fresh watch.

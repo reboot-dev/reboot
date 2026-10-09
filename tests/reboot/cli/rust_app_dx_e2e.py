@@ -119,6 +119,8 @@ class Session:
         self.data['children_absent'] = all(not Path(f'/proc/{pid}').exists() for pid in self.children)
         record(f'SESSION {self.data["name"]}: CLI exit={status}, children absent={self.data["children_absent"]}')
         assert self.data['children_absent'], self.data
+        if reader_registry_fixture:
+            reader_registry_fixture.closed()
         if http_fixture:
             http_fixture.closed()
             http_fixture.audit_lifecycle(self)
@@ -163,6 +165,15 @@ def durable_count(session):
 
 
 http_fixture = None
+reader_registry_fixture = None
+if os.environ.get('RUST_DX_READER_REGISTRY_ONLY'):
+    fixture_path = REPOSITORY / 'tests/reboot/cli/fixtures/rust_reader_registry_fixture.py'
+    spec = importlib.util.spec_from_file_location('reader_registry_fixture', fixture_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    for fixture in [fixture_path, Path(__file__)]:
+        evidence['source_hashes'][str(fixture)] = hashlib.sha256(fixture.read_bytes()).hexdigest()
+    reader_registry_fixture = module.ReaderRegistryFixture(APP, ENV, PORT, REPOSITORY, evidence, record, command, database_pb2, database_pb2_grpc, proto)
 if os.environ.get('RUST_DX_HTTP_REQUEST_ONLY'):
     fixture_path = REPOSITORY / 'tests/reboot/cli/fixtures/rust_http_request_fixture.py'
     spec = importlib.util.spec_from_file_location('http_request_fixture', fixture_path)
@@ -190,6 +201,8 @@ try:
     command(['cargo', 'fmt', '--manifest-path', manifest, '--', '--check'], timeout=30)
     command(['cargo', 'test', '--manifest-path', manifest, '--all-targets'], timeout=240)
     current = Session('first')
+    if reader_registry_fixture:
+        reader_registry_fixture.first(current)
     if http_fixture:
         http_fixture.first(current)
     assert command([TARGET / 'debug/client', 'create']) == '0'
@@ -197,47 +210,52 @@ try:
     assert command([TARGET / 'debug/client', 'greet', 'hello', '11111111-1111-4111-8111-111111111111']) == '1'
     assert command([TARGET / 'debug/client', 'read']) == '1'
     assert durable_count(current) == 1
-    # Exercise Cargo generation through the live CLI watcher (no direct cargo
-    # invocation). Restore the real proto and wait for a second successful
-    # regeneration before final-state restart proof.
     proto_path = APP / 'api/rust_greetings/v1/hello_world.proto'
     original = proto_path.read_text()
-    old_host = current.children[1]
-    prior_ready = current.path.read_text().count('SERVING (canonical gRPC health check)')
-    proto_path.write_text(original + '\nmessage RegenerationProbe { string note = 1; }\n')
-    for phase in ['added', 'restored']:
-        end = time.monotonic() + 60
-        while time.monotonic() < end:
-            text = current.path.read_text()
-            hosts = [int(n) for n in re.findall(r'Rust app PID=(\d+)', text)]
-            if hosts[-1] != old_host and text.count('SERVING (canonical gRPC health check)') > prior_ready:
-                break
-            assert current.process.poll() is None, text
-            time.sleep(0.1)
-        else:
-            raise AssertionError('watch regeneration timeout: ' + current.path.read_text())
-        assert not Path(f'/proc/{old_host}').exists()
-        generated = list((TARGET / 'debug/build').glob('rust_greetings-*/out/rust_greetings.v1.rs'))
-        assert generated, 'No emitted application protobuf binding'
-        generated = max(generated, key=lambda path: path.stat().st_mtime_ns)
-        emitted = generated.read_text()
-        assert ('pub struct RegenerationProbe' in emitted) == (phase == 'added'), emitted
-        current.children.append(hosts[-1])
-        current.data['children'] = current.children[:]
-        record(f'WATCH {phase}: new actual generated host PID={hosts[-1]}, Database PID unchanged={current.children[0]}, emitted probe={phase == "added"}')
-        assert command([TARGET / 'debug/client', 'read']) == '1'
-        assert durable_count(current) == 1
-        if http_fixture:
-            http_fixture.restored(current)
-        old_host = hosts[-1]
-        if phase == 'added':
-            prior_ready = current.path.read_text().count('SERVING (canonical gRPC health check)')
-            proto_path.write_text(original)
+    if not reader_registry_fixture:
+        # Exercise Cargo generation through the live CLI watcher (no direct cargo
+        # invocation). Restore the real proto and wait for a second successful
+        # regeneration before final-state restart proof.
+        proto_path = APP / 'api/rust_greetings/v1/hello_world.proto'
+        original = proto_path.read_text()
+        old_host = current.children[1]
+        prior_ready = current.path.read_text().count('SERVING (canonical gRPC health check)')
+        proto_path.write_text(original + '\nmessage RegenerationProbe { string note = 1; }\n')
+        for phase in ['added', 'restored']:
+            end = time.monotonic() + 60
+            while time.monotonic() < end:
+                text = current.path.read_text()
+                hosts = [int(n) for n in re.findall(r'Rust app PID=(\d+)', text)]
+                if hosts[-1] != old_host and text.count('SERVING (canonical gRPC health check)') > prior_ready:
+                    break
+                assert current.process.poll() is None, text
+                time.sleep(0.1)
+            else:
+                raise AssertionError('watch regeneration timeout: ' + current.path.read_text())
+            assert not Path(f'/proc/{old_host}').exists()
+            generated = list((TARGET / 'debug/build').glob('rust_greetings-*/out/rust_greetings.v1.rs'))
+            assert generated, 'No emitted application protobuf binding'
+            generated = max(generated, key=lambda path: path.stat().st_mtime_ns)
+            emitted = generated.read_text()
+            assert ('pub struct RegenerationProbe' in emitted) == (phase == 'added'), emitted
+            current.children.append(hosts[-1])
+            current.data['children'] = current.children[:]
+            record(f'WATCH {phase}: new actual generated host PID={hosts[-1]}, Database PID unchanged={current.children[0]}, emitted probe={phase == "added"}')
+            assert command([TARGET / 'debug/client', 'read']) == '1'
+            assert durable_count(current) == 1
+            if http_fixture:
+                http_fixture.restored(current)
+            old_host = hosts[-1]
+            if phase == 'added':
+                prior_ready = current.path.read_text().count('SERVING (canonical gRPC health check)')
+                proto_path.write_text(original)
     if http_fixture:
         http_fixture.begin_slow_body()
     assert current.close(signal.SIGTERM) == 143
     current = None
     current = Session('restart')
+    if reader_registry_fixture:
+        reader_registry_fixture.restored(current)
     if http_fixture:
         http_fixture.restored(current)
     assert command([TARGET / 'debug/client', 'read']) == '1'
@@ -276,6 +294,8 @@ try:
     evidence['passed'] = True
     record('PASS actual init + Cargo generation + typed create/write/replay/read + canonical durable Load + RocksDB restart + CLI SIGTERM/SIGINT cleanup + actual host-exit supervision')
 except BaseException as error:
+    if isinstance(error, (subprocess.TimeoutExpired, TimeoutError)):
+        timeout_seen = True
     evidence['passed'] = False
     evidence['failure'] = repr(error)
     raise

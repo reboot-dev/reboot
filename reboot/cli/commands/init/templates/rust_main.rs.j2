@@ -43,11 +43,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         DatabaseActorStore::connect(endpoint).await?,
         HelloWorld,
     );
-    ApplicationHost::new(application)
-        .add_public_service(
-            proto::hello_world_methods_server::HelloWorldMethodsServer::new(adapter),
-        )
-        .serve_with_shutdown(address, shutdown())
-        .await?;
+    // Optional explicit allowlist; subscription metadata never creates owners.
+    // All owners use this exact store and start before public readiness.
+    let mut registry = reboot::reactive::LocalReaderRegistry::new();
+    let configured = match std::env::var("RBT_RUST_REACTIVE_ACTORS") {
+        Ok(value) => Some(value),
+        Err(std::env::VarError::NotPresent) => None,
+        Err(error) => return Err(error.into()),
+    };
+    if let Some(references) = &configured {
+        for reference in references.split(',') {
+            let reference = reboot::state_ref::StateRef::from_maybe_readable(reference)?;
+            let (_, readers) = adapter.local_readers(reference.as_str())?;
+            registry.register(readers)?;
+        }
+    }
+    let host = ApplicationHost::new(application).add_public_service(
+        proto::hello_world_methods_server::HelloWorldMethodsServer::new(adapter),
+    );
+    let host = if configured.is_some() {
+        host.try_add_local_reader_registry(registry)?
+    } else {
+        host
+    };
+    host.serve_with_shutdown(address, shutdown()).await?;
     Ok(())
 }

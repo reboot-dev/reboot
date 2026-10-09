@@ -43,7 +43,7 @@ proofs below retain their separate source snapshots and limits.
 | Transactions | Legacy durable coordinator/participant paths and bounded supervised chains/star | General nested snapshots, reentrancy, intersecting subtrees, migration |
 | Tasks | Durable scheduled tasks, typed results/Wait with opt-in result policy, recovery, local admin list/stream and scheduled-workflow cancellation | Transactional targets, running/ordinary/distributed cancellation, aggregation, broad retry and dispatcher fencing |
 | Workflows | Finite typed named steps, bounded nested indexed replay, saved reader observations and finite Continue/Break, typed declared business terminals; explicit local-body resumption | Python unbounded Task cursor/GC/Break, cross-actor composition, framework failure isolation |
-| Reactive readers | Typed bounded database/workflow/transaction-service ordinary reader subscriptions, commit invalidation and explicit same-query reconnect | Cross-actor/remote invalidation, transparent reconnect/durable resume, streaming/transaction RPC subscriptions |
+| Reactive readers | Typed bounded database/workflow/transaction-service ordinary reader subscriptions, allowlisted multi-actor routing, commit invalidation and explicit same-query reconnect | Cross-actor/remote invalidation, transparent reconnect/durable resume, streaming/transaction RPC subscriptions |
 | SortedMap | Canonical empty constructor, serial same-host app/map transactions, same-root session reopening, live keyset pages and atomic multi-entry approval transfer | Public inbound adapter, nested/reusable siblings, distributed collection lifecycle |
 
 ## Local app development
@@ -1396,6 +1396,75 @@ Sources: [map sessions](src/sorted_map.rs), [admitted root cache](src/runtime.rs
 
 ## Local reactive readers
 
+### Allowlisted multi-actor local reader routing (2026-10-09)
+
+`LocalReaderRegistry` installs one reserved LocalReaders route for an explicit
+allowlist of at most 64 canonical actor references. Registration retains each
+existing generated binding, authorized reader envelope, actor gate and lifecycle
+scope. Actor metadata selects only a registered entry; it cannot create an owner,
+change its store or subscribe to a constructor/writer. Duplicate references and
+empty registry installation fail closed. The registry has a host-wide limit of
+64 concurrent streams in addition to each owner's existing limit. End/error/Drop
+release global admission without detached producer tasks. Acknowledged commits,
+uncertainty and deduplication remain isolated to the exact selected actor.
+
+`RunningApplicationHost::try_add_local_reader_registry` registers all owners and
+marks readiness Recovering immediately. Owners start before Ready/public ingress.
+A deterministic original-source regression failed with Ready instead of Recovering;
+the fixed real-Tonic test parks a predecessor and verifies NOT_SERVING health,
+Unavailable ordinary ingress, successful registered baseline after owner startup,
+stream cleanup and listener closure. Unit cases retain actor-specific credential
+metadata, authorization errors, unknown actor rejection, duplicate reserved-route
+rejection in either API order, 64-actor/stream bounds, uncertainty isolation and
+admission release. The old single-owner API remains supported.
+
+The generated greeting scaffold optionally reads `RBT_RUST_REACTIVE_ACTORS` once
+at startup. Its generated typed client exposes `state-ref <id>` and
+`watch <canonical-ref> <count>`. No application code injection or private Database
+seeding is needed. Without configuration the previous greeting route is unchanged.
+Configuration errors, including non-Unicode input, do not silently disable policy.
+The allowlist is not a token verifier: each generated binding still owns normal
+authentication/authorization; this remains trusted isolated local development.
+
+**Executed public Cargo/rbt/native:** `/tmp/reboot-rust-reader-registry-cli-1791557943933839768` passed 29
+checks: public constructors created alpha/beta plus an unregistered actor; two
+actual generated typed clients observed isolated baseline/changed snapshots,
+beta commits did not invalidate alpha, and canonical CXX Load verified exact
+actor states. Unknown actor/writer-query subscriptions rejected without mutation.
+The real host admitted 64 streams across both actors, rejected a 65th, and admitted
+a fresh watch after remote Drop. Empty/duplicate/malformed/non-Unicode/65-actor
+startup configurations exited without actor mutation. Full CLI/RocksDB restart
+preserved all three actor states and idempotent writer replay; fresh subscriptions
+observed both persisted values and shutdown terminated both streams. Actual
+host/Database exit, failed build, smoke startup and owned-child cleanup passed.
+Generated greeting Clippy/fmt passed; its empty Cargo unit targets are compilation
+checks, not behavioral test passes. Behavior above ran through the real clients.
+
+SDK `/tmp/reboot-rust-reader-registry-sdk-1791558250398314269`: 451 passed, 131 ignored and strict all-target
+Clippy, plus explicit native reader-outcome and staged-map restart gates. Retained
+map `/tmp/reboot-rust-map-reentry-cli-1791558601777357831` (18), batch `/tmp/reboot-rust-batch-ledger-acceptance-1791558884585471523` (162), nested `/tmp/reboot-rust-nested-cli-1791559662247691882` (26), pagination
+`/tmp/reboot-rust-pagination-cli-1791560028257271664` (22), generated/HTTP preflight `/tmp/reboot-rust-http-request-preflight-1791558520532995052`, and unchanged default
+HTTP/greeting/rebuild/health/cleanup `/tmp/reboot-rust-loop-decision-greeting-1791557537361451879` (26 HTTP exchanges) passed.
+The HTTP acceptance fixture now preserves the generated configured host and
+replaces only its serving tail; it no longer reconstructs an obsolete builder.
+Authorization injection and the host's registered recovery owners remain intact.
+Frozen source, native Database identity, resource budgets and proof-owned PID
+absence were audited before the source digest refresh.
+
+This is a routing foundation, not cross-actor reader composition. Python's
+[React route](../aio/servers.py) and [reactive state manager](../aio/state_managers.py)
+add transitive reader dependencies that this registry does not provide. Dynamic
+dependency registration/retirement, context-aware typed reader calls, remote
+invalidation, atomic multi-actor snapshots, canonical React interoperability and
+durable stream resume remain missing. Overall Rust parity remains incomplete.
+
+Sources: [registry and stream scope](src/reactive.rs),
+[host registration](src/application_host.rs),
+[generated greeting host](../cli/commands/init/templates/rust_main.rs.j2),
+[typed client](../cli/commands/init/templates/rust_client.rs.j2),
+[native acceptance fixture](../../tests/reboot/cli/fixtures/rust_reader_registry_fixture.py).
+
+
 Database-only generated services expose an exact-actor lifecycle owner plus
 companion Tonic service through `local_readers(state_ref)`. Register recovery and
 ordinary service with `ApplicationHost`, then add the companion with
@@ -1403,7 +1472,8 @@ ordinary service with `ApplicationHost`, then add the companion with
 rejects this reserved route. Generated typed subscriptions cancel their RPC on
 Drop; ordinary unary readers stay unary.
 
-**Bounded contract:** one actor/service/trusted host owning every sidecar mutation;
+**Single-owner bounded contract:** one actor/service/trusted host owning every sidecar mutation;
+the optional multi-actor registry above routes independent owners on one host.
 64 subscriptions **per owner**, a 64KiB **encoded request payload** and a
 1MiB **encoded reader response**. These are not bounds on the whole RPC envelope
 or total transport memory. One coalescing revision/current response/pending future
@@ -2244,7 +2314,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 077f0b95df1fe30ff10bb7853bd51944c9628a41528b16c6f31edb75e452079b -->
+<!-- parity-source-sha256: 8f04ff0a14338280cf564ccf31f7a95c190a0ceb8517042cc5fa8df827747ef6 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

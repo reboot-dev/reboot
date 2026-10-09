@@ -242,4 +242,218 @@ mod tests {
         drop(stream);
         assert_eq!(owner.active_subscriptions(), 0);
     }
+    #[tokio::test]
+    async fn registry_routes_independent_actors_and_reclaims_global_capacity() {
+        let (a, service_a, value_a) = setup();
+        let (b, service_b, value_b) = setup();
+        let (cancel, _) = RecoveryCancellation::test_host();
+        for owner in [&a, &b] {
+            owner
+                .start(&mut tokio::task::JoinSet::new(), cancel.clone())
+                .await
+                .unwrap();
+        }
+        let mut registry = LocalReaderRegistry::default();
+        registry.register(service_a.clone()).unwrap();
+        registry.register(service_b).unwrap();
+        assert_eq!(
+            registry.register(service_a).unwrap_err().code(),
+            tonic::Code::AlreadyExists
+        );
+        let (unknown, _, _) = setup();
+        assert_eq!(
+            registry
+                .subscribe(request(&unknown))
+                .await
+                .err()
+                .unwrap()
+                .code(),
+            tonic::Code::FailedPrecondition
+        );
+        assert_eq!(registry.active_subscriptions(), 0);
+        let mut stream_a = registry.subscribe(request(&a)).await.unwrap().into_inner();
+        let mut stream_b = registry.subscribe(request(&b)).await.unwrap().into_inner();
+        assert_eq!(number(stream_a.next().await.unwrap().unwrap()), 0);
+        assert_eq!(number(stream_b.next().await.unwrap().unwrap()), 0);
+        value_b.store(11, Ordering::SeqCst);
+        b.inner.gate.commit_attempt().acknowledged();
+        assert_eq!(number(stream_b.next().await.unwrap().unwrap()), 11);
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(20), stream_a.next())
+                .await
+                .is_err()
+        );
+        value_a.store(7, Ordering::SeqCst);
+        a.inner.gate.commit_attempt().acknowledged();
+        assert_eq!(number(stream_a.next().await.unwrap().unwrap()), 7);
+        // An uncertain actor terminates only that actor's subscriptions.
+        drop(a.inner.gate.commit_attempt());
+        assert_eq!(
+            stream_a.next().await.unwrap().unwrap_err().code(),
+            tonic::Code::Unavailable
+        );
+        assert_eq!(registry.active_subscriptions(), 1);
+        value_b.store(12, Ordering::SeqCst);
+        b.inner.gate.commit_attempt().acknowledged();
+        assert_eq!(number(stream_b.next().await.unwrap().unwrap()), 12);
+        let mut streams = Vec::new();
+        for _ in 0..63 {
+            streams.push(registry.subscribe(request(&b)).await.unwrap().into_inner());
+        }
+        assert_eq!(registry.active_subscriptions(), 64);
+        assert_eq!(
+            registry.subscribe(request(&a)).await.err().unwrap().code(),
+            tonic::Code::ResourceExhausted
+        );
+        streams.clear();
+        cancel.cancel();
+        assert!(stream_b.next().await.is_none());
+        assert_eq!(registry.active_subscriptions(), 0);
+        assert_eq!(a.active_subscriptions(), 0);
+        assert_eq!(b.active_subscriptions(), 0);
+    }
+    #[tokio::test]
+    async fn registry_admission_is_bounded_and_failed_routes_do_not_reserve_slots() {
+        let mut registry = LocalReaderRegistry::new();
+        assert!(registry.owners().is_err());
+        let mut owners = Vec::new();
+        for _ in 0..64 {
+            let (owner, service, _) = setup();
+            registry.register(service).unwrap();
+            owners.push(owner);
+        }
+        assert_eq!(registry.owners().unwrap().len(), 64);
+        let (_, extra, _) = setup();
+        assert_eq!(
+            registry.register(extra).unwrap_err().code(),
+            tonic::Code::ResourceExhausted
+        );
+        // Unstarted lifecycle denial drops the already reserved global permit.
+        assert_eq!(
+            registry
+                .subscribe(request(&owners[0]))
+                .await
+                .err()
+                .unwrap()
+                .code(),
+            tonic::Code::FailedPrecondition
+        );
+        assert_eq!(registry.active_subscriptions(), 0);
+        let mut missing = request(&owners[0]);
+        missing.metadata_mut().remove("x-reboot-state-ref");
+        assert!(registry.subscribe(missing).await.is_err());
+        assert_eq!(registry.active_subscriptions(), 0);
+    }
+
+    struct ProtectedBinding {
+        binding: Binding,
+        token: &'static str,
+    }
+    #[tonic::async_trait]
+    impl ReaderBinding for ProtectedBinding {
+        fn validate_owner(&self, owner: &LocalReaderOwner) -> Result<(), Status> {
+            self.binding.validate_owner(owner)
+        }
+        async fn read(&self, request: Request<wire::Query>) -> Result<Vec<u8>, Status> {
+            if request
+                .metadata()
+                .get("authorization")
+                .and_then(|value| value.to_str().ok())
+                != Some(self.token)
+            {
+                return Err(Status::permission_denied("actor-specific policy denied"));
+            }
+            self.binding.read(request).await
+        }
+    }
+    #[tokio::test]
+    async fn registry_preserves_actor_specific_metadata_and_auth_errors() {
+        let (a, service_a, _) = setup();
+        let (b, service_b, _) = setup();
+        let (cancel, _) = RecoveryCancellation::test_host();
+        let mut registry = LocalReaderRegistry::new();
+        for (owner, service, token) in [(&a, service_a, "alpha"), (&b, service_b, "beta")] {
+            owner
+                .start(&mut tokio::task::JoinSet::new(), cancel.clone())
+                .await
+                .unwrap();
+            registry
+                .register(
+                    LocalReaderService::new(
+                        ProtectedBinding {
+                            binding: Binding {
+                                store: service.binding.store.clone(),
+                                value: service.binding.value.clone(),
+                            },
+                            token,
+                        },
+                        owner.clone(),
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
+        }
+        for (owner, token, allowed) in [
+            (&a, "alpha", true),
+            (&b, "alpha", false),
+            (&b, "beta", true),
+        ] {
+            let mut query = request(owner);
+            query
+                .metadata_mut()
+                .insert("authorization", token.parse().unwrap());
+            let mut stream = registry.subscribe(query).await.unwrap().into_inner();
+            let result = stream.next().await.unwrap();
+            if allowed {
+                assert!(result.is_ok());
+            } else {
+                assert_eq!(result.unwrap_err().code(), tonic::Code::PermissionDenied);
+            }
+            drop(stream);
+            assert_eq!(registry.active_subscriptions(), 0);
+        }
+    }
+    #[tokio::test]
+    async fn host_registry_rejects_empty_and_both_duplicate_route_shapes() {
+        use crate::application_host::ApplicationHost;
+        let host = || {
+            ApplicationHost::new("registry-test").add_public_service(
+                crate::proto::echo_methods_server::EchoMethodsServer::new(
+                    crate::runtime::InMemoryHost::default(),
+                ),
+            )
+        };
+        assert!(
+            host()
+                .try_add_local_reader_registry(LocalReaderRegistry::new())
+                .is_err()
+        );
+        let (_, service, _) = setup();
+        let mut first = LocalReaderRegistry::new();
+        first.register(service.clone()).unwrap();
+        let second = first.clone();
+        assert!(
+            host()
+                .try_add_local_reader_registry(first)
+                .unwrap()
+                .try_add_local_reader_registry(second)
+                .is_err()
+        );
+        let mut registry = LocalReaderRegistry::new();
+        registry.register(service.clone()).unwrap();
+        assert!(
+            host()
+                .try_add_local_readers(service.clone())
+                .unwrap()
+                .try_add_local_reader_registry(registry.clone())
+                .is_err()
+        );
+        assert!(
+            host()
+                .try_add_local_reader_registry(registry)
+                .unwrap()
+                .try_add_local_readers(service)
+                .is_err()
+        );
+    }
 }

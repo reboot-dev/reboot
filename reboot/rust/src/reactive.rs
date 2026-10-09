@@ -114,10 +114,17 @@ impl HostRecovery for LocalReaderOwner {
         Ok(())
     }
 }
-#[derive(Clone)]
 pub struct LocalReaderService<B> {
     binding: Arc<B>,
     owner: LocalReaderOwner,
+}
+impl<B> Clone for LocalReaderService<B> {
+    fn clone(&self) -> Self {
+        Self {
+            binding: self.binding.clone(),
+            owner: self.owner.clone(),
+        }
+    }
 }
 impl<B: ReaderBinding> LocalReaderService<B> {
     pub fn new(binding: B, owner: LocalReaderOwner) -> Result<Self, Status> {
@@ -128,6 +135,128 @@ impl<B: ReaderBinding> LocalReaderService<B> {
         })
     }
 }
+/// An immutable-at-installation allowlist of at most 64 exact local actors.
+/// Each entry keeps its generated binding, authorization, gate and stream scope.
+/// This routes independent subscriptions; it does not track read dependencies.
+#[derive(Clone)]
+pub struct LocalReaderRegistry {
+    entries: std::collections::BTreeMap<String, Arc<dyn RegisteredReader>>,
+    slots: Arc<tokio::sync::Semaphore>,
+}
+
+#[tonic::async_trait]
+trait RegisteredReader: Send + Sync {
+    fn owner(&self) -> LocalReaderOwner;
+    async fn subscribe_registered(
+        &self,
+        request: Request<wire::Query>,
+    ) -> Result<
+        Pin<Box<dyn tokio_stream::Stream<Item = Result<wire::Snapshot, Status>> + Send>>,
+        Status,
+    >;
+}
+#[tonic::async_trait]
+impl<B: ReaderBinding> RegisteredReader for LocalReaderService<B> {
+    fn owner(&self) -> LocalReaderOwner {
+        self.owner.clone()
+    }
+    async fn subscribe_registered(
+        &self,
+        request: Request<wire::Query>,
+    ) -> Result<
+        Pin<Box<dyn tokio_stream::Stream<Item = Result<wire::Snapshot, Status>> + Send>>,
+        Status,
+    > {
+        use wire::local_readers_server::LocalReaders;
+        Ok(Box::pin(self.subscribe(request).await?.into_inner()))
+    }
+}
+impl Default for LocalReaderRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+impl LocalReaderRegistry {
+    pub fn new() -> Self {
+        Self {
+            entries: std::collections::BTreeMap::new(),
+            slots: Arc::new(tokio::sync::Semaphore::new(64)),
+        }
+    }
+    /// Explicit host configuration only: client metadata cannot register actors.
+    pub fn register<B: ReaderBinding>(
+        &mut self,
+        service: LocalReaderService<B>,
+    ) -> Result<(), Status> {
+        let key = service.owner.inner.state_ref.clone();
+        if self.entries.contains_key(&key) {
+            return Err(Status::already_exists(
+                "local reactive actor already registered",
+            ));
+        }
+        if self.entries.len() == 64 {
+            return Err(Status::resource_exhausted(
+                "local reactive registry capacity is 64 actors",
+            ));
+        }
+        self.entries.insert(key, Arc::new(service));
+        Ok(())
+    }
+    pub fn active_subscriptions(&self) -> usize {
+        64 - self.slots.available_permits()
+    }
+    pub(crate) fn owners(&self) -> Result<Vec<LocalReaderOwner>, Status> {
+        if self.entries.is_empty() {
+            return Err(Status::failed_precondition(
+                "local reactive registry is empty",
+            ));
+        }
+        Ok(self.entries.values().map(|entry| entry.owner()).collect())
+    }
+}
+/// One routed stream owns both the actor admission and host-wide admission.
+/// Dropping it cancels the in-flight read without background fan-out tasks.
+pub struct RegisteredReaderStream {
+    inner: Pin<Box<dyn tokio_stream::Stream<Item = Result<wire::Snapshot, Status>> + Send>>,
+    permit: Option<tokio::sync::OwnedSemaphorePermit>,
+}
+impl tokio_stream::Stream for RegisteredReaderStream {
+    type Item = Result<wire::Snapshot, Status>;
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let result = self.inner.as_mut().poll_next(cx);
+        if matches!(&result, Poll::Ready(None) | Poll::Ready(Some(Err(_)))) {
+            self.permit.take();
+        }
+        result
+    }
+}
+#[tonic::async_trait]
+impl wire::local_readers_server::LocalReaders for LocalReaderRegistry {
+    type SubscribeStream = RegisteredReaderStream;
+    async fn subscribe(
+        &self,
+        request: Request<wire::Query>,
+    ) -> Result<tonic::Response<Self::SubscribeStream>, Status> {
+        let reference = request
+            .metadata()
+            .get("x-reboot-state-ref")
+            .and_then(|value| value.to_str().ok())
+            .ok_or_else(|| Status::failed_precondition("local reactive actor is not registered"))?;
+        let entry = self
+            .entries
+            .get(reference)
+            .ok_or_else(|| Status::failed_precondition("local reactive actor is not registered"))?;
+        let permit = self.slots.clone().try_acquire_owned().map_err(|_| {
+            Status::resource_exhausted("local reactive host capacity is 64 subscriptions")
+        })?;
+        let inner = entry.subscribe_registered(request).await?;
+        Ok(tonic::Response::new(RegisteredReaderStream {
+            inner,
+            permit: Some(permit),
+        }))
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct ReaderScope {
     lifecycle: RecoveryCancellation,

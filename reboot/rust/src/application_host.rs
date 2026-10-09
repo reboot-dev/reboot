@@ -1064,7 +1064,7 @@ impl ApplicationHost {
         assert_ne!(
             S::NAME,
             "reboot.rust.reactive.v1.LocalReaders",
-            "reserved local reader route: use try_add_local_readers (one actor per host)"
+            "reserved local reader route: use a typed local reader registration"
         );
         let mut public_services = BTreeSet::new();
         public_services.insert(S::NAME.to_owned());
@@ -1107,7 +1107,7 @@ impl ApplicationHost {
         assert_ne!(
             S::NAME,
             "reboot.rust.reactive.v1.LocalReaders",
-            "reserved local reader route: use try_add_local_readers (one actor per host)"
+            "reserved local reader route: use a typed local reader registration"
         );
         let mut public_services = BTreeSet::new();
         if !is_legacy_control_service(S::NAME) {
@@ -1160,6 +1160,32 @@ impl RunningApplicationHost {
         Ok(self)
     }
 
+    /// Install one allowlisted multi-actor route and all its reader lifecycles.
+    /// Owners start before public readiness; duplicate reserved routes fail closed.
+    #[allow(clippy::result_large_err)]
+    pub fn try_add_local_reader_registry(
+        mut self,
+        registry: crate::reactive::LocalReaderRegistry,
+    ) -> Result<Self, tonic::Status> {
+        let owners = registry.owners()?;
+        const NAME: &str = "reboot.rust.reactive.v1.LocalReaders";
+        if !self.public_services.insert(NAME.to_owned()) {
+            return Err(tonic::Status::failed_precondition(
+                "local reactive route already installed",
+            ));
+        }
+        self.readiness.send_replace(RecoveryState::Recovering);
+        self.recovery.extend(
+            owners
+                .into_iter()
+                .map(|owner| Arc::new(owner) as Arc<dyn HostRecovery>),
+        );
+        self.router = self.router.add_service(
+            crate::reactive::wire::local_readers_server::LocalReadersServer::new(registry),
+        );
+        Ok(self)
+    }
+
     /// The immutable application identity used by this server.
     pub fn application_id(&self) -> &str {
         &self.application_id
@@ -1178,7 +1204,7 @@ impl RunningApplicationHost {
         assert_ne!(
             S::NAME,
             "reboot.rust.reactive.v1.LocalReaders",
-            "reserved local reader route: use try_add_local_readers (one actor per host)"
+            "reserved local reader route: use a typed local reader registration"
         );
         self.public_services.insert(S::NAME.to_owned());
         Self {
@@ -1219,7 +1245,7 @@ impl RunningApplicationHost {
             assert_ne!(
                 S::NAME,
                 "reboot.rust.reactive.v1.LocalReaders",
-                "reserved local reader route: use try_add_local_readers (one actor per host)"
+                "reserved local reader route: use a typed local reader registration"
             );
             self.public_services.insert(S::NAME.to_owned());
         }
@@ -1826,5 +1852,133 @@ mod health_watch_tests {
         drop(state);
         assert_eq!(next(&mut stream).await, ServingStatus::NotServing as i32);
         assert!(stream.next().await.is_none());
+    }
+    #[tokio::test]
+    async fn registry_registration_gates_readiness_until_all_owners_start() {
+        struct Binding(crate::runtime::DatabaseActorStore);
+        #[tonic::async_trait]
+        impl crate::reactive::ReaderBinding for Binding {
+            fn validate_owner(
+                &self,
+                owner: &crate::reactive::LocalReaderOwner,
+            ) -> Result<(), tonic::Status> {
+                owner.validate_generated_store(&self.0, "unit.Registry")
+            }
+            async fn read(
+                &self,
+                _: tonic::Request<crate::reactive::wire::Query>,
+            ) -> Result<Vec<u8>, tonic::Status> {
+                Ok(vec![7])
+            }
+        }
+        struct Parked {
+            entered: Arc<tokio::sync::Notify>,
+            release: Arc<tokio::sync::Notify>,
+        }
+        #[tonic::async_trait]
+        impl HostRecovery for Parked {
+            async fn start(
+                &self,
+                _: &mut JoinSet<Result<(), tonic::Status>>,
+                _: RecoveryCancellation,
+            ) -> Result<(), tonic::Status> {
+                self.entered.notify_one();
+                self.release.notified().await;
+                Ok(())
+            }
+        }
+        let store = crate::runtime::DatabaseActorStore::connect_lazy("http://127.0.0.1:9").unwrap();
+        let reference = crate::state_ref::StateRef::from_id("unit.Registry", "actor")
+            .unwrap()
+            .to_string();
+        let owner = crate::reactive::LocalReaderOwner::for_generated_actor(
+            &store,
+            "unit.Registry",
+            &reference,
+        )
+        .unwrap();
+        let readers =
+            crate::reactive::LocalReaderService::new(Binding(store), owner.clone()).unwrap();
+        let mut registry = crate::reactive::LocalReaderRegistry::new();
+        registry.register(readers).unwrap();
+        let service = crate::proto::echo_methods_server::EchoMethodsServer::new(
+            crate::runtime::InMemoryHost::default(),
+        );
+        let mut host = ApplicationHost::new("registry-readiness")
+            .add_public_service(service)
+            .try_add_local_reader_registry(registry)
+            .unwrap();
+        assert_eq!(*host.readiness.borrow(), RecoveryState::Recovering);
+        let entered = Arc::new(tokio::sync::Notify::new());
+        let release = Arc::new(tokio::sync::Notify::new());
+        // A deterministic test-only parked predecessor makes the startup window
+        // observable without slowing or replacing the real reader owners.
+        host.recovery.insert(
+            0,
+            Arc::new(Parked {
+                entered: entered.clone(),
+                release: release.clone(),
+            }),
+        );
+        let mut readiness = host.readiness.subscribe();
+        let socket = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = socket.local_addr().unwrap();
+        drop(socket);
+        let (shutdown, stopped) = tokio::sync::oneshot::channel();
+        let serving = tokio::spawn(host.serve_with_shutdown(address, async {
+            let _ = stopped.await;
+        }));
+        tokio::time::timeout(std::time::Duration::from_secs(2), entered.notified())
+            .await
+            .unwrap();
+        let channel = tonic::transport::Endpoint::from_shared(format!("http://{address}"))
+            .unwrap()
+            .connect()
+            .await
+            .unwrap();
+        let mut health = tonic_health::pb::health_client::HealthClient::new(channel.clone());
+        assert_eq!(
+            health
+                .check(tonic_health::pb::HealthCheckRequest {
+                    service: String::new()
+                })
+                .await
+                .unwrap()
+                .into_inner()
+                .status,
+            tonic_health::pb::health_check_response::ServingStatus::NotServing as i32
+        );
+        let mut echo = crate::proto::echo_methods_client::EchoMethodsClient::new(channel.clone());
+        assert_eq!(
+            echo.last_message(crate::proto::Empty {})
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::Unavailable
+        );
+        release.notify_one();
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while *readiness.borrow_and_update() != RecoveryState::Ready {
+                readiness.changed().await.unwrap();
+            }
+        })
+        .await
+        .unwrap();
+        let mut client =
+            crate::reactive::wire::local_readers_client::LocalReadersClient::new(channel);
+        let mut query = tonic::Request::new(crate::reactive::wire::Query {
+            method: "query".into(),
+            request: vec![],
+        });
+        query
+            .metadata_mut()
+            .insert("x-reboot-state-ref", reference.parse().unwrap());
+        let mut stream = client.subscribe(query).await.unwrap().into_inner();
+        assert_eq!(stream.message().await.unwrap().unwrap().response, vec![7]);
+        drop(stream);
+        shutdown.send(()).unwrap();
+        assert!(serving.await.unwrap().is_ok());
+        assert_eq!(owner.active_subscriptions(), 0);
+        assert!(tokio::net::TcpStream::connect(address).await.is_err());
     }
 }

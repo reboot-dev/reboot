@@ -5,9 +5,19 @@ use std::time::Duration;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
-    let command = args
-        .get(1)
-        .ok_or("usage: client <create|greet|read|health> [state-ref] [idempotency-key]")?;
+    let command = args.get(1).ok_or(
+        "usage: client <create|greet|read|watch|state-ref|health> [state-ref] [idempotency-key]",
+    )?;
+    if command == "state-ref" {
+        println!(
+            "{}",
+            reboot::state_ref::StateRef::from_id(
+                "{{ name }}.v1.HelloWorld",
+                args.get(2).ok_or("missing actor id")?
+            )?
+        );
+        return Ok(());
+    }
     let endpoint = std::env::var("RBT_RUST_URL").unwrap_or_else(|_| "http://127.0.0.1:9990".into());
     let context = ExternalContext::new(args.get(2).cloned().unwrap_or_else(|| "hello".into()));
     let channel = tokio::time::timeout(Duration::from_secs(2), context.connect(endpoint)).await??;
@@ -23,6 +33,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Err("application is not ready".into());
         }
         println!("SERVING");
+        return Ok(());
+    }
+    if command == "watch" {
+        use std::io::Write;
+        let count: usize = args
+            .get(3)
+            .map(|value| value.parse())
+            .transpose()?
+            .unwrap_or(2);
+        if !(1..=64).contains(&count) {
+            return Err("watch count must be 1..64".into());
+        }
+        let mut client = generated::HelloWorldMethodsReactiveClient::new(channel, context);
+        let mut subscription = client.num_greetings(proto::NumGreetingsRequest {}).await?;
+        for _ in 0..count {
+            let response = tokio::time::timeout(Duration::from_secs(30), subscription.message())
+                .await??
+                .ok_or("reader stream ended")?;
+            println!("{}", response.number_of_greetings);
+            std::io::stdout().flush()?;
+        }
         return Ok(());
     }
     let mut client = generated::HelloWorldMethodsExternalClient::new(channel, context);
@@ -59,7 +90,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .into_inner()
                     .number_of_greetings
             }
-            _ => return Err("unknown command; use create, greet, read or health".into()),
+            _ => {
+                return Err(
+                    "unknown command; use create, greet, read, watch, state-ref or health".into(),
+                );
+            }
         };
         println!("{count}");
         Ok::<(), Box<dyn std::error::Error>>(())

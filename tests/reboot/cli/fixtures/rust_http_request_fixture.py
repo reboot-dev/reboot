@@ -28,21 +28,20 @@ class HttpRequestFixture:
         evidence['http_role_file'] = str(self.role)
         source = app / 'backend/src/main.rs'
         text = source.read_text()
-        anchor = '''    ApplicationHost::new(application)
-        .add_public_service(
-            proto::hello_world_methods_server::HelloWorldMethodsServer::new(adapter),
-        )
-        .serve_with_shutdown(address, shutdown())
-        .await?;
+        # Preserve the generated host, including its optional reader registry.
+        # Only replace serving, rather than reconstructing an older host builder.
+        host_anchor = '    let host = ApplicationHost::new(application).add_public_service('
+        assert text.count(host_anchor) == 1
+        text = text.replace(host_anchor, '    let http_application = application.clone();\n' + host_anchor, 1)
+        anchor = '''    host.serve_with_shutdown(address, shutdown()).await?;
     Ok(())
 }'''
-        replacement = '''    let http_application = application.clone();
+        replacement = '''
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     tokio::spawn(async move { shutdown().await; let _ = shutdown_tx.send(true); });
     let mut grpc_shutdown = shutdown_rx.clone();
     let grpc = async move {
-        ApplicationHost::new(application)
-            .add_public_service(proto::hello_world_methods_server::HelloWorldMethodsServer::new(adapter))
+        host
             .serve_with_shutdown(address, async move { let _ = grpc_shutdown.wait_for(|value| *value).await; }).await?;
         Ok::<(), Box<dyn std::error::Error>>(())
     };
