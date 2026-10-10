@@ -49,7 +49,8 @@ Combined retained stages cover all 131 inventory cases successfully (3 + 114 +
 1 + 5 + 8), but **not one current-snapshot full audit**: the two workflow fixture
 files changed between stages. Earlier failures remain evidence, not passes.
 No current merge-result/CI acceptance, production readiness, or full parity is
-claimed. A1/A2 authorization and the experimental release contract remain next.
+claimed. Bounded authorization corrections are recorded below; broader A1/A2
+coverage and the experimental release contract remain next.
 
 ## Fresh shared-root authorization correction (2026-10-10)
 
@@ -78,9 +79,58 @@ a scoped dead-code allowance, not a Clippy warning exemption.
 This closes the fresh-shared omitted-policy path, **not all A2 coverage**. Native
 regressions use their existing permissive policies; explicit-policy allowed
 promotion, denied malformed/absent state and inbound rejection are not certified
-by them. A1 default permissiveness, broader task/subscription/HTTP policy coverage,
+by them. The subsequent default-deny/inbound correction is recorded below;
+broader task/subscription/HTTP policy coverage,
 experimental release contract, full current-head native audit and merge-result
 validation remain outstanding. Earlier failed/zero-test runs are not acceptance.
+
+## Default-deny and inbound transaction authorization (2026-10-10)
+
+`AuthorizationPolicy::default()`, `new(None, None)` and verifier-only policies
+now deny absent authorizers. Authentication and caller transaction metadata do
+not confer internal authority. Development allowance requires the explicit
+`permissive_for_development()` host policy. Greeting and batch transaction hosts
+select it only for exact `RBT_RUST_UNAUTHORIZED_DEVELOPMENT=1`; `rbt dev run`
+deliberately selects that development mode and warns that it is not production-safe.
+
+Shared and exclusive inbound generated adapters verify before participant
+admission and authorize immutable wire state/request bytes before decoding or
+handlers. Denial reuses existing ownership-aware `abort_local()` cleanup; fresh
+shared denial retains its asynchronous undurable-lease cleanup. Exclusive Abort
+cleanup is legitimate, including factory denial. No mutation/status retry was added.
+
+**Executed, bounded:** `/tmp/reboot-rust-default-deny-gates-1791639381166298333`
+passed both policy tests, all 34 downstream consumer tests plus one enclosing
+Cargo test, strict SDK/all-target and complete native-consumer Clippy. Its CLI
+step failed on checkout/native-library environment selection; this failure is
+retained, not credited. The corrected CLI-only overlay preserves installed Python
+native dependencies while selecting current checkout CLI source.
+
+`/tmp/reboot-rust-default-deny-public-gates-1791639852951151642` passed 25 CLI
+tests and both selected real CXX native cases (one each): shared no-op/restart
+and durable promotion recovery. The public greeting step exposed template
+formatting and failed before behavioral acceptance. Only the two templates were
+then reformatted. `/tmp/reboot-rust-default-deny-scaffold-gates-1791640126545913225`
+passed all 25 CLI tests again and the full public greeting driver: init/Cargo
+strict Clippy/fmt, create/write/receipt replay/read, canonical Load `0801`,
+watcher rebuilds retaining Database ownership, persisted RocksDB restart,
+SIGTERM/SIGINT cleanup, host/Database exit supervision, health-check termination
+and failed live rebuild cleanup. Generated Cargo targets executed zero unit
+cases; they are build checks, not additional behavioral tests. All completed
+stages retain frozen manifests/exits; the final public driver records source
+and binary identities, `passed=true`, and owned-child cleanup.
+
+Source review approved the bounded inbound fix. This is **not full A1/A2 or
+production security parity**: canonical Wait without a configured result policy
+and batch non-StopBatch authorization still allow by default; production ingress,
+User ownership and trusted internal provenance remain missing. Malformed/absent
+inbound-state denial, parked-policy cancellation under alternate ownership,
+uncertain cleanup, transport denial and custom-policy Allow need broader proofs.
+Manual-host unset/invalid/exact-one environment selection is source-mapped, not
+fully exercised natively. HTTP/tasks/subscriptions need their own coverage.
+Reproducible experimental release gates and current-head/merge-result full native
+audits remain outstanding. Earlier failed stages and historical composite native
+inventories are not current-snapshot full certification.
 
 ## How to read the evidence
 
@@ -166,7 +216,7 @@ Inbound transaction/recovery authority must not be inferred from user headers.
   protobuf fields and proto3 are not blanket gaps.
 - **G2:** typed declared errors exist, but shared transactions and constructors
   in workflow-bearing services reject relevant declared-error combinations.
-- **A1:** default authorization differs; make development opt-in and production
+- **A1:** bounded default-deny/development opt-in implemented above; remaining production
   protection explicit before claiming a supported production surface.
 - **A2:** policy coverage differs across admitted execution forms, particularly
   fresh shared roots. Exercise reader/writer/constructor/shared/exclusive/factory,
@@ -378,15 +428,15 @@ extensions and body) alongside immutable untrusted external metadata and
 server-owned identity. Legacy context-only handlers remain compatible. This is
 not automatic HTTP protobuf dispatch, gRPC multiplexing, or an HTTP readiness API.
 
-**Authorization boundary:** default `AuthorizationPolicy` allows when no
-verifier/authorizer is configured. Configured generated database methods and
-fresh exclusive and fresh shared roots enforce their policies on new execution. Ordinary database
-writer/constructor and generated external exclusive-root/factory receipts require
-fresh current-state authorization before replay disclosure. Transaction roots use
-fresh gate-protected participant snapshots rather than an ungated receipt fast
-path. Shared/inbound/task/workflow paths
-do not gain universal policy coverage. No built-in JWT/OIDC provider, default-deny
-policy or complete HTTP authorization/web/middleware contract is claimed.
+**Authorization boundary:** default `AuthorizationPolicy` denies absent authorizers;
+explicit host-selected development permission is separate from authentication.
+Configured generated database methods and fresh shared/exclusive/factory roots,
+and supported shared/exclusive inbound methods, enforce their policies before
+handlers. Ordinary database and exclusive-root/factory receipts require current
+snapshot authorization before disclosure. This does not establish universal
+policy coverage: canonical Wait without a result policy and batch non-StopBatch
+methods still default allow. Production ingress, User ownership, trusted internal
+identity, built-in JWT/OIDC and complete HTTP authorization remain missing.
 
 Shutdown during a parked `HostRecovery::start` drops startup ownership, revokes
 readiness, cancels/joins prior owned children and closes ingress. Earlier completed
@@ -2845,7 +2895,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 38e2ee1fbc7b38f9c97fc5a985f13b459a9bb55a26f9f461c6c0dd995d36e2a9 -->
+<!-- parity-source-sha256: d16593b98d51120c6c29c88161eb73a00bd56953568b9d8e0df12697908128df -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

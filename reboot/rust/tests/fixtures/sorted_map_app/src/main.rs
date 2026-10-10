@@ -248,7 +248,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             map: sorted_map.clone(),
             retained: retained.clone(),
         },
-    )
+    ).with_authorization(reboot::auth::AuthorizationPolicy::permissive_for_development())
     .with_explicit_abort_owner(reboot::explicit_abort::ExplicitAbortOwner::new(8)?);
     let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
     let address = listener.local_addr()?;

@@ -177,6 +177,9 @@ async def run_rust_dev(*, manifest: Path, database_binary: Path, state: Path,
     if not application_name or not 1 <= port <= 65535:
         raise RustDevError('Rust dev requires an application name and a valid TCP port')
     environment = dict(os.environ if env is None else env)
+    # This launcher is development-only; production/manual hosts stay default-deny.
+    environment['RBT_RUST_UNAUTHORIZED_DEVELOPMENT'] = '1'
+    report('Rust development mode: missing authorizers are explicitly permitted; not production-safe')
     environment['RBT_NAME'] = application_name
     environment['RBT_RUST_LISTEN_ADDR'] = f'127.0.0.1:{port}'
     environment['RBT_RUST_URL'] = f'http://127.0.0.1:{port}'

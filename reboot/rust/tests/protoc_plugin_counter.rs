@@ -824,7 +824,7 @@ fn transaction_adapter_with_store_and_idempotent_recovery(
         coordinator,
         TransactionStartFactory,
         TransactionCounter { trace, fail, downstream: None, final_state_override: None },
-    )
+    ).with_authorization(reboot::auth::AuthorizationPolicy::permissive_for_development())
 }
 
 fn transaction_adapter_with_downstream(
@@ -856,7 +856,7 @@ fn transaction_adapter_with_downstream(
         DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(), participant, coordinator,
         TransactionStartFactory,
         TransactionCounter { trace, fail: false, downstream: Some(transaction_generated::TransactionCounterWritesMethodsClient::new(FixedChannelResolver(channel))), final_state_override: None },
-    )
+    ).with_authorization(reboot::auth::AuthorizationPolicy::permissive_for_development())
 }
 
 fn factory_transaction_adapter(
@@ -899,7 +899,7 @@ fn factory_transaction_adapter(
         coordinator,
         TransactionStartFactory,
         TransactionCounter { trace, fail, downstream: None, final_state_override },
-    )
+    ).with_authorization(reboot::auth::AuthorizationPolicy::permissive_for_development())
 }
 
 #[derive(Clone)]
@@ -1023,7 +1023,7 @@ async fn generated_fresh_shared_transaction_authorization_precedes_handler_and_r
     // Drop schedules pre-Store cleanup. Observe eventual release, not synchronous Drop.
     // This fixture-only wait retries only the exact known pre-admission conflict;
     // it never retries a handler or a transaction that could have produced effects.
-    let read_again = denied_adapter.with_authorization(AuthorizationPolicy::default());
+    let read_again = denied_adapter.with_authorization(AuthorizationPolicy::permissive_for_development());
     let recovered = tokio::time::timeout(std::time::Duration::from_secs(2), async {
         loop {
             match TransactionCounterWritesMethods::shared_read(&read_again, request("allow")).await {
@@ -1708,6 +1708,61 @@ async fn generated_tonic_fresh_exclusive_stages_handler_mutation_by_default_and_
 }
 
 #[tokio::test]
+async fn generated_inbound_transaction_metadata_does_not_bypass_authorization() {
+    use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
+    fn request(token: &str) -> tonic::Request<proto::TransactionIncrementRequest> {
+        let mut headers = reboot::RebootHeaders::new("transaction-counter");
+        headers.transaction_ids = Some(vec![Uuid::from_u128(201)]);
+        headers.transaction_coordinator_state_type = Some("tests.reboot.protoc.Root".into());
+        headers.transaction_coordinator_state_ref = Some("root-counter".into());
+        headers.bearer_token = Some(token.into());
+        let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 0 });
+        *request.metadata_mut() = headers.to_metadata().unwrap();
+        request
+    }
+    for shared in [false, true] {
+        for kind in ["default", "reject", "deny"] {
+            let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+            let probe = Arc::new(AuthProbe {
+                verifier_calls: Arc::new(AtomicUsize::new(0)),
+                authorizer_calls: Arc::new(AtomicUsize::new(0)),
+                handler_calls: Arc::new(AtomicUsize::new(0)),
+                decision: AuthorizationDecision::PermissionDenied { message: "inbound denied".into() },
+                contexts: Arc::new(std::sync::Mutex::new(Vec::new())),
+                snapshots: Arc::new(std::sync::Mutex::new(Vec::new())),
+            });
+            let policy = if kind == "default" { AuthorizationPolicy::default() }
+                else { AuthorizationPolicy::new(Some(probe.clone()), Some(probe.clone())) };
+            let adapter = transaction_adapter(trace.clone(), false).with_authorization(policy);
+            let token = if kind == "reject" { "reject" } else { "app-internal" };
+            let result = if shared {
+                TransactionCounterWritesMethods::shared_read(&adapter, request(token)).await
+            } else {
+                TransactionCounterWritesMethods::increment(&adapter, request(token)).await
+            };
+            assert_eq!(result.unwrap_err().code(), if kind == "reject" { tonic::Code::Unauthenticated } else { tonic::Code::PermissionDenied });
+            let expected: Vec<&str> = if kind == "reject" { vec![] }
+                else if shared { vec!["participant load"] }
+                else { vec!["participant load", "participant abort"] };
+            assert_eq!(*trace.lock().unwrap(), expected, "kind={kind}, shared={shared}");
+            assert_eq!(probe.authorizer_calls.load(Ordering::SeqCst), usize::from(kind == "deny"));
+            for context in probe.contexts.lock().unwrap().iter() {
+                assert!(context.headers.transaction_ids.is_none());
+                assert!(context.headers.transaction_coordinator_state_type.is_none());
+                assert!(context.headers.transaction_coordinator_state_ref.is_none());
+                assert!(!context.headers.internal_call);
+            }
+            // An allowed read-only root proves denied inbound local ownership
+            // released without requiring a root decision or mutation retry.
+            let adapter = adapter.with_authorization(AuthorizationPolicy::permissive_for_development());
+            let mut fresh = tonic::Request::new(proto::TransactionIncrementRequest { amount: 0 });
+            *fresh.metadata_mut() = reboot::RebootHeaders::new("transaction-counter").to_metadata().unwrap();
+            assert_eq!(TransactionCounterWritesMethods::shared_read(&adapter, fresh).await.unwrap().into_inner().value, 4);
+        }
+    }
+}
+
+#[tokio::test]
 async fn generated_transaction_adapter_stages_validated_inbound_participant_in_success_trailer() {
     use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
 
@@ -2187,11 +2242,11 @@ async fn start_counter_adapters(
     let writes = generated::CounterWritesMethodsDatabaseAdapter::new(
         DatabaseActorStore::connect(database_endpoint).await.unwrap(),
         Counter,
-    );
+    ).with_authorization(reboot::auth::AuthorizationPolicy::permissive_for_development());
     let reads = generated::CounterReadsMethodsDatabaseAdapter::new(
         DatabaseActorStore::connect(database_endpoint).await.unwrap(),
         Counter,
-    );
+    ).with_authorization(reboot::auth::AuthorizationPolicy::permissive_for_development());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let server = tokio::spawn(async move {
@@ -2387,6 +2442,72 @@ async fn generated_external_clients_attach_reader_and_writer_context() {
         explicit_key.as_bytes()
     );
     server.abort();
+    database_server.abort();
+}
+
+#[tokio::test]
+async fn generated_default_policy_denies_database_and_fresh_root_forms_before_effects() {
+    use proto::counter_reads_methods_server::CounterReadsMethods;
+    use proto::counter_writes_methods_server::CounterWritesMethods;
+    use proto::constructor_counter_writes_methods_server::ConstructorCounterWritesMethods;
+    use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
+
+    let (endpoint, database, database_server) = start_database().await;
+    let calls = Arc::new(AtomicUsize::new(0));
+    let store = DatabaseActorStore::connect(&endpoint).await.unwrap();
+    let writer = generated::CounterWritesMethodsDatabaseAdapter::new(store.clone(), AuthCounter(calls.clone()));
+    let reader = generated::CounterReadsMethodsDatabaseAdapter::new(store.clone(), AuthCounter(calls.clone()));
+    let constructor = constructor_generated::ConstructorCounterWritesMethodsDatabaseAdapter::new(store, ConstructorCounter(calls.clone()));
+    let context = ExternalContext::new("default-denied");
+    assert_eq!(CounterWritesMethods::increment(&writer, context.writer_with_key(proto::IncrementRequest { amount: 1 }, Uuid::new_v4()).unwrap()).await.unwrap_err().code(), tonic::Code::PermissionDenied);
+    assert_eq!(CounterReadsMethods::get(&reader, context.reader(proto::Empty {}).unwrap()).await.unwrap_err().code(), tonic::Code::PermissionDenied);
+    assert_eq!(ConstructorCounterWritesMethods::create(&constructor, context.writer_with_key(proto::ConstructorCreateRequest { initial_value: 1 }, Uuid::new_v4()).unwrap()).await.unwrap_err().code(), tonic::Code::PermissionDenied);
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert!(database.store_requests().is_empty());
+    assert!(database.create_requests().is_empty());
+
+    for mode in ["shared", "exclusive", "factory"] {
+        let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let adapter = if mode == "factory" {
+            factory_transaction_adapter(trace.clone(), None, Arc::new(std::sync::Mutex::new(Vec::new())), false, None)
+        } else {
+            transaction_adapter(trace.clone(), false)
+        }.with_authorization(AuthorizationPolicy::default());
+        let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 1 });
+        *request.metadata_mut() = reboot::RebootHeaders::new("transaction-counter").to_metadata().unwrap();
+        let status = match mode {
+            "shared" => TransactionCounterWritesMethods::shared_read(&adapter, request).await.unwrap_err(),
+            "exclusive" => TransactionCounterWritesMethods::increment(&adapter, request).await.unwrap_err(),
+            _ => TransactionCounterWritesMethods::factory_increment(&adapter, request).await.unwrap_err(),
+        };
+        assert_eq!(status.code(), tonic::Code::PermissionDenied, "{mode}");
+        // Both exclusive forms retain their existing acknowledged Abort cleanup;
+        // fresh shared pre-handler denial leaves undurable Drop armed.
+        let expected = if mode != "shared" {
+            vec!["participant load", "participant abort"]
+        } else {
+            vec!["participant load"]
+        };
+        assert_eq!(*trace.lock().unwrap(), expected, "{mode}: denial before handler/Store/Prepare");
+        if mode == "shared" {
+            let adapter = adapter.with_authorization(AuthorizationPolicy::permissive_for_development());
+            let response = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+                loop {
+                    let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 0 });
+                    *request.metadata_mut() = reboot::RebootHeaders::new("transaction-counter").to_metadata().unwrap();
+                    match TransactionCounterWritesMethods::shared_read(&adapter, request).await {
+                        Err(status) if status.code() == tonic::Code::FailedPrecondition
+                            && status.message() == "actor already has a pending transaction" => {
+                            tokio::task::yield_now().await;
+                        }
+                        result => break result,
+                    }
+                }
+            }).await.expect("default-denied shared ownership did not release").unwrap();
+            assert_eq!(response.into_inner().value, 4);
+            assert_eq!(*trace.lock().unwrap(), ["participant load", "participant load", "fresh shared handler"]);
+        }
+    }
     database_server.abort();
 }
 
@@ -2598,7 +2719,7 @@ async fn generated_external_constructor_declared_errors_round_trip_without_creat
     let adapter = constructor_generated::ConstructorCounterWritesMethodsDatabaseAdapter::new(
         DatabaseActorStore::connect(&database_endpoint).await.unwrap(),
         ConstructorCounter(Arc::clone(&handler_calls)),
-    );
+    ).with_authorization(reboot::auth::AuthorizationPolicy::permissive_for_development());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let server = tokio::spawn(async move {
@@ -2705,7 +2826,7 @@ async fn start_map_counter_adapters(
     let writes = map_generated::MapCounterWritesMethodsDatabaseAdapter::new(
         DatabaseActorStore::connect(database_endpoint).await.unwrap(),
         MapCounter,
-    );
+    ).with_authorization(reboot::auth::AuthorizationPolicy::permissive_for_development());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let server = tokio::spawn(async move {
@@ -3060,7 +3181,7 @@ mod tests {
         let adapter = generated::CounterWritesMethodsDatabaseAdapter::new(
             DatabaseActorStore::connect(&database_endpoint).await.unwrap(),
             Counter,
-        );
+        ).with_authorization(reboot::auth::AuthorizationPolicy::permissive_for_development());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let server = tokio::spawn(async move {

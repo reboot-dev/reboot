@@ -1771,7 +1771,7 @@ async fn main() {
         let adapter = generated::ExternalConstructorMethodsDatabaseAdapter::new(
             store,
             ExternalConstructorHandler,
-        );
+        ).with_authorization(reboot::auth::AuthorizationPolicy::permissive_for_development());
         let address = listen.parse().unwrap();
         let surface_first_success_unavailable = has("--surface-first-success-unavailable");
         let server = tokio::spawn(async move {
@@ -1964,7 +1964,7 @@ async fn main() {
             coordinator.clone(),
             starts,
             LegacyRollbackHandler(handler),
-        )
+        ).with_authorization(reboot::auth::AuthorizationPolicy::permissive_for_development())
         .with_live_participant_owner(owner)
         .with_supervised_transaction_tree();
         let legacy = if has("--sequential-root-star") {
@@ -1993,7 +1993,7 @@ async fn main() {
         coordinator.clone(),
         starts,
         handler,
-    );
+    ).with_authorization(reboot::auth::AuthorizationPolicy::permissive_for_development());
     let adapter = if let Some(ceiling) = optional_arg("--replay-auth-ceiling") {
         adapter.with_authorization(reboot::auth::AuthorizationPolicy::new(
             None,
@@ -2142,7 +2142,7 @@ async fn main() {
                 block: false,
                 vector: String::new(),
             },
-        )
+        ).with_authorization(reboot::auth::AuthorizationPolicy::permissive_for_development())
         .with_explicit_abort_owner(root_owner);
         host = host.with_host_recovery(FullRootProof { marker, work: tokio::sync::Mutex::new(Some(Box::pin(async move {
             use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
@@ -2191,7 +2191,7 @@ async fn main() {
                 child: Uuid::from_u128(3),
             },
             Handler::Target,
-        )
+        ).with_authorization(reboot::auth::AuthorizationPolicy::permissive_for_development())
         .with_live_participant_owner(live_owner.clone().unwrap());
         host = host.with_host_recovery(FullWatchProof(tokio::sync::Mutex::new(Some(Box::pin(async move {
             use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
@@ -2340,7 +2340,7 @@ async fn main() {
                 block: has("--block-task"),
                 vector: String::new(),
             },
-        );
+        ).with_authorization(reboot::auth::AuthorizationPolicy::permissive_for_development());
         let (_, second) = second_adapter.with_one_shot_reader_tasks("second").unwrap();
         if !has("--shared-task-recovery") {
             host = host.with_host_recovery(
@@ -2381,7 +2381,7 @@ async fn main() {
             GaugeTaskHandler {
                 marker: arg("--second-task-marker"),
             },
-        );
+        ).with_authorization(reboot::auth::AuthorizationPolicy::permissive_for_development());
         let (_, gauge) = adapter.with_one_shot_reader_tasks("root").unwrap();
         if !has("--shared-task-recovery") {
             host = host.with_host_recovery(

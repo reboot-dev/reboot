@@ -277,6 +277,25 @@ class RuntimeTest(unittest.IsolatedAsyncioTestCase):
 
 
 
+class DevelopmentAuthorizationSelectionTest(unittest.IsolatedAsyncioTestCase):
+    async def test_dev_launcher_selects_explicit_permissive_mode_without_mutating_input(self):
+        from unittest.mock import AsyncMock
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = Path(directory) / 'Cargo.toml'
+            manifest.write_text('[package]\nname="selection"\nversion="0.1.0"\n')
+            original = {'RBT_RUST_UNAUTHORIZED_DEVELOPMENT': '0'}
+            reports = []
+            metadata = AsyncMock(side_effect=RuntimeError('stop before build'))
+            with patch('reboot.cli.commands.rust_dev.checked_command', metadata):
+                with self.assertRaisesRegex(RuntimeError, 'stop before build'):
+                    await run_rust_dev(manifest=manifest, database_binary=Path(sys.executable),
+                                       state=Path(directory) / 'state', application_name='selection',
+                                       env=original, allow_insecure_database=True, report=reports.append)
+            self.assertEqual(metadata.call_args.kwargs['env']['RBT_RUST_UNAUTHORIZED_DEVELOPMENT'], '1')
+            self.assertEqual(original, {'RBT_RUST_UNAUTHORIZED_DEVELOPMENT': '0'})
+            self.assertTrue(any('not production-safe' in message for message in reports))
+
+
 class HealthObserverCleanupTest(unittest.TestCase):
     """Fault injection checks resource cleanup, not native status delivery."""
     def fixture(self):

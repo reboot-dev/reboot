@@ -42,6 +42,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let adapter = generated::HelloWorldMethodsDatabaseAdapter::new(
         DatabaseActorStore::connect(endpoint).await?,
         HelloWorld,
+    )
+    .with_authorization(
+        if std::env::var("RBT_RUST_UNAUTHORIZED_DEVELOPMENT").as_deref() == Ok("1") {
+            reboot::auth::AuthorizationPolicy::permissive_for_development()
+        } else {
+            reboot::auth::AuthorizationPolicy::default()
+        },
     );
     // Optional explicit allowlist; subscription metadata never creates owners.
     // All owners use this exact store and start before public readiness.

@@ -1746,9 +1746,9 @@ fn emit_transactional_client(
 /// Keep the generated transaction paths separate. In particular, a future
 /// shared-root promotion must not accidentally change inbound shared execution.
 fn emit_exclusive_transaction_method(output: &mut String, flow: TransactionFlow<'_>) {
-    // Only fresh exclusive external roots use authorization. Inbound flows
-    // retain their established lifecycle contracts; factory roots authorize
-    // the optional loaded state before revealing whether it exists.
+    // Transaction metadata selects a protocol path, not trusted identity.
+    // Both fresh and validated inbound execution enforce the service policy;
+    // factories authorize optional state before revealing whether it exists.
     output.push_str(&format!(
         "    async fn {}(&self, request: tonic::Request<proto::{}>) -> Result<tonic::Response<proto::{}>, tonic::Status> {{\n        let headers = {}::RebootHeaders::from_request(&request).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?;\n        let inbound = headers.transaction_ids.is_some();\n",
         flow.method, flow.request, flow.response, flow.runtime_module,
@@ -1769,10 +1769,15 @@ fn emit_exclusive_transaction_method(output: &mut String, flow: TransactionFlow<
         );
     } else {
         output.push_str("        if inbound {\n");
+        output.push_str(&format!(
+            "            let (authorization_context, authorization_auth) = self.authorization.verify(headers.clone(), <{} as {}::runtime::DurableStateDeclaration>::STATE_TYPE, \"{}\").await?;\n",
+            flow.declaration, flow.runtime_module, flow.method_identity
+        ));
         emit_transaction_flow(
             output,
             TransactionFlow {
                 inbound: TransactionInbound::KnownInbound,
+                authorize_after_load: true,
                 ..flow
             },
         );
@@ -1797,10 +1802,15 @@ fn emit_shared_transaction_method(output: &mut String, flow: TransactionFlow<'_>
         "    async fn {}(&self, request: tonic::Request<proto::{}>) -> Result<tonic::Response<proto::{}>, tonic::Status> {{\n        let headers = {}::RebootHeaders::from_request(&request).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?;\n        let inbound = headers.transaction_ids.is_some();\n        if inbound {{\n            // Shared inbound execution remains read-only; it never promotes.\n", flow.method, flow.request, flow.response, flow.runtime_module
     ));
     output.push_str("            if self.supervised_tree { return Err(tonic::Status::failed_precondition(\"tree excludes shared execution\")); }\n");
+    output.push_str(&format!(
+            "            let (authorization_context, authorization_auth) = self.authorization.verify(headers.clone(), <{} as {}::runtime::DurableStateDeclaration>::STATE_TYPE, \"{}\").await?;\n",
+        flow.declaration, flow.runtime_module, flow.method_identity
+    ));
     emit_transaction_flow(
         output,
         TransactionFlow {
             inbound: TransactionInbound::KnownInbound,
+            authorize_after_load: true,
             shared_root_ownership_seam: false,
             ..flow
         },

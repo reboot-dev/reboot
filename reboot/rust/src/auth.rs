@@ -89,11 +89,17 @@ pub trait Authorizer: Send + Sync {
     ) -> AuthorizeFuture<'a>;
 }
 
-/// Optional verifier/authorizer pair owned by a generated service adapter.
+/// Verifier/authorizer pair owned by a generated service adapter.
+///
+/// The default denies calls without an authorizer, even when a verifier has
+/// authenticated the caller. Applications must supply an authorizer or explicitly
+/// opt into [`Self::permissive_for_development`]. Caller metadata never grants
+/// trusted internal authority through this policy.
 #[derive(Clone, Default)]
 pub struct AuthorizationPolicy {
     verifier: Option<Arc<dyn TokenVerifier>>,
     authorizer: Option<Arc<dyn Authorizer>>,
+    allow_missing_authorizer_for_development: bool,
 }
 
 impl AuthorizationPolicy {
@@ -104,6 +110,17 @@ impl AuthorizationPolicy {
         Self {
             verifier,
             authorizer,
+            allow_missing_authorizer_for_development: false,
+        }
+    }
+
+    /// Deliberately allow unauthenticated external calls in isolated development.
+    /// This is not a production policy or trusted-internal-call exemption. The
+    /// SDK never enables it from environment variables or caller headers.
+    pub fn permissive_for_development() -> Self {
+        Self {
+            allow_missing_authorizer_for_development: true,
+            ..Self::default()
         }
     }
 
@@ -144,7 +161,13 @@ impl AuthorizationPolicy {
         request: &[u8],
     ) -> Result<(), tonic::Status> {
         let Some(authorizer) = &self.authorizer else {
-            return Ok(());
+            return if self.allow_missing_authorizer_for_development {
+                Ok(())
+            } else {
+                Err(tonic::Status::permission_denied(
+                    "no authorizer configured; unauthorized development must be explicitly enabled",
+                ))
+            };
         };
         match authorizer.authorize(context, auth, state, request).await {
             AuthorizationDecision::Allow => Ok(()),
@@ -155,5 +178,67 @@ impl AuthorizationPolicy {
                 Err(tonic::Status::permission_denied(message))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct AuthenticatedVerifier;
+    impl TokenVerifier for AuthenticatedVerifier {
+        fn verify<'a>(
+            &'a self,
+            _: &'a AuthorizationContext,
+            _: Option<&'a str>,
+        ) -> VerifyFuture<'a> {
+            Box::pin(async {
+                TokenVerification::Authenticated(Auth::new(serde_json::json!({"user_id": "owner"})))
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn absent_authorizer_denies_even_authenticated_and_spoofed_internal_calls() {
+        for policy in [
+            AuthorizationPolicy::default(),
+            AuthorizationPolicy::new(None, None),
+            AuthorizationPolicy::new(Some(Arc::new(AuthenticatedVerifier)), None),
+        ] {
+            let mut headers = RebootHeaders::new("owner");
+            headers.bearer_token = Some("app-internal".into());
+            let (context, auth) = policy.verify(headers, "User", "Read").await.unwrap();
+            assert_eq!(
+                policy
+                    .authorize(&context, auth.as_ref(), Some(b"state"), b"request")
+                    .await
+                    .unwrap_err()
+                    .code(),
+                tonic::Code::PermissionDenied
+            );
+            assert_eq!(
+                policy
+                    .clone()
+                    .authorize(&context, auth.as_ref(), None, b"request")
+                    .await
+                    .unwrap_err()
+                    .code(),
+                tonic::Code::PermissionDenied
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn unauthorized_development_requires_explicit_policy_selection() {
+        let policy = AuthorizationPolicy::permissive_for_development();
+        let (context, auth) = policy
+            .verify(RebootHeaders::new("actor"), "Counter", "Read")
+            .await
+            .unwrap();
+        assert!(auth.is_none());
+        policy
+            .authorize(&context, None, None, b"request")
+            .await
+            .unwrap();
     }
 }

@@ -82,7 +82,7 @@ mod workflow_composition_configuration_tests {
     #[tokio::test]
     async fn clones_preserve_binding_but_authorization_reconfiguration_does_not() {
         let store = DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap();
-        let adapter = generated::LedgerWorkMethodsDatabaseAdapter::new(store, Ledger);
+        let adapter = generated::LedgerWorkMethodsDatabaseAdapter::new(store, Ledger).with_authorization(reboot::auth::AuthorizationPolicy::permissive_for_development());
         let registry = registered(&adapter);
         assert!(adapter.clone().with_reader_registry(registry.clone()).is_ok());
         let changed = adapter.with_authorization(reboot::auth::AuthorizationPolicy::default());
@@ -91,7 +91,7 @@ mod workflow_composition_configuration_tests {
     #[tokio::test]
     async fn workflow_owner_reconfiguration_detaches_stale_reader_binding() {
         let store = DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap();
-        let adapter = generated::LedgerWorkMethodsDatabaseAdapter::new(store, Ledger);
+        let adapter = generated::LedgerWorkMethodsDatabaseAdapter::new(store, Ledger).with_authorization(reboot::auth::AuthorizationPolicy::permissive_for_development());
         let registry = registered(&adapter);
         let attached = adapter.with_reader_registry(registry.clone()).unwrap();
         let (changed, _) = attached.with_workflows(&reference()).unwrap();
