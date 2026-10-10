@@ -107,7 +107,7 @@ plugin_checkout_dir() {
 prewarm() {
     local bindir="$1"
     [ -d "$bindir" ] || return 0
-    for tool in uv uvx node npm envoy cloudflared rbt; do
+    for tool in uv uvx node npm envoy cloudflared portless rbt; do
         sh "$bindir/$tool" --version >/dev/null 2>&1 \
             || log "Could not pre-install $tool; it loads on first use."
     done

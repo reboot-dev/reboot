@@ -6,6 +6,7 @@ import grpc
 import os
 import random
 import reboot.aio.tracing
+import reboot.portless
 import secrets
 import shutil
 import signal
@@ -29,7 +30,7 @@ from reboot.aio.exceptions import InputError
 from reboot.cli.commands.generate import generate_direct
 # We import the whole `terminal` module (as opposed to the methods it contains)
 # to allow us to mock these methods out in tests.
-from reboot.cli.common import terminal
+from reboot.cli.common import portless, terminal
 from reboot.cli.common.dev_extra import dev_extra_installed, missing_dev_extra
 from reboot.cli.common.directories import (
     add_working_directory_options,
@@ -79,6 +80,7 @@ from reboot.settings import (
     ENVVAR_RBT_MCP_APP_DIST_PATH,
     ENVVAR_RBT_NAME,
     ENVVAR_RBT_NODEJS,
+    ENVVAR_RBT_PORTLESS_NAME,
     ENVVAR_RBT_SERVERS,
     ENVVAR_RBT_STATE_DIRECTORY,
     ENVVAR_RBT_WEB_APP,
@@ -95,6 +97,7 @@ from reboot.settings import (
 )
 from reboot.version import REBOOT_VERSION
 from typing import Any, Awaitable, Callable, Optional, TextIO, TypeVar
+from urllib.parse import urlparse
 
 TLS_CERTIFICATE_BEGINNING = "-----BEGIN CERTIFICATE-----"
 TLS_PRIVATE_KEY_BEGINNING = "-----BEGIN PRIVATE KEY-----"
@@ -264,6 +267,24 @@ def _register_dev_run(parser: ArgumentParser):
     add_common_web_args(parser.subcommand('dev run'))
 
     parser.subcommand('dev run').add_argument(
+        '--portless',
+        type=bool,
+        default=False,
+        help=(
+            'serve under a named `.localhost` URL via portless '
+            '(https://github.com/vercel-labs/portless): registers '
+            'this application with the running portless proxy as '
+            '`https://<application-name>.localhost`, and trusts '
+            '`https://frontend.<application-name>.localhost`, where the '
+            'frontend dev server is expected (`portless '
+            'frontend.<application-name> vite`, the frontend\'s `npm run '
+            'dev:portless`), as a browser origin. '
+            'Requires `--application-name`, and the `portless` CLI on '
+            'PATH with its proxy started (`portless proxy start`).'
+        ),
+    )
+
+    parser.subcommand('dev run').add_argument(
         '--servers',
         type=int,
         help='the number of "servers" (serving processes) to spawn.',
@@ -277,7 +298,8 @@ def _register_dev_run(parser: ArgumentParser):
         '--port',
         type=int,
         help='port on which the Reboot app will serve traffic; defaults to '
-        f'{DEFAULT_LOCAL_ENVOY_PORT}',
+        f'{DEFAULT_LOCAL_ENVOY_PORT}, or under `--portless`, where the name '
+        'is the address, to a free port',
     )
 
     parser.subcommand('dev run').add_argument(
@@ -601,21 +623,32 @@ async def check_local_envoy_mode(subprocesses: Subprocesses) -> None:
 
 async def _check_local_envoy_status(
     *,
-    port: int,
+    port: Optional[int],
     terminate_after_health_check: bool,
     application_started_event: asyncio.Event,
     tls_certificate: Optional[str],
     root_certificate: Optional[str],
     tracing: Tracing,
     nodejs: bool,
+    portless_name: Optional[str],
+    web_app: bool,
 ) -> None:
-    """Checks if the application is up and running.
+    """Checks if the application is up and running, by the gRPC health
+    check on its port. Under `--portless` the port is the application's
+    to pick and the proxy's to tell: whenever the health check is not
+    passing, the proxy is asked which port the name routes to, which
+    the application registers once it is serving, and the health check
+    then goes to that port directly, so the steady state costs no more
+    than on a plain port.
     Optionally exits as soon as the health check has passed.
     """
     # Wait until application is running with starting health check.
     await application_started_event.wait()
 
-    address = f'127.0.0.1:{port}'
+    assert (port is None) == (portless_name is not None)
+    # The host to check; the port is `port`, or under `--portless` the
+    # application's to pick and learned from the proxy below.
+    host = '127.0.0.1'
 
     if tls_certificate is not None:
         assert root_certificate is not None
@@ -648,12 +681,12 @@ async def _check_local_envoy_status(
                 f"('{san_list[0]}') will be used as the address for the "
                 "health check."
             )
-            address = f"{san_list[0]}:{port}"
+            host = san_list[0]
         else:
             # We can use 'localhost' as the address for the health check, which
             # is great since it doesn't require any `/etc/hosts` entries or
             # similar.
-            address = f'localhost:{port}'
+            host = 'localhost'
 
     protocol = "https" if tls_certificate else "http"
 
@@ -685,7 +718,16 @@ async def _check_local_envoy_status(
         async with aiofiles.open(root_certificate, 'rb') as f:
             binary_root_certificate = await f.read()
 
+    is_application_serving = False
+
     while True:
+        # Asked again whenever the last check did not pass, since a
+        # restart binds a new port.
+        if portless_name is not None and not is_application_serving:
+            port = await portless.wait_for_port(portless_name)
+
+        address = f'{host}:{port}'
+
         try:
             async with create_channel(
                 address,
@@ -713,15 +755,26 @@ async def _check_local_envoy_status(
 
             if is_application_serving:
                 terminal.info("Application is serving traffic ...\n")
+                # Under `--portless` the application's address is its
+                # name; the port behind the proxy is nobody's business.
+                if portless_name is not None:
+                    url = 'https://' + reboot.portless.hostname(portless_name)
+                else:
+                    url = f"{protocol}://{address}"
                 # MCP server and endpoint is not supported for Nodejs currently.
                 mcp_line = (
                     "" if nodejs else
-                    f"  MCP clients can connect at:    {protocol}://{address}/mcp\n"
+                    f"  MCP clients can connect at:    {url}/mcp\n"
+                )
+                web_line = (
+                    f"  Your web app is at:            {url}/\n"
+                    if web_app else ""
                 )
                 terminal.info(
-                    f"  Your API is available at:      {protocol}://{address}\n"
+                    f"  Your API is available at:      {url}\n"
                     f"{mcp_line}"
-                    f"  You can inspect your state at: {protocol}://{address}/__/inspect\n",
+                    f"{web_line}"
+                    f"  You can inspect your state at: {url}/__/inspect\n",
                     color=Fore.WHITE,
                 )
                 if tracing == Tracing.JAEGER:
@@ -1089,6 +1142,14 @@ async def dev_run(
     """Implementation of the 'dev run' subcommand."""
 
     _check_common_args(args)
+
+    # `--port=0` is any free port, which only makes sense where the
+    # name is the address.
+    if args.port == 0 and not args.portless:
+        terminal.fail(
+            '`--port=0` (any free port) needs `--portless`: without a '
+            'name, the port is the address.'
+        )
 
     # A development environment installs the `reboot[dev]` extra. The
     # application runs without it, so this only says so.
@@ -1524,9 +1585,27 @@ async def __dev_run(
     await check_local_envoy_mode(subprocesses)
     env[ENVVAR_REBOOT_LOCAL_ENVOY] = 'true'
 
+    # Under `--portless` the name is the address, so unless `--port`
+    # says otherwise the port behind the proxy is any free one (0), and
+    # several applications run at once; the application registers the
+    # name once it is serving.
+    if args.portless:
+        if args.application_name is None:
+            terminal.fail(
+                '`--portless` needs `--application-name`: the name is the '
+                'hostname, `https://<application-name>.localhost`.'
+            )
+        # Before the application is started, so that a missing CLI or
+        # proxy says so rather than leaving it unreachable.
+        await portless.check('--portless')
+        env[ENVVAR_RBT_PORTLESS_NAME] = args.application_name
+        port = args.port if args.port is not None else 0
+    else:
+        port = args.port if args.port is not None else DEFAULT_LOCAL_ENVOY_PORT
+
     health_check_task = asyncio.create_task(
         _check_local_envoy_status(
-            port=args.port or DEFAULT_LOCAL_ENVOY_PORT,
+            port=None if args.portless else port,
             terminate_after_health_check=args.terminate_after_health_check or
             False,
             application_started_event=application_started_event,
@@ -1534,14 +1613,14 @@ async def __dev_run(
             root_certificate=args.tls_root_certificate,
             tracing=tracing,
             nodejs=bool(args.nodejs),
+            portless_name=(args.application_name if args.portless else None),
+            web_app=bool(args.web_app or args.web_app_dist_path),
         ),
         name=f'_check_local_envoy_status(...) in {__name__}',
     )
     background_command_tasks.append(health_check_task)
 
-    env[ENVVAR_REBOOT_LOCAL_ENVOY_PORT] = str(
-        args.port or DEFAULT_LOCAL_ENVOY_PORT
-    )
+    env[ENVVAR_REBOOT_LOCAL_ENVOY_PORT] = str(port)
 
     try:
         validate_num_servers(args.servers, "servers")

@@ -20,6 +20,20 @@ py_library(
 )
 
 py_library(
+    name = "portless_py",
+    srcs = ["portless.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":directories_py",
+        ":subprocesses_py",
+        ":terminal_py",
+        "//reboot:portless_py",
+        "@com_github_reboot_dev_reboot//reboot/aio/backoff:python",
+    ],
+)
+
+py_library(
     name = "run_command_py",
     srcs = ["run_command.py"],
     srcs_version = "PY3",

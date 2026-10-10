@@ -966,3 +966,13 @@ py_test(
         "//reboot/aio:tests_py",
     ],
 )
+
+py_test(
+    name = "portless_test_py",
+    size = "small",
+    srcs = ["portless_test.py"],
+    main = "portless_test.py",
+    deps = [
+        "//reboot:portless_py",
+    ],
+)
