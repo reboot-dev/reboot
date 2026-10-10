@@ -26,9 +26,30 @@ Focused execution of both complete enclosing native cases passed (one case per
 Cargo command, exit zero) after these corrections. The preceding five diagnostic
 star repetitions produced four passes and one invocation-count failure, with a
 Pending reader already logged before shutdown and three reader entries after
-restart. These focused results do not certify the full native inventory: the
-first full audit failed two CXX cases and stopped before the remaining three
-suites. Full-suite revalidation remains outstanding.
+restart. Subsequent native execution passed SortedMap 3 and generated CXX 114
+on `89879c35858d300848641259899fb531ded2b270`; reactive passed 1 on the
+same source. Workflow then exposed a separate fixture conflict: the default
+success path caught failed framework method/payload/name probes, tainting the
+attempt before successful completion. Those probes now run only in an explicit
+`caught-probes` negative case. The runtime clean-attempt guard is unchanged.
+The negative case asserts fatal finish rejection, one Pending checkpoint, no
+second-handler entry, and clean native restart recovery to Completed with two
+checkpoints; successful restart bodies no longer inject deliberate failures.
+
+**Executed repair:** `/tmp/reboot-rust-full-native-1791636271653660112`:
+strict generated-workflow fixture Clippy (`-D warnings`) exit 0; all five native
+workflow cases passed, including 13 body-recovery/failure subcases; all eight
+native 2PC cases passed. Both Cargo suites exited 0 with recorded child cleanup.
+The wrapper failed solely because it incorrectly required zero filtered cases;
+native 2PC legitimately filtered five non-ignored cases (generated CXX earlier
+filtered two). Retained inventories and exact enclosing test names reconcile
+these results without exempting any test failure.
+
+Combined retained stages cover all 131 inventory cases successfully (3 + 114 +
+1 + 5 + 8), but **not one current-snapshot full audit**: the two workflow fixture
+files changed between stages. Earlier failures remain evidence, not passes.
+No current merge-result/CI acceptance, production readiness, or full parity is
+claimed. A1/A2 authorization and the experimental release contract remain next.
 
 ## How to read the evidence
 
@@ -2793,7 +2814,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: bbf037a73b4054fb20c30b69241bbf0f230f2527804863dbb6d1c3935398db46 -->
+<!-- parity-source-sha256: f08aeb0c57c36560678cc40360e31773d2397117418b014d56b82556ba8fa652 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

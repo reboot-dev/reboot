@@ -407,6 +407,43 @@ impl generated::LedgerMethodsDatabaseHandler for Ledger {
                     "controlled local body failure".into(),
                 ));
             }
+            // Failed framework probes taint the attempt: exercise them only in
+            // the negative case, never in a body expected to recover successfully.
+            if mode == "caught-probes" {
+                let conflicting = generated::LedgerMethodsWorkflowSteps::second(
+                    context,
+                    Arc::new(self.clone()),
+                    "first-effect",
+                    request,
+                )
+                .await
+                .unwrap_err();
+                assert_eq!(conflicting.code(), tonic::Code::FailedPrecondition);
+                let changed = generated::LedgerMethodsWorkflowSteps::first(
+                    context,
+                    Arc::new(self.clone()),
+                    "first-effect",
+                    proto::Step {
+                        amount: request.amount + 1,
+                    },
+                )
+                .await
+                .unwrap_err();
+                assert_eq!(changed.code(), tonic::Code::FailedPrecondition);
+                let missing = generated::LedgerMethodsWorkflowSteps::first(
+                    context,
+                    Arc::new(self.clone()),
+                    "",
+                    request,
+                )
+                .await
+                .unwrap_err();
+                assert_eq!(missing.code(), tonic::Code::InvalidArgument);
+                return Ok(proto::Result {
+                    first: first.value,
+                    second: 0,
+                });
+            }
             let second = generated::LedgerMethodsWorkflowSteps::second(
                 context,
                 Arc::new(self.clone()),
@@ -419,35 +456,6 @@ impl generated::LedgerMethodsDatabaseHandler for Ledger {
                 second: second.value,
             });
         }
-        let conflicting = generated::LedgerMethodsWorkflowSteps::second(
-            context,
-            Arc::new(self.clone()),
-            "first-effect",
-            request,
-        )
-        .await
-        .unwrap_err();
-        assert_eq!(conflicting.code(), tonic::Code::FailedPrecondition);
-        let changed = generated::LedgerMethodsWorkflowSteps::first(
-            context,
-            Arc::new(self.clone()),
-            "first-effect",
-            proto::Step {
-                amount: request.amount + 1,
-            },
-        )
-        .await
-        .unwrap_err();
-        assert_eq!(changed.code(), tonic::Code::FailedPrecondition);
-        let missing = generated::LedgerMethodsWorkflowSteps::first(
-            context,
-            Arc::new(self.clone()),
-            "",
-            request,
-        )
-        .await
-        .unwrap_err();
-        assert_eq!(missing.code(), tonic::Code::InvalidArgument);
         if let Ok(marker) = std::env::var("WORKFLOW_FIRST_ACK") {
             std::fs::write(
                 &marker,

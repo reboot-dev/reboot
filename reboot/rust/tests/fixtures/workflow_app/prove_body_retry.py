@@ -78,7 +78,7 @@ def wait_event(name):
 with tempfile.TemporaryDirectory(prefix="rust-workflow-loop84-cxx-") as d:
     work = Path(d)
     try:
-        for mode in ["once", "always", "transport", "swallowed", "dropped-step", "broken-pipe", "cancel", "load-failure", "finish-failure", "cancel-backoff", "aba-backoff", "root-backoff"]:
+        for mode in ["once", "always", "transport", "swallowed", "caught-probes", "dropped-step", "broken-pipe", "cancel", "load-failure", "finish-failure", "cancel-backoff", "aba-backoff", "root-backoff"]:
             root = work / mode
             root.mkdir()
             event_path = root / "events"
@@ -180,6 +180,9 @@ with tempfile.TemporaryDirectory(prefix="rust-workflow-loop84-cxx-") as d:
                 assert events().count("body") == expected, events()
                 assert events().count("first-handler") == 1, events()
                 assert events().count("second-handler") == 0, events()
+                if mode == "caught-probes":
+                    log = Path(next(e["log"] for e in processes if e["pid"] == host.pid)).read_text()
+                    assert "unclean workflow attempt cannot complete successfully" in log, log
                 before = json.loads(run("inspect", database, handle))
             first_events = events()
             if mode != "once":
