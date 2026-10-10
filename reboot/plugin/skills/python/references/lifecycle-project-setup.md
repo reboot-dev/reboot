@@ -150,8 +150,7 @@ your servicer code (`backend/src/`) have **no `__init__.py`** —
 project-root `.mypy.ini` fixes this by adding the source roots to
 `mypy_path` and turning on `explicit_package_bases`. Without it,
 `mypy backend/ tests/` fails with bogus "module not found" errors and the
-type-check is useless. Create it at the project root, substituting
-your API package name for `<pkg>` in the last stanza:
+type-check is useless. Create it at the project root:
 
 ```ini
 # .mypy.ini — documented at
@@ -178,27 +177,16 @@ ignore_missing_imports = True
 ignore_missing_imports = True
 [mypy-grpc_status.*]
 ignore_missing_imports = True
-
-# The generated `*_rbt.py` for your API package is not hand-written;
-# don't type-check it (you never edit it anyway). Repeat per package.
-# Name the generated module specifically — a blanket `<pkg>.v1.*`
-# would also silence your own `api/<pkg>/v1/<name>.py`, and with it
-# every state and request model your code is annotated with.
-[mypy-<pkg>.v1.<name>_rbt]
-ignore_errors = True
-ignore_missing_imports = True
 ```
 
-**Both details in that file are load-bearing.** The project-root
-`api/` entry in `mypy_path` is what lets mypy resolve the
-hand-written pydantic API module, and the narrow ignore stanza is
-what stops it being silenced again. Get either wrong and
-`from <pkg>.v1.<name> import <X>State` quietly resolves to `Any`:
-mypy still reports "Success", but every annotation mentioning a
-state or request model checks nothing, and a misspelled field on
-`state` sails through to a test failure. A quick way to confirm the
-config is live: add a bogus attribute access on a state model and
-check that mypy reports `has no attribute`.
+**The project-root `api/` entry in `mypy_path` is required.** It is
+what lets mypy resolve the hand-written pydantic API module. Without
+it, `from <pkg>.v1.<name> import <X>State` quietly resolves to
+`Any`: mypy still reports "Success", but every annotation
+mentioning a state or request model checks nothing, and a misspelled
+field on `state` sails through to a test failure. A quick way to
+confirm the config is live: add a bogus attribute access on a state
+model and check that mypy reports `has no attribute`.
 
 ## Always Type-Check What You Write
 

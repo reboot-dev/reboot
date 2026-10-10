@@ -17,6 +17,7 @@ from reboot.settings import ENVVAR_SECRET_REBOOT_ADMIN_TOKEN
 from reboot.ssl.localhost import LOCALHOST_CRT_DATA
 from tests.reboot.echo_rbt import Echo
 from tests.reboot.echo_servicers import MyEchoServicer
+from typing import Optional
 from uuid import uuid4
 
 logger = get_logger(__name__)
@@ -535,6 +536,7 @@ class InspectTestCase(unittest.IsolatedAsyncioTestCase):
 
         # Accumulate the first chunked response (initial state).
         data = []
+        struct: Optional[struct_pb2.Struct] = None
         async for response in response_stream:
             data.append(response.data)
             # Check if there are more chunks.
@@ -588,7 +590,6 @@ class InspectTestCase(unittest.IsolatedAsyncioTestCase):
         expected_struct.update({'messages': expected_messages})
 
         updates_seen = 0
-        struct = None
         while True:
             async for response in response_stream:
                 data.append(response.data)
