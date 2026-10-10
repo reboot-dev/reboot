@@ -18,7 +18,10 @@ from reboot.cli.common.directories import (
     add_working_directory_options,
     use_working_directory,
 )
-from reboot.cli.common.frontend import add_common_frontend_args
+from reboot.cli.common.frontend import (
+    add_common_frontend_args,
+    add_common_web_args,
+)
 from reboot.cli.common.rc import (
     ArgumentParser,
     ArgumentParserFactory,
@@ -43,6 +46,7 @@ from reboot.settings import (
     ENVVAR_RBT_SERVE,
     ENVVAR_RBT_SERVERS,
     ENVVAR_RBT_STATE_DIRECTORY,
+    ENVVAR_RBT_WEB_APP_DIST_PATH,
     ENVVAR_REBOOT_EXPECTED_VERSION,
     ENVVAR_REBOOT_LOCAL_ENVOY,
     ENVVAR_REBOOT_LOCAL_ENVOY_PORT,
@@ -214,6 +218,7 @@ def register_serve(parser: ArgumentParser):
     )
 
     add_common_frontend_args(parser.subcommand('serve run'))
+    add_common_web_args(parser.subcommand('serve run'))
 
 
 def servers_from_cores() -> int:
@@ -277,6 +282,9 @@ async def serve_run(
                 "`--mcp-app-path-prefix` is only valid alongside "
                 "`--mcp-app-dist-path`."
             )
+
+        if args.web_app_dist_path is not None:
+            env[ENVVAR_RBT_WEB_APP_DIST_PATH] = args.web_app_dist_path
 
         # Pick the mode we'll run Envoy in (either as a stand-alone
         # program or inside a Docker container) and check that the

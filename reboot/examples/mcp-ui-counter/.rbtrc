@@ -30,10 +30,12 @@ dev run --mcp-app-path-prefix=frontend
 
 dev run:hmr --mcp-app-url=http://localhost:5173
 
-# Dist mode: serve pre-built artifacts from "frontend/dist/" (no Vite HMR).
+# Dist mode: serve the built MCP UIs from "frontend/dist/" and the
+# built web app at `/` (no Vite HMR).
 # Usage: `uv run rbt dev run --config=dist`
 # Requires: `cd frontend && npm run build`
 dev run:dist --mcp-app-dist-path=frontend/dist
+dev run:dist --web-app-dist-path=frontend/dist/web
 
 # When expunging, expunge that state we've saved.
 dev expunge --application-name=mcp-ui-counter
@@ -44,6 +46,7 @@ dev expunge --application-name=mcp-ui-counter
 serve run --python
 serve run --mcp-app-dist-path=frontend/dist
 serve run --mcp-app-path-prefix=frontend
+serve run --web-app-dist-path=frontend/dist/web
 serve run --application=backend/src/main.py
 
 # Reboot Cloud terminates TLS at the external load balancer, so the app

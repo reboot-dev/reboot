@@ -31,9 +31,9 @@
 //     inlined via `vite-plugin-singlefile`). The framework serves it
 //     at `/__/frontend/mcp/<name>/index.html` in dist mode.
 //   * `RBT_BUILD_TARGET=web vite build`: builds the web app into
-//     `dist/web/` with normal (non-inlined) assets. Its `base` is
-//     `/__/frontend/web/` so asset URLs resolve when served at that
-//     prefix. In Vite's `production` mode, it reads
+//     `dist/web/` with normal (non-inlined) assets at `base: "/"`,
+//     to be served at `/` by the backend (`--web-app-dist-path`) or any
+//     static host. In Vite's `production` mode, it reads
 //     `<webPath>/.env.production`.
 //
 // The plugin sets what the layout requires (`root`, `base`, the
@@ -379,14 +379,14 @@ export function reboot(options: RebootOptions = {}): Plugin[] {
       // Build the web app into `dist/web/`. We root the build at
       // `webPath` so `index.html` and its `assets/` land directly
       // under `dist/web/` (rather than `dist/web/web/`). Keep assets
-      // as separate files (a normal multi-file build) and set `base`
-      // so their URLs resolve when the app is served at
-      // `/__/frontend/web/`.
+      // as separate files (a normal multi-file build) at `base: "/"`:
+      // the built app is served at `/`, by the backend
+      // (`--web-app-dist-path`) or by any static host.
       if (target.kind === "web") {
         claim(
           config,
           "base",
-          "to `/__/frontend/web/`, where the web app is served"
+          "to `/`, where the built web app is served (`--web-app-dist-path`, or a static host)"
         );
         claim(
           config,
@@ -399,7 +399,7 @@ export function reboot(options: RebootOptions = {}): Plugin[] {
           "since `dist/web` is the web app's own directory"
         );
         result.root = path.resolve(root, webPath!);
-        result.base = "/__/frontend/web/";
+        result.base = "/";
         result.build = {
           outDir: path.resolve(root, "dist/web"),
           emptyOutDir: true,

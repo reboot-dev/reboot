@@ -70,6 +70,8 @@ dev run:hmr --mcp-app-url=http://localhost:5173
 # Usage: uv run rbt dev run --config=dist
 # Requires: cd frontend && npm run build
 dev run:dist --mcp-app-dist-path=frontend/dist
+# A dual-frontend app also serves its built web app at `/`:
+# dev run:dist --web-app-dist-path=frontend/dist/web
 
 # When expunging, expunge that state we've saved.
 dev expunge --application-name=<project-name>
@@ -81,6 +83,8 @@ dev expunge --application-name=<project-name>
 # the `:hmr`/`:dist` configs).
 serve run --python
 serve run --mcp-app-dist-path=frontend/dist --mcp-app-path-prefix=frontend
+# A dual-frontend app also serves its built web app at `/`:
+# serve run --web-app-dist-path=frontend/dist/web
 serve run --application=backend/src/main.py
 serve run --application-name=<project-name>
 serve run --tls=external

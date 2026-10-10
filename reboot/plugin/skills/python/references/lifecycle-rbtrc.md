@@ -146,8 +146,9 @@ dev run --mcp-app-path-prefix=frontend
 
 dev run:hmr --mcp-app-url=http://localhost:5173
 
-# Dist mode (no Vite).
+# Dist mode (no Vite): the built MCP UIs, and the built web app at `/`.
 dev run:dist --mcp-app-dist-path=frontend/dist
+dev run:dist --web-app-dist-path=frontend/dist/web
 ```
 
 Run with `rbt dev run` (uses `--default-config=hmr`) or

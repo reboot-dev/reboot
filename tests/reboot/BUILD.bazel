@@ -941,6 +941,7 @@ py_test(
     deps = [
         ":greeter_servicers_py",
         requirement("aiohttp"),
+        "//reboot:settings_py",
         "//reboot/aio:applications_py",
         "//reboot/aio:tests_py",
     ],

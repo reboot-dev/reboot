@@ -40,7 +40,10 @@ from reboot.cli.common.directories import (
     dot_rbt_dev_directory,
     use_working_directory,
 )
-from reboot.cli.common.frontend import add_common_frontend_args
+from reboot.cli.common.frontend import (
+    add_common_frontend_args,
+    add_common_web_args,
+)
 from reboot.cli.common.monkeys import monkeys, no_chaos_monkeys
 # We won't mock the classes in `rc`, so it's safe to import those directly.
 from reboot.cli.common.rc import (
@@ -82,6 +85,7 @@ from reboot.settings import (
     ENVVAR_RBT_NODEJS,
     ENVVAR_RBT_SERVERS,
     ENVVAR_RBT_STATE_DIRECTORY,
+    ENVVAR_RBT_WEB_APP_DIST_PATH,
     ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
     ENVVAR_REBOOT_EXPECTED_VERSION,
     ENVVAR_REBOOT_LOCAL_ENVOY,
@@ -231,6 +235,7 @@ def _register_dev_run(parser: ArgumentParser):
     )
 
     add_common_frontend_args(parser.subcommand('dev run'))
+    add_common_web_args(parser.subcommand('dev run'))
 
     parser.subcommand('dev run').add_argument(
         '--servers',
@@ -1076,6 +1081,14 @@ def _check_common_args(args):
     elif not args.python and not args.nodejs:
         terminal.fail("One of '--python' or '--nodejs' must be specified.")
 
+    # `--web-app-dist-path` is the Python web framework's doing; a Node.js
+    # application's own serves `/`.
+    if args.nodejs and args.web_app_dist_path:
+        terminal.fail(
+            "`--web-app-dist-path` is not supported with `--nodejs`: a "
+            "Node.js application's own web framework serves `/`."
+        )
+
 
 async def _check_file_first_line_equals(file_path, expected_first_line):
     async with aiofiles.open(file_path) as f:
@@ -1579,6 +1592,11 @@ async def __dev_run(
             "`--mcp-app-path-prefix` is only valid alongside "
             "`--mcp-app-url` or `--mcp-app-dist-path`."
         )
+
+    # The web app, when Reboot serves it, is its own thing: a built
+    # web app at `/`, independent of how the MCP UIs are served.
+    if args.web_app_dist_path:
+        env[ENVVAR_RBT_WEB_APP_DIST_PATH] = args.web_app_dist_path
 
     health_check_task: Optional[asyncio.Task] = None
 
