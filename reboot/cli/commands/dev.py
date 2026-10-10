@@ -56,6 +56,7 @@ from reboot.cli.common.transpile import (
     ensure_can_auto_transpile,
 )
 from reboot.cli.common.type_check import (
+    check_mypy_installed,
     missing_mypy,
     mypy_installed,
     type_check,
@@ -332,11 +333,16 @@ def _register_dev_run(parser: ArgumentParser):
     parser.subcommand('dev run').add_argument(
         '--type-check',
         type=bool,
-        default=True,
+        # Three states: '--type-check' needs a Python application and
+        # mypy, and fails without them; unset type-checks a Python
+        # application when mypy is installed; '--no-type-check' never
+        # does.
+        default=None,
         help="whether or not to type-check a '--python' application, and "
         "the code of yours that it imports, with mypy before every "
-        "(re)start, and start it only once mypy reports no errors; needs "
-        "mypy installed alongside the application",
+        "(re)start, and start it only once mypy reports no errors; unset, "
+        "a '--python' application is type-checked when mypy is installed "
+        "alongside it",
     )
 
     parser.subcommand('dev run').add_argument(
@@ -1230,10 +1236,21 @@ async def dev_run(
             )
         )
 
-    # Likewise, a Python application runs without mypy, so this only
-    # says that it starts without a type-check.
-    if args.python and args.type_check and not mypy_installed():
-        terminal.warn(missing_mypy())
+    # '--type-check' asks for a type-check, which needs a Python
+    # application and mypy. Unset, a Python application is type-checked
+    # when mypy is installed; it runs without mypy, so missing mypy
+    # then only says that it starts without a type-check.
+    if args.type_check and not args.python:
+        terminal.fail(
+            "'--type-check' was specified, which is currently only "
+            "supported for Python applications"
+        )
+    elif args.type_check:
+        check_mypy_installed()
+    elif args.type_check is None:
+        args.type_check = args.python and mypy_installed()
+        if args.python and not args.type_check:
+            terminal.warn(missing_mypy())
 
     tls_args = [args.tls_certificate, args.tls_key, args.tls_root_certificate]
 
@@ -2015,18 +2032,19 @@ async def __dev_run(
 
                 # Type-check a Python application, and start it only
                 # once mypy reports no errors.
-                if args.python and args.type_check and mypy_installed():
-                    # `--watch` need not cover `application`, so watch
-                    # it for the modification that the wait below ends
-                    # with.
+                if args.type_check:
+                    assert args.python and mypy_installed()
+
+                    # Watch `application`, which `--watch` need not
+                    # cover, before type-checking it, so that a
+                    # modification made while mypy runs, e.g. by an
+                    # agent that is already fixing the errors, ends
+                    # the wait below instead of going unseen. The
+                    # other watches above started before this one.
                     async with watcher.watch(
                         [application]
                     ) as application_event_task:
-                        if not await type_check(
-                            subprocesses,
-                            application,
-                            generated_directory=generate_python_directory,
-                        ):
+                        if not await type_check(subprocesses, application):
                             terminal.warn(
                                 '\n'
                                 'Type-check failed ... waiting for modification'
