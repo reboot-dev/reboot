@@ -25,32 +25,7 @@ class RootPageTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(response.status, 200)
                 return await response.text()
 
-    async def test_redirects_to_root(self) -> None:
-        await self.rbt.up(
-            Application(servicers=[MyGreeterServicer], root='/app/'),
-            local_envoy=True,
-        )
-
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                self.rbt.url() + '/',
-                allow_redirects=False,
-            ) as response:
-                self.assertEqual(response.status, 307)
-                self.assertEqual(response.headers['Location'], '/app/')
-
-            # The query comes along, e.g. `/?opened=automatically`.
-            async with session.get(
-                self.rbt.url() + '/?opened=automatically',
-                allow_redirects=False,
-            ) as response:
-                self.assertEqual(response.status, 307)
-                self.assertEqual(
-                    response.headers['Location'],
-                    '/app/?opened=automatically',
-                )
-
-    async def test_serves_reboot_root_page_without_root(self) -> None:
+    async def test_serves_reboot_root_page(self) -> None:
         await self.rbt.up(
             Application(servicers=[MyGreeterServicer]),
             local_envoy=True,
@@ -135,15 +110,6 @@ class RootPageTest(unittest.IsolatedAsyncioTestCase):
             ) as response:
                 self.assertEqual(response.status, 200)
 
-    async def test_web_app_and_root_conflict(self) -> None:
-        self._web_dist()
-        with self.assertRaises(Exception) as raised:
-            await self.rbt.up(
-                Application(servicers=[MyGreeterServicer], root='/app/'),
-                local_envoy=True,
-            )
-        self.assertIn('`--web-app-dist-path`', str(raised.exception))
-
     async def test_web_app_and_application_root_mount_conflict(self) -> None:
         self._web_dist()
 
@@ -155,12 +121,6 @@ class RootPageTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(Exception) as raised:
             await self.rbt.up(application, local_envoy=True)
         self.assertIn('mounts `/` itself', str(raised.exception))
-
-    def test_root_must_be_a_path(self) -> None:
-        for root in ['app/', '//elsewhere.example/', 'https://example.com/']:
-            with self.subTest(root=root):
-                with self.assertRaises(ValueError):
-                    Application(servicers=[MyGreeterServicer], root=root)
 
 
 if __name__ == '__main__':

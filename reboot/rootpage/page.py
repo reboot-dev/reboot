@@ -9,10 +9,8 @@ from starlette.requests import Request  # type: ignore[import]
 from starlette.responses import (  # type: ignore[import]
     FileResponse,
     HTMLResponse,
-    RedirectResponse,
     Response,
 )
-from typing import Awaitable, Callable, Optional
 
 logger = get_logger(__name__)
 
@@ -62,29 +60,12 @@ async def probe(request: Request) -> Response:
     return Response(status_code=200)
 
 
-def render_root_page() -> str:
-    """Reboot's own root page, which walks the user through adding
-    this application to an MCP client."""
-    return render_template_path(
-        os.path.join(os.path.dirname(__file__), "index.html.j2"),
-        {"application_id": reboot.application.ref().state_id},
+async def root_page(request: Request) -> Response:
+    """The handler for `GET /`: Reboot's own root page, which walks the
+    user through adding this application to an MCP client."""
+    return HTMLResponse(
+        render_template_path(
+            os.path.join(os.path.dirname(__file__), "index.html.j2"),
+            {"application_id": reboot.application.ref().state_id},
+        )
     )
-
-
-def root_page_endpoint(
-    root: Optional[str],
-) -> Callable[[Request], Awaitable[Response]]:
-    """The handler for `GET /`: a redirect to `root` when the
-    application named one, else Reboot's own root page."""
-
-    async def root_page(request: Request) -> Response:
-        if root is not None:
-            # Keep the query, e.g. `/?opened=automatically`; the
-            # browser keeps the fragment, e.g. `/#/models`, on its own.
-            url = root
-            if request.url.query:
-                url += "?" + request.url.query
-            return RedirectResponse(url, status_code=307)
-        return HTMLResponse(render_root_page())
-
-    return root_page
