@@ -210,6 +210,7 @@ py_library(
         ":types_py",
         "//reboot:wait_for_tasks_py",
         "//reboot/aio/internals:channel_manager_py",
+        "//reboot/rootpage:page_py",
     ],
 )
 
@@ -412,7 +413,6 @@ py_library(
         "//reboot/controller:settings_py",
         "//reboot/inspect:servicer_py",
         "//reboot/nodejs:python_py",
-        "//reboot/rootpage:servicer_py",
         "//reboot/server:database_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:application_config_py_proto",
     ],

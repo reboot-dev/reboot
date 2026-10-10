@@ -554,14 +554,10 @@ def automatically_opened_url(dashboard_url: str) -> str:
     """The URL a dashboard is opened at when nobody asked for it, which
     tells the page so, letting it offer not to be opened again.
 
-    Everything else sends people to the root, which forwards to the
-    page wherever it is served, but this passes the page's whole path:
-    the root is served by the `RootPage` servicer through Envoy's
-    gRPC-JSON transcoder, which fails a request carrying a query
-    parameter the method has no field for (with `grpc-status: 2`, "Bad
-    method header", and an empty body), so `/?opened=automatically`
-    would never reach the page. The query only ever comes from here, so
-    nobody is told to type it.
+    Everything else sends people to the root, which redirects to the
+    page wherever it is served, keeping the query; this passes the
+    page's whole path so the browser doesn't take the extra hop. The
+    query only ever comes from here, so nobody is told to type it.
     """
     return f'{dashboard_url}{DASHBOARD_PATH}/?opened=automatically'
 
