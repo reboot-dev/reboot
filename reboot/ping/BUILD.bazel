@@ -195,7 +195,7 @@ py_binary(
     env = dict(
         _PING_RUN_ENV,
         RBT_FRONTEND_DIST_PATH = "frontend/dist",
-        RBT_FRONTEND_ROOT_PATH = "frontend",
+        RBT_MCP_UI_PATH_PREFIX = "frontend",
     ),
     main = "ping.py",
     visibility = ["//visibility:public"],

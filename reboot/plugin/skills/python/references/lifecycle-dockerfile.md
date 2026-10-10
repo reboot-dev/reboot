@@ -113,7 +113,7 @@ serve run --python
 
 # If the app bundles a frontend (built to `frontend/dist/`), serve it
 # at `/__/frontend/` from the built-in HTTP server.
-serve run --frontend-dist-path=frontend/dist --frontend-root-path=frontend
+serve run --frontend-dist-path=frontend/dist --mcp-ui-path-prefix=frontend
 
 # Entry point.
 serve run --application=backend/src/main.py

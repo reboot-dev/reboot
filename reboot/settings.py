@@ -141,7 +141,10 @@ ENVVAR_RBT_SERVERS = 'RBT_SERVERS'
 # Format: "http://host:port" (e.g., "http://localhost:4444").
 # When set, Envoy routes "/__/frontend/**" to this server.
 ENVVAR_RBT_FRONTEND_HOST = 'RBT_FRONTEND_HOST'
-ENVVAR_RBT_FRONTEND_ROOT_PATH = 'RBT_FRONTEND_ROOT_PATH'
+# The prefix of each MCP `UI(path=...)` that names the frontend
+# directory, e.g. "frontend"; stripped to find the UI under
+# "/__/frontend/" and under the dist directory.
+ENVVAR_RBT_MCP_UI_PATH_PREFIX = 'RBT_MCP_UI_PATH_PREFIX'
 ENVVAR_RBT_FRONTEND_DIST_PATH = 'RBT_FRONTEND_DIST_PATH'
 
 # Environment variable indicating that `rbt` is being invoked from

@@ -26,7 +26,7 @@ dev run --default-config=hmr
 
 # Hot Module Replacement (HMR): Vite dev server proxied through Envoy.
 # Run Vite in a separate terminal: `cd frontend && npm run dev`
-dev run --frontend-root-path=frontend
+dev run --mcp-ui-path-prefix=frontend
 
 dev run:hmr --frontend-host=http://localhost:4444
 
@@ -43,7 +43,7 @@ dev expunge --application-name=mcp-ui-counter
 # these up.
 serve run --python
 serve run --frontend-dist-path=frontend/dist
-serve run --frontend-root-path=frontend
+serve run --mcp-ui-path-prefix=frontend
 serve run --application=backend/src/main.py
 
 # Reboot Cloud terminates TLS at the external load balancer, so the app

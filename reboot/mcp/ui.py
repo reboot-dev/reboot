@@ -63,7 +63,7 @@ from reboot.mcp.iframe import (
 from reboot.settings import (
     ENVVAR_RBT_FRONTEND_DIST_PATH,
     ENVVAR_RBT_FRONTEND_HOST,
-    ENVVAR_RBT_FRONTEND_ROOT_PATH,
+    ENVVAR_RBT_MCP_UI_PATH_PREFIX,
 )
 from typing import Any, Optional, Union
 from urllib.parse import urlparse
@@ -160,28 +160,29 @@ def _find_project_root() -> Path:
 _FRONTEND_URL_PREFIX = "/__/frontend"
 
 
-def _frontend_root_path() -> str:
-    """The project-relative directory that is the frontend root: the
-    prefix to strip off a project-relative `UI(path=...)` to get the
-    UI's address within the frontend. Always named explicitly via
-    `--frontend-root-path`, which is required alongside both
-    `--frontend-host` (dev/HMR) and `--frontend-dist-path` (dist).
-    Empty when unset. Surrounding slashes are stripped, so a flag
-    value like `frontend/` still matches project-relative
-    `UI(path=...)` values.
+def _mcp_ui_path_prefix() -> str:
+    """The prefix to strip off a project-relative `UI(path=...)` to get
+    the UI's address within the frontend: the frontend directory,
+    e.g. `frontend` for `UI(path="frontend/mcp/counter")`. Always
+    named explicitly via `--mcp-ui-path-prefix`, which is
+    required alongside both `--frontend-host` (dev/HMR) and
+    `--frontend-dist-path` (dist). Empty when unset. Surrounding
+    slashes are stripped, so a flag value like `frontend/` still
+    matches project-relative `UI(path=...)` values.
     """
-    return (os.environ.get(ENVVAR_RBT_FRONTEND_ROOT_PATH) or "").strip("/")
+    prefix = os.environ.get(ENVVAR_RBT_MCP_UI_PATH_PREFIX) or ""
+    return prefix.strip("/")
 
 
 def _ui_address(ui_path: str) -> str:
     """A UI's address within the frontend: its project-relative
-    `UI(path=...)` with the frontend-root prefix stripped off the front.
-    This is the segment that follows the `/__/frontend/` URL prefix and
-    sits under the dist directory.
+    `UI(path=...)` with the `--mcp-ui-path-prefix` stripped off
+    the front. This is the segment that follows the `/__/frontend/`
+    URL prefix and sits under the dist directory.
     """
-    root = _frontend_root_path()
-    if root and (ui_path == root or ui_path.startswith(root + "/")):
-        return ui_path[len(root):].lstrip("/")
+    prefix = _mcp_ui_path_prefix()
+    if prefix and (ui_path == prefix or ui_path.startswith(prefix + "/")):
+        return ui_path[len(prefix):].lstrip("/")
     return ui_path
 
 
@@ -213,8 +214,8 @@ def _resolve_dist_path(
 
     The built assets live under `--frontend-dist-path` at the UI's
     address within the frontend — i.e. `ui_path` with the explicit
-    `--frontend-root-path` prefix stripped. For example, with
-    `--frontend-dist-path` "frontend/dist", `--frontend-root-path`
+    `--mcp-ui-path-prefix` stripped. For example, with
+    `--frontend-dist-path` "frontend/dist", `--mcp-ui-path-prefix`
     "frontend", and `ui_path` "frontend/mcp/clicker", the build is at
     "frontend/dist/mcp/clicker/index.html". `artifact_path`, when
     given, overrides this with an explicit project-relative directory.
@@ -292,13 +293,13 @@ def compute_ui_cache_bust(
                 "from; we'll serve a 'build not found' placeholder."
             )
         else:
-            root_path = (
-                os.environ.get(ENVVAR_RBT_FRONTEND_ROOT_PATH) or "frontend"
+            frontend_dir = (
+                os.environ.get(ENVVAR_RBT_MCP_UI_PATH_PREFIX) or "frontend"
             )
             logger.warning(
                 f"Web artifact '{dist_path}' for MCP app is missing; "
                 "we'll serve a 'build not found' placeholder. Run "
-                f"`cd {root_path} && npm run build` and restart."
+                f"`cd {frontend_dir} && npm run build` and restart."
             )
         # Hash the placeholder we will actually serve. Same call
         # `ui_html` makes in this branch, so the cache-bust
@@ -447,7 +448,9 @@ def _inject_globals(
 
 def _build_not_found_html(title: str, ui_name: str) -> str:
     """Generate fallback HTML when a build artifact is not found."""
-    root_path = os.environ.get(ENVVAR_RBT_FRONTEND_ROOT_PATH) or "frontend"
+    frontend_dir = (
+        os.environ.get(ENVVAR_RBT_MCP_UI_PATH_PREFIX) or "frontend"
+    )
     return f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -479,7 +482,7 @@ def _build_not_found_html(title: str, ui_name: str) -> str:
     <div class="container">
         <h1>{title}</h1>
         <p>The React app needs to be built first.</p>
-        <p>Run: <code>cd {root_path} && npm install && npm run build</code></p>
+        <p>Run: <code>cd {frontend_dir} && npm install && npm run build</code></p>
     </div>
 </body>
 </html>'''
