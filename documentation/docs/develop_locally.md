@@ -226,6 +226,7 @@ dev run --default-config=hmr
 | `dev run --mcp-app-dist-path=<dir>` | Dist: serve the built MCP UIs from `<dir>` (e.g. `frontend/dist`) on disk; mutually exclusive with `--mcp-app-url`. |
 | `dev run --web-app-dist-path=<dir>` | Serve the built web app from `<dir>` (e.g. `frontend/dist/web`) at `/`, with its `index.html` answering any path the app has no route or file for. Without it or `--web-app-url`, `/` is Reboot's page. Python applications only: with `--nodejs` it is an error. |
 | `dev run --web-app-url=<url>` | Serve the web app at `/` from its Vite dev server (e.g. `http://localhost:5173`), proxying to it, with Hot Module Replacement: the app has the same URL as the API, as it does in production. Mutually exclusive with `--web-app-dist-path`. Python applications only: with `--nodejs` it is an error. |
+| `dev run --portless` | Serve under a named URL via [portless](https://github.com/vercel-labs/portless): the backend becomes `https://<app>.localhost`, on a free port unless `--port` is given, serving the web app at `/` and the MCP UIs from the frontend dev server, which runs under portless as `https://vite.<app>.localhost` (its `npm run dev:portless`) and is trusted as a browser origin too. See [Named local URLs](#named-local-urls-with---portless). |
 | `dev run --default-config=<name>` | Sets the default configuration profile when `--config` is not specified. |
 | `dev run:hmr` / `dev run:dist` | Named configurations. Flags prefixed with `dev run:<name>` only apply when `--config=<name>` is used. |
 
@@ -271,12 +272,64 @@ $ npx rbt dev run
 ...
 ```
 
+### Named local URLs with `--portless`
+
+[portless](https://github.com/vercel-labs/portless) gives local
+servers names instead of ports. Install it once with
+`npm install -g portless` and start its proxy with
+`portless proxy start` (it asks for `sudo` to bind port 443 and
+installs a local certificate authority so the `https://` URLs are
+trusted). Then:
+
+```console
+$ rbt dev run --portless --application-name=bank
+...
+  Your API is available at:      https://bank.localhost (also at http://127.0.0.1:52817)
+```
+
+`rbt dev run` registers the backend with the proxy as
+`https://<app>.localhost`. The name is the address, so the port
+behind the proxy is a free one unless `--port` says otherwise, and
+several applications run at once without colliding on `9991`. It
+expects the frontend's dev server at `https://vite.<app>.localhost`,
+which is what running it under portless with that name gives you.
+The frontend's `package.json` carries that as scripts mirroring the
+`.rbtrc` configs below, with `portless` as a dev dependency:
+
+```json
+"dev": "npm run dev:portless",
+"dev:portless": "portless vite.bank vite",
+"dev:hmr": "vite"
+```
+
+```console
+$ cd frontend && npm run dev
+```
+
+The backend serves the web app at `/` and the MCP UIs from that dev
+server, so the whole app is at `https://<app>.localhost`, one origin,
+and no `VITE_REBOOT_URL` is needed. It also trusts exactly the dev
+server's origin for credentialed requests (a frontend registered
+under any other name is refused, so the two names cannot drift
+apart), so the web app opened at `https://vite.<app>.localhost`
+works as well, cross-origin. Point the frontend flags at the named
+dev server, typically as a config that `.rbtrc` makes the default:
+
+```shell
+dev run --application-name=bank
+dev run --default-config=portless
+dev run:portless --portless
+dev run:portless --mcp-app-url=https://vite.bank.localhost
+dev run:portless --web-app-url=https://vite.bank.localhost
+```
+
 ### Inspecting state
 
 While doing local development you can inspect your application state
 by pointing your browser at
 `http://localhost:9991/__/inspect` (assuming you aren't using TLS and haven't
-changed the default port from `9991`).
+changed the default port from `9991`), or at
+`https://<app>.localhost/__/inspect` under `--portless`.
 
 ### Persisting state during development
 

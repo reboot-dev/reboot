@@ -104,6 +104,47 @@ The full secrets story — dev vs. Reboot Cloud — is in
 Run each process in its own background shell, from the project
 root.
 
+### Named URLs with portless — ask the user first
+
+Reboot recommends running the app under
+[portless](https://github.com/vercel-labs/portless), which gives
+each local server a name instead of a port: the app is
+`https://<app>.localhost`, where `<app>` is the `.rbtrc`'s
+`--application-name`, serving the API, the web app at `/` and the
+MCP UIs, the latter two proxied from the frontend dev server, which
+runs as `https://vite.<app>.localhost`. One origin, so no
+`VITE_REBOOT_URL` is needed and one tunnel carries everything; the
+backend trusts exactly that dev server origin too. An app scaffolded
+by these skills defaults to it: its `.rbtrc` has
+`dev run --default-config=portless`.
+
+**Ask the user whether they want portless before starting anything**
+(recommend it). If they decline, start the processes on plain ports
+as the sections below describe, passing `--config=hmr` to
+`rbt dev run` when the `.rbtrc` defaults to portless, and reading
+`http://localhost:9991` wherever this skill says
+`https://<app>.localhost`.
+
+If they accept, before the backend and frontend:
+
+1. **Check the CLI and the proxy:** `portless doctor`. The plugin's
+   `portless` shim installs the pinned CLI on first use, so a
+   missing CLI needs nothing from the user; read the output for the
+   proxy's liveness and whether the local CA is trusted.
+2. **Start the proxy if it is not running:** `portless proxy start`,
+   from your own shell. Binding port 443 needs root, which portless
+   takes itself by re-running under `sudo`; where `sudo` asks for no
+   password (a Codespace, most dev containers) that succeeds without
+   a terminal, and `portless trust` likewise, so run them yourself
+   when `doctor` said the proxy is down or the CA is not trusted.
+   Where `sudo` wants a password, portless cannot ask for one from
+   your shell and fails saying so; then stop and ask the user to run
+   `portless proxy start` (and `portless trust`) in their own
+   terminal, and continue once they say it is up. Do not elevate any
+   other way; `sudo` without a password is the one case you may use.
+3. Start the frontend with its `dev:portless` script and the
+   backend with its portless config, as the sections below say.
+
 ### Tunnel — MCP UIs only
 
 Before starting an MCP UI's backend, kick off a Cloudflare quick
@@ -130,10 +171,13 @@ cloudflared tunnel \
 ```
 
 Pass the **same** `<BACKEND_PORT>` to `rbt dev run` so the dev
-server and the tunnel agree on the port — Reboot's default is
-`9991`, so no extra flag is needed if you stuck with the default;
-otherwise see `python/references/lifecycle-rbtrc.md` for the
-`application_port` knob.
+server and the tunnel agree on the port. Under portless pass it
+as `--port=<BACKEND_PORT>` every time: the backend's name is its
+address there, so without `--port` it takes a free port the tunnel
+cannot know. Without portless Reboot's default is `9991`, so no
+extra flag is needed if you stuck with the default; otherwise see
+`python/references/lifecycle-rbtrc.md` for the `application_port`
+knob.
 
 ### Backend — both app types
 
@@ -145,20 +189,35 @@ uv run rbt dev run --no-chaos
 
 `--env-file=.env` in `.rbtrc` loads the secrets into the process;
 `--no-chaos` disables the Chaos Monkey, a useful bug-finder that is
-confusing to a developer who cannot see the backend terminal.
+confusing to a developer who cannot see the backend terminal. With
+portless, the `.rbtrc`'s default config passes `--portless` (add it
+yourself for an `.rbtrc` that has no such config), and the backend
+logs its named URLs once it is serving; without, pass
+`--config=hmr` if the `.rbtrc` defaults to portless.
 
 ### Frontend — both app types
 
-Run the Vite dev server from `frontend/`.
+Run the Vite dev server from `frontend/`. Its `package.json`
+mirrors the `.rbtrc`: `npm run dev` is the default, `dev:portless`,
+which runs `portless vite.<app> vite` (portless is a dev dependency, so
+`npm install` brought it), and `dev:hmr` is plain `vite` on Vite's
+port. Under portless, when the user chose it:
 
 ```sh
-cd frontend && npm run dev
+cd frontend && npm run dev:portless
+```
+
+or on a plain port otherwise:
+
+```sh
+cd frontend && npm run dev:hmr
 ```
 
 ### Setup wizard — MCP UIs only
 
 An MCP UI's backend serves an interactive **setup wizard** at
-its root URL (`http://localhost:9991`) — a browser page that walks
+its root URL (`https://<app>.localhost` with portless, else
+`http://localhost:9991`) — a browser page that walks
 the user through connecting the app to an MCP client (such as
 MCPJam: picking a client, copying the `/mcp` endpoint, completing
 the OAuth handshake). It is the natural starting point — and the
@@ -230,6 +289,7 @@ Confirm every process is up from its logs, then give the user:
   only starts if the user picks it in the wizard (see the on-demand
   step above);
 - for a Web App — the URL the Vite dev server printed
+  (`https://<app>.localhost` with portless)
   (`http://localhost:5173/` by default) and a first page to open.
 
 > **Always start every process the app needs.** An MCP UI needs

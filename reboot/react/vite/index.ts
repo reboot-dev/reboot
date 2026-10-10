@@ -420,17 +420,18 @@ export function reboot(options: RebootOptions = {}): Plugin[] {
         );
         claim(
           config,
-          "server.host",
-          "to every interface, since requests come through Envoy (and tunnels)"
-        );
-        claim(
-          config,
           "server.allowedHosts",
           "to every host, since requests come through Envoy (and tunnels)"
         );
         result.base = BASE;
         result.server = {
-          host: true,
+          // Every interface unless the config, or the command line,
+          // which Vite merges into it before plugins see it, says
+          // where to listen: `portless <app> vite` passes
+          // `--host 127.0.0.1`, the proxy's side of loopback. Not
+          // Vite's own default, `localhost`, which Node may bind as
+          // `::1` alone while Envoy connects over IPv4.
+          host: config.server?.host ?? true,
           allowedHosts: true,
         };
         if (webPath !== undefined) {

@@ -186,7 +186,7 @@ plugin/
 ├── README.md
 ├── install.sh                # installs for Claude Code and/or Codex
 ├── bin/                      # pinned tool shims (uv, node, rbt,
-│                             # cloudflared, …)
+│                             # cloudflared, portless, …)
 ├── lib/                      # shim install scripts
 ├── hooks/
 │   ├── hooks.json            # hook registrations (Claude Code + Codex)

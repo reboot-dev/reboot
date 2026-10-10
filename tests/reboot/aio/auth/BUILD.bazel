@@ -2,6 +2,17 @@ load("@rbt_pypi//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_test")
 
 py_test(
+    name = "allowed_origins_test_py",
+    size = "small",
+    srcs = ["allowed_origins_test.py"],
+    main = "allowed_origins_test.py",
+    deps = [
+        "//reboot:settings_py",
+        "//reboot/aio/auth:allowed_origins_py",
+    ],
+)
+
+py_test(
     name = "oauth_providers_test_py",
     size = "small",
     timeout = "long",

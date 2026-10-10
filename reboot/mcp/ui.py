@@ -50,6 +50,8 @@ import json
 import logging
 import os
 import re
+import reboot.portless
+import ssl
 import urllib.request
 import uuid
 from pathlib import Path
@@ -519,6 +521,16 @@ def _build_claude_ngrok_free_error_html() -> str:
     return _CLAUDE_NGROK_ERROR_HTML_PATH.read_text(encoding="utf-8")
 
 
+def _dev_server_ssl_context(url: str) -> Optional[ssl.SSLContext]:
+    """For an `https://` dev server, a context that also trusts the
+    portless proxy's CA (`rbt dev run --portless` serves the dev
+    server as `https://<name>.localhost` through it). `None` for
+    plain `http://`."""
+    if not url.startswith("https://"):
+        return None
+    return reboot.portless.ssl_context()
+
+
 def dev_inline_html(
     ui_path: str,
     reboot_url: str,
@@ -586,7 +598,9 @@ def dev_inline_html(
     # proxy.
     fetch_url = f"{mcp_app_url.rstrip('/')}{ui_url_path}/index.html"
     request = urllib.request.Request(fetch_url)
-    with urllib.request.urlopen(request) as response:
+    with urllib.request.urlopen(
+        request, context=_dev_server_ssl_context(fetch_url)
+    ) as response:
         html = response.read().decode("utf-8")
 
     # Two rewrites cover everything Vite emits:

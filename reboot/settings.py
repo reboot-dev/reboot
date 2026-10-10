@@ -155,6 +155,11 @@ ENVVAR_RBT_WEB_APP_DIST_PATH = 'RBT_WEB_APP_DIST_PATH'
 # serves the web app, which the application serves at "/" by proxying
 # to it (`rbt dev run --web-app-url`).
 ENVVAR_RBT_WEB_APP_URL = 'RBT_WEB_APP_URL'
+# "true" under `rbt dev run --portless`: the application is served as
+# `https://<RBT_NAME>.localhost` through the portless proxy, and
+# `https://vite.<RBT_NAME>.localhost`, where its frontend dev server
+# is expected, is trusted as a browser origin.
+ENVVAR_RBT_PORTLESS = 'RBT_PORTLESS'
 
 # Environment variable indicating that `rbt` is being invoked from
 # Node.js.

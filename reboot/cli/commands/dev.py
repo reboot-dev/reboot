@@ -6,6 +6,7 @@ import grpc
 import os
 import random
 import reboot.aio.tracing
+import reboot.portless
 import secrets
 import shutil
 import signal
@@ -33,7 +34,7 @@ from reboot.aio.external import ExternalContext
 from reboot.cli.commands.generate import generate_direct
 # We import the whole `terminal` module (as opposed to the methods it contains)
 # to allow us to mock these methods out in tests.
-from reboot.cli.common import terminal
+from reboot.cli.common import portless, terminal
 from reboot.cli.common.dev_extra import dev_extra_installed, missing_dev_extra
 from reboot.cli.common.directories import (
     add_working_directory_options,
@@ -82,6 +83,7 @@ from reboot.settings import (
     ENVVAR_RBT_MCP_APP_URL,
     ENVVAR_RBT_NAME,
     ENVVAR_RBT_NODEJS,
+    ENVVAR_RBT_PORTLESS,
     ENVVAR_RBT_SERVERS,
     ENVVAR_RBT_STATE_DIRECTORY,
     ENVVAR_RBT_WEB_APP_DIST_PATH,
@@ -97,6 +99,7 @@ from reboot.settings import (
 )
 from reboot.version import REBOOT_VERSION
 from typing import Any, Awaitable, Callable, Optional, TextIO, TypeVar
+from urllib.parse import urlparse
 
 TLS_CERTIFICATE_BEGINNING = "-----BEGIN CERTIFICATE-----"
 TLS_PRIVATE_KEY_BEGINNING = "-----BEGIN PRIVATE KEY-----"
@@ -251,6 +254,24 @@ def _register_dev_run(parser: ArgumentParser):
     add_common_web_args(parser.subcommand('dev run'))
 
     parser.subcommand('dev run').add_argument(
+        '--portless',
+        type=bool,
+        default=False,
+        help=(
+            'serve under a named `.localhost` URL via portless '
+            '(https://github.com/vercel-labs/portless): registers '
+            'this application with the running portless proxy as '
+            '`https://<application-name>.localhost`, and trusts '
+            '`https://vite.<application-name>.localhost`, where the '
+            'frontend dev server is expected (`portless '
+            'vite.<application-name> vite`, the frontend\'s `npm run '
+            'dev:portless`), as a browser origin. '
+            'Requires `--application-name`, and the `portless` CLI on '
+            'PATH with its proxy started (`portless proxy start`).'
+        ),
+    )
+
+    parser.subcommand('dev run').add_argument(
         '--servers',
         type=int,
         help='the number of "servers" (serving processes) to spawn.',
@@ -264,7 +285,8 @@ def _register_dev_run(parser: ArgumentParser):
         '--port',
         type=int,
         help='port on which the Reboot app will serve traffic; defaults to '
-        f'{DEFAULT_LOCAL_ENVOY_PORT}',
+        f'{DEFAULT_LOCAL_ENVOY_PORT}, or under `--portless`, where the name '
+        'is the address, to a free port',
     )
 
     parser.subcommand('dev run').add_argument(
@@ -737,6 +759,53 @@ async def check_local_envoy_mode(subprocesses: Subprocesses) -> None:
             )
 
 
+async def _portless_register(
+    args,
+    subprocesses: Subprocesses,
+    *,
+    port: int,
+) -> None:
+    """Check that `--portless` can be honored, and register this
+    application's name with the portless proxy as a route to the
+    local Envoy on `port`. Fails with what to do when it can't."""
+    if args.application_name is None:
+        terminal.fail(
+            '`--portless` needs `--application-name`: the name is the '
+            'hostname, `https://<application-name>.localhost`.'
+        )
+
+    await portless.check('--portless')
+
+    await portless.alias(subprocesses, args.application_name, port)
+
+    # The frontend dev server is expected at
+    # `https://vite.<name>.localhost` (that is the origin trusted for
+    # credentialed requests), so a flag naming it anywhere else is
+    # probably a slip.
+    expected = reboot.portless.vite_hostname(args.application_name)
+    for flag, value in (
+        ('--mcp-app-url', args.mcp_app_url),
+        ('--web-app-url', args.web_app_url),
+    ):
+        if not value:
+            continue
+        hostname = urlparse(value).hostname or ''
+        if hostname != expected:
+            terminal.warn(
+                f'`{flag}={value}` does not name `https://{expected}`, '
+                'where `--portless` expects the frontend dev server '
+                f'(`portless vite.{args.application_name} vite`, the '
+                'frontend\'s `npm run dev:portless`); a frontend '
+                'served from any other origin is not trusted '
+                'for credentialed requests.\n'
+            )
+
+
+async def _portless_unregister(args) -> None:
+    """Remove the name `_portless_register` registered."""
+    await portless.unalias(args.application_name)
+
+
 async def _check_local_envoy_status(
     *,
     port: int,
@@ -747,6 +816,8 @@ async def _check_local_envoy_status(
     root_certificate: Optional[str],
     tracing: Tracing,
     nodejs: bool,
+    portless_name: Optional[str],
+    web_app: bool,
 ) -> None:
     """Checks if the application is up and running.
     Optionally exits as soon as the health check has passed.
@@ -855,15 +926,29 @@ async def _check_local_envoy_status(
                     application_serving_event.set()
 
                 terminal.info("Application is serving traffic ...\n")
+                # Under `--portless` the application's address is its
+                # name, which is what to tell people; the port it is
+                # reached by behind the proxy is an aside.
+                if portless_name is not None:
+                    url = 'https://' + reboot.portless.hostname(portless_name)
+                    aside = f" (also at {protocol}://{address})"
+                else:
+                    url = f"{protocol}://{address}"
+                    aside = ""
                 # MCP server and endpoint is not supported for Nodejs currently.
                 mcp_line = (
                     "" if nodejs else
-                    f"  MCP clients can connect at:    {protocol}://{address}/mcp\n"
+                    f"  MCP clients can connect at:    {url}/mcp\n"
+                )
+                web_line = (
+                    f"  Your web app is at:            {url}/\n"
+                    if web_app else ""
                 )
                 terminal.info(
-                    f"  Your API is available at:      {protocol}://{address}\n"
+                    f"  Your API is available at:      {url}{aside}\n"
                     f"{mcp_line}"
-                    f"  You can inspect your state at: {protocol}://{address}/__/inspect\n",
+                    f"{web_line}"
+                    f"  You can inspect your state at: {url}/__/inspect\n",
                     color=Fore.WHITE,
                 )
                 if tracing == Tracing.JAEGER:
@@ -1234,6 +1319,14 @@ async def dev_run(
 
     _check_common_args(args)
 
+    # Under `--portless` the name is the address, so unless `--port`
+    # says otherwise the port behind the proxy is any free one, and
+    # several applications run at once. Chosen once: a `.rbtrc` edit
+    # re-parses the flags below, and the port stays the same.
+    if args.portless and args.port is None:
+        args.port = portless.free_port()
+    port = args.port
+
     # A development environment installs the `reboot[dev]` extra. The
     # application runs without it, so this only says so.
     if not dev_extra_installed():
@@ -1278,40 +1371,49 @@ async def dev_run(
             f"Legal values are: {[option.name.lower() for option in Tracing]}"
         )
 
-    with file_watcher() as watcher:
-        if parser.dot_rc is not None:
-            while True:
-                async with watcher.watch(
-                    [parser.dot_rc]
-                ) as rc_file_event_task:
-                    return_code = await _dev_run(
-                        args,
-                        parser=parser,
-                        parser_factory=parser_factory,
-                        rc_file_event_task=rc_file_event_task,
-                        watcher=watcher,
-                        tracing=tracing,
-                    )
-                if return_code is not None:
-                    return return_code
+    try:
+        with file_watcher() as watcher:
+            if parser.dot_rc is not None:
+                while True:
+                    async with watcher.watch(
+                        [parser.dot_rc]
+                    ) as rc_file_event_task:
+                        return_code = await _dev_run(
+                            args,
+                            parser=parser,
+                            parser_factory=parser_factory,
+                            rc_file_event_task=rc_file_event_task,
+                            watcher=watcher,
+                            tracing=tracing,
+                        )
+                    if return_code is not None:
+                        return return_code
 
-                terminal.info(
-                    '\n'
-                    f'{parser.dot_rc_filename} modified; restarting ... '
-                    '\n'
+                    terminal.info(
+                        '\n'
+                        f'{parser.dot_rc_filename} modified; restarting ... '
+                        '\n'
+                    )
+                    args, _ = parser.parse_args()
+                    if args.portless and args.port is None:
+                        args.port = port
+            else:
+                return_code = await _dev_run(
+                    args,
+                    parser=parser,
+                    parser_factory=parser_factory,
+                    rc_file_event_task=None,
+                    watcher=watcher,
+                    tracing=tracing,
                 )
-                args, _ = parser.parse_args()
-        else:
-            return_code = await _dev_run(
-                args,
-                parser=parser,
-                parser_factory=parser_factory,
-                rc_file_event_task=None,
-                watcher=watcher,
-                tracing=tracing,
-            )
-            assert return_code is not None, "Should not have requested re-running: no `rc_file_event_task` was set."
-            return return_code
+                assert return_code is not None, "Should not have requested re-running: no `rc_file_event_task` was set."
+                return return_code
+    finally:
+        # The names registered with portless by each `_dev_run` (each
+        # re-registers, so a changed port or name takes) point at an
+        # Envoy that is gone once we are.
+        if args.portless and args.application_name is not None:
+            await _portless_unregister(args)
 
 
 @reboot.aio.tracing.function_span()
@@ -1646,6 +1748,14 @@ async def __dev_run(
     await check_local_envoy_mode(subprocesses)
     env[ENVVAR_REBOOT_LOCAL_ENVOY] = 'true'
 
+    if args.portless:
+        await _portless_register(
+            args,
+            subprocesses,
+            port=args.port or DEFAULT_LOCAL_ENVOY_PORT,
+        )
+        env[ENVVAR_RBT_PORTLESS] = 'true'
+
     # The developer dashboard runs separately, started by
     # `rbt dashboard`; this run only decides whether to open a window
     # on it.
@@ -1676,6 +1786,8 @@ async def __dev_run(
             root_certificate=args.tls_root_certificate,
             tracing=tracing,
             nodejs=bool(args.nodejs),
+            portless_name=(args.application_name if args.portless else None),
+            web_app=bool(args.web_app_url or args.web_app_dist_path),
         ),
         name=f'_check_local_envoy_status(...) in {__name__}',
     )

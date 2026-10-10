@@ -140,12 +140,22 @@ A `<subcommand>:<config>` line only applies when `--config=<config>` is on
 the command line:
 
 ```sh
-# Default config (HMR / Vite).
-dev run --default-config=hmr
+# Default config: named URLs via portless (https://github.com/vercel-labs/portless).
+# The app is https://<app>.localhost; Vite, run as the frontend's
+# `npm run dev:portless` (`portless vite.<app> vite`), is
+# https://vite.<app>.localhost, which the app serves the web app and
+# the MCP UIs from.
+dev run --default-config=portless
 dev run --mcp-app-path-prefix=frontend
 
-dev run:hmr --mcp-app-url=http://localhost:5173
+dev run:portless --portless
+dev run:portless --mcp-app-url=https://vite.<app>.localhost
 # A web app is served by that same Vite; serve it at `/` from there.
+dev run:portless --web-app-url=https://vite.<app>.localhost
+
+# Plain ports, no portless: `rbt dev run --config=hmr`, Vite from
+# `npm run dev:hmr`.
+dev run:hmr --mcp-app-url=http://localhost:5173
 dev run:hmr --web-app-url=http://localhost:5173
 
 # Dist mode (no Vite): the built MCP UIs, and the built web app at `/`.
@@ -153,5 +163,11 @@ dev run:dist --mcp-app-dist-path=frontend/dist
 dev run:dist --web-app-dist-path=frontend/dist/web
 ```
 
-Run with `rbt dev run` (uses `--default-config=hmr`) or
-`rbt dev run --config=dist` to switch.
+Run with `rbt dev run` (uses `--default-config=portless`), or
+`rbt dev run --config=hmr` or `--config=dist` to switch. `--portless`
+requires `--application-name` (the name is the hostname), the
+`portless` CLI, and its proxy running (`portless proxy start`).
+The frontend's `package.json` mirrors these configs as scripts:
+`dev` is the default, `dev:portless`, which runs
+`portless vite.<app> vite` with `portless` as a dev dependency, and
+`dev:hmr` is plain `vite`.

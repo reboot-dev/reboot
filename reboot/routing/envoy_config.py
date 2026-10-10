@@ -26,10 +26,14 @@ from google.protobuf.duration_pb2 import Duration
 from google.protobuf.message import Message
 from google.protobuf.wrappers_pb2 import BoolValue, UInt32Value
 from pathlib import Path
-from reboot.aio.auth.allowed_origins import DEV_ORIGIN_REGEXES
+from reboot.aio.auth.allowed_origins import (
+    DEV_ORIGIN_REGEXES,
+    portless_dev_origins,
+)
 from reboot.aio.headers import CALLER_ID_HEADER, SERVER_ID_HEADER
 from reboot.aio.types import ApplicationId, ServerId
 from reboot.helpers import get_path_prefixes_from_file_descriptor_set
+from reboot.portless import proxy_port
 from reboot.routing.cors_settings import (
     CORS_ALLOW_HEADERS,
     CORS_ALLOW_METHODS,
@@ -92,15 +96,28 @@ class FrontendConfig:
     host: str
     port: int
     original_url: str
+    # Whether to reach it over TLS (an `https://` host), which is how
+    # a dev server behind the portless proxy, `https://<name>.localhost`,
+    # is reached.
+    tls: bool
+
+    @property
+    def named_loopback(self) -> bool:
+        """A `*.localhost` host: loopback by name (RFC 6761), which a
+        browser honors but Envoy's resolver may not, and which the
+        proxy serving it routes by. Reached at the loopback address,
+        with the name carried as SNI and as the `Host` header."""
+        return self.host.endswith(".localhost")
 
 
 def _get_frontend_config() -> FrontendConfig | None:
     """Get frontend host configuration from environment.
 
     Parses the `RBT_MCP_APP_URL` or `RBT_WEB_APP_URL` env var (e.g.,
-    "http://localhost:5173"): the dev server serving the MCP UIs, the
-    web app, or both (one server; `rbt dev run` refuses two), which
-    Envoy routes `/__/frontend/**` to.
+    "http://localhost:5173", or "https://vite.<name>.localhost" under
+    `--portless`): the dev server serving the MCP UIs, the web app, or
+    both (one server; `rbt dev run` refuses two), which Envoy routes
+    `/__/frontend/**` to.
 
     Returns None if not configured or not in dev mode.
     """
@@ -114,20 +131,23 @@ def _get_frontend_config() -> FrontendConfig | None:
         return None
 
     parsed = urlparse(frontend_url)
-    if not parsed.port:
+    if parsed.scheme not in ("http", "https"):
         raise ValueError(
-            "The frontend dev server URL must include a port; got "
-            f"'{frontend_url}'"
+            "The frontend dev server must be an http:// or https:// "
+            f"URL; got '{frontend_url}'"
         )
     if not parsed.hostname:
         raise ValueError(
             "The frontend dev server URL must include a hostname; got "
             f"'{frontend_url}'"
         )
+    tls = parsed.scheme == "https"
+    default_port = (proxy_port() if tls else 80)
     return FrontendConfig(
         host=parsed.hostname,
-        port=parsed.port,
+        port=parsed.port or default_port,
         original_url=frontend_url,
+        tls=tls,
     )
 
 
@@ -224,6 +244,13 @@ def _cors_origin_matchers(
     matchers = [
         string_pb2.StringMatcher(exact=origin) for origin in allowed_origins
     ]
+    if running_rbt_dev():
+        # Under `--portless`, the two named `.localhost` origins,
+        # exactly (see `portless_dev_origins`).
+        matchers.extend(
+            string_pb2.StringMatcher(exact=origin)
+            for origin in portless_dev_origins()
+        )
     if running_rbt_dev() or is_in_test():
         # RE2 syntax. Envoy's `SafeRegex` matches against the whole
         # origin string (a full-string match, not a substring search).
@@ -601,6 +628,13 @@ def _frontend_routes() -> list[route_components_pb2.Route]:
         ),
         route=route_components_pb2.RouteAction(
             cluster=FRONTEND_CLUSTER_NAME,
+            # A dev server behind a proxy that routes by name (the
+            # portless proxy serving `https://<name>.localhost`) must
+            # be asked for by that name, not by the name the browser
+            # asked us for, which is ours and would loop back here.
+            host_rewrite_literal=(
+                config.host if config.named_loopback else ""
+            ),
         ),
         typed_per_filter_config={
             GRPC_JSON_TRANSCODER_HTTP_FILTER_NAME:
@@ -627,11 +661,39 @@ def _frontend_cluster(
     # needs `host.docker.internal` to reach the host machine; Envoy
     # running as a stand-alone executable can use `localhost` directly.
     host = config.host
-    if host in ("localhost", "127.0.0.1", "0.0.0.0"):
+    if (
+        host in ("localhost", "127.0.0.1", "0.0.0.0") or config.named_loopback
+    ):
         if local_envoy_mode is LocalEnvoyMode.DOCKER:
             host = "host.docker.internal"
         else:
             host = "localhost"
+
+    transport_socket: Optional[base_pb2.TransportSocket] = None
+    if config.tls:
+        # The portless proxy serves its own locally generated CA; trust
+        # it where portless keeps it, else (a CA elsewhere, or Envoy in
+        # Docker where the home directory isn't mounted) accept any
+        # certificate, since this is a developer's own machine talking
+        # to its own proxy.
+        portless_ca = Path.home() / ".portless" / "ca.pem"
+        common_tls_context = tls_pb2.CommonTlsContext()
+        if (
+            local_envoy_mode is not LocalEnvoyMode.DOCKER and
+            portless_ca.is_file()
+        ):
+            common_tls_context.validation_context.trusted_ca.filename = (
+                str(portless_ca)
+            )
+        transport_socket = base_pb2.TransportSocket(
+            name="envoy.transport_sockets.tls",
+            typed_config=any_pack(
+                tls_pb2.UpstreamTlsContext(
+                    sni=config.host,
+                    common_tls_context=common_tls_context,
+                )
+            ),
+        )
 
     return cluster_pb2.Cluster(
         name=FRONTEND_CLUSTER_NAME,
@@ -640,6 +702,7 @@ def _frontend_cluster(
         common_http_protocol_options=protocol_pb2.HttpProtocolOptions(
             idle_timeout=ZERO_SECONDS,
         ),
+        transport_socket=transport_socket,
         dns_lookup_family=cluster_pb2.Cluster.V4_ONLY,
         # Frontend is HTTP/1.1 (WebSockets not compatible with HTTP/2).
         load_assignment=endpoint_pb2.ClusterLoadAssignment(

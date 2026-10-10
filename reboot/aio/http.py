@@ -10,6 +10,7 @@ from reboot.aio.caller_id import CallerID
 from reboot.aio.external import ExternalContext
 from reboot.aio.internals.channel_manager import _ChannelManager
 from reboot.aio.types import ApplicationId, ServerId
+from reboot.portless import proxy_port, ssl_context
 from reboot.rootpage.page import probe, root_page_asset, root_page_endpoint
 from reboot.wait_for_tasks import wait_for_tasks
 from starlette.exceptions import HTTPException  # type: ignore[import]
@@ -26,6 +27,7 @@ from typing import (
     Protocol,
     overload,
 )
+from urllib.parse import urlparse
 
 
 class WebApp(StaticFiles):
@@ -100,6 +102,16 @@ class WebDevServer:
 
     def __init__(self, host: str):
         self._host = host.rstrip("/")
+        parsed = urlparse(self._host)
+        self._hostname = parsed.hostname or ""
+        self._tls = parsed.scheme == "https"
+        # A `*.localhost` host is one the portless proxy serves,
+        # routing by name: reached at the loopback address with the
+        # name as SNI and `Host`, the way a browser's request arrives,
+        # so that no resolver has to know the name (as Envoy reaches
+        # it, see `FrontendConfig.named_loopback`).
+        self._named_loopback = self._hostname.endswith(".localhost")
+        self._port = parsed.port or (proxy_port() if self._tls else 80)
 
     async def __call__(
         self,
@@ -114,15 +126,23 @@ class WebDevServer:
             await send({"type": "websocket.close"})
             return
         request = Request(scope, receive)
-        url = self._host + request.url.path
+        path = request.url.path
         if request.url.query:
-            url += "?" + request.url.query
+            path += "?" + request.url.query
         # The request as it came, minus the `Host`, which is the dev
-        # server's own (set from the URL).
+        # server's own.
         headers = [
             (name, value) for name, value in request.headers.items() if
             name.lower() not in _HOP_BY_HOP_HEADERS and name.lower() != "host"
         ]
+        if self._named_loopback:
+            scheme = "https" if self._tls else "http"
+            url = f"{scheme}://127.0.0.1:{self._port}{path}"
+            headers.append(("host", self._hostname))
+            by_name: dict[str, Any] = {"server_hostname": self._hostname}
+        else:
+            url = self._host + path
+            by_name = {}
         try:
             async with aiohttp.ClientSession(auto_decompress=False) as session:
                 async with session.request(
@@ -134,6 +154,8 @@ class WebDevServer:
                         if request.method not in ("GET", "HEAD") else None
                     ),
                     allow_redirects=False,
+                    ssl=ssl_context() if self._tls else None,
+                    **by_name,
                 ) as upstream:
                     await send(
                         {
