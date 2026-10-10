@@ -502,27 +502,6 @@ def _routes_for_server(
                     [CALLER_ID_HEADER] if not trust_caller_id else []
                 ),
             ),
-            # This route sends traffic with the 'x-reboot-server-id'
-            # header and an exact path of '/' to the gRPC port,
-            # because that is what currently serves '/' (the
-            # `RootPage` servicer).
-            #
-            # This route deliberately does NOT require gRPC
-            # `content-type` (no `GrpcRouteMatchOptions`): a browser
-            # `GET /` arrives as plain HTTP and must match a route on
-            # which the gRPC-JSON transcoder is still enabled, so the
-            # transcoder can turn it into a `RootPage` gRPC call.
-            route_components_pb2.Route(
-                match=route_components_pb2.RouteMatch(
-                    path="/",
-                    headers=[server_header_matcher],
-                ),
-                route=route_components_pb2.RouteAction(
-                    cluster=cluster_name,
-                    max_stream_duration=route_components_pb2.RouteAction.
-                    MaxStreamDuration(grpc_timeout_header_max=ZERO_SECONDS)
-                ),
-            ),
         ] + [
             # These routes send all traffic with the
             # 'x-reboot-server-id' header and a prefix path from
@@ -541,11 +520,6 @@ def _routes_for_server(
             ) for prefix in get_path_prefixes_from_file_descriptor_set(
                 file_descriptor_set,
             )
-            # We skip over the path '/' because we cover it above as
-            # an exact path not a prefix here otherwise it would catch
-            # everything which we don't want because we want
-            # everything else to be caught below for the HTTP port.
-            if prefix != "/"
         ]
 
     elif kind == ClusterKind.HTTP:

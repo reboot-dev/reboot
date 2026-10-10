@@ -300,8 +300,8 @@ class Application:
         :param example_prompts: a list of `ExamplePrompt` instances
             for using this application in a chat client.
         :param root: a path on this application, e.g. `/dashboard/`,
-            that the root page `/` forwards a browser to instead of
-            showing Reboot's own page.
+            that `/` redirects a browser to instead of showing
+            Reboot's own page.
 
         TODO(benh): update the initialize function to be run in a
         transaction and ensure that the transaction has finished before

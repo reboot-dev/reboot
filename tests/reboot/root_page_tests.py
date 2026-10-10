@@ -20,22 +20,30 @@ class RootPageTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(response.status, 200)
                 return await response.text()
 
-    async def test_forwards_to_root(self) -> None:
+    async def test_redirects_to_root(self) -> None:
         await self.rbt.up(
             Application(servicers=[MyGreeterServicer], root='/app/'),
             local_envoy=True,
         )
 
-        page = await self.root_page()
-        self.assertIn(
-            '<script>location.replace("/app/" + '
-            'location.search + location.hash);</script>',
-            page,
-        )
-        self.assertIn(
-            '<meta http-equiv="refresh" content="0; url=/app/">',
-            page,
-        )
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                self.rbt.url() + '/',
+                allow_redirects=False,
+            ) as response:
+                self.assertEqual(response.status, 307)
+                self.assertEqual(response.headers['Location'], '/app/')
+
+            # The query comes along, e.g. `/?opened=automatically`.
+            async with session.get(
+                self.rbt.url() + '/?opened=automatically',
+                allow_redirects=False,
+            ) as response:
+                self.assertEqual(response.status, 307)
+                self.assertEqual(
+                    response.headers['Location'],
+                    '/app/?opened=automatically',
+                )
 
     async def test_serves_reboot_root_page_without_root(self) -> None:
         await self.rbt.up(
@@ -45,7 +53,25 @@ class RootPageTest(unittest.IsolatedAsyncioTestCase):
 
         page = await self.root_page()
         self.assertIn('/__/rootpage/bundle.js', page)
-        self.assertNotIn('location.replace', page)
+
+        async with aiohttp.ClientSession() as session:
+            # The page's assets, and the install wizard's probe, come
+            # from the same server.
+            async with session.get(
+                self.rbt.url() + '/__/rootpage/bundle.js'
+            ) as response:
+                self.assertEqual(response.status, 200)
+                self.assertTrue(
+                    response.headers['Content-Type'].
+                    startswith('text/javascript')
+                )
+            async with session.get(self.rbt.url() + '/__/probe') as response:
+                self.assertEqual(response.status, 200)
+            # Only the page's own assets, not the package's sources.
+            async with session.get(
+                self.rbt.url() + '/__/rootpage/page.py'
+            ) as response:
+                self.assertEqual(response.status, 404)
 
     def test_root_must_be_a_path(self) -> None:
         for root in ['app/', '//elsewhere.example/', 'https://example.com/']:
