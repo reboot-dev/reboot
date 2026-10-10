@@ -81,11 +81,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     if command == "health" {
         let mut client = tonic_health::pb::health_client::HealthClient::new(channel);
-        let result = client
-            .check(tonic_health::pb::HealthCheckRequest { service: "".into() })
-            .await?
-            .into_inner();
-        println!("{}", result.status);
+        let mut request = tonic::Request::new(tonic_health::pb::HealthCheckRequest {
+            service: String::new(),
+        });
+        request.set_timeout(Duration::from_secs(1));
+        let result = client.check(request).await?.into_inner();
+        if result.status != tonic_health::pb::health_check_response::ServingStatus::Serving as i32 {
+            return Err("application is not ready".into());
+        }
+        println!("SERVING");
         return Ok(());
     }
     let context = reboot::ExternalContext::new({{ name }}::reference()?);

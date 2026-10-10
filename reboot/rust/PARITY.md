@@ -33,6 +33,102 @@ public Cargo/native application acceptance and retained greeting regressions
 are described in [Verification](#verification). Older workflow/transaction
 proofs below retain their separate source snapshots and limits.
 
+## External source review and release priorities (2026-10-10)
+
+An external review supplied by Vlad compares Rust
+[`5849787f`](https://github.com/jean-de-bot/reboot/commit/5849787fef3cfdd416da77aae9fcabfbdc6b3887)
+with Python PR base
+[`84715af`](https://github.com/reboot-dev/reboot/commit/84715af592cf35fa599937fdb7ae9461953c4bc0).
+It inspected source/test assertions, not runtime execution, and is not a complete
+TypeScript/React API audit. The identifiers below preserve that review's backlog;
+closing a finding requires current-source mapping and exercised acceptance, not
+merely a passing older checkpoint. Mixed reader/transaction external composition
+exists at that snapshot and is not a missing feature.
+
+**Release blockers first: security and reproducible validation.** The review's A1
+and A2 are independently confirmed in the pinned sources: an empty
+[AuthorizationPolicy](https://github.com/jean-de-bot/reboot/blob/5849787fef3cfdd416da77aae9fcabfbdc6b3887/reboot/rust/src/auth.rs)
+allows authorization without an authorizer; the
+[fresh shared external root emitter](https://github.com/jean-de-bot/reboot/blob/5849787fef3cfdd416da77aae9fcabfbdc6b3887/reboot/rust/src/codegen.rs#L1795)
+does not invoke the explicit policy path used by exclusive external roots. Hooks
+are implemented, but this is not default Python production protection. Python's
+[DefaultAuthorizer](https://github.com/reboot-dev/reboot/blob/84715af592cf35fa599937fdb7ae9461953c4bc0/reboot/aio/auth/authorizers.py#L350)
+distinguishes development, production, User ownership and trusted internal calls.
+The next implementation priority is an explicit experimental release/security
+contract and a denial-before-handler/effects policy matrix, not broader composition.
+Inbound transaction/recovery authority must not be inferred from user headers.
+
+### Review backlog
+
+- **W1:** explicit finite named/indexed replay differs from Python's canonical
+  task iteration cursor. Define cursor advancement, Break, restart position and
+  checkpoint lifetime together. Python's single control loop and in-memory
+  cleanup do not establish on-disk garbage collection.
+- **W2:** durable workflow steps/readers remain local and explicitly named;
+  cross-actor stubs, deterministic external/idempotency keys and callbacks remain.
+- **W3:** bounded evidence-qualified RetryLocal differs from indefinite Python
+  unexpected-task retry/backoff. Match eligibility and isolation; never retry
+  uncertain mutations merely by status or claim arbitrary external exactly-once.
+- **W4:** cancellation admits only future unstarted workflows; running/ordinary
+  task cancellation, completion races and restart are separate work.
+- **W5:** authorized task listing/streams are local; placement-aware aggregation
+  is missing, not task administration itself.
+- **W6:** scheduling from transactions exists; transaction task targets and
+  general registered-actor writer/workflow recovery remain narrower.
+- **T1:** first-touch/direct-leaf rollback and RelinquishOwnership exist; arbitrary
+  ancestor/subtree snapshots and rollback-versus-Prepare are not established.
+- **T2:** sequential siblings and reusable direct participants exist; overlapping
+  branches and general parent/ancestor reentry remain restricted.
+- **T3:** fresh local shared promotion, root factories and root idempotent replay
+  exist; their inbound/shared/factory/tree/nested combinations do not compose generally.
+- **C1:** SortedMap operations/pagination/serial session reuse exist; routed access,
+  authorization and broader transaction composition remain. Python does not
+  guarantee recoverable rollback of eager nested SortedMap effects either.
+- **C2:** Rust-native Queue, OrderedMap, PubSub, presence, OAuth and ciphertext
+  libraries are absent; this does not imply Rust cannot call existing services.
+- **R1:** local exact-endpoint one-hop dependencies lack transitive/distributed
+  invalidation; Python reactive calls also exclude transactions.
+- **R2:** LocalReaders.Subscribe and explicit fresh-baseline reconnect exist;
+  canonical React/browser protocol and general streaming/state-reader support
+  are separate missing surfaces, not absence of subscriptions.
+- **G1:** reader/transaction services exist; workflow/transaction service combinations
+  and imported/nested descriptor type/error references remain restricted. Nested
+  protobuf fields and proto3 are not blanket gaps.
+- **G2:** typed declared errors exist, but shared transactions and constructors
+  in workflow-bearing services reject relevant declared-error combinations.
+- **A1:** default authorization differs; make development opt-in and production
+  protection explicit before claiming a supported production surface.
+- **A2:** policy coverage differs across admitted execution forms, particularly
+  fresh shared roots. Exercise reader/writer/constructor/shared/exclusive/factory,
+  task/subscription and HTTP denials with trusted identity preserved.
+- **A3:** real Cargo/init/dev tooling is not production packaging: unpublished SDK,
+  generated/runtime compatibility, Rust serve launcher and configuration remain.
+- **A4:** placement readiness/process-local gates are not cross-host mutation
+  fencing, endpoint-alias or migration proof. Python graceful handoff also has
+  unresolved coordination; do not claim unproved superiority.
+- **A5:** external HTTP routes/lifecycle hooks exist; gRPC multiplexing, mounts,
+  trusted internal contexts and application OAuth/user-state integration remain.
+- **A6:** pre-listener component hooks and durable recovery are not Python's
+  post-servicer InitializeContext with application calls. Define ordering/context,
+  actor access and restart behavior explicitly.
+
+**Order:** finish the active accepted-slice delivery and full native validation;
+then A1/A2 plus reproducible Rust release gates; W1–W6; T1–T3;
+R1/R2/G1/G2/C1; production integration A3–A6 and application-driven C2 ports.
+Bounds are contracts to review, not automatic defects. New behavior needs matching
+Python/Rust request/result/error acceptance and crash/cancellation/lost-response
+boundaries. Canonical schemas alone do not certify generated API/protocol parity.
+
+**Validation distinction:** default Cargo currently skips 131 native integration
+cases; explicitly selected prerequisites/CLI modes do not substitute for all of
+those tests. A full-suite run is queued with fresh evidence, not yet certified.
+General Bazel CI does not provide the Cargo/runtime/generated-consumer/native gate.
+PR #216 remains draft and fork CI awaits approval, an execution gate rather than a
+failing result. Release-readiness requires exact-head and current-merge-result
+formatting, strict Clippy, Cargo, generated consumers and native evidence tied to
+source/Database revisions. Neither this source review nor historical pass counts
+satisfy that gate. Later feature sections retain their individual recorded evidence.
+
 ## Capability overview
 
 | Capability | Current useful slice | Main remaining gap |
@@ -43,7 +139,7 @@ proofs below retain their separate source snapshots and limits.
 | Transactions | Legacy durable coordinator/participant paths and bounded supervised chains/star | General nested snapshots, reentrancy, intersecting subtrees, migration |
 | Tasks | Durable scheduled tasks, typed results/Wait with opt-in result policy, recovery, local admin list/stream and scheduled-workflow cancellation | Transactional targets, running/ordinary/distributed cancellation, aggregation, broad retry and dispatcher fencing |
 | Workflows | Finite typed named steps, bounded nested indexed replay, saved reader observations and finite Continue/Break, typed declared business terminals; explicit local-body resumption | Python unbounded Task cursor/GC/Break, cross-actor composition, framework failure isolation |
-| Reactive readers | Typed bounded database/workflow/transaction-service ordinary reader subscriptions, plain-database/workflow-bearing/mixed-transaction external unary composition, allowlisted multi-actor routing, bounded one-hop composition, commit invalidation and explicit same-query reconnect | Transactional-context composition, same-actor service aggregation, remote/transitive invalidation, transparent reconnect/durable resume, streaming/transaction RPC subscriptions |
+| Reactive readers | Typed bounded database/workflow/transaction-service ordinary reader subscriptions, plain-database/workflow-bearing/mixed-transaction external unary composition, allowlisted multi-actor routing, bounded one-hop composition, commit invalidation and explicit same-query reconnect | Transactional-context composition, remote/transitive invalidation, transparent reconnect/durable resume, streaming/transaction RPC subscriptions |
 | SortedMap | Canonical empty constructor, serial same-host app/map transactions, same-root session reopening, live keyset pages and atomic multi-entry approval transfer | Public inbound adapter, nested/reusable siblings, distributed collection lifecycle |
 
 ## Local app development
@@ -1396,6 +1492,66 @@ Sources: [map sessions](src/sorted_map.rs), [admitted root cache](src/runtime.rs
 
 ## Local reactive readers
 
+### Same-actor grouped external readers (2026-10-10)
+
+`LocalReaderGroup` registers several generated immutable-reader service bindings
+for one exact actor under one canonical recovery/admission owner. Exact immutable
+method inventories route to the original adapter, handler and authorization policy;
+there is no manufactured shared unary binding identity. Attachment validates every
+method against its original opaque identity. Duplicate/empty methods, mismatched
+actor/state/endpoint/store gate, nested groups and already-started owners reject
+before route mutation. Groups are configured before host startup and registered once.
+Bounds remain 64 grouped methods/bindings, 64 registry actors/host streams and eight
+distinct one-hop dependencies. Same-root dependency execution still rejects.
+
+Generated database, workflow and mixed transaction adapters expose exact reader
+inventories and method-aware registry attachment. Readerless services retain valid
+generated Rust through a method-local ReaderBinding bound. Clone/policy rotation,
+raw mutation-authority rejection, framework errors and declared reader errors keep
+their prior boundaries; transaction execution and workflow checkpoint readers do
+not acquire composition authority.
+
+Public configuration pattern (register pre-attachment adapters, then attach registry):
+
+```rust,ignore
+let (_, work_readers) = work.local_readers(&ledger_ref)?;
+let (_, index_readers) = index.local_readers(&ledger_ref)?;
+let mut group = reboot::reactive::LocalReaderGroup::new(work_readers)?;
+group.add(index_readers)?;
+let mut registry = reboot::reactive::LocalReaderRegistry::new()
+    .with_reader_composition();
+registry.register(group.into_service()?)?;
+registry.register(source_readers)?;
+let work = work.with_reader_registry(registry.clone())?;
+let index = index.with_reader_registry(registry.clone())?;
+// Install registry.owners() once through the public host recovery path.
+```
+
+**Executed public native vertical:** `/tmp/reboot-rust-group-composition-cli-1791607463788813721` initialized a Cargo/rbt batch-ledger
+application with grouped Work/Index readers at the same Ledger and one distinct
+ViewSource. All 49 checks passed: both generated ordinary unary routes,
+independent original policies and denial isolation, both typed subscription routes,
+shared source commit invalidation, authority/identity/deadline rejection, genuine
+approval transactions and workflow progression, two RocksDB restarts and canonical
+Wait replay without completed workflow redispatch. Sampled record-byte comparisons
+prove those records' equality, not absence of transient writes or atomic snapshots.
+The generated consumer passed strict all-target Clippy/fmt and 15 tests. Three
+sessions and every recorded process were reaped. SDK passed 477 tests
+with 131 native integration tests ignored by the default command;
+two named native prerequisites were explicitly executed, not the full ignored suite.
+All twelve frozen gates passed, preserving separate workflow/mixed/ordinary
+composition, registry, greeting/HTTP, map, batch, nested and pagination regressions.
+Frozen source/binary identity, process absence and resource budgets were audited.
+
+This closes bounded same-actor service aggregation, not transactional-context
+composition, recursive/same-root dependencies, distributed invalidation, atomic
+multi-actor snapshots, durable subscription resume or crash-window/lost-ACK parity.
+
+Sources: [group](src/reactive_group.rs), [identity tests](src/reactive_group_tests.rs),
+[generated inventory](src/reactive_codegen.rs),
+[native fixture](../../tests/reboot/cli/fixtures/rust_grouped_reader_composition_fixture.py).
+
+
 ### Mixed reader/transaction external composition (2026-10-10)
 
 Generated TransactionAdapters with ordinary reader RPCs now expose optional
@@ -2619,7 +2775,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 66602f6b23368986e71984050bb96b3a558e2a68883790ba6d773bc023c69151 -->
+<!-- parity-source-sha256: e3d490a5fb0375f06d845d7d74f604865e8bfe32597641d02ab51e7023f8b2e4 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

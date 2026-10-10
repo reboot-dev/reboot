@@ -31,6 +31,21 @@ pub trait ReaderBinding: Send + Sync + 'static {
     fn unary_binding_id(&self) -> Option<Arc<()>> {
         None
     }
+    /// Exact generated immutable-reader methods; empty bindings cannot be grouped.
+    fn reader_method_names(&self) -> &'static [&'static str] {
+        &[]
+    }
+    fn supports_unary_binding(&self, identity: &Arc<()>) -> bool {
+        self.unary_binding_id()
+            .is_some_and(|id| Arc::ptr_eq(&id, identity))
+    }
+    fn matches_unary_methods(&self, identity: &Arc<()>, names: &[&str]) -> bool {
+        self.supports_unary_binding(identity)
+            && (names.is_empty()
+                || names
+                    .iter()
+                    .all(|name| self.reader_method_names().contains(name)))
+    }
     async fn read(&self, request: Request<wire::Query>) -> Result<Vec<u8>, Status>;
     /// Generated database readers can opt into bounded same-host composition.
     async fn read_with_context(
@@ -154,6 +169,9 @@ impl<B: ReaderBinding> LocalReaderService<B> {
         })
     }
 }
+include!("reactive_group.rs");
+include!("reactive_group_tests.rs");
+
 /// An immutable-at-installation allowlist of at most 64 exact local actors.
 /// Each entry keeps its generated binding, authorization, gate and stream scope.
 /// Independent routing by default; opt-in database reader composition tracks
@@ -168,7 +186,7 @@ pub struct LocalReaderRegistry {
 #[tonic::async_trait]
 trait RegisteredReader: Send + Sync {
     fn owner(&self) -> LocalReaderOwner;
-    fn unary_binding_id(&self) -> Option<Arc<()>>;
+    fn matches_unary_methods(&self, identity: &Arc<()>, names: &[&str]) -> bool;
     async fn read_registered(&self, request: Request<wire::Query>) -> Result<Vec<u8>, Status>;
     async fn subscribe_registered(
         &self,
@@ -187,8 +205,8 @@ impl<B: ReaderBinding> RegisteredReader for LocalReaderService<B> {
     fn owner(&self) -> LocalReaderOwner {
         self.owner.clone()
     }
-    fn unary_binding_id(&self) -> Option<Arc<()>> {
-        self.binding.unary_binding_id()
+    fn matches_unary_methods(&self, identity: &Arc<()>, names: &[&str]) -> bool {
+        self.binding.matches_unary_methods(identity, names)
     }
     async fn subscribe_registered(
         &self,
@@ -249,6 +267,15 @@ impl LocalReaderRegistry {
         endpoint: &str,
         binding: &Arc<()>,
     ) -> Result<(), Status> {
+        self.validate_unary_binding_methods::<D>(endpoint, binding, &[])
+    }
+    #[doc(hidden)]
+    pub fn validate_unary_binding_methods<D: crate::runtime::DurableStateDeclaration>(
+        &self,
+        endpoint: &str,
+        binding: &Arc<()>,
+        names: &[&str],
+    ) -> Result<(), Status> {
         if !self.composition {
             return Err(Status::failed_precondition(
                 "unary composition requires composed registry",
@@ -265,10 +292,7 @@ impl LocalReaderRegistry {
             }
             if owner.inner.state_type == D::STATE_TYPE {
                 roots += 1;
-                if !entry
-                    .unary_binding_id()
-                    .is_some_and(|id| Arc::ptr_eq(&id, binding))
-                {
+                if !entry.matches_unary_methods(binding, names) {
                     return Err(Status::failed_precondition(
                         "unary registry handler/authorization binding mismatch",
                     ));

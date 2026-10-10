@@ -431,9 +431,9 @@ watch = None
 task_watch = None
 try:
     command([RBT, 'init', '--backend=rust', '--frontend=none', '--application-name=batch_ledger', '--rust-sdk=' + str(ROOT / 'reboot/rust'), '--rust-example=batch-ledger'])
-    if (os.environ.get('RUST_BATCH_WORKFLOW_COMPOSITION_ONLY') or os.environ.get('RUST_BATCH_TRANSACTION_COMPOSITION_ONLY')):
+    if (os.environ.get('RUST_BATCH_WORKFLOW_COMPOSITION_ONLY') or os.environ.get('RUST_BATCH_TRANSACTION_COMPOSITION_ONLY') or os.environ.get('RUST_BATCH_GROUP_COMPOSITION_ONLY')):
         import importlib.util
-        spec = importlib.util.spec_from_file_location('workflow_composition_fixture', ROOT / ('tests/reboot/cli/fixtures/rust_transaction_reader_composition_fixture.py' if os.environ.get('RUST_BATCH_TRANSACTION_COMPOSITION_ONLY') else 'tests/reboot/cli/fixtures/rust_workflow_reader_composition_fixture.py'))
+        spec = importlib.util.spec_from_file_location('workflow_composition_fixture', ROOT / ('tests/reboot/cli/fixtures/rust_grouped_reader_composition_fixture.py' if os.environ.get('RUST_BATCH_GROUP_COMPOSITION_ONLY') else 'tests/reboot/cli/fixtures/rust_transaction_reader_composition_fixture.py' if os.environ.get('RUST_BATCH_TRANSACTION_COMPOSITION_ONLY') else 'tests/reboot/cli/fixtures/rust_workflow_reader_composition_fixture.py'))
         composition_fixture = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(composition_fixture)
         composition_fixture.prepare(globals())
@@ -543,12 +543,43 @@ try:
     command(['cargo', 'clippy', '--manifest-path', 'backend/Cargo.toml', '--all-targets', '--', '-D', 'warnings'])
     command(['cargo', 'fmt', '--manifest-path', 'backend/Cargo.toml', '--', '--check'])
     tests, _ = command(['cargo', 'test', '--manifest-path', 'backend/Cargo.toml', '--all-targets'])
-    consumer_tests = 15 if (os.environ.get('RUST_BATCH_WORKFLOW_COMPOSITION_ONLY') or os.environ.get('RUST_BATCH_TRANSACTION_COMPOSITION_ONLY')) else 13
+    consumer_tests = 15 if (os.environ.get('RUST_BATCH_WORKFLOW_COMPOSITION_ONLY') or os.environ.get('RUST_BATCH_TRANSACTION_COMPOSITION_ONLY') or os.environ.get('RUST_BATCH_GROUP_COMPOSITION_ONLY')) else 13
     check('generated consumer strict Clippy/fmt and nonzero tests', f'test result: ok. {consumer_tests} passed; 0 failed' in tests)
-    if (os.environ.get('RUST_BATCH_WORKFLOW_COMPOSITION_ONLY') or os.environ.get('RUST_BATCH_TRANSACTION_COMPOSITION_ONLY')):
+    if (os.environ.get('RUST_BATCH_WORKFLOW_COMPOSITION_ONLY') or os.environ.get('RUST_BATCH_TRANSACTION_COMPOSITION_ONLY') or os.environ.get('RUST_BATCH_GROUP_COMPOSITION_ONLY')):
         for case in ['clones_preserve_binding_but_authorization_reconfiguration_does_not', 'workflow_owner_reconfiguration_detaches_stale_reader_binding']:
             check('generated workflow registry configuration ' + case, case + ' ... ok' in tests)
     command(['cargo', 'build', '--manifest-path', 'backend/Cargo.toml', '--bins'])
+    # Exercise the actual generated client against exact canonical health wire
+    # statuses, before the real native session. Never retry a tested mutation.
+    from concurrent.futures import ThreadPoolExecutor
+    health_status = [0]
+    health_executor = ThreadPoolExecutor(max_workers=1)
+    health_server = grpc.server(health_executor)
+    health_server.add_generic_rpc_handlers((grpc.method_handlers_generic_handler(
+        'grpc.health.v1.Health', {'Check': grpc.unary_unary_rpc_method_handler(
+            lambda request, context: bytes([8, health_status[0]]),
+            request_deserializer=lambda wire: wire,
+            response_serializer=lambda wire: wire)}),))
+    health_port = health_server.add_insecure_port('127.0.0.1:0')
+    assert health_port
+    original_url = ENV['RBT_RUST_URL']
+    health_server.start()
+    try:
+        ENV['RBT_RUST_URL'] = f'http://127.0.0.1:{health_port}'
+        observations = []
+        for status in [0, 2, 3, 1]:
+            health_status[0] = status
+            output, code = command([TARGET / 'debug/client', 'health'], timeout=15, ok=False)
+            assert (code == 0) == (status == 1), (status, code, output)
+            assert ('SERVING' in output) if status == 1 else ('application is not ready' in output)
+            observations.append({'status': status, 'exit': code})
+        evidence['generated_health_probe'] = observations
+        checkpoint()
+        print('PASS actual generated health client rejects all non-serving statuses', flush=True)
+    finally:
+        ENV['RBT_RUST_URL'] = original_url
+        health_server.stop(0).wait(timeout=5)
+        health_executor.shutdown(wait=True)
     py = STAGE / 'generated-python'
     py.mkdir()
     status = protoc.main(['protoc', '-I' + str(APP / 'api'), '-I' + str(ROOT), '-I' + str(Path(grpc_tools.__file__).parent / '_proto'), '--python_out=' + str(py), str(APP / 'api/batch_ledger/v1/batch.proto')])
@@ -562,7 +593,7 @@ try:
     reference = str(StateRef.from_id('batch_ledger.v1.Ledger', 'ledger'))
     map_ref = str(StateRef.from_id('rbt.std.collections.v1.SortedMap', 'approvals'))
     archive_ref = str(StateRef.from_id('rbt.std.collections.v1.SortedMap', 'archived-approvals'))
-    if (os.environ.get('RUST_BATCH_WORKFLOW_COMPOSITION_ONLY') or os.environ.get('RUST_BATCH_TRANSACTION_COMPOSITION_ONLY')):
+    if (os.environ.get('RUST_BATCH_WORKFLOW_COMPOSITION_ONLY') or os.environ.get('RUST_BATCH_TRANSACTION_COMPOSITION_ONLY') or os.environ.get('RUST_BATCH_GROUP_COMPOSITION_ONLY')):
         composition_fixture.run(globals())
         raise SystemExit(0)
     if os.environ.get('RUST_BATCH_TASK_RESULT_AUTH_ONLY'):
