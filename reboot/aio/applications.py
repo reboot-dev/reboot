@@ -51,6 +51,7 @@ from reboot.run_environments import (
 from reboot.server.service_descriptor_validator import ProtoValidationError
 from reboot.settings import (
     DEFAULT_SECURE_PORT,
+    ENVVAR_RBT_DEV_PORTLESS_ORIGIN,
     ENVVAR_RBT_FRONTEND_DIST_PATH,
     ENVVAR_RBT_FRONTEND_HOST,
     ENVVAR_RBT_NAME,
@@ -466,6 +467,18 @@ class Application:
         self._skip_consent_for_redirect_uris: list[str] = []
         if oauth is not None:
             self._allowed_origins = list(oauth.allowed_origins or [])
+            # `rbt dev run --portless=<name>` creates a same-machine HTTPS
+            # origin outside the ordinary localhost development regexes.  The
+            # CLI obtains this exact origin from Portless and passes it only to
+            # its child application, so OAuth redirects and credentialed CORS
+            # requests work without asking every local application to repeat
+            # the ephemeral development hostname in source.
+            portless_origin = (
+                os.environ.get(ENVVAR_RBT_DEV_PORTLESS_ORIGIN)
+                if running_rbt_dev() else None
+            )
+            if portless_origin is not None and portless_origin not in self._allowed_origins:
+                self._allowed_origins.append(portless_origin)
             self._skip_consent_for_redirect_uris = list(
                 oauth.skip_consent_for_redirect_uris
             )
