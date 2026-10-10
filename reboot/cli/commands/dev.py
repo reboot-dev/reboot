@@ -1913,47 +1913,50 @@ async def __dev_run(
                             continue
 
                 if auto_transpilation:
-                    bundle = await auto_transpile(
-                        subprocesses,
-                        application,
-                        args.application_name or "anonymous",
-                        ts_input_paths,
-                    )
-
-                    if bundle is None:
-                        if len(ts_input_paths) == 0:
-                            # Exit because we don't know what to watch
-                            # for modification!
-                            terminal.fail(
-                                '\n'
-                                'Transpilation failed, please fix the errors above and re-run `rbt dev`'
-                            )
-
-                        # Wait for file modification.
-                        #
-                        # TODO: are there corner cases here where,
-                        # e.g., a new file in a new directory is the
-                        # only file with a transpilation error but
-                        # since it wasn't part of the previous
-                        # `ts_input_paths` we won't watch it and thus
-                        # wait forever? Is `watcher.watch()`
-                        # sophisticated enough to look for all sub
-                        # directories or do we need to explicitly add
-                        # '**' style globs in this case (and only this
-                        # case to reduce load on the OS) to make sure
-                        # we see all modifications?
-                        terminal.warn(
-                            '\n'
-                            'Transpilation failed ... waiting for modification\n'
-                            '\n'
+                    # Watch the inputs of the previous transpilation,
+                    # which are all the files we know of that might
+                    # have the transpilation issue, before transpiling
+                    # again, so that a modification made while
+                    # `rbt-esbuild` runs ends the wait below instead
+                    # of going unseen.
+                    async with watcher.watch(
+                        ts_input_paths
+                    ) as application_event_task:
+                        bundle = await auto_transpile(
+                            subprocesses,
+                            application,
+                            args.application_name or "anonymous",
+                            ts_input_paths,
                         )
 
-                        # Watch all previously watched files for
-                        # changes as we don't know which file
-                        # might have add the transpilation issue.
-                        async with watcher.watch(
-                            ts_input_paths
-                        ) as application_event_task:
+                        if bundle is None:
+                            if len(ts_input_paths) == 0:
+                                # Exit because we don't know what to
+                                # watch for modification!
+                                terminal.fail(
+                                    '\n'
+                                    'Transpilation failed, please fix the errors above and re-run `rbt dev`'
+                                )
+
+                            # Wait for file modification.
+                            #
+                            # TODO: are there corner cases here where,
+                            # e.g., a new file in a new directory is
+                            # the only file with a transpilation error
+                            # but since it wasn't part of the previous
+                            # `ts_input_paths` we won't watch it and
+                            # thus wait forever? Is `watcher.watch()`
+                            # sophisticated enough to look for all sub
+                            # directories or do we need to explicitly
+                            # add '**' style globs in this case (and
+                            # only this case to reduce load on the OS)
+                            # to make sure we see all modifications?
+                            terminal.warn(
+                                '\n'
+                                'Transpilation failed ... waiting for modification\n'
+                                '\n'
+                            )
+
                             completed = await _wait_for_first_completed(
                                 application_event_task,
                                 watch_event_task,
