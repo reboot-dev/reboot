@@ -3,9 +3,10 @@
 
 All served by the application's HTTP server rather than through the
 gRPC-JSON transcoder: the transcoder can only answer with a body or a
-gRPC status, so a `/` served through it could never redirect, which
-is what an application that names its own `root` needs, and the
-assets and the probe have no reason to be gRPC either.
+gRPC status, so a `/` served through it could never redirect, and an
+application's own route or mount at `/` (see `--web-app-dist-path`) could
+never take its place; the assets and the probe have no reason to be
+gRPC either.
 """
 import os
 import reboot.application
@@ -15,10 +16,9 @@ from starlette.requests import Request  # type: ignore[import]
 from starlette.responses import (  # type: ignore[import]
     FileResponse,
     HTMLResponse,
-    RedirectResponse,
     Response,
 )
-from typing import Awaitable, Callable, Optional
+from typing import Awaitable, Callable
 
 logger = get_logger(__name__)
 
@@ -77,20 +77,10 @@ def render_root_page() -> str:
     )
 
 
-def root_page_endpoint(
-    root: Optional[str],
-) -> Callable[[Request], Awaitable[Response]]:
-    """The handler for `GET /`: a redirect to `root` when the
-    application named one, else Reboot's own root page."""
+def root_page_endpoint() -> Callable[[Request], Awaitable[Response]]:
+    """The handler for `GET /`: Reboot's own root page."""
 
     async def root_page(request: Request) -> Response:
-        if root is not None:
-            # Keep the query, e.g. `/?opened=automatically`; the
-            # browser keeps the fragment, e.g. `/#/models`, on its own.
-            url = root
-            if request.url.query:
-                url += "?" + request.url.query
-            return RedirectResponse(url, status_code=307)
         return HTMLResponse(render_root_page())
 
     return root_page

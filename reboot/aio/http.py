@@ -78,11 +78,9 @@ class WebFramework(ABC):
         port: Optional[int],
         channel_manager: _ChannelManager,
         application_id: ApplicationId,
-        root: Optional[str],
     ) -> int:
         """Start serving on `port` (or a free one when `None`) and
-        return the port. `root` is the path the application's `/`
-        forwards to, when it named one."""
+        return the port."""
         raise NotImplementedError()
 
     @abstractmethod
@@ -278,7 +276,6 @@ class PythonWebFramework(WebFramework):
         port: Optional[int],
         channel_manager: _ChannelManager,
         application_id: ApplicationId,
-        root: Optional[str],
     ) -> int:
         assert server_id not in self._servers
 
@@ -391,14 +388,13 @@ class PythonWebFramework(WebFramework):
         # as one of the application's routes (see
         # `has_http_routes_or_mounts`): the built web app
         # (`--web-app-dist-path`), which also catches every path nothing
-        # else claimed; else Reboot's page at `/`, or a redirect to
-        # the application's `root`.
+        # else claimed; else Reboot's page at `/`.
         if self._http._web_app_directory is not None:
             fastapi.mount("/", WebApp(self._http._web_app_directory))
         else:
             fastapi.add_api_route(
                 "/",
-                root_page_endpoint(root),
+                root_page_endpoint(),
                 methods=["GET"],
                 include_in_schema=False,
             )
@@ -498,12 +494,10 @@ class NodeWebFramework(WebFramework):
         port: Optional[int],
         channel_manager: _ChannelManager,
         application_id: ApplicationId,
-        root: Optional[str],
     ) -> int:
         # `application_id` is only needed to build app-internal contexts
-        # for Python-served framework routes (e.g. the OAuth callback),
-        # and `root` for the Python-served page at `/`; the Node web
-        # framework serves neither, so both are ignored.
+        # for Python-served framework routes (e.g. the OAuth callback);
+        # the Node web framework doesn't serve those, so it's ignored.
         return await self._start(server_id, port, channel_manager)
 
     async def stop(self, server_id: ServerId):

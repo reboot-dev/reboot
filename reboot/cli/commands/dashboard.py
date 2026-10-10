@@ -26,6 +26,7 @@ from reboot.cli.common.directories import (
 from reboot.cli.common.rc import ArgumentParser
 from reboot.cli.common.subprocesses import Subprocesses
 from reboot.dashboard.backend.constants import (
+    DASHBOARD_DIRECTORY,
     DEFAULT_DASHBOARD_PORT,
     ENVVAR_RBT_API_DIRECTORY,
     ENVVAR_RBT_APPLICATION,
@@ -160,15 +161,20 @@ def _dashboard_env(
     # Every other application-flavored variable is overwritten below;
     # these four have no dashboard value to overwrite them with, so a
     # developer's shell export would leak through and make the
-    # dashboard a Node.js application or serve their frontend.
+    # dashboard a Node.js application or serve their MCP UIs.
     for name in (
         ENVVAR_RBT_NODEJS,
         ENVVAR_RBT_MCP_APP_URL,
         ENVVAR_RBT_MCP_APP_DIST_PATH,
         ENVVAR_RBT_MCP_APP_PATH_PREFIX,
-        ENVVAR_RBT_WEB_APP_DIST_PATH,
     ):
         composed.pop(name, None)
+
+    # The dashboard's page is its web app, served at `/` the way
+    # `--web-app-dist-path` serves a developer's; absolute, since the
+    # dashboard has no project root for a relative path to resolve
+    # against.
+    composed[ENVVAR_RBT_WEB_APP_DIST_PATH] = str(DASHBOARD_DIRECTORY)
 
     # Served with `rbt serve` defaults rather than `rbt dev` ones.
     # Popped rather than left unset, since `detect_run_environment`

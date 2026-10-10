@@ -61,7 +61,6 @@ from reboot.cli.common.transpile import (
 from reboot.cli.common.watch import FileWatcher, file_watcher
 from reboot.controller.plan_makers import validate_num_servers
 from reboot.dashboard.backend.constants import (
-    DASHBOARD_PATH,
     DEFAULT_DASHBOARD_PORT,
     PREFERENCES_ID,
     PRESENCE_ID,
@@ -557,14 +556,10 @@ async def _open_dashboard_once(
 
 def automatically_opened_url(dashboard_url: str) -> str:
     """The URL a dashboard is opened at when nobody asked for it, which
-    tells the page so, letting it offer not to be opened again.
-
-    Everything else sends people to the root, which redirects to the
-    page wherever it is served, keeping the query; this passes the
-    page's whole path so the browser doesn't take the extra hop. The
+    tells the page so, letting it offer not to be opened again. The
     query only ever comes from here, so nobody is told to type it.
     """
-    return f'{dashboard_url}{DASHBOARD_PATH}/?opened=automatically'
+    return f'{dashboard_url}/?opened=automatically'
 
 
 async def _dashboard_reachable(port: int) -> bool:
