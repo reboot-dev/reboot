@@ -12,6 +12,24 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Native fixture corrections (2026-10-10)
+
+The disabled task-administration fixture now expects the runtime's fail-closed
+`PermissionDenied` for ListTasks and CancelTask. The sequential-star restart
+fixture waits for every participant's immediate tasks to be durably Completed
+before checking delayed tasks remain Pending and stopping hosts. Root Commit
+publishes tasks; handler entry alone is not durable task completion. Exact two
+invocations and later Completed-restart/no-redispatch assertions remain intact.
+This does not claim exactly-once handler entry across an in-flight crash.
+
+Focused execution of both complete enclosing native cases passed (one case per
+Cargo command, exit zero) after these corrections. The preceding five diagnostic
+star repetitions produced four passes and one invocation-count failure, with a
+Pending reader already logged before shutdown and three reader entries after
+restart. These focused results do not certify the full native inventory: the
+first full audit failed two CXX cases and stopped before the remaining three
+suites. Full-suite revalidation remains outstanding.
+
 ## How to read the evidence
 
 - **Implemented, bounded:** a public/generated path exists, with the limitations
@@ -2775,7 +2793,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: e3d490a5fb0375f06d845d7d74f604865e8bfe32597641d02ab51e7023f8b2e4 -->
+<!-- parity-source-sha256: bbf037a73b4054fb20c30b69241bbf0f230f2527804863dbb6d1c3935398db46 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

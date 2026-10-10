@@ -197,7 +197,7 @@ fn generated_canonical_reader_task_wait_deadline_and_typed_result() {
                 .await
                 .unwrap_err()
                 .code(),
-            tonic::Code::Unimplemented
+            tonic::Code::PermissionDenied
         );
         assert_eq!(
             client
@@ -207,7 +207,7 @@ fn generated_canonical_reader_task_wait_deadline_and_typed_result() {
                 .await
                 .unwrap_err()
                 .code(),
-            tonic::Code::Unimplemented
+            tonic::Code::PermissionDenied
         );
     });
     let deadline_marker = markers.path().join("typed-deadline");

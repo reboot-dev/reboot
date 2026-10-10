@@ -152,8 +152,23 @@ fn sequential_star_reader_writer_atomic_commit_delayed_completed_restart() {
     tree.sibling_paths();
     tree.root_members(&format!("{}\n{}", tree.refs[1], tree.refs[2]));
     let tasks: Vec<_> = (0..3).map(|actor| tree.scheduled_records(actor)).collect();
+    // Root Commit publishes tasks; it does not acknowledge their completion.
+    // This restart covers immediate Completed tasks and delayed Pending tasks,
+    // not the replay window between handler entry and durable CompleteTask.
+    for (actor, actor_tasks) in tasks.iter().enumerate() {
+        for task in actor_tasks.iter().filter(|task| task.timestamp.is_none()) {
+            tree.wait_task(actor, task);
+        }
+    }
+    // Check all participants only after every immediate task has completed.
     for (actor, actor_tasks) in tasks.iter().enumerate() {
         let records = tree.records(actor, actor_tasks);
+        assert_eq!(
+            records.iter().filter(|task| task.timestamp.is_none()
+                && task.status == database::task::Status::Completed as i32).count(),
+            2,
+            "immediate tasks must be durably Completed before restart"
+        );
         assert_eq!(records.iter().filter(|t| t.timestamp.is_some() && t.status == database::task::Status::Pending as i32).count(),2,
             "delayed tasks must be Pending before actual host/sidecar restart");
     }
@@ -202,7 +217,10 @@ fn sequential_star_reader_writer_atomic_commit_delayed_completed_restart() {
         );
     }
     let logs = tree.task_logs();
-    assert!(logs.iter().all(|log| log.lines().count() == 2));
+    assert!(logs.iter().all(|log| log.lines().count() == 2),
+        "sequential-star POST-RESTART logs (collector order): {:?}",
+        logs.iter().enumerate().map(|(index, log)|
+            (index, log.lines().count(), log)).collect::<Vec<_>>());
     SupervisedTree::stop(&mut hosts);
     tree.restart();
     let mut commands = std::array::from_fn::<_, 3, _>(|actor| tree.star_command(actor, at));
