@@ -8,6 +8,7 @@ from reboot.aio.caller_id import CallerID
 from reboot.aio.external import ExternalContext
 from reboot.aio.internals.channel_manager import _ChannelManager
 from reboot.aio.types import ApplicationId, ServerId
+from reboot.rootpage.page import probe, root_page_asset, root_page_endpoint
 from reboot.settings import ONLY_LOCALHOST_NETWORK_ADDRESS
 from reboot.wait_for_tasks import wait_for_tasks
 from starlette.requests import Request  # type: ignore[import]
@@ -33,7 +34,11 @@ class WebFramework(ABC):
         port: Optional[int],
         channel_manager: _ChannelManager,
         application_id: ApplicationId,
+        root: Optional[str],
     ) -> int:
+        """Start serving on `port` (or a free one when `None`) and
+        return the port. `root` is the path the application's `/`
+        forwards to, when it named one."""
         raise NotImplementedError()
 
     @abstractmethod
@@ -223,6 +228,7 @@ class PythonWebFramework(WebFramework):
         port: Optional[int],
         channel_manager: _ChannelManager,
         application_id: ApplicationId,
+        root: Optional[str],
     ) -> int:
         assert server_id not in self._servers
 
@@ -295,6 +301,24 @@ class PythonWebFramework(WebFramework):
 
             return await call_next(request)
 
+        # Reboot's own paths: the root page's assets and the install
+        # wizard's probe. Registered before the application's routes
+        # and mounts so that a catch-all mount can't swallow them, and
+        # not through `self._http` so that they don't count as the
+        # application's (see `has_http_routes_or_mounts`).
+        fastapi.add_api_route(
+            "/__/rootpage/{file:path}",
+            root_page_asset,
+            methods=["GET"],
+            include_in_schema=False,
+        )
+        fastapi.add_api_route(
+            "/__/probe",
+            probe,
+            methods=["GET"],
+            include_in_schema=False,
+        )
+
         for mount in self._http._mounts:
             assert mount.app is not None or mount.factory is not None
             fastapi.mount(
@@ -310,6 +334,18 @@ class PythonWebFramework(WebFramework):
                 api_route.endpoint,
                 **api_route.kwargs,
             )
+
+        # Reboot's page at `/`, or a redirect to the application's
+        # `root`. Registered after the application's own routes and
+        # mounts so that any of those that claims `/` wins, and not
+        # through `self._http` so that it doesn't count as one of the
+        # application's routes (see `has_http_routes_or_mounts`).
+        fastapi.add_api_route(
+            "/",
+            root_page_endpoint(root),
+            methods=["GET"],
+            include_in_schema=False,
+        )
 
         config = uvicorn.Config(
             fastapi,
@@ -408,10 +444,12 @@ class NodeWebFramework(WebFramework):
         port: Optional[int],
         channel_manager: _ChannelManager,
         application_id: ApplicationId,
+        root: Optional[str],
     ) -> int:
         # `application_id` is only needed to build app-internal contexts
-        # for Python-served framework routes (e.g. the OAuth callback);
-        # the Node web framework doesn't serve those, so it's ignored.
+        # for Python-served framework routes (e.g. the OAuth callback),
+        # and `root` for the Python-served page at `/`; the Node web
+        # framework serves neither, so both are ignored.
         return await self._start(server_id, port, channel_manager)
 
     async def stop(self, server_id: ServerId):
