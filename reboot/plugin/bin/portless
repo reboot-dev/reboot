@@ -1,0 +1,21 @@
+#!/usr/bin/env sh
+#
+# Reboot Claude Code plugin: `portless` bootstrap shim.
+#
+# Claude Code prepends this script's directory to the agent's `PATH`,
+# so the agent's `portless ...` invocations land here. Delegates to
+# `lib/install_portless.sh` and execs the cached CLI with the plugin's
+# pinned Node first on `PATH`, which is what its `#!/usr/bin/env node`
+# resolves.
+
+set -eu
+
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname -- "$0")/.." && pwd)}"
+
+NODE_DIR="$("$PLUGIN_ROOT/lib/install_node.sh")"
+PORTLESS_DIR="$("$PLUGIN_ROOT/lib/install_portless.sh")"
+
+PATH="$NODE_DIR/bin:$PATH"
+export PATH
+
+exec "$PORTLESS_DIR/node_modules/.bin/portless" "$@"

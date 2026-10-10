@@ -351,6 +351,7 @@ py_library(
         ":state_managers_py",
         ":tracing_py",
         "//reboot:naming_py",
+        "//reboot:portless_py",
         "//reboot:run_environments_py",
         "//reboot:wait_for_tasks_py",
         "//reboot/aio:servers_py",

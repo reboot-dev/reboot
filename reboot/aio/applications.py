@@ -14,6 +14,7 @@ from log.log import get_logger
 from mcp.server.fastmcp import FastMCP
 from pathlib import Path
 from rbt.v1alpha1.application.application_pb2 import ExamplePrompt
+from reboot.aio.auth.allowed_origins import frontend_dev_origin
 from reboot.aio.auth.oauth import OAuth
 from reboot.aio.auth.oauth_server import OAuthServer
 from reboot.aio.auth.token_verifiers import (
@@ -466,6 +467,14 @@ class Application:
         self._skip_consent_for_redirect_uris: list[str] = []
         if oauth is not None:
             self._allowed_origins = list(oauth.allowed_origins or [])
+            # Under `rbt dev run`, the frontend dev server's origin too:
+            # Envoy's CORS and the OAuth server both read this list.
+            frontend_origin = frontend_dev_origin()
+            if (
+                frontend_origin is not None and
+                frontend_origin not in self._allowed_origins
+            ):
+                self._allowed_origins.append(frontend_origin)
             self._skip_consent_for_redirect_uris = list(
                 oauth.skip_consent_for_redirect_uris
             )

@@ -139,7 +139,8 @@ ENVVAR_RBT_SERVERS = 'RBT_SERVERS'
 
 # URL of the frontend's dev server (e.g., Vite at
 # "http://localhost:5173"), which Envoy proxies "/__/frontend/**" to
-# (`rbt dev run --frontend-url`).
+# (`rbt dev run --frontend-url`), and whose origin, since a browser may
+# open the web app there too, is trusted as a browser origin.
 ENVVAR_RBT_FRONTEND_URL = 'RBT_FRONTEND_URL'
 # "true" when the application's MCP Apps are served from that dev
 # server (`rbt dev run --mcp-app`); their builds are served from
@@ -157,6 +158,12 @@ ENVVAR_RBT_MCP_APP_DIST_PATH = 'RBT_MCP_APP_DIST_PATH'
 # Project-relative directory holding the built web app, e.g.
 # "frontend/dist/web", served at "/".
 ENVVAR_RBT_WEB_APP_DIST_PATH = 'RBT_WEB_APP_DIST_PATH'
+# The name to register with the portless proxy once the application is
+# serving (see `reboot.portless`), so that it is served as
+# `https://<RBT_PORTLESS_NAME>.localhost`: the `--application-name`
+# under `rbt dev run --portless`, and `dashboard.<application-name>`
+# for `rbt dashboard --portless`. Unset when not under portless.
+ENVVAR_RBT_PORTLESS_NAME = 'RBT_PORTLESS_NAME'
 
 # Environment variable indicating that `rbt` is being invoked from
 # Node.js.

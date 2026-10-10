@@ -12,7 +12,8 @@
 #
 #   2. The Reboot dev commands issued by the `run` and `dashboard`
 #      skills: `uv sync`, `npm install`, `npm run dev`,
-#      `cloudflared tunnel …`, `uv run rbt dev run …`,
+#      `cloudflared tunnel …`, `npm run dev:portless`,
+#      `portless doctor`, `uv run rbt dev run …`,
 #      `uv run rbt dashboard …`, `npx @mcpjam/inspector …`. These
 #      are approved ONLY inside a Reboot project tree (the working
 #      directory, or an ancestor, holds a `.rbtrc`).
@@ -271,10 +272,33 @@ case "$tool" in
                         args_all_flags "${trimmed#npm install}" || exit 1
                         approved=$((approved + 1))
                         ;;
-                    'npm run dev' | 'npm run dev '*)
-                        # `run` skill — frontend dev server.
+                    'npm run dev' | 'npm run dev '* | 'npm run dev:'*)
+                        # `run` skill — frontend dev server: `dev`,
+                        # or a script named after an `.rbtrc`
+                        # config (`dev:portless`, which runs
+                        # `portless frontend.<name> vite`, or `dev:hmr`).
                         in_reboot_project "$effective_dir" || exit 1
-                        args_all_flags "${trimmed#npm run dev}" || exit 1
+                        rest="${trimmed#npm run dev}"
+                        case "$rest" in
+                            :*)
+                                config="${rest#:}"
+                                config="${config%% *}"
+                                case "$config" in
+                                    ''|*[!A-Za-z0-9-]*|-*) exit 1 ;;
+                                esac
+                                rest="${rest#:"$config"}"
+                                ;;
+                        esac
+                        args_all_flags "$rest" || exit 1
+                        approved=$((approved + 1))
+                        ;;
+                    'portless doctor' | 'portless list' | 'portless proxy start')
+                        # `run` skill — check on, and start, the
+                        # portless proxy. Starting it needs `sudo`
+                        # for port 443, which portless runs itself:
+                        # passwordless, that just works; otherwise
+                        # it fails and the skill hands it to the user.
+                        in_reboot_project "$effective_dir" || exit 1
                         approved=$((approved + 1))
                         ;;
                     'uv run rbt dev run' | 'uv run rbt dev run '*)

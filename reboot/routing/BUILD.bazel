@@ -39,6 +39,7 @@ py_library(
         # runfiles root as the `reboot.aio.auth` package that
         # consumers like `rbt` resolve, in both the mono and the
         # public workspace.
+        "//reboot:portless_py",
         "//reboot/aio/auth:allowed_origins_py",
         "//reboot/routing:cors_settings_py",
         "//reboot/routing/filters:lua_py",

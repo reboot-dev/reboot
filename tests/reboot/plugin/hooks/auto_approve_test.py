@@ -741,6 +741,70 @@ REBOOT_DEV_CASES: list[tuple[str, str, Where, Decision]] = [
         Decision.APPROVE,
     ),
     (
+        # `run` skill checks on the portless proxy before deciding
+        # whether to start it.
+        "dev: portless doctor",
+        "portless doctor",
+        Where.PROJECT,
+        Decision.APPROVE,
+    ),
+    (
+        # ...and starts it; portless asks for `sudo` itself, in a
+        # terminal, so this fails harmlessly from the agent's shell.
+        "dev: portless proxy start",
+        "portless proxy start",
+        Where.PROJECT,
+        Decision.APPROVE,
+    ),
+    (
+        # `run` skill starts the frontend dev server under portless
+        # through the frontend's `dev:portless` script, which runs
+        # `portless frontend.<name> vite` (portless is a dev dependency).
+        "dev: npm run dev:portless",
+        "npm run dev:portless",
+        Where.PROJECT,
+        Decision.APPROVE,
+    ),
+    (
+        "dev: npm run dev:hmr",
+        "npm run dev:hmr",
+        Where.PROJECT,
+        Decision.APPROVE,
+    ),
+    (
+        # A script name that isn't one: anything but letters, digits
+        # and dashes (the metacharacter screen would catch most, but
+        # a leading dash is a flag).
+        "dev: npm run dev:<not a script name>",
+        "npm run dev:--help",
+        Where.PROJECT,
+        Decision.REJECT,
+    ),
+    (
+        # Running portless by hand rather than through the script is
+        # like its other subcommands below: not the skill's.
+        "dev: portless <name> npm run dev",
+        "portless bank-pydantic npm run dev",
+        Where.PROJECT,
+        Decision.REJECT,
+    ),
+    (
+        # Other portless subcommands (aliasing, cleaning) change the
+        # machine and are the user's or `rbt`'s to run; `portless
+        # trust`, which the skill may run, changes the OS trust store
+        # and is asked about each time.
+        "dev: portless alias",
+        "portless alias bank 9991",
+        Where.PROJECT,
+        Decision.REJECT,
+    ),
+    (
+        "dev: portless doctor outside a Reboot project",
+        "portless doctor",
+        Where.NON_PROJECT,
+        Decision.REJECT,
+    ),
+    (
         # Outside a Reboot project the tunnel command defers, like
         # the rest of the dev commands.
         "dev: cloudflared tunnel outside a Reboot project",
