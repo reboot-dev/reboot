@@ -45,6 +45,7 @@ py_library(
         "//reboot/cli/common:subprocesses_py",
         "//reboot/cli/common:terminal_py",
         "//reboot/cli/common:transpile_py",
+        "//reboot/cli/common:type_check_py",
         "//reboot/cli/common:watch_py",
         "//reboot/controller:plan_makers_py",
         "//reboot/dashboard/backend:constants_py",

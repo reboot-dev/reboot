@@ -55,6 +55,12 @@ from reboot.cli.common.transpile import (
     auto_transpile,
     ensure_can_auto_transpile,
 )
+from reboot.cli.common.type_check import (
+    check_mypy_installed,
+    missing_mypy,
+    mypy_installed,
+    type_check,
+)
 from reboot.cli.common.watch import FileWatcher, file_watcher
 from reboot.controller.plan_makers import validate_num_servers
 from reboot.dashboard.backend.constants import (
@@ -322,6 +328,21 @@ def _register_dev_run(parser: ArgumentParser):
         "TypeScript files, e.g., 'npx tsc'",
         default=None,
         non_empty_string=True,
+    )
+
+    parser.subcommand('dev run').add_argument(
+        '--type-check',
+        type=bool,
+        # Three states: '--type-check' needs a Python application and
+        # mypy, and fails without them; unset type-checks a Python
+        # application when mypy is installed; '--no-type-check' never
+        # does.
+        default=None,
+        help="whether or not to type-check a '--python' application, and "
+        "the code of yours that it imports, with mypy before every "
+        "(re)start, and start it only once mypy reports no errors; unset, "
+        "a '--python' application is type-checked when mypy is installed "
+        "alongside it",
     )
 
     parser.subcommand('dev run').add_argument(
@@ -1215,6 +1236,22 @@ async def dev_run(
             )
         )
 
+    # '--type-check' asks for a type-check, which needs a Python
+    # application and mypy. Unset, a Python application is type-checked
+    # when mypy is installed; it runs without mypy, so missing mypy
+    # then only says that it starts without a type-check.
+    if args.type_check and not args.python:
+        terminal.fail(
+            "'--type-check' was specified, which is currently only "
+            "supported for Python applications"
+        )
+    elif args.type_check:
+        check_mypy_installed()
+    elif args.type_check is None:
+        args.type_check = args.python and mypy_installed()
+        if args.python and not args.type_check:
+            terminal.warn(missing_mypy())
+
     tls_args = [args.tls_certificate, args.tls_key, args.tls_root_certificate]
 
     if any(tls_args) and not all(tls_args):
@@ -1876,47 +1913,50 @@ async def __dev_run(
                             continue
 
                 if auto_transpilation:
-                    bundle = await auto_transpile(
-                        subprocesses,
-                        application,
-                        args.application_name or "anonymous",
-                        ts_input_paths,
-                    )
-
-                    if bundle is None:
-                        if len(ts_input_paths) == 0:
-                            # Exit because we don't know what to watch
-                            # for modification!
-                            terminal.fail(
-                                '\n'
-                                'Transpilation failed, please fix the errors above and re-run `rbt dev`'
-                            )
-
-                        # Wait for file modification.
-                        #
-                        # TODO: are there corner cases here where,
-                        # e.g., a new file in a new directory is the
-                        # only file with a transpilation error but
-                        # since it wasn't part of the previous
-                        # `ts_input_paths` we won't watch it and thus
-                        # wait forever? Is `watcher.watch()`
-                        # sophisticated enough to look for all sub
-                        # directories or do we need to explicitly add
-                        # '**' style globs in this case (and only this
-                        # case to reduce load on the OS) to make sure
-                        # we see all modifications?
-                        terminal.warn(
-                            '\n'
-                            'Transpilation failed ... waiting for modification\n'
-                            '\n'
+                    # Watch the inputs of the previous transpilation,
+                    # which are all the files we know of that might
+                    # have the transpilation issue, before transpiling
+                    # again, so that a modification made while
+                    # `rbt-esbuild` runs ends the wait below instead
+                    # of going unseen.
+                    async with watcher.watch(
+                        ts_input_paths
+                    ) as application_event_task:
+                        bundle = await auto_transpile(
+                            subprocesses,
+                            application,
+                            args.application_name or "anonymous",
+                            ts_input_paths,
                         )
 
-                        # Watch all previously watched files for
-                        # changes as we don't know which file
-                        # might have add the transpilation issue.
-                        async with watcher.watch(
-                            ts_input_paths
-                        ) as application_event_task:
+                        if bundle is None:
+                            if len(ts_input_paths) == 0:
+                                # Exit because we don't know what to
+                                # watch for modification!
+                                terminal.fail(
+                                    '\n'
+                                    'Transpilation failed, please fix the errors above and re-run `rbt dev`'
+                                )
+
+                            # Wait for file modification.
+                            #
+                            # TODO: are there corner cases here where,
+                            # e.g., a new file in a new directory is
+                            # the only file with a transpilation error
+                            # but since it wasn't part of the previous
+                            # `ts_input_paths` we won't watch it and
+                            # thus wait forever? Is `watcher.watch()`
+                            # sophisticated enough to look for all sub
+                            # directories or do we need to explicitly
+                            # add '**' style globs in this case (and
+                            # only this case to reduce load on the OS)
+                            # to make sure we see all modifications?
+                            terminal.warn(
+                                '\n'
+                                'Transpilation failed ... waiting for modification\n'
+                                '\n'
+                            )
+
                             completed = await _wait_for_first_completed(
                                 application_event_task,
                                 watch_event_task,
@@ -1992,6 +2032,44 @@ async def __dev_run(
 
                 if not await aiofiles.os.path.isfile(application):
                     terminal.fail(f"Missing application at '{application}'")
+
+                # Type-check a Python application, and start it only
+                # once mypy reports no errors.
+                if args.type_check:
+                    assert args.python and mypy_installed()
+
+                    # Watch `application`, which `--watch` need not
+                    # cover, before type-checking it, so that a
+                    # modification made while mypy runs, e.g. by an
+                    # agent that is already fixing the errors, ends
+                    # the wait below instead of going unseen. The
+                    # other watches above started before this one.
+                    async with watcher.watch(
+                        [application]
+                    ) as application_event_task:
+                        if not await type_check(subprocesses, application):
+                            terminal.warn(
+                                '\n'
+                                'Type-check failed ... waiting for modification'
+                                '\n'
+                            )
+                            completed = await _wait_for_first_completed(
+                                application_event_task,
+                                watch_event_task,
+                                env_file_event_task,
+                                protos_event_task,
+                                rc_file_event_task,
+                            )
+                            if rc_file_event_task in completed:
+                                return None
+                            if protos_event_task in completed:
+                                needs_proto_compile = True
+                            terminal.info(
+                                '\n'
+                                'Application modified; restarting ... '
+                                '\n'
+                            )
+                            continue
 
                 launcher: Optional[str] = None
                 if args.python:
