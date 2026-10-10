@@ -504,9 +504,9 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
         # Without this the UI resolves to a non-existent source path
         # and the test would silently exercise the placeholder.
         os.environ["RBT_FRONTEND_DIST_PATH"] = "frontend/dist"
-        os.environ["RBT_FRONTEND_ROOT_PATH"] = "frontend"
+        os.environ["RBT_MCP_UI_PATH_PREFIX"] = "frontend"
         self.addCleanup(os.environ.pop, "RBT_FRONTEND_DIST_PATH", None)
-        self.addCleanup(os.environ.pop, "RBT_FRONTEND_ROOT_PATH", None)
+        self.addCleanup(os.environ.pop, "RBT_MCP_UI_PATH_PREFIX", None)
 
         await self.rbt.up(
             Application(

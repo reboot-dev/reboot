@@ -77,7 +77,7 @@ from reboot.settings import (
     ENVVAR_RBT_EFFECT_VALIDATION,
     ENVVAR_RBT_FRONTEND_DIST_PATH,
     ENVVAR_RBT_FRONTEND_HOST,
-    ENVVAR_RBT_FRONTEND_ROOT_PATH,
+    ENVVAR_RBT_MCP_UI_PATH_PREFIX,
     ENVVAR_RBT_NAME,
     ENVVAR_RBT_NODEJS,
     ENVVAR_RBT_SERVERS,
@@ -220,7 +220,7 @@ def _register_dev_run(parser: ArgumentParser):
             '(e.g., http://localhost:4444). When set, '
             'Envoy routes `/__/frontend/**` paths to this '
             'host for Hot Module Replacement. Requires '
-            '`--frontend-root-path`; mutually exclusive '
+            '`--mcp-ui-path-prefix`; mutually exclusive '
             'with `--frontend-dist-path`.'
         ),
     )
@@ -1552,28 +1552,30 @@ async def __dev_run(
 
     # The frontend is served one of two mutually-exclusive ways: a live
     # dev server (`--frontend-host`, for HMR) or built assets on disk
-    # (`--frontend-dist-path`). `--frontend-root-path` names the frontend
-    # root and is required alongside whichever of the two is chosen.
+    # (`--frontend-dist-path`). `--mcp-ui-path-prefix` names the
+    # frontend directory and is required alongside whichever of the
+    # two is chosen.
     if args.frontend_host and args.frontend_dist_path:
         terminal.fail(
             "`--frontend-host` and `--frontend-dist-path` are mutually "
             "exclusive; pass one or the other."
         )
+    prefix = args.mcp_ui_path_prefix
     if args.frontend_host:
-        if not args.frontend_root_path:
-            terminal.fail("`--frontend-host` requires `--frontend-root-path`.")
+        if not prefix:
+            terminal.fail("`--frontend-host` requires `--mcp-ui-path-prefix`.")
         env[ENVVAR_RBT_FRONTEND_HOST] = args.frontend_host
-        env[ENVVAR_RBT_FRONTEND_ROOT_PATH] = args.frontend_root_path
+        env[ENVVAR_RBT_MCP_UI_PATH_PREFIX] = prefix
     elif args.frontend_dist_path:
-        if not args.frontend_root_path:
+        if not prefix:
             terminal.fail(
-                "`--frontend-dist-path` requires `--frontend-root-path`."
+                "`--frontend-dist-path` requires `--mcp-ui-path-prefix`."
             )
         env[ENVVAR_RBT_FRONTEND_DIST_PATH] = args.frontend_dist_path
-        env[ENVVAR_RBT_FRONTEND_ROOT_PATH] = args.frontend_root_path
-    elif args.frontend_root_path:
+        env[ENVVAR_RBT_MCP_UI_PATH_PREFIX] = prefix
+    elif prefix:
         terminal.fail(
-            "`--frontend-root-path` is only valid alongside "
+            "`--mcp-ui-path-prefix` is only valid alongside "
             "`--frontend-host` or `--frontend-dist-path`."
         )
 

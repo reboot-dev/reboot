@@ -37,7 +37,7 @@ from reboot.settings import (
     ENVVAR_LOCAL_ENVOY_USE_TLS,
     ENVVAR_RBT_EFFECT_VALIDATION,
     ENVVAR_RBT_FRONTEND_DIST_PATH,
-    ENVVAR_RBT_FRONTEND_ROOT_PATH,
+    ENVVAR_RBT_MCP_UI_PATH_PREFIX,
     ENVVAR_RBT_NAME,
     ENVVAR_RBT_NODEJS,
     ENVVAR_RBT_SERVE,
@@ -264,16 +264,17 @@ async def serve_run(
         if args.state_directory is not None:
             env[ENVVAR_RBT_STATE_DIRECTORY] = args.state_directory
 
+        prefix = args.mcp_ui_path_prefix
         if args.frontend_dist_path is not None:
-            if args.frontend_root_path is None:
+            if prefix is None:
                 terminal.fail(
-                    "`--frontend-dist-path` requires `--frontend-root-path`."
+                    "`--frontend-dist-path` requires `--mcp-ui-path-prefix`."
                 )
             env[ENVVAR_RBT_FRONTEND_DIST_PATH] = args.frontend_dist_path
-            env[ENVVAR_RBT_FRONTEND_ROOT_PATH] = args.frontend_root_path
-        elif args.frontend_root_path is not None:
+            env[ENVVAR_RBT_MCP_UI_PATH_PREFIX] = prefix
+        elif prefix is not None:
             terminal.fail(
-                "`--frontend-root-path` is only valid alongside "
+                "`--mcp-ui-path-prefix` is only valid alongside "
                 "`--frontend-dist-path`."
             )
 

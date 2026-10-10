@@ -188,12 +188,12 @@ cd frontend && npm run dev
 server always has an up-to-date `frontend/api/`.
 
 If you want Reboot to serve the frontend too — so both are on one
-origin, and so `UI` methods work — point it at your frontend root in
-`.rbtrc`:
+origin, and so `UI` methods work — point it at your frontend directory
+in `.rbtrc`:
 
 ```
-# The frontend root, shared by the `:hmr` and `:dist` configs below.
-dev run --frontend-root-path=frontend
+# The frontend directory, shared by the `:hmr` and `:dist` configs below.
+dev run --mcp-ui-path-prefix=frontend
 
 # HMR: proxy `/__/frontend/**` to the Vite dev server.
 dev run:hmr --frontend-host=http://localhost:4444

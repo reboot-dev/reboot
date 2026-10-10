@@ -142,7 +142,7 @@ the command line:
 ```sh
 # Default config (HMR / Vite).
 dev run --default-config=hmr
-dev run --frontend-root-path=frontend
+dev run --mcp-ui-path-prefix=frontend
 
 dev run:hmr --frontend-host=http://localhost:4444
 

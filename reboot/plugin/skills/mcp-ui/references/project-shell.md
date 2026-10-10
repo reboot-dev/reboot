@@ -62,7 +62,7 @@ dev run --default-config=hmr
 # HMR: Vite dev server proxied through Envoy.
 # Run Vite in a separate terminal: cd frontend && npm run dev
 # Envoy routes "/__/frontend/**" to Vite for HMR support.
-dev run --frontend-root-path=frontend
+dev run --mcp-ui-path-prefix=frontend
 
 dev run:hmr --frontend-host=http://localhost:4444
 
@@ -80,7 +80,7 @@ dev expunge --application-name=<project-name>
 # block above, minus the dev-only knobs (`--watch`, `--env-file`,
 # the `:hmr`/`:dist` configs).
 serve run --python
-serve run --frontend-dist-path=frontend/dist --frontend-root-path=frontend
+serve run --frontend-dist-path=frontend/dist --mcp-ui-path-prefix=frontend
 serve run --application=backend/src/main.py
 serve run --application-name=<project-name>
 serve run --tls=external
