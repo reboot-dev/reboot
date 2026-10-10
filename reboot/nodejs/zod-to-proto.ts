@@ -584,6 +584,16 @@ const generate = (
 
       const literal = option.shape[discriminator]._zod.def.values[0];
 
+      // The literal names the nested type, so it has to be a string.
+      if (typeof literal !== "string") {
+        console.error(
+          chalk.stderr.bold.red(
+            `Discriminated union at '${path}' has a non-string literal '${literal}' for discriminator '${discriminator}', only string literals are currently supported`
+          )
+        );
+        process.exit(-1);
+      }
+
       if (literals.has(literal)) {
         console.error(
           chalk.stderr.bold.red(

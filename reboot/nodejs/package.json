@@ -32,9 +32,9 @@
     "prepack": "tsc"
   },
   "devDependencies": {
-    "typescript": "5.4.5",
+    "typescript": "5.9.3",
     "@types/express": "^5.0.1",
-    "@types/node": "20.11.5",
+    "@types/node": "26.6.4",
     "@types/express-serve-static-core": "^5.0.6"
   },
   "bin": {

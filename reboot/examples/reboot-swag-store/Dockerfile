@@ -41,7 +41,7 @@ RUN rbt generate
 # import the generated TS bindings at `frontend/api/`, which we pull
 # from the backend stage above.
 # ---------------------------------------------------------------------------
-FROM node:20-alpine AS web-build
+FROM node:26-alpine AS web-build
 
 WORKDIR /app/frontend
 

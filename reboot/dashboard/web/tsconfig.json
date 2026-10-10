@@ -8,5 +8,6 @@
     // So the contract test can import `description.ts` by name.
     "declaration": true,
     "verbatimModuleSyntax": true
-  }
+  },
+  "exclude": []
 }
