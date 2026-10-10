@@ -97,7 +97,7 @@ class ViteFrontend(Frontend):
             'not serving; `serve()` first'
         )
         # The app is at the root, in a dual-surface layout by way of
-        # the dev server's redirect to `/__/frontend/web/`.
+        # the dev server serving `web/index.html` there.
         url = f'{self.origin}/'
         deadline = time.monotonic() + SERVING_DEADLINE_SECONDS
         last: Optional[str] = None

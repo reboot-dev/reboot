@@ -36,7 +36,7 @@ plugin raises an error about if the config sets them: the backend's
 their values. The copy fixed the dev server's port at 4444; the
 plugin leaves the port to Vite, so it is Vite's default, 5173, unless
 the config sets `server.port`. Change `--mcp-app-url` (and
-`VITE_WEB_APP_URL`, if set) in `.rbtrc` and
+`--web-app-url` or `VITE_WEB_APP_URL`, if set) in `.rbtrc` and
 `.env.development` from `http://localhost:4444` to
 `http://localhost:5173`, or keep 4444 by adding
 `server: { port: 4444 }` to the config. `vite`, `@vitejs/plugin-react` and `vite-plugin-singlefile`

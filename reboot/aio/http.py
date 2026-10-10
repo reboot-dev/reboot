@@ -1,3 +1,4 @@
+import aiohttp
 import asyncio
 import contextlib
 import uvicorn  # type: ignore[import]
@@ -66,6 +67,107 @@ class WebApp(StaticFiles):
             if name == b"accept":
                 return b"text/html" in value
         return False
+
+
+# Headers that describe the connection a message came over, not the
+# message, which a proxy must not pass on (RFC 9110 §7.6.1).
+_HOP_BY_HOP_HEADERS = frozenset(
+    (
+        "connection",
+        "keep-alive",
+        "proxy-authenticate",
+        "proxy-authorization",
+        "te",
+        "trailer",
+        "transfer-encoding",
+        "upgrade",
+    )
+)
+
+
+class WebDevServer:
+    """A web app served at `/` from its dev server (`--web-app-url`), with
+    Hot Module Replacement: every request that reaches this mount is
+    proxied to the dev server as it came, so `/` and every path the
+    web app's own routing owns are answered the way the dev server
+    answers them (its transformed `index.html`), and a missing asset
+    404s as it does there.
+
+    Only the page itself and the web app's `public/` files come this
+    way. The modules the page loads, and the HMR WebSocket, are under
+    `/__/frontend/`, which Envoy proxies to the dev server directly.
+    """
+
+    def __init__(self, host: str):
+        self._host = host.rstrip("/")
+
+    async def __call__(
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+    ) -> None:
+        if scope["type"] != "http":
+            # A WebSocket for a path under `/` is not the HMR socket
+            # (that is under `/__/frontend/`, Envoy's to proxy), and
+            # nothing else here speaks it.
+            await send({"type": "websocket.close"})
+            return
+        request = Request(scope, receive)
+        url = self._host + request.url.path
+        if request.url.query:
+            url += "?" + request.url.query
+        # The request as it came, minus the `Host`, which is the dev
+        # server's own (set from the URL).
+        headers = [
+            (name, value) for name, value in request.headers.items() if
+            name.lower() not in _HOP_BY_HOP_HEADERS and name.lower() != "host"
+        ]
+        try:
+            async with aiohttp.ClientSession(auto_decompress=False) as session:
+                async with session.request(
+                    request.method,
+                    url,
+                    headers=headers,
+                    data=(
+                        request.stream()
+                        if request.method not in ("GET", "HEAD") else None
+                    ),
+                    allow_redirects=False,
+                ) as upstream:
+                    await send(
+                        {
+                            "type":
+                                "http.response.start",
+                            "status":
+                                upstream.status,
+                            "headers":
+                                [
+                                    (name.lower().encode(), value.encode())
+                                    for name, value in upstream.headers.items()
+                                    if name.lower() not in _HOP_BY_HOP_HEADERS
+                                ],
+                        }
+                    )
+                    async for chunk in upstream.content.iter_any():
+                        await send(
+                            {
+                                "type": "http.response.body",
+                                "body": chunk,
+                                "more_body": True,
+                            }
+                        )
+                    await send({"type": "http.response.body", "body": b""})
+        except aiohttp.ClientConnectionError as error:
+            # The dev server is not up (or not yet): say so in place
+            # of the page, rather than a bare 502.
+            await Response(
+                f"The web app's dev server at {self._host} is not "
+                f"answering ({error}); is it running "
+                "(`npm run dev` in the frontend)?",
+                status_code=502,
+                media_type="text/plain",
+            )(scope, receive, send)
 
 
 class WebFramework(ABC):
@@ -142,6 +244,10 @@ class PythonWebFramework(WebFramework):
             # of the application's own routes (see
             # `has_http_routes_or_mounts`).
             self._web_app_directory: Optional[Path] = None
+            # The dev server serving the web app (`--web-app-url`), if
+            # any: `/`, and every path nothing else claims, is proxied
+            # to it.
+            self._web_app_url: Optional[str] = None
             # Exact request paths whose handlers receive an *app-internal*
             # context (one that can call app-internal-only servicers)
             # instead of the usual external one, because they opted in via
@@ -387,10 +493,13 @@ class PythonWebFramework(WebFramework):
         # wins, and not through `self._http` so that it doesn't count
         # as one of the application's routes (see
         # `has_http_routes_or_mounts`): the built web app
-        # (`--web-app-dist-path`), which also catches every path nothing
-        # else claimed; else Reboot's page at `/`.
+        # (`--web-app-dist-path`) or the web app its dev server serves
+        # (`--web-app-url`), either of which also catches every path
+        # nothing else claimed; else Reboot's page at `/`.
         if self._http._web_app_directory is not None:
             fastapi.mount("/", WebApp(self._http._web_app_directory))
+        elif self._http._web_app_url is not None:
+            fastapi.mount("/", WebDevServer(self._http._web_app_url))
         else:
             fastapi.add_api_route(
                 "/",

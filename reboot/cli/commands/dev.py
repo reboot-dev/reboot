@@ -85,6 +85,7 @@ from reboot.settings import (
     ENVVAR_RBT_SERVERS,
     ENVVAR_RBT_STATE_DIRECTORY,
     ENVVAR_RBT_WEB_APP_DIST_PATH,
+    ENVVAR_RBT_WEB_APP_URL,
     ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
     ENVVAR_REBOOT_EXPECTED_VERSION,
     ENVVAR_REBOOT_LOCAL_ENVOY,
@@ -231,6 +232,19 @@ def _register_dev_run(parser: ArgumentParser):
     parser.subcommand('dev run').add_renamed_flag(
         '--frontend-host',
         '--mcp-app-url',
+    )
+    parser.subcommand('dev run').add_argument(
+        '--web-app-url',
+        type=str,
+        help=(
+            'URL of the dev server (e.g., Vite at '
+            'http://localhost:5173) that serves the web app. '
+            'The application serves the web app at `/` by '
+            'proxying to it, so the app has the same URL as '
+            'the API with Hot Module Replacement; Envoy proxies '
+            '`/__/frontend/**`, where its modules are, to it. '
+            'Mutually exclusive with `--web-app-dist-path`.'
+        ),
     )
 
     add_common_frontend_args(parser.subcommand('dev run'))
@@ -1076,11 +1090,16 @@ def _check_common_args(args):
     elif not args.python and not args.nodejs:
         terminal.fail("One of '--python' or '--nodejs' must be specified.")
 
-    # `--web-app-dist-path` is the Python web framework's doing; a Node.js
-    # application's own serves `/`.
+    # `--web-app-dist-path` and `--web-app-url` are the Python web
+    # framework's doing; a Node.js application's own serves `/`.
     if args.nodejs and args.web_app_dist_path:
         terminal.fail(
             "`--web-app-dist-path` is not supported with `--nodejs`: a "
+            "Node.js application's own web framework serves `/`."
+        )
+    if args.nodejs and args.web_app_url:
+        terminal.fail(
+            "`--web-app-url` is not supported with `--nodejs`: a "
             "Node.js application's own web framework serves `/`."
         )
 
@@ -1588,10 +1607,35 @@ async def __dev_run(
             "`--mcp-app-url` or `--mcp-app-dist-path`."
         )
 
-    # The web app, when Reboot serves it, is its own thing: a built
-    # web app at `/`, independent of how the MCP UIs are served.
+    # The web app is its own thing, independent of how the MCP UIs
+    # are served: Reboot serves it at `/` either way, built from a
+    # directory or live from its dev server.
+    if args.web_app_dist_path and args.web_app_url:
+        terminal.fail(
+            "`--web-app-dist-path` and `--web-app-url` are mutually "
+            "exclusive; pass one or the other."
+        )
     if args.web_app_dist_path:
         env[ENVVAR_RBT_WEB_APP_DIST_PATH] = args.web_app_dist_path
+    if args.web_app_url:
+        # One frontend dev server serves the web app and the MCP
+        # UIs, and `/__/frontend/**` is proxied to one host.
+        if (
+            args.mcp_app_url and
+            args.mcp_app_url.rstrip('/') != args.web_app_url.rstrip('/')
+        ):
+            terminal.fail(
+                "`--mcp-app-url` and `--web-app-url` name different dev "
+                "servers; the frontend is one dev server, which "
+                "`/__/frontend/**` is proxied to."
+            )
+        if args.mcp_app_dist_path:
+            terminal.fail(
+                "`--web-app-url` and `--mcp-app-dist-path` are mutually "
+                "exclusive: `/__/frontend/**` is proxied to the dev "
+                "server, where the built MCP UIs are not."
+            )
+        env[ENVVAR_RBT_WEB_APP_URL] = args.web_app_url
 
     health_check_task: Optional[asyncio.Task] = None
 

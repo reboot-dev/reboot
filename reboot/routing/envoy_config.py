@@ -49,6 +49,7 @@ from reboot.settings import (
     ENVOY_PER_CONNECTION_BUFFER_LIMIT_BYTES,
     ENVVAR_RBT_DEV,
     ENVVAR_RBT_MCP_APP_URL,
+    ENVVAR_RBT_WEB_APP_URL,
     LocalEnvoyMode,
 )
 from typing import Optional
@@ -96,25 +97,32 @@ class FrontendConfig:
 def _get_frontend_config() -> FrontendConfig | None:
     """Get frontend host configuration from environment.
 
-    Parses `RBT_MCP_APP_URL` env var (e.g., "http://localhost:5173")
-    to extract port for Envoy routing to web dev server.
+    Parses the `RBT_MCP_APP_URL` or `RBT_WEB_APP_URL` env var (e.g.,
+    "http://localhost:5173"): the dev server serving the MCP UIs, the
+    web app, or both (one server; `rbt dev run` refuses two), which
+    Envoy routes `/__/frontend/**` to.
 
     Returns None if not configured or not in dev mode.
     """
     if os.environ.get(ENVVAR_RBT_DEV) != "true":
         return None
-    frontend_url = os.environ.get(ENVVAR_RBT_MCP_APP_URL)
+    frontend_url = (
+        os.environ.get(ENVVAR_RBT_MCP_APP_URL) or
+        os.environ.get(ENVVAR_RBT_WEB_APP_URL)
+    )
     if not frontend_url:
         return None
 
     parsed = urlparse(frontend_url)
     if not parsed.port:
         raise ValueError(
-            f"RBT_MCP_APP_URL must include a port; got '{frontend_url}'"
+            "The frontend dev server URL must include a port; got "
+            f"'{frontend_url}'"
         )
     if not parsed.hostname:
         raise ValueError(
-            f"RBT_MCP_APP_URL must include a hostname; got '{frontend_url}'"
+            "The frontend dev server URL must include a hostname; got "
+            f"'{frontend_url}'"
         )
     return FrontendConfig(
         host=parsed.hostname,

@@ -195,8 +195,10 @@ MCP UIs from its own origin; point it at your frontend directory in
 # The frontend directory, shared by the `:hmr` and `:dist` configs below.
 dev run --mcp-app-path-prefix=frontend
 
-# HMR: proxy `/__/frontend/**` to the Vite dev server.
+# HMR: proxy `/__/frontend/**` to the Vite dev server, and serve the
+# web app it serves at `/`.
 dev run:hmr --mcp-app-url=http://localhost:5173
+dev run:hmr --web-app-url=http://localhost:5173
 dev run --default-config=hmr
 
 # Dist: serve the built MCP UIs instead. `rbt dev run --config=dist`.

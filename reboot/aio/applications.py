@@ -57,6 +57,7 @@ from reboot.settings import (
     ENVVAR_RBT_SERVERS,
     ENVVAR_RBT_STATE_DIRECTORY,
     ENVVAR_RBT_WEB_APP_DIST_PATH,
+    ENVVAR_RBT_WEB_APP_URL,
     ENVVAR_REBOOT_CLOUD_DATABASE_ADDRESS,
     ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
     ENVVAR_REBOOT_EXPECTED_VERSION,
@@ -932,13 +933,18 @@ class Application:
             )
 
     def _mount_web_app(self) -> None:
-        """Have the web framework serve the built web app named by
-        `--web-app-dist-path` at `/`, when there is one.
+        """Tell the web framework what `/` is when the application has
+        a web app: the built one named by `--web-app-dist-path`, or the one
+        the dev server named by `--web-app-url` serves, either served at
+        `/`.
 
-        Only noted here; the web framework mounts it when it starts,
+        Only noted here; the web framework acts on it when it starts,
         after every route, since a mount at `/` claims every path
-        nothing else does (see `WebApp`).
+        nothing else does (see `WebApp` and `WebDevServer`).
         """
+        web_app_url = os.environ.get(ENVVAR_RBT_WEB_APP_URL)
+        if web_app_url:
+            self.http._web_app_url = web_app_url
         web_app_dist_path = os.environ.get(ENVVAR_RBT_WEB_APP_DIST_PATH)
         if not web_app_dist_path:
             return

@@ -172,31 +172,104 @@ function redirectFrontendDirTrailingSlash(): Plugin {
   };
 }
 
-// The web app is the dev server's home: the bare `/`, `/__/frontend`,
-// and `/__/frontend/` otherwise 404 (there's no index there), so
-// silently redirect them to `/__/frontend/<webPath>/`. Also print the
-// friendlier `http://<host>/` at startup instead of the
+// The web app is the dev server's home. `/` serves its `index.html`,
+// put through Vite's HTML transform (which injects the HMR client and
+// the React refresh preamble) and with its relative URLs made absolute
+// under `/__/frontend/<webPath>/`, where this server serves the web
+// app's directory. So does any path a browser navigates to that isn't
+// under the `/__/frontend/` base, which is what makes the web app's
+// own URL routing survive a reload, and what the backend's
+// `--web-app-url` proxies its own `/` to. `/__/frontend` and
+// `/__/frontend/` otherwise
+// 404 (there's no index there), so they come to `/` too. Also print
+// the friendlier `http://<host>/` at startup instead of the
 // `/__/frontend/` base URL Vite would otherwise show (which is a dead
 // link).
 function serveWebAppAtRoot(webPath: string): Plugin {
-  const target = `${BASE}${segment(webPath)}/`;
-  const homes = new Set(["/", "/__/frontend", "/__/frontend/"]);
+  const webSegment = segment(webPath);
+  const webPrefix = `${BASE}${webSegment}/`;
   return {
     name: "reboot:serve-web-app-at-root",
     apply: "serve",
     configureServer(server) {
-      server.middlewares.use((req, res, next) => {
+      const webDir = path.resolve(server.config.root, webPath);
+      const webIndex = path.join(webDir, "index.html");
+      const publicDir = path.join(webDir, "public");
+      // Whether `rel` names a file in the web app's `public/`, and
+      // not one of its sources (which win, as they do for Vite).
+      const isPublicFile = (rel: string): boolean => {
+        if (rel === "" || fs.existsSync(path.join(webDir, rel))) return false;
+        const file = path.resolve(publicDir, rel);
+        return (
+          file.startsWith(publicDir + path.sep) &&
+          fs.existsSync(file) &&
+          fs.statSync(file).isFile()
+        );
+      };
+      server.middlewares.use(async (req, res, next) => {
         const url = req.url ?? "";
         const queryAt = url.indexOf("?");
         const pathname = queryAt === -1 ? url : url.slice(0, queryAt);
-        if (homes.has(pathname)) {
-          const query = queryAt === -1 ? "" : url.slice(queryAt);
+        const query = queryAt === -1 ? "" : url.slice(queryAt);
+        if (pathname === "/__/frontend" || pathname === "/__/frontend/") {
+          // 302 (not 301): a permanent redirect would be cached by the
+          // browser, which is wrong for a dev server.
           res.statusCode = 302;
-          res.setHeader("Location", target + query);
+          res.setHeader("Location", "/" + query);
           res.end();
           return;
         }
-        next();
+        // A file in the web app's `public/`, asked for as a built
+        // app served at `/` would have it (`/favicon.svg`) or through
+        // a relative URL in `index.html` rewritten below
+        // (`/__/frontend/web/favicon.svg`): Vite serves `publicDir`
+        // under the base, so point the request there.
+        const rel = pathname.startsWith(webPrefix)
+          ? pathname.slice(webPrefix.length)
+          : pathname.startsWith(BASE)
+          ? undefined
+          : pathname.slice(1);
+        if (rel !== undefined && isPublicFile(rel)) {
+          req.url = `${BASE}${rel}${query}`;
+          next();
+          return;
+        }
+        // Vite's own URLs, the web app's sources, and the MCP UIs all
+        // live under the base: not ours.
+        if (pathname.startsWith(BASE)) {
+          next();
+          return;
+        }
+        // Anything else is the web app, but only for a browser
+        // navigating to it: a fetch for a missing asset or a JSON path
+        // still 404s, so a typo isn't masked by a page.
+        const accept = req.headers.accept ?? "";
+        if (
+          req.method !== "GET" ||
+          (pathname !== "/" && !accept.includes("text/html"))
+        ) {
+          next();
+          return;
+        }
+        try {
+          let html = fs.readFileSync(webIndex, "utf-8");
+          // The path is as Vite sees it under the base, so the
+          // injected script tags resolve there.
+          html = await server.transformIndexHtml(
+            `/${webSegment}/index.html`,
+            html,
+            req.originalUrl
+          );
+          html = html.replace(
+            /(src|href)=(["'])\.\//g,
+            `$1=$2${BASE}${webSegment}/`
+          );
+          res.statusCode = 200;
+          res.setHeader("Content-Type", "text/html");
+          res.end(html);
+        } catch (e) {
+          next(e);
+        }
       });
       // Print `http://<host>/` instead of the `/__/frontend/` base.
       const printUrls = server.printUrls.bind(server);
@@ -328,12 +401,12 @@ export function reboot(options: RebootOptions = {}): Plugin[] {
       // Vite's URLs work normally. `base: "/__/frontend/"` ensures all
       // paths route through Envoy.
       //
-      // The web app is served at `/__/frontend/<webPath>/` by this
-      // same server. It reaches the backend via `VITE_REBOOT_URL`
-      // (see `<webPath>/.env.development`) rather than its own
-      // origin, so opening it straight from this dev server
-      // exercises the real cross-origin frontend/backend path — the
-      // same shape as a production deploy.
+      // The web app is served at `/` by this same server (see
+      // `serveWebAppAtRoot`), which the backend's `--web-app-url`
+      // proxies its own `/` to, so the app is on the backend's
+      // origin as in production. Opened straight from this dev
+      // server instead, it reaches the backend via `VITE_REBOOT_URL`
+      // (see `<webPath>/.env.development`), cross-origin.
       //
       // Hot Module Replacement works automatically: Vite's client
       // connects to the page's origin, and Envoy proxies WebSocket

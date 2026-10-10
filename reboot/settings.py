@@ -151,6 +151,10 @@ ENVVAR_RBT_MCP_APP_DIST_PATH = 'RBT_MCP_APP_DIST_PATH'
 # Project-relative directory holding the built web app, e.g.
 # "frontend/dist/web", served at "/".
 ENVVAR_RBT_WEB_APP_DIST_PATH = 'RBT_WEB_APP_DIST_PATH'
+# URL of the dev server (e.g., Vite at "http://localhost:5173") that
+# serves the web app, which the application serves at "/" by proxying
+# to it (`rbt dev run --web-app-url`).
+ENVVAR_RBT_WEB_APP_URL = 'RBT_WEB_APP_URL'
 
 # Environment variable indicating that `rbt` is being invoked from
 # Node.js.

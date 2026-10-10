@@ -208,10 +208,12 @@ When your application has a React frontend — a
 # Generate typed React hooks, shared by every frontend.
 generate --react=frontend/api
 
-# Proxy the MCP UIs through Vite for hot module replacement.
+# Proxy the MCP UIs through Vite for hot module replacement, and serve
+# the web app it serves at `/`.
 dev run --mcp-app-path-prefix=frontend
 
 dev run:hmr --mcp-app-url=http://localhost:5173
+dev run:hmr --web-app-url=http://localhost:5173
 
 # Default to HMR mode when --config is not specified.
 dev run --default-config=hmr
@@ -222,7 +224,8 @@ dev run --default-config=hmr
 | `dev run --mcp-app-path-prefix=<dir>` | The prefix of each `UI(path=...)` that names the frontend directory (e.g. `frontend`). Set once on the base `dev run` line so the `:hmr` and `:dist` configs inherit it. |
 | `dev run --mcp-app-url=<url>` | HMR: the Vite dev server URL (e.g. `http://localhost:5173`) that serves the MCP UIs; Envoy proxies `/__/frontend/**` to it. |
 | `dev run --mcp-app-dist-path=<dir>` | Dist: serve the built MCP UIs from `<dir>` (e.g. `frontend/dist`) on disk; mutually exclusive with `--mcp-app-url`. |
-| `dev run --web-app-dist-path=<dir>` | Serve the built web app from `<dir>` (e.g. `frontend/dist/web`) at `/`, with its `index.html` answering any path the app has no route or file for. Without it, `/` is Reboot's page. Python applications only: with `--nodejs` it is an error. |
+| `dev run --web-app-dist-path=<dir>` | Serve the built web app from `<dir>` (e.g. `frontend/dist/web`) at `/`, with its `index.html` answering any path the app has no route or file for. Without it or `--web-app-url`, `/` is Reboot's page. Python applications only: with `--nodejs` it is an error. |
+| `dev run --web-app-url=<url>` | Serve the web app at `/` from its Vite dev server (e.g. `http://localhost:5173`), proxying to it, with Hot Module Replacement: the app has the same URL as the API, as it does in production. Mutually exclusive with `--web-app-dist-path`. Python applications only: with `--nodejs` it is an error. |
 | `dev run --default-config=<name>` | Sets the default configuration profile when `--config` is not specified. |
 | `dev run:hmr` / `dev run:dist` | Named configurations. Flags prefixed with `dev run:<name>` only apply when `--config=<name>` is used. |
 

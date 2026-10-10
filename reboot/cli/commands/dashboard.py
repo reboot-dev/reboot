@@ -44,6 +44,7 @@ from reboot.settings import (
     ENVVAR_RBT_SERVERS,
     ENVVAR_RBT_STATE_DIRECTORY,
     ENVVAR_RBT_WEB_APP_DIST_PATH,
+    ENVVAR_RBT_WEB_APP_URL,
     ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
     ENVVAR_REBOOT_EXPECTED_VERSION,
     ENVVAR_REBOOT_LOCAL_ENVOY,
@@ -159,14 +160,16 @@ def _dashboard_env(
     composed = os.environ.copy()
 
     # Every other application-flavored variable is overwritten below;
-    # these four have no dashboard value to overwrite them with, so a
+    # these five have no dashboard value to overwrite them with, so a
     # developer's shell export would leak through and make the
-    # dashboard a Node.js application or serve their MCP UIs.
+    # dashboard a Node.js application, or serve their MCP UIs or
+    # web app.
     for name in (
         ENVVAR_RBT_NODEJS,
         ENVVAR_RBT_MCP_APP_URL,
         ENVVAR_RBT_MCP_APP_DIST_PATH,
         ENVVAR_RBT_MCP_APP_PATH_PREFIX,
+        ENVVAR_RBT_WEB_APP_URL,
     ):
         composed.pop(name, None)
 

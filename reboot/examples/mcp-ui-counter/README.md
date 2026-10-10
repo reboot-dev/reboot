@@ -41,7 +41,7 @@ uv run rbt dev run
 cd frontend && npm run dev
 ```
 
-Open <http://localhost:5173/__/frontend/web/>. Click sign-in, pick a `Development`
+Open <http://localhost:9991/>. Click sign-in, pick a `Development`
 identity, land back on the SPA, and create counters. If you also
 launch MCPJam against the same backend, MCPJam's authorize step
 short-circuits (no second IdP picker) because the browser already
