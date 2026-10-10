@@ -389,7 +389,6 @@ class ServiceServer(Server):
         websocket_port: Optional[int] = None,
         http_port: Optional[int] = None,
         token_verifier: Optional[TokenVerifier],
-        root: Optional[str],
         state_manager: StateManager,
         placement_client: PlacementClient,
         actor_resolver: ActorResolver,
@@ -502,10 +501,6 @@ class ServiceServer(Server):
         )
         self._inspect_servicer.add_to_server(self._grpc_server)
 
-        # The web framework, which serves the root page, gets `root`
-        # when it starts.
-        self._root = root
-
         # Construct 'ExportImport' system service for the Reboot servicers.
         self._export_import_servicer = ExportImportServicer(
             self._application_id,
@@ -586,7 +581,6 @@ class ServiceServer(Server):
             self._http_port,
             self._channel_manager,
             self._application_id,
-            self._root,
         )
 
         # And also start serving React traffic.

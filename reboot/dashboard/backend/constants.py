@@ -4,9 +4,14 @@ Kept apart from `main.py` so that reading them does not drag in the
 application and everything it serves with.
 """
 
-# Where the dashboard application serves its page, relative to its
-# own address.
-DASHBOARD_PATH = '/dashboard'
+from pathlib import Path
+
+# The dashboard's built page, beside the application's module, which
+# is the same arrangement `InspectServicer` uses for its own assets.
+# The CLI serves it at `/` the way `--web-app-dist-path` would, by
+# naming it (absolute, since no project root is involved) in the
+# application's environment.
+DASHBOARD_DIRECTORY = Path(__file__).parent / 'dashboard'
 
 # The dashboard application's port. Deliberately not adjacent to
 # `rbt dev run`'s default port of 9991: VS Code forwards a port

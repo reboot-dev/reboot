@@ -25,7 +25,7 @@ from reboot.cli.common.directories import (
 from reboot.cli.common.rc import ArgumentParser
 from reboot.cli.common.subprocesses import Subprocesses
 from reboot.dashboard.backend.constants import (
-    DASHBOARD_PATH,
+    DASHBOARD_DIRECTORY,
     DEFAULT_DASHBOARD_PORT,
     ENVVAR_RBT_API_DIRECTORY,
     ENVVAR_RBT_APPLICATION,
@@ -161,7 +161,7 @@ def _dashboard_env(
     # Every other application-flavored variable is overwritten below;
     # these four have no dashboard value to overwrite them with, so a
     # developer's shell export would leak through and make the
-    # dashboard a Node.js application or serve their frontend.
+    # dashboard a Node.js application or serve their MCP Apps.
     for name in (
         ENVVAR_RBT_NODEJS,
         ENVVAR_RBT_FRONTEND_URL,
@@ -169,6 +169,12 @@ def _dashboard_env(
         ENVVAR_RBT_WEB_APP_DIST_PATH,
     ):
         composed.pop(name, None)
+
+    # The dashboard's page is its web app, served at `/` the way
+    # `--web-app-dist-path` serves a developer's; absolute, since the
+    # dashboard has no project root for a relative path to resolve
+    # against.
+    composed[ENVVAR_RBT_WEB_APP_DIST_PATH] = str(DASHBOARD_DIRECTORY)
 
     # Served with `rbt serve` defaults rather than `rbt dev` ones.
     # Popped rather than left unset, since `detect_run_environment`
@@ -310,18 +316,10 @@ async def _should_open_automatically(dashboard_url: str) -> bool:
 
 def automatically_opened_url(dashboard_url: str) -> str:
     """The URL a dashboard is opened at, which tells the page it was
-    opened automatically, letting it offer not to be opened again.
-
-    Everything else sends people to the root, which forwards to the
-    page wherever it is served, but this passes the page's whole path:
-    the root is served by the `RootPage` servicer through Envoy's
-    gRPC-JSON transcoder, which fails a request carrying a query
-    parameter the method has no field for (with `grpc-status: 2`, "Bad
-    method header", and an empty body), so `/?opened=automatically`
-    would never reach the page. The query only ever comes from here, so
-    nobody is told to type it.
+    opened automatically, letting it offer not to be opened again. The
+    query only ever comes from here, so nobody is told to type it.
     """
-    return f'{dashboard_url}{DASHBOARD_PATH}/?opened=automatically'
+    return f'{dashboard_url}/?opened=automatically'
 
 
 # How long the dashboard application, which is still starting when
