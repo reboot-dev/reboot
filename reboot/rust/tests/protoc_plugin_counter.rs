@@ -966,6 +966,102 @@ async fn generated_transaction_adapter_aborts_when_handler_rejects() {
 }
 
 #[tokio::test]
+async fn generated_fresh_shared_transaction_authorization_precedes_handler_and_releases_denial() {
+    use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
+
+    fn probe(decision: AuthorizationDecision) -> Arc<AuthProbe> {
+        Arc::new(AuthProbe {
+            verifier_calls: Arc::new(AtomicUsize::new(0)),
+            authorizer_calls: Arc::new(AtomicUsize::new(0)),
+            handler_calls: Arc::new(AtomicUsize::new(0)),
+            decision,
+            contexts: Arc::new(std::sync::Mutex::new(Vec::new())),
+            snapshots: Arc::new(std::sync::Mutex::new(Vec::new())),
+        })
+    }
+    fn policy(probe: Arc<AuthProbe>) -> AuthorizationPolicy {
+        AuthorizationPolicy::new(Some(probe.clone()), Some(probe))
+    }
+    // Read-only allowed calls avoid the fake Store endpoint; native promotion is separate.
+    fn request(token: &str) -> tonic::Request<proto::TransactionIncrementRequest> {
+        let mut headers = reboot::RebootHeaders::new("transaction-counter");
+        headers.bearer_token = Some(token.into());
+        let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 0 });
+        *request.metadata_mut() = headers.to_metadata().unwrap();
+        request
+    }
+
+    let rejected_trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let rejected = probe(AuthorizationDecision::Allow);
+    let rejected_adapter = transaction_adapter(Arc::clone(&rejected_trace), false)
+        .with_authorization(policy(Arc::clone(&rejected)));
+    assert_eq!(
+        TransactionCounterWritesMethods::shared_read(&rejected_adapter, request("reject"))
+            .await
+            .unwrap_err()
+            .code(),
+        tonic::Code::Unauthenticated
+    );
+    assert_eq!(rejected.verifier_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(rejected.authorizer_calls.load(Ordering::SeqCst), 0);
+    assert!(rejected_trace.lock().unwrap().is_empty());
+
+    let denied_trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let denied = probe(AuthorizationDecision::PermissionDenied { message: "denied".into() });
+    let denied_adapter = transaction_adapter(Arc::clone(&denied_trace), false)
+        .with_authorization(policy(Arc::clone(&denied)));
+    assert_eq!(
+        TransactionCounterWritesMethods::shared_read(&denied_adapter, request("allow"))
+            .await
+            .unwrap_err()
+            .code(),
+        tonic::Code::PermissionDenied
+    );
+    assert_eq!(denied.authorizer_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(*denied_trace.lock().unwrap(), ["participant load"]);
+
+    // Drop schedules pre-Store cleanup. Observe eventual release, not synchronous Drop.
+    // This fixture-only wait retries only the exact known pre-admission conflict;
+    // it never retries a handler or a transaction that could have produced effects.
+    let read_again = denied_adapter.with_authorization(AuthorizationPolicy::default());
+    let recovered = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            match TransactionCounterWritesMethods::shared_read(&read_again, request("allow")).await {
+                Err(status) if status.code() == tonic::Code::FailedPrecondition
+                    && status.message() == "actor already has a pending transaction" => {
+                    tokio::task::yield_now().await;
+                }
+                result => break result,
+            }
+        }
+    }).await.expect("denied participant cleanup did not release ownership").unwrap();
+    assert_eq!(recovered.into_inner().value, 4);
+    assert_eq!(*denied_trace.lock().unwrap(), ["participant load", "participant load", "fresh shared handler"]);
+
+    let allowed_trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let allowed = probe(AuthorizationDecision::Allow);
+    let allowed_adapter = transaction_adapter(Arc::clone(&allowed_trace), false)
+        .with_authorization(policy(Arc::clone(&allowed)));
+    assert_eq!(
+        TransactionCounterWritesMethods::shared_read(&allowed_adapter, request("allow"))
+            .await
+            .unwrap()
+            .into_inner()
+            .value,
+        4
+    );
+    let contexts = allowed.contexts.lock().unwrap();
+    assert_eq!(contexts[0].method, "tests.reboot.protoc.TransactionCounterWritesMethods.SharedRead");
+    assert_eq!(contexts[0].state_type, "tests.reboot.protoc.TransactionCounter");
+    assert_eq!(contexts[0].headers.bearer_token.as_deref(), Some("allow"));
+    drop(contexts);
+    let snapshots = allowed.snapshots.lock().unwrap();
+    assert_eq!(proto::TransactionCounter::decode(snapshots[0].0.as_ref().unwrap().as_slice()).unwrap(), proto::TransactionCounter { value: 4 });
+    assert_eq!(proto::TransactionIncrementRequest::decode(snapshots[0].1.as_slice()).unwrap(), proto::TransactionIncrementRequest { amount: 0 });
+}
+
+
+#[tokio::test]
 async fn generated_fresh_exclusive_transaction_authorization_verifies_before_replay_and_aborts_denial() {
     use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
 

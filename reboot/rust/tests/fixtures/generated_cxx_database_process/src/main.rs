@@ -24,6 +24,7 @@ use uuid::Uuid;
 pub mod proto {
     tonic::include_proto!("tests.reboot.protoc");
 }
+#[allow(dead_code)] // Private fixture uses only a subset of the generated public API.
 mod generated {
     include!(concat!(
         env!("OUT_DIR"),
@@ -254,8 +255,9 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                 Self::Target => None,
             }
         };
-        if let Some((marker, block)) = reader {
-            if request.amount == 9000 {
+        if let Some((marker, block)) = reader
+            && request.amount == 9000
+        {
                 // Append per invocation: an identical overwritten result cannot
                 // hide replay across Wait calls or host recovery.
                 {
@@ -291,7 +293,6 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                     let _drop = ReaderDrop(marker.clone());
                     std::future::pending::<()>().await;
                 }
-            }
         }
         Ok(proto::TransactionCounterValue { value: state.value })
     }
@@ -469,15 +470,15 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
         state: &mut proto::TransactionCounter,
         request: proto::TransactionIncrementRequest,
     ) -> Result<TransactionExecution<proto::TransactionCounterValue>, tonic::Status> {
-        if request.amount == -9000 {
-            if let Self::Tasks { marker, .. } = self {
+        if request.amount == -9000
+            && let Self::Tasks { marker, .. } = self
+        {
                 std::fs::write(
                     format!("{marker}.cancel"),
                     "handler entered before durable handoff",
                 )
                 .unwrap();
                 std::future::pending::<()>().await;
-            }
         }
         state.value += request.amount;
         if context.supervised_tree_execution()
@@ -542,7 +543,7 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                 .increment(
                     context,
                     &generated::TransactionCounterWritesMethodsTarget::new("unregistered-child"),
-                    request.clone(),
+                    request,
                 )
                 .await
                 .unwrap_err();
@@ -568,7 +569,7 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                         &generated::TransactionCounterWritesMethodsTarget::new(arg(
                             "--star-second",
                         )),
-                        request.clone(),
+                        request,
                     )
                     .await
                     .unwrap_err();
@@ -604,7 +605,6 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
             if has("--tree-active-child") {
                 let client = root.client.clone();
                 let context = context.clone();
-                let request = request.clone();
                 let child = targets[0].to_owned();
                 let marker = arg("--tree-active-marker");
                 let child_marker = marker.clone();
@@ -613,7 +613,7 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                         .increment(
                             &context,
                             &generated::TransactionCounterWritesMethodsTarget::new(child),
-                            request.clone(),
+                            request,
                         )
                         .await;
                     std::fs::write(format!("{child_marker}.child-ended"), format!("{result:?}"))
@@ -667,7 +667,7 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                                     "tests.reboot.protoc.TransactionCounter",
                                     target,
                                     method,
-                                    request.clone(),
+                                    request,
                                 )
                                 .await?;
                             let mut grpc = tonic::client::Grpc::new(channel);
@@ -709,7 +709,7 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                             .increment(
                                 context,
                                 &generated::TransactionCounterWritesMethodsTarget::new(targets[0]),
-                                request.clone(),
+                                request,
                             )
                             .await
                             .unwrap_err();
@@ -721,7 +721,7 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                         .unwrap();
                         return Err(tonic::Status::failed_precondition("repeat denied"));
                     }
-                    let mut nested_request = request.clone();
+                    let mut nested_request = request;
                     if has("--sequential-reusable") && index == 1 {
                         nested_request.amount = 11;
                     }
@@ -734,12 +734,12 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                     .await
                 {
                     Ok(_) => {
-                        if has("--sequential-root-star") {
-                            if let Some(marker) = optional_arg("--star-confirmed") {
+                        if has("--sequential-root-star")
+                            && let Some(marker) = optional_arg("--star-confirmed")
+                        {
                                 let members = context.returned_participants_snapshot().into_iter().map(|p|
                                     format!("{}|{}|{}", p.target.state_type,p.target.state_ref,p.read_only)).collect::<Vec<_>>();
                                 std::fs::write(marker, members.join("\n")).unwrap();
-                            }
                         }
                     },
                     Err(generated::TransactionCounterWritesMethodsIncrementError::TransactionLimitExceeded(error)) if has("--sequential-reusable") => {
@@ -838,7 +838,7 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                     .increment(
                         context,
                         &generated::TransactionCounterWritesMethodsTarget::new("root"),
-                        request.clone(),
+                        request,
                     )
                     .await
                     .unwrap_err();
@@ -1002,8 +1002,9 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
         // while the remote participant comes from successful generated trailers.
         let mut execution =
             TransactionExecution::new(proto::TransactionCounterValue { value: state.value });
-        if let Self::Root(root) = self {
-            if root.task_marker.is_some() {
+        if let Self::Root(root) = self
+            && let Some(task_marker) = &root.task_marker
+        {
                 let mut task = generated::TransactionCounterWritesMethodsTasks::query(
                     &context.headers().state_ref,
                     &proto::TransactionIncrementRequest { amount: 9000 },
@@ -1039,7 +1040,7 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                     _ => {}
                 }
                 std::fs::write(
-                    format!("{}.task-id", root.task_marker.as_ref().unwrap()),
+                    format!("{task_marker}.task-id"),
                     Uuid::from_slice(&task.task_id.as_ref().unwrap().task_uuid)
                         .unwrap()
                         .to_string(),
@@ -1067,7 +1068,6 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                     ));
                 }
                 execution.task_upserts.push(task);
-            }
         }
         if context.headers().state_ref != "watch-capacity"
             && let Some(marker) = optional_arg("--tree-local-tasks")
@@ -1199,7 +1199,7 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                 .increment(
                     context,
                     &generated::TransactionCounterWritesMethodsTarget::new("target"),
-                    request.clone(),
+                    request,
                 )
                 .await
             {
@@ -1257,12 +1257,10 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
         Ok(proto::TransactionCounterValue { value: state.value })
     }
 }
+type RecoveryWork = std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), tonic::Status>> + Send>>;
+
 struct FullWatchProof(
-    tokio::sync::Mutex<
-        Option<
-            std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), tonic::Status>> + Send>>,
-        >,
-    >,
+    tokio::sync::Mutex<Option<RecoveryWork>>,
 );
 #[tonic::async_trait]
 impl reboot::application_host::HostRecovery for FullWatchProof {
@@ -1275,11 +1273,7 @@ impl reboot::application_host::HostRecovery for FullWatchProof {
     }
 }
 struct FullRootProof {
-    work: tokio::sync::Mutex<
-        Option<
-            std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), tonic::Status>> + Send>>,
-        >,
-    >,
+    work: tokio::sync::Mutex<Option<RecoveryWork>>,
     marker: String,
 }
 #[tonic::async_trait]
@@ -2117,7 +2111,6 @@ async fn main() {
                 state_type: "tests.reboot.protoc.TransactionCounter".into(),
                 state_ref: auxiliary.into(),
                 state: Some(proto::TransactionCounter { value: 20 }.encode_to_vec()),
-                ..Default::default()
             }],
             sync: true,
             ..Default::default()
@@ -2172,7 +2165,6 @@ async fn main() {
                 state_type: "tests.reboot.protoc.TransactionCounter".into(),
                 state_ref: auxiliary.into(),
                 state: Some(proto::TransactionCounter { value: 20 }.encode_to_vec()),
-                ..Default::default()
             }],
             sync: true,
             ..Default::default()
@@ -2628,13 +2620,12 @@ async fn main() {
             let mut headers = reboot::RebootHeaders::new(&state_ref);
             headers.idempotency_key = idempotency_key;
             *request.metadata_mut() = headers.to_metadata().unwrap();
-            if let Some(marker) = std::env::var_os("REBOOT_TEST_TASK_ADMISSION_CANCEL") {
-                if !std::path::Path::new(&format!("{}.cancelled", marker.to_string_lossy()))
+            if let Some(marker) = std::env::var_os("REBOOT_TEST_TASK_ADMISSION_CANCEL")
+                && (!std::path::Path::new(&format!("{}.cancelled", marker.to_string_lossy()))
                     .exists()
-                    || std::env::var_os("REBOOT_TEST_CANCEL_PARTICIPANT_COMMIT_ACK").is_some()
-                {
-                    request.set_timeout(std::time::Duration::from_millis(350));
-                }
+                    || std::env::var_os("REBOOT_TEST_CANCEL_PARTICIPANT_COMMIT_ACK").is_some())
+            {
+                request.set_timeout(std::time::Duration::from_millis(350));
             }
             let result = if has("--shared-invoke") {
                 client.shared_read(request).await

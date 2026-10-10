@@ -51,6 +51,37 @@ files changed between stages. Earlier failures remain evidence, not passes.
 No current merge-result/CI acceptance, production readiness, or full parity is
 claimed. A1/A2 authorization and the experimental release contract remain next.
 
+## Fresh shared-root authorization correction (2026-10-10)
+
+Fresh external shared roots now verify credentials before root start/participant
+Load and authorize the immutable optional wire state and encoded request before
+state decoding, handler invocation, staging or promotion. Denial leaves the
+pre-Store guard armed; its asynchronous Drop cleanup releases undurable ownership
+without a terminal sidecar Abort. Validated inbound/recovery paths are unchanged.
+
+**Executed, bounded:** generated downstream consumer acceptance at
+`/tmp/reboot-rust-shared-auth-regression-1791637544583525535` passed all 32
+consumer tests and the one enclosing Cargo test. The new case checks verifier
+rejection before Load, denial before handler/effects, eventual denied-participant
+reuse, allowed no-op execution, method/state identity and wire snapshots. The
+fixture-only bounded wait recognizes only the exact pre-admission pending-owner
+conflict; no production mutation/status retry was added.
+
+`/tmp/reboot-rust-shared-auth-native-gates-1791638027913884435` passed strict
+SDK/all-targets and whole generated native-consumer Clippy (`-D warnings`), then
+both selected native cases (one pass each, exit 0): shared no-op without a durable
+decision followed by restart/exclusive admission, and shared promotion recovery
+after a durable decision. Frozen source checks passed. Consumer fixture lint
+cleanup was separately source-reviewed; unused private generated APIs alone have
+a scoped dead-code allowance, not a Clippy warning exemption.
+
+This closes the fresh-shared omitted-policy path, **not all A2 coverage**. Native
+regressions use their existing permissive policies; explicit-policy allowed
+promotion, denied malformed/absent state and inbound rejection are not certified
+by them. A1 default permissiveness, broader task/subscription/HTTP policy coverage,
+experimental release contract, full current-head native audit and merge-result
+validation remain outstanding. Earlier failed/zero-test runs are not acceptance.
+
 ## How to read the evidence
 
 - **Implemented, bounded:** a public/generated path exists, with the limitations
@@ -349,7 +380,7 @@ not automatic HTTP protobuf dispatch, gRPC multiplexing, or an HTTP readiness AP
 
 **Authorization boundary:** default `AuthorizationPolicy` allows when no
 verifier/authorizer is configured. Configured generated database methods and
-fresh exclusive roots enforce their policies on new execution. Ordinary database
+fresh exclusive and fresh shared roots enforce their policies on new execution. Ordinary database
 writer/constructor and generated external exclusive-root/factory receipts require
 fresh current-state authorization before replay disclosure. Transaction roots use
 fresh gate-protected participant snapshots rather than an ungated receipt fast
@@ -2814,7 +2845,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: f08aeb0c57c36560678cc40360e31773d2397117418b014d56b82556ba8fa652 -->
+<!-- parity-source-sha256: 38e2ee1fbc7b38f9c97fc5a985f13b459a9bb55a26f9f461c6c0dd995d36e2a9 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,
