@@ -1692,7 +1692,9 @@ tomli==2.4.1 \
     --hash=sha256:fd0409a3653af6c147209d267a0e4243f0ae46b011aa978b1080359fddc9b6cf \
     --hash=sha256:ff18e6a727ee0ab0388507b89d1bc6a22b138d1e2fa56d1ad494586d61d2eae9 \
     --hash=sha256:ff2983983d34813c1aeb0fa89091e76c3a22889ee83ab27c5eeb45100560c049
-    # via pytest
+    # via
+    #   -r reboot/requirements.in
+    #   pytest
 types-protobuf==4.24.0.20240129 \
     --hash=sha256:23be68cc29f3f5213b5c5878ac0151706182874040e220cfb11336f9ee642ead \
     --hash=sha256:8a83dd3b9b76a33e08d8636c5daa212ace1396418ed91837635fcd564a624891

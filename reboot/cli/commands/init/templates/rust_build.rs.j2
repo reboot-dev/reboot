@@ -1,0 +1,10 @@
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("cargo:rerun-if-changed=../api");
+    reboot::build::compile_protos_with_runtime(
+        &["../api/{{ name }}/v1/hello_world.proto"],
+        &["../api"],
+        "crate::proto",
+        "reboot",
+    )?;
+    Ok(())
+}

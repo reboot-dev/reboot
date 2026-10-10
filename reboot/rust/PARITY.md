@@ -1,0 +1,2916 @@
+# Rust SDK parity
+
+This is the **single current parity and capability ledger** for the Rust SDK.
+It replaces the separate parity map, capability notes and candidate/contract
+records. Historical proposals and failed runs remain available in Git history;
+they are not additional current specifications.
+
+**Verdict:** useful experimental local applications and bounded durable runtime
+verticals exist. Full Python/TypeScript feature equivalence and production
+readiness do not. Languages are intended to be used independently: mixed-language
+applications are **not a requirement or a parity gap**. Existing canonical
+protocols are implementation contracts, not an interoperability certification.
+No overall percentage is asserted.
+
+## Native fixture corrections (2026-10-10)
+
+The disabled task-administration fixture now expects the runtime's fail-closed
+`PermissionDenied` for ListTasks and CancelTask. The sequential-star restart
+fixture waits for every participant's immediate tasks to be durably Completed
+before checking delayed tasks remain Pending and stopping hosts. Root Commit
+publishes tasks; handler entry alone is not durable task completion. Exact two
+invocations and later Completed-restart/no-redispatch assertions remain intact.
+This does not claim exactly-once handler entry across an in-flight crash.
+
+Focused execution of both complete enclosing native cases passed (one case per
+Cargo command, exit zero) after these corrections. The preceding five diagnostic
+star repetitions produced four passes and one invocation-count failure, with a
+Pending reader already logged before shutdown and three reader entries after
+restart. Subsequent native execution passed SortedMap 3 and generated CXX 114
+on `89879c35858d300848641259899fb531ded2b270`; reactive passed 1 on the
+same source. Workflow then exposed a separate fixture conflict: the default
+success path caught failed framework method/payload/name probes, tainting the
+attempt before successful completion. Those probes now run only in an explicit
+`caught-probes` negative case. The runtime clean-attempt guard is unchanged.
+The negative case asserts fatal finish rejection, one Pending checkpoint, no
+second-handler entry, and clean native restart recovery to Completed with two
+checkpoints; successful restart bodies no longer inject deliberate failures.
+
+**Executed repair:** `/tmp/reboot-rust-full-native-1791636271653660112`:
+strict generated-workflow fixture Clippy (`-D warnings`) exit 0; all five native
+workflow cases passed, including 13 body-recovery/failure subcases; all eight
+native 2PC cases passed. Both Cargo suites exited 0 with recorded child cleanup.
+The wrapper failed solely because it incorrectly required zero filtered cases;
+native 2PC legitimately filtered five non-ignored cases (generated CXX earlier
+filtered two). Retained inventories and exact enclosing test names reconcile
+these results without exempting any test failure.
+
+Combined retained stages cover all 131 inventory cases successfully (3 + 114 +
+1 + 5 + 8), but **not one current-snapshot full audit**: the two workflow fixture
+files changed between stages. Earlier failures remain evidence, not passes.
+No current merge-result/CI acceptance, production readiness, or full parity is
+claimed. Bounded authorization corrections are recorded below; broader A1/A2
+coverage and the experimental release contract remain next.
+
+## Fresh shared-root authorization correction (2026-10-10)
+
+Fresh external shared roots now verify credentials before root start/participant
+Load and authorize the immutable optional wire state and encoded request before
+state decoding, handler invocation, staging or promotion. Denial leaves the
+pre-Store guard armed; its asynchronous Drop cleanup releases undurable ownership
+without a terminal sidecar Abort. Validated inbound/recovery paths are unchanged.
+
+**Executed, bounded:** generated downstream consumer acceptance at
+`/tmp/reboot-rust-shared-auth-regression-1791637544583525535` passed all 32
+consumer tests and the one enclosing Cargo test. The new case checks verifier
+rejection before Load, denial before handler/effects, eventual denied-participant
+reuse, allowed no-op execution, method/state identity and wire snapshots. The
+fixture-only bounded wait recognizes only the exact pre-admission pending-owner
+conflict; no production mutation/status retry was added.
+
+`/tmp/reboot-rust-shared-auth-native-gates-1791638027913884435` passed strict
+SDK/all-targets and whole generated native-consumer Clippy (`-D warnings`), then
+both selected native cases (one pass each, exit 0): shared no-op without a durable
+decision followed by restart/exclusive admission, and shared promotion recovery
+after a durable decision. Frozen source checks passed. Consumer fixture lint
+cleanup was separately source-reviewed; unused private generated APIs alone have
+a scoped dead-code allowance, not a Clippy warning exemption.
+
+This closes the fresh-shared omitted-policy path, **not all A2 coverage**. Native
+regressions use their existing permissive policies; explicit-policy allowed
+promotion, denied malformed/absent state and inbound rejection are not certified
+by them. The subsequent default-deny/inbound correction is recorded below;
+broader task/subscription/HTTP policy coverage,
+experimental release contract, full current-head native audit and merge-result
+validation remain outstanding. Earlier failed/zero-test runs are not acceptance.
+
+## Default-deny and inbound transaction authorization (2026-10-10)
+
+`AuthorizationPolicy::default()`, `new(None, None)` and verifier-only policies
+now deny absent authorizers. Authentication and caller transaction metadata do
+not confer internal authority. Development allowance requires the explicit
+`permissive_for_development()` host policy. Greeting and batch transaction hosts
+select it only for exact `RBT_RUST_UNAUTHORIZED_DEVELOPMENT=1`; `rbt dev run`
+deliberately selects that development mode and warns that it is not production-safe.
+
+Shared and exclusive inbound generated adapters verify before participant
+admission and authorize immutable wire state/request bytes before decoding or
+handlers. Denial reuses existing ownership-aware `abort_local()` cleanup; fresh
+shared denial retains its asynchronous undurable-lease cleanup. Exclusive Abort
+cleanup is legitimate, including factory denial. No mutation/status retry was added.
+
+**Executed, bounded:** `/tmp/reboot-rust-default-deny-gates-1791639381166298333`
+passed both policy tests, all 34 downstream consumer tests plus one enclosing
+Cargo test, strict SDK/all-target and complete native-consumer Clippy. Its CLI
+step failed on checkout/native-library environment selection; this failure is
+retained, not credited. The corrected CLI-only overlay preserves installed Python
+native dependencies while selecting current checkout CLI source.
+
+`/tmp/reboot-rust-default-deny-public-gates-1791639852951151642` passed 25 CLI
+tests and both selected real CXX native cases (one each): shared no-op/restart
+and durable promotion recovery. The public greeting step exposed template
+formatting and failed before behavioral acceptance. Only the two templates were
+then reformatted. `/tmp/reboot-rust-default-deny-scaffold-gates-1791640126545913225`
+passed all 25 CLI tests again and the full public greeting driver: init/Cargo
+strict Clippy/fmt, create/write/receipt replay/read, canonical Load `0801`,
+watcher rebuilds retaining Database ownership, persisted RocksDB restart,
+SIGTERM/SIGINT cleanup, host/Database exit supervision, health-check termination
+and failed live rebuild cleanup. Generated Cargo targets executed zero unit
+cases; they are build checks, not additional behavioral tests. All completed
+stages retain frozen manifests/exits; the final public driver records source
+and binary identities, `passed=true`, and owned-child cleanup.
+
+Source review approved the bounded inbound fix. This is **not full A1/A2 or
+production security parity**: canonical Wait without a configured result policy
+and batch non-StopBatch authorization still allow by default; production ingress,
+User ownership and trusted internal provenance remain missing. Malformed/absent
+inbound-state denial, parked-policy cancellation under alternate ownership,
+uncertain cleanup, transport denial and custom-policy Allow need broader proofs.
+Manual-host unset/invalid/exact-one environment selection is source-mapped, not
+fully exercised natively. HTTP/tasks/subscriptions need their own coverage.
+Reproducible experimental release gates and current-head/merge-result full native
+audits remain outstanding. Earlier failed stages and historical composite native
+inventories are not current-snapshot full certification.
+
+## How to read the evidence
+
+- **Implemented, bounded:** a public/generated path exists, with the limitations
+  stated here. This never means every shape of that Python feature works.
+- **Executed:** the cited acceptance actually ran successfully on a recorded
+  source snapshot. Tests merely existing or compiling do not earn this label.
+- **Test coverage:** source contains executable cases, but the latest batch did
+  not necessarily execute every ignored native case.
+- **Missing:** required semantics/API are absent or explicitly rejected. A
+  rejected operation is not an implementation waiting for a compiler flag.
+
+The latest scheduled-workflow cancellation was implemented on baseline
+`f385e2b49680e1fb7d2e7bfd557bfe3bc2875cf2` (2026-10-08). Workflow-service reactive
+integration was based on `2ab2695302a62ded67eda4a63cf0919efc41a11d`. The preceding explicit
+reconnect vertical was based on `dfb8734c9834f31a2038d36deb8bbadfb6e80601`. Declared workflow
+terminals were implemented from `ba58bae69fb047b52e637525b36aa19227c7a7b5`;
+the original public batch app was based on `e2a6bdc5914a8c152eb48c102c3dc91249cc4ead`. Executed
+public Cargo/native application acceptance and retained greeting regressions
+are described in [Verification](#verification). Older workflow/transaction
+proofs below retain their separate source snapshots and limits.
+
+## External source review and release priorities (2026-10-10)
+
+An external review supplied by Vlad compares Rust
+[`5849787f`](https://github.com/jean-de-bot/reboot/commit/5849787fef3cfdd416da77aae9fcabfbdc6b3887)
+with Python PR base
+[`84715af`](https://github.com/reboot-dev/reboot/commit/84715af592cf35fa599937fdb7ae9461953c4bc0).
+It inspected source/test assertions, not runtime execution, and is not a complete
+TypeScript/React API audit. The identifiers below preserve that review's backlog;
+closing a finding requires current-source mapping and exercised acceptance, not
+merely a passing older checkpoint. Mixed reader/transaction external composition
+exists at that snapshot and is not a missing feature.
+
+**Release blockers first: security and reproducible validation.** The review's A1
+and A2 are independently confirmed in the pinned sources: an empty
+[AuthorizationPolicy](https://github.com/jean-de-bot/reboot/blob/5849787fef3cfdd416da77aae9fcabfbdc6b3887/reboot/rust/src/auth.rs)
+allows authorization without an authorizer; the
+[fresh shared external root emitter](https://github.com/jean-de-bot/reboot/blob/5849787fef3cfdd416da77aae9fcabfbdc6b3887/reboot/rust/src/codegen.rs#L1795)
+does not invoke the explicit policy path used by exclusive external roots. Hooks
+are implemented, but this is not default Python production protection. Python's
+[DefaultAuthorizer](https://github.com/reboot-dev/reboot/blob/84715af592cf35fa599937fdb7ae9461953c4bc0/reboot/aio/auth/authorizers.py#L350)
+distinguishes development, production, User ownership and trusted internal calls.
+The next implementation priority is an explicit experimental release/security
+contract and a denial-before-handler/effects policy matrix, not broader composition.
+Inbound transaction/recovery authority must not be inferred from user headers.
+
+### Review backlog
+
+- **W1:** explicit finite named/indexed replay differs from Python's canonical
+  task iteration cursor. Define cursor advancement, Break, restart position and
+  checkpoint lifetime together. Python's single control loop and in-memory
+  cleanup do not establish on-disk garbage collection.
+- **W2:** durable workflow steps/readers remain local and explicitly named;
+  cross-actor stubs, deterministic external/idempotency keys and callbacks remain.
+- **W3:** bounded evidence-qualified RetryLocal differs from indefinite Python
+  unexpected-task retry/backoff. Match eligibility and isolation; never retry
+  uncertain mutations merely by status or claim arbitrary external exactly-once.
+- **W4:** cancellation admits only future unstarted workflows; running/ordinary
+  task cancellation, completion races and restart are separate work.
+- **W5:** authorized task listing/streams are local; placement-aware aggregation
+  is missing, not task administration itself.
+- **W6:** scheduling from transactions exists; transaction task targets and
+  general registered-actor writer/workflow recovery remain narrower.
+- **T1:** first-touch/direct-leaf rollback and RelinquishOwnership exist; arbitrary
+  ancestor/subtree snapshots and rollback-versus-Prepare are not established.
+- **T2:** sequential siblings and reusable direct participants exist; overlapping
+  branches and general parent/ancestor reentry remain restricted.
+- **T3:** fresh local shared promotion, root factories and root idempotent replay
+  exist; their inbound/shared/factory/tree/nested combinations do not compose generally.
+- **C1:** SortedMap operations/pagination/serial session reuse exist; routed access,
+  authorization and broader transaction composition remain. Python does not
+  guarantee recoverable rollback of eager nested SortedMap effects either.
+- **C2:** Rust-native Queue, OrderedMap, PubSub, presence, OAuth and ciphertext
+  libraries are absent; this does not imply Rust cannot call existing services.
+- **R1:** local exact-endpoint one-hop dependencies lack transitive/distributed
+  invalidation; Python reactive calls also exclude transactions.
+- **R2:** LocalReaders.Subscribe and explicit fresh-baseline reconnect exist;
+  canonical React/browser protocol and general streaming/state-reader support
+  are separate missing surfaces, not absence of subscriptions.
+- **G1:** reader/transaction services exist; workflow/transaction service combinations
+  and imported/nested descriptor type/error references remain restricted. Nested
+  protobuf fields and proto3 are not blanket gaps.
+- **G2:** typed declared errors exist, but shared transactions and constructors
+  in workflow-bearing services reject relevant declared-error combinations.
+- **A1:** bounded default-deny/development opt-in implemented above; remaining production
+  protection explicit before claiming a supported production surface.
+- **A2:** policy coverage differs across admitted execution forms, particularly
+  fresh shared roots. Exercise reader/writer/constructor/shared/exclusive/factory,
+  task/subscription and HTTP denials with trusted identity preserved.
+- **A3:** real Cargo/init/dev tooling is not production packaging: unpublished SDK,
+  generated/runtime compatibility, Rust serve launcher and configuration remain.
+- **A4:** placement readiness/process-local gates are not cross-host mutation
+  fencing, endpoint-alias or migration proof. Python graceful handoff also has
+  unresolved coordination; do not claim unproved superiority.
+- **A5:** external HTTP routes/lifecycle hooks exist; gRPC multiplexing, mounts,
+  trusted internal contexts and application OAuth/user-state integration remain.
+- **A6:** pre-listener component hooks and durable recovery are not Python's
+  post-servicer InitializeContext with application calls. Define ordering/context,
+  actor access and restart behavior explicitly.
+
+**Order:** finish the active accepted-slice delivery and full native validation;
+then A1/A2 plus reproducible Rust release gates; W1–W6; T1–T3;
+R1/R2/G1/G2/C1; production integration A3–A6 and application-driven C2 ports.
+Bounds are contracts to review, not automatic defects. New behavior needs matching
+Python/Rust request/result/error acceptance and crash/cancellation/lost-response
+boundaries. Canonical schemas alone do not certify generated API/protocol parity.
+
+**Validation distinction:** default Cargo currently skips 131 native integration
+cases; explicitly selected prerequisites/CLI modes do not substitute for all of
+those tests. A full-suite run is queued with fresh evidence, not yet certified.
+General Bazel CI does not provide the Cargo/runtime/generated-consumer/native gate.
+PR #216 remains draft and fork CI awaits approval, an execution gate rather than a
+failing result. Release-readiness requires exact-head and current-merge-result
+formatting, strict Clippy, Cargo, generated consumers and native evidence tied to
+source/Database revisions. Neither this source review nor historical pass counts
+satisfy that gate. Later feature sections retain their individual recorded evidence.
+
+## Capability overview
+
+| Capability | Current useful slice | Main remaining gap |
+| --- | --- | --- |
+| Local app DX | Cargo scaffold, annotated-proto generation, typed client, durable dev host | Production packaging/bootstrap and general distributed application composition |
+| Schema/codegen | Explicit schema DSL, Prost/Tonic bindings and concrete typed adapters | Rust derive/reflection and complete schema/tooling contract |
+| State/client runtime | Durable constructors/readers/writers, idempotent response replay, metadata/auth | General distributed ownership/fencing and arbitrary external effects |
+| Transactions | Legacy durable coordinator/participant paths and bounded supervised chains/star | General nested snapshots, reentrancy, intersecting subtrees, migration |
+| Tasks | Durable scheduled tasks, typed results/Wait with opt-in result policy, recovery, local admin list/stream and scheduled-workflow cancellation | Transactional targets, running/ordinary/distributed cancellation, aggregation, broad retry and dispatcher fencing |
+| Workflows | Finite typed named steps, bounded nested indexed replay, saved reader observations and finite Continue/Break, typed declared business terminals; explicit local-body resumption | Python unbounded Task cursor/GC/Break, cross-actor composition, framework failure isolation |
+| Reactive readers | Typed bounded database/workflow/transaction-service ordinary reader subscriptions, plain-database/workflow-bearing/mixed-transaction external unary composition, allowlisted multi-actor routing, bounded one-hop composition, commit invalidation and explicit same-query reconnect | Transactional-context composition, remote/transitive invalidation, transparent reconnect/durable resume, streaming/transaction RPC subscriptions |
+| SortedMap | Canonical empty constructor, serial same-host app/map transactions, same-root session reopening, live keyset pages and atomic multi-entry approval transfer | Public inbound adapter, nested/reusable siblings, distributed collection lifecycle |
+
+## Local app development
+
+**Implemented, bounded:** one local public gRPC host backed by one canonical
+C++ Database/RocksDB process. The SDK crate is unpublished and requires a checkout.
+The CLI does not use Python/Node Envoy/bootstrap, distributed placement, dashboard
+or chaos machinery. The default greeting scaffold wires ordinary unary
+constructor/writer/reader methods. The opt-in `--rust-example=batch-ledger`
+scaffold additionally composes a finite approval-gated workflow, typed canonical
+Tasks.Wait, a local reactive subscription and transactional SortedMap in one
+host. It restores **all** application/map participant ownership before coordinator
+recovery, authoritative Watch convergence, task recovery and public readiness.
+One task owner and one Wait service serve this bounded one-server topology;
+this is not general distributed placement or mixed-language composition.
+
+Generate it with the same Cargo/native development path:
+
+```sh
+rbt init --backend=rust --frontend=none --application-name=batch_ledger \
+  --rust-sdk=/absolute/path/to/sdk/reboot/rust --rust-example=batch-ledger
+```
+
+Its generated README documents `create`, `submit`, `approve`, `watch`, `wait`,
+`read`, `history`, `archive`, `archive-history` and typed archive rejection.
+Approval updates the ledger and index in one transaction; archive moves an exact
+approval entry between two distinct canonical maps and updates a cumulative counter
+under the same admitted app root. Existing workflow terminals/checkpoints are retained;
+workflow steps wait without holding an exclusive lease. The stable empty-map
+constructor replays on restart; no private state seeding is required. Arbitrary
+external-effects exactly-once and additional status-code retry policies are not
+claimed.
+
+```sh
+mkdir greetings && cd greetings
+rbt init --backend=rust --frontend=none --application-name=greetings \
+  --rust-sdk=/absolute/path/to/sdk/reboot/rust
+export RBT_RUST_DATABASE_BINARY=/absolute/path/to/reboot/server/database
+rbt dev run --rust-allow-insecure-database
+# In another terminal in the generated project:
+cargo run --manifest-path backend/Cargo.toml --bin client -- create
+cargo run --manifest-path backend/Cargo.toml --bin client -- greet
+cargo run --manifest-path backend/Cargo.toml --bin client -- read
+# Reuse this same logical mutation key when retrying:
+cargo run --manifest-path backend/Cargo.toml --bin client -- \
+  greet hello 11111111-1111-4111-8111-111111111111
+```
+
+**Security boundary:** the canonical C++ executable binds unauthenticated
+`0.0.0.0`; only the public Rust host is loopback-bound. The explicit insecure
+opt-in is mandatory. Use an isolated trusted development network, not production.
+Use the compatible canonical Database binary, not the isolated Native2pc sidecar.
+The runner needs POSIX process groups/`fcntl`; Linux descendant cleanup uses
+child-subreaper support.
+
+Cargo `build.rs` generates bindings/adapters in `OUT_DIR`. The Rust `.rbtrc`
+disables the ordinary background generation watcher; `rbt generate --rust` is a
+separate prebuilt-plugin route, not the Cargo app build path. The CLI builds app
+and client, validates app `--server-info`, starts Database/host, then checks
+canonical Health.Check through the client. Rust/proto/build/manifest changes
+rebuild and restart the host while retaining Database state; failed builds end
+the session. Configuration changes require restarting the command.
+
+State persists at `.rbt/dev/<application-name>/rust/rocksdb`; `database.log` and
+`host.log` live alongside it. An advisory lock rejects simultaneous sessions on
+the same state directory. Signals cancel/terminate/reap owned process groups;
+unexpected child exit fails the CLI and cleans up the other child. The runner
+requires `--servers=1` and rejects unsupported frontend/TLS/Node/Python/tracing/
+transpilation/background-command modes. `--terminate-after-health-check` is a
+bounded startup smoke option. `--port=12991` changes the public listener; use
+`RBT_RUST_URL=http://127.0.0.1:12991` on the client. Expunging local state is
+separate and destructive, never a normal verification step.
+
+Init validates SDK/frontend/name and collisions before writes, rejects symlinked
+scaffold parents/overwrites, and publishes `.rbtrc` last. Python 3.10 uses `tomli`;
+newer Python uses `tomllib`.
+
+**Sources:** [rust_init.py](../cli/commands/init/rust_init.py),
+[rust_dev.py](../cli/commands/rust_dev.py), [dev.py](../cli/commands/dev.py),
+[templates](../cli/commands/init/templates).
+**Coverage:** [CLI behavior tests](../../tests/reboot/cli/rust_app_dx_test.py),
+[real app acceptance driver](../../tests/reboot/cli/rust_app_dx_e2e.py).
+These cover create/write/same-key replay/read, canonical Load, RocksDB restart,
+rebuild and owned-child cleanup; process-shim tests alone are not durability proof.
+
+## Schema, generation and ordinary state APIs
+
+The explicit schema DSL emits stable tags/requiredness, proto3 scalar types,
+nested models, enums, repeated/map/oneof fields and reserved removed tags/names.
+Compatibility checks reject supported tag/type/enum changes; this is not full
+Python model validation/reflection. No mature `derive(RebootState)` equivalent
+is claimed.
+
+Cargo-native generation uses vendored protoc and deterministic Prost map fields
+(`BTreeMap`) for request fingerprints. The direct plugin needs pre-existing
+Prost/Tonic bindings and an explicit module/runtime path; it cannot silently
+change those bindings' map containers. Generated services are concrete typed
+handlers/adapters/clients, not caller-selected dynamic dispatch. Descriptor,
+method-kind, symbol and unsupported-shape validation fail closed. Streaming
+reader state is not ordinary unary state; canonical map and standalone workflow
+services use specifically supported generator paths, not a blanket exception
+for arbitrary trusted effects. Request/state/declared-error protobuf shapes are
+bounded to supported same-package top-level models. Declared errors are supported
+for ordinary unary readers/writers, exclusive transactions, standalone workflow
+terminals, ordinary unary reader/writer errors on workflow-bearing services,
+and serial same-actor named writer business decisions. The opt-in serial same-actor reader-outcome API supports typed durable declared
+errors; ordinary reader waits and framework errors remain fatal step failures.
+Shared transactions and workflow-service constructor errors remain unsupported. Metadata/StateRef helpers also remain a
+subset: the StateRef codec is not automatic migration of opaque durable keys;
+full per-call Options/context merge, timezone/DST parsing and cross-application
+service discovery are not supplied.
+
+```toml
+[build-dependencies]
+reboot = { package = "reboot-rust-schema", path = "/path/to/reboot/rust", features = ["build"] }
+[dependencies]
+reboot = { package = "reboot-rust-schema", path = "/path/to/reboot/rust" }
+```
+
+```rust
+// build.rs; consumer owns the crate::proto module and includes emitted adapters.
+fn main() {
+    reboot::build::compile_protos_with_runtime(
+        &["proto/counter.proto"], &["proto", "/path/to/reboot"],
+        "crate::proto", "reboot",
+    ).unwrap();
+}
+```
+
+Database-backed adapters isolate actor/type, validate state references and call
+metadata, load state, and durably Store state plus writer-response replay data.
+Same-key request/method collisions fail closed. Constructor uniqueness,
+automatic writer-key expiration and declared error envelopes have scoped tests.
+Generated ordinary external unary readers/writers retry **Unavailable only** with
+the same request/metadata/logical writer key. Backoff starts at one second, doubles
+and caps at 30 seconds; the generated loop has **no total attempt/time budget**.
+Callers must own a timeout/cancellation for bounded waiting. After an uncertain
+call, a new `_with_key` invocation must reuse the original key; a new automatic
+writer invocation creates a new logical key. This is not nested transactional or
+arbitrary external-effect retry authority.
+Actor gates are process-local, keyed by normalized endpoint/type/ref; endpoint
+aliases or separate processes are not coordinated by these locks. Ordinary
+handler external IO is not transactional or exactly-once.
+
+**Sources:** [schema/DSL](src/lib.rs), [generation](src/codegen.rs),
+[Cargo helper](src/build.rs), [runtime](src/runtime.rs),
+[external client](src/lib.rs), [state refs](src/state_ref.rs).
+**Coverage:** [generated downstream compilation/behavior](tests/protoc_plugin_counter.rs),
+[external metadata/runtime](src/lib.rs).
+
+## Application host, security and HTTP
+
+`ApplicationHost` owns lifecycle, explicit recovery registrations, accepted
+placement/readiness and router shutdown. Public ingress stays gated before
+recovery or after host failure; internal recovery/control paths are separate.
+Server-owned application identity is not a caller header. Generated adapters
+support scoped bearer verification/immutable-state authorization and rich
+method-declared/system error handling. Canonical Health.Check and opt-in descriptor reflection plus a bounded separate
+external HTTP route host exist. Host-wide Health.Watch observes recovery and
+required-placement readiness, coalesces duplicate/current updates and ends on
+observed failure/shutdown. Check follows the same gate. Neither performs Python's
+websocket probe or per-service health discovery. Reflection requires explicit
+descriptor sets and is not Rust derive reflection. Request-aware
+GET/POST/OPTIONS handlers receive the original Axum request (URI/query, headers,
+extensions and body) alongside immutable untrusted external metadata and
+server-owned identity. Legacy context-only handlers remain compatible. This is
+not automatic HTTP protobuf dispatch, gRPC multiplexing, or an HTTP readiness API.
+
+**Authorization boundary:** default `AuthorizationPolicy` denies absent authorizers;
+explicit host-selected development permission is separate from authentication.
+Configured generated database methods and fresh shared/exclusive/factory roots,
+and supported shared/exclusive inbound methods, enforce their policies before
+handlers. Ordinary database and exclusive-root/factory receipts require current
+snapshot authorization before disclosure. This does not establish universal
+policy coverage: canonical Wait without a result policy and batch non-StopBatch
+methods still default allow. Production ingress, User ownership, trusted internal
+identity, built-in JWT/OIDC and complete HTTP authorization remain missing.
+
+Shutdown during a parked `HostRecovery::start` drops startup ownership, revokes
+readiness, cancels/joins prior owned children and closes ingress. Earlier completed
+registrations' child failures can interrupt a later parked start. Children created
+by the currently pending start are not independently polled until it returns.
+Pre-listen lifecycle initialize/recover hooks also observe the same caller shutdown
+future in both gRPC and HTTP hosts, with cancellation-safe RAII and initialized-prefix cleanup. Trusted host registration/handler/router composition is not a sandbox
+against a malicious application registrar. Public metadata cannot manufacture
+private task, workflow, map or supervised-root authority.
+
+**Sources:** [host](src/application_host.rs), [HTTP](src/http_host.rs),
+[generated authorization](src/codegen.rs), [placement](src/legacy_placement.rs).
+**Coverage:** host lifecycle tests in [application_host.rs](src/application_host.rs),
+[generated native fixture](tests/fixtures/generated_cxx_database_process/src/main.rs).
+
+### Request-aware HTTP and ordinary receipt authorization (2026-10-09)
+
+`get_with_request`, `post_with_request` and `options_with_request` preserve the
+request while deriving HTTP name/token metadata before handler entry. Caller
+identity stays untrusted; raw header/URI mutation cannot replace the immutable
+snapshot or select application identity. Handlers own body size/time bounds and
+JSON validation; no default authorization, CORS, multipart/WebSocket or streaming
+RPC protocol is supplied by these route builders.
+
+A real generated greeting consumer hosts a loopback HTTP-to-public-gRPC adapter,
+not a native Database proxy. Its explicit fixture verifier/authorizer rejects
+unknown/missing credentials and revoked grants before saved writer/constructor
+responses. Authorization sees the current persisted actor bytes under the same
+exclusive gate as receipt lookup. Ordinary protected readers/writers authorize
+immutable raw/default protobuf state before state admission/decoding; constructors
+preserve absent versus present-empty state and authorize before existence errors.
+Unauthenticated owner-side compatibility APIs retain their historical replay path.
+
+Native proof covers create/write/read, cached replay, header spoof isolation,
+invalid JSON/UUID/oversized bodies, missing-actor authorization before admission,
+revoked writer **and constructor** keys with observed current count 1 and exact
+unchanged actor bytes `0801`, watch regeneration, restart and cached constructor
+response 0 despite current state 1. A deliberately incomplete body receives 408
+while the generated host drains shutdown; no RPC mutation occurs, listeners and
+owned descendants close. These are ordinary local application routes, not a
+production JWT/OIDC provider, arbitrary transaction gateway, distributed authority,
+or lost-ACK/cancelled in-flight mutation proof. No default scaffold HTTP listener
+or new public CLI HTTP option is claimed.
+
+**Executed:** preflight `/tmp/reboot-rust-http-request-preflight-1791504298517132096`
+passed all four HTTP unit tests and generated batch strict Clippy. Broad
+`/tmp/reboot-rust-http-request-final-gates-1791504369366316353` passed strict SDK
+Clippy, **408 SDK tests, 128 ignored**, generated HTTP consumer strict Clippy and
+its verifier unit test, plus 26 recorded HTTP exchanges and native greeting
+restart/regeneration/supervision/cleanup. Full batch regression
+`/tmp/reboot-rust-batch-ledger-acceptance-1791504888009235674` passed **162 checks**.
+Both accepted manifests confirm sources unchanged during execution. Earlier
+unconfigured-verifier negative was an invalid test expectation; a corrected
+explicit-policy native red then reproduced receipt-before-authorizer disclosure.
+Only corrected green evidence is acceptance. Static review is not execution proof.
+
+**Sources/evidence:** [routes](src/http_host.rs), [ordinary store](src/runtime.rs),
+[policy](src/auth.rs), [native harness](../../tests/reboot/cli/rust_app_dx_e2e.py),
+[fixture adapter](../../tests/reboot/cli/fixtures/rust_http_request_host.rs),
+[HTTP checks](../../tests/reboot/cli/fixtures/rust_http_request_fixture.py).
+
+### Transaction-root receipt authorization (2026-10-09)
+
+Generated external exclusive roots, including factories, verify credentials and
+obtain fresh participant admission before authorizing immutable raw optional
+state. Only then may the one gate-protected receipt lookup validate a fingerprint
+or return a cached success. There is no pre-admission receipt fast path. Execution
+state decoding, missing-state diagnostics and factory-existing rejection follow
+policy and replay, so a permitted factory retry can return its original response
+against a newer existing state without invoking the factory again. Inbound/shared
+branches do not acquire universal policy coverage from this change.
+
+Replay now depends on current admission/Load and acknowledged cleanup, rather
+than receipt availability alone. It waits behind retained/restored ownership;
+restoration must settle before fresh admission. An absent snapshot is preserved
+as None, not replaced with a cached response or fabricated state. Cleanup remains bound to
+the newly admitted root/local-owner incarnation. Failed or cancelled terminal
+ACKs retain uncertainty; they do not manufacture a successful denial/replay or
+permission to reopen the original transaction. Receipt decoding occurs after
+policy; current state is not decoded by generated execution on a successful
+replay. Authorizers must handle raw bytes safely themselves.
+
+Factory pre-handler policy and receipt awaits keep undurable Drop armed. A
+synchronous generated guard transition immediately before handler invocation
+restores the historical retained-handler lifetime, including all disarm flags.
+It refuses owned cancellation/registration/inbound composition. This is not an
+acknowledged Prepare and does not grant factory explicit-Abort authority. Handler
+cancellation retains the existing uncertainty behavior; it is not newly supported
+factory cancellation.
+
+The real C++/RocksDB public generated-service test creates an absent actor with
+factory response **7**, advances it through an exclusive writer to **12**, then
+retries both original keys. A current-state ceiling of 10 denies both with
+PermissionDenied; an allowing policy returns the original factory **7** and
+writer **12** while the actor remains **080c**. Each invocation must freshly trace
+current state 12. Exact original receipts and state survive denial, permitted
+replay and restart of the same RocksDB directory. No direct storage seeding is
+used by this new acceptance. This fixture uses an explicit state-sensitive app
+policy, not a production identity provider or distinct-principal proof.
+
+Generated-consumer cancellation tests reproduced the pre-handler retained-lease
+bug before deferred disarm: authorization cancellation and cached-factory receipt
+cancellation both prevented bounded re-admission. The repaired tests prove actual
+parked awaits, no handler/terminal work before cancellation, subsequent admission,
+and unchanged legacy handler-cancellation retention. These use fake sidecars;
+they are not native cancellation, concurrent duplicate admission, lost-ACK,
+malformed-state/receipt, or multi-participant proof. Existing exact-incarnation
+and prepared-ownership regression gates remain required. Automatic root receipts
+still store successful protobuf replies, not declared transaction errors.
+
+**Sources/coverage:** [generator](src/codegen.rs),
+[guard ownership](src/explicit_abort.rs), [participant](src/durable_participant.rs),
+[generated consumer checks](tests/protoc_plugin_counter.rs),
+[native public-service acceptance](tests/generated_cxx_database_process.rs),
+[native fixture](tests/fixtures/generated_cxx_database_process/src/main.rs).
+
+**Executed acceptance:** immutable final native root
+`/tmp/reboot-rust-transaction-replay-final-native-1791510718240817276` ran three
+nonzero ignored native tests: current-state receipt authorization, factory replay
+collision, and post-decision factory recovery. SDK/all-targets and its nested
+consumer: **411 passed, 129 ignored**, including **31 generated-consumer tests**;
+strict SDK Clippy passed. The final invoker adjustment separates a bounded
+read-only readiness probe from one tested mutation/replay and clears the probe's
+authorization trace before that RPC. No status-based mutation retry is credited.
+
+SDK/generator/guard sources are identical to the full CLI/HTTP proof at
+`/tmp/reboot-rust-batch-ledger-acceptance-1791509285544767756` (**162 checks**) and
+`/tmp/reboot-rust-http-request-final-gates-1791509982153855278` (**26 HTTP exchanges**,
+ordinary replay/privacy, real restart/regeneration and partial-body shutdown),
+with whole generated batch-consumer strict Clippy at
+`/tmp/reboot-rust-http-request-preflight-1791509213659158995`.
+Only the native fixture invoker changed afterward; the final native/SDK rerun
+above freezes and verifies that adjustment. Earlier native exclusive-root
+idempotency and post-decision recovery also passed at
+`/tmp/reboot-rust-transaction-replay-regression-1791509057181156168`.
+
+**Remaining scope:** native factory cancellation, concurrent duplicate admission,
+malformed snapshots/receipts, unknown-ACK cleanup and multi-participant authorization
+remain unproved. Shared/inbound/task/workflow policy coverage and automatic durable
+transaction-declared replies remain separate contracts. This closes the bounded
+external-exclusive/factory cache-authorizer bypass, not broad authorization parity.
+
+### Host-wide lifecycle health observations (2026-10-09)
+
+Canonical `grpc.health.v1.Health.Check` and `Watch` share host readiness:
+SERVING requires recovery Ready and all opted-in placement declarations. Required
+placement loss is NOT_SERVING, even if recovery alone is Ready. Health remains
+read-only control ingress available before public actor readiness; observing it
+neither grants actor/transaction authority nor relaxes dispatch gates.
+
+Watch sends a current initial observation and changed statuses. Its stream owns
+only watch receivers and a boxed pending change future, without detached producers,
+queues, database calls, polling timers or extra dependencies. Snapshot versions
+are marked before constructing change waits, so a notification between sampling
+and polling is retained. Duplicate and fast/slow-client observations coalesce;
+this is not a durable transition log, readiness lease or retry authorization.
+
+Observed Failed or owner-channel closure emits NOT_SERVING (unless already the
+last observed status) and ends. Once polled, termination on host failure/shutdown stops the observer waiting
+for another source change during graceful router shutdown. Arbitrarily stalled
+transport/backpressure shutdown is not newly certified. Transport loss
+can prevent delivery; no universal final-message delivery is promised. Dropping
+or cancelling the stream releases its pending receivers synchronously.
+
+Requests are intentionally host-wide: service names are ignored like the existing
+custom Check contract, not per-service SERVICE_UNKNOWN discovery. This additive
+Rust Watch does not claim Python parity: Python Watch is unimplemented, and its
+Check includes a websocket probe that Rust does not implement.
+
+Sources: [host](src/application_host.rs), [wire lifecycle tests](tests/application_host.rs),
+[native CLI observer](../../tests/reboot/cli/fixtures/rust_http_request_fixture.py).
+
+**Executed acceptance:** `/tmp/reboot-rust-health-watch-preflight-1791511880749185669`
+ran three direct health stream tests and all twelve real-wire host tests, including
+recovering NOT_SERVING -> Ready SERVING -> shutdown NOT_SERVING -> EOF. Placement
+revocation/regain, duplicate/slow observations, owner closure and receiver release
+are directly exercised. Whole generated batch-consumer strict Clippy passed at
+`/tmp/reboot-rust-http-request-preflight-1791511962500090882`.
+
+Final native/SDK proof:
+`/tmp/reboot-rust-health-watch-final-gates-1791513399274396552`;
+**414 Rust tests passed, 129 ignored** (including 31 nested generated-consumer
+checks), strict SDK Clippy and 26 real HTTP exchanges. The ordinary native CLI
+consumer holds a public Health.Watch during shutdown and receives exactly
+**SERVING, NOT_SERVING, EOF**, while the parked HTTP body drains with 408 and
+listeners/process groups close. Caller-resource fault tests cover failed Watch
+creation, first-frame failure and shutdown observation; channel/call/partial-body
+socket cleanup is not counted as native status delivery. Current CLI unit gate
+also passed. Only those fixture/CLI test files changed after the broad batch run;
+SDK/host/generator sources remained identical and final native/SDK acceptance
+froze the final harness.
+
+The full **162-check** native persisted batch regression passed at
+`/tmp/reboot-rust-batch-ledger-acceptance-1791512596767606765`, preserving app/map
+restoration, tasks/replay/cancellation, restart and watcher cleanup. No dependency,
+lockfile, new producer, timer or second application owner was added.
+
+**Remaining:** per-service health discovery, websocket/end-to-end storage health,
+transparent reconnect/resume, a durable transition log and arbitrary transport
+backpressure shutdown guarantees are not implemented or proved. Native placement
+revocation/failure transitions are not credited by the default greeting shutdown
+observer; those require separate live-placement/fault acceptance. Overall parity
+remains incomplete.
+
+### Pre-listen lifecycle shutdown and cleanup (2026-10-09)
+
+The gRPC `RunningApplicationHost` polls one pinned caller shutdown future before
+and during every pre-listen initialize/recover hook, then reuses it for host
+recovery and serving. Shutdown wins simultaneous hook readiness. Interruption
+drops the actual awaited hook future before revoking readiness and awaiting
+cleanup; no later hook, recovery registration or listener starts on that path.
+A final-hook/empty-registry boundary check prevents a shutdown made ready by the
+last hook from reaching bind. An incomplete initialize is not treated as
+initialized: it must own partial resources through cancellation-safe RAII.
+Interrupted recover receives cleanup because initialization already succeeded.
+Trusted callbacks must not detach unowned work.
+
+Every successfully initialized component is cleaned in registration order, even
+if an earlier cleanup returns an error. Primary hook, bind, recovery-registration,
+recovery-child, transport and sticky durable-uncertainty failures are not replaced
+by cleanup errors. Otherwise the first cleanup error is reported. Normal ready
+shutdown publishes Failed before signaling router cancellation; the publication
+order is source-backed, not an assertion of universal remote final-frame delivery.
+
+Five original-source regressions failed at baseline `0945e0b3`: parked initialize
+and recover ignored shutdown, precompleted shutdown ran hooks, bind failure
+skipped cleanup, and a cleanup error masked the primary lifecycle failure.
+Result record: `/tmp/reboot-rust-lifecycle-startup-red-1791514597429512892/result.json`
+(process `proc_5e2469e62677`, exit 101; one existing test passed, five failed).
+Current tests additionally cover shutdown becoming ready in the last hook,
+precompleted empty registry, recovery-registration/child primary failures and
+sticky uncertainty surviving cleanup failure. These are actual host/RAII/wire
+lifecycle tests, not new C++ transaction-cancellation or durable recovery proof.
+
+**Executed final revision:** `/tmp/reboot-rust-lifecycle-startup-final-gates-1791516077707479328`:
+21 host integration tests, **424 Rust tests passed, 129 ignored**
+(including 31 nested generated-consumer checks), 24 CLI tests and strict SDK
+Clippy. Native generated greeting/HTTP acceptance preserves 26 exchanges,
+authorization/replay, real RocksDB restart, rebuild/supervision and owned-child
+cleanup; its Health.Watch still receives SERVING -> NOT_SERVING -> EOF.
+Whole generated batch-consumer strict Clippy: `/tmp/reboot-rust-http-request-preflight-1791516677539529570`.
+Full **162-check** native persisted batch regression: `/tmp/reboot-rust-batch-ledger-acceptance-1791517288056386300`.
+Frozen manifests were read back against the final source before ledger refresh.
+A preceding final-revision batch run at
+`/tmp/reboot-rust-batch-ledger-acceptance-1791516751240757543` stopped after 92 checks
+when explicit read-only reconnect returned Unavailable after restart instead of
+the requested snapshot; that failed run is not acceptance. A fresh public reader
+on its still-running host returned `batch-001 3 1 1 1`. Normal CLI SIGINT shutdown
+closed the recorded CLI/Database/host PIDs before the isolated rerun above.
+No uncertain mutation was retried. The reconnect failure's exact transport cause
+is not established; first-attempt reconnect robustness remains an unresolved
+fixture observation, not transparent reconnect or new retry authority.
+
+**Scope at this gRPC checkpoint:** the independent HTTP host startup/cleanup
+implementation was not repaired here; the later HTTP checkpoint below extends it. Cleanup hooks are not forcibly timed out; hanging hooks,
+panics, externally aborting the entire host future and detached callback effects
+are not certified. Generic hooks do not infer Abort or erase sidecar uncertainty.
+No new distributed cancellation, lost-ACK recovery, per-service health, actor
+ownership or exactly-once external-effect guarantee is claimed. Overall parity
+remains incomplete.
+
+Sources: [host](src/application_host.rs),
+[host integration tests](tests/application_host.rs),
+[native greeting/HTTP regression](../../tests/reboot/cli/rust_app_dx_e2e.py),
+[persisted batch regression](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
+
+### HTTP lifecycle startup cancellation and cleanup (2026-10-09)
+
+The external-only `HttpApplicationHost` now pins one caller shutdown future
+before initialize/recover and moves that same owned pinned future into Axum's
+graceful shutdown. Initial and final-hook/empty-registry boundary probes prevent
+already-observed shutdown from running hooks or reaching bind. Biased selection
+interrupts a parked hook; its owned future drops before cleanup. Only completed
+initialization joins the cleanup prefix. All initialized hooks are cleaned in
+registration order despite returned errors. Primary hook/bind/HTTP transport
+errors survive cleanup; otherwise the first cleanup error is returned. This
+repairs the former `result.or(cleanup)` false-success/error-masking behavior.
+
+Six original-source HTTP regressions failed against `eb08bc98` (process
+`proc_18f533ee9313`, exit 101): parked initialize/recover ignored shutdown,
+precompleted shutdown ran hooks, startup cleanup masked its primary error,
+bind cleanup stopped early, and normal cleanup failure returned success.
+Two boundary tests already passed. All eight HTTP lifecycle integration tests
+pass in the final revision; parked tests assert RAII drop-before-cleanup, exact
+initialized-prefix traces and absent listener. These are direct HTTP host tests,
+not new native sidecar transaction-cancellation evidence. Transport precedence
+is source-backed, not a new forced transport-error regression.
+
+**Executed final revision:** `/tmp/reboot-rust-http-lifecycle-final-gates-1791519078351082710`: eight HTTP lifecycle tests,
+**432 Rust tests passed, 129 ignored**, 24 CLI tests and strict SDK
+Clippy. Native generated public CLI greeting/HTTP/health/restart/cleanup retains
+26 exchanges and SERVING -> NOT_SERVING -> EOF. The HTTP-only listener hook trace
+is exactly initialize/recover/shutdown once per recorded normally stopped host PID,
+including the two hot-rebuild hosts; abrupt whole-future drops are not credited; it owns no app,
+map, task or sidecar recovery participants. Whole generated batch-consumer strict
+Clippy: `/tmp/reboot-rust-http-request-preflight-1791519671124187273`; native persisted **162-check** batch: `/tmp/reboot-rust-batch-ledger-acceptance-1791519744444676826`.
+Frozen manifests, database identity and recorded PID absence were audited before
+canonical fingerprint refresh.
+
+**Limits:** trusted hooks must own partial resources via cancellation-safe RAII;
+cleanup can still wait indefinitely, panics and externally aborting the whole
+serving future are not asynchronous cleanup guarantees. No routing authority,
+retry, NoAuth, durable Abort or external-exactly-once semantics are expanded.
+Overall parity remains incomplete. This extends the previous gRPC-only checkpoint;
+its historical HTTP exclusion no longer describes the current host.
+
+Sources: [HTTP host](src/http_host.rs),
+[HTTP lifecycle regressions](tests/http_application_lifecycle.rs),
+[native HTTP fixture](../../tests/reboot/cli/fixtures/rust_http_request_host.rs),
+[native lifecycle inspector](../../tests/reboot/cli/fixtures/rust_http_request_fixture.py).
+
+## Legacy transactions and ownership
+
+### Implemented transaction shapes
+
+Generated typed application RPCs carry validated transaction context to targets,
+which load/authorize/run/stage their actual handlers and return participant
+membership in trailers. The root collects membership and persists the complete
+coordinator set before Prepare. Terminal `Participant` control RPCs do **not**
+start/load/stage application methods. The rejected `ParticipantLifecycle.Start`
+/`Stage` proposal is obsolete and must not become a roadmap requirement.
+
+Legacy coordinator/participant recovery, resolver/placement routing, durable
+state/idempotency, exclusive and factory roots and bounded shared/read-only
+paths exist. Fresh local shared-to-exclusive promotion is implemented through a
+consuming direct-local handoff on one existing actor: unchanged state takes the
+read-only path; mutation owns Prepare/terminal delivery. It is not general
+remote/shared promotion. Actor gates include queued-writer fairness,
+cancellation-safe admission and supported exclusive-to-shared downgrade.
+
+A successful response/trailer is not a durable decision. Transport uncertainty,
+lost terminal ACKs, cancellation and sticky shutdown failure retain ownership
+rather than synthesize an Abort or permit live competing admission. Recovery
+uses durable canonical decisions; unprepared work must not become a fabricated
+Commit. No general transparent retry after uncertain terminal operations exists.
+
+### Supervised chains, rollback and root-star
+
+- Explicit supervised existing-actor exclusive non-factory/non-idempotent
+  A→B→C chains preserve original root identity, paths, registered root cleanup and
+  each inbound participant's live Watch ownership. Builder/header flags alone do
+  not grant authority. Successful-return chains and participant-local task effects
+  are bounded supported shapes, not arbitrary-depth tree orchestration.
+- First-touch direct-leaf declared-error rollback can retain read-only leaf
+  ownership so a root catches the declared failure and commits its own effects.
+  Exact singleton membership, admitted incarnation and canonical declared errors
+  are mandatory; failed private handler state/tasks are discarded before staging.
+- The descendant variant allows B to catch first-touch C, then succeed to A.
+  B failure after the catch does not give A general subtree rollback authority.
+  C restart before Prepare fails closed; no synthetic duplicate-Prepare success
+  or crash-surviving in-memory read lease is supplied.
+- `with_sequential_root_star()` permits sequential distinct leaves A→B then A→C.
+  The runtime consumes counted scope and performs the real typed unary call;
+  caller-created receipts/futures cannot settle membership. Repeated targets,
+  overlapping scopes and descendants under this policy are rejected. After B
+  succeeds, failed C dooms the root even if caught; uncertain C is not invented
+  into confirmed membership. Trusted hosts supply fresh child IDs/routes.
+
+**Additional implemented policy (source/test coverage, not rerun native release
+certification here):** `with_sequential_reusable_participants()` allows bounded
+serial same-root reuse of direct existing exclusive leaves using fresh nested
+IDs. Retained staged effects and per-call snapshot/relinquishment are separate
+from distinct-target root-star. Active/prepared/uncertain/stale/completed-ID or
+shared-retained admissions fail closed; the canonical bounded
+`relinquish_ownership` control path exists. See
+[reusable acceptance](tests/fixtures/reusable_participant_acceptance.rs). This does
+not establish concurrent/reentrant/intersecting subtree or general ancestor
+snapshot semantics.
+
+**Admission limits:** supervised paths are bounded to 32 transaction IDs; merged
+participant sets are bounded to 1024. These are rejection boundaries, not automatic
+paging or unlimited descendant traversal.
+
+**Still missing:** general sibling/reentrant/intersecting subtrees, ancestor
+staged snapshot restoration, nested rollback/retry, unrestricted shared/factory/
+idempotent composition, general pre-Prepare coordinator-death resolution,
+actor migration and cross-process dispatcher/ownership fencing. A bounded chain
+or sequential distinct star is not the Python general ownership engine.
+
+**Sources:** [runtime contexts](src/runtime.rs),
+[participants](src/durable_participant.rs), [coordinator](src/durable_coordinator.rs),
+[owned abort/scope](src/explicit_abort.rs), [generated stubs](src/codegen.rs),
+[legacy protocol](../../rbt/v1alpha1/transactions.proto).
+**Coverage:** [direct rollback](tests/fixtures/remote_leaf_task_acceptance.rs),
+[descendant rollback](tests/fixtures/descendant_rollback_acceptance.rs),
+[failure vectors](tests/fixtures/descendant_rollback_failure_acceptance.rs),
+[sequential star](tests/fixtures/sequential_star_acceptance.rs),
+[tree tasks](tests/fixtures/tree_participant_task_acceptance.rs).
+Python comparison: [contexts](../aio/contexts.py), [stubs](../aio/stubs.py),
+[state managers](../aio/state_managers.py). These compare semantics, not mixed apps.
+
+### Isolated Native2pc
+
+Native2pc has separate identities, journals/RPCs, routing and recovery/
+materialization primitives. It is real implemented functionality but is not the
+canonical legacy transaction protocol. Enrollment digests are supplied externally;
+there is no general generated user-method/effect/task executor or retry/timeout/
+lock-owning application coordinator. An acknowledged Committed decision is not
+proof of participant terminalization/materialized state or executed effects.
+Never use its passing tests to certify a
+legacy transaction shape or general SDK semantics. Keeping that evidence separate
+is still necessary even though mixed-language applications are not a goal.
+
+**Sources:** [native protocol](../../rbt/v1alpha1/native_2pc.proto),
+[native sidecar](../server/database.cc).
+**Coverage:** [native transport](tests/native_2pc_transport.rs).
+
+## Durable tasks and typed results
+
+Generated existing-actor unary reader and ordinary non-constructor writer methods
+can be scheduled immediately or at a canonical absolute UTC timestamp. Generated
+owners must be actively registered with host recovery; a dormant builder cannot
+schedule. Pending work is durable data, not a queue message. Bounded canonical
+rescans discover committed work even when notifications are lost; future tasks
+do not block ready peers. The supported runtime bounds pending/admitted work and
+owns bounded concurrent singleton deliveries rather than unbounded detached workers. Singleton
+admission bounds pending plus staged tasks to **1024**. Shared canonical recovery
+rejects a cumulative Pending batch over **1024 before dispatch**, even if each
+owner is individually below the limit; it does not page/drain excess work.
+
+Writer success atomically persists actor state plus its saved response, then
+**separately** completes via canonical CompleteTask CAS. Restart replays that
+checkpoint without remutating, including after an intervening ordinary writer.
+This is not atomic Store+CompleteTask. CompleteTask first-result-wins applies to
+its CAS authority. Its mutex serializes CompleteTask and nontransactional Store,
+but legacy Store still unconditionally upserts tasks; transaction commit/import
+have separate write authority. Thus alternate overwrites are not universally
+prohibited by the CAS or mutex.
+
+Method-declared reader/writer errors persist as validated `Any<google.rpc.Status>`.
+Immutable trusted registration binds full method, state/request/response types
+and exact declared-error decoders. Generated Wait checks stored method/terminal;
+same response types do not authorize another method. Rich RPC failures remain
+transport/system `Grpc` failures rather than becoming declared results just
+because their details resemble a schema. Trusted custom registration is not
+cryptographic/protoc-origin sealing or third-party Tasks-server certification.
+
+Ordinary writer `PreStoreFailure` receipts now escape as supervised failures,
+without live retry. Before Store does **not** establish local-computation-only
+provenance: handlers can forward transport or Cancelled statuses and perform
+external IO. This on-path fail-closed correction removes the previous implicit
+three-attempt policy; the workflow's explicit `RetryLocal` policy remains separate.
+The fresh ordinary-writer native regression executed all 10 selected cases,
+including the changed handler-failure vectors; historical three-attempt writer
+proof is not evidence for this correction.
+
+Failed private state is discarded. Framework Load/Store/replay/completion errors
+escape that retry receipt path, and actual owner cancellation/uncertainty remains
+fenced. Declared returns before completion CAS may be redelivered: no exactly-once
+handler/external-effects guarantee or durable error checkpoint is claimed. Losing
+CAS accepts an equal validated canonical winner; conflicting/malformed terminals
+fail closed.
+
+Canonical typed `Tasks.Wait` supports registered actors, exact response/error
+validation, deadlines and per-poll/pre/post-Load accepted placement authority.
+Generated routed Wait selects the latest client route, not a generic retry/migration
+engine. Multi-actor/shared-shard reader recovery collects one canonical stream,
+validates the whole bounded batch before dispatch and partitions exact type/ref.
+Shared recovery does not install cross-actor transaction scheduling authority.
+It supports graceful shutdown/redelivery without changing Pending to Cancelled.
+
+Supported explicit supervised tree participants may stage **their own** reader/
+writer tasks while exact root/Watch/gate ownership remains valid. Prepare carries
+private effects; only committed canonical Pending plus local terminalization
+makes them runnable. Trailers/queue hints/root decision alone cannot publish
+work. Arbitrary foreign task upserts remain rejected.
+
+Canonical server-local `Tasks.ListTasks` is opt-in on `ReaderTaskWaitService`:
+`with_admin_authorization(verifier, authorizer)` requires both explicit
+application-owned policies; no policy means denial. Authorization receives an
+encoded ListTasks request and no actor state. Original dispatch generations are
+retained across both policy awaits; accepted placement, activity and sticky
+uncertainty are rechecked before disclosure. This is application-controlled
+administration, not Python's built-in admin credential mechanism.
+
+Only an explicit matching `only_server_id` and singleton-recovered owners are
+admitted. The bounded in-memory cache records actual `SCHEDULED`, `STARTED` and
+local `SCHEDULED_RETRY` phases, preserves retry counts across rescans, prunes
+completed IDs on subsequent canonical scans and clears on owner revocation.
+Phase timestamps/failure counts are local to this server generation; there is no
+atomic canonical snapshot, durable transition history or completed-cache parity.
+`iterations` is the canonical task-level count, not a finite workflow checkpoint
+index. Shared-reader recovery listing and cross-server aggregation remain rejected.
+
+Canonical `Tasks.ListTasksStream` shares the exact local listing scope and emits
+an initial snapshot, then changed observations. Its RPC-owned lazy future polls
+at 200ms, retains the original dispatcher generations for the subscription
+lifetime and re-verifies/re-authorizes the exact stream method on each observation
+before post-await placement/activity/uncertainty checks. Errors terminate the
+stream; Drop cancels its timer/policy future, without a spawned producer or
+unbounded event queue. Slow consumers coalesce current observations, not a durable
+event history. Revocation is checked on the next pulled observation, not pushed
+independently through backpressure. The initial snapshot is authorized at RPC
+admission. Generated batch `tasks-watch` supplies bearer/server scope and an RPC
+deadline; reconnect creates a new current snapshot, without a resume cursor.
+
+**Missing:** transactional task targets, running/ordinary/distributed cancellation and full aggregated listing,
+automatic task-creator ACLs, broad retry policies, distributed dispatcher fencing and
+migration, arbitrary shared/factory/idempotent tree scheduling. Workflow methods
+have their separate context/result contract below, not ordinary declared-task
+error semantics.
+
+**Sources:** [task owner/recovery/Wait](src/one_shot_tasks.rs),
+[generated descriptors/schedulers](src/codegen.rs), [writer checkpoints](src/runtime.rs),
+[canonical task/CompleteTask](../../rbt/v1alpha1/database.proto),
+[Database CAS implementation](../server/database.cc).
+**Coverage:** [task vectors](tests/fixtures/task_vertical_acceptance.rs),
+[tree tasks](tests/fixtures/tree_participant_task_acceptance.rs),
+[shared recovery](tests/fixtures/task_vertical_acceptance.rs).
+Python comparison: [task dispatcher](../aio/internals/tasks_dispatcher.py),
+[Tasks service](../aio/internals/tasks_servicer.py),
+[generated method contract](../templates/reboot.py.j2).
+
+### Implemented, bounded scheduled-workflow cancellation
+
+Implemented on baseline `f385e2b49680e1fb7d2e7bfd557bfe3bc2875cf2` (2026-10-08).
+Public canonical `Tasks.CancelTask` shares the listing admin's explicitly configured
+verifier AND authorizer; default host exposure remains deny. Original dispatcher
+generation and server-owned application/server identity are captured before policy
+waits. Authorization receives the exact encoded request without actor-state loading;
+identity/UUIDv4/placement/owner errors follow successful policy outcomes. Malformed
+transport headers still fail parsing before authentication.
+
+Eligibility is a registered singleton workflow, future-scheduled and not entered
+STARTED **in this local owner generation**. SCHEDULED is a process-local observation,
+not a durable certificate that no prior generation ran it; prior effects across
+recovery/clock rollback are retained. Actor-exclusive admission serializes cancellation
+with workflow start. Initial admission reloads/validates canonical Pending, owner and
+due time and marks STARTED before releasing the gate; a stale completed hint is
+validated/skipped without invoking the body.
+
+Cancellation preserves identity/request/method/schedule and performs one sync
+`Database.CompleteTask` Pending→Completed CAS, with `Any<google.rpc.Status>` code
+Cancelled and exactly one typed `rbt.v1alpha1.Cancelled` detail. A valid ACK plus
+still-current authority yields OK; missing/completed canonical tasks yield NOT_FOUND.
+Running/due workflows and ordinary task targets are rejected. This is NOT Python's
+interrupt/async-cleanup/CANCELLING protocol. False CAS, transport/drop uncertainty
+or post-ACK authority loss leave sticky uncertainty before lease release. Existing
+host supervision propagates failure asynchronously; no status retry or synchronous
+readiness-revocation guarantee is added.
+
+Canonical workflow validation/generated Wait recognize cancellation separately from
+business declarations. Declared body validation cannot inject it as an undeclared
+business error. Generated Wait retains original TaskId/exact method metadata and
+supports both business-error enums (Grpc arm) and no-business-error methods
+(tonic::Status). An actual no-error consumer exposed unconditional identity
+conversions and a fallback-only match under strict Clippy; generation now emits
+only required conversions and direct fail-closed empty validation.
+
+The public batch client adds `cancel TASK_UUID`, with separately admitted exact
+admin request. Cancellation does **not** roll back submission state, map data,
+scheduling replay or saved steps, nor release an app business reservation.
+Compensation/retirement needs a separate app writer, not an invented rollback.
+
+**Executed final acceptance** (all accepted manifests recorded unchanged source):
+- `/tmp/reboot-rust-batch-ledger-acceptance-1791466910057365779`: actual public
+  scaffold/generation/Cargo/rbt/CXX/RocksDB. Disabled admin, absent/invalid bearer,
+  wrong route and running-task denial preserved canonical records. Two generated
+  clients concurrently cancelling returned one OK and one NOT_FOUND. Typed Wait
+  exposed Cancelled; durable status/type/details and immutable payload/schedule
+  matched. Submission/map/replay remained intact; scheduling replay did not reopen
+  the terminal; live inventory pruned it. Full RocksDB restart returned identical
+  terminal/Wait and zero body dispatch beyond original due time. Batch/reactive/
+  reconnect/watch/typed-business-error regressions passed; recorded children reaped.
+- `/tmp/reboot-rust-batch-ledger-final-gates-1791467542400778108`: SDK strict
+  all-target Clippy with test-support, **398 passed, 0 failed, 128 ignored**;
+  default native greeting durable restart/supervision/failed-live-rebuild cleanup.
+  The native batch consumer passed strict Clippy and four tests.
+- `/tmp/reboot-rust-cancellation-no-business-errors-1791466814746697061`: separate
+  generated no-business-error consumer strict all-target Clippy and four library
+  tests. This is compiler/consumer evidence, not native persisted cancellation
+  for that schema variant. All 51 focused codegen controls passed. SDK controls
+  exercise exact rich validation, admin auth/revocation and sticky destructor
+  uncertainty; their unit/static role is not native lost-ACK proof.
+- First native stage `1791465354930538153` failed an inspector before cancellation
+  (ColocatedRangeResponse incorrectly treated as rows), not accepted.
+  `1791466020736921795` passed native semantics but was superseded after the
+  no-error compiler repair. Final native/broad proofs above were rerun after it.
+  Concurrent clients have separate exact PID/command/log records, not a
+  thread-unsafe sequential evidence helper.
+
+Both source reviews found no confirmed defect. Source/destructor controls and
+uncontrolled concurrency do NOT prove actual completion-CAS lost ACK, dropped
+in-flight completion or a deterministic start-versus-cancel race; these are explicit
+test gaps. Running/ordinary cancellation, active-body cleanup, distributed authority,
+durable phase history and Python CANCELLING remain unsupported. Other parity gaps
+are not closed by this slice.
+
+**Sources:** [cancellation](src/task_cancellation.rs),
+[controls](src/task_cancellation_tests.rs), [workflow admission](src/workflow_context.rs),
+[typed Wait](src/workflow_codegen.rs),
+[public native acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
+
+## Durable named workflows
+
+Standalone workflow descriptors emit a typed handler, private `WorkflowContext`,
+workflow scheduler, named writer-step helpers and typed canonical Wait. Ordinary
+writer `method_scheduled` hooks can atomically persist state, task and idempotent
+scheduling response. Reusing the scheduling key returns the saved handle;
+request/method collisions fail closed. A direct public workflow RPC is denied;
+public workflow metadata is never private dispatcher authority.
+
+Explicit host recovery registration is mandatory. Steps are **finite explicit
+workflow-global names**, same actor, ordinary writers. Each acquires its own actor
+lease, validates exact Pending/owner/cancellation and atomically stores effect
+plus typed result/provenance. The body holds no actor lease across its own waits.
+Acknowledged steps replay saved results without invoking their writers. Task
+completion uses canonical CAS outside the body retry branch.
+
+Step identity uses the external-key helper UUIDv5(workflow UUID, name), not the
+complete Python typed-RPC manager alias/seed machinery. Writer/result contract,
+workflow method/request and step request are fingerprint-bound; conflicting
+reuse is rejected. `workflow_iteration` is absent outside loops, not Some(0),
+although Task iteration is zero. Incomplete legacy replay records fail closed.
+
+The generated workflow-specific attempt hook defaults ordinary `Status` to
+nonretryable `WorkflowBodyError::Failed`. An application may explicitly request
+`RetryLocal(String)` **only for local computation failure**. Private failed/
+dropped/active operation evidence, exact scope/Pending, original owner generation,
+sticky uncertainty and cancellation must remain clean. At most three total
+attempts, with 25/50ms backoff, run without restarting the host. Actual transport
+`Internal` (e.g. BrokenPipe) is not local-body provenance. Load/recovery, step/
+Store uncertainty, completion failures and cancellation do not request retry.
+Swallowing/dropping a failed framework operation cannot erase its fence.
+Successful finish checks attempt cleanliness before minting its own operation;
+receipt acceptance and canonical completion under the actor gate independently
+reject unclean attempts. Native caught-reader acceptance proves fail-closed host
+supervision and an unset Pending terminal across restart, not recoverable
+reader-error replay. Changing saved-step method/request identity requires an
+explicit migration; incompatible persisted replay fails closed.
+
+One dispatcher owns at most 1024 live bodies by default, equal to the durable
+Pending admission bound (configurable 1..1024 before recovery via
+`set_max_live_deliveries`). Each Pending ID is delivered at most once while live.
+Parked bodies consume the budget, but every accepted due ID has a delivery slot;
+scheduling rejects Pending plus staged work above the configured budget before
+commit rather than accepting work that could be stranded indefinitely. Recovery
+fails closed if the persisted Pending set exceeds the configured budget. Ordinary
+actor RPC admission is separate. Completed children may briefly occupy a slot
+until joined; canonical rescans then admit their replacements.
+Exhaustion retains existing supervised host failure and Pending restart progress.
+There is no durable quarantine or separate per-workflow readiness contract;
+the three-attempt budget resets per host delivery after restart.
+
+### Implemented, bounded application cooperative stop
+
+The public batch-ledger app can opt an **immediate** batch into cooperative stop
+with `Submit.stop_enabled`; default-false submissions retain the previous wire
+encoding and `approved-through-index.v1` predicate identity. Opt-in state binds
+the original workflow UUID. An authenticated configured task admin calls ordinary
+`StopBatch(batch, task_id)` with an idempotency key. Stale UUIDs, non-opt-in batches
+and finished batches return typed `StopDenied`, not guessed cancellation.
+
+The workflow branches on its returned **persisted** reader observation using
+`approved-or-stop.v1`, then calls private named `FinishStopped`. It retains the
+acknowledged prefix, maps and saved business decisions and returns an explicitly
+`stopped` partial Ledger through canonical successful Tasks.Wait. Further
+approvals are denied after stop intent commits; an already observed approved unit
+may finish before the next observation stops. A replacement batch resets control
+flags; its UUID isolates delayed stop requests even when the batch name is reused.
+Public FinishStopped scheduling is denied and both control methods remain writers,
+not reactive reader targets. Existing task ownership and participant restoration
+order are unchanged.
+
+Ordinary workflow-service scheduling writers now load canonical current actor
+state and run the authorizer **before** recovering/returning any cached receipt,
+under the same exclusive actor gate. Verified/no-op token handling alone is not
+authorization. Owner checks bracket awaited policy/recovery work and existing
+Store uncertainty fencing remains intact. Previously a cached receipt could bypass
+the authorizer; native restart with server administration disabled now denies the
+exact previously accepted stop key without changing durable records.
+
+This is a finite application control-flow branch, **not** canonical running-task
+cancellation, Python durable Break/unbounded cursor parity, asynchronous interruption,
+rollback of prior effects, compensation or external-effects exactly-once. Stop
+checkpoint Store lost-ACK and post-checkpoint/pre-terminal crash/replacement are
+not newly exercised; general task cancellation gaps remain unchanged.
+
+Sources: [batch application](../cli/commands/init/templates/rust_batch_lib.rs.j2),
+[admin policy](../cli/commands/init/templates/rust_batch_host.rs.j2),
+[shared scheduling replay](src/workflow_store.rs),
+[native acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
+
+### Implemented, bounded declared workflow terminals
+
+Generated workflow methods may declare same-file protobuf business errors.
+Their handler returns a typed error enum; its explicit declared variant becomes
+`WorkflowBodyError::Declared`. Plain tonic `Status`, even rich Status, remains
+nonretryable `Failed`. There is no status-code retry or error-detail classification
+of transport failures. Ordinary reader/writer errors inside workflow services
+and serial named writer business decisions are covered below; constructors and
+general system abort/running-cancellation terminals remain unsupported. The bounded
+admin scheduled-workflow Cancelled terminal is documented separately above.
+
+A declared terminal requires a clean outer workflow scope. Private failed,
+dropped or active framework-operation evidence rejects it before canonical Load.
+Immutable method declarations validate the exact rich Status shape, declared type
+URL and decodable payload, independently of overridable binding hooks. Original
+owner, Pending/due scope and cancellation checks then precede the existing
+uncertainty-fenced canonical CompleteTask CAS. Acknowledged earlier checkpoints
+are retained: business failure is not an all-workflow rollback. Terminal Store
+or lost-ACK uncertainty does not authorize retry or a guessed error result.
+
+Generated `*_wait` validates the canonical terminal and reconstructs the typed
+business variant. RPC failures remain its `Grpc(Status)` variant. The batch app's
+`submit-rejecting` path checkpoints a rejection before returning `BatchRejected`.
+Public `Checkpoint` dispatch is explicitly denied by `checkpoint_scheduled`;
+only admitted private workflow steps call the checkpoint handler. Subsequent
+approval of a rejected batch fails, while a new scheduled batch can proceed.
+
+### Implemented, bounded finite control-flow vertical
+
+`WorkflowContext::iteration(name, index, count)` mints explicit finite indexed
+replay scopes, with count bounded to 1..1024. Bounded nested scopes are supported by the separate
+composition contract below (depth <=8; Cartesian bound <=1024 along each path). This is **not**
+Python's unbounded canonical `Task.iteration` cursor or iteration GC. Task remains
+iteration zero and restart reruns the finite application body, loading each
+acknowledged typed decision/effect. Explicit finite Continue/Break is now supported
+by the separate saved decision API below; this does not persist arbitrary Rust
+control flow. Keep the finite count, indices, condition version and named calls
+stable across replay.
+
+Generated `WorkflowSteps::<reader>_until` binds exact immutable reader descriptor,
+request/result types, explicit checkpoint alias and versioned named condition.
+Predicates/reader implementations are trusted pure local computations; closure
+semantics are not introspectable. Changed named condition, request, method, type
+or finite count fails fingerprint validation at the same checkpoint identity.
+Wait-only reader descriptors cannot be staged as ordinary tasks. Hierarchical
+UUIDv5 operation namespaces and length-delimited loop/index/name material keep
+waits, iteration writers and legacy global writer aliases structurally disjoint;
+legacy global writer UUIDv5 semantics remain unchanged. Iteration checkpoint
+records carry Some(index), distinct from global None.
+
+The wait subscribes/marks revision before canonical Load and releases actor
+admission before parking. A successful immutable read is checked and saved while
+exclusive admission is retained; only its typed decision is stored (no actor
+upsert or fabricated actor invalidation). A saved matched observation replays
+before consulting live state, even after true-to-false flapping and host/RocksDB
+restart. Failed/dropped operations retain private attempt evidence; original
+owner generation, terminal reader revocation, cancellation and sticky uncertainty
+remain fences. No Load/Store/completion uncertainty is retried.
+
+Capacity regression executed on the corrected source:
+`/tmp/reboot-rust-control-flow-loop1-capacity-final2-proof.json` records 64 parked
+false predicates, ready workflow 65 completing without releasing them, the same
+progress after host recovery, configured-capacity scheduling rejection with state
+rollback, and undersized-recovery rejection. All 16 owned processes were reaped.
+The corresponding SDK all-target tests and SDK/generated workflow consumer strict
+Clippy gates passed (`/tmp/reboot-rust-capacity-final-{alltargets,clippy,consumer-clippy,native}.log`).
+This is targeted capacity/control-flow evidence, not a fresh run of every ignored
+native workflow or transaction acceptance.
+
+The fresh post-repair frozen run in [Verification](#verification) executed all
+three native workflow tests, including expanded capacity, subscription-before-read
+and false-before-idle barrier races, saved wait flap/restart, three typed iterations
+with exactly two checkpoints per finished iteration, ordinary RPC responsiveness
+and parked-owner shutdown. Its control-flow proof records 16 owned processes,
+all absent after cleanup. The 64 parked/ready-65 scenario is not a full 1024-body
+stress test. Earlier native/capacity runs remain separate revision-scoped evidence.
+
+Forced supervisor destruction revokes publication immediately, but each delivery
+captures the registry owner before spawn/first poll and retains it until future
+destruction. The controlled synchronous-callback unit test proves replacement
+claim rejection while an old child survives supervisor abortion, then successful
+claim after destruction. Its production spawn-helper mutant failed and restoration
+passed; this is focused lifetime evidence, not execution of the entire host's
+five-second forced-abort fallback or distributed fencing. Normal shutdown drains
+owned children before releasing ownership.
+
+Abort-drain preserves an already-selected delivery error using explicit fallback
+provenance, not Status-code/message classification. It can adopt one completed
+child error for a supervision fallback or successful cancellation, but does not
+overwrite an already-selected primary with secondary readiness failure. Two
+deterministic production-helper tests and an unconditional-overwrite causal mutant
+exercise this correction without clearing uncertainty or authorizing retry. This
+does not rank every concurrent failure by causal importance. Independent read-only
+ownership and R1 diagnostic reviews found no unresolved decisive defect in those
+bounded corrections; terminal execution/hash/cleanup audit is separate evidence.
+
+**Missing:** Python unbounded cursor/GC and arbitrary durable Break semantics,
+remote/cross-actor steps, nested transactions, mixed transaction/workflow services,
+general durable reader failure isolation and full alias/seed semantics. The bounded
+opt-in declared-reader outcome API below does not supply arbitrary catch semantics. No arbitrary external
+side-effect exactly-once claim. New retry proof does not inject Store/CompleteTask
+lost ACK; existing uncertainty tests/source guards are separate evidence.
+
+**Sources:** [context/attempt fences](src/workflow_context.rs),
+[checkpoint Store/recovery](src/workflow_store.rs),
+[generation](src/workflow_codegen.rs), [dispatcher](src/one_shot_tasks.rs).
+**Executed acceptance:** [native restart tests](tests/workflow_native_restart.rs),
+[generated app](tests/fixtures/workflow_app/src/main.rs),
+[restart proof](tests/fixtures/workflow_app/prove_restart.py),
+[12-case body proof](tests/fixtures/workflow_app/prove_body_retry.py),
+[finite control-flow proof](tests/fixtures/workflow_app/prove_control_flow.py).
+This uses generated Create/ScheduleWork, not task-state seeding: future scheduling,
+concurrent ordinary Read while paused, same-host failure/success, first writer
+once, exhaustion, real transport/framework failures, cancellation, generation ABA,
+root-handoff Drop, and pending/terminal persistence through actual host/RocksDB
+restarts. Python comparison: [workflow API](../aio/workflows.py),
+[dispatcher](../aio/internals/tasks_dispatcher.py).
+
+### Bounded nested finite workflow composition (2026-10-09)
+
+`WorkflowContext::iteration` composes same-actor finite scopes up to eight levels,
+with a checked Cartesian bound of at most 1024 leaf positions along a nested path.
+Names, nonzero bounds and indices are validated; rejection retains failed-attempt
+provenance. This bound is not a workflow-wide checkpoint quota. Every scope retains
+original dispatcher generation, cancellation and shared attempt fences.
+
+Flat scopes and global checkpoint identities remain byte-for-byte unchanged.
+Nested writer/wait/decision identities use a separate `reboot.nested.scope.v1`
+UUIDv5 namespace with length-delimited parent names/indices and existing leaf
+identity. Bounds stay out of keys and bind fingerprints (all parent bounds plus
+leaf bound): changing a bound hits the original record and fails closed, rather
+than creating a new effect. Canonical checkpoint workflow_iteration stores the
+local leaf index; UUID identity distinguishes repeated leaf indices under different
+parents. Canonical Task.iteration remains zero; there is no cursor advancement/GC.
+
+The generated batch application exposes `Submit.group_size`, `submit-grouped` and
+`submit-grouped-break`. A nonzero size must divide the bounded item count. Actual
+outer-group/inner-item loops reuse generated immutable reader waits, writer steps
+and saved Continue/Break decisions; Break exits the whole group loop before the
+existing private after-loop writer. Approvals retain global item indices. Zero
+retains the original single-loop path. Public direct private-finalizer calls and
+invalid group sizes reject before durable mutation.
+
+**Executed public Cargo/rbt/native:** `/tmp/reboot-rust-nested-cli-1791550478430403401` (26 checks) processed
+four items in two groups. Repeated leaf zero produced distinct checkpoints; three
+saved decision envelopes independently matched full-path UUIDs, response snapshots
+and Continue/Break. After saved Break, a generated-handler-only parent-bound drift
+made real recovery fail closed on the original checkpoint identity. Supervised
+children were reaped; restoring the bound then restarting real RocksDB/host
+retained exact app/map/Pending-task/checkpoint bytes, without callback reexecution.
+Canonical public Wait completed one private after-loop effect and no fourth item;
+terminal restart retained exact state and did not redispatch. A second ordinary
+grouped batch exhausted both groups through canonical Wait. Generated consumers
+passed strict Clippy/fmt and 13 tests; 24 CLI tests passed.
+
+SDK `/tmp/reboot-rust-nested-sdk-1791550840030951404`: 446 passed, 131 ignored, strict all-target Clippy. Admission vectors
+exercise nested namespace separation, siblings/depth, changed parent bound at the
+same key, exact legacy flat key, depth8/product1024 boundaries and tainted invalid
+scope admission. Explicit native reader-outcome and staged-map restart gates passed.
+Retained public map `/tmp/reboot-rust-map-reentry-cli-1791551104348889239` (18), batch `/tmp/reboot-rust-batch-ledger-acceptance-1791551380009232896` (162), pagination `/tmp/reboot-rust-pagination-cli-1791552132266523406` (22),
+generated/HTTP preflight `/tmp/reboot-rust-http-request-preflight-1791550403064564143`, and greeting/HTTP/rebuild/health/cleanup
+`/tmp/reboot-rust-loop-decision-greeting-1791552427706479774` (26 HTTP exchanges) passed. Frozen source/native Database identity,
+resource bounds and proof-owned PID absence audited before digest refresh.
+
+Python currently permits only one context.loop per workflow
+([state manager](../aio/state_managers.py)); this bounded nesting is a separate Rust
+application contract, not Python unbounded loop/cursor parity. No nested transaction,
+remote/cross-actor composition, concurrency, arbitrary durable catch, full-depth
+native saturation, new lost-ACK injection, automatic framework retry or external
+exactly-once guarantee is established. Overall Rust parity remains incomplete.
+
+Sources: [scope identity/fences](src/workflow_context.rs),
+[checkpoint fingerprint/replay](src/workflow_store.rs),
+[generated grouped body](../cli/commands/init/templates/rust_batch_lib.rs.j2),
+[public native acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
+
+### Finite saved Continue/Break and after-loop work (2026-10-09)
+
+`WorkflowContext::decide_reader` and generated `WorkflowSteps::<reader>_decide`
+save one same-actor immutable observation and its pure boolean classifier result
+as a typed `ControlFlow<Response, Response>`. Only explicit finite iteration
+scopes are admitted. Replay returns the saved branch and original snapshot before
+consulting live state or invoking the classifier. A named global writer after the
+loop is separately persisted; Break is not a workflow terminal. The classifier
+is trusted/pure and its condition name is the versioned semantic contract; a crash
+before Store acknowledgement can rerun it. No exactly-once callback claim.
+
+Decisions use their own `reboot.finite.decision.v1` UUIDv5 domain; an application
+response with the internal envelope's type URL cannot collide with ordinary waits.
+The fingerprint additionally binds decision kind and original reader response
+URL. Old writer/wait keys are unchanged. The envelope carries saved response bytes,
+original response type and branch; type/Prost decoding precedes attempt success.
+Generated `_until`/`_decide` helpers are checked against writer member names.
+Ordinary waits and decisions both recheck the actor uncertainty latch under the
+exclusive lease after queued admission, before recovery/read/checkpoint work.
+A controlled polled-reader/uncertain-writer regression verifies rejection and
+lease release; it is not new native lost-ACK injection.
+
+The public opt-in batch example adds `submit-break BATCH COUNT KEY DUE THRESHOLD`.
+A positive threshold no greater than count stops further approvals/iterations;
+`FinishDecision` persists private after-loop finalization, denied to ordinary
+public callers even with admin metadata. Existing ordinary batches, stop and
+business rejection retain their contracts. Python `context.loop()` instead advances
+canonical Task.iteration on Continue and does not persist a distinct Break enum in
+its finally path; this separate finite application contract is not that cursor/GC.
+
+**Executed:** `/tmp/reboot-rust-loop-decision-sdk-1791525682443676332`: **434 Rust tests passed, 130 ignored**, strict all-target
+SDK Clippy, and one explicitly executed ignored real CXX/RocksDB generated fixture.
+It saved Continue then Break, mutated the live actor via a real public writer so
+recomputed Break would differ, restarted host and Database, returned the original
+snapshot, executed one after-loop writer, and retained state/receipts through a
+second terminal restart. Eighteen commands, six owned processes reaped. Classifier
+traces prove callback omission; reader omission is additionally source-backed,
+not an independent reader-entry trace in that fixture.
+
+Public Cargo/`rbt` execution: `/tmp/reboot-rust-loop-decision-cli-1791525909015345513`: **19 checks**, strict/fmt and
+nonzero generated-consumer tests plus 24 CLI tests. Canonical inspection decodes
+actual saved envelopes, validates original URL/branch/snapshot and decision UUID
+keys, Pending Task.iteration zero, exact restored app/map/task/checkpoint prefix,
+then canonical Wait and one after-loop record, no third iteration, and terminal
+restart without body/classifier/finalizer redispatch. Public direct continuation
+and out-of-bound thresholds are rejected without mutation. The public case
+preserves observed state; the separate native fixture above supplies state-flip
+coverage. Receipt fingerprints are asserted present and stable, not independently
+recomputed by this inspector.
+
+Retained generated-consumer strict Clippy: `/tmp/reboot-rust-http-request-preflight-1791526214679215542`. Full unchanged public
+batch regression: `/tmp/reboot-rust-batch-ledger-acceptance-1791526290123700900` (**162 checks**). Native greeting/HTTP/health/hot-rebuild/
+restart/cleanup: `/tmp/reboot-rust-loop-decision-greeting-1791527037529943302` (**26 HTTP exchanges**, SERVING -> NOT_SERVING -> EOF).
+Frozen manifests, database identity, resource limits and recorded PID absence
+were audited before canonical digest refresh. A prior CLI harness timeout compared
+an unprefixed event against whole prefixed log lines; its saved Break was parked,
+its retained CLI was gracefully stopped without releasing continuation, and fresh
+isolated acceptance was required. No uncertain mutation was retried.
+
+**Remaining:** unbounded canonical cursor/GC, cross-actor composition,
+general durable catch/failure isolation, new decision Store/CompleteTask lost-ACK
+or malformed-envelope process injection, full-bound saturation and distributed
+fencing. Existing operation/authority/uncertainty guards remain; compile/unit tests
+are not those native negative proofs. Overall parity remains incomplete.
+
+Sources: [decision API](src/workflow_context.rs), [durable keys/Store](src/workflow_store.rs),
+[generated helper validation](src/workflow_codegen.rs),
+[native state-flip proof](tests/fixtures/workflow_app/prove_loop_decision.py),
+[Python loop source](../aio/state_managers.py),
+[public CLI acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
+
+### Serial declared-reader outcomes and private audit fallback (2026-10-09)
+
+`WorkflowContext::wait_reader_declared` and generated `<reader>_try_until` wait
+for a matching response or return a saved method-declared typed business error.
+Ordinary `_until` and `_decide` keep their fatal error contract. Only generated
+explicit declared variants become catchable; Grpc/transport/framework failures,
+even rich statuses containing declared-looking details, remain failed operations.
+Python until/memoize stores successful callable returns, not thrown exceptions:
+this is explicit bounded typed outcome support, not blanket exception parity.
+
+The response/error oneof binds the original response URL, method, request,
+versioned predicate condition, actor/workflow identity and finite scope. A separate
+`reboot.reader.outcome.v1` UUID domain preserves older writer/wait/decision keys.
+Fresh and replayed errors must validate against immutable reader declarations,
+canonical non-OK rich Status, exact detail URL and decoded payload. No actor/task
+upsert occurs when saving a reader observation. Typed success decode precedes
+helper acknowledgment. Reader descriptors remain unschedulable.
+
+A clean serial-attempt reservation prevents preexisting or transient overlapping
+helpers from making a declared outcome catchable. Competing helper creation leaves
+sticky failure evidence; final acknowledgment and release share one admission
+mutex. Internal scope/authority checks have separately classified but still counted
+operations: failure/drop evidence is retained without self-tainting successful
+reader work. Three focused regressions cover preexisting/transient overlap, clean
+release and nested authority failure/drop accounting. They do not prove arbitrary
+concurrent native Store failure/cancellation interleavings.
+
+The public opt-in batch app adds `submit-audited` and a private named `RecordAudit`
+fallback. A saved ObserveBatch BatchMismatch can be caught, audited, and followed
+by ordinary approval/map effects and canonical Wait success. Public callers cannot
+invoke that fallback, including while the workflow is paused. Matching reader
+success is also exercised without the business-error fallback.
+
+**Executed:** `/tmp/reboot-rust-reader-outcome-sdk-1791534192426796030`: **438 SDK tests passed, 131 ignored**, strict all-target
+SDK Clippy, and the explicitly executed generated real CXX/RocksDB reader-outcome
+restart test. Its ten owned processes are absent. The fixture saves a declared
+threshold error, changes live actor state through a real public writer so a fresh
+reader would succeed, restarts Database/host and returns the original saved error
+payload without reader/predicate entry. One fallback persists, terminal restart
+retains records and omits body redispatch. A changed condition version causes a
+real nonzero recovery-host exit with unchanged canonical checkpoint/actor state.
+A deliberately caught rich Grpc failure also causes a nonzero supervised-host
+exit: Pending task, no outcome/error terminal or fallback, retained first-writer
+checkpoint. Negative state assertions use read-only Database Load after host exit.
+
+Public generated Cargo/`rbt`: `/tmp/reboot-rust-reader-outcome-cli-1791534422967915593` (**18 checks**), including
+exact restored Pending app/map/task/checkpoint bytes, typed error and success
+oneofs, deterministic outcome UUIDs, private continuation denial and terminal
+no-redispatch. Strict generated consumer Clippy/fmt and **11 consumer tests**;
+24 CLI tests. The public case does not change observed state between restarts;
+the separate native fixture supplies changed-state coverage. Fingerprints are
+required present/stable, not independently recomputed by the public inspector.
+
+Retained finite Continue/Break public proof: `/tmp/reboot-rust-loop-decision-cli-1791534730122747971` (**19 checks**).
+HTTP/generated strict preflight: `/tmp/reboot-rust-http-request-preflight-1791535035775536451`. Full batch regression: `/tmp/reboot-rust-batch-ledger-acceptance-1791535109434672631`
+(**162 checks**). Greeting/HTTP/health/rebuild/restart/cleanup: `/tmp/reboot-rust-loop-decision-greeting-1791535833156310151`
+(**26 HTTP exchanges**). Frozen-source manifests, database identity, resource
+budgets and owned PID absence were audited before canonical digest refresh.
+
+**Remaining:** arbitrary/nested/cross-actor catch and failure isolation, unbounded
+cursor/GC, malformed/foreign saved-error native injection, Store/authority lost-ACK
+and cancellation/concurrent-attempt native negatives. Trusted versioned predicate
+purity is not exactly-once callback execution before Store. Overall parity remains
+incomplete.
+
+Sources: [reader outcomes/attempt fences](src/workflow_context.rs),
+[checkpoint Store](src/workflow_store.rs), [generation](src/workflow_codegen.rs),
+[native proof](tests/fixtures/workflow_app/prove_reader_outcome.py),
+[Python memoize](../aio/memoize.py),
+[public acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
+
+### Live bounded public collection pagination (2026-10-09)
+
+`SortedMapSession::page` admits page sizes 1..100 and fetches one extra eligible
+row under one existing root-work lifetime reservation. Versioned JSON continuation
+binds a fixed-size SHA256 digest of full canonical map identity, original bounds
+and direction. Even deeply colocated identities cannot expand its size unboundedly. It resumes at the
+first unreturned inclusive key without fabricating successors at the 128-byte key
+limit. This token is query data, not authorization or a snapshot capability.
+The page size may change between requests. Each generated HistoryPage transaction
+owns a fresh serial exclusive app/map root. No public inbound SortedMap adapter,
+root idempotency, automatic retry or cross-request snapshot is introduced.
+
+Original bounds and cursor query identity are validated before native scan. The
+native page remains cardinality/order/identity checked. Any out-of-start leading
+row fails closed with DataLoss and uncertainty rather than being filtered after
+consuming a native limit. End-only out-of-range rows are trailing in the strict
+ordering and remain excluded. Thus end leakage cannot hide another eligible row.
+This is not transparent repair/retry of a faulty native scan.
+
+Generated `HistoryPage`/`client history-page` returns key/value bytes and nullable
+continuation for approval or archive maps, in forward/reverse order and optional
+inclusive-start/exclusive-end ranges. It traverses the whole multi-batch index,
+unlike the legacy per-batch history command's fixed 100-row cap. JSON cursor bytes
+are capped at 4096, admitting worst escaped supported ASCII bounds/next keys.
+Malformed/foreign map, bounds or direction rejects; changed datasets use live
+keyset semantics (insertions before the resume key are not revisited).
+
+**Executed public native Cargo/rbt:** `/tmp/reboot-rust-pagination-cli-1791546886462649186` (**22 checks**) constructed 102
+entries through public workflow submission/approval, with no private seeding.
+Programmatic forward and reverse traversal proved exact key/value bytes, no skip
+or duplicate and termination. Bound-limited traversal covered multiple pages,
+inclusive starts/exclusive ends, empty/exact/partial exhaustion. Real host and
+RocksDB restart between pages resumed the saved token on unchanged data. Invalid
+sizes, malformed and foreign-query cursors rejected without durable mutation;
+app/map/task/checkpoint bytes stayed unchanged; a following writer admitted.
+Generated strict Clippy/fmt and nonzero consumer tests plus 24 CLI tests passed.
+
+SDK `/tmp/reboot-rust-pagination-sdk-1791547173836221968`: **446 passed, 131 ignored**, strict all-target Clippy; explicit
+native reader outcome state-flip/fail-closed restart proof and native staged-map
+visibility/range/commit/abort/restart prerequisite both passed. Five page unit
+vectors cover max-key first-unreturned lookup, query binding/version, empty/exact
+exhaustion, escaped 128-byte ASCII key roundtrip/zero-limit status, and bounded full-identity
+binding for deeply colocated maps.
+HTTP/generated preflight `/tmp/reboot-rust-http-request-preflight-1791546813527300342`, retained same-root map public checks
+`/tmp/reboot-rust-map-reentry-cli-1791547441705197405` (**18**), full batch `/tmp/reboot-rust-batch-ledger-acceptance-1791547720277324457` (**162**) and greeting/HTTP/rebuild/health/
+restart/cleanup `/tmp/reboot-rust-loop-decision-greeting-1791548467354204666` (**26 HTTP exchanges**) passed. Frozen sources,
+canonical Database identity, resource bounds and owned PID absence audited before
+digest refresh. Concurrent cross-request collection mutation, hostile cursor
+integrity, distributed routing and cross-request snapshots are not certified.
+Overall Rust parity remains incomplete.
+
+Sources: [page/session](src/sorted_map.rs), [native bounds](src/sorted_map_participant.rs),
+[canonical range schema](../../rbt/std/collections/v1/sorted_map.proto),
+[public schema](../cli/commands/init/templates/rust_batch.proto.j2),
+[public handler](../cli/commands/init/templates/rust_batch_lib.rs.j2),
+[native acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
+
+### Opt-in canonical task-result authorization (2026-10-09)
+
+`ReaderTaskWaitService::with_wait_authorization` installs an application-owned
+verifier/authorizer pair independently of task administration. Without this
+explicit opt-in, Wait preserves its public development behavior. The policies
+receive the exact encoded WaitRequest, actor type/routed ref and server-owned
+application/server identity, with no actor snapshot or task result. This is a
+Rust application security extension: Python TasksServicer.Wait itself checks
+routing/placement and retrieves cache/storage, without these policy calls.
+It is not an automatic task-creator ACL or built-in identity provider.
+
+Protected Wait captures the original dispatcher generation before policy awaits,
+reverifies/reauthorizes before and after every canonical Load, and checks original
+owner/activity/uncertainty plus current placement before disclosure. The final
+owner guard remains held through synchronous result/diagnostic construction and
+is dropped before any pending sleep. Read-only owner validation does not obtain
+singleton scheduling authority; shared-reader recovery_request remains absent.
+Failed policy reveals no task existence/status/result and writes no task state.
+Pending polling observes revocation; dropping/deadlining Wait does not cancel the
+durable task. No detached task waiter or status retry is added. Policy/uncertainty
+transitions and transport delivery are not one linearizable revocation operation.
+
+The generated batch host optionally uses a trusted local regular-file JSON grant
+via RBT_RUST_TASK_RESULT_GRANT. Its separate token/task UUID grant is bounded to
+4096 bytes with async read-only IO; absent/malformed/ungranted credentials fail
+closed. `client wait` forwards RBT_RUST_TASK_RESULT_TOKEN as bearer metadata
+through the generated typed helper without replacing its deadline. This local
+development example is not hostile-path filesystem isolation or production IAM.
+Tokio may finish bounded read-only filesystem work after future drop; it cannot
+publish a task mutation or result on behalf of that dropped Wait.
+
+**Executed native public Cargo/rbt:** `/tmp/reboot-rust-task-result-auth-cli-1791540791349700882` (**14 checks**), generated strict
+Clippy/fmt, **12 consumer tests**, 24 CLI tests. Real public submission/approval
+created Pending and Completed workflow records. Missing/invalid/admin-only and
+ungranted task credentials denied without mutation; a live pending Wait observed
+revocation, and the generated protected pending deadline retained Pending bytes.
+Actual post-Load authorization was parked, then revoked before release, rejecting
+completed disclosure. Restored grants retrieved the exact terminal; malformed
+grants denied; real RocksDB/host restart retained policy, terminal and no workflow
+redispatch. This proof exercises a success terminal. Protected declared-error/
+Cancelled terminals, shared-registry host execution and suspended-policy owner
+replacement remain separate acceptance gaps; their existing unprotected native
+contracts and read-owner unit vectors do not certify those protected shapes.
+
+SDK `/tmp/reboot-rust-task-result-auth-sdk-1791541080222047185`: **441 passed, 131 ignored**, strict all-target Clippy and retained
+explicit native reader outcome state-flip/fail-closed proof. HTTP/generated
+preflight `/tmp/reboot-rust-http-request-preflight-1791540717430497691` passed. Same-root maps `/tmp/reboot-rust-map-reentry-cli-1791541309024809130` (**18 checks**), full
+baseline batch `/tmp/reboot-rust-batch-ledger-acceptance-1791541574776710814` (**162 checks**) and greeting/HTTP/rebuild/health/restart/
+cleanup `/tmp/reboot-rust-loop-decision-greeting-1791542298246798496` (**26 HTTP exchanges**) passed. Frozen source, canonical
+Database identity, resource limits and owned PID absence audited before digest
+refresh. Three protected-Wait source tests exercise exact request/trusted
+identity/revocation, unknown actor denial, and read-owner ABA/uncertainty without
+scheduling authority. Overall Rust parity remains incomplete.
+
+Sources: [canonical Wait](src/one_shot_tasks.rs), [policy](src/auth.rs),
+[Python Wait](../aio/internals/tasks_servicer.py),
+[public host](../cli/commands/init/templates/rust_batch_host.rs.j2),
+[native acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
+
+### Same-root map reopening and atomic multi-entry archive (2026-10-09)
+
+`SortedMapHandle::in_transaction` now permits serial reopening under the exact
+same admitted fresh exclusive application root. Its private BuiltinMapAdmission
+retains the original native participant guard by canonical map identity. Context
+clones share that admission/cache; a newly admitted root gets a new cache. There
+is no global handle cache and no context-to-session reference cycle. Reopening
+reuses the exact native transaction/local owner rather than reacquiring its own
+actor gate, duplicating eager Store or creating a replacement transaction.
+
+Every opening and call still reserves counted root work and revalidates active
+root owner, exact endpoint, fresh exclusive path and certain/unsealed membership.
+Competing, failed or dropped operations retain existing doom/uncertainty evidence.
+Retained guard lifetime does not delay terminal ACK releasing Pending/the actor
+lease; delayed guard Drop still matches the exact root/local incarnation. This
+adds no network ingress, child transaction path, per-call snapshot/rollback,
+shared/factory authority, status retry or root idempotency.
+
+Public `ArchiveEntries` / `client archive-many KEY,KEY,...` moves 1..100 unique
+nonempty approval keys through repeated source/archive session openings in one
+app transaction. Present-empty bytes remain existing values. All source removals,
+destination insertions and app counter changes commit together. A later missing
+source/occupied destination rejects the entire root; a caught invalid map range
+also dooms all enrolled app/map participants. There are no individual entry commits
+or compensations. `archive-many-invalid` exercises that latter path after all moves.
+
+**Executed public native Cargo/rbt:** `/tmp/reboot-rust-map-reentry-cli-1791537054939395043` (**18 checks**), generated strict
+Clippy/fmt and **12 consumer tests**, plus 24 CLI tests. Three real approval entries
+were created through generated public transactions and completed canonical Wait.
+Duplicate/empty requests retained exact app, two maps, task and workflow receipts.
+A second missing key rolled back a first eager transfer; a caught invalid range
+after three repeated transfers rolled back both maps and all tentative counters.
+A fresh bulk root then committed all three present-empty entries. Full Database/
+RocksDB and host restart retained exact app/map/task/checkpoint bytes without
+workflow redispatch. A repeated command rejected absent sources; a new batch,
+approval and bulk transfer after restart exercised independent root ownership.
+Three-entry and singleton cases are executed; full-bound 100-key saturation is not.
+
+SDK `/tmp/reboot-rust-map-reentry-sdk-1791537326595919669`: **438 passed, 131 ignored**, strict all-target Clippy and retained
+explicit native declared-reader state-flip/fail-closed proof. HTTP/generated
+preflight `/tmp/reboot-rust-http-request-preflight-1791536980308505015` passed. Retained reader-outcome public proof `/tmp/reboot-rust-reader-outcome-cli-1791537557282691243`
+(**18 checks**), finite decision `/tmp/reboot-rust-loop-decision-cli-1791537870843153717` (**19 checks**), full baseline batch
+`/tmp/reboot-rust-batch-ledger-acceptance-1791538178111660431` (**162 checks**), greeting/HTTP/rebuild/health/restart/cleanup `/tmp/reboot-rust-loop-decision-greeting-1791538911173424673`
+(**26 HTTP exchanges**). Frozen source, canonical Database identity, resource
+limits and recorded owned PID absence were audited before digest refresh.
+
+**Remaining:** native admission-cancellation/Store/Prepare/terminal lost-ACK crash
+windows for reentry, full-bound saturation, reusable network sibling paths/nested
+snapshots and distributed placement. Same-root session reopening is not ordinary
+transaction-sibling rollback parity. Overall parity remains incomplete.
+
+Sources: [map sessions](src/sorted_map.rs), [admitted root cache](src/runtime.rs),
+[participant ownership](src/durable_participant.rs),
+[public example](../cli/commands/init/templates/rust_batch_lib.rs.j2),
+[native acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
+
+## Local reactive readers
+
+### Same-actor grouped external readers (2026-10-10)
+
+`LocalReaderGroup` registers several generated immutable-reader service bindings
+for one exact actor under one canonical recovery/admission owner. Exact immutable
+method inventories route to the original adapter, handler and authorization policy;
+there is no manufactured shared unary binding identity. Attachment validates every
+method against its original opaque identity. Duplicate/empty methods, mismatched
+actor/state/endpoint/store gate, nested groups and already-started owners reject
+before route mutation. Groups are configured before host startup and registered once.
+Bounds remain 64 grouped methods/bindings, 64 registry actors/host streams and eight
+distinct one-hop dependencies. Same-root dependency execution still rejects.
+
+Generated database, workflow and mixed transaction adapters expose exact reader
+inventories and method-aware registry attachment. Readerless services retain valid
+generated Rust through a method-local ReaderBinding bound. Clone/policy rotation,
+raw mutation-authority rejection, framework errors and declared reader errors keep
+their prior boundaries; transaction execution and workflow checkpoint readers do
+not acquire composition authority.
+
+Public configuration pattern (register pre-attachment adapters, then attach registry):
+
+```rust,ignore
+let (_, work_readers) = work.local_readers(&ledger_ref)?;
+let (_, index_readers) = index.local_readers(&ledger_ref)?;
+let mut group = reboot::reactive::LocalReaderGroup::new(work_readers)?;
+group.add(index_readers)?;
+let mut registry = reboot::reactive::LocalReaderRegistry::new()
+    .with_reader_composition();
+registry.register(group.into_service()?)?;
+registry.register(source_readers)?;
+let work = work.with_reader_registry(registry.clone())?;
+let index = index.with_reader_registry(registry.clone())?;
+// Install registry.owners() once through the public host recovery path.
+```
+
+**Executed public native vertical:** `/tmp/reboot-rust-group-composition-cli-1791607463788813721` initialized a Cargo/rbt batch-ledger
+application with grouped Work/Index readers at the same Ledger and one distinct
+ViewSource. All 49 checks passed: both generated ordinary unary routes,
+independent original policies and denial isolation, both typed subscription routes,
+shared source commit invalidation, authority/identity/deadline rejection, genuine
+approval transactions and workflow progression, two RocksDB restarts and canonical
+Wait replay without completed workflow redispatch. Sampled record-byte comparisons
+prove those records' equality, not absence of transient writes or atomic snapshots.
+The generated consumer passed strict all-target Clippy/fmt and 15 tests. Three
+sessions and every recorded process were reaped. SDK passed 477 tests
+with 131 native integration tests ignored by the default command;
+two named native prerequisites were explicitly executed, not the full ignored suite.
+All twelve frozen gates passed, preserving separate workflow/mixed/ordinary
+composition, registry, greeting/HTTP, map, batch, nested and pagination regressions.
+Frozen source/binary identity, process absence and resource budgets were audited.
+
+This closes bounded same-actor service aggregation, not transactional-context
+composition, recursive/same-root dependencies, distributed invalidation, atomic
+multi-actor snapshots, durable subscription resume or crash-window/lost-ACK parity.
+
+Sources: [group](src/reactive_group.rs), [identity tests](src/reactive_group_tests.rs),
+[generated inventory](src/reactive_codegen.rs),
+[native fixture](../../tests/reboot/cli/fixtures/rust_grouped_reader_composition_fixture.py).
+
+
+### Mixed reader/transaction external composition (2026-10-10)
+
+Generated TransactionAdapters with ordinary reader RPCs now expose optional
+reader-context hooks, opaque clone-stable binding identity, checked registry
+attachment and explicit exact legacy-root configuration. Registered external unary
+readers evaluate the first bounded snapshot; reserved LocalReaders subscriptions
+use the contextual binding. Reader policy reconfiguration detaches the registry,
+clears legacy roots and rotates identity. Context-hook collisions include all
+service methods, including transaction RPCs. Registered errors never fall through.
+
+Transaction method emission, inbound participant metadata, sticky doom/uncertainty,
+commit/abort paths, task handoff and internal checkpointed readers remain unchanged.
+Unconfigured unary admission retains its baseline; registered contextual readers
+require existing actors. External composition rejects raw transaction/workflow/task
+mutation authority rather than stripping it or pretending to enter a transaction.
+
+**Executed public native vertical:** `/tmp/reboot-rust-transaction-composition-cli-1791585540360573380` initialized a real Cargo/rbt
+batch-ledger app. The fixture registered only its mixed LedgerIndexMethods binding
+and a distinct ViewSource actor, never the same-root Work binding or CombinedReaders.
+A fixture-only ObserveView reader projects source count into a copied Ledger, not
+persisted application state. All 41 checks passed: ordinary generated
+unary composition; root/leaf credentials and trusted identity; denial; rich declared
+reader error through the existing ApprovalSnapshot subscription; raw-authority and
+identity rejection; self/unknown target rejection; deadline cleanup; contextual
+subscription/source commit updates; genuine approval transaction/map progression
+and scheduled workflow completion; exact sampled record restoration; canonical
+Wait terminal replay after a second restart without redispatch.
+
+Before/after comparisons establish equality of sampled canonical records, not
+absence of transient writes, inspection of all Database records or atomic snapshots.
+Consumer strict all-target Clippy/fmt and 15 tests passed; the retained configuration
+tests exercise workflow adapters, not new native mixed-binding configuration cases.
+Three sessions and all recorded processes exited. SDK: 474 passed /
+131 ignored, strict Clippy and both native restart prerequisites.
+Eleven frozen gates retained workflow composition (41), ordinary composition (107),
+map (18), batch (162), nested (26), pagination (22), registry, greeting/HTTP and CLI
+regressions. Source/binary identity, resource budgets and process absence were audited.
+
+This is external one-hop composition on a mixed service, not transactional reader
+composition. Same-host/exact Database endpoint, eight distinct direct dependencies,
+sequential one-hop reads and existing stream budgets remain. No same-actor aggregate,
+transitive/distributed invalidation, atomic multi-actor snapshots, inherited transaction
+authority, durable resume or native lost-ACK/crash-window parity is implied.
+
+Sources: [generator](src/codegen.rs), [typed binding](src/reactive_codegen.rs),
+[native fixture](../../tests/reboot/cli/fixtures/rust_transaction_reader_composition_fixture.py),
+[public harness](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
+
+
+### Workflow-bearing external reader composition (2026-10-10)
+
+Generated workflow-bearing DatabaseAdapters now expose default reader-context
+hooks, typed binding identity and explicit registry/legacy-root configuration.
+Ordinary external unary readers evaluate the registered first snapshot with the
+same bounded one-hop engine as plain database adapters. Reserved LocalReaders
+subscriptions use the contextual binding as well. All ordinary reader entrypoints
+retain the standalone raw-authority boundary, exact actor/endpoint/binding checks,
+accepted-request validation, original credentials and trusted host identity.
+
+Internal workflow reader checkpoints, waits, decisions, writer steps, task dispatch
+and canonical Wait remain their existing baseline paths. Reader-context hooks do
+not receive workflow/task mutation authority. Reconfiguring authorization or
+with_workflows clears attached registry/legacy roots and rotates binding identity;
+clones retain it. Configure final adapters before registering baseline clones,
+then attach serving adapters to avoid registry cycles. Contextual hook and helper
+name collisions fail generation; declared reader errors retain their typed details.
+
+**Executed public native vertical:** `/tmp/reboot-rust-workflow-composition-cli-1791581246575727540` used a real Cargo/rbt batch-ledger
+app with its scheduled RunBatch workflow, coupled sorted maps and a distinct
+registered ViewSource actor created/updated only through public generated writers.
+Its application overlay computes a read-only projection in a copied Ledger's
+archived field; canonical app/task/checkpoint/map bytes do not store that projection.
+41 checks passed: composed ordinary reads; root/source credentials and
+trusted identity; root/leaf denial; declared errors; authority/identity rejection;
+self/unregistered target rejection; deadline/control read; contextual subscription
+and source-commit reevaluation; pending checkpoint progression; exact RocksDB
+restoration; canonical workflow completion; terminal replay after a second restart
+without redispatch, while new source commits still change external views.
+Before/after comparisons prove equality of sampled canonical records, not absence
+of transient writes, inspection of every Database record or atomic cross-actor snapshots.
+All three sessions and recorded owned processes exited. Consumer strict all-target
+Clippy/fmt and 15 tests passed, including real generated adapter configuration tests
+for cloned, authorization-reconfigured and workflow-owner-reconfigured bindings.
+Those configuration tests use lazy transport and are not native Database proofs.
+
+SDK `/tmp/reboot-rust-unary-composition-sdk-1791580969911386764`: 474 passed/131 ignored, strict Clippy and
+both explicit native restart prerequisites passed. Ten frozen gates retained
+ordinary composition (107), registry (29),
+map (18), batch (162), nested (26), pagination (22), greeting/HTTP (26 exchanges)
+and CLI/preflight regressions. Source/Database identity, resource bounds and owned
+process absence were audited before updating this canonical ledger.
+
+This extends composed external readers to workflow-bearing database adapters;
+mixed reader/transaction adapters still lack contextual registry wiring. Same-host,
+exact Database endpoint, eight distinct direct dependencies and one-hop limits
+remain. No transitive/distributed snapshots, cross-application authority, durable
+resume, native lost-ACK/crash-window coverage, CI certification or full Rust parity
+is implied by this vertical. Same-actor mixed-service aggregation is not proved.
+
+Sources: [workflow generator](src/workflow_codegen.rs),
+[typed reactive bindings](src/reactive_codegen.rs),
+[native workflow fixture](../../tests/reboot/cli/fixtures/rust_workflow_reader_composition_fixture.py),
+[public acceptance harness](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
+
+
+### Standalone reader authority boundary (2026-10-09)
+
+Public LocalReaders subscriptions (registry and direct single-owner entrypoints)
+and configured ordinary composed unary readers now share a fail-closed boundary
+before routing, admission, snapshot Load, authorization or handler invocation.
+Raw presence of transaction IDs, either coordinator identity field, retry age,
+workflow ID/iteration, idempotency key, task schedule/method or coordinator
+read-only-aware metadata returns FailedPrecondition. Empty, malformed and repeated
+values are rejected as authority envelopes, not interpreted as absent fields.
+This also applies before an explicitly allowlisted legacy unary fallback on a
+configured adapter. Actor identity ambiguity still returns InvalidArgument first.
+Normal credentials, trusted host identity, caller metadata and deadlines retain
+the existing reader paths; no parser normalization or new authority is introduced.
+
+This is a concrete prerequisite for external unary composition on workflow-bearing
+and mixed reader/transaction services, not implementation of those generated
+contracts. Internal workflow waits/decisions, checkpointed declared outcomes,
+transaction execution, task dispatch and their recovery owners are unchanged.
+Database-only, same-host/exact endpoint, eight direct dependencies and one-hop
+limits remain; this is not Python's broader transitive reader-context parity.
+
+The pre-fix native run `/tmp/reboot-rust-unary-composition-cli-1791575250893249512`
+returned a composed value despite a coordinator-state-type header, failing the
+new rejection assertion. Its child cleanup completed. The new runtime matrix
+exercises all ten keys in empty/malformed/repeated forms through unary, registry
+subscription and direct subscription entrypoints, asserting no binding entry or
+permit retention; a clean control read still succeeds.
+
+**Executed native GREEN:** `/tmp/reboot-rust-unary-composition-cli-1791575813295421886` passed
+107 composition checks, including 60 envelope
+rejections across actual generated unary and reserved subscription RPCs. The
+fixture observed no authorization or composed handler entries for those requests,
+unchanged canonical root/source actor bytes, and a succeeding normal read. Existing
+selection, target authorization, shared capacity, duplicate identity, public
+mutation/replay, RocksDB restart and child-cleanup checks remained green. This does
+not prove every native cancellation or durable uncertainty window.
+
+SDK `/tmp/reboot-rust-unary-composition-sdk-1791575530521316632`: 472 passed/131 ignored,
+strict all-target Clippy and both explicit native restart prerequisites passed.
+Generated consumer strict Clippy/fmt passed. Retained registry `/tmp/reboot-rust-reader-registry-cli-1791576514255158795` (29),
+map `/tmp/reboot-rust-map-reentry-cli-1791576897721512912` (18), batch `/tmp/reboot-rust-batch-ledger-acceptance-1791577176342562146` (162), nested `/tmp/reboot-rust-nested-cli-1791577937243187674` (26),
+pagination `/tmp/reboot-rust-pagination-cli-1791578308055122875` (22), preflight `/tmp/reboot-rust-http-request-preflight-1791576818046713080` and greeting/HTTP
+`/tmp/reboot-rust-loop-decision-greeting-1791576130257918559` (26 exchanges) passed. Frozen source/Database identities,
+resource bounds and owned-process absence were audited before updating this ledger.
+No CI certification or full Rust parity is claimed.
+
+Sources: [standalone boundary](src/reactive.rs),
+[runtime matrix](src/reactive_composition_tests.rs),
+[public native fixture](../../tests/reboot/cli/fixtures/rust_reader_composition_fixture.py),
+[Python header contract](../aio/headers.py).
+
+
+### Bounded ordinary unary reader composition (2026-10-09)
+
+Ordinary generated database reader RPCs can opt into the same one-hop local
+composition used by subscriptions. `with_reader_registry` attaches a complete
+composed registry to the serving adapter; exact Database endpoint and opaque
+handler/authorization-version identity must match the registered roots. Finalize
+policy before cloning bindings. Policy changes detach the old registry and legacy
+list and rotate binding identity. Configuration builders box their setup errors;
+Tonic method and declared-error contracts remain unchanged.
+
+Registered unary roots dispatch through the original generated authorized snapshot
+binding and context hook, with the actual request metadata/extensions. Each call
+consumes exactly the first snapshot and drops its cursor before returning. It
+retains no subscription, uses the same shared 64-slot admission pool, preserves
+root extensions, and delegates only fresh target scope/trusted provenance. Its
+one inbound timeout becomes an absolute deadline through admission, snapshot Load,
+dependencies and response decode; a late ready result is still rejected. Drop or
+expiry seals escaped contexts and reclaims admission. Mutation/transaction/workflow
+root authority is rejected. There is no selected-root fallback after routing,
+authorization, dependency, cancellation or uncertainty failure.
+
+Custom adapters are strict by default. `with_legacy_unary_roots` explicitly allows
+at most 64 exact non-composed identities and cannot shadow registered roots.
+The scaffold deliberately retains its existing raw `hello` actor: no canonical
+reference repair or hidden actor creation occurs. Same-host, same-endpoint,
+database-only and eight direct dependency/one-hop limits remain. Separate Loads
+are not an atomic cross-actor snapshot; remote/transitive invalidation, nested
+DAGs, durable resume and mixed/workflow root contexts remain missing.
+
+An evaluated Unavailable keeps its code and receives a terminal SDK metadata
+marker; generated reader retry guards do not reinterpret that evaluation as a
+fresh transport attempt. Unmarked disconnected transport classification and
+mutation retry/recovery behavior are unchanged. Focused runtime tests cover this
+marker, deadline/cancellation, extension delegation, binding identity and capacity;
+these do not establish all real-sidecar uncertainty or cancellation windows.
+
+**Identity-boundary regression:** a real generated Cargo/rbt/CXX run at
+`/tmp/reboot-rust-unary-composition-cli-1791571007492137824` reproduced unauthorized
+beta snapshot `0802` (count 2) through duplicate actor headers: first-header routing
+and snapshot Load disagreed with last-header authorization. Both subscription
+entry points now reject duplicate actor identity before routing/admission. The
+store boundary rejects duplicates for every required identity field, including
+actor and idempotency identity; identical repeats reject too. Single identifiers
+are preserved literally. No parser normalization or synthetic authority was added.
+
+**Executed public native acceptance:** `/tmp/reboot-rust-unary-composition-cli-1791571772637877079` passed
+43 checks. The ordinary generated client read
+returned selected source values after commits, equal-result switching and retirement,
+then restored the selected baseline after real RocksDB restart and selection replay.
+Root/leaf authorization observed original cookie, trusted application identity,
+actual loaded snapshots and request bytes; denied dependency reads produced no
+fallback and did not mutate canonical records. Unary and subscription duplicate
+identity negatives rejected. Sixty-four simultaneous root streams excluded unary
+admission; releasing a stream enabled an ordinary read. Typed watching, self/unknown/
+nested failures, failed-build rejection and host/Database/child cleanup were retained.
+The fixture only adds test authorization and observation through public generated
+interfaces; it does not replace the production evaluator or seed native state.
+
+SDK `/tmp/reboot-rust-unary-composition-sdk-1791571498306860543`: 471 passed/131 ignored, strict all-target
+Clippy and both explicit native restart prerequisites passed. Nineteen composition
+runtime tests plus the common required-identity regression passed. Retained fresh
+registry `/tmp/reboot-rust-reader-registry-cli-1791572469702351692` (29), map `/tmp/reboot-rust-map-reentry-cli-1791572855098756881` (18), batch `/tmp/reboot-rust-batch-ledger-acceptance-1791573141400303145` (162), nested `/tmp/reboot-rust-nested-cli-1791573901349112273`
+(26), pagination `/tmp/reboot-rust-pagination-cli-1791574266941211314` (22), preflight `/tmp/reboot-rust-http-request-preflight-1791572775659570425` and greeting/HTTP `/tmp/reboot-rust-loop-decision-greeting-1791572088433356911`
+(26 exchanges) passed. Frozen source/Database identities, resource bounds and owned
+process absence were audited before updating this ledger. No CI certification or
+full Rust parity is claimed.
+
+Sources: [evaluator](src/reactive.rs), [snapshot/identity boundary](src/runtime.rs),
+[ordinary adapters/reader retries](src/codegen.rs), [typed bindings](src/reactive_codegen.rs),
+[tests](src/reactive_composition_tests.rs),
+[native fixture](../../tests/reboot/cli/fixtures/rust_reader_composition_fixture.py).
+
+
+### Bounded one-hop local reader composition (2026-10-09)
+
+Opt-in `LocalReaderRegistry::with_reader_composition` enables generated database
+reader snapshot hooks and typed `{reader}_read_local` calls to registered actors.
+The registry enforces one exact canonical Database endpoint. Each evaluation may
+use at most eight distinct direct dependencies. Self, unknown/type-mismatched
+actors and unsupported bindings fail closed. Leaf dispatch invokes ordinary
+unary readers, not another composed context or Subscribe producer. There are no
+detached dependency streams, recursive DAGs or cross-actor atomic snapshots.
+
+Revision receivers register and mark their baseline before admission/Load.
+Repeated reads retain the earliest baseline so racing commits remain pending.
+Successful evaluation replaces dependencies before output deduplication, retiring
+unused sources even for equal output. Active evaluation watches root uncertainty
+and dynamically registered dependency uncertainty/revocation. Sticky uncertain
+commit outcomes terminate the stream; no status-based retries or synthetic abort.
+
+The authorized root envelope holds a shared lease for immutable snapshot Load,
+authorization and decode, then releases it before invoking the composed callback.
+Direct leaf reads retain original credential/caller metadata with only the exact
+target reference substituted, preserve lifecycle scope, and rerun the target's
+existing verifier/authorizer against its state/request. This same-host trusted
+mutation-owner contract does not grant cross-application internal authority.
+
+Evaluation admission, completion/failure and finalization share one mutex.
+A canceled/dropped dependency poisons the evaluation even if its handler catches
+or times it out. Failure records precede active-read decrement. Finalization seals
+new reads atomically and rejects unfinished calls. A closure watch wakes escaped
+in-flight reads; RAII stream Drop cancels the callback/dependency futures and
+reclaims admission. Twelve focused tests exercise selection/retirement, racing
+revision/uncertainty, actor bounds/auth denial, caught errors, canceled fallback,
+root/dependency uncertainty during lease waits, closed contexts, escaped-read
+wake/cleanup and atomic finalization. These are local runtime tests, not native
+proof of all failure windows.
+
+The greeting scaffold opts in with `RBT_RUST_REACTIVE_COMPOSITION=1` plus its
+actor allowlist. Public `select-source` persists a canonical source on a selector
+actor; typed `watch` follows that source. Clearing selection restores local reads.
+At that checkpoint, ordinary selected-source reads required a subscription scope;
+the bounded ordinary unary integration above supersedes that limitation.
+selected-source leaves reject nesting rather than recursively resolving a DAG.
+Default greeting behavior without composition remains exercised separately.
+
+**Executed public Cargo/rbt/native:** `/tmp/reboot-rust-reader-composition-cli-1791563149582223716` passed
+21 checks through public constructors, selection
+writers and a generated typed watcher: selected-source commits updated the view,
+equal-result source switch retired alpha before beta updates, self/unknown/nested
+queries failed without partial publication, canonical CXX Load matched persisted
+selector/source states, and real RocksDB restart restored the selected baseline.
+Replaying an old selection key did not restore its old dependency. Shutdown,
+failed build, actual host/Database exit and owned-child cleanup passed. The fixture
+adds only a handler-entry trace for retirement observation; application logic and
+all mutations use the actual generated public paths. Its finite quiet-window
+trace check is not a proof of arbitrary future inactivity.
+
+SDK `/tmp/reboot-rust-reader-composition-sdk-1791562880330177302`: 463 passed/131 ignored, strict all-target
+Clippy and explicit native reader-outcome/staged-map restart gates. Generated
+consumer Clippy/fmt passed. Retained registry `/tmp/reboot-rust-reader-registry-cli-1791563835759141764` (29), map `/tmp/reboot-rust-map-reentry-cli-1791564217652716283` (18),
+batch `/tmp/reboot-rust-batch-ledger-acceptance-1791564499153902931` (162), nested `/tmp/reboot-rust-nested-cli-1791565258524672068` (26), pagination `/tmp/reboot-rust-pagination-cli-1791565634139742496` (22), preflight
+`/tmp/reboot-rust-http-request-preflight-1791564137556504604`, and default greeting/HTTP `/tmp/reboot-rust-loop-decision-greeting-1791563460499733936` (26 exchanges) all passed.
+Frozen hashes, Database identity, resources and owned-process absence audited.
+
+Python [reader interception](../aio/stubs.py) and
+[reactive manager](../aio/state_managers.py) have broader transitive semantics.
+Remote invalidation/migration, nested dependency DAGs, canonical React wire,
+atomic multi-actor snapshots and durable resume remain missing. Native target-auth,
+commit-uncertainty/cancellation and racing first-Load composition windows are not
+claimed by the selected-source acceptance. Overall Rust parity is incomplete.
+
+Sources: [runtime](src/reactive.rs), [authorized snapshots](src/runtime.rs),
+[generated hooks](src/codegen.rs), [typed calls](src/reactive_codegen.rs),
+[focused tests](src/reactive_composition_tests.rs),
+[native fixture](../../tests/reboot/cli/fixtures/rust_reader_composition_fixture.py).
+
+
+### Allowlisted multi-actor local reader routing (2026-10-09)
+
+`LocalReaderRegistry` installs one reserved LocalReaders route for an explicit
+allowlist of at most 64 canonical actor references. Registration retains each
+existing generated binding, authorized reader envelope, actor gate and lifecycle
+scope. Actor metadata selects only a registered entry; it cannot create an owner,
+change its store or subscribe to a constructor/writer. Duplicate references and
+empty registry installation fail closed. The registry has a host-wide limit of
+64 concurrent streams in addition to each owner's existing limit. End/error/Drop
+release global admission without detached producer tasks. Acknowledged commits,
+uncertainty and deduplication remain isolated to the exact selected actor.
+
+`RunningApplicationHost::try_add_local_reader_registry` registers all owners and
+marks readiness Recovering immediately. Owners start before Ready/public ingress.
+A deterministic original-source regression failed with Ready instead of Recovering;
+the fixed real-Tonic test parks a predecessor and verifies NOT_SERVING health,
+Unavailable ordinary ingress, successful registered baseline after owner startup,
+stream cleanup and listener closure. Unit cases retain actor-specific credential
+metadata, authorization errors, unknown actor rejection, duplicate reserved-route
+rejection in either API order, 64-actor/stream bounds, uncertainty isolation and
+admission release. The old single-owner API remains supported.
+
+The generated greeting scaffold optionally reads `RBT_RUST_REACTIVE_ACTORS` once
+at startup. Its generated typed client exposes `state-ref <id>` and
+`watch <canonical-ref> <count>`. No application code injection or private Database
+seeding is needed. Without configuration the previous greeting route is unchanged.
+Configuration errors, including non-Unicode input, do not silently disable policy.
+The allowlist is not a token verifier: each generated binding still owns normal
+authentication/authorization; this remains trusted isolated local development.
+
+**Executed public Cargo/rbt/native:** `/tmp/reboot-rust-reader-registry-cli-1791557943933839768` passed 29
+checks: public constructors created alpha/beta plus an unregistered actor; two
+actual generated typed clients observed isolated baseline/changed snapshots,
+beta commits did not invalidate alpha, and canonical CXX Load verified exact
+actor states. Unknown actor/writer-query subscriptions rejected without mutation.
+The real host admitted 64 streams across both actors, rejected a 65th, and admitted
+a fresh watch after remote Drop. Empty/duplicate/malformed/non-Unicode/65-actor
+startup configurations exited without actor mutation. Full CLI/RocksDB restart
+preserved all three actor states and idempotent writer replay; fresh subscriptions
+observed both persisted values and shutdown terminated both streams. Actual
+host/Database exit, failed build, smoke startup and owned-child cleanup passed.
+Generated greeting Clippy/fmt passed; its empty Cargo unit targets are compilation
+checks, not behavioral test passes. Behavior above ran through the real clients.
+
+SDK `/tmp/reboot-rust-reader-registry-sdk-1791558250398314269`: 451 passed, 131 ignored and strict all-target
+Clippy, plus explicit native reader-outcome and staged-map restart gates. Retained
+map `/tmp/reboot-rust-map-reentry-cli-1791558601777357831` (18), batch `/tmp/reboot-rust-batch-ledger-acceptance-1791558884585471523` (162), nested `/tmp/reboot-rust-nested-cli-1791559662247691882` (26), pagination
+`/tmp/reboot-rust-pagination-cli-1791560028257271664` (22), generated/HTTP preflight `/tmp/reboot-rust-http-request-preflight-1791558520532995052`, and unchanged default
+HTTP/greeting/rebuild/health/cleanup `/tmp/reboot-rust-loop-decision-greeting-1791557537361451879` (26 HTTP exchanges) passed.
+The HTTP acceptance fixture now preserves the generated configured host and
+replaces only its serving tail; it no longer reconstructs an obsolete builder.
+Authorization injection and the host's registered recovery owners remain intact.
+Frozen source, native Database identity, resource budgets and proof-owned PID
+absence were audited before the source digest refresh.
+
+This is a routing foundation, not cross-actor reader composition. Python's
+[React route](../aio/servers.py) and [reactive state manager](../aio/state_managers.py)
+add transitive reader dependencies that this registry does not provide. Dynamic
+dependency registration/retirement, context-aware typed reader calls, remote
+invalidation, atomic multi-actor snapshots, canonical React interoperability and
+durable stream resume remain missing. Overall Rust parity remains incomplete.
+
+Sources: [registry and stream scope](src/reactive.rs),
+[host registration](src/application_host.rs),
+[generated greeting host](../cli/commands/init/templates/rust_main.rs.j2),
+[typed client](../cli/commands/init/templates/rust_client.rs.j2),
+[native acceptance fixture](../../tests/reboot/cli/fixtures/rust_reader_registry_fixture.py).
+
+
+Database-only generated services expose an exact-actor lifecycle owner plus
+companion Tonic service through `local_readers(state_ref)`. Register recovery and
+ordinary service with `ApplicationHost`, then add the companion with
+`RunningApplicationHost::try_add_local_readers`. Generic service registration
+rejects this reserved route. Generated typed subscriptions cancel their RPC on
+Drop; ordinary unary readers stay unary.
+
+**Single-owner bounded contract:** one actor/service/trusted host owning every sidecar mutation;
+the optional multi-actor registry above routes independent owners on one host.
+64 subscriptions **per owner**, a 64KiB **encoded request payload** and a
+1MiB **encoded reader response**. These are not bounds on the whole RPC envelope
+or total transport memory. One coalescing revision/current response/pending future
+per stream avoids unbounded queues. Baseline registration
+precedes Load; shared admission covers Load/auth/handler, not idle/backpressure.
+Equal serialized responses deduplicate; slow consumers may skip intermediate
+values but converge on latest acknowledged state only while the subscription
+remains healthy and the consumer continues polling. Authorization/accepted placement
+is rechecked; revocation is terminal even if authority later returns.
+
+Acknowledged writer/constructor/workflow-step/scheduling/participant-commit paths
+invalidate synchronously. Prepare/Abort/replay/failed mutation do not announce
+committed state; task status alone is not actor mutation. RAII mutation uncertainty
+terminates existing/new subscriptions with Unavailable rather than silently going
+stale; a later write does not clear the latch. Restart/re-read is required. This
+is not exactly-once notification after a lost ACK.
+
+Generated subscriptions retain the exact query, caller metadata, channel and
+method-specific error decoder. `disconnect()` releases the current RPC but keeps
+that plan; explicit `reconnect()` drops the old RPC before awaiting a single new
+Subscribe. Failed/cancelled attempts leave it disconnected. A new authenticated
+server scope emits a fresh baseline, even if equal; intervening states may be
+lost/coalesced. There is no automatic status-based retry or durable resume cursor.
+The generated `*_with_timeout(request, duration)` client entry point captures one
+absolute budget across reads/reconnects and sends only its remaining duration.
+Expiry is checked before and after awaited IO: Tokio timeout alone is insufficient
+when a buffered value/header is ready. There is no independent client idle-expiry
+task; the deadline is enforced when the client reads or explicitly reconnects.
+Remote cursor destruction is asynchronous, not an acknowledged teardown barrier.
+
+Standalone workflow-bearing adapters now expose the same bounded ordinary unary
+reader companions. Their manual Clone shares the existing store/handler/auth/task
+owner rather than constructing another dispatcher. The generated batch app uses
+Work.Observe and typed Work.ObserveBatch for public observation; saved approval
+waits now use ObserveBatch. There is no separate View schema/handler/placement
+entry. Only declared ordinary readers enter
+the subscription dispatcher, never workflow bodies, constructors or scheduling
+writers. Declared ordinary-reader errors use the existing method-specific rich
+status enum for unary RPCs and subscriptions. Internal waits convert them to
+framework Status and taint the attempt before any saved decision; catching a
+failed reader cannot authorize successful terminal completion. Declared
+workflow-service constructor errors remain unsupported. Ordinary writer errors
+are now permitted; their scoped named-step business decisions are documented below.
+The shared generator rejects collisions among each reader's base, `_with_timeout`
+and `_connect` methods and constructor `new` before companion emission; caller
+errors propagate to the public code-generation response without files.
+
+Transaction-bearing service companions now use the existing
+`TransactionAdapter<H, P, C, R, F>` bounds and manual Clone, preserving the
+shared handler/store/auth, participant, coordinator, registry, factories and
+optional reader-task binding. Only ordinary unary readers enter the dispatcher;
+root transactions, including reader-looking History, are not subscription
+targets. Pure transaction services without ordinary readers have no companion.
+Helper/reserved-name checks precede emission; actual per-file outbound
+Client/Target names now participate in root-symbol collision checks.
+
+The public batch app's approval service exposes `ApprovalSnapshot(Batch)` with
+typed declared `BatchMismatch`; `index-read`, `index-mismatch`,
+`index-target-error` and `watch-index-reconnect` exercise it. Its batch-match
+condition differs from Work.Observe, which remains the workflow's saved-wait
+and public observation reader. Both exact-method ReaderBindings share one
+validated local reader owner and LocalReaders service; no additional workflow
+dispatcher or canonical Tasks.Wait owner is created. This is local registered
+actor observation, not transaction subscription, streaming readers, or
+transaction-joined query execution.
+
+**Wakeup #8 executed evidence (2026-10-08):** immutable native proof
+`/tmp/reboot-rust-batch-ledger-acceptance-1791469520443513860` passed public
+`rbt init`, generation, strict all-target consumer Clippy, four consumer tests,
+and actual CLI/native RocksDB acceptance. It verifies decoded declared mismatch,
+actual committed approval observation, Approve/History subscription denial with
+canonical task/state/map/replay unchanged, same-process explicit reconnection
+through schema regeneration and full RocksDB restart, and reclamation of both
+subscriptions. Existing batch/reactive/reconnect and scheduled cancellation
+regressions remain passing. These are real generated API/native controls, not
+emitted-text assertions substituted for persistence evidence.
+Compiler-only ordinary-reader-without-business-errors variant
+`/tmp/reboot-rust-mixed-reader-no-business-errors-1791470377785105382` passed
+strict all-target Clippy and four consumer tests, not separate native persistence.
+Broad gates `/tmp/reboot-rust-batch-ledger-final-gates-1791470437913724777`
+passed strict SDK Clippy, **399 SDK tests, 128 ignored**, and default greeting
+native restart, regeneration, supervision and cleanup. All three accepted
+manifests affirm source unchanged at completion; semantic SDK/template inputs
+remain unchanged, and only this canonical ledger/fingerprint was refreshed
+after the gates (the broad manifest also captured its earlier documentation). The first preflight exposed missing System error arms and
+a typed initial-message conversion; both were repaired before corrected
+preflight/native acceptance. Independent review found these same compiler
+blockers and no other confirmed safety defect; targeted re-review confirmed
+closure. Compiler/native evidence comes from parent execution, not review claims.
+
+**Missing:** cross-actor dependencies, distributed or remote-process invalidation, transparent
+reconnect/resumption. This uses a Rust-specific local service, not canonical React
+wire behavior; that is an API scope distinction, not a mixed-language app goal.
+Raw Database/custom persistence/other-process mutation violates its single-owner
+contract.
+
+**Sources:** [hub/ownership](src/reactive.rs), [generation](src/reactive_codegen.rs),
+[protocol](reactive.proto), [commit sites](src/runtime.rs).
+**Executed acceptance:** [native tests](tests/reactive_native_restart.rs),
+[generated app](tests/fixtures/reactive_app/src/main.rs),
+[process proof](tests/fixtures/reactive_app/prove_restart.py).
+The real generated app verifies baseline/live writes, failed writer silence,
+slow-reader convergence after 100 durable writes, cancellation reclamation,
+shutdown closure and new subscription to persisted state after host/Database
+restart. Unit coverage: [reactive tests](src/reactive_tests.rs).
+
+## Canonical SortedMap
+
+Generate canonical `rbt/std/collections/v1/sorted_map.proto` with explicit module/
+runtime paths. The exact compiled schema/options select a fixed builtin wrapper;
+arbitrary trusted-effects user descriptors remain rejected. The host registers
+`SortedMapLibrary` at an exact native endpoint and returned participant control
+routes. There is no publicly header-authorized inbound map service.
+
+Generated `SortedMap::create` creates EMPTY canonical state with native uniqueness
+and constructor replay. A schema-only Store ensures the canonical entry CF before
+CreateActor; it is idempotent metadata, not an actor/entry seed. The uncertainty
+gate is installed before native awaits. Within a live admitted fresh same-endpoint
+exclusive non-factory app root **without automatic root idempotency**, a typed
+`in_transaction(context)` session exposes insert/remove/get/range/reverse_range.
+It shares direct native participant ownership, read-own-writes and atomic app/map
+Commit or Abort. A caught declared map error dooms the root, not just the session.
+Private root provenance is mandatory; public internal/transaction headers and
+manual contexts cannot grant it.
+
+**Lifetime boundary:** sessions/futures must be serial and handler-awaited. Every
+polled builtin admission/call now reserves counted root work through its await;
+only successful returns settle. Failed/dropped work retains ledger uncertainty and
+doom, so active or failed operations cannot authorize successful root sealing.
+Do not escape/spawn detached calls: this fence does not establish task provenance
+or support concurrent sessions. See [lifetime evidence](#sortedmap-operation-lifetime-fencing-2026-10-09). Aggregate membership uses the ordinary bounded participant contract before
+eager Store. Uncertain native start/Store cannot release, re-stage or Prepare a
+vanished transaction; reset host plus sidecar, recover and abort unprepared work.
+
+**Missing:** public inbound/network builtin adapter, child paths/independent
+reusable siblings, nested savepoints, shared/factory/tasks/map-root idempotency,
+implicit singleton construction, placement/migration and transparent sidecar-only
+restart. Constructor crash/lost-ACK/restart replay is not established by the
+constructor test. Existing map Store-lost-ACK recovery is a different test.
+**Key/range limits:** nonempty ASCII, at most 128 bytes; `/`, `\`, NUL and
+newline are rejected. Forward ranges are `[start,end)` with `start < end`;
+reverse ranges include start/exclude end with `start > end`. Limits must be
+nonzero. Invalid ordering/zero limit produces declared `InvalidRangeError`; invalid
+key characters produce InvalidArgument. Canonical Range has no cursor field; the
+SDK page operation adds live keyset continuation, not a cross-RPC snapshot
+guarantee.
+
+**Sources:** [library/session](src/sorted_map.rs),
+[native participant](src/sorted_map_participant.rs),
+[canonical schema](../../rbt/std/collections/v1/sorted_map.proto).
+The public application also exercises serial distinct-map transfer under one app
+root: exact bytes/read-own-writes, app-plus-two-map Commit/Abort, occupied destination
+and present-empty values, all-participant restoration and fresh post-restart transfer.
+See [public collection evidence](#public-serial-distinct-map-transfer-2026-10-08).
+This does not remove the unsupported lifecycle shapes above; admission-await
+cancellation and dropped native Store windows need distinct native proofs.
+
+**Executed acceptance:** [native prerequisite](tests/sorted_map_native_prerequisite.rs),
+[generated app](tests/fixtures/sorted_map_app/src/main.rs),
+[lost ACK vector](tests/fixtures/sorted_map_lost_ack.rs).
+Checks empty CF/constructor replay/duplicate rejection, Range-first, typed writes/
+read-own-writes, atomic app/map Commit and caught-error Abort, stale provenance,
+parent/key bounds, unprepared recovery and lost-ACK retention. Unit coverage:
+[ownership tests](src/sorted_map_ownership_tests.rs).
+
+## Verification
+
+
+### SortedMap operation-lifetime fencing (2026-10-09)
+
+Same-host builtin admission and every public map call reserve the existing root
+active-work ledger before awaiting. A private RAII guard counts unfinished work;
+only successful returns settle after fresh authority/admission validation.
+Returned errors latch their original doom while the reservation remains held.
+Unsettled Drop atomically decrements active work and retains membership uncertainty,
+preventing a completion/error race from authorizing successful root sealing.
+This bookkeeping grants no dispatch authority and neither sets nor clears native
+Store ACK uncertainty. Successful serial reuse remains supported.
+
+The public generated-consumer acceptance overlay performs a real native Insert,
+polls a reader until unfinished, drops it, and tries to return transaction success.
+That success is rejected. Registered Abort of known, ACKed participants preserves
+exact committed app/map/task/checkpoint/archive bytes before and after RocksDB
+restart; fresh public approvals complete the original task through canonical Wait.
+First Pending proves a polled unfinished future, NOT native Range receipt.
+Four new SDK tests cover active sealing, serial settlement, dropped-work fencing,
+and original-error/uncertainty retention. Python's participant-transaction-manager
+unfinished-call checks provide a lifecycle comparison, not broader parity.
+
+Evidence: `/tmp/reboot-rust-batch-ledger-acceptance-1791499412823156953`
+(focused lifetime proof, 10 checks) and
+`/tmp/reboot-rust-batch-ledger-acceptance-1791499702590131853`
+(full batch regression, 162 checks), and
+`/tmp/reboot-rust-batch-ledger-final-gates-1791500401268791548`
+(strict SDK all-target Clippy; **406 passed, 0 failed, 128 ignored**; native greeting,
+restart, host/Database exit supervision, failed rebuild and child cleanup).
+Both native batch consumers passed strict Clippy/fmt and **10 library tests**.
+All frozen-source audits matched; recorded owned process groups were reaped.
+
+Limits remain: serial handler-awaited same-host calls only. No promise of map
+sessions escaping handlers, concurrent/cloned callers, remote routing, dropped
+Store/lost-ACK recovery windows, or general transaction-future cancellation.
+Settlement-validation errors may latch a generic dropped-work doom before their
+specific diagnostic; original native-operation errors retain their own status.
+
+### Cooperative stop and fresh receipt authorization (2026-10-08)
+
+Implemented on `ac595b011a68f43c94775666cdb7d6949ab95dc7` with a shared scheduling
+replay authorization correction; source reviewed after the confirmed bypass fix.
+
+- `/tmp/reboot-rust-batch-ledger-acceptance-1791494496665595401`:
+  **38 checks**, native public CLI/C++ Database/RocksDB. A real partial prefix
+  including a saved writer business-error decision stops through admin StopBatch,
+  retains exact prefix/checkpoints and completes canonical Wait with an explicit
+  stopped response. RocksDB/host restart preserves the result without redispatch.
+  Replaying the accepted key with administration disabled is PermissionDenied;
+  complete actor/map/task/checkpoint/ordinary-receipt snapshots remain identical.
+  Re-enabling admin replays the original receipt, including after a successor
+  submission. Same-name stale UUID and same-key/different-request negatives leave
+  records unchanged. A controlled saved-approval-before-stop-before-writer race
+  completes one already-observed unit, then stops at the next observation.
+- `/tmp/reboot-rust-batch-ledger-acceptance-1791494902443424066`:
+  **162 full batch checks**, strict consumer Clippy/fmt and **10 library tests**;
+  default workflows, transaction/map transfer, typed terminals, scheduled cancel,
+  reactive reconnect/rebuild and watcher cleanup retained. Recorded watcher PIDs
+  were confirmed absent after completion, despite historical handles in the result.
+- `/tmp/reboot-rust-batch-ledger-final-gates-1791495601318353167`:
+  strict all-target SDK Clippy and **402 passed, 0 failed, 128 ignored**;
+  full native greeting restart/idempotency/rebuild/failed-rebuild/shutdown proof.
+- `/tmp/reboot-rust-workflow-reader-no-business-errors-1791496109043528591`:
+  separate plain-reader generated consumer strict Clippy and **10 library tests**;
+  this is a compilation/behavior gate, not independent native persistence proof.
+
+Frozen manifests matched throughout. Each runner retained exclusive target
+ownership, target <=8 GiB/free >=8 GiB. Do not credit earlier pre-authorization-fix
+proofs as evidence for the security correction. The predecessor framework-error
+and caught-reader focused negative proofs were retained; the shared correction
+changes ordinary writer ingress, not private typed decisions or reader fences.
+Post-stop-checkpoint/pre-terminal crash and lost-ACK boundaries remain unclaimed.
+
+### Named writer business decisions (2026-10-08)
+
+Implemented on baseline `f154bd0c368d447360ee5554f07e6ec537728278`:
+ordinary nonconstructor writers on workflow-bearing services may declare typed
+business errors. Generated named-step helpers use `writer_step_declared` and
+preserve explicit `TaskHandlerError::Declared` versus `Failed`; they never infer
+business authority from a Status code or matching rich details. Constructors
+remain rejected. Task ownership, canonical Wait and workflow terminal authority
+are unchanged; a writer-step error is not a new workflow/task terminal type.
+
+A same-actor serial writer decision requires the exact immutable writer method,
+state/request/response and error-payload decoder, named/finite-indexed provenance,
+canonical Pending ownership, and a clean attempt with only its own active
+operation. Its declared rejection discards the tentative actor copy and atomically
+Stores only a validated `Any<google.rpc.Status>` checkpoint plus provenance, with
+zero actor upserts and no state-change invalidation. Successful writer effects
+continue to Store state plus response. Replay validates the same descriptor and
+request fingerprint before returning the typed error, without dispatching the
+handler; malformed/foreign/colliding envelopes fail closed. Plain or rich framework
+Status remains fatal and taints the attempt; all existing successful-completion
+fences and uncertain Store/readiness handling remain in place.
+
+The public opt-in app adds private named `TryCheckpoint`, `StepRejected`,
+`Submit.reject_step`, and `submit-step-reject`. The handler deliberately changes
+its tentative counter before rejecting. The body catches only the typed business
+variant, performs the real Checkpoint and parks at the next approval. Ordinary
+public scheduling of TryCheckpoint is denied, like Checkpoint. The default app
+path and retained greeting are unchanged. Python source backs writer exception
+rollback; these proofs do not assert Python automatically memoizes every caught
+writer exception or certify broader Python equivalence.
+
+**Fresh executed evidence (immutable stages, source_unchanged):**
+
+- `/tmp/reboot-rust-batch-ledger-acceptance-1791484810586135003`:
+  a generated native handler returns **Grpc** with a real declared-looking
+  StepRejected envelope; the body catches it and returns success. The host rejects
+  unclean completion. After RocksDB restart the real writer runs, and the only
+  saved rejection has its genuine payload, not the forged framework payload;
+  public approvals and canonical Wait finish the original task.
+- `/tmp/reboot-rust-batch-ledger-acceptance-1791485066794866486`:
+  rejected tentative state is discarded; the typed error checkpoint is present;
+  the same Pending task and all checkpoint bytes survive restart; no writer
+  redispatch occurs for that error. A second real approval completes the task,
+  preserving the exact original error row; terminal Wait replays after restart.
+- `/tmp/reboot-rust-batch-ledger-acceptance-1791485361738095883`:
+  prior caught-reader failure still cannot save a terminal or decision and remains
+  unresolved across restart, then progresses through actual approval/Wait.
+- `/tmp/reboot-rust-batch-ledger-acceptance-1791485619021677264`:
+  full public batch persistence/rebuild/reconnect, shared readers, archive/map
+  rollback, listing/stream/cancellation and typed terminals pass; strict consumer
+  Clippy/fmt and **seven library tests** pass.
+- `/tmp/reboot-rust-batch-ledger-final-gates-1791486315240085598`:
+  strict SDK all-target Clippy; **402 passed, 0 failed, 128 ignored**; retained
+  greeting native persistence/replay/restart and host/Database supervision pass.
+- `/tmp/reboot-rust-workflow-reader-no-business-errors-1791486832728407419`:
+  a separate generated ordinary-reader-error-free consumer passes strict Clippy
+  and **seven library tests**, retaining the typed writer path. This is compiler
+  evidence, not a second native persistence proof.
+
+**Limits:** serial same-actor finite named steps, not concurrent or remote writer
+composition. At this writer checkpoint reader failures were not catchable; the bounded
+reader-outcome API below supersedes that restriction only for explicit declared
+outcomes. Constructor errors, new running cancellation, automatic Status retry or external exactly-once claim.
+This new error-checkpoint proof does not inject Store lost ACK, dropped completion
+or arbitrary concurrent-operation races. Existing uncertainty controls are
+source/unit evidence, not those missing native fault cases. Full parity remains
+incomplete.
+
+**Sources:** [typed step admission](src/workflow_context.rs),
+[checkpoint effect/replay](src/workflow_store.rs),
+[generation](src/workflow_codegen.rs),
+[public native acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
+
+### Workflow-service declared readers and clean completion (2026-10-08)
+
+Implemented on baseline `5335e9c61dbffe43c5f9ffce14c4906364f5a3e6`:
+ordinary unary readers on workflow-bearing services may declare method-specific
+errors. The public batch app adds `Work.ObserveBatch` with `BatchMismatch`,
+`work-unary`/`work-read`/`work-mismatch` and `watch-work-reconnect`. Unary and
+shared reactive paths preserve the typed rich-error payload. Internal reader
+waits use framework Status and retain empty task-business-error descriptors;
+this checkpoint granted neither new task terminal authority nor durable catchable
+reader failure decisions. The later opt-in outcome API below adds only typed serial
+same-actor reader outcomes, not schedulable reader-task terminal authority. At this checkpoint ordinary writer/constructor declarations
+remained rejected; the subsequent writer-decision checkpoint below supersedes
+the writer restriction, not the constructor restriction.
+
+A native negative probe exposed a pre-existing safety defect: catching a failed
+reader observation and returning success could persist an empty successful task
+terminal. Successful `finish` now rejects failed/dropped/live work before minting
+its operation. Receipt acceptance and authoritative completion under actor
+admission independently reject unclean attempts. Original generation, pending,
+readiness, cancellation, canonical terminal and durable uncertainty fences remain.
+
+**Fresh executed evidence (immutable runs, source_unchanged):**
+
+- `/tmp/reboot-rust-batch-ledger-acceptance-1791481089906270585`: generated-handler
+  fault overlay catches an actual declared reader failure and returns success.
+  The actual supervised host fails with unclean-attempt FailedPrecondition.
+  Canonical recovery after RocksDB restart has one Pending task with no terminal
+  and no saved decision; ledger/maps are unchanged. Public approve/Wait then
+  completes the restored task. Overlay hash is recorded; production SDK/source
+  are frozen and both sessions' process groups are reaped.
+- `/tmp/reboot-rust-batch-ledger-acceptance-1791481339355527946`: public
+  init/Cargo/rbt/CXX/RocksDB acceptance passes ordinary unary success/rich mismatch,
+  typed subscription success/mismatch, unchanged raw actor/maps/task/replay on
+  errors, and actual committed checkpoint updates. Three retained typed clients
+  explicitly reconnect through regeneration and full restart with cleanup.
+  Prior batch/map/archive/task-list/stream/cancellation gates remain green.
+  Generated consumer strict all-target Clippy/fmt and **six library tests** pass.
+- `/tmp/reboot-rust-batch-ledger-final-gates-1791482036728123360`: strict SDK
+  all-target Clippy; **401 passed, 0 failed, 128 ignored**, including the new
+  failed/dropped/live success fence and writer/constructor denial controls.
+  Public default greeting native persistence/replay/restart, host/Database
+  failure supervision and failed-live-rebuild cleanup pass.
+- `/tmp/reboot-rust-workflow-reader-no-business-errors-1791482553479487000`:
+  separate generated workflow-service and transaction-service ordinary readers
+  without declared business errors pass strict consumer Clippy and **six library
+  tests**. This variant is compiler/consumer evidence, not native persistence.
+
+**Limits:** same local actor/owner, ordinary unary readers and existing bounded
+shared reactive machinery. No remote/cross-actor invalidation, streaming-reader
+parity, automatic status retry, durable error decisions or workflow-service writer
+error expansion. The failure probe covers caught reader error, not new Store/CAS
+lost-ACK injection. Saved-step method/request changes require explicit migration;
+incompatible old replay fails closed, never silently reinterprets its meaning.
+Full Rust parity and production readiness remain unclaimed.
+
+**Sources:** [generation](src/workflow_codegen.rs),
+[attempt and completion fences](src/workflow_context.rs),
+[public schema](../cli/commands/init/templates/rust_batch.proto.j2),
+[native acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
+
+### Public serial distinct-map transfer (2026-10-08)
+
+The opt-in public batch scaffold adds `LedgerIndex.ArchiveEntry`/`ArchiveHistory`,
+`ArchiveRejected`, cumulative `Ledger.archived`, and generated client commands
+`archive`/`archive-history`. A second canonical EMPTY SortedMap is host-created via
+its stable constructor, not privately seeded. Both exact map participants are in
+resolver control routes and recovery registration. All app/map ownership restoration
+precedes coordinator/task recovery and readiness; Work still owns the only Tasks.Wait.
+
+Within one fresh same-host existing-actor exclusive app root without automatic
+root idempotency, the handler reads source presence (Some(empty) is not absent),
+rejects an occupied destination, removes source, inserts exact bytes into destination,
+checks both read-own-writes and increments a checked cumulative app counter. Root
+Commit covers the app plus both distinct map participants. A caught invalid Range
+after all provisional effects dooms/aborts the entire cohort; the CLI preserves the
+actual original **Unknown InvalidRangeError**, not an invented Code::Aborted.
+Method-scoped ArchiveRejected uses the existing Status-compatible transaction
+handler and generated typed-result compatibility hook; required handler traits did
+not change. The client validates exact single-detail declared payload/Unknown status.
+
+**Fresh executed evidence (frozen inputs, all source_unchanged):**
+
+- `/tmp/reboot-rust-batch-ledger-acceptance-1791474667645658662`: actual public
+  init/Cargo/rbt/CXX/RocksDB. Emitted consumer fmt/strict all-target Clippy and
+  **six library tests** passed. Native canonical reads prove raw actor-state,
+  both map rows, original workflow terminal and saved progress records unchanged
+  after caught two-map doom, source-absent rejection and occupied-destination
+  rejection. Occupancy is tested by archiving, publicly resubmitting the same
+  batch with a fresh scheduling key, approving/recreating source and completing
+  that workflow; a present-empty destination is rejected, not overwritten.
+  Successful transfers preserve present-empty value, remove only selected source
+  key, increment the durable app counter and retain original task/checkpoint
+  bytes. Duplicate move is declared source absence, not a second effect. Full
+  RocksDB restart retains identical raw committed snapshot; a fresh transfer
+  succeeds after all participant ownership is restored. ArchiveHistory reads the
+  canonical destination. Both new transaction RPC subscription attempts fail
+  closed; all prior batch/workflow/reactive/list/stream/cancellation/watch checks
+  pass and recorded owned process groups are reaped.
+- `/tmp/reboot-rust-batch-ledger-final-gates-1791475468598897705`: strict SDK
+  all-target Clippy; **399 passed, 0 failed, 128 ignored**. Default greeting
+  generation/native create/write/replay/read, canonical Load, RocksDB restart,
+  host/Database failure supervision and failed-live-rebuild cleanup pass.
+- `/tmp/reboot-rust-mixed-reader-no-business-errors-1791475982812429036`: separate
+  generated reader-error variant strict all-target consumer Clippy and **six
+  library tests**. This is compiler/consumer evidence, not native persistence
+  for that variant. Archive's own declared error remains present in this schema;
+  "no business errors" here describes the ordinary ApprovalSnapshot reader.
+
+**Limits:** a bounded serial distinct-actor/direct-root collection application,
+not reusable sibling/nested paths or a header-authorized public
+builtin/network adapter, distributed placement or general collection migration.
+At that checkpoint sessions/futures remained handler-awaited and nonescaping; no
+root-operation reservation or cancellation-overlap safety was implied. Empty values are exercised,
+not arbitrary nonempty transfer bytes. Unit counter-overflow control proves no
+partial increment, not native full-cohort overflow rollback. New three-participant
+Store/Prepare/terminal lost-ACK or crash-boundary injection is not executed; prior
+single-map uncertainty evidence is not upgraded. No automatic transfer idempotency,
+status retry or external-effects exactly-once; callers must reconcile uncertain
+RPC outcomes through durable application state. Constructor crash/lost-ACK and
+sidecar-only restart remain separate unsupported/unproved shapes.
+
+**Sources:** [public schema](../cli/commands/init/templates/rust_batch.proto.j2),
+[handler](../cli/commands/init/templates/rust_batch_lib.rs.j2),
+[host](../cli/commands/init/templates/rust_batch_host.rs.j2),
+[client](../cli/commands/init/templates/rust_batch_client.rs.j2),
+[native acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
+
+### Workflow-service reactive composition (2026-10-08)
+
+The generated batch app now subscribes to Work.Observe on its workflow-bearing
+adapter, with the duplicate View service removed across schema, handler, host,
+placement and clients. Fresh public generation passed strict emitted-consumer
+all-target Clippy/fmt and **four behavioral tests**. Actual public rbt/C++
+Database/RocksDB acceptance passed live updates, explicit same-client reconnect,
+proto regeneration and full restart, slot cleanup, and retained batch/map/task/
+declared-terminal/list/stream/delayed/lock regressions. Subscribe attempts for
+Create, SubmitBatch, Checkpoint and RunBatch returned exact Unimplemented; canonical
+ledger/task/map/replay remained unchanged. These are actual integrated controls,
+not private seeding or generator-text authority proof.
+
+Review found helper-name collisions for Observe + ObserveWithTimeout/ObserveConnect.
+The new control failed RED because emission incorrectly returned Ok; central
+symbol validation corrected both database/workflow callers. **51 codegen tests**
+passed, including workflow accepted/excluded methods, reserved names, helper
+collisions and retained declared-step/mixed-transaction rejection. The shared
+helper test checks an untouched companion-output buffer, not compiled colliding
+schemas. The targeted read-only review found the P2 closed with no remaining
+confirmed repair defect. An initial missing adapter Clone failed actual downstream
+preflight and was fixed with manual generic cloning, without H:Clone.
+
+Final immutable native proof:
+`/tmp/reboot-rust-batch-ledger-acceptance-1791463075805391400`
+(`accepted.json`, `frozen-source.json`, `native/result.json`). Final broad proof:
+`/tmp/reboot-rust-batch-ledger-final-gates-1791463666520275062` passed strict SDK
+all-target Clippy, **394 passed / 0 failed / 128 ignored**, and actual greeting
+regeneration/restart/signals/child-exit/failed-build cleanup. Ignored matrices are
+not fresh passes. Sources matched both runs; the ledger/digest update is later
+metadata. The pre-symbol-repair native/broad proofs ending `1791461474516531206`
+and `1791462099168909387` are **superseded, not final publication evidence**.
+
+This does not add transaction-service subscription bindings, mixed workflow/
+transaction services, declared step errors, remote invalidation or canonical
+React interoperability. Workflow execution/terminal CAS and uncertainty fences
+are unchanged. Sources: [workflow emitter](src/workflow_codegen.rs),
+[shared reader emitter](src/reactive_codegen.rs),
+[native app acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
+
+
+### Explicit reactive reconnect in the public application (2026-10-08)
+
+Fresh public Cargo generation passed emitted-consumer strict Clippy/fmt and
+**four behavioral tests**. Actual `rbt dev run`/C++ Database/RocksDB acceptance
+retained one generated `watch-reconnect` client PID/query. `next` observed live
+approval/checkpoint changes; explicit reconnect returned equal current baselines,
+including after native live proto replacement and full durable restart. Explicit
+disconnect reclaimed reader slots; stopped-host reconnect returned Unavailable
+without exiting the client, then a caller-requested reconnect succeeded after
+recovery. Quit reaped that client and reader slots returned to zero. The existing
+batch approval/map/rollback, canonical task/replay/typed Wait/declared-error,
+regeneration, delayed task, task-list/stream and shutdown/lock regressions passed.
+
+Six new local live-Tonic controls (12 reactive tests including retained controls)
+exercise query/ASCII/binary metadata retention, equal fresh baselines, eventual
+old-RPC release, failed/cancelled reconnect, terminal Unavailable/PermissionDenied,
+malformed snapshot, exact Subscribe counts/no automatic retries, and absolute
+budgets including buffered snapshots/ready headers after expiry. These are local
+client controls, not C++ distributed authority or native credential-revocation
+proof. The native stopped-host status alone does not establish retry absence.
+
+Three RED paths were exercised: retaining the old stream failed the parked
+Subscribe cancellation control; the uncorrected buffered-snapshot path returned
+Ok(Some(Counter7)) after expiry; removing the reconnect postcheck accepted a ready
+header after expiry. Restoration passed 12 tests. Notification-before-response is
+not an explicit client transport-buffer acknowledgement; actual mutant failures
+establish sensitivity to the production gates. Targeted read-only repair review
+found no remaining confirmed deadline defect.
+
+Accepted immutable native proof:
+`/tmp/reboot-rust-batch-ledger-acceptance-1791458706014249420`
+(`accepted.json`, `frozen-source.json`, `native/result.json`). The prior native run
+`/tmp/reboot-rust-batch-ledger-acceptance-1791457669489224470` preceded the deadline
+repair and is **superseded, not final publication evidence**. Control logs:
+`/tmp/reboot-rust-reactive-reconnect-controls-1791457557441175078`.
+Broad frozen gates:
+`/tmp/reboot-rust-batch-ledger-final-gates-1791459295060650678` passed strict locked
+all-target SDK Clippy, **393 passed / 0 failed / 128 ignored**, and actual retained
+greeting regeneration/restart/signals/child-exit/failed-build cleanup. Ignored
+native matrices are not fresh passes. Both final manifests were unchanged during
+their runs; this canonical ledger/digest update is later metadata.
+
+This is explicit fresh-snapshot reconnection, **not** transparent recovery,
+durable event replay, cursor resume, remote invalidation or canonical Python React
+protocol parity. Client idle expiry has no independent spawned deadline watcher.
+Portable sources: [client/server ownership](src/reactive.rs),
+[generated surface](src/reactive_codegen.rs),
+[local controls](src/reactive_reconnect_tests.rs),
+[public native acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
+
+### Declared workflow business-error application (2026-10-08)
+
+Fresh public generation passed generated-consumer strict Clippy/fmt and **four
+behavioral tests**. Actual `rbt dev run`/C++ Database acceptance created a rejecting
+workflow and approval, acknowledged its saved reader/writer checkpoints, and
+returned typed `BatchRejected` through canonical Tasks.Wait. Durable inspection
+verified Completed/error, exact rich Status/type/payload, partial application and
+SortedMap effects, and retained replay records. Full RocksDB restart returned
+identical typed Wait and canonical task/app/checkpoint bytes, with no completed
+body or writer redispatch. A later normal delayed workflow completed. Existing
+listing/stream policy, approval/map rollback, regeneration, pending restart,
+subscription cleanup, parked shutdown and lock reuse regressions passed.
+
+The public checkpoint repair was necessary: review found that ordinary callers
+could set rejection/progress without a workflow-scoped checkpoint. Both actual
+public RPC variants now return PermissionDenied and preserve canonical actor,
+task, map and replay bytes. Those native calls occur before approval; the
+otherwise-valid **approved** checkpoint is separately denied in the generated
+unit control. Targeted re-review confirmed the generated hook wiring and private
+step preservation. Do not describe this as a native after-approval exploit replay.
+
+Local runtime control denies unknown/malformed payloads even with a permissive
+binding, and denies tainted or iteration-scoped terminal receipts before Load.
+It also checks that rich Status alone remains Failed. Removing the clean-attempt
+fence made that control fail; restoration passed **8 focused tests**. Source
+emission checks inspect typed declarations, handler/Wait and terminal validation;
+those string assertions are not behavioral proof by themselves.
+
+Accepted immutable native proof:
+`/tmp/reboot-rust-batch-ledger-acceptance-1791454683886347424`
+(`accepted.json`, `frozen-source.json`, `native/result.json`). The earlier run
+before the public-checkpoint repair is **not accepted final publication evidence**.
+RED/restored control:
+`/tmp/reboot-rust-workflow-errors-controls-1791453887538072195`.
+Broad frozen gates:
+`/tmp/reboot-rust-batch-ledger-final-gates-1791455596651079196` passed strict locked
+all-target SDK Clippy, **387 passed / 0 failed / 128 ignored**, and the retained
+actual greeting regeneration/restart/signals/child-exit/failed-build cleanup gate.
+Ignored native matrices are not fresh passes. Both runners audited unchanged
+frozen semantic source and disk bounds; this canonical documentation/fingerprint
+refresh is subsequent metadata, not a modification of those snapshots.
+
+This acceptance does **not** inject restart between the rejecting checkpoint and
+terminal CAS, or declared-terminal CompleteTask lost ACK. Existing generic
+uncertainty fences remain source-backed/separately tested, not a new native
+injection claim. General framework-failure isolation, running cancellation, Python
+unbounded cursor/GC/Break and distributed semantics remain missing.
+
+Portable sources: [typed workflow generation](src/workflow_codegen.rs),
+[terminal scope fences](src/workflow_context.rs),
+[public native application](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
+
+### Server-local administrative task-list stream (2026-10-08)
+
+Fresh native acceptance generated the public ordinary Cargo consumer and passed
+strict all-target Clippy/fmt and two behavioral tests. Actual `rbt dev run` with
+C++ Database/RocksDB exercised canonical and generated ListTasksStream: disabled
+policy, missing/invalid bearer and unsupported server scope fail closed; initial
+empty snapshot and unchanged observations preserve the real RPC deadline; the
+same live workflow changes empty → STARTED and completed → empty. Stream clients
+terminate on host shutdown and reconnect to a recovered current STARTED snapshot.
+Full batch approval/map/checkpoint/replay/regeneration/persisted delayed-task/Wait,
+subscription cleanup and durable-lock reuse regressions also passed.
+
+Local controls exercised no-duplicate/coalescing behavior, fresh exact-method
+policy checks, original generation/placement/uncertainty/stop revocation with an
+unchanged cache, owner replacement during a later awaited policy, terminal error
+closure and cancellation of an armed policy future on stream Drop. Two RED
+controls failed their exact invariants after removing the original owner fence
+or publishing unchanged observations; restored source passed. These are local
+controls, not native distributed authority proof. Native deadline/client reaping
+is not direct evidence of a particular server future's destructor, nor proof of
+independent revocation under transport backpressure.
+
+Immutable native proof:
+`/tmp/reboot-rust-batch-ledger-acceptance-1791451791876267609`
+(`accepted.json`, `frozen-source.json`, `native/result.json`). Post-native source
+changes are public rustdoc correction and an extra test-only awaited-generation
+control, not production behavior changes. RED/restored proof:
+`/tmp/reboot-rust-task-stream-controls-1791451599163707664`.
+Broad frozen gates:
+`/tmp/reboot-rust-batch-ledger-final-gates-1791452393276815561` passed strict locked
+all-target SDK Clippy, **386 tests passed / 0 failed / 128 ignored**, and the
+retained actual greeting regeneration/restart/signals/child-exit/failed-build
+cleanup regression. Ignored native matrices are not fresh passes. All manifests
+were unchanged during their respective runs; later canonical ledger updates are
+separate from those immutable semantic source snapshots.
+
+Portable sources: [RPC fences](src/one_shot_tasks.rs),
+[pull-owned stream](src/task_listing.rs), [local controls](src/task_listing_tests.rs),
+[public app acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
+
+### Server-local administrative task listing (2026-10-08)
+
+The public generated batch app now exposes the `tasks` client command and an
+opt-in environment-owned development admin verifier/authorizer. Fresh native
+acceptance generated the ordinary consumer, passed strict all-target Clippy/fmt
+and two tests, then exercised canonical ListTasks through actual `rbt dev run`
+and C++ Database/RocksDB. It proved default denial, missing/invalid bearer denial,
+explicit-server scope rejection, actual STARTED parked workflow listing before
+and after restart, SCHEDULED future timestamp listing before and after restart,
+completed pruning and no synthesized terminal history. The full approval/map,
+saved-checkpoint replay, regeneration, delayed execution, typed Wait, subscription
+cleanup and lock-reuse regression also passed with unchanged frozen source.
+
+Four local controls exercised cache retry/phase bookkeeping and administrative
+policy denial plus generation replacement, uncertainty, placement movement and
+stop during an awaited authorizer. These are local controls, not native proof of
+distributed ownership or retry execution. Native retry-phase observation remains
+unexercised; no public cancellation or task-result auth claim is made.
+
+Native proof: `/tmp/reboot-rust-batch-ledger-acceptance-1791449231292063216`
+(`accepted.json`, `frozen-source.json`, `command-2.log`, `native/result.json`).
+The earlier interrupted run is not accepted evidence. Subsequent changes are
+documentation/comments and the strict-Clippy correction `task.timestamp.clone()`
+to `task.timestamp` (the optional Timestamp is Copy), not task behavior changes.
+The broad gate also exposed a test synchronization race: Weak::upgrade may fail
+before DispatchOwner::drop publishes registry release. The ownership control now
+waits for actual registry removal; it retains its blocked-child ownership and
+replacement-denial assertions and passed 50 exact repeated executions.
+These changes must be distinguished from the immutable semantic source snapshot.
+Broad frozen gates passed strict locked all-target SDK Clippy, **381 tests passed,
+0 failed, 128 ignored**, and the retained native greeting regeneration/restart,
+child-exit, signal and failed-build cleanup regression. Ignored native matrices
+are not fresh passes. Gate evidence:
+`/tmp/reboot-rust-batch-ledger-final-gates-1791450151288499096`
+(`accepted.json`, `frozen-source.json`, SDK logs and greeting proof).
+
+Portable sources: [listing controls](src/task_listing_tests.rs),
+[phase bookkeeping](src/task_listing.rs),
+[public application acceptance](../../tests/reboot/cli/rust_batch_ledger_e2e.py).
+
+
+### Public batch-ledger application and retained greeting (2026-10-08)
+
+The actual opt-in `rbt init` generated consumer passed strict all-target Clippy,
+formatting and two behavioral tests, then ran through normal `rbt dev run` with
+the canonical C++ Database. Native acceptance decoded application state,
+canonical Pending/Completed Tasks, typed saved replay responses and canonical
+SortedMap entries. It exercised submit UUID replay/fingerprint rejection,
+pending Wait deadlines, invalid approvals and caught map-range root doom with
+**both** app/map unchanged, followed by successful atomic approval.
+
+After one acknowledged checkpoint, live proto regeneration retained Database,
+reaped the old host, emitted new bindings and replaced the typed subscription
+from persisted state. Full RocksDB restart recovered the same pending UUID
+without repeating the saved checkpoint mutation; remaining approvals completed
+all three entries. A second restart returned identical typed Wait results and
+canonical terminal bytes without body/step redispatch. A future task survived
+restart before its persisted due time and completed after it. Subscriber owners
+returned to zero, parked shutdown drained streams, and process/lock reuse passed.
+Handler evidence is bounded by each session's byte offset into append-only logs.
+
+A separate final frozen gate passed SDK all-target strict Clippy and tests with
+`--features test-support`: **377 passed / 0 failed / 128 ignored** (ignored native
+matrices are not fresh passes). The default generated greeting retained its own
+strict Clippy/fmt/test, real create/write/replay/read, canonical Load, regeneration,
+RocksDB restart, SIGTERM/SIGINT and child-exit supervision. An intentionally broken
+live proto rebuild exited the CLI and reaped host/Database rather than serving
+stale code. Both runners audited unchanged frozen source and target/free-disk
+bounds. Test-only observation hooks are not enabled in generated consumers.
+
+Local immutable evidence:
+- `/tmp/reboot-rust-batch-ledger-acceptance-1791445215069889908`
+  (`accepted.json`, `frozen-source.json`, `command-2.log`, `native/result.json`).
+- `/tmp/reboot-rust-batch-ledger-final-gates-1791445889892168445`
+  (`accepted.json`, `frozen-source.json`, SDK logs and greeting proof).
+
+Portable acceptance sources are
+[`rust_batch_ledger_e2e.py`](../../tests/reboot/cli/rust_batch_ledger_e2e.py) and
+[`rust_app_dx_e2e.py`](../../tests/reboot/cli/rust_app_dx_e2e.py), executed with one
+exclusive target owner. Earlier failed inspector runs are not accepted proofs.
+The final changes after batch acceptance were test-fixture type naming and
+greeting timeout/failed-rebuild coverage; the batch SDK/runtime/templates stayed
+identical. General distributed recovery, Python cursor/GC/Break and external
+exactly-once remain outside this application slice.
+
+### Historical post-repair executed evidence (2026-10-08)
+
+The sole-owner post-R1 frozen run completed **23/23 planned gates**:
+**21 exited zero**, while the deliberately stale ledger fingerprint exited 1
+and the existing legacy process-consumer strict Clippy baseline exited 101.
+Required gates passed; this is **not an all-green matrix**. The stale rejection
+was preserved before this reviewed documentation/fingerprint refresh; the checker
+was then rerun separately. Legacy generated dead-code/style diagnostics remain
+unresolved, rather than being suppressed or described as green.
+
+All-feature SDK all-target execution recorded **374 passed / 0 failed / 128 ignored**,
+including **317 library tests** and 28 generated downstream behavioral tests.
+Default and no-default library gates each passed 317 tests; these repeated
+configurations are not unique coverage totals. Six doctests passed. Strict SDK,
+no-default SDK and emitted workflow/map/reactive consumer Clippy passed, along
+with docs and formatting/diff checks. Emitted workflow/map all-target gates each
+executed zero tests: they establish compilation only, not native behavior.
+
+Actual native execution passed workflow **3**, ordinary-writer **10**, and focused
+precise-child-error **3** cases (the latter overlap the writer suite). The workflow
+gate preserved separate finite-control-flow, **12-case body-retry**, and named-step
+restart proofs. This run did not execute the complete ignored legacy/Native2pc,
+native map or native reactive matrices; their older proofs remain historical.
+
+Terminal audit matched **190 frozen source hashes**, all **23 gate-log hashes**,
+all **3 proof hashes**, the source manifest and canonical Database/app binaries;
+test-result counts matched the logs. Proof process counts were 16/50/11, all with
+recorded exits and no live recorded PIDs. Runner descendants were empty, its
+process group was empty and the target lock was released. Target/free disk bounds
+were checked. Documentation changes after this audit are separate from the freeze.
+
+Local evidence prefix:
+`/tmp/reboot-rust-control-flow-loop1-ownerfix-r1-1791441615138944047`
+with `-result.json`, `-source.json`, `-successor-audit.json` and separate
+`-5-{proof,retry-proof,legacy-proof}.json` artifacts. Read-only R1 review:
+`/tmp/reboot-rust-control-flow-loop1-r1-final-independent-review.md`.
+Focused diagnostic green/causal-red/restored-green logs:
+`/tmp/reboot-rust-ownerfix-r1-{green1,causal-red1,restored-green1}.log`
+(2 passed / 1 failed / 2 passed respectively, not unique-test totals).
+These local handles are not shipped or portable prerequisites. No newly injected
+workflow-wait Store/CompleteTask lost-ACK, Python cursor/GC/Break, distributed
+fencing or arbitrary external-effects exactly-once acceptance is claimed.
+
+### Historical corrected workflow evidence and its limits
+
+The corrected sole-owner workflow batch ran successfully on the runtime source
+represented by the baseline above: **22/22 gates green**, **312 library tests**
+in all-feature/default/no-default runs, strict SDK/generated-consumer Clippy,
+28 generated downstream behavioral tests, docs/doctests/format checks and real
+map/reactive/workflow CXX/RocksDB gates. Workflow body proof completed **12 cases**
+and reported all owned processes absent. Independent audit checked **2,632 hashes**
+(source/log/proof/binary), no mismatches/live owned PIDs and released ownership.
+The two earlier colliding runners' shared namespace is explicitly excluded.
+
+Recorded local handles (not shipped prerequisites or portable proof artifacts):
+`/tmp/reboot-rust-workflow-loop84-corrected-final-{result,audit}.json`,
+`-corrected-final-body-proof-final.json`, and `-corrected-final-runner.log`.
+Publication audit `/tmp/reboot-rust-publication-audit.json` binds published source
+and subsequent docs/one EOF whitespace cleanup. These handles may disappear;
+portable re-verification is through repository tests/commands below. The full
+older ignored legacy/Native2pc matrix was **not** rerun in that 22-gate batch.
+Do not sum repeated gate test counts or call ignored cases green by default.
+
+### Reproducible checks
+
+From `reboot/rust`, use a sole-owned target and enough free disk:
+
+```sh
+export CARGO_TARGET_DIR=/tmp/reboot-rust-parity-target
+export CARGO_BUILD_JOBS=2 CARGO_INCREMENTAL=0
+export CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0
+python3 tests/verify_parity_documentation.py
+cargo test --locked --all-features --all-targets -- --test-threads=1
+cargo clippy --locked --all-features --all-targets -- -D warnings
+cargo test --locked --no-default-features --lib
+cargo clippy --locked --no-default-features --lib -- -D warnings
+cargo test --locked --all-features --doc
+RUSTDOCFLAGS='-D warnings' cargo doc --locked --no-deps --all-features
+cargo fmt --all --check
+```
+
+For actual native acceptance, set an existing compatible canonical C++ binary;
+these commands exercise ignored tests, not a fake Database:
+
+```sh
+export REBOOT_NATIVE2PC_CXX_DATABASE=/absolute/path/to/reboot/server/database
+cargo test --locked --all-features --test workflow_native_restart -- --ignored --test-threads=1 --nocapture
+cargo test --locked --all-features --test reactive_native_restart -- --ignored --test-threads=1 --nocapture
+cargo test --locked --all-features --test sorted_map_native_prerequisite -- --ignored --test-threads=1 --nocapture
+# Full legacy and separate Native2pc matrices are distinct gates:
+cargo test --locked --all-features --test generated_cxx_database_process -- --ignored --test-threads=1 --nocapture
+cargo test --locked --all-features --test native_2pc_transport -- --ignored --test-threads=1 --nocapture
+```
+
+Generated fixture `cargo clippy/test/fmt --manifest-path tests/fixtures/<app>/Cargo.toml`
+checks are separate from SDK Clippy; set `-- -D warnings` for Clippy. Native app
+proof runs compile their actual generated consumers. Python CLI behavior and real
+app driver have separate dependencies; see their source rather than pretending
+Rust unit tests exercise init/dev process ownership.
+
+### Consolidation verification (2026-10-08)
+
+For this consolidation, independent source reviews corrected stale implementation
+status, default-allow/configured authorization scope, bounded reusable participant
+support, concrete admission limits, external retry budgets and writer-task versus
+workflow retry provenance. The selected **166 implementation/protocol/test files**
+matched the published baseline; only documentation and its new checker changed.
+
+A fresh sole-owner four-gate run passed: checker **6 positive/negative self-tests**
+and **84 local links**, **312 library tests**, compilation/discovery of **113
+ignored legacy native cases**, and the actual **12-case generated workflow body
+CXX/RocksDB proof**. Discovery of 113 cases is **not their execution**. The run's
+2,582 source hashes matched at completion and all recorded owned PIDs were absent.
+The full 22-gate execution above remains prior evidence, not a new full rerun.
+Final text additions here only record these measured results.
+
+Local artifacts: `/tmp/reboot-rust-unified-parity-{result,source}.json`,
+`-body-proof.json`, `-ledger-check.log`, `-sdk-lib.log`,
+`-native-target-discovery.log`, `-workflow-body-native.log`.
+Read-only review records are local audit notes, not additional parity documents.
+
+### Trust and maintenance contract
+
+The documentation checker validates local links/anchors, obsolete-ledger removal,
+and a fingerprint of selected SDK/CLI/protocol implementation/test inputs. It has
+negative self-tests so a broken link or changed source cannot silently pass.
+A matching fingerprint is **not behavioral proof**: source review and actual
+acceptance above are separate evidence. The fingerprint excludes documentation
+and the checker itself; it is not a full toolchain/dependency lock or native binary
+certificate. If relevant implementation changes, re-audit claims and appropriate
+acceptance before refreshing it; do not merely regenerate the number.
+
+<!-- parity-source-sha256: d16593b98d51120c6c29c88161eb73a00bd56953568b9d8e0df12697908128df -->
+
+New feature work updates this ledger in the same verified commit, not another
+candidate/status file. Status is by public use case and safe admitted shapes,
+with source/acceptance/limitations adjacent. Do not promote a historical blocked
+proposal or a compile-only facade into current functionality. Frozen executions
+have one build owner and unique evidence namespace; no source edits mid-run.
+Commit/push verified changes normally; production/migration/external-effect claims
+need their own acceptance, not more historical prose.
+
+## Next higher-level priority
+
+Extend the bounded finite replay/wait vertical only after defining and exercising
+canonical unbounded iteration advancement/GC and durable Break authority, or a
+separate explicit application contract. Add new-wait Store/CompleteTask lost-ACK
+injection and full-bound saturation evidence before expanding those claims.
+Current Task iteration-zero and single-owner fences remain mandatory; these
+extensions are **not implemented behavior**. Do not silently add quarantine,
+distributed fencing or cross-actor guarantees to the existing finite-step API.

@@ -1,0 +1,4121 @@
+//! Experimental Rust input to Reboot's language-neutral `.proto` contract.
+//!
+//! Tonic generates service traits with `tonic::Status` error values. Those
+//! transport signatures are fixed by the generated gRPC contract, so boxing
+//! them to satisfy `clippy::result_large_err` would make the bindings invalid.
+#![allow(clippy::result_large_err)]
+//!
+//! This is an experimental schema and transport spike. It proves that Rust can
+//! emit Reboot's existing descriptor format and validate the isolated Native2pc
+//! v1 transport contract without Python or Node.js. It does not claim to host a
+//! production Rust servicer: the current `rbt dev run` launcher supports only
+//! `--python` and `--nodejs`. The [`runtime`] module provides deliberately
+//! scoped Tonic service adapters for executable testing; [`native_2pc`] remains
+//! an explicitly non-executable control-plane boundary.
+
+pub mod application_host;
+pub mod auth;
+#[cfg(feature = "build")]
+pub mod build;
+pub mod codegen;
+pub mod durable_coordinator;
+pub mod durable_participant;
+pub mod explicit_abort;
+pub mod http_host;
+pub mod legacy_coordinator;
+pub mod legacy_placement;
+pub mod live_participant;
+pub mod native_2pc;
+pub mod one_shot_tasks;
+pub mod placement;
+/// Canonical PlacementPlanner transport DTOs and generated Tonic client/server
+/// bindings. The application host owns the bounded stream lifecycle.
+pub mod placement_proto {
+    include!(concat!(env!("OUT_DIR"), "/placement_proto/rbt.v1alpha1.rs"));
+}
+pub mod reactive;
+pub mod runtime;
+pub mod state_ref;
+/// Canonical SortedMap wire DTOs and Tonic bindings. No builtin Reboot host adapter
+/// or public constructor is established by these transport bindings alone.
+pub mod sorted_map_proto {
+    tonic::include_proto!("rbt.std.collections.v1");
+}
+pub mod successful_trailers;
+
+use chrono::{DateTime, FixedOffset, Utc};
+use prost::Message;
+use std::collections::HashMap;
+use std::sync::Mutex;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FieldType {
+    Bool,
+    Bytes,
+    F32,
+    F64,
+    Fixed32,
+    Fixed64,
+    I32,
+    I64,
+    SFixed32,
+    SFixed64,
+    SInt32,
+    SInt64,
+    String,
+    U32,
+    U64,
+    /// A named model emitted elsewhere in this application's proto contract.
+    Message(&'static str),
+    /// A named enum emitted elsewhere in this application's proto contract.
+    Enum(&'static str),
+    /// A protobuf `repeated` field. The element descriptor is shared so schema
+    /// declarations remain `const`-friendly.
+    Repeated(&'static FieldType),
+    /// A protobuf map. Proto only permits scalar keys, so this cannot produce
+    /// an invalid `map<Message, Value>` declaration.
+    Map {
+        key: MapKeyType,
+        value: &'static FieldType,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MapKeyType {
+    Bool,
+    Fixed32,
+    Fixed64,
+    I32,
+    I64,
+    SFixed32,
+    SFixed64,
+    SInt32,
+    SInt64,
+    String,
+    U32,
+    U64,
+}
+
+impl MapKeyType {
+    fn proto(self) -> &'static str {
+        match self {
+            Self::Bool => "bool",
+            Self::Fixed32 => "fixed32",
+            Self::Fixed64 => "fixed64",
+            Self::I32 => "int32",
+            Self::I64 => "int64",
+            Self::SFixed32 => "sfixed32",
+            Self::SFixed64 => "sfixed64",
+            Self::SInt32 => "sint32",
+            Self::SInt64 => "sint64",
+            Self::String => "string",
+            Self::U32 => "uint32",
+            Self::U64 => "uint64",
+        }
+    }
+}
+
+impl FieldType {
+    fn proto(self) -> String {
+        match self {
+            Self::Bool => "bool".into(),
+            Self::Bytes => "bytes".into(),
+            Self::F32 => "float".into(),
+            Self::F64 => "double".into(),
+            Self::Fixed32 => "fixed32".into(),
+            Self::Fixed64 => "fixed64".into(),
+            Self::I32 => "int32".into(),
+            Self::I64 => "int64".into(),
+            Self::SFixed32 => "sfixed32".into(),
+            Self::SFixed64 => "sfixed64".into(),
+            Self::SInt32 => "sint32".into(),
+            Self::SInt64 => "sint64".into(),
+            Self::String => "string".into(),
+            Self::U32 => "uint32".into(),
+            Self::U64 => "uint64".into(),
+            Self::Message(name) | Self::Enum(name) => name.into(),
+            Self::Repeated(element) => element.proto(),
+            Self::Map { key, value } => format!("map<{}, {}>", key.proto(), value.proto()),
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Repeated(_) => "repeated ",
+            Self::Map { .. } => "",
+            _ => "optional ",
+        }
+    }
+
+    fn referenced_type(self) -> Option<&'static str> {
+        match self {
+            Self::Message(name) | Self::Enum(name) => Some(name),
+            Self::Repeated(element) => element.referenced_type(),
+            Self::Map { value, .. } => value.referenced_type(),
+            _ => None,
+        }
+    }
+
+    fn has_valid_shape(self) -> bool {
+        match self {
+            Self::Repeated(element) => !matches!(*element, Self::Repeated(_) | Self::Map { .. }),
+            Self::Map { value, .. } => !matches!(*value, Self::Repeated(_) | Self::Map { .. }),
+            _ => true,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FieldSpec {
+    pub name: &'static str,
+    pub tag: u32,
+    pub field_type: FieldType,
+    pub required: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MethodKind {
+    Reader,
+    Writer,
+    TransactionExclusive,
+    TransactionShared,
+    Workflow,
+}
+
+impl MethodKind {
+    fn proto_option(self) -> &'static str {
+        match self {
+            Self::Reader => "reader: {}",
+            Self::Writer => "writer: {}",
+            Self::TransactionExclusive => "transaction: { exclusive: {} }",
+            Self::TransactionShared => "transaction: { shared: {} }",
+            Self::Workflow => "workflow: {}",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MethodSpec {
+    pub name: &'static str,
+    pub request: &'static str,
+    pub response: &'static str,
+    pub kind: MethodKind,
+    pub description: Option<&'static str>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ReservedFields {
+    /// Tags that must never be reused after their fields are removed.
+    pub tags: &'static [u32],
+    /// Names that must never be reused after their fields are removed.
+    pub names: &'static [&'static str],
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StateSpec {
+    pub name: &'static str,
+    pub fields: &'static [FieldSpec],
+    pub reserved: ReservedFields,
+}
+
+/// One stable numeric member of an emitted protobuf enum.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EnumVariantSpec {
+    pub name: &'static str,
+    pub number: i32,
+}
+
+/// A protobuf enum. The first variant must be the zero/default value required
+/// by proto3; variant names and numbers remain part of the wire contract.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EnumSpec {
+    pub name: &'static str,
+    pub variants: &'static [EnumVariantSpec],
+}
+
+/// Mutually exclusive protobuf fields. Each member keeps its own stable tag.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OneOfSpec {
+    pub name: &'static str,
+    pub fields: &'static [FieldSpec],
+}
+
+/// A request or response model in the emitted API contract.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MessageSpec {
+    pub name: &'static str,
+    pub fields: &'static [FieldSpec],
+    pub oneofs: &'static [OneOfSpec],
+    pub reserved: ReservedFields,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ServiceSpec {
+    pub name: &'static str,
+    pub state: &'static str,
+    pub methods: &'static [MethodSpec],
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ApplicationSpec {
+    pub package: &'static str,
+    pub state: StateSpec,
+    /// Enums used by state, request, and response models.
+    pub enums: &'static [EnumSpec],
+    /// Request and response models used by this service.
+    pub messages: &'static [MessageSpec],
+    pub service: ServiceSpec,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum SchemaError {
+    EmptyPackage,
+    InvalidPackage(&'static str),
+    InvalidIdentifier {
+        kind: &'static str,
+        name: &'static str,
+    },
+    EmptyName(&'static str),
+    InvalidTag {
+        field: &'static str,
+        tag: u32,
+    },
+    InvalidReservation,
+    InvalidFieldShape(&'static str),
+    DuplicateTag(u32),
+    DuplicateField(&'static str),
+    DuplicateType(&'static str),
+    DuplicateMessage(&'static str),
+    DuplicateEnum(&'static str),
+    DuplicateOneOf(&'static str),
+    DuplicateMethod(&'static str),
+    UnknownMethodMessage(&'static str),
+    InvalidEnum(&'static str),
+    UnknownMessage(&'static str),
+    ServiceStateMismatch {
+        service: &'static str,
+        state: &'static str,
+    },
+}
+
+impl std::fmt::Display for SchemaError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::EmptyPackage => write!(f, "package must not be empty"),
+            Self::InvalidPackage(package) => {
+                write!(f, "package `{package}` is not a valid protobuf package")
+            }
+            Self::InvalidIdentifier { kind, name } => {
+                write!(f, "{kind} `{name}` is not a valid protobuf identifier")
+            }
+            Self::EmptyName(kind) => write!(f, "{kind} name must not be empty"),
+            Self::InvalidTag { field, tag } => {
+                write!(f, "field `{field}` has invalid protobuf tag {tag}")
+            }
+            Self::InvalidReservation => write!(
+                f,
+                "reserved field tags/names must be valid, unique, and unused by active fields"
+            ),
+            Self::InvalidFieldShape(field) => write!(
+                f,
+                "field `{field}` nests repeated or map collections in an invalid protobuf shape"
+            ),
+            Self::DuplicateTag(tag) => write!(f, "protobuf tag {tag} is used more than once"),
+            Self::DuplicateField(name) => write!(f, "field `{name}` is declared more than once"),
+            Self::DuplicateType(name) => {
+                write!(
+                    f,
+                    "top-level protobuf type `{name}` is declared more than once"
+                )
+            }
+            Self::DuplicateMessage(name) => {
+                write!(f, "message `{name}` is declared more than once")
+            }
+            Self::DuplicateEnum(name) => write!(f, "enum `{name}` is declared more than once"),
+            Self::DuplicateOneOf(name) => write!(f, "oneof `{name}` is declared more than once"),
+            Self::DuplicateMethod(name) => write!(f, "method `{name}` is declared more than once"),
+            Self::UnknownMethodMessage(name) => {
+                write!(
+                    f,
+                    "method request/response message `{name}` is not declared"
+                )
+            }
+            Self::InvalidEnum(name) => write!(
+                f,
+                "enum `{name}` must have a named zero-valued first variant and unique variant numbers"
+            ),
+            Self::UnknownMessage(name) => write!(f, "message `{name}` is not declared"),
+            Self::ServiceStateMismatch { service, state } => {
+                write!(f, "service `{service}` does not target state `{state}`")
+            }
+        }
+    }
+}
+
+impl std::error::Error for SchemaError {}
+
+/// A backward-incompatible edit to Reboot's language-neutral wire contract.
+///
+/// This intentionally errs on the safe side: removing an old field is rejected
+/// until a future SDK can emit an explicit protobuf `reserved` declaration.
+#[derive(Debug, Eq, PartialEq)]
+pub enum CompatibilityError {
+    PackageChanged,
+    StateChanged,
+    MissingReservedTag {
+        model: &'static str,
+        tag: u32,
+    },
+    MissingReservedName {
+        model: &'static str,
+        name: &'static str,
+    },
+    MissingEnum(&'static str),
+    MissingEnumVariant {
+        enum_name: &'static str,
+        variant: &'static str,
+    },
+    ChangedEnumVariant {
+        enum_name: &'static str,
+        variant: &'static str,
+    },
+    MissingMessage(&'static str),
+    MissingField {
+        model: &'static str,
+        tag: u32,
+    },
+    ChangedField {
+        model: &'static str,
+        tag: u32,
+    },
+    MissingMethod(&'static str),
+    ChangedMethod(&'static str),
+}
+
+impl std::fmt::Display for CompatibilityError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::PackageChanged => write!(f, "protobuf package changed"),
+            Self::StateChanged => write!(f, "service state type changed"),
+            Self::MissingReservedTag { model, tag } => {
+                write!(f, "reserved tag {tag} was removed from `{model}`")
+            }
+            Self::MissingReservedName { model, name } => {
+                write!(f, "reserved field name `{name}` was removed from `{model}`")
+            }
+            Self::MissingEnum(name) => write!(f, "enum `{name}` was removed"),
+            Self::MissingEnumVariant { enum_name, variant } => {
+                write!(f, "enum variant `{enum_name}.{variant}` was removed")
+            }
+            Self::ChangedEnumVariant { enum_name, variant } => {
+                write!(
+                    f,
+                    "enum variant `{enum_name}.{variant}` changed its numeric value"
+                )
+            }
+            Self::MissingMessage(name) => write!(f, "message `{name}` was removed"),
+            Self::MissingField { model, tag } => {
+                write!(f, "field tag {tag} was removed from `{model}`")
+            }
+            Self::ChangedField { model, tag } => {
+                write!(f, "field tag {tag} changed in `{model}`")
+            }
+            Self::MissingMethod(name) => write!(f, "method `{name}` was removed"),
+            Self::ChangedMethod(name) => write!(f, "method `{name}` changed its wire contract"),
+        }
+    }
+}
+
+impl std::error::Error for CompatibilityError {}
+
+fn fields_by_tag<'a>(
+    fields: &'a [FieldSpec],
+    oneofs: &'a [OneOfSpec],
+) -> std::collections::BTreeMap<u32, &'a FieldSpec> {
+    fields
+        .iter()
+        .chain(oneofs.iter().flat_map(|oneof| oneof.fields.iter()))
+        .map(|field| (field.tag, field))
+        .collect()
+}
+
+fn oneof_for_tag(oneofs: &[OneOfSpec], tag: u32) -> Option<&'static str> {
+    oneofs
+        .iter()
+        .find(|oneof| oneof.fields.iter().any(|field| field.tag == tag))
+        .map(|oneof| oneof.name)
+}
+
+fn check_model_compatibility(
+    model: &'static str,
+    previous_fields: &[FieldSpec],
+    previous_oneofs: &[OneOfSpec],
+    current_fields: &[FieldSpec],
+    current_oneofs: &[OneOfSpec],
+    previous_reserved: ReservedFields,
+    current_reserved: ReservedFields,
+) -> Result<(), CompatibilityError> {
+    for tag in previous_reserved.tags {
+        if !current_reserved.tags.contains(tag) {
+            return Err(CompatibilityError::MissingReservedTag { model, tag: *tag });
+        }
+    }
+    for name in previous_reserved.names {
+        if !current_reserved.names.contains(name) {
+            return Err(CompatibilityError::MissingReservedName { model, name });
+        }
+    }
+    let current = fields_by_tag(current_fields, current_oneofs);
+    for previous in fields_by_tag(previous_fields, previous_oneofs).into_values() {
+        let Some(next) = current.get(&previous.tag) else {
+            if current_reserved.tags.contains(&previous.tag)
+                && current_reserved.names.contains(&previous.name)
+            {
+                continue;
+            }
+            return Err(CompatibilityError::MissingField {
+                model,
+                tag: previous.tag,
+            });
+        };
+        if previous.name != next.name
+            || previous.field_type != next.field_type
+            || previous.required != next.required
+            || oneof_for_tag(previous_oneofs, previous.tag)
+                != oneof_for_tag(current_oneofs, previous.tag)
+        {
+            return Err(CompatibilityError::ChangedField {
+                model,
+                tag: previous.tag,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn check_enum_compatibility(
+    previous: &EnumSpec,
+    current: &EnumSpec,
+) -> Result<(), CompatibilityError> {
+    for previous_variant in previous.variants {
+        let Some(next) = current
+            .variants
+            .iter()
+            .find(|variant| variant.name == previous_variant.name)
+        else {
+            return Err(CompatibilityError::MissingEnumVariant {
+                enum_name: previous.name,
+                variant: previous_variant.name,
+            });
+        };
+        if next.number != previous_variant.number {
+            return Err(CompatibilityError::ChangedEnumVariant {
+                enum_name: previous.name,
+                variant: previous_variant.name,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Generated directly from Reboot's existing cross-language test protocol.
+///
+/// This intentionally bypasses schema reflection and generated Reboot servicer
+/// classes. It proves the public protobuf/gRPC client boundary from Rust.
+pub mod proto {
+    tonic::include_proto!("tests.reboot.protoc");
+}
+
+/// Bindings for Reboot's durable database-sidecar protocol.
+pub mod database_proto {
+    tonic::include_proto!("rbt.v1alpha1");
+}
+
+/// Encoded descriptor set for the generated `rbt.v1alpha1` bindings.
+///
+/// This is intentionally schema-only: no Native2pc client, adapter, or
+/// transaction execution path is exposed by this crate.
+pub const RBT_V1ALPHA1_DESCRIPTOR_SET: &[u8] =
+    tonic::include_file_descriptor_set!("rbt_v1alpha1_descriptor");
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum ContextError {
+    EmptyStateRef,
+    InvalidMetadata,
+    InvalidBearerToken,
+    InvalidCallerId,
+    MissingTransactionMetadata,
+    MissingTransactionCoordinatorMetadata,
+    EmptyTransactionIds,
+    InvalidTransactionIds,
+    InvalidUuid(&'static str),
+}
+
+impl std::fmt::Display for ContextError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::EmptyStateRef => write!(f, "Reboot state reference must not be empty"),
+            Self::InvalidMetadata => write!(f, "Reboot metadata value is invalid"),
+            Self::InvalidBearerToken => write!(f, "Reboot bearer token is invalid"),
+            Self::InvalidCallerId => write!(f, "Reboot caller ID is invalid"),
+            Self::MissingTransactionMetadata => {
+                write!(f, "transaction context requires transaction metadata")
+            }
+            Self::MissingTransactionCoordinatorMetadata => write!(
+                f,
+                "transaction metadata requires coordinator state type and state reference"
+            ),
+            Self::EmptyTransactionIds => {
+                write!(f, "transaction metadata must contain at least one ID")
+            }
+            Self::InvalidTransactionIds => {
+                write!(f, "transaction IDs must be a JSON array of UUIDs")
+            }
+            Self::InvalidUuid(header) => write!(f, "metadata `{header}` must be a UUID"),
+        }
+    }
+}
+
+impl std::error::Error for ContextError {}
+
+const MAX_BEARER_TOKEN_LENGTH: usize = 4096;
+
+fn validate_bearer_token(token: &str) -> Result<(), ContextError> {
+    if token.len() > MAX_BEARER_TOKEN_LENGTH || !token.is_ascii() || token.contains('\n') {
+        return Err(ContextError::InvalidBearerToken);
+    }
+    Ok(())
+}
+
+/// Identifies an application caller in Reboot metadata.
+///
+/// The wire form is Python-compatible: `application_id=<id>` with an optional
+/// leading `space_id=<id>,`. Unknown key/value pairs are ignored for forward
+/// compatibility, while malformed or missing required values are rejected.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CallerId {
+    application_id: String,
+    space_id: Option<String>,
+}
+
+impl CallerId {
+    pub fn new(
+        application_id: impl Into<String>,
+        space_id: Option<String>,
+    ) -> Result<Self, ContextError> {
+        let application_id = application_id.into();
+        if !is_valid_application_id(&application_id)
+            || space_id.as_deref().is_some_and(|id| !is_valid_space_id(id))
+        {
+            return Err(ContextError::InvalidCallerId);
+        }
+        Ok(Self {
+            application_id,
+            space_id,
+        })
+    }
+
+    pub fn application_id(&self) -> &str {
+        &self.application_id
+    }
+
+    pub fn space_id(&self) -> Option<&str> {
+        self.space_id.as_deref()
+    }
+}
+
+impl std::fmt::Display for CallerId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(space_id) = &self.space_id {
+            write!(f, "space_id={space_id},")?;
+        }
+        write!(f, "application_id={}", self.application_id)
+    }
+}
+
+impl std::str::FromStr for CallerId {
+    type Err = ContextError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let mut application_id = None;
+        let mut space_id = None;
+        for part in value.split(',').filter(|part| !part.is_empty()) {
+            let (key, value) = part.split_once('=').ok_or(ContextError::InvalidCallerId)?;
+            match key {
+                "application_id" => application_id = Some(value.to_owned()),
+                "space_id" => space_id = Some(value.to_owned()),
+                _ => {}
+            }
+        }
+        Self::new(
+            application_id.ok_or(ContextError::InvalidCallerId)?,
+            space_id,
+        )
+    }
+}
+
+fn is_valid_id_suffix(value: &str) -> bool {
+    value
+        .bytes()
+        .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+}
+
+fn is_valid_space_id(value: &str) -> bool {
+    value.len() == 11 && value.starts_with('s') && is_valid_id_suffix(&value[1..])
+}
+
+fn is_valid_application_id(value: &str) -> bool {
+    value == "cloud"
+        || (value.len() == 11 && value.starts_with('a') && is_valid_id_suffix(&value[1..]))
+        || value
+            .strip_suffix("-facilitator")
+            .is_some_and(is_valid_application_id)
+}
+
+const APPLICATION_ID_HEADER: &str = "x-reboot-application-id";
+const STATE_REF_HEADER: &str = "x-reboot-state-ref";
+const SERVER_ID_HEADER: &str = "x-reboot-server-id";
+const WORKFLOW_ID_HEADER: &str = "x-reboot-workflow-id";
+const WORKFLOW_ITERATION_HEADER: &str = "x-reboot-workflow-iteration";
+const TRANSACTION_IDS_HEADER: &str = "x-reboot-transaction-ids";
+const TRANSACTION_COORDINATOR_STATE_TYPE_HEADER: &str =
+    "x-reboot-transaction-coordinator-state-type";
+const TRANSACTION_COORDINATOR_STATE_REF_HEADER: &str = "x-reboot-transaction-coordinator-state-ref";
+const TRANSACTION_RETRY_AGE_HEADER: &str = "x-reboot-transaction-retry-age";
+const IDEMPOTENCY_KEY_HEADER: &str = "x-reboot-idempotency-key";
+const AUTHORIZATION_HEADER: &str = "authorization";
+const COOKIE_HEADER: &str = "cookie";
+const TASK_SCHEDULE_HEADER: &str = "x-reboot-task-schedule";
+const CALLER_ID_HEADER: &str = "x-reboot-caller-id";
+const TRACEPARENT_HEADER: &str = "traceparent";
+const TRACESTATE_HEADER: &str = "tracestate";
+const INTERNAL_CALL_HEADER: &str = "x-reboot-internal-call";
+const TRANSACTION_COORDINATOR_READ_ONLY_AWARE_HEADER: &str =
+    "x-reboot-transaction-coordinator-read-only-aware";
+
+/// Parses the explicit-offset schedule wire forms shared by Python and
+/// `DateTime<FixedOffset>`.
+///
+/// Python's `datetime.fromisoformat` accepts a basic `+HHMM`/`-HHMM` offset,
+/// whereas Chrono's RFC 3339 parser requires the colon. Normalize only that
+/// final, integral-minute offset, then retain Chrono as the calendar, time,
+/// separator, and offset-range validator. In particular, this does not infer a
+/// local timezone for Python's naive/date-only forms or round Python offsets
+/// containing fractional seconds.
+fn parse_task_schedule(value: &str) -> Result<DateTime<FixedOffset>, chrono::ParseError> {
+    DateTime::parse_from_rfc3339(value).or_else(|original_error| {
+        let Some(offset_start) = value.len().checked_sub(5) else {
+            return Err(original_error);
+        };
+        let offset = &value[offset_start..];
+        if !matches!(offset.as_bytes().first(), Some(b'+' | b'-'))
+            || !offset.as_bytes()[1..].iter().all(u8::is_ascii_digit)
+        {
+            return Err(original_error);
+        }
+
+        let normalized = format!(
+            "{}{}:{}",
+            &value[..offset_start],
+            &offset[..3],
+            &offset[3..]
+        );
+        DateTime::parse_from_rfc3339(&normalized)
+    })
+}
+
+/// Reboot metadata that is safe to forward to a downstream Reboot call.
+///
+/// This mirrors `reboot.aio.headers.Headers`: unknown inbound metadata is
+/// intentionally discarded rather than transitively forwarded. Transaction
+/// IDs are encoded as the Python runtime's JSON array of canonical UUID text.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RebootHeaders {
+    pub state_ref: String,
+    pub application_id: Option<String>,
+    pub server_id: Option<String>,
+    pub workflow_id: Option<uuid::Uuid>,
+    pub workflow_iteration: Option<i64>,
+    pub transaction_ids: Option<Vec<uuid::Uuid>>,
+    pub transaction_coordinator_state_type: Option<String>,
+    pub transaction_coordinator_state_ref: Option<String>,
+    pub transaction_retry_age: Option<uuid::Uuid>,
+    pub idempotency_key: Option<uuid::Uuid>,
+    pub bearer_token: Option<String>,
+    pub task_schedule: Option<DateTime<FixedOffset>>,
+    pub cookie: Option<String>,
+    pub caller_id: Option<CallerId>,
+    pub traceparent: Option<String>,
+    pub tracestate: Option<String>,
+    pub internal_call: bool,
+    pub coordinator_read_only_aware: bool,
+}
+
+impl RebootHeaders {
+    pub fn new(state_ref: impl Into<String>) -> Self {
+        Self {
+            state_ref: state_ref.into(),
+            application_id: None,
+            server_id: None,
+            workflow_id: None,
+            workflow_iteration: None,
+            transaction_ids: None,
+            transaction_coordinator_state_type: None,
+            transaction_coordinator_state_ref: None,
+            transaction_retry_age: None,
+            idempotency_key: None,
+            bearer_token: None,
+            task_schedule: None,
+            cookie: None,
+            caller_id: None,
+            traceparent: None,
+            tracestate: None,
+            internal_call: false,
+            coordinator_read_only_aware: false,
+        }
+    }
+
+    /// Returns the metadata safe for token verification and authorization.
+    ///
+    /// This preserves caller identity, bearer credentials, state/server identity,
+    /// cookies, and tracing while deliberately removing mutation and transaction
+    /// context so authorization cannot accidentally enlist in a caller's work.
+    pub fn copy_for_token_verification_and_authorization(&self) -> Self {
+        Self {
+            state_ref: self.state_ref.clone(),
+            application_id: self.application_id.clone(),
+            server_id: self.server_id.clone(),
+            workflow_id: None,
+            workflow_iteration: None,
+            transaction_ids: None,
+            transaction_coordinator_state_type: None,
+            transaction_coordinator_state_ref: None,
+            transaction_retry_age: None,
+            idempotency_key: None,
+            bearer_token: self.bearer_token.clone(),
+            task_schedule: None,
+            cookie: self.cookie.clone(),
+            caller_id: self.caller_id.clone(),
+            traceparent: self.traceparent.clone(),
+            tracestate: self.tracestate.clone(),
+            internal_call: false,
+            coordinator_read_only_aware: false,
+        }
+    }
+
+    pub fn from_request<T>(request: &tonic::Request<T>) -> Result<Self, ContextError> {
+        let mut headers = Self::from_metadata(request.metadata())?;
+        if let Some(context) =
+            crate::application_host::TrustedApplicationContext::from_request(request)
+        {
+            headers.application_id = Some(context.application_id().to_owned());
+        }
+        Ok(headers)
+    }
+
+    pub fn from_metadata(metadata: &tonic::metadata::MetadataMap) -> Result<Self, ContextError> {
+        fn get(
+            metadata: &tonic::metadata::MetadataMap,
+            name: &'static str,
+        ) -> Result<Option<String>, ContextError> {
+            // Python's `dict(metadata)` keeps the final value for duplicate
+            // gRPC metadata keys. Select the final entry rather than
+            // `MetadataMap::get`, which selects the first.
+            metadata
+                .get_all(name)
+                .iter()
+                .next_back()
+                .map(|value| {
+                    value
+                        .to_str()
+                        .map(str::to_owned)
+                        .map_err(|_| ContextError::InvalidMetadata)
+                })
+                .transpose()
+        }
+        let state_ref = get(metadata, STATE_REF_HEADER)?.ok_or(ContextError::EmptyStateRef)?;
+        if state_ref.is_empty() {
+            return Err(ContextError::EmptyStateRef);
+        }
+        let transaction_ids = match get(metadata, TRANSACTION_IDS_HEADER)? {
+            None => None,
+            Some(value) => {
+                let values: Vec<String> = serde_json::from_str(&value)
+                    .map_err(|_| ContextError::InvalidTransactionIds)?;
+                if values.is_empty() {
+                    return Err(ContextError::EmptyTransactionIds);
+                }
+                Some(
+                    values
+                        .into_iter()
+                        .map(|value| {
+                            uuid::Uuid::parse_str(&value)
+                                .map_err(|_| ContextError::InvalidTransactionIds)
+                        })
+                        .collect::<Result<_, _>>()?,
+                )
+            }
+        };
+        let transaction_coordinator_state_type =
+            get(metadata, TRANSACTION_COORDINATOR_STATE_TYPE_HEADER)?;
+        let transaction_coordinator_state_ref =
+            get(metadata, TRANSACTION_COORDINATOR_STATE_REF_HEADER)?;
+        if transaction_ids.is_some()
+            && (transaction_coordinator_state_type.is_none()
+                || transaction_coordinator_state_ref.is_none())
+        {
+            return Err(ContextError::MissingTransactionCoordinatorMetadata);
+        }
+        let parse_uuid = |name| -> Result<Option<uuid::Uuid>, ContextError> {
+            get(metadata, name)?
+                .map(|value| {
+                    uuid::Uuid::parse_str(&value).map_err(|_| ContextError::InvalidUuid(name))
+                })
+                .transpose()
+        };
+        // `x-reboot-application-id` is target/server identity, not caller
+        // authority. Python replaces the wire value with identity injected by
+        // its server interceptor. This Rust SDK has no equivalent host
+        // lifecycle, so accepting the client-supplied value here would make
+        // untrusted metadata appear trusted (and could forward it downstream).
+        // Keep it absent until a server-owned injection boundary exists.
+        Ok(Self {
+            state_ref,
+            application_id: None,
+            server_id: get(metadata, SERVER_ID_HEADER)?,
+            workflow_id: parse_uuid(WORKFLOW_ID_HEADER)?,
+            workflow_iteration: get(metadata, WORKFLOW_ITERATION_HEADER)?
+                .map(|value| value.parse().map_err(|_| ContextError::InvalidMetadata))
+                .transpose()?,
+            transaction_ids,
+            transaction_coordinator_state_type,
+            transaction_coordinator_state_ref,
+            transaction_retry_age: parse_uuid(TRANSACTION_RETRY_AGE_HEADER)?,
+            idempotency_key: parse_uuid(IDEMPOTENCY_KEY_HEADER)?,
+            bearer_token: get(metadata, AUTHORIZATION_HEADER)?
+                .map(|value| value.strip_prefix("Bearer ").unwrap_or(&value).to_owned())
+                .map(|token| {
+                    validate_bearer_token(&token)?;
+                    Ok(token)
+                })
+                .transpose()?,
+            task_schedule: get(metadata, TASK_SCHEDULE_HEADER)?
+                .map(|value| {
+                    if value.is_empty() {
+                        Ok(Utc::now().fixed_offset())
+                    } else {
+                        parse_task_schedule(&value).map_err(|_| ContextError::InvalidMetadata)
+                    }
+                })
+                .transpose()?,
+            cookie: get(metadata, COOKIE_HEADER)?,
+            caller_id: get(metadata, CALLER_ID_HEADER)?
+                .map(|value| value.parse().map_err(|_| ContextError::InvalidCallerId))
+                .transpose()?,
+            traceparent: get(metadata, TRACEPARENT_HEADER)?,
+            tracestate: get(metadata, TRACESTATE_HEADER)?,
+            internal_call: get(metadata, INTERNAL_CALL_HEADER)?
+                .is_some_and(|value| value == "true"),
+            coordinator_read_only_aware: metadata
+                .contains_key(TRANSACTION_COORDINATOR_READ_ONLY_AWARE_HEADER),
+        })
+    }
+
+    pub fn to_metadata(&self) -> Result<tonic::metadata::MetadataMap, ContextError> {
+        if self.state_ref.is_empty() {
+            return Err(ContextError::EmptyStateRef);
+        }
+        if self.transaction_ids.as_ref().is_some_and(Vec::is_empty) {
+            return Err(ContextError::EmptyTransactionIds);
+        }
+        if self.transaction_ids.is_some()
+            && (self.transaction_coordinator_state_type.is_none()
+                || self.transaction_coordinator_state_ref.is_none())
+        {
+            return Err(ContextError::MissingTransactionCoordinatorMetadata);
+        }
+        fn insert(
+            metadata: &mut tonic::metadata::MetadataMap,
+            name: &'static str,
+            value: String,
+        ) -> Result<(), ContextError> {
+            metadata.insert(
+                name,
+                value.parse().map_err(|_| ContextError::InvalidMetadata)?,
+            );
+            Ok(())
+        }
+        let mut metadata = tonic::metadata::MetadataMap::new();
+        insert(&mut metadata, STATE_REF_HEADER, self.state_ref.clone())?;
+        for (name, value) in [
+            (APPLICATION_ID_HEADER, &self.application_id),
+            (SERVER_ID_HEADER, &self.server_id),
+        ] {
+            if let Some(value) = value {
+                insert(&mut metadata, name, value.clone())?;
+            }
+        }
+        if let Some(token) = &self.bearer_token {
+            validate_bearer_token(token)?;
+            insert(
+                &mut metadata,
+                AUTHORIZATION_HEADER,
+                format!("Bearer {token}"),
+            )?;
+        }
+        if let Some(cookie) = &self.cookie {
+            insert(&mut metadata, COOKIE_HEADER, cookie.clone())?;
+        }
+        if let Some(ids) = &self.transaction_ids {
+            let encoded = format!(
+                "[{}]",
+                ids.iter()
+                    .map(|id| format!("\"{id}\""))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            insert(&mut metadata, TRANSACTION_IDS_HEADER, encoded)?;
+            insert(
+                &mut metadata,
+                TRANSACTION_COORDINATOR_STATE_TYPE_HEADER,
+                self.transaction_coordinator_state_type.clone().unwrap(),
+            )?;
+            insert(
+                &mut metadata,
+                TRANSACTION_COORDINATOR_STATE_REF_HEADER,
+                self.transaction_coordinator_state_ref.clone().unwrap(),
+            )?;
+        }
+        if let Some(age) = self.transaction_retry_age {
+            insert(&mut metadata, TRANSACTION_RETRY_AGE_HEADER, age.to_string())?;
+        }
+        if let Some(id) = self.workflow_id {
+            insert(&mut metadata, WORKFLOW_ID_HEADER, id.to_string())?;
+        }
+        if let Some(iteration) = self.workflow_iteration {
+            insert(
+                &mut metadata,
+                WORKFLOW_ITERATION_HEADER,
+                iteration.to_string(),
+            )?;
+        }
+        if let Some(key) = self.idempotency_key {
+            insert(&mut metadata, IDEMPOTENCY_KEY_HEADER, key.to_string())?;
+        }
+        for (name, value) in [
+            (TRACEPARENT_HEADER, self.traceparent.clone()),
+            (TRACESTATE_HEADER, self.tracestate.clone()),
+            (
+                CALLER_ID_HEADER,
+                self.caller_id.as_ref().map(ToString::to_string),
+            ),
+        ] {
+            if let Some(value) = value {
+                insert(&mut metadata, name, value)?;
+            }
+        }
+        if self.internal_call {
+            insert(&mut metadata, INTERNAL_CALL_HEADER, "true".into())?;
+        }
+        if self.coordinator_read_only_aware {
+            insert(
+                &mut metadata,
+                TRANSACTION_COORDINATOR_READ_ONLY_AWARE_HEADER,
+                "true".into(),
+            )?;
+        }
+        Ok(metadata)
+    }
+}
+
+/// Rejection reason for a Python-compatible external endpoint URL.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ExternalEndpointError {
+    InvalidUrl,
+    MissingScheme,
+    UnsupportedScheme(String),
+    MissingAuthority,
+    HasPathQueryOrFragment,
+}
+
+impl std::fmt::Display for ExternalEndpointError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidUrl => f.write_str("external endpoint is not a valid URL"),
+            Self::MissingScheme => {
+                f.write_str("external endpoint requires an explicit http or https scheme")
+            }
+            Self::UnsupportedScheme(scheme) => write!(
+                f,
+                "external endpoint scheme `{scheme}` must be http or https"
+            ),
+            Self::MissingAuthority => f.write_str("external endpoint requires an authority"),
+            Self::HasPathQueryOrFragment => {
+                f.write_str("external endpoint must not contain a path, query, or fragment")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ExternalEndpointError {}
+
+/// A validated HTTP(S) external endpoint URL.
+///
+/// This matches the URL contract Python's `ExternalContext` accepts. It is a
+/// one-endpoint value, not a channel manager, resolver, retry policy, or
+/// placement claim.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExternalEndpoint(String);
+
+impl ExternalEndpoint {
+    pub fn parse(endpoint: impl Into<String>) -> Result<Self, ExternalEndpointError> {
+        let endpoint = endpoint.into();
+        let uri = endpoint
+            .parse::<http::Uri>()
+            .map_err(|_| ExternalEndpointError::InvalidUrl)?;
+        let scheme = uri
+            .scheme_str()
+            .ok_or(ExternalEndpointError::MissingScheme)?;
+        if !matches!(scheme, "http" | "https") {
+            return Err(ExternalEndpointError::UnsupportedScheme(scheme.into()));
+        }
+        if uri.authority().is_none() {
+            return Err(ExternalEndpointError::MissingAuthority);
+        }
+        // `http::Uri` normalizes an omitted path to `/`, so inspect the source
+        // spelling to preserve Python's stricter no-path contract.
+        let authority_and_suffix = endpoint
+            .split_once("://")
+            .expect("validated URL scheme must include ://")
+            .1;
+        if authority_and_suffix.contains(['/', '?', '#']) {
+            return Err(ExternalEndpointError::HasPathQueryOrFragment);
+        }
+        Ok(Self(endpoint))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// A reusable, endpoint-bound cache for one lazily connected Tonic channel.
+///
+/// Clones returned by [`Self::channel`] share Tonic's cheap, buffered
+/// `Channel` handle. The manager is immutable, so it is safe to share between
+/// concurrent callers. It deliberately has no connectivity state inspection or
+/// explicit reconnect operation: Tonic 0.12 does not expose a sound public
+/// channel shutdown/health state for a cache to act on. Connection lifecycle is
+/// therefore left to Tonic's channel implementation when an RPC is made.
+///
+/// This is only an endpoint cache. It does not resolve services, select
+/// placement, retry RPCs, or make an RPC outcome decision. HTTP(S) scheme
+/// handling is whatever Tonic's endpoint supports; this type makes no broader
+/// TLS-equivalence claim.
+#[derive(Clone)]
+pub struct ExternalChannelManager {
+    endpoint: ExternalEndpoint,
+    channel: tonic::transport::Channel,
+}
+
+impl ExternalChannelManager {
+    /// Creates a cache for one already validated external endpoint.
+    ///
+    /// The channel is lazy: this performs URI construction but does not open a
+    /// network connection. The first RPC through a clone returned by
+    /// [`Self::channel`] initiates transport use.
+    pub fn new(endpoint: ExternalEndpoint) -> Result<Self, ExternalEndpointError> {
+        let tonic_endpoint = tonic::transport::Endpoint::from_shared(endpoint.as_str().to_owned())
+            .map_err(|_| ExternalEndpointError::InvalidUrl)?;
+        Ok(Self {
+            endpoint,
+            channel: tonic_endpoint.connect_lazy(),
+        })
+    }
+
+    /// Returns the endpoint bound to this cache.
+    pub fn endpoint(&self) -> &ExternalEndpoint {
+        &self.endpoint
+    }
+
+    /// Returns a cheap clone of the one cached Tonic channel.
+    pub fn channel(&self) -> tonic::transport::Channel {
+        self.channel.clone()
+    }
+}
+
+/// The portable subset of Reboot's external-call context.
+///
+/// `state_ref` must already be a valid encoded Reboot state reference. Encoding
+/// state type tags is still owned by the current runtime; this client never
+/// guesses or synthesizes them.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExternalContext {
+    headers: RebootHeaders,
+    name: Option<String>,
+}
+
+impl ExternalContext {
+    pub fn new(state_ref: impl Into<String>) -> Self {
+        Self {
+            headers: RebootHeaders::new(state_ref),
+            name: None,
+        }
+    }
+
+    /// Creates the untrusted caller context supplied to an external HTTP
+    /// handler. It deliberately carries no caller ID: a public HTTP request
+    /// cannot acquire app-internal authority merely by reaching a route.
+    pub fn for_http(method: &str, path: &str, bearer_token: Option<String>) -> Self {
+        let mut headers = RebootHeaders::new("");
+        headers.bearer_token = bearer_token;
+        Self {
+            headers,
+            name: Some(format!("HTTP {method} '{path}'")),
+        }
+    }
+
+    /// The source-faithful HTTP/request identity when this context was
+    /// created by an [`ApplicationHost`](crate::application_host::ApplicationHost)
+    /// HTTP route.
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    /// Connects one caller-specified external Tonic endpoint.
+    ///
+    /// This intentionally provides no pooling, placement, retries, or routing;
+    /// those remain separate application concerns.
+    pub async fn connect(
+        &self,
+        endpoint: impl Into<String>,
+    ) -> Result<tonic::transport::Channel, tonic::transport::Error> {
+        tonic::transport::Endpoint::from_shared(endpoint.into())?
+            .connect()
+            .await
+    }
+
+    /// Connects a URL that was validated against Python's external URL contract.
+    pub async fn connect_validated(
+        &self,
+        endpoint: &ExternalEndpoint,
+    ) -> Result<tonic::transport::Channel, tonic::transport::Error> {
+        self.connect(endpoint.as_str()).await
+    }
+
+    pub fn with_bearer_token(mut self, bearer_token: impl Into<String>) -> Self {
+        self.headers.bearer_token = Some(bearer_token.into());
+        self
+    }
+
+    /// Attaches the validated external application identity to every request.
+    ///
+    /// This never creates transaction or internal-call metadata.
+    pub fn with_caller_id(mut self, caller_id: CallerId) -> Self {
+        self.headers.caller_id = Some(caller_id);
+        self
+    }
+
+    pub fn with_headers(headers: RebootHeaders) -> Self {
+        Self {
+            headers,
+            name: None,
+        }
+    }
+
+    pub fn headers(&self) -> &RebootHeaders {
+        &self.headers
+    }
+
+    pub fn reader<T>(&self, message: T) -> Result<tonic::Request<T>, ContextError> {
+        self.request(message, None)
+    }
+
+    /// Starts a new idempotent writer call. Persist the returned metadata key
+    /// before retrying across a process boundary; use `writer_with_key` for
+    /// subsequent attempts.
+    pub fn writer<T>(&self, message: T) -> Result<tonic::Request<T>, ContextError> {
+        self.writer_with_key(message, self.new_idempotency_key())
+    }
+
+    /// Creates the automatic key for one logical external writer call.
+    ///
+    /// Generated external clients retain this value while transparently
+    /// retrying an `Unavailable` unary call, rather than allocating a key per
+    /// transport attempt.
+    pub fn new_idempotency_key(&self) -> uuid::Uuid {
+        let expiry = std::time::SystemTime::now()
+            .checked_add(std::time::Duration::from_secs(7 * 24 * 60 * 60))
+            .expect("idempotency expiry must fit SystemTime")
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("idempotency expiry must be after the Unix epoch");
+        let timestamp =
+            uuid::Timestamp::from_unix(uuid::NoContext, expiry.as_secs(), expiry.subsec_nanos());
+        uuid::Uuid::new_v7(timestamp)
+    }
+
+    /// Builds a retry-safe writer call using a caller-owned idempotency key.
+    pub fn writer_with_key<T>(
+        &self,
+        message: T,
+        idempotency_key: uuid::Uuid,
+    ) -> Result<tonic::Request<T>, ContextError> {
+        self.request(message, Some(idempotency_key))
+    }
+
+    fn request<T>(
+        &self,
+        message: T,
+        idempotency_key: Option<uuid::Uuid>,
+    ) -> Result<tonic::Request<T>, ContextError> {
+        let mut headers = self.headers.clone();
+        headers.idempotency_key = idempotency_key;
+        let mut request = tonic::Request::new(message);
+        *request.metadata_mut() = headers.to_metadata()?;
+        Ok(request)
+    }
+}
+
+/// Returns whether a transport status is safe to retry as a disconnected call.
+///
+/// This deliberately matches Python's narrow `aio.aborted.is_retryable_status_code`:
+/// only `Unavailable` is classified as retryable. It does not retry a request,
+/// decide whether an idempotent mutation reached durable storage, or change
+/// transaction recovery semantics.
+pub fn is_retryable_status_code(code: tonic::Code) -> bool {
+    code == tonic::Code::Unavailable
+}
+
+/// Returns whether a Tonic status has Python-compatible retryable transport code.
+pub fn is_retryable_status(status: &tonic::Status) -> bool {
+    is_retryable_status_code(status.code())
+}
+
+/// Cancellation-safe exponential delay for generated external unary retries.
+///
+/// This preserves the Python `aio.backoff.Backoff` envelope (one second,
+/// doubled after each retry, capped at thirty seconds). Rust deliberately uses
+/// the upper bound rather than Python's random jitter because generated code
+/// must not need another randomness dependency. Awaiting Tokio's sleep is
+/// cancellation-safe: dropping the external-call future cancels a pending
+/// delay and no later transport attempt is issued.
+#[derive(Debug, Clone)]
+pub struct ExternalUnaryRetryBackoff {
+    next_delay: std::time::Duration,
+}
+
+impl Default for ExternalUnaryRetryBackoff {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ExternalUnaryRetryBackoff {
+    pub fn new() -> Self {
+        Self {
+            next_delay: std::time::Duration::from_secs(1),
+        }
+    }
+
+    pub fn next_delay(&self) -> std::time::Duration {
+        self.next_delay
+    }
+
+    pub async fn wait(&mut self) {
+        tokio::time::sleep(self.next_delay).await;
+        self.next_delay = (self.next_delay * 2).min(std::time::Duration::from_secs(30));
+    }
+}
+
+/// Encodes one declared protobuf error in a standard `google.rpc.Status`
+/// trailer. Generated adapters provide the proto type URL explicitly.
+pub fn declared_error_status<M: prost::Message>(
+    code: tonic::Code,
+    message: impl Into<String>,
+    type_url: impl Into<String>,
+    error: &M,
+) -> tonic::Status {
+    let status = googleapis_tonic_google_rpc::google::rpc::Status {
+        code: code as i32,
+        message: message.into(),
+        details: vec![prost_types::Any {
+            type_url: type_url.into(),
+            value: error.encode_to_vec(),
+        }],
+    };
+    tonic::Status::with_details(
+        code,
+        status.message.clone(),
+        bytes::Bytes::from(status.encode_to_vec()),
+    )
+}
+
+/// Decodes ordered rich-status details from a Tonic status.
+///
+/// `None` is an ordinary gRPC status; malformed binary details remain an
+/// error so generated clients preserve the status as undeclared.
+pub fn declared_error_details(
+    status: &tonic::Status,
+) -> Result<Option<googleapis_tonic_google_rpc::google::rpc::Status>, prost::DecodeError> {
+    if status.details().is_empty() {
+        return Ok(None);
+    }
+    let rich_status = googleapis_tonic_google_rpc::google::rpc::Status::decode(status.details())?;
+    // `grpc-status-details-bin` is an alternate encoding of this status, not
+    // an independent error. A conflicting inner envelope must not authorize a
+    // generated declared-error conversion.
+    if rich_status.code != status.code() as i32 || rich_status.message != status.message() {
+        return Ok(None);
+    }
+    Ok(Some(rich_status))
+}
+
+/// A source-defined Reboot backend abort emitted through a generated method
+/// error enum. The message is part of the rich `google.rpc.Status` envelope
+/// and must survive generated server/client round trips.
+#[derive(Debug)]
+pub struct SystemAbort {
+    pub error: SystemAborted,
+    pub message: String,
+}
+
+impl SystemAbort {
+    /// Preserves the generated transaction-client classification API while
+    /// retaining the backend's rich status message.
+    pub fn is_recoverable(&self) -> bool {
+        self.error.is_recoverable()
+    }
+}
+
+/// A source-defined rich abort emitted by a Reboot backend.
+///
+/// This is intentionally only a classification primitive: transaction callers
+/// decide whether they can continue. Unknown or malformed details never become
+/// this type, because their outcome is uncertain.
+#[derive(Debug)]
+pub enum SystemAborted {
+    StateAlreadyConstructed(database_proto::StateAlreadyConstructed),
+    StateNotConstructed(database_proto::StateNotConstructed),
+    InvalidArgument(database_proto::InvalidArgument),
+    NotFound(database_proto::NotFound),
+    AlreadyExists(database_proto::AlreadyExists),
+    FailedPrecondition(database_proto::FailedPrecondition),
+    Aborted(database_proto::Aborted),
+    OutOfRange(database_proto::OutOfRange),
+    DataLoss(database_proto::DataLoss),
+    TransactionShouldRetry(database_proto::TransactionShouldRetry),
+    /// Rust has no nested transaction reissue owner yet, so this remains
+    /// recognized-but-unrecoverable rather than pretending it can continue.
+    NestedTransactionShouldRetry(database_proto::NestedTransactionShouldRetry),
+}
+
+impl SystemAborted {
+    /// Mirrors Python's `FROM_BACKEND_AND_RECOVERABLE_ERROR_TYPES` for the
+    /// bounded generated transaction-client path. Nested reissue is excluded.
+    pub fn is_recoverable(&self) -> bool {
+        !matches!(
+            self,
+            Self::TransactionShouldRetry(_) | Self::NestedTransactionShouldRetry(_)
+        )
+    }
+
+    /// Encodes this backend-originated abort as the rich gRPC status used by
+    /// Python's `SystemAborted`. The inner status envelope always matches the
+    /// transport code and message so a receiver can safely classify it.
+    pub fn into_status(self, message: impl Into<String>) -> tonic::Status {
+        macro_rules! status {
+            ($code:expr, $type_url:literal, $error:expr) => {
+                declared_error_status($code, message, $type_url, &$error)
+            };
+        }
+        match self {
+            Self::StateAlreadyConstructed(error) => status!(
+                tonic::Code::Aborted,
+                "type.googleapis.com/rbt.v1alpha1.StateAlreadyConstructed",
+                error
+            ),
+            Self::StateNotConstructed(error) => status!(
+                tonic::Code::Aborted,
+                "type.googleapis.com/rbt.v1alpha1.StateNotConstructed",
+                error
+            ),
+            Self::InvalidArgument(error) => status!(
+                tonic::Code::InvalidArgument,
+                "type.googleapis.com/rbt.v1alpha1.InvalidArgument",
+                error
+            ),
+            Self::NotFound(error) => status!(
+                tonic::Code::NotFound,
+                "type.googleapis.com/rbt.v1alpha1.NotFound",
+                error
+            ),
+            Self::AlreadyExists(error) => status!(
+                tonic::Code::AlreadyExists,
+                "type.googleapis.com/rbt.v1alpha1.AlreadyExists",
+                error
+            ),
+            Self::FailedPrecondition(error) => status!(
+                tonic::Code::FailedPrecondition,
+                "type.googleapis.com/rbt.v1alpha1.FailedPrecondition",
+                error
+            ),
+            Self::Aborted(error) => status!(
+                tonic::Code::Aborted,
+                "type.googleapis.com/rbt.v1alpha1.Aborted",
+                error
+            ),
+            Self::OutOfRange(error) => status!(
+                tonic::Code::OutOfRange,
+                "type.googleapis.com/rbt.v1alpha1.OutOfRange",
+                error
+            ),
+            Self::DataLoss(error) => status!(
+                tonic::Code::DataLoss,
+                "type.googleapis.com/rbt.v1alpha1.DataLoss",
+                error
+            ),
+            Self::TransactionShouldRetry(error) => status!(
+                tonic::Code::Unavailable,
+                "type.googleapis.com/rbt.v1alpha1.TransactionShouldRetry",
+                error
+            ),
+            Self::NestedTransactionShouldRetry(error) => status!(
+                tonic::Code::Unavailable,
+                "type.googleapis.com/rbt.v1alpha1.NestedTransactionShouldRetry",
+                error
+            ),
+        }
+    }
+}
+
+/// Decodes one known Reboot system-abort detail.
+///
+/// An unknown type URL is not a system abort. A matching type URL with invalid
+/// payload is deliberately an error so callers conservatively retain the raw
+/// gRPC outcome rather than committing after an uncertain remote result.
+pub fn system_aborted_from_detail(
+    detail: &prost_types::Any,
+) -> Result<Option<SystemAborted>, prost::DecodeError> {
+    macro_rules! decode {
+        ($type_url:literal, $variant:ident, $message:ty) => {
+            if detail.type_url == $type_url {
+                return <$message as prost::Message>::decode(detail.value.as_slice())
+                    .map(SystemAborted::$variant)
+                    .map(Some);
+            }
+        };
+    }
+    decode!(
+        "type.googleapis.com/rbt.v1alpha1.StateAlreadyConstructed",
+        StateAlreadyConstructed,
+        database_proto::StateAlreadyConstructed
+    );
+    decode!(
+        "type.googleapis.com/rbt.v1alpha1.StateNotConstructed",
+        StateNotConstructed,
+        database_proto::StateNotConstructed
+    );
+    decode!(
+        "type.googleapis.com/rbt.v1alpha1.InvalidArgument",
+        InvalidArgument,
+        database_proto::InvalidArgument
+    );
+    decode!(
+        "type.googleapis.com/rbt.v1alpha1.NotFound",
+        NotFound,
+        database_proto::NotFound
+    );
+    decode!(
+        "type.googleapis.com/rbt.v1alpha1.AlreadyExists",
+        AlreadyExists,
+        database_proto::AlreadyExists
+    );
+    decode!(
+        "type.googleapis.com/rbt.v1alpha1.FailedPrecondition",
+        FailedPrecondition,
+        database_proto::FailedPrecondition
+    );
+    decode!(
+        "type.googleapis.com/rbt.v1alpha1.Aborted",
+        Aborted,
+        database_proto::Aborted
+    );
+    decode!(
+        "type.googleapis.com/rbt.v1alpha1.OutOfRange",
+        OutOfRange,
+        database_proto::OutOfRange
+    );
+    decode!(
+        "type.googleapis.com/rbt.v1alpha1.DataLoss",
+        DataLoss,
+        database_proto::DataLoss
+    );
+    decode!(
+        "type.googleapis.com/rbt.v1alpha1.TransactionShouldRetry",
+        TransactionShouldRetry,
+        database_proto::TransactionShouldRetry
+    );
+    decode!(
+        "type.googleapis.com/rbt.v1alpha1.NestedTransactionShouldRetry",
+        NestedTransactionShouldRetry,
+        database_proto::NestedTransactionShouldRetry
+    );
+    Ok(None)
+}
+
+/// The portable, code-only subset of Python's generated gRPC error markers.
+///
+/// Python's `Aborted.error_from_google_rpc_status_code` and
+/// `error_from_grpc_aio_rpc_error` turn each non-OK gRPC code into a distinct
+/// protobuf marker. Rust does not generate those marker messages, so this enum
+/// preserves only their public classification and round-trip code semantics.
+/// It deliberately does not claim to decode `google.rpc.Status` details or
+/// Reboot-specific declared errors.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GrpcStatusError {
+    Cancelled,
+    Unknown,
+    InvalidArgument,
+    DeadlineExceeded,
+    NotFound,
+    AlreadyExists,
+    PermissionDenied,
+    ResourceExhausted,
+    FailedPrecondition,
+    Aborted,
+    OutOfRange,
+    Unimplemented,
+    Internal,
+    Unavailable,
+    DataLoss,
+    Unauthenticated,
+}
+
+impl GrpcStatusError {
+    /// Returns the Tonic code represented by this error classification.
+    pub const fn code(self) -> tonic::Code {
+        match self {
+            Self::Cancelled => tonic::Code::Cancelled,
+            Self::Unknown => tonic::Code::Unknown,
+            Self::InvalidArgument => tonic::Code::InvalidArgument,
+            Self::DeadlineExceeded => tonic::Code::DeadlineExceeded,
+            Self::NotFound => tonic::Code::NotFound,
+            Self::AlreadyExists => tonic::Code::AlreadyExists,
+            Self::PermissionDenied => tonic::Code::PermissionDenied,
+            Self::ResourceExhausted => tonic::Code::ResourceExhausted,
+            Self::FailedPrecondition => tonic::Code::FailedPrecondition,
+            Self::Aborted => tonic::Code::Aborted,
+            Self::OutOfRange => tonic::Code::OutOfRange,
+            Self::Unimplemented => tonic::Code::Unimplemented,
+            Self::Internal => tonic::Code::Internal,
+            Self::Unavailable => tonic::Code::Unavailable,
+            Self::DataLoss => tonic::Code::DataLoss,
+            Self::Unauthenticated => tonic::Code::Unauthenticated,
+        }
+    }
+
+    /// Classifies a Tonic status code like Python's code-only fallback.
+    ///
+    /// Python falls back to `Unknown` for `google.rpc.Code.OK` because it is
+    /// converting an error status. Tonic's finite public code enum has no
+    /// other unknown value, so `Ok` is the sole fallback case.
+    pub const fn from_code(code: tonic::Code) -> Self {
+        match code {
+            tonic::Code::Cancelled => Self::Cancelled,
+            tonic::Code::Unknown => Self::Unknown,
+            tonic::Code::InvalidArgument => Self::InvalidArgument,
+            tonic::Code::DeadlineExceeded => Self::DeadlineExceeded,
+            tonic::Code::NotFound => Self::NotFound,
+            tonic::Code::AlreadyExists => Self::AlreadyExists,
+            tonic::Code::PermissionDenied => Self::PermissionDenied,
+            tonic::Code::ResourceExhausted => Self::ResourceExhausted,
+            tonic::Code::FailedPrecondition => Self::FailedPrecondition,
+            tonic::Code::Aborted => Self::Aborted,
+            tonic::Code::OutOfRange => Self::OutOfRange,
+            tonic::Code::Unimplemented => Self::Unimplemented,
+            tonic::Code::Internal => Self::Internal,
+            tonic::Code::Unavailable => Self::Unavailable,
+            tonic::Code::DataLoss => Self::DataLoss,
+            tonic::Code::Unauthenticated => Self::Unauthenticated,
+            tonic::Code::Ok => Self::Unknown,
+        }
+    }
+
+    /// Classifies a Tonic status like Python's code-only RPC-error fallback.
+    pub fn from_status(status: &tonic::Status) -> Self {
+        Self::from_code(status.code())
+    }
+}
+
+/// Small, executable runtime slice: serialized actor state plus write
+/// idempotency. It intentionally uses process-local memory; durable storage,
+/// distributed locks, and multi-actor transactions remain separate layers.
+pub struct InMemoryActor<State, Response> {
+    inner: Mutex<InMemoryActorState<State, Response>>,
+}
+
+struct InMemoryActorState<State, Response> {
+    state: State,
+    completed_writes: HashMap<uuid::Uuid, CompletedWrite<Response>>,
+}
+
+struct CompletedWrite<Response> {
+    request_fingerprint: Option<Vec<u8>>,
+    response: Response,
+}
+
+#[derive(Debug)]
+pub(crate) enum IdempotencyCollision {
+    DifferentRequest,
+}
+
+impl<State, Response> InMemoryActor<State, Response>
+where
+    Response: Clone,
+{
+    pub fn new(state: State) -> Self {
+        Self {
+            inner: Mutex::new(InMemoryActorState {
+                state,
+                completed_writes: HashMap::new(),
+            }),
+        }
+    }
+
+    /// Reads one consistent state snapshot while excluding concurrent writers.
+    pub fn reader<Value>(&self, read: impl FnOnce(&State) -> Value) -> Value {
+        let guard = self.inner.lock().expect("actor state mutex poisoned");
+        read(&guard.state)
+    }
+
+    /// Runs a write exactly once for one idempotency key and returns the cached
+    /// response on replay. State and cached response become visible together.
+    pub fn writer(
+        &self,
+        idempotency_key: uuid::Uuid,
+        write: impl FnOnce(&mut State) -> Response,
+    ) -> Response {
+        let mut guard = self.inner.lock().expect("actor state mutex poisoned");
+        if let Some(write) = guard.completed_writes.get(&idempotency_key) {
+            return write.response.clone();
+        }
+        let response = write(&mut guard.state);
+        guard.completed_writes.insert(
+            idempotency_key,
+            CompletedWrite {
+                request_fingerprint: None,
+                response: response.clone(),
+            },
+        );
+        response
+    }
+
+    /// Runs a write once for a canonical request fingerprint. Reusing the key
+    /// with a different request fails without invoking the write callback.
+    pub(crate) fn writer_with_fingerprint(
+        &self,
+        idempotency_key: uuid::Uuid,
+        request_fingerprint: Vec<u8>,
+        write: impl FnOnce(&mut State) -> Response,
+    ) -> Result<Response, IdempotencyCollision> {
+        let mut guard = self.inner.lock().expect("actor state mutex poisoned");
+        if let Some(completed) = guard.completed_writes.get(&idempotency_key) {
+            if completed
+                .request_fingerprint
+                .as_deref()
+                .is_some_and(|stored| stored != request_fingerprint)
+            {
+                return Err(IdempotencyCollision::DifferentRequest);
+            }
+            return Ok(completed.response.clone());
+        }
+        let response = write(&mut guard.state);
+        guard.completed_writes.insert(
+            idempotency_key,
+            CompletedWrite {
+                request_fingerprint: Some(request_fingerprint),
+                response: response.clone(),
+            },
+        );
+        Ok(response)
+    }
+}
+
+impl<State, Response> InMemoryActor<State, Response>
+where
+    State: Clone,
+    Response: Clone,
+{
+    /// Runs a fallible write atomically. A returned error restores the complete
+    /// pre-write state and is deliberately not cached: a retry with the same
+    /// idempotency key gets another execution attempt.
+    pub fn writer_transactional<Error>(
+        &self,
+        idempotency_key: uuid::Uuid,
+        write: impl FnOnce(&mut State) -> Result<Response, Error>,
+    ) -> Result<Response, Error> {
+        let mut guard = self.inner.lock().expect("actor state mutex poisoned");
+        if let Some(write) = guard.completed_writes.get(&idempotency_key) {
+            return Ok(write.response.clone());
+        }
+        let checkpoint = guard.state.clone();
+        match write(&mut guard.state) {
+            Ok(response) => {
+                guard.completed_writes.insert(
+                    idempotency_key,
+                    CompletedWrite {
+                        request_fingerprint: None,
+                        response: response.clone(),
+                    },
+                );
+                Ok(response)
+            }
+            Err(error) => {
+                guard.state = checkpoint;
+                Err(error)
+            }
+        }
+    }
+}
+
+fn validate_reservations(
+    reserved: ReservedFields,
+    fields: &[FieldSpec],
+    oneofs: &[OneOfSpec],
+) -> Result<(), SchemaError> {
+    let active_tags = fields_by_tag(fields, oneofs);
+    let active_names: std::collections::BTreeSet<_> = fields
+        .iter()
+        .chain(oneofs.iter().flat_map(|oneof| oneof.fields.iter()))
+        .map(|field| field.name)
+        .collect();
+    let mut tags = std::collections::BTreeSet::new();
+    for tag in reserved.tags {
+        if *tag == 0
+            || (19000..=19999).contains(tag)
+            || !tags.insert(*tag)
+            || active_tags.contains_key(tag)
+        {
+            return Err(SchemaError::InvalidReservation);
+        }
+    }
+    let mut names = std::collections::BTreeSet::new();
+    for name in reserved.names {
+        if name.is_empty() || !names.insert(*name) || active_names.contains(name) {
+            return Err(SchemaError::InvalidReservation);
+        }
+    }
+    Ok(())
+}
+
+fn emit_reservations(proto: &mut String, reserved: ReservedFields, indent: &str) {
+    if !reserved.tags.is_empty() {
+        proto.push_str(indent);
+        proto.push_str("reserved ");
+        proto.push_str(
+            &reserved
+                .tags
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
+        proto.push_str(";\n");
+    }
+    if !reserved.names.is_empty() {
+        proto.push_str(indent);
+        proto.push_str("reserved ");
+        proto.push_str(
+            &reserved
+                .names
+                .iter()
+                .map(|name| format!("\"{name}\""))
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
+        proto.push_str(";\n");
+    }
+}
+
+fn is_protobuf_identifier(value: &str) -> bool {
+    let mut characters = value.bytes();
+    matches!(characters.next(), Some(b'a'..=b'z' | b'A'..=b'Z' | b'_'))
+        && characters
+            .all(|character| matches!(character, b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_'))
+}
+
+fn is_protobuf_package(value: &str) -> bool {
+    value.split('.').all(is_protobuf_identifier)
+}
+
+impl ApplicationSpec {
+    pub fn validate(&self) -> Result<(), SchemaError> {
+        if self.package.is_empty() {
+            return Err(SchemaError::EmptyPackage);
+        }
+        if !is_protobuf_package(self.package) {
+            return Err(SchemaError::InvalidPackage(self.package));
+        }
+        if self.state.name.is_empty() {
+            return Err(SchemaError::EmptyName("state"));
+        }
+        if !is_protobuf_identifier(self.state.name) {
+            return Err(SchemaError::InvalidIdentifier {
+                kind: "state",
+                name: self.state.name,
+            });
+        }
+        if self.service.name.is_empty() {
+            return Err(SchemaError::EmptyName("service"));
+        }
+        if !is_protobuf_identifier(self.service.name) {
+            return Err(SchemaError::InvalidIdentifier {
+                kind: "service",
+                name: self.service.name,
+            });
+        }
+        if self.service.state != self.state.name {
+            return Err(SchemaError::ServiceStateMismatch {
+                service: self.service.name,
+                state: self.state.name,
+            });
+        }
+
+        let mut tags = std::collections::BTreeSet::new();
+        let mut field_names = std::collections::BTreeSet::new();
+        for field in self.state.fields {
+            if field.name.is_empty() {
+                return Err(SchemaError::EmptyName("field"));
+            }
+            if !field_names.insert(field.name) {
+                return Err(SchemaError::DuplicateField(field.name));
+            }
+            if field.tag == 0 || (19000..=19999).contains(&field.tag) {
+                return Err(SchemaError::InvalidTag {
+                    field: field.name,
+                    tag: field.tag,
+                });
+            }
+            if !tags.insert(field.tag) {
+                return Err(SchemaError::DuplicateTag(field.tag));
+            }
+        }
+        validate_reservations(self.state.reserved, self.state.fields, &[])?;
+        let mut type_names = std::collections::BTreeSet::from([self.state.name]);
+        let mut enum_names = std::collections::BTreeSet::new();
+        for enum_spec in self.enums {
+            if enum_spec.name.is_empty() {
+                return Err(SchemaError::EmptyName("enum"));
+            }
+            if !enum_names.insert(enum_spec.name) {
+                return Err(SchemaError::DuplicateEnum(enum_spec.name));
+            }
+            if !type_names.insert(enum_spec.name) {
+                return Err(SchemaError::DuplicateType(enum_spec.name));
+            }
+            let Some(first) = enum_spec.variants.first() else {
+                return Err(SchemaError::InvalidEnum(enum_spec.name));
+            };
+            if first.name.is_empty() || first.number != 0 {
+                return Err(SchemaError::InvalidEnum(enum_spec.name));
+            }
+            let mut numbers = std::collections::BTreeSet::new();
+            let mut variant_names = std::collections::BTreeSet::new();
+            for variant in enum_spec.variants {
+                if variant.name.is_empty()
+                    || !variant_names.insert(variant.name)
+                    || !numbers.insert(variant.number)
+                {
+                    return Err(SchemaError::InvalidEnum(enum_spec.name));
+                }
+            }
+        }
+
+        let mut message_names = std::collections::BTreeSet::new();
+        for message in self.messages {
+            if message.name.is_empty() {
+                return Err(SchemaError::EmptyName("message"));
+            }
+            if !message_names.insert(message.name) {
+                return Err(SchemaError::DuplicateMessage(message.name));
+            }
+            if !type_names.insert(message.name) {
+                return Err(SchemaError::DuplicateType(message.name));
+            }
+            let mut tags = std::collections::BTreeSet::new();
+            let mut field_names = std::collections::BTreeSet::new();
+            for field in message.fields {
+                if field.name.is_empty() {
+                    return Err(SchemaError::EmptyName("field"));
+                }
+                if !field_names.insert(field.name) {
+                    return Err(SchemaError::DuplicateField(field.name));
+                }
+                if field.tag == 0 || (19000..=19999).contains(&field.tag) {
+                    return Err(SchemaError::InvalidTag {
+                        field: field.name,
+                        tag: field.tag,
+                    });
+                }
+                if !tags.insert(field.tag) {
+                    return Err(SchemaError::DuplicateTag(field.tag));
+                }
+            }
+            let mut oneof_names = std::collections::BTreeSet::new();
+            for oneof in message.oneofs {
+                if oneof.name.is_empty() {
+                    return Err(SchemaError::EmptyName("oneof"));
+                }
+                if !oneof_names.insert(oneof.name) {
+                    return Err(SchemaError::DuplicateOneOf(oneof.name));
+                }
+                if oneof.fields.is_empty() {
+                    return Err(SchemaError::EmptyName("oneof field"));
+                }
+                for field in oneof.fields {
+                    if field.name.is_empty() {
+                        return Err(SchemaError::EmptyName("field"));
+                    }
+                    if !field_names.insert(field.name) {
+                        return Err(SchemaError::DuplicateField(field.name));
+                    }
+                    if field.tag == 0 || (19000..=19999).contains(&field.tag) {
+                        return Err(SchemaError::InvalidTag {
+                            field: field.name,
+                            tag: field.tag,
+                        });
+                    }
+                    if !tags.insert(field.tag) {
+                        return Err(SchemaError::DuplicateTag(field.tag));
+                    }
+                }
+            }
+            validate_reservations(message.reserved, message.fields, message.oneofs)?;
+        }
+
+        let mut method_names = std::collections::BTreeSet::new();
+        for method in self.service.methods {
+            if method.name.is_empty() {
+                return Err(SchemaError::EmptyName("method"));
+            }
+            if !method_names.insert(method.name) {
+                return Err(SchemaError::DuplicateMethod(method.name));
+            }
+            for message in [method.request, method.response] {
+                if message.is_empty()
+                    || !self
+                        .messages
+                        .iter()
+                        .any(|declared| declared.name == message)
+                {
+                    return Err(SchemaError::UnknownMethodMessage(message));
+                }
+            }
+        }
+
+        for field in self.state.fields.iter().chain(
+            self.messages
+                .iter()
+                .flat_map(|message| message.fields.iter())
+                .chain(self.messages.iter().flat_map(|message| {
+                    message.oneofs.iter().flat_map(|oneof| oneof.fields.iter())
+                })),
+        ) {
+            if !field.field_type.has_valid_shape() {
+                return Err(SchemaError::InvalidFieldShape(field.name));
+            }
+            if let Some(name) = field.field_type.referenced_type() {
+                let declared = name == self.state.name
+                    || self.messages.iter().any(|message| message.name == name)
+                    || self.enums.iter().any(|enum_spec| enum_spec.name == name);
+                if !declared {
+                    return Err(SchemaError::UnknownMessage(name));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Rejects edits that would change the already-published Reboot wire API.
+    /// Both specs should pass [`Self::validate`] before this comparison.
+    pub fn check_backward_compatible_with(
+        &self,
+        previous: &ApplicationSpec,
+    ) -> Result<(), CompatibilityError> {
+        if self.package != previous.package {
+            return Err(CompatibilityError::PackageChanged);
+        }
+        if self.state.name != previous.state.name || self.service.state != previous.service.state {
+            return Err(CompatibilityError::StateChanged);
+        }
+        check_model_compatibility(
+            previous.state.name,
+            previous.state.fields,
+            &[],
+            self.state.fields,
+            &[],
+            previous.state.reserved,
+            self.state.reserved,
+        )?;
+
+        for previous_enum in previous.enums {
+            let Some(current_enum) = self
+                .enums
+                .iter()
+                .find(|enum_spec| enum_spec.name == previous_enum.name)
+            else {
+                return Err(CompatibilityError::MissingEnum(previous_enum.name));
+            };
+            check_enum_compatibility(previous_enum, current_enum)?;
+        }
+
+        for previous_message in previous.messages {
+            let Some(current_message) = self
+                .messages
+                .iter()
+                .find(|message| message.name == previous_message.name)
+            else {
+                return Err(CompatibilityError::MissingMessage(previous_message.name));
+            };
+            check_model_compatibility(
+                previous_message.name,
+                previous_message.fields,
+                previous_message.oneofs,
+                current_message.fields,
+                current_message.oneofs,
+                previous_message.reserved,
+                current_message.reserved,
+            )?;
+        }
+
+        for previous_method in previous.service.methods {
+            let Some(current_method) = self
+                .service
+                .methods
+                .iter()
+                .find(|method| method.name == previous_method.name)
+            else {
+                return Err(CompatibilityError::MissingMethod(previous_method.name));
+            };
+            if current_method.request != previous_method.request
+                || current_method.response != previous_method.response
+                || current_method.kind != previous_method.kind
+            {
+                return Err(CompatibilityError::ChangedMethod(previous_method.name));
+            }
+        }
+        Ok(())
+    }
+
+    /// Emits source compatible with Reboot's existing `rbt/v1alpha1/options.proto`.
+    pub fn to_proto(&self) -> Result<String, SchemaError> {
+        self.validate()?;
+        let mut proto =
+            String::from("syntax = \"proto3\";\n\nimport \"rbt/v1alpha1/options.proto\";\n\n");
+        proto.push_str("package ");
+        proto.push_str(self.package);
+        proto.push_str(";\n\n");
+
+        proto.push_str("message ");
+        proto.push_str(self.state.name);
+        proto.push_str(" {\n  option (rbt.v1alpha1.state) = {};\n");
+        for field in self.state.fields {
+            proto.push_str("  ");
+            proto.push_str(field.field_type.label());
+            proto.push_str(&field.field_type.proto());
+            proto.push(' ');
+            proto.push_str(field.name);
+            proto.push_str(" = ");
+            proto.push_str(&field.tag.to_string());
+            proto.push_str(" [(rbt.v1alpha1.field).required = ");
+            proto.push_str(if field.required { "true" } else { "false" });
+            proto.push_str("];\n");
+        }
+        emit_reservations(&mut proto, self.state.reserved, "  ");
+        proto.push_str("}\n\n");
+
+        for enum_spec in self.enums {
+            proto.push_str("enum ");
+            proto.push_str(enum_spec.name);
+            proto.push_str(" {\n");
+            for variant in enum_spec.variants {
+                proto.push_str("  ");
+                proto.push_str(variant.name);
+                proto.push_str(" = ");
+                proto.push_str(&variant.number.to_string());
+                proto.push_str(";\n");
+            }
+            proto.push_str("}\n\n");
+        }
+
+        for message in self.messages {
+            proto.push_str("message ");
+            proto.push_str(message.name);
+            proto.push_str(" {\n");
+            for field in message.fields {
+                proto.push_str("  ");
+                proto.push_str(field.field_type.label());
+                proto.push_str(&field.field_type.proto());
+                proto.push(' ');
+                proto.push_str(field.name);
+                proto.push_str(" = ");
+                proto.push_str(&field.tag.to_string());
+                proto.push_str(" [(rbt.v1alpha1.field).required = ");
+                proto.push_str(if field.required { "true" } else { "false" });
+                proto.push_str("];\n");
+            }
+            for oneof in message.oneofs {
+                proto.push_str("  oneof ");
+                proto.push_str(oneof.name);
+                proto.push_str(" {\n");
+                for field in oneof.fields {
+                    proto.push_str("    ");
+                    proto.push_str(&field.field_type.proto());
+                    proto.push(' ');
+                    proto.push_str(field.name);
+                    proto.push_str(" = ");
+                    proto.push_str(&field.tag.to_string());
+                    proto.push_str(" [(rbt.v1alpha1.field).required = ");
+                    proto.push_str(if field.required { "true" } else { "false" });
+                    proto.push_str("];\n");
+                }
+                proto.push_str("  }\n");
+            }
+            emit_reservations(&mut proto, message.reserved, "  ");
+            proto.push_str("}\n\n");
+        }
+
+        proto.push_str("service ");
+        proto.push_str(self.service.name);
+        proto.push_str(" {\n  option (rbt.v1alpha1.service) = { state: \"");
+        proto.push_str(self.service.state);
+        proto.push_str("\" };\n");
+        for method in self.service.methods {
+            proto.push_str("  rpc ");
+            proto.push_str(method.name);
+            proto.push('(');
+            proto.push_str(method.request);
+            proto.push_str(") returns (");
+            proto.push_str(method.response);
+            proto.push_str(") {\n    option (rbt.v1alpha1.method) = { ");
+            proto.push_str(method.kind.proto_option());
+            if let Some(description) = method.description {
+                proto.push_str(", description: \"");
+                proto.push_str(description);
+                proto.push('"');
+            }
+            proto.push_str(" };\n  }\n");
+        }
+        proto.push_str("}\n");
+        Ok(proto)
+    }
+}
+
+const STRING_FIELD: FieldType = FieldType::String;
+const PHONE_NUMBER_FIELD: FieldType = FieldType::Message("PhoneNumber");
+
+pub const CLINIC: ApplicationSpec = ApplicationSpec {
+    package: "clinic.v1",
+    state: StateSpec {
+        name: "Clinic",
+        fields: &[
+            FieldSpec {
+                name: "name",
+                tag: 1,
+                field_type: FieldType::String,
+                required: true,
+            },
+            FieldSpec {
+                name: "phone_number",
+                tag: 2,
+                field_type: FieldType::String,
+                required: false,
+            },
+        ],
+        reserved: ReservedFields {
+            tags: &[],
+            names: &[],
+        },
+    },
+    enums: &[EnumSpec {
+        name: "ClinicStatus",
+        variants: &[
+            EnumVariantSpec {
+                name: "CLINIC_STATUS_UNSPECIFIED",
+                number: 0,
+            },
+            EnumVariantSpec {
+                name: "CLINIC_STATUS_OPEN",
+                number: 1,
+            },
+            EnumVariantSpec {
+                name: "CLINIC_STATUS_CLOSED",
+                number: 2,
+            },
+        ],
+    }],
+    messages: &[
+        MessageSpec {
+            name: "RenameRequest",
+            fields: &[FieldSpec {
+                name: "name",
+                tag: 1,
+                field_type: FieldType::String,
+                required: true,
+            }],
+            oneofs: &[],
+            reserved: ReservedFields {
+                tags: &[],
+                names: &[],
+            },
+        },
+        MessageSpec {
+            name: "RenameResponse",
+            fields: &[],
+            oneofs: &[],
+            reserved: ReservedFields {
+                tags: &[],
+                names: &[],
+            },
+        },
+        MessageSpec {
+            name: "DetailsRequest",
+            fields: &[],
+            oneofs: &[],
+            reserved: ReservedFields {
+                tags: &[],
+                names: &[],
+            },
+        },
+        MessageSpec {
+            name: "PhoneNumber",
+            fields: &[FieldSpec {
+                name: "value",
+                tag: 1,
+                field_type: FieldType::String,
+                required: true,
+            }],
+            oneofs: &[],
+            reserved: ReservedFields {
+                tags: &[],
+                names: &[],
+            },
+        },
+        MessageSpec {
+            name: "DetailsResponse",
+            fields: &[
+                FieldSpec {
+                    name: "name",
+                    tag: 1,
+                    field_type: FieldType::String,
+                    required: true,
+                },
+                FieldSpec {
+                    name: "phone",
+                    tag: 2,
+                    field_type: FieldType::Message("PhoneNumber"),
+                    required: false,
+                },
+                FieldSpec {
+                    name: "aliases",
+                    tag: 3,
+                    field_type: FieldType::Repeated(&STRING_FIELD),
+                    required: false,
+                },
+                FieldSpec {
+                    name: "phone_book",
+                    tag: 4,
+                    field_type: FieldType::Map {
+                        key: MapKeyType::String,
+                        value: &PHONE_NUMBER_FIELD,
+                    },
+                    required: false,
+                },
+                FieldSpec {
+                    name: "status",
+                    tag: 5,
+                    field_type: FieldType::Enum("ClinicStatus"),
+                    required: false,
+                },
+            ],
+            oneofs: &[OneOfSpec {
+                name: "preferred_contact",
+                fields: &[
+                    FieldSpec {
+                        name: "email",
+                        tag: 6,
+                        field_type: FieldType::String,
+                        required: false,
+                    },
+                    FieldSpec {
+                        name: "pager",
+                        tag: 7,
+                        field_type: FieldType::String,
+                        required: false,
+                    },
+                ],
+            }],
+            reserved: ReservedFields {
+                tags: &[],
+                names: &[],
+            },
+        },
+    ],
+    service: ServiceSpec {
+        name: "ClinicMethods",
+        state: "Clinic",
+        methods: &[
+            MethodSpec {
+                name: "Rename",
+                request: "RenameRequest",
+                response: "RenameResponse",
+                kind: MethodKind::Writer,
+                description: Some("Renames the clinic."),
+            },
+            MethodSpec {
+                name: "Details",
+                request: "DetailsRequest",
+                response: "DetailsResponse",
+                kind: MethodKind::Reader,
+                description: Some("Reads clinic details."),
+            },
+        ],
+    },
+};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use prost::Message;
+
+    #[test]
+    fn scalar_field_types_emit_protobuf_scalar_names() {
+        for (field_type, proto) in [
+            (FieldType::Bool, "bool"),
+            (FieldType::Bytes, "bytes"),
+            (FieldType::F32, "float"),
+            (FieldType::F64, "double"),
+            (FieldType::Fixed32, "fixed32"),
+            (FieldType::Fixed64, "fixed64"),
+            (FieldType::I32, "int32"),
+            (FieldType::I64, "int64"),
+            (FieldType::SFixed32, "sfixed32"),
+            (FieldType::SFixed64, "sfixed64"),
+            (FieldType::SInt32, "sint32"),
+            (FieldType::SInt64, "sint64"),
+            (FieldType::String, "string"),
+            (FieldType::U32, "uint32"),
+            (FieldType::U64, "uint64"),
+        ] {
+            assert_eq!(field_type.proto(), proto);
+        }
+    }
+
+    #[test]
+    fn map_key_types_emit_protobuf_eligible_key_names() {
+        for (key_type, proto) in [
+            (MapKeyType::Bool, "bool"),
+            (MapKeyType::Fixed32, "fixed32"),
+            (MapKeyType::Fixed64, "fixed64"),
+            (MapKeyType::I32, "int32"),
+            (MapKeyType::I64, "int64"),
+            (MapKeyType::SFixed32, "sfixed32"),
+            (MapKeyType::SFixed64, "sfixed64"),
+            (MapKeyType::SInt32, "sint32"),
+            (MapKeyType::SInt64, "sint64"),
+            (MapKeyType::String, "string"),
+            (MapKeyType::U32, "uint32"),
+            (MapKeyType::U64, "uint64"),
+        ] {
+            assert_eq!(key_type.proto(), proto);
+        }
+    }
+
+    #[test]
+    fn clinic_emits_reboot_compatible_proto() {
+        let proto = CLINIC.to_proto().unwrap();
+        assert!(proto.contains("import \"rbt/v1alpha1/options.proto\";"));
+        assert!(proto.contains("option (rbt.v1alpha1.state) = {};"));
+        assert!(
+            proto.contains(
+                "optional string phone_number = 2 [(rbt.v1alpha1.field).required = false];"
+            )
+        );
+        assert!(proto.contains("message RenameRequest {\n  optional string name = 1"));
+        assert!(proto.contains("optional PhoneNumber phone = 2"));
+        assert!(proto.contains("repeated string aliases = 3"));
+        assert!(proto.contains("map<string, PhoneNumber> phone_book = 4"));
+        assert!(proto.contains("enum ClinicStatus {\n  CLINIC_STATUS_UNSPECIFIED = 0;"));
+        assert!(proto.contains("optional ClinicStatus status = 5"));
+        assert!(proto.contains("oneof preferred_contact {\n    string email = 6"));
+        assert!(proto.contains(
+            "option (rbt.v1alpha1.method) = { writer: {}, description: \"Renames the clinic.\" };"
+        ));
+    }
+
+    #[test]
+    fn emitted_proto_compiles_against_reboots_options() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("clinic.proto");
+        let descriptor = directory.path().join("clinic.pb");
+        std::fs::write(&source, CLINIC.to_proto().unwrap()).unwrap();
+
+        let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .unwrap();
+        let status = std::process::Command::new(protoc_bin_vendored::protoc_bin_path().unwrap())
+            .arg(format!("--proto_path={}", repository.display()))
+            .arg(format!("--proto_path={}", directory.path().display()))
+            .arg(format!("--descriptor_set_out={}", descriptor.display()))
+            .arg(&source)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        assert!(descriptor.is_file());
+    }
+
+    #[tokio::test]
+    async fn external_context_rejects_an_invalid_endpoint() {
+        let error = ExternalContext::new("opaque-state-ref")
+            .connect("not a valid endpoint")
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("invalid URI"));
+    }
+
+    #[test]
+    fn external_endpoint_matches_python_url_contract() {
+        let endpoint = ExternalEndpoint::parse("https://example.test:8443").unwrap();
+        assert_eq!(endpoint.as_str(), "https://example.test:8443");
+        assert_eq!(
+            ExternalEndpoint::parse("example.test").unwrap_err(),
+            ExternalEndpointError::MissingScheme
+        );
+        assert_eq!(
+            ExternalEndpoint::parse("grpc://example.test").unwrap_err(),
+            ExternalEndpointError::UnsupportedScheme("grpc".into())
+        );
+        for invalid in [
+            "http://example.test/",
+            "http://example.test/path",
+            "http://example.test?query=value",
+            "http://example.test#fragment",
+        ] {
+            assert!(matches!(
+                ExternalEndpoint::parse(invalid),
+                Err(ExternalEndpointError::HasPathQueryOrFragment)
+                    | Err(ExternalEndpointError::InvalidUrl)
+            ));
+        }
+    }
+
+    #[test]
+    fn system_aborted_status_encodes_matching_rich_envelopes() {
+        let statuses = [
+            (
+                SystemAborted::StateAlreadyConstructed(database_proto::StateAlreadyConstructed {}),
+                tonic::Code::Aborted,
+                "type.googleapis.com/rbt.v1alpha1.StateAlreadyConstructed",
+            ),
+            (
+                SystemAborted::NotFound(database_proto::NotFound {}),
+                tonic::Code::NotFound,
+                "type.googleapis.com/rbt.v1alpha1.NotFound",
+            ),
+            (
+                SystemAborted::TransactionShouldRetry(database_proto::TransactionShouldRetry {
+                    reason: database_proto::transaction_should_retry::Reason::RestartDetected
+                        as i32,
+                    retry_age: "root-attempt".into(),
+                }),
+                tonic::Code::Unavailable,
+                "type.googleapis.com/rbt.v1alpha1.TransactionShouldRetry",
+            ),
+        ];
+        for (error, code, type_url) in statuses {
+            let status = error.into_status("backend outcome");
+            assert_eq!(status.code(), code);
+            assert_eq!(status.message(), "backend outcome");
+            let rich = declared_error_details(&status).unwrap().unwrap();
+            assert_eq!(rich.code, code as i32);
+            assert_eq!(rich.message, "backend outcome");
+            assert_eq!(rich.details.len(), 1);
+            assert_eq!(rich.details[0].type_url, type_url);
+            assert!(
+                system_aborted_from_detail(&rich.details[0])
+                    .unwrap()
+                    .is_some()
+            );
+        }
+    }
+
+    #[test]
+    fn declared_error_details_rejects_conflicting_inner_envelope() {
+        let detail = prost_types::Any {
+            type_url: "type.googleapis.com/test.Declared".into(),
+            value: vec![1],
+        };
+        for inner in [
+            googleapis_tonic_google_rpc::google::rpc::Status {
+                code: tonic::Code::Unknown as i32,
+                message: "outer".into(),
+                details: vec![detail.clone()],
+            },
+            googleapis_tonic_google_rpc::google::rpc::Status {
+                code: tonic::Code::InvalidArgument as i32,
+                message: "inner".into(),
+                details: vec![detail.clone()],
+            },
+        ] {
+            let outer = tonic::Status::with_details(
+                tonic::Code::InvalidArgument,
+                "outer",
+                inner.encode_to_vec().into(),
+            );
+            assert_eq!(declared_error_details(&outer).unwrap(), None);
+        }
+    }
+
+    #[test]
+    fn retryable_statuses_match_python_unavailable_only_policy() {
+        assert!(is_retryable_status_code(tonic::Code::Unavailable));
+        assert!(is_retryable_status(&tonic::Status::unavailable(
+            "disconnected"
+        )));
+        for code in [
+            tonic::Code::Aborted,
+            tonic::Code::Cancelled,
+            tonic::Code::DeadlineExceeded,
+            tonic::Code::Internal,
+            tonic::Code::Unknown,
+        ] {
+            assert!(!is_retryable_status_code(code));
+        }
+    }
+
+    #[test]
+    fn grpc_status_error_matches_python_code_only_fallback() {
+        let cases = [
+            (tonic::Code::Cancelled, GrpcStatusError::Cancelled),
+            (tonic::Code::Unknown, GrpcStatusError::Unknown),
+            (
+                tonic::Code::InvalidArgument,
+                GrpcStatusError::InvalidArgument,
+            ),
+            (
+                tonic::Code::DeadlineExceeded,
+                GrpcStatusError::DeadlineExceeded,
+            ),
+            (tonic::Code::NotFound, GrpcStatusError::NotFound),
+            (tonic::Code::AlreadyExists, GrpcStatusError::AlreadyExists),
+            (
+                tonic::Code::PermissionDenied,
+                GrpcStatusError::PermissionDenied,
+            ),
+            (
+                tonic::Code::ResourceExhausted,
+                GrpcStatusError::ResourceExhausted,
+            ),
+            (
+                tonic::Code::FailedPrecondition,
+                GrpcStatusError::FailedPrecondition,
+            ),
+            (tonic::Code::Aborted, GrpcStatusError::Aborted),
+            (tonic::Code::OutOfRange, GrpcStatusError::OutOfRange),
+            (tonic::Code::Unimplemented, GrpcStatusError::Unimplemented),
+            (tonic::Code::Internal, GrpcStatusError::Internal),
+            (tonic::Code::Unavailable, GrpcStatusError::Unavailable),
+            (tonic::Code::DataLoss, GrpcStatusError::DataLoss),
+            (
+                tonic::Code::Unauthenticated,
+                GrpcStatusError::Unauthenticated,
+            ),
+        ];
+        for (code, error) in cases {
+            assert_eq!(GrpcStatusError::from_code(code), error);
+            assert_eq!(error.code(), code);
+        }
+        assert_eq!(
+            GrpcStatusError::from_code(tonic::Code::Ok),
+            GrpcStatusError::Unknown
+        );
+        assert_eq!(
+            GrpcStatusError::from_status(&tonic::Status::not_found("missing")),
+            GrpcStatusError::NotFound
+        );
+    }
+
+    #[test]
+    fn external_context_attaches_reboot_metadata() {
+        let caller_id = CallerId::new("a1234567890", Some("s1234567890".into())).unwrap();
+        let context = ExternalContext::new("opaque-state-ref")
+            .with_bearer_token("test-token")
+            .with_caller_id(caller_id.clone());
+        let before_writer = std::time::SystemTime::now();
+        let request = context
+            .writer(proto::Text {
+                content: "hello from rust".to_owned(),
+            })
+            .unwrap();
+        let after_writer = std::time::SystemTime::now();
+        let metadata = request.metadata();
+        assert_eq!(
+            metadata.get("x-reboot-state-ref").unwrap(),
+            "opaque-state-ref"
+        );
+        let automatic_key = uuid::Uuid::parse_str(
+            metadata
+                .get("x-reboot-idempotency-key")
+                .unwrap()
+                .to_str()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(automatic_key.get_version_num(), 7);
+        let (seconds, nanos) = automatic_key.get_timestamp().unwrap().to_unix();
+        let automatic_expiry = std::time::UNIX_EPOCH + std::time::Duration::new(seconds, nanos);
+        assert!(
+            automatic_expiry
+                >= before_writer + std::time::Duration::from_secs(7 * 24 * 60 * 60 - 1)
+        );
+        assert!(
+            automatic_expiry <= after_writer + std::time::Duration::from_secs(7 * 24 * 60 * 60 + 1)
+        );
+        assert_eq!(metadata.get("authorization").unwrap(), "Bearer test-token");
+        assert_eq!(
+            metadata
+                .get("x-reboot-caller-id")
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            caller_id.to_string()
+        );
+        assert!(metadata.get("x-reboot-internal-call").is_none());
+        assert!(metadata.get("x-reboot-transaction-ids").is_none());
+
+        let retry_key = uuid::Uuid::from_u128(42);
+        let retry = context
+            .writer_with_key(
+                proto::Text {
+                    content: "retry".to_owned(),
+                },
+                retry_key,
+            )
+            .unwrap();
+        assert_eq!(
+            retry
+                .metadata()
+                .get("x-reboot-idempotency-key")
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            retry_key.to_string()
+        );
+
+        let reader = context.reader(proto::Empty {}).unwrap();
+        assert!(reader.metadata().get("x-reboot-idempotency-key").is_none());
+    }
+
+    #[test]
+    fn reboot_headers_drop_untrusted_application_identity_and_unknown_headers() {
+        let mut headers = RebootHeaders::new("actor/opaque-ref");
+        headers.application_id = Some("application-id".into());
+        headers.server_id = Some("server-id".into());
+        headers.workflow_id = Some(uuid::Uuid::from_u128(1));
+        headers.workflow_iteration = Some(7);
+        headers.transaction_ids = Some(vec![uuid::Uuid::from_u128(2), uuid::Uuid::from_u128(3)]);
+        headers.transaction_coordinator_state_type = Some("example.Coordinator".into());
+        headers.transaction_coordinator_state_ref = Some("coordinator/42".into());
+        headers.transaction_retry_age = Some(uuid::Uuid::from_u128(4));
+        headers.idempotency_key = Some(uuid::Uuid::from_u128(5));
+        headers.bearer_token = Some("bearer-token".into());
+        headers.task_schedule =
+            Some(DateTime::parse_from_rfc3339("2026-10-03T12:00:00+00:00").unwrap());
+        headers.cookie = Some("session=abc".into());
+        headers.caller_id = Some("application_id=cloud".parse().unwrap());
+        headers.traceparent =
+            Some("00-0123456789abcdef0123456789abcdef-0123456789abcdef-01".into());
+        headers.tracestate = Some("vendor=value".into());
+        headers.internal_call = true;
+        headers.coordinator_read_only_aware = true;
+
+        let mut inbound = headers.to_metadata().unwrap();
+        inbound.insert(
+            TASK_SCHEDULE_HEADER,
+            "2026-10-03T12:00:00+00:00".parse().unwrap(),
+        );
+        inbound.insert("x-example-unknown", "must-not-forward".parse().unwrap());
+        assert_eq!(
+            inbound.get(TRANSACTION_IDS_HEADER).unwrap(),
+            "[\"00000000-0000-0000-0000-000000000002\", \"00000000-0000-0000-0000-000000000003\"]"
+        );
+
+        let parsed = RebootHeaders::from_metadata(&inbound).unwrap();
+        let mut expected = headers.clone();
+        expected.application_id = None;
+        assert_eq!(parsed, expected);
+        let emitted = parsed.to_metadata().unwrap();
+        assert!(emitted.get("x-example-unknown").is_none());
+        // Python's server interceptor supplies application identity; an inbound
+        // client header must never be admitted or forwarded as trusted Rust
+        // context before that host lifecycle exists.
+        assert!(emitted.get(APPLICATION_ID_HEADER).is_none());
+        // Python reads `x-reboot-task-schedule` on inbound task delivery but
+        // deliberately does not propagate it to downstream RPC metadata.
+        assert!(emitted.get(TASK_SCHEDULE_HEADER).is_none());
+        assert_eq!(emitted.len(), inbound.len() - 3);
+    }
+
+    #[test]
+    fn bearer_tokens_match_python_length_and_metadata_validation() {
+        let maximum = "a".repeat(MAX_BEARER_TOKEN_LENGTH);
+        let mut valid = RebootHeaders::new("actor");
+        valid.bearer_token = Some(maximum);
+        assert!(valid.to_metadata().is_ok());
+
+        let too_long = "a".repeat(MAX_BEARER_TOKEN_LENGTH + 1);
+        let mut outbound = RebootHeaders::new("actor");
+        outbound.bearer_token = Some(too_long.clone());
+        assert!(matches!(
+            outbound.to_metadata(),
+            Err(ContextError::InvalidBearerToken)
+        ));
+
+        let mut inbound = tonic::metadata::MetadataMap::new();
+        inbound.insert(STATE_REF_HEADER, "actor".parse().unwrap());
+        inbound.insert(
+            AUTHORIZATION_HEADER,
+            format!("Bearer {too_long}").parse().unwrap(),
+        );
+        assert_eq!(
+            RebootHeaders::from_metadata(&inbound),
+            Err(ContextError::InvalidBearerToken)
+        );
+    }
+
+    #[test]
+    fn authorization_header_copy_drops_transaction_and_mutation_context() {
+        let mut headers = RebootHeaders::new("actor/ref");
+        headers.application_id = Some("application".into());
+        headers.server_id = Some("server".into());
+        headers.workflow_id = Some(uuid::Uuid::from_u128(1));
+        headers.workflow_iteration = Some(2);
+        headers.transaction_ids = Some(vec![uuid::Uuid::from_u128(3)]);
+        headers.transaction_coordinator_state_type = Some("example.Coordinator".into());
+        headers.transaction_coordinator_state_ref = Some("coordinator/ref".into());
+        headers.transaction_retry_age = Some(uuid::Uuid::from_u128(4));
+        headers.idempotency_key = Some(uuid::Uuid::from_u128(5));
+        headers.task_schedule =
+            Some(DateTime::parse_from_rfc3339("2026-10-03T12:00:00+00:00").unwrap());
+        headers.internal_call = true;
+        headers.coordinator_read_only_aware = true;
+        headers.bearer_token = Some("token".into());
+        headers.cookie = Some("cookie".into());
+        headers.caller_id = Some("application_id=cloud".parse().unwrap());
+        headers.traceparent = Some("traceparent".into());
+        headers.tracestate = Some("tracestate".into());
+
+        let authorization = headers.copy_for_token_verification_and_authorization();
+        assert_eq!(authorization.state_ref, "actor/ref");
+        assert_eq!(authorization.application_id, Some("application".into()));
+        assert_eq!(authorization.server_id, Some("server".into()));
+        assert_eq!(authorization.bearer_token, Some("token".into()));
+        assert_eq!(authorization.cookie, Some("cookie".into()));
+        assert_eq!(authorization.caller_id, "application_id=cloud".parse().ok());
+        assert_eq!(authorization.traceparent, Some("traceparent".into()));
+        assert_eq!(authorization.tracestate, Some("tracestate".into()));
+        assert!(authorization.workflow_id.is_none());
+        assert!(authorization.workflow_iteration.is_none());
+        assert!(authorization.transaction_ids.is_none());
+        assert!(authorization.transaction_coordinator_state_type.is_none());
+        assert!(authorization.transaction_coordinator_state_ref.is_none());
+        assert!(authorization.transaction_retry_age.is_none());
+        assert!(authorization.idempotency_key.is_none());
+        assert!(authorization.task_schedule.is_none());
+        assert!(!authorization.internal_call);
+        assert!(!authorization.coordinator_read_only_aware);
+    }
+
+    #[test]
+    fn caller_id_matches_python_wire_validation_and_forward_compatibility() {
+        let caller: CallerId = "unknown=value,space_id=sabc123def4,application_id=aabc123def4"
+            .parse()
+            .unwrap();
+        assert_eq!(caller.application_id(), "aabc123def4");
+        assert_eq!(caller.space_id(), Some("sabc123def4"));
+        assert_eq!(
+            caller.to_string(),
+            "space_id=sabc123def4,application_id=aabc123def4"
+        );
+
+        let duplicate: CallerId = "application_id=cloud,application_id=aabc123def4"
+            .parse()
+            .unwrap();
+        assert_eq!(duplicate.application_id(), "aabc123def4");
+        assert!("space_id=sabc123def4".parse::<CallerId>().is_err());
+        assert!("application_id=invalid".parse::<CallerId>().is_err());
+        assert!("application_id=aABC123def4".parse::<CallerId>().is_err());
+        assert!(
+            "application_id=aabc123def4,space_id=invalid"
+                .parse::<CallerId>()
+                .is_err()
+        );
+
+        let mut metadata = tonic::metadata::MetadataMap::new();
+        metadata.insert(STATE_REF_HEADER, "actor".parse().unwrap());
+        metadata.insert(
+            CALLER_ID_HEADER,
+            "space_id=sabc123def4,application_id=aabc123def4"
+                .parse()
+                .unwrap(),
+        );
+        assert_eq!(
+            RebootHeaders::from_metadata(&metadata).unwrap().caller_id,
+            Some(caller)
+        );
+    }
+
+    #[test]
+    fn python_caller_id_and_metadata_corpus_matches_public_header_subset() {
+        // `aio/caller_id.py:37-65`: empty comma components are ignored, each
+        // non-empty component requires an equals sign, unknown keys are ignored,
+        // and repeated keys retain the last value.
+        let caller_id_vectors = [
+            (
+                ",,unknown=future,space_id=sabc123def4,,application_id=aabc123def4,",
+                Some(("aabc123def4", Some("sabc123def4"))),
+            ),
+            (
+                "application_id=cloud,application_id=aabc123def4",
+                Some(("aabc123def4", None)),
+            ),
+            (
+                "space_id=sabc123def4,space_id=invalid,application_id=cloud",
+                None,
+            ),
+            ("application_id=cloud,unknown", None),
+            ("unknown=value", None),
+            ("application_id=", None),
+        ];
+        for (wire, expected) in caller_id_vectors {
+            match expected {
+                Some((application_id, space_id)) => {
+                    let parsed: CallerId = wire.parse().unwrap();
+                    assert_eq!(parsed.application_id(), application_id, "{wire}");
+                    assert_eq!(parsed.space_id(), space_id, "{wire}");
+                }
+                None => assert!(wire.parse::<CallerId>().is_err(), "{wire}"),
+            }
+        }
+
+        // `aio/headers.py:127-137,251-393,400-521`: `dict(metadata)` selects
+        // each known key's final value and metadata re-emission drops unknown
+        // inbound keys. The authorization projection is transaction-free.
+        let first_workflow = uuid::Uuid::from_u128(1);
+        let final_workflow = uuid::Uuid::from_u128(2);
+        let mut inbound = tonic::metadata::MetadataMap::new();
+        inbound.append(STATE_REF_HEADER, "discarded-state".parse().unwrap());
+        inbound.append(STATE_REF_HEADER, "actor/final".parse().unwrap());
+        inbound.append(AUTHORIZATION_HEADER, "Bearer discarded".parse().unwrap());
+        inbound.append(AUTHORIZATION_HEADER, "Bearer retained".parse().unwrap());
+        inbound.append(CALLER_ID_HEADER, "application_id=cloud".parse().unwrap());
+        inbound.append(
+            CALLER_ID_HEADER,
+            "space_id=sabc123def4,application_id=aabc123def4"
+                .parse()
+                .unwrap(),
+        );
+        inbound.append(
+            WORKFLOW_ID_HEADER,
+            first_workflow.to_string().parse().unwrap(),
+        );
+        inbound.append(
+            WORKFLOW_ID_HEADER,
+            final_workflow.to_string().parse().unwrap(),
+        );
+        inbound.append("x-reboot-unknown-future-key", "drop-me".parse().unwrap());
+
+        let parsed = RebootHeaders::from_metadata(&inbound).unwrap();
+        assert_eq!(parsed.state_ref, "actor/final");
+        assert_eq!(parsed.bearer_token.as_deref(), Some("retained"));
+        assert_eq!(parsed.workflow_id, Some(final_workflow));
+        assert_eq!(
+            parsed
+                .caller_id
+                .as_ref()
+                .map(ToString::to_string)
+                .as_deref(),
+            Some("space_id=sabc123def4,application_id=aabc123def4")
+        );
+
+        let emitted = parsed.to_metadata().unwrap();
+        assert!(emitted.get("x-reboot-unknown-future-key").is_none());
+        assert_eq!(emitted.get(STATE_REF_HEADER).unwrap(), "actor/final");
+        assert_eq!(
+            emitted.get(AUTHORIZATION_HEADER).unwrap(),
+            "Bearer retained"
+        );
+        assert_eq!(
+            emitted.get(CALLER_ID_HEADER).unwrap(),
+            "space_id=sabc123def4,application_id=aabc123def4"
+        );
+
+        let authorization = parsed.copy_for_token_verification_and_authorization();
+        assert_eq!(authorization.state_ref, "actor/final");
+        assert_eq!(authorization.bearer_token.as_deref(), Some("retained"));
+        assert_eq!(authorization.workflow_id, None);
+        assert_eq!(
+            authorization
+                .caller_id
+                .as_ref()
+                .map(ToString::to_string)
+                .as_deref(),
+            Some("space_id=sabc123def4,application_id=aabc123def4")
+        );
+    }
+
+    #[test]
+    fn task_schedule_is_inbound_only_and_defaults_empty_metadata_to_now() {
+        let mut scheduled = tonic::metadata::MetadataMap::new();
+        scheduled.insert(STATE_REF_HEADER, "actor".parse().unwrap());
+        scheduled.insert(
+            TASK_SCHEDULE_HEADER,
+            "2026-10-03T12:00:00+02:00".parse().unwrap(),
+        );
+        let parsed = RebootHeaders::from_metadata(&scheduled).unwrap();
+        assert_eq!(
+            parsed.task_schedule,
+            Some(DateTime::parse_from_rfc3339("2026-10-03T12:00:00+02:00").unwrap())
+        );
+        assert!(
+            parsed
+                .to_metadata()
+                .unwrap()
+                .get(TASK_SCHEDULE_HEADER)
+                .is_none()
+        );
+
+        let mut empty = tonic::metadata::MetadataMap::new();
+        empty.insert(STATE_REF_HEADER, "actor".parse().unwrap());
+        empty.insert(TASK_SCHEDULE_HEADER, "".parse().unwrap());
+        assert!(
+            RebootHeaders::from_metadata(&empty)
+                .unwrap()
+                .task_schedule
+                .is_some()
+        );
+
+        let mut malformed = tonic::metadata::MetadataMap::new();
+        malformed.insert(STATE_REF_HEADER, "actor".parse().unwrap());
+        malformed.insert(TASK_SCHEDULE_HEADER, "tomorrow-ish".parse().unwrap());
+        assert_eq!(
+            RebootHeaders::from_metadata(&malformed),
+            Err(ContextError::InvalidMetadata)
+        );
+    }
+
+    #[test]
+    fn task_schedule_accepts_python_basic_offsets_without_widening_timezone_rules() {
+        // Source: `time.py:74-80` delegates schedule strings to
+        // `datetime.fromisoformat`, and `aio/headers.py:346-352` uses that
+        // conversion only for inbound x-reboot-task-schedule metadata.
+        // Python 3.11.15 vector output:
+        //   2026-10-03T12:00:00+0200  -> 2026-10-03T12:00:00+02:00
+        //   2026-10-03T12:00:00-0530  -> 2026-10-03T12:00:00-05:30
+        // Chrono RFC 3339 rejects those two basic offsets, although the
+        // normalized values are exact `DateTime<FixedOffset>` values.
+        let vectors = [
+            ("2026-10-03T12:00:00+0200", "2026-10-03T12:00:00+02:00"),
+            ("2026-10-03T12:00:00-0530", "2026-10-03T12:00:00-05:30"),
+        ];
+        for (wire, expected) in vectors {
+            let mut metadata = tonic::metadata::MetadataMap::new();
+            metadata.insert(STATE_REF_HEADER, "actor".parse().unwrap());
+            metadata.insert(TASK_SCHEDULE_HEADER, wire.parse().unwrap());
+            let headers = RebootHeaders::from_metadata(&metadata).unwrap();
+            assert_eq!(
+                headers.task_schedule.unwrap().to_rfc3339(),
+                expected,
+                "{wire}"
+            );
+            // Schedule metadata remains inbound-only after normalization.
+            assert!(
+                headers
+                    .to_metadata()
+                    .unwrap()
+                    .get(TASK_SCHEDULE_HEADER)
+                    .is_none()
+            );
+        }
+
+        // Python also accepts offset seconds, fractional offset seconds, and
+        // arbitrary one-character date/time separators. FixedOffset can retain
+        // whole offset seconds but not fractional ones; this bounded parser
+        // intentionally adds only basic ±HHMM and lets Chrono reject the rest
+        // rather than widening the schedule wire grammar piecemeal. `Z` and a
+        // space separator are already accepted by Chrono's RFC 3339 parser.
+        for wire in [
+            "2026-10-03T12:00:00+02:00:30",
+            "2026-10-03T12:00:00+02:00:30.5",
+            "2026-10-03T12:00:00+020030",
+            "2026-10-03T12:00:00+020030.5",
+            "2026-10-03T12:00:00+02.5",
+            "2026-10-03T12:00:00+02:30.5",
+            "2026-10-03X12:00:00+0200",
+            "2026-10-03T12:00:00",
+            "2026-10-03",
+        ] {
+            assert!(parse_task_schedule(wire).is_err(), "{wire}");
+        }
+        for wire in ["2026-10-03T12:00:00Z", "2026-10-03 12:00:00+02:00"] {
+            assert!(parse_task_schedule(wire).is_ok(), "{wire}");
+        }
+    }
+
+    #[test]
+    fn reboot_headers_reject_malformed_transaction_and_identifier_metadata() {
+        let mut malformed_transaction = tonic::metadata::MetadataMap::new();
+        malformed_transaction.insert(STATE_REF_HEADER, "actor".parse().unwrap());
+        malformed_transaction.insert(TRANSACTION_IDS_HEADER, "[\"not-a-uuid\"]".parse().unwrap());
+        malformed_transaction.insert(
+            TRANSACTION_COORDINATOR_STATE_TYPE_HEADER,
+            "example.Coordinator".parse().unwrap(),
+        );
+        malformed_transaction.insert(
+            TRANSACTION_COORDINATOR_STATE_REF_HEADER,
+            "coordinator".parse().unwrap(),
+        );
+        assert_eq!(
+            RebootHeaders::from_metadata(&malformed_transaction),
+            Err(ContextError::InvalidTransactionIds)
+        );
+
+        let mut malformed_retry_age = tonic::metadata::MetadataMap::new();
+        malformed_retry_age.insert(STATE_REF_HEADER, "actor".parse().unwrap());
+        malformed_retry_age.insert(TRANSACTION_RETRY_AGE_HEADER, "not-a-uuid".parse().unwrap());
+        assert_eq!(
+            RebootHeaders::from_metadata(&malformed_retry_age),
+            Err(ContextError::InvalidUuid(TRANSACTION_RETRY_AGE_HEADER))
+        );
+
+        let mut malformed_idempotency_key = tonic::metadata::MetadataMap::new();
+        malformed_idempotency_key.insert(STATE_REF_HEADER, "actor".parse().unwrap());
+        malformed_idempotency_key.insert(IDEMPOTENCY_KEY_HEADER, "not-a-uuid".parse().unwrap());
+        assert_eq!(
+            RebootHeaders::from_metadata(&malformed_idempotency_key),
+            Err(ContextError::InvalidUuid(IDEMPOTENCY_KEY_HEADER))
+        );
+    }
+
+    #[test]
+    fn external_context_rejects_empty_state_references() {
+        assert!(matches!(
+            ExternalContext::new("").reader(proto::Empty {}),
+            Err(ContextError::EmptyStateRef)
+        ));
+    }
+
+    #[tokio::test]
+    async fn generated_client_reaches_a_tonic_service_with_reboot_context() {
+        #[derive(Default)]
+        struct Echo;
+
+        #[tonic::async_trait]
+        impl proto::echo_methods_server::EchoMethods for Echo {
+            async fn reply(
+                &self,
+                request: tonic::Request<proto::Text>,
+            ) -> Result<tonic::Response<proto::Text>, tonic::Status> {
+                let metadata = request.metadata();
+                if metadata
+                    .get("x-reboot-state-ref")
+                    .and_then(|value| value.to_str().ok())
+                    != Some("echo-42")
+                    || metadata.get("x-reboot-idempotency-key").is_none()
+                    || metadata
+                        .get("authorization")
+                        .and_then(|value| value.to_str().ok())
+                        != Some("Bearer integration-token")
+                {
+                    return Err(tonic::Status::unauthenticated("missing Reboot context"));
+                }
+                Ok(tonic::Response::new(request.into_inner()))
+            }
+
+            async fn last_message(
+                &self,
+                _request: tonic::Request<proto::Empty>,
+            ) -> Result<tonic::Response<proto::Text>, tonic::Status> {
+                Ok(tonic::Response::new(proto::Text {
+                    content: "last message".to_owned(),
+                }))
+            }
+        }
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            tonic::transport::Server::builder()
+                .add_service(proto::echo_methods_server::EchoMethodsServer::new(Echo))
+                .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+                .await
+                .unwrap();
+        });
+
+        let mut client =
+            proto::echo_methods_client::EchoMethodsClient::connect(format!("http://{address}"))
+                .await
+                .unwrap();
+        let context = ExternalContext::new("echo-42").with_bearer_token("integration-token");
+        let reply = client
+            .reply(
+                context
+                    .writer(proto::Text {
+                        content: "hello from rust".to_owned(),
+                    })
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(reply.content, "hello from rust");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn external_channel_manager_reuses_one_lazy_channel_and_preserves_context() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+        use tokio_stream::StreamExt;
+
+        #[derive(Default)]
+        struct Echo;
+
+        #[tonic::async_trait]
+        impl proto::echo_methods_server::EchoMethods for Echo {
+            async fn reply(
+                &self,
+                request: tonic::Request<proto::Text>,
+            ) -> Result<tonic::Response<proto::Text>, tonic::Status> {
+                if request
+                    .metadata()
+                    .get("x-reboot-state-ref")
+                    .and_then(|value| value.to_str().ok())
+                    != Some("cached-echo")
+                {
+                    return Err(tonic::Status::unauthenticated("missing Reboot context"));
+                }
+                Ok(tonic::Response::new(request.into_inner()))
+            }
+
+            async fn last_message(
+                &self,
+                _request: tonic::Request<proto::Empty>,
+            ) -> Result<tonic::Response<proto::Text>, tonic::Status> {
+                Ok(tonic::Response::new(proto::Text::default()))
+            }
+        }
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let connections = Arc::new(AtomicUsize::new(0));
+        let accepted_connections = Arc::clone(&connections);
+        let incoming = tokio_stream::wrappers::TcpListenerStream::new(listener).map(move |item| {
+            accepted_connections.fetch_add(1, Ordering::SeqCst);
+            item
+        });
+        let server = tokio::spawn(async move {
+            tonic::transport::Server::builder()
+                .add_service(proto::echo_methods_server::EchoMethodsServer::new(Echo))
+                .serve_with_incoming(incoming)
+                .await
+                .unwrap();
+        });
+
+        let manager = Arc::new(
+            ExternalChannelManager::new(
+                ExternalEndpoint::parse(format!("http://{address}")).unwrap(),
+            )
+            .unwrap(),
+        );
+        assert_eq!(manager.endpoint().as_str(), format!("http://{address}"));
+
+        let mut requests = Vec::new();
+        for number in 0..16 {
+            let manager = Arc::clone(&manager);
+            requests.push(tokio::spawn(async move {
+                let mut client =
+                    proto::echo_methods_client::EchoMethodsClient::new(manager.channel());
+                let context = ExternalContext::new("cached-echo");
+                let response = client
+                    .reply(
+                        context
+                            .reader(proto::Text {
+                                content: number.to_string(),
+                            })
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap()
+                    .into_inner();
+                assert_eq!(response.content, number.to_string());
+            }));
+        }
+        for request in requests {
+            request.await.unwrap();
+        }
+        assert_eq!(connections.load(Ordering::SeqCst), 1);
+        server.abort();
+    }
+
+    #[test]
+    fn in_memory_actor_serializes_and_deduplicates_writes() {
+        let actor = InMemoryActor::<i64, i64>::new(0);
+        let key = uuid::Uuid::new_v4();
+        assert_eq!(
+            actor.writer(key, |state| {
+                *state += 1;
+                *state
+            }),
+            1
+        );
+        assert_eq!(
+            actor.writer(key, |state| {
+                *state += 1;
+                *state
+            }),
+            1
+        );
+        assert_eq!(actor.reader(|state| *state), 1);
+    }
+
+    #[test]
+    fn in_memory_actor_rejects_fingerprinted_idempotency_collisions() {
+        let actor = InMemoryActor::<i64, i64>::new(0);
+        let key = uuid::Uuid::new_v4();
+        assert_eq!(
+            actor
+                .writer_with_fingerprint(key, vec![1], |state| {
+                    *state += 1;
+                    *state
+                })
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            actor
+                .writer_with_fingerprint(key, vec![1], |state| {
+                    *state += 1;
+                    *state
+                })
+                .unwrap(),
+            1
+        );
+        let collision = actor
+            .writer_with_fingerprint(key, vec![2], |state| {
+                *state += 1;
+                *state
+            })
+            .unwrap_err();
+        assert!(matches!(collision, IdempotencyCollision::DifferentRequest));
+        assert_eq!(actor.reader(|state| *state), 1);
+    }
+
+    #[test]
+    fn in_memory_actor_rolls_back_failed_transactional_writes() {
+        let actor = InMemoryActor::<i64, i64>::new(0);
+        let key = uuid::Uuid::new_v4();
+        assert_eq!(
+            actor.writer_transactional(key, |state| {
+                *state += 1;
+                Err::<i64, _>("rollback")
+            }),
+            Err("rollback")
+        );
+        assert_eq!(actor.reader(|state| *state), 0);
+
+        assert_eq!(
+            actor.writer_transactional(key, |state| {
+                *state += 1;
+                Ok::<i64, &str>(*state)
+            }),
+            Ok(1)
+        );
+        assert_eq!(
+            actor.writer_transactional(key, |state| {
+                *state += 1;
+                Ok::<i64, &str>(*state)
+            }),
+            Ok(1)
+        );
+        assert_eq!(actor.reader(|state| *state), 1);
+    }
+
+    #[test]
+    fn rejects_malformed_state_and_service_identifiers() {
+        let mut invalid = CLINIC;
+        invalid.state.name = "Clinic-State";
+        assert_eq!(
+            invalid.validate(),
+            Err(SchemaError::InvalidIdentifier {
+                kind: "state",
+                name: "Clinic-State",
+            })
+        );
+
+        invalid = CLINIC;
+        invalid.service.name = "Clinic Methods";
+        assert_eq!(
+            invalid.validate(),
+            Err(SchemaError::InvalidIdentifier {
+                kind: "service",
+                name: "Clinic Methods",
+            })
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_protobuf_packages() {
+        for package in ["clinic..v1", "clinic-v1", "1clinic.v1", ".clinic"] {
+            let mut invalid = CLINIC;
+            invalid.package = package;
+            assert_eq!(
+                invalid.validate(),
+                Err(SchemaError::InvalidPackage(package))
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_duplicate_top_level_type_names() {
+        let mut duplicate_state_name = CLINIC;
+        duplicate_state_name.enums = &[EnumSpec {
+            name: "Clinic",
+            variants: &[EnumVariantSpec {
+                name: "CLINIC_UNSPECIFIED",
+                number: 0,
+            }],
+        }];
+        assert_eq!(
+            duplicate_state_name.validate(),
+            Err(SchemaError::DuplicateType("Clinic"))
+        );
+
+        let mut duplicate_enum_name = CLINIC;
+        duplicate_enum_name.messages = &[MessageSpec {
+            name: "ClinicStatus",
+            fields: &[],
+            oneofs: &[],
+            reserved: ReservedFields {
+                tags: &[],
+                names: &[],
+            },
+        }];
+        assert_eq!(
+            duplicate_enum_name.validate(),
+            Err(SchemaError::DuplicateType("ClinicStatus"))
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_field_names_across_model_members() {
+        let mut duplicate_state_field = CLINIC;
+        duplicate_state_field.state.fields = &[
+            FieldSpec {
+                name: "name",
+                tag: 1,
+                field_type: FieldType::String,
+                required: false,
+            },
+            FieldSpec {
+                name: "name",
+                tag: 2,
+                field_type: FieldType::String,
+                required: false,
+            },
+        ];
+        assert_eq!(
+            duplicate_state_field.validate(),
+            Err(SchemaError::DuplicateField("name"))
+        );
+
+        let mut duplicate_oneof_field = CLINIC;
+        duplicate_oneof_field.messages = &[MessageSpec {
+            name: "DuplicateFieldName",
+            fields: &[FieldSpec {
+                name: "contact",
+                tag: 1,
+                field_type: FieldType::String,
+                required: false,
+            }],
+            oneofs: &[OneOfSpec {
+                name: "choice",
+                fields: &[FieldSpec {
+                    name: "contact",
+                    tag: 2,
+                    field_type: FieldType::String,
+                    required: false,
+                }],
+            }],
+            reserved: ReservedFields {
+                tags: &[],
+                names: &[],
+            },
+        }];
+        assert_eq!(
+            duplicate_oneof_field.validate(),
+            Err(SchemaError::DuplicateField("contact"))
+        );
+    }
+
+    #[test]
+    fn rejects_an_undeclared_nested_model() {
+        let mut invalid = CLINIC;
+        invalid.state.fields = &[FieldSpec {
+            name: "address",
+            tag: 1,
+            field_type: FieldType::Message("Address"),
+            required: false,
+        }];
+        assert_eq!(
+            invalid.validate(),
+            Err(SchemaError::UnknownMessage("Address"))
+        );
+    }
+
+    #[test]
+    fn compatibility_rejects_reusing_a_published_field_tag() {
+        assert_eq!(CLINIC.check_backward_compatible_with(&CLINIC), Ok(()));
+
+        let mut changed = CLINIC;
+        changed.state.fields = &[
+            FieldSpec {
+                name: "renamed",
+                tag: 1,
+                field_type: FieldType::String,
+                required: true,
+            },
+            FieldSpec {
+                name: "phone_number",
+                tag: 2,
+                field_type: FieldType::String,
+                required: false,
+            },
+        ];
+        assert_eq!(
+            changed.check_backward_compatible_with(&CLINIC),
+            Err(CompatibilityError::ChangedField {
+                model: "Clinic",
+                tag: 1,
+            })
+        );
+    }
+
+    #[test]
+    fn compatibility_rejects_moving_a_field_into_a_oneof() {
+        const FIELD: FieldSpec = FieldSpec {
+            name: "contact",
+            tag: 1,
+            field_type: FieldType::String,
+            required: false,
+        };
+        const FIELDS: &[FieldSpec] = &[FIELD];
+        const ONEOFS: &[OneOfSpec] = &[OneOfSpec {
+            name: "choice",
+            fields: FIELDS,
+        }];
+        assert_eq!(
+            check_model_compatibility(
+                "Message",
+                FIELDS,
+                &[],
+                &[],
+                ONEOFS,
+                ReservedFields {
+                    tags: &[],
+                    names: &[]
+                },
+                ReservedFields {
+                    tags: &[],
+                    names: &[]
+                },
+            ),
+            Err(CompatibilityError::ChangedField {
+                model: "Message",
+                tag: 1,
+            })
+        );
+    }
+
+    #[test]
+    fn compatibility_allows_deleting_a_field_only_when_its_tag_and_name_are_reserved() {
+        let mut changed = CLINIC;
+        changed.state.fields = &[FieldSpec {
+            name: "name",
+            tag: 1,
+            field_type: FieldType::String,
+            required: true,
+        }];
+        changed.state.reserved = ReservedFields {
+            tags: &[2],
+            names: &["phone_number"],
+        };
+        assert_eq!(changed.validate(), Ok(()));
+        assert_eq!(changed.check_backward_compatible_with(&CLINIC), Ok(()));
+        let proto = changed.to_proto().unwrap();
+        assert!(proto.contains("reserved 2;"));
+        assert!(proto.contains("reserved \"phone_number\";"));
+
+        let mut later = changed;
+        later.state.reserved = ReservedFields {
+            tags: &[],
+            names: &[],
+        };
+        assert_eq!(
+            later.check_backward_compatible_with(&changed),
+            Err(CompatibilityError::MissingReservedTag {
+                model: "Clinic",
+                tag: 2,
+            })
+        );
+    }
+
+    #[test]
+    fn compatibility_rejects_reassigning_a_published_enum_variant() {
+        let mut changed = CLINIC;
+        changed.enums = &[EnumSpec {
+            name: "ClinicStatus",
+            variants: &[
+                EnumVariantSpec {
+                    name: "CLINIC_STATUS_UNSPECIFIED",
+                    number: 0,
+                },
+                EnumVariantSpec {
+                    name: "CLINIC_STATUS_OPEN",
+                    number: 3,
+                },
+                EnumVariantSpec {
+                    name: "CLINIC_STATUS_CLOSED",
+                    number: 2,
+                },
+            ],
+        }];
+        assert_eq!(changed.validate(), Ok(()));
+        assert_eq!(
+            changed.check_backward_compatible_with(&CLINIC),
+            Err(CompatibilityError::ChangedEnumVariant {
+                enum_name: "ClinicStatus",
+                variant: "CLINIC_STATUS_OPEN",
+            })
+        );
+    }
+
+    #[test]
+    fn compatibility_rejects_removing_a_published_enum() {
+        let mut changed = CLINIC;
+        changed.enums = &[];
+        assert_eq!(
+            changed.check_backward_compatible_with(&CLINIC),
+            Err(CompatibilityError::MissingEnum("ClinicStatus"))
+        );
+    }
+
+    #[test]
+    fn rejects_methods_with_undeclared_messages() {
+        let mut invalid = CLINIC;
+        invalid.service.methods = &[MethodSpec {
+            name: "Broken",
+            request: "MissingRequest",
+            response: "RenameResponse",
+            kind: MethodKind::Reader,
+            description: None,
+        }];
+        assert_eq!(
+            invalid.validate(),
+            Err(SchemaError::UnknownMethodMessage("MissingRequest"))
+        );
+    }
+
+    #[test]
+    fn rejects_oneof_tags_that_collide_with_ordinary_fields() {
+        let mut invalid = CLINIC;
+        invalid.messages = &[MessageSpec {
+            name: "Message",
+            fields: &[FieldSpec {
+                name: "ordinary",
+                tag: 1,
+                field_type: FieldType::String,
+                required: false,
+            }],
+            oneofs: &[OneOfSpec {
+                name: "choice",
+                fields: &[FieldSpec {
+                    name: "alternative",
+                    tag: 1,
+                    field_type: FieldType::String,
+                    required: false,
+                }],
+            }],
+            reserved: ReservedFields {
+                tags: &[],
+                names: &[],
+            },
+        }];
+        assert_eq!(invalid.validate(), Err(SchemaError::DuplicateTag(1)));
+    }
+
+    #[test]
+    fn rejects_invalid_enums() {
+        let mut invalid = CLINIC;
+        invalid.enums = &[EnumSpec {
+            name: "Broken",
+            variants: &[EnumVariantSpec {
+                name: "BROKEN_ONE",
+                number: 1,
+            }],
+        }];
+        assert_eq!(invalid.validate(), Err(SchemaError::InvalidEnum("Broken")));
+
+        invalid.enums = &[EnumSpec {
+            name: "DuplicateVariant",
+            variants: &[
+                EnumVariantSpec {
+                    name: "DUPLICATE_UNSPECIFIED",
+                    number: 0,
+                },
+                EnumVariantSpec {
+                    name: "DUPLICATE_UNSPECIFIED",
+                    number: 1,
+                },
+            ],
+        }];
+        assert_eq!(
+            invalid.validate(),
+            Err(SchemaError::InvalidEnum("DuplicateVariant"))
+        );
+    }
+
+    #[test]
+    fn rejects_nested_protobuf_collection_shapes() {
+        const NESTED_MAP: FieldType = FieldType::Map {
+            key: MapKeyType::String,
+            value: &STRING_FIELD,
+        };
+        let mut invalid = CLINIC;
+        invalid.state.fields = &[FieldSpec {
+            name: "invalid_collection",
+            tag: 3,
+            field_type: FieldType::Repeated(&NESTED_MAP),
+            required: false,
+        }];
+        assert_eq!(
+            invalid.validate(),
+            Err(SchemaError::InvalidFieldShape("invalid_collection"))
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_or_reserved_tags() {
+        let mut invalid = CLINIC;
+        invalid.state.fields = &[
+            FieldSpec {
+                name: "first",
+                tag: 1,
+                field_type: FieldType::String,
+                required: true,
+            },
+            FieldSpec {
+                name: "second",
+                tag: 1,
+                field_type: FieldType::String,
+                required: true,
+            },
+        ];
+        assert_eq!(invalid.validate(), Err(SchemaError::DuplicateTag(1)));
+
+        invalid.state.fields = &[FieldSpec {
+            name: "bad",
+            tag: 19000,
+            field_type: FieldType::String,
+            required: true,
+        }];
+        assert_eq!(
+            invalid.validate(),
+            Err(SchemaError::InvalidTag {
+                field: "bad",
+                tag: 19000
+            })
+        );
+    }
+
+    #[test]
+    fn native_2pc_generated_bindings_preserve_protocol_and_identity() {
+        let record = database_proto::Native2pcParticipantRecord {
+            protocol: Some(database_proto::Native2pcProtocol {
+                protocol_id: "reboot.native-2pc.v1".into(),
+                record_version: 1,
+            }),
+            root_transaction_id: vec![1, 2, 3],
+            participant: Some(database_proto::Native2pcActorId {
+                state_type: "example.Participant".into(),
+                state_ref: "participant-a".into(),
+            }),
+            coordinator: Some(database_proto::Native2pcActorId {
+                state_type: "example.Coordinator".into(),
+                state_ref: "coordinator-a".into(),
+            }),
+            enrollment_digest: vec![4, 5, 6],
+            phase: database_proto::native2pc_participant_record::Phase::Prepared as i32,
+            effects: Some(database_proto::Native2pcActorEffects::default()),
+        };
+
+        let encoded = record.encode_to_vec();
+        let decoded = database_proto::Native2pcParticipantRecord::decode(encoded.as_slice())
+            .expect("generated Native2pc record must decode");
+        assert_eq!(decoded, record);
+    }
+
+    #[test]
+    fn native_2pc_descriptor_has_exact_contract_and_distinct_services() {
+        use prost_types::{
+            FileDescriptorProto, field_descriptor_proto::Label, field_descriptor_proto::Type,
+        };
+
+        fn message<'a>(
+            file: &'a FileDescriptorProto,
+            name: &str,
+        ) -> &'a prost_types::DescriptorProto {
+            file.message_type
+                .iter()
+                .find(|message| message.name.as_deref() == Some(name))
+                .unwrap_or_else(|| panic!("missing {name} message"))
+        }
+
+        fn assert_fields(
+            message: &prost_types::DescriptorProto,
+            expected: &[(&str, i32, Type, Label)],
+        ) {
+            let actual: Vec<_> = message
+                .field
+                .iter()
+                .map(|field| {
+                    (
+                        field.name.as_deref().unwrap(),
+                        field.number.unwrap(),
+                        Type::try_from(field.r#type.unwrap()).unwrap(),
+                        Label::try_from(field.label.unwrap()).unwrap(),
+                    )
+                })
+                .collect();
+            assert_eq!(actual, expected);
+        }
+
+        let descriptor = prost_types::FileDescriptorSet::decode(RBT_V1ALPHA1_DESCRIPTOR_SET)
+            .expect("build script must emit an rbt.v1alpha1 descriptor set");
+        let native = descriptor
+            .file
+            .iter()
+            .find(|file| file.name.as_deref() == Some("rbt/v1alpha1/native_2pc.proto"))
+            .expect("Native2pc proto must be present in generated descriptor set");
+
+        assert_fields(
+            message(native, "Native2pcProtocol"),
+            &[
+                ("protocol_id", 1, Type::String, Label::Optional),
+                ("record_version", 2, Type::Uint32, Label::Optional),
+            ],
+        );
+        assert_fields(
+            message(native, "Native2pcActorId"),
+            &[
+                ("state_type", 1, Type::String, Label::Optional),
+                ("state_ref", 2, Type::String, Label::Optional),
+            ],
+        );
+        assert_fields(
+            message(native, "Native2pcEnrollment"),
+            &[
+                ("participant", 1, Type::Message, Label::Optional),
+                ("enrollment_digest", 2, Type::Bytes, Label::Optional),
+            ],
+        );
+        assert_fields(
+            message(native, "Native2pcCapabilitiesRequest"),
+            &[("required", 1, Type::Message, Label::Optional)],
+        );
+        assert_fields(
+            message(native, "Native2pcCapabilitiesResponse"),
+            &[
+                ("accepted", 1, Type::Message, Label::Optional),
+                ("native_participant_enabled", 2, Type::Bool, Label::Optional),
+                ("native_sidecar_enabled", 3, Type::Bool, Label::Optional),
+            ],
+        );
+        assert_fields(
+            message(native, "Native2pcCoordinatorRecord"),
+            &[
+                ("protocol", 1, Type::Message, Label::Optional),
+                ("root_transaction_id", 2, Type::Bytes, Label::Optional),
+                ("coordinator", 3, Type::Message, Label::Optional),
+                ("enrollment", 4, Type::Message, Label::Repeated),
+                ("enrollment_digest", 5, Type::Bytes, Label::Optional),
+                ("phase", 6, Type::Enum, Label::Optional),
+            ],
+        );
+        assert_fields(
+            message(native, "Native2pcParticipantRecord"),
+            &[
+                ("protocol", 1, Type::Message, Label::Optional),
+                ("root_transaction_id", 2, Type::Bytes, Label::Optional),
+                ("participant", 3, Type::Message, Label::Optional),
+                ("coordinator", 4, Type::Message, Label::Optional),
+                ("enrollment_digest", 5, Type::Bytes, Label::Optional),
+                ("phase", 6, Type::Enum, Label::Optional),
+                ("effects", 7, Type::Message, Label::Optional),
+            ],
+        );
+        assert_eq!(
+            message(native, "Native2pcCoordinatorRecord").enum_type[0]
+                .value
+                .iter()
+                .map(|value| (value.name.as_deref().unwrap(), value.number.unwrap()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("UNSPECIFIED", 0),
+                ("PREPARING", 1),
+                ("COMMIT_DECIDED", 2),
+                ("ABORT_DECIDED", 3),
+            ]
+        );
+        assert_eq!(
+            message(native, "Native2pcParticipantRecord").enum_type[0]
+                .value
+                .iter()
+                .map(|value| (value.name.as_deref().unwrap(), value.number.unwrap()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("UNSPECIFIED", 0),
+                ("ACTIVE", 1),
+                ("PREPARED", 2),
+                ("COMMITTED", 3),
+                ("ABORTED", 4),
+                ("STAGED", 5),
+            ]
+        );
+        assert_eq!(
+            message(native, "Native2pcPrepareResponse").enum_type[0]
+                .value
+                .iter()
+                .map(|value| (value.name.as_deref().unwrap(), value.number.unwrap()))
+                .collect::<Vec<_>>(),
+            vec![("UNSPECIFIED", 0), ("PREPARED", 1), ("DEFINITIVE_ABORT", 2)]
+        );
+        assert_eq!(
+            message(native, "Native2pcTerminalRequest").enum_type[0]
+                .value
+                .iter()
+                .map(|value| (value.name.as_deref().unwrap(), value.number.unwrap()))
+                .collect::<Vec<_>>(),
+            vec![("UNSPECIFIED", 0), ("COMMIT", 1), ("ABORT", 2)]
+        );
+        assert_fields(
+            message(native, "Native2pcPrepareRequest"),
+            &[
+                ("protocol", 1, Type::Message, Label::Optional),
+                ("root_transaction_id", 2, Type::Bytes, Label::Optional),
+                ("participant", 3, Type::Message, Label::Optional),
+                ("coordinator", 4, Type::Message, Label::Optional),
+                ("enrollment_digest", 5, Type::Bytes, Label::Optional),
+            ],
+        );
+        assert_fields(
+            message(native, "Native2pcTerminalRequest"),
+            &[
+                ("protocol", 1, Type::Message, Label::Optional),
+                ("root_transaction_id", 2, Type::Bytes, Label::Optional),
+                ("participant", 3, Type::Message, Label::Optional),
+                ("coordinator", 4, Type::Message, Label::Optional),
+                ("enrollment_digest", 5, Type::Bytes, Label::Optional),
+                ("decision", 6, Type::Enum, Label::Optional),
+            ],
+        );
+        assert_fields(
+            message(native, "Native2pcTerminalResponse"),
+            &[("terminal_phase", 1, Type::Enum, Label::Optional)],
+        );
+        assert_fields(
+            message(native, "Native2pcWatchRequest"),
+            &[
+                ("protocol", 1, Type::Message, Label::Optional),
+                ("root_transaction_id", 2, Type::Bytes, Label::Optional),
+                ("coordinator", 3, Type::Message, Label::Optional),
+                ("participant", 4, Type::Message, Label::Optional),
+                ("enrollment_digest", 5, Type::Bytes, Label::Optional),
+            ],
+        );
+
+        assert_fields(
+            message(native, "Native2pcRecoverResponse"),
+            &[
+                ("coordinator", 1, Type::Message, Label::Optional),
+                ("participant", 2, Type::Message, Label::Optional),
+                ("applied", 3, Type::Message, Label::Optional),
+                ("applied_journal", 4, Type::Bytes, Label::Optional),
+            ],
+        );
+
+        assert_fields(
+            message(native, "Native2pcApplicationReceipt"),
+            &[
+                ("applied", 1, Type::Message, Label::Optional),
+                ("applied_journal", 2, Type::Bytes, Label::Optional),
+            ],
+        );
+        assert_fields(
+            message(native, "Native2pcMaterializeAppliedRequest"),
+            &[("applied_journal", 1, Type::Bytes, Label::Optional)],
+        );
+        assert_fields(
+            message(native, "Native2pcMaterializeAppliedResponse"),
+            &[
+                ("receipt", 1, Type::Message, Label::Optional),
+                ("state", 2, Type::Bytes, Label::Optional),
+            ],
+        );
+        assert_fields(
+            message(native, "Native2pcGetMaterializedStateRequest"),
+            &[
+                ("protocol", 1, Type::Message, Label::Optional),
+                ("actor", 2, Type::Message, Label::Optional),
+            ],
+        );
+        assert_fields(
+            message(native, "Native2pcGetMaterializedStateResponse"),
+            &[("state", 1, Type::Bytes, Label::Optional)],
+        );
+
+        let services: Vec<_> = native
+            .service
+            .iter()
+            .map(|service| {
+                (
+                    service.name.as_deref().unwrap(),
+                    service
+                        .method
+                        .iter()
+                        .map(|method| {
+                            (
+                                method.name.as_deref().unwrap(),
+                                method.input_type.as_deref().unwrap(),
+                                method.output_type.as_deref().unwrap(),
+                                method.server_streaming.unwrap_or(false),
+                            )
+                        })
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            services,
+            vec![
+                (
+                    "Native2pcParticipant",
+                    vec![
+                        (
+                            "GetCapabilities",
+                            ".rbt.v1alpha1.Native2pcCapabilitiesRequest",
+                            ".rbt.v1alpha1.Native2pcCapabilitiesResponse",
+                            false
+                        ),
+                        (
+                            "Prepare",
+                            ".rbt.v1alpha1.Native2pcPrepareRequest",
+                            ".rbt.v1alpha1.Native2pcPrepareResponse",
+                            false
+                        ),
+                        (
+                            "Terminal",
+                            ".rbt.v1alpha1.Native2pcTerminalRequest",
+                            ".rbt.v1alpha1.Native2pcTerminalResponse",
+                            false
+                        ),
+                    ],
+                ),
+                (
+                    "Native2pcCoordinator",
+                    vec![(
+                        "Watch",
+                        ".rbt.v1alpha1.Native2pcWatchRequest",
+                        ".rbt.v1alpha1.Native2pcWatchResponse",
+                        false
+                    )],
+                ),
+                (
+                    "Native2pcDatabase",
+                    vec![
+                        (
+                            "PutCoordinator",
+                            ".rbt.v1alpha1.Native2pcPutCoordinatorRequest",
+                            ".rbt.v1alpha1.Native2pcPutCoordinatorResponse",
+                            false
+                        ),
+                        (
+                            "PutParticipant",
+                            ".rbt.v1alpha1.Native2pcPutParticipantRequest",
+                            ".rbt.v1alpha1.Native2pcPutParticipantResponse",
+                            false
+                        ),
+                        (
+                            "StageParticipant",
+                            ".rbt.v1alpha1.Native2pcStageParticipantRequest",
+                            ".rbt.v1alpha1.Native2pcStageParticipantResponse",
+                            false
+                        ),
+                        (
+                            "PutCommitDecision",
+                            ".rbt.v1alpha1.Native2pcPutCommitDecisionRequest",
+                            ".rbt.v1alpha1.Native2pcPutCommitDecisionResponse",
+                            false
+                        ),
+                        (
+                            "PutAbortDecision",
+                            ".rbt.v1alpha1.Native2pcPutAbortDecisionRequest",
+                            ".rbt.v1alpha1.Native2pcPutAbortDecisionResponse",
+                            false
+                        ),
+                        (
+                            "RecoverNative2pc",
+                            ".rbt.v1alpha1.Native2pcRecoverRequest",
+                            ".rbt.v1alpha1.Native2pcRecoverResponse",
+                            true
+                        ),
+                        (
+                            "MaterializeApplied",
+                            ".rbt.v1alpha1.Native2pcMaterializeAppliedRequest",
+                            ".rbt.v1alpha1.Native2pcMaterializeAppliedResponse",
+                            false
+                        ),
+                        (
+                            "GetMaterializedState",
+                            ".rbt.v1alpha1.Native2pcGetMaterializedStateRequest",
+                            ".rbt.v1alpha1.Native2pcGetMaterializedStateResponse",
+                            false
+                        ),
+                        (
+                            "TerminalParticipant",
+                            ".rbt.v1alpha1.Native2pcTerminalParticipantRequest",
+                            ".rbt.v1alpha1.Native2pcTerminalParticipantResponse",
+                            false
+                        ),
+                    ],
+                ),
+            ]
+        );
+    }
+}
+
+/// Canonical same-host SortedMap construction and admitted root sessions.
+pub mod sorted_map;

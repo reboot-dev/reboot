@@ -1,0 +1,99 @@
+use prost::Message;
+use reboot::{application_host::ApplicationHost, runtime::DatabaseActorStore};
+use {{ name }}::{HelloWorld, generated, proto};
+
+async fn shutdown() {
+    #[cfg(unix)]
+    {
+        let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("install SIGTERM handler");
+        tokio::select! { _ = tokio::signal::ctrl_c() => {}, _ = term.recv() => {} }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("--server-info") {
+        let path = std::path::Path::new(args.get(2).ok_or("missing server-info path")?);
+        let info = reboot::database_proto::ServerInfo {
+            shard_infos: vec![reboot::database_proto::ShardInfo {
+                shard_id: "s000000000".into(),
+                shard_first_key: vec![],
+            }],
+        };
+        if path.exists() {
+            if reboot::database_proto::ServerInfo::decode(std::fs::read(path)?.as_slice())? != info
+            {
+                return Err("incompatible Rust development server-info".into());
+            }
+        } else {
+            std::fs::write(path, info.encode_to_vec())?;
+        }
+        return Ok(());
+    }
+    let endpoint = std::env::var("RBT_RUST_DATABASE_URL")?;
+    let address = std::env::var("RBT_RUST_LISTEN_ADDR")?.parse()?;
+    let application = std::env::var("RBT_NAME").unwrap_or_else(|_| "{{ name }}".into());
+    let adapter = generated::HelloWorldMethodsDatabaseAdapter::new(
+        DatabaseActorStore::connect(endpoint).await?,
+        HelloWorld,
+    )
+    .with_authorization(
+        if std::env::var("RBT_RUST_UNAUTHORIZED_DEVELOPMENT").as_deref() == Ok("1") {
+            reboot::auth::AuthorizationPolicy::permissive_for_development()
+        } else {
+            reboot::auth::AuthorizationPolicy::default()
+        },
+    );
+    // Optional explicit allowlist; subscription metadata never creates owners.
+    // All owners use this exact store and start before public readiness.
+    let mut registry = reboot::reactive::LocalReaderRegistry::new();
+    let configured = match std::env::var("RBT_RUST_REACTIVE_ACTORS") {
+        Ok(value) => Some(value),
+        Err(std::env::VarError::NotPresent) => None,
+        Err(error) => return Err(error.into()),
+    };
+    if let Some(references) = &configured {
+        for reference in references.split(',') {
+            let reference = reboot::state_ref::StateRef::from_maybe_readable(reference)?;
+            let (_, readers) = adapter.local_readers(reference.as_str())?;
+            registry.register(readers)?;
+        }
+    }
+    let composition = match std::env::var("RBT_RUST_REACTIVE_COMPOSITION") {
+        Ok(value) if value == "1" => true,
+        Ok(_) => return Err("RBT_RUST_REACTIVE_COMPOSITION must be 1 when present".into()),
+        Err(std::env::VarError::NotPresent) => false,
+        Err(error) => return Err(error.into()),
+    };
+    if composition {
+        if configured.is_none() {
+            return Err("composed readers require an actor allowlist".into());
+        }
+        registry = registry.with_reader_composition();
+    }
+    // Register baseline clones first; ordinary RPCs use the same immutable
+    // owners/policy, without recursively wiring serving adapters into entries.
+    let adapter = if composition {
+        adapter
+            .with_reader_registry(registry.clone())?
+            .with_legacy_unary_roots(vec!["hello".to_owned()])?
+    } else {
+        adapter
+    };
+    let host = ApplicationHost::new(application).add_public_service(
+        proto::hello_world_methods_server::HelloWorldMethodsServer::new(adapter),
+    );
+    let host = if configured.is_some() {
+        host.try_add_local_reader_registry(registry)?
+    } else {
+        host
+    };
+    host.serve_with_shutdown(address, shutdown()).await?;
+    Ok(())
+}

@@ -1,0 +1,95 @@
+pub mod proto {
+    tonic::include_proto!("{{ name }}.v1");
+}
+
+pub mod generated {
+    include!(concat!(
+        env!("OUT_DIR"),
+        "/{{ name }}/v1/hello_world.reboot.rs"
+    ));
+}
+
+pub struct HelloWorld;
+
+#[tonic::async_trait]
+impl generated::HelloWorldMethodsDatabaseHandler for HelloWorld {
+    async fn create(
+        &self,
+        state: &mut proto::HelloWorld,
+        _: proto::CreateRequest,
+    ) -> Result<proto::NumGreetingsResponse, tonic::Status> {
+        state.number_of_greetings = 0;
+        state.selected_source.clear();
+        Ok(proto::NumGreetingsResponse {
+            number_of_greetings: 0,
+        })
+    }
+
+    async fn greet(
+        &self,
+        state: &mut proto::HelloWorld,
+        _: proto::GreetRequest,
+    ) -> Result<proto::GreetResponse, tonic::Status> {
+        state.number_of_greetings = state
+            .number_of_greetings
+            .checked_add(1)
+            .ok_or_else(|| tonic::Status::out_of_range("greeting count overflow"))?;
+        Ok(proto::GreetResponse {
+            number_of_greetings: state.number_of_greetings,
+        })
+    }
+
+    async fn select_source(
+        &self,
+        state: &mut proto::HelloWorld,
+        request: proto::SelectSourceRequest,
+    ) -> Result<proto::NumGreetingsResponse, tonic::Status> {
+        if !request.state_ref.is_empty() {
+            let reference = reboot::state_ref::StateRef::from_maybe_readable(&request.state_ref)
+                .map_err(|e| tonic::Status::invalid_argument(e.to_string()))?;
+            if reference.as_str() != request.state_ref
+                || !reference.matches_state_type("{{ name }}.v1.HelloWorld")
+            {
+                return Err(tonic::Status::invalid_argument(
+                    "source must be an exact HelloWorld reference",
+                ));
+            }
+        }
+        state.selected_source = request.state_ref;
+        Ok(proto::NumGreetingsResponse {
+            number_of_greetings: state.number_of_greetings,
+        })
+    }
+    async fn num_greetings_with_reader_context(
+        &self,
+        state: &proto::HelloWorld,
+        request: proto::NumGreetingsRequest,
+        context: reboot::reactive::LocalReaderContext,
+    ) -> Result<proto::NumGreetingsResponse, tonic::Status> {
+        if state.selected_source.is_empty() {
+            self.num_greetings(state, request).await
+        } else {
+            generated::HelloWorldMethodsReactiveClient::num_greetings_read_local(
+                &context,
+                &state.selected_source,
+                request,
+            )
+            .await
+        }
+    }
+
+    async fn num_greetings(
+        &self,
+        state: &proto::HelloWorld,
+        _: proto::NumGreetingsRequest,
+    ) -> Result<proto::NumGreetingsResponse, tonic::Status> {
+        if !state.selected_source.is_empty() {
+            return Err(tonic::Status::failed_precondition(
+                "selected-source view requires a composed reader scope",
+            ));
+        }
+        Ok(proto::NumGreetingsResponse {
+            number_of_greetings: state.number_of_greetings,
+        })
+    }
+}

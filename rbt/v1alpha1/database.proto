@@ -174,6 +174,18 @@ message IdempotentMutation {
 
   bytes response = 2;
 
+  // Optional canonical request fingerprint for collision detection.
+  //
+  // v1 is SHA-256 over:
+  //   "reboot.idempotency.request-fingerprint.v1\0" +
+  //   UTF-8 fully-qualified method identity + "\0" +
+  //   deterministic protobuf serialization of the request.
+  //
+  // An absent fingerprint is legacy data and remains replay-compatible.
+  // A nonempty stored fingerprint must equal a nonempty incoming fingerprint
+  // for the same idempotency storage key.
+  optional bytes request_fingerprint = 8;
+
   // Any tasks that were scheduled as part of this mutation.
   repeated TaskId task_ids = 3;
 
@@ -380,6 +392,49 @@ message StoreResponse {
   optional google.protobuf.Timestamp timestamp = 1;
 }
 
+// Atomically completes a pending task among concurrent CompleteTask callers.
+// Legacy Store and transactional task upserts remain unconditional and can
+// overwrite or recreate task records; this is not a global first-result-wins
+// guarantee. Callers must exclusively use CompleteTask for terminal writes.
+message CompleteTaskRequest {
+  // Must be a completed task with a task ID. The task response or error is the
+  // durable result of the winning completion. A response must have a non-empty
+  // Any type URL prefix and message name; its payload is application-opaque
+  // (including valid empty messages). An error must unpack as google.rpc.Status
+  // with a non-OK canonical code (1..16) and typed Any details.
+  Task task = 1;
+
+  // Sync the RocksDB write before returning success.
+  bool sync = 2;
+}
+
+message CompleteTaskResponse {
+  // True only for the caller that changed the task from PENDING to COMPLETED.
+  // False means the task was already completed or was not pending.
+  bool completed = 1;
+
+  // Latest timestamp from database clock, for timestamp refresh.
+  // Optional for explicit backwards compatibility.
+  optional google.protobuf.Timestamp timestamp = 2;
+}
+
+// Atomically creates one actor only when it does not already exist, together
+// with the completed idempotent writer response. This is intentionally a
+// separate operation: Store remains an unconditional upsert for compatibility.
+message CreateActorRequest {
+  // Must have state set (an empty state is valid).
+  Actor actor = 1;
+  // The response to replay for this constructor invocation.
+  IdempotentMutation idempotent_mutation = 2;
+  // Sync the RocksDB write before returning success.
+  bool sync = 3;
+}
+
+message CreateActorResponse {
+  // Latest timestamp from database clock, for timestamp refresh.
+  optional google.protobuf.Timestamp timestamp = 1;
+}
+
 ////////////////////////////////////////////////////////////////////////
 
 message RecoverRequest {
@@ -553,6 +608,43 @@ message TransactionCoordinatorCleanupResponse {}
 
 ////////////////////////////////////////////////////////////////////////
 
+// Immutable terminal decision for the legacy Coordinator.Watch recovery path.
+// This is intentionally separate from TransactionCoordinator: cleanup may
+// remove the live control-loop record only after direct delivery, whereas a
+// participant that missed delivery still needs an authoritative decision.
+message TransactionCoordinatorDecision {
+  enum Outcome {
+    OUTCOME_UNSPECIFIED = 0;
+    COMMIT = 1;
+    ABORT = 2;
+  }
+
+  // The coordinator state identity. Together with root_transaction_id this is
+  // the RocksDB identity of a decision; a root UUID alone is not sufficient.
+  string coordinator_state_ref = 1;
+  Outcome outcome = 2;
+  // Present only for COMMIT and is the immutable complete participant set.
+  Participants participants = 3;
+}
+
+message TransactionCoordinatorDecisionPutRequest {
+  bytes root_transaction_id = 1;
+  TransactionCoordinatorDecision decision = 2;
+}
+message TransactionCoordinatorDecisionPutResponse {}
+
+message TransactionCoordinatorDecisionGetRequest {
+  bytes root_transaction_id = 1;
+  string coordinator_state_ref = 2;
+}
+message TransactionCoordinatorDecisionGetResponse {
+  // Absent means no durable terminal decision. It must never be interpreted as
+  // either commit or abort by a Watch host.
+  optional TransactionCoordinatorDecision decision = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
 message RefreshTimestampRequest {}
 
 message RefreshTimestampResponse {
@@ -631,6 +723,13 @@ service Database {
   // Stores the specified data.
   rpc Store(StoreRequest) returns (StoreResponse);
 
+  // Changes a task from PENDING to COMPLETED only if it is still pending.
+  rpc CompleteTask(CompleteTaskRequest) returns (CompleteTaskResponse);
+
+  // Creates a previously absent actor and its idempotent response atomically.
+  // Returns FAILED_PRECONDITION when the actor already exists.
+  rpc CreateActor(CreateActorRequest) returns (CreateActorResponse);
+
   // Returns state needed to recover the server after a potential restart.
   rpc Recover(RecoverRequest) returns (stream RecoverResponse);
 
@@ -656,6 +755,12 @@ service Database {
 
   rpc TransactionCoordinatorCleanup(TransactionCoordinatorCleanupRequest)
       returns (TransactionCoordinatorCleanupResponse);
+
+  rpc TransactionCoordinatorDecisionPut(TransactionCoordinatorDecisionPutRequest)
+      returns (TransactionCoordinatorDecisionPutResponse);
+
+  rpc TransactionCoordinatorDecisionGet(TransactionCoordinatorDecisionGetRequest)
+      returns (TransactionCoordinatorDecisionGetResponse);
 
   // Exports all items for the given state type and shards. Fails
   // with `FAILED_PRECONDITION` if the data exceeds the gRPC message

@@ -45,6 +45,20 @@ py_test(
 )
 
 py_test(
+    name = "rust_tests_py",
+    srcs = ["rust.py"],
+    main = "rust.py",
+    deps = [":tests_helper"],
+)
+
+py_test(
+    name = "rust_generate_tests_py",
+    srcs = ["rust_generate.py"],
+    main = "rust_generate.py",
+    deps = ["//reboot/cli:rust_generate_py"],
+)
+
+py_test(
     name = "with_rc_file_tests_py",
     srcs = ["with_rc_file.py"],
     main = "with_rc_file.py",

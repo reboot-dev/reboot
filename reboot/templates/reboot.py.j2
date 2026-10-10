@@ -1344,8 +1344,11 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
         # already performed the transaction then we don't want to
         # become a transaction participant (again) we just want to
         # return the transaction's response.
+        context.request_fingerprint = IMPORT_reboot_aio_state_managers.request_fingerprint(
+            '{{ method.proto.full_name }}', request
+        )
         idempotent_mutation = await self._state_manager.check_for_idempotent_mutation(
-            context
+            context, context.request_fingerprint
         )
 
         if idempotent_mutation is not None:
@@ -1513,8 +1516,11 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
         # already performed the transaction then we don't want to
         # become a transaction participant (again) we just want to
         # return the transaction's response.
+        context.request_fingerprint = IMPORT_reboot_aio_state_managers.request_fingerprint(
+            '{{ method.proto.full_name }}', request
+        )
         idempotent_mutation = await self._state_manager.check_for_idempotent_mutation(
-            context
+            context, context.request_fingerprint
         )
 
         if idempotent_mutation is not None:
@@ -3622,9 +3628,18 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                         # already performed the transaction then we don't want to
                         # become a transaction participant (again) we just want to
                         # return the transaction's response.
+                        # Inline writers have no request message. Use an empty BytesValue
+                        # with a domain-separated synthetic method identity so they still
+                        # participate in durable collision detection.
+                        writer_context.request_fingerprint = (
+                            IMPORT_reboot_aio_state_managers.request_fingerprint(
+                                '{{ state.proto.full_name }}.inline_writer',
+                                IMPORT_google_protobuf_wrappers_pb2.BytesValue(),
+                            )
+                        )
                         idempotent_mutation = (
                             await servicer._middleware._state_manager.check_for_idempotent_mutation(
-                                writer_context
+                                writer_context, writer_context.request_fingerprint
                             )
                         )
 
