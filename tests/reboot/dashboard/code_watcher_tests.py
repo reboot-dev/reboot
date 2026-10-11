@@ -39,7 +39,7 @@ from reboot.dashboard.backend.code_watcher import (
     extract_and_sort_servicers,
 )
 from reboot.dashboard.backend.main import application
-from reboot.dashboard.backend.pyright import Pyright
+from reboot.dashboard.backend.pyright import HEAP_MEGABYTES, Pyright
 from reboot.dashboard.backend.walk import _walk
 from typing import Optional
 from unittest.mock import patch
@@ -912,6 +912,25 @@ class PyrightTest(unittest.IsolatedAsyncioTestCase):
             [process.pid for process in processes if _running(process)],
             [],
         )
+
+    async def test_node_server_is_given_a_heap(self) -> None:
+        """The Node server runs with a heap limit of the dashboard's
+        choosing, not Node's default, which a mid-sized application's
+        analysis outgrows. First, so that one the developer set
+        themselves comes later and wins."""
+        with tempfile.TemporaryDirectory() as directory:
+            pyright = Pyright()
+            await pyright.start(root=Path(directory), extra_paths=[])
+            try:
+                assert pyright._process is not None
+                entry_point = psutil.Process(pyright._process.pid)
+                self.assertTrue(
+                    entry_point.environ().get(
+                        'NODE_OPTIONS', ''
+                    ).startswith(f'--max-old-space-size={HEAP_MEGABYTES}')
+                )
+            finally:
+                await pyright.stop()
 
 
 class ServicerFilesTest(unittest.IsolatedAsyncioTestCase):

@@ -26,6 +26,11 @@ from typing import Any, Mapping, Optional, Sequence
 # How long a server gets to shut down when asked, before it is killed.
 SHUTDOWN_SECONDS = 5
 
+# The heap the Node server may grow to. Node's default, about 4 GB, is
+# too small for a mid-sized application's analysis. A limit, not an
+# allocation: an analysis that needs little uses little.
+HEAP_MEGABYTES = 12288
+
 
 @dataclass(frozen=True, kw_only=True)
 class Location:
@@ -115,6 +120,10 @@ class Pyright:
         # holding our pipes, rather than becoming it. In a session of
         # its own, the entry point and the Node server form a process
         # group that `stop` can kill as one.
+        #
+        # The Node server's heap is set through `NODE_OPTIONS`, which
+        # the entry point passes on to it, so that the developer need
+        # not know that Node is involved to give it enough.
         self._process = await asyncio.create_subprocess_exec(
             sys.executable,
             '-m',
@@ -124,6 +133,18 @@ class Pyright:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
             start_new_session=True,
+            env={
+                **os.environ,
+                'NODE_OPTIONS':
+                    ' '.join(
+                        [
+                            # First, so that a limit the developer set in
+                            # their own `NODE_OPTIONS` comes later and wins.
+                            f'--max-old-space-size={HEAP_MEGABYTES}',
+                            os.environ.get('NODE_OPTIONS', ''),
+                        ]
+                    ),
+            },
         )
 
         self._reader = asyncio.create_task(self._read())
