@@ -180,6 +180,7 @@ pub struct TransactionContext {
     sequential_reusable: bool,
     builtin_map_admission: Option<BuiltinMapAdmission>,
     handler_lifetime: Option<tokio::sync::watch::Receiver<bool>>,
+    handler_ancestors: Arc<[tokio::sync::watch::Receiver<bool>]>,
 }
 
 pub(crate) struct HandlerLifetimeOwner(tokio::sync::watch::Sender<bool>);
@@ -902,6 +903,7 @@ impl TransactionContext {
             mode,
             returned_participants: None,
             handler_lifetime: None,
+            handler_ancestors: Arc::from([]),
             doomed: Arc::new(Mutex::new(None)),
             live_leaf: false,
             supervised_tree: false,
@@ -1037,6 +1039,12 @@ impl TransactionContext {
             && self.supervised_tree == other.supervised_tree
             && self.live_leaf == other.live_leaf
             && Arc::ptr_eq(&self.doomed, &other.doomed)
+            && self.handler_ancestors.len() == other.handler_ancestors.len()
+            && self
+                .handler_ancestors
+                .iter()
+                .zip(other.handler_ancestors.iter())
+                .all(|(a, b)| a.same_channel(b))
             && match (&self.handler_lifetime, &other.handler_lifetime) {
                 (Some(a), Some(b)) => a.same_channel(b),
                 (None, None) => true,
@@ -1074,44 +1082,89 @@ impl TransactionContext {
         Ok((context, HandlerLifetimeOwner(sender)))
     }
 
-    async fn handler_revoked(&self) {
-        if let Some(receiver) = &self.handler_lifetime {
-            let mut receiver = receiver.clone();
-            loop {
-                if !*receiver.borrow_and_update() {
-                    return;
-                }
-                if receiver.changed().await.is_err() {
-                    return;
-                }
-            }
-        }
-        std::future::pending::<()>().await;
+    fn handler_lifetimes(&self) -> impl Iterator<Item = &tokio::sync::watch::Receiver<bool>> {
+        self.handler_ancestors
+            .iter()
+            .chain(self.handler_lifetime.iter())
     }
 
-    // Hold a watch read reservation through synchronous terminal ledger mutation.
-    // Owner revocation (send_replace) serializes with this reservation; no await
-    // or nested lifetime validation may occur while it is retained.
-    fn reserve_handler_settlement(
-        &self,
-    ) -> Result<Option<tokio::sync::watch::Ref<'_, bool>>, Status> {
-        let reservation = self
-            .handler_lifetime
-            .as_ref()
-            .map(|receiver| receiver.borrow());
-        if reservation.as_ref().is_some_and(|value| !**value) {
-            return Err(Status::cancelled("generated handler lifetime revoked"));
+    fn validate_handler_ancestry(&self) -> Result<(), Status> {
+        if self.handler_ancestors.len() > 16 {
+            return Err(Status::resource_exhausted(
+                "handler ancestry capacity exceeded",
+            ));
         }
-        Ok(reservation)
+        let channels: Vec<_> = self.handler_lifetimes().collect();
+        for (index, channel) in channels.iter().enumerate() {
+            if channels[..index]
+                .iter()
+                .any(|prior| prior.same_channel(channel))
+            {
+                return Err(Status::failed_precondition(
+                    "duplicate handler lifetime channel",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    async fn handler_revoked(&self) {
+        if self.validate_handler_ancestry().is_err() {
+            return;
+        }
+        // Owned receivers/futures; no read reservation survives an await.
+        let mut waits: Vec<std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>> = self
+            .handler_lifetimes()
+            .map(|receiver| {
+                let mut receiver = receiver.clone();
+                Box::pin(async move {
+                    loop {
+                        if !*receiver.borrow_and_update() {
+                            return;
+                        }
+                        if receiver.changed().await.is_err() {
+                            return;
+                        }
+                    }
+                })
+                    as std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+            })
+            .collect();
+        std::future::poll_fn(|cx| {
+            for wait in &mut waits {
+                if wait.as_mut().poll(cx).is_ready() {
+                    return std::task::Poll::Ready(());
+                }
+            }
+            std::task::Poll::Pending
+        })
+        .await;
+    }
+
+    // Reserve ancestor-first, then this handler, through synchronous mutation.
+    // No await or nested value reads while reservations are retained. Ancestor
+    // channel insertion is private; ticket consumption must enforce an immutable
+    // parent prefix (parent ancestors, parent own, fresh child own). Per-context
+    // uniqueness alone cannot prevent reversed cross-context lock ordering.
+    fn reserve_handler_settlement(&self) -> Result<Vec<tokio::sync::watch::Ref<'_, bool>>, Status> {
+        self.validate_handler_ancestry()?;
+        let mut reservations = Vec::new();
+        for receiver in self.handler_lifetimes() {
+            let reservation = receiver.borrow();
+            if !*reservation {
+                return Err(Status::cancelled("generated handler lifetime revoked"));
+            }
+            reservations.push(reservation);
+        }
+        Ok(reservations)
     }
 
     fn validate_handler_lifetime(&self) -> Result<(), Status> {
-        if self
-            .handler_lifetime
-            .as_ref()
-            .is_some_and(|receiver| !*receiver.borrow())
-        {
-            return Err(Status::cancelled("generated handler lifetime revoked"));
+        self.validate_handler_ancestry()?;
+        for receiver in self.handler_lifetimes() {
+            if !*receiver.borrow() {
+                return Err(Status::cancelled("generated handler lifetime revoked"));
+            }
         }
         Ok(())
     }
@@ -1933,6 +1986,7 @@ impl TransactionContext {
             // A locally derived path shares its branch, never root coordinator authority.
             returned_participants: self.returned_participants.clone(),
             handler_lifetime: self.handler_lifetime.clone(),
+            handler_ancestors: self.handler_ancestors.clone(),
             doomed: Arc::clone(&self.doomed),
             live_leaf: self.live_leaf,
             supervised_tree: self.supervised_tree,

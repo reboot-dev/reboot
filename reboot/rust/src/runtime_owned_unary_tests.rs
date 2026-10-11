@@ -206,6 +206,178 @@ async fn admitted_handler_revocation_interrupts_actual_response_await_without_se
     let _ = server.await;
 }
 
+#[tokio::test]
+async fn ancestor_revocation_preserves_child_lifetime_and_scope_identity() {
+    let source = context(true);
+    let (parent, parent_owner) = source.with_handler_lifetime().unwrap();
+    // Unit-only transfer setup, not registered-local provenance or authority.
+    let mut inbound = context(true);
+    inbound.handler_ancestors = Arc::from([parent.handler_lifetime.as_ref().unwrap().clone()]);
+    let (child, child_owner) = inbound.with_handler_lifetime().unwrap();
+    let nested = child
+        .with_nested_transaction_id(uuid::Uuid::new_v4())
+        .unwrap();
+    assert!(child.validate_handler_lifetime().is_ok());
+    assert!(!child.same_ownership_context(&source));
+    drop(parent_owner);
+    tokio::time::timeout(std::time::Duration::from_secs(1), child.handler_revoked())
+        .await
+        .unwrap();
+    for escaped in [&child, &nested] {
+        assert_eq!(
+            escaped.validate_handler_lifetime().unwrap_err().code(),
+            tonic::Code::Cancelled
+        );
+        assert!(
+            escaped
+                .begin_generated_outbound_for("example.Actor", "B", METHOD)
+                .is_err()
+        );
+        assert!(escaped.reserve_handler_settlement().is_err());
+    }
+    assert!(source.validate_handler_lifetime().is_ok());
+    assert!(
+        *child.handler_lifetime.as_ref().unwrap().borrow(),
+        "child own lifetime still live"
+    );
+    drop(child_owner);
+}
+
+#[tokio::test]
+async fn child_return_does_not_revoke_parent_response_settlement() {
+    let source = context(true);
+    let (parent, parent_owner) = source.with_handler_lifetime().unwrap();
+    let mut inbound = context(true);
+    inbound.handler_ancestors = Arc::from([parent.handler_lifetime.as_ref().unwrap().clone()]);
+    let (child, child_owner) = inbound.with_handler_lifetime().unwrap();
+    drop(child_owner);
+    assert!(child.validate_handler_lifetime().is_err());
+    assert!(parent.validate_handler_lifetime().is_ok());
+    assert!(parent.reserve_handler_settlement().is_ok());
+    drop(parent_owner);
+}
+
+#[tokio::test]
+async fn malformed_handler_ancestry_fails_before_reserving_duplicate_channels() {
+    let (parent, _owner) = context(true).with_handler_lifetime().unwrap();
+    let receiver = parent.handler_lifetime.as_ref().unwrap().clone();
+    let mut inbound = context(true);
+    inbound.handler_ancestors = Arc::from([receiver.clone(), receiver.clone()]);
+    assert_eq!(
+        inbound.reserve_handler_settlement().unwrap_err().code(),
+        tonic::Code::FailedPrecondition
+    );
+    assert!(inbound.with_handler_lifetime().is_err());
+    tokio::time::timeout(std::time::Duration::from_secs(1), inbound.handler_revoked())
+        .await
+        .unwrap();
+    inbound.handler_ancestors = vec![receiver; 17].into();
+    assert_eq!(
+        inbound.validate_handler_lifetime().unwrap_err().code(),
+        tonic::Code::ResourceExhausted
+    );
+}
+
+#[tokio::test]
+async fn live_ancestry_wait_wakes_for_each_channel_and_can_be_dropped() {
+    for revoked_index in 0..3 {
+        let mut senders = Vec::new();
+        let mut receivers = Vec::new();
+        for _ in 0..2 {
+            let (ctx, owner) = context(true).with_handler_lifetime().unwrap();
+            receivers.push(ctx.handler_lifetime.unwrap());
+            senders.push(Some(owner));
+        }
+        let mut inbound = context(true);
+        inbound.handler_ancestors = receivers.into();
+        let (child, own) = inbound.with_handler_lifetime().unwrap();
+        senders.push(Some(own));
+        let mut wait = Box::pin(child.handler_revoked());
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(10), &mut wait)
+                .await
+                .is_err()
+        );
+        drop(wait);
+        assert!(
+            child.validate_handler_lifetime().is_ok(),
+            "dropping waiter never revokes owners"
+        );
+        let mut wait = Box::pin(child.handler_revoked());
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(10), &mut wait)
+                .await
+                .is_err()
+        );
+        drop(senders[revoked_index].take());
+        tokio::time::timeout(std::time::Duration::from_secs(1), wait)
+            .await
+            .unwrap();
+        assert!(child.validate_handler_lifetime().is_err());
+    }
+}
+
+#[test]
+fn ancestry_identity_is_ordered_and_cannot_substitute_scope_owner() {
+    let (first, _first_owner) = context(true).with_handler_lifetime().unwrap();
+    let (second, _second_owner) = context(true).with_handler_lifetime().unwrap();
+    let a = first.handler_lifetime.as_ref().unwrap().clone();
+    let b = second.handler_lifetime.as_ref().unwrap().clone();
+    let mut base = context(true);
+    base.handler_ancestors = Arc::from([a.clone(), b.clone()]);
+    let (child, _child_owner) = base.with_handler_lifetime().unwrap();
+    let scope = child
+        .begin_generated_outbound_for("example.Actor", "B", METHOD)
+        .unwrap();
+    assert!(child.clone().same_ownership_context(&child));
+    assert!(
+        child
+            .clone()
+            .validate_outbound_scope_admission(&scope)
+            .is_ok()
+    );
+    for ancestors in [vec![b.clone(), a.clone()], vec![a.clone()], vec![b.clone()]] {
+        let mut substituted = child.clone();
+        substituted.handler_ancestors = ancestors.into();
+        assert!(!substituted.same_ownership_context(&child));
+        assert!(
+            substituted
+                .validate_outbound_scope_admission(&scope)
+                .is_err()
+        );
+    }
+    let mut duplicate_own = child.clone();
+    duplicate_own.handler_ancestors = Arc::from([child.handler_lifetime.as_ref().unwrap().clone()]);
+    assert_eq!(
+        duplicate_own
+            .reserve_handler_settlement()
+            .unwrap_err()
+            .code(),
+        tonic::Code::FailedPrecondition
+    );
+}
+
+#[test]
+fn sixteen_distinct_ancestors_reserve_without_exceeding_boundary() {
+    let mut owners = Vec::new();
+    let mut receivers = Vec::new();
+    for _ in 0..16 {
+        let (ctx, owner) = context(true).with_handler_lifetime().unwrap();
+        receivers.push(ctx.handler_lifetime.unwrap());
+        owners.push(owner);
+    }
+    let mut inbound = context(true);
+    inbound.handler_ancestors = receivers.into();
+    let (child, child_owner) = inbound.with_handler_lifetime().unwrap();
+    {
+        let reservation = child.reserve_handler_settlement().unwrap();
+        assert_eq!(reservation.len(), 17, "sixteen ancestors plus own handler");
+    }
+    drop(child_owner);
+    assert!(child.validate_handler_lifetime().is_err());
+    drop(owners);
+}
+
 const METHOD: &str = "grpc.health.v1.Health.Check";
 const ERROR_URL: &str = "type.googleapis.com/tests.Declared";
 

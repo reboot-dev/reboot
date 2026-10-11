@@ -36,6 +36,10 @@ pub mod placement_proto {
     include!(concat!(env!("OUT_DIR"), "/placement_proto/rbt.v1alpha1.rs"));
 }
 pub mod reactive;
+#[doc(hidden)]
+pub mod registered_local;
+#[doc(hidden)]
+pub mod registered_local_service;
 pub mod runtime;
 pub mod state_ref;
 /// Canonical SortedMap wire DTOs and Tonic bindings. No builtin Reboot host adapter

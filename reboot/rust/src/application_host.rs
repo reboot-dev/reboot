@@ -957,9 +957,53 @@ pub struct ApplicationHost {
     placement_gate: LegacyPlacementGate,
     placement_requirement: Option<LegacyPlacementRequirement>,
     reflection_descriptor_sets: Vec<&'static [u8]>,
+    local_registry: crate::registered_local::HostLocalRegistry,
 }
 
 impl ApplicationHost {
+    /// Register immutable generated adapter composition without granting policy,
+    /// readiness, mounting or outbound authority. Mount the returned adapter's
+    /// generated service (or exact-target facade) separately on this same host.
+    #[doc(hidden)]
+    pub fn register_transaction_adapter<
+        A: crate::registered_local::GeneratedLocalTransactionAdapter,
+    >(
+        &mut self,
+        adapter: A,
+    ) -> Result<A, tonic::Status> {
+        self.local_registry.register(adapter)
+    }
+
+    /// Retain the generated Tonic service for this exact configured adapter.
+    /// Returned templates provide no internal-call/readiness exemption; a
+    /// ticket-authorized runtime dispatch path is not installed by this method.
+    #[doc(hidden)]
+    pub fn register_local_transaction_service<A>(
+        &mut self,
+        adapter: A,
+    ) -> Result<
+        (
+            A,
+            crate::registered_local_service::RegisteredServiceTemplate,
+        ),
+        tonic::Status,
+    >
+    where
+        A: crate::registered_local_service::GeneratedLocalTransactionService,
+        <A::Service as Service<http::Request<BoxBody>>>::Future: Send + 'static,
+    {
+        self.local_registry.register_service(adapter)
+    }
+    #[doc(hidden)]
+    pub fn registered_transaction_service_count(&self) -> usize {
+        self.local_registry.service_count()
+    }
+
+    #[doc(hidden)]
+    pub fn registered_transaction_adapter_count(&self) -> usize {
+        self.local_registry.len()
+    }
+
     /// Creates a host whose application identity is selected by the server
     /// owner, not from inbound metadata.
     pub fn new(application_id: impl Into<String>) -> Self {
@@ -994,6 +1038,7 @@ impl ApplicationHost {
             placement_gate,
             placement_requirement: None,
             reflection_descriptor_sets: Vec::new(),
+            local_registry: Default::default(),
         }
     }
 
@@ -1076,6 +1121,7 @@ impl ApplicationHost {
             placement_gate: self.placement_gate,
             placement_requirement: self.placement_requirement,
             reflection_descriptor_sets: self.reflection_descriptor_sets,
+            local_registry: self.local_registry,
             public_services,
             router: self.router.add_service(service),
         }
@@ -1121,6 +1167,7 @@ impl ApplicationHost {
             placement_gate: self.placement_gate,
             placement_requirement: self.placement_requirement,
             reflection_descriptor_sets: self.reflection_descriptor_sets,
+            local_registry: self.local_registry,
             public_services,
             router: self.router.add_service(service),
         }
@@ -1136,11 +1183,55 @@ pub struct RunningApplicationHost {
     placement_gate: LegacyPlacementGate,
     placement_requirement: Option<LegacyPlacementRequirement>,
     reflection_descriptor_sets: Vec<&'static [u8]>,
+    local_registry: crate::registered_local::HostLocalRegistry,
     public_services: BTreeSet<String>,
     router: Router<RecoveryIngressStack>,
 }
 
 impl RunningApplicationHost {
+    /// Register immutable generated adapter composition without granting policy,
+    /// readiness, mounting or outbound authority. Mount the returned adapter's
+    /// generated service (or exact-target facade) separately on this same host.
+    #[doc(hidden)]
+    pub fn register_transaction_adapter<
+        A: crate::registered_local::GeneratedLocalTransactionAdapter,
+    >(
+        &mut self,
+        adapter: A,
+    ) -> Result<A, tonic::Status> {
+        self.local_registry.register(adapter)
+    }
+
+    /// Retain the generated Tonic service for this exact configured adapter.
+    /// Returned templates provide no internal-call/readiness exemption; a
+    /// ticket-authorized runtime dispatch path is not installed by this method.
+    #[doc(hidden)]
+    pub fn register_local_transaction_service<A>(
+        &mut self,
+        adapter: A,
+    ) -> Result<
+        (
+            A,
+            crate::registered_local_service::RegisteredServiceTemplate,
+        ),
+        tonic::Status,
+    >
+    where
+        A: crate::registered_local_service::GeneratedLocalTransactionService,
+        <A::Service as Service<http::Request<BoxBody>>>::Future: Send + 'static,
+    {
+        self.local_registry.register_service(adapter)
+    }
+    #[doc(hidden)]
+    pub fn registered_transaction_service_count(&self) -> usize {
+        self.local_registry.service_count()
+    }
+
+    #[doc(hidden)]
+    pub fn registered_transaction_adapter_count(&self) -> usize {
+        self.local_registry.len()
+    }
+
     /// One actor per host. This reserved route can only be installed through
     /// this typed API; duplicate companions return an explicit bounded error.
     #[allow(clippy::result_large_err)]
@@ -1215,6 +1306,7 @@ impl RunningApplicationHost {
             placement_gate: self.placement_gate,
             placement_requirement: self.placement_requirement,
             reflection_descriptor_sets: self.reflection_descriptor_sets,
+            local_registry: self.local_registry,
             public_services: self.public_services,
             router: self.router.add_service(service),
         }
@@ -1257,6 +1349,7 @@ impl RunningApplicationHost {
             placement_gate: self.placement_gate,
             placement_requirement: self.placement_requirement,
             reflection_descriptor_sets: self.reflection_descriptor_sets,
+            local_registry: self.local_registry,
             public_services: self.public_services,
             router: self.router.add_service(service),
         }
@@ -1288,8 +1381,10 @@ impl RunningApplicationHost {
             reflection_descriptor_sets,
             public_services,
             router,
+            local_registry,
             ..
         } = self;
+        readiness.send_replace(RecoveryState::Recovering);
         let router = if reflection_descriptor_sets.is_empty() {
             router
         } else {
@@ -1310,7 +1405,7 @@ impl RunningApplicationHost {
             )
         };
         tokio::pin!(shutdown);
-        if !Self::start_lifecycle(&lifecycle, &mut shutdown, &readiness).await? {
+        if !Self::start_lifecycle(&lifecycle, &mut shutdown, &readiness, &local_registry).await? {
             return Ok(());
         }
         // Bind before recovery so peers can reach the fixed Participant and
@@ -1319,6 +1414,7 @@ impl RunningApplicationHost {
         let listener = match tokio::net::TcpListener::bind(address).await {
             Ok(listener) => listener,
             Err(source) => {
+                local_registry.revoke();
                 readiness.send_replace(RecoveryState::Failed);
                 // Cleanup must not mask the primary bind failure.
                 let _ = Self::shutdown_lifecycle(&lifecycle).await;
@@ -1347,6 +1443,13 @@ impl RunningApplicationHost {
             ChildFailure(tonic::Status),
         }
         let mut supervisor = vec![JoinSet::new()];
+        local_registry.supervise_readiness(
+            readiness.subscribe(),
+            placement_gate.state.clone(),
+            placement_gate.revocations.subscribe(),
+            cancel.clone(),
+            &mut supervisor[0],
+        );
         for (component, registration) in recovery.iter().enumerate() {
             // Startup can await a remote Recover stream indefinitely. Keep the
             // same shutdown future live before Ready; dropping this start future
@@ -1367,6 +1470,7 @@ impl RunningApplicationHost {
                 StartupEvent::Shutdown => None,
                 StartupEvent::Registration(result) => Some(result),
                 StartupEvent::ChildFailure(source) => {
+                    local_registry.revoke();
                     readiness.send_replace(RecoveryState::Failed);
                     cancel.cancel();
                     Self::join_cancelled_recovery(&mut supervisor).await;
@@ -1376,6 +1480,7 @@ impl RunningApplicationHost {
                 }
             };
             let Some(started) = started else {
+                local_registry.revoke();
                 readiness.send_replace(RecoveryState::Failed);
                 cancel.cancel();
                 Self::join_cancelled_recovery(&mut supervisor).await;
@@ -1384,6 +1489,7 @@ impl RunningApplicationHost {
                 return Self::shutdown_result(&cancel, serving).and(cleanup);
             };
             if let Err(source) = started {
+                local_registry.revoke();
                 readiness.send_replace(RecoveryState::Failed);
                 cancel.cancel();
                 Self::join_cancelled_recovery(&mut supervisor).await;
@@ -1427,11 +1533,13 @@ impl RunningApplicationHost {
         tokio::select! {
             _ = &mut shutdown => {
                 // Revoke readiness before the router can observe cancellation.
+                local_registry.revoke();
                 readiness.send_replace(RecoveryState::Failed);
                 cancel.cancel();
             },
             result = Self::next_recovery_child(&mut supervisor), if supervisor.iter().any(|group| !group.is_empty()) => {
                 let source = Self::recovery_child_failure(result);
+                local_registry.revoke();
                 readiness.send_replace(RecoveryState::Failed);
                 cancel.cancel();
                 Self::join_cancelled_recovery(&mut supervisor).await;
@@ -1440,6 +1548,7 @@ impl RunningApplicationHost {
                 return Err(ApplicationHostError::RecoveryTask(source));
             }
             result = &mut serving => {
+                local_registry.revoke();
                 readiness.send_replace(RecoveryState::Failed);
                 cancel.cancel();
                 Self::join_cancelled_recovery(&mut supervisor).await;
@@ -1448,6 +1557,7 @@ impl RunningApplicationHost {
                 return Self::shutdown_result(&cancel, result).and(cleanup);
             }
         }
+        local_registry.revoke();
         readiness.send_replace(RecoveryState::Failed);
         Self::join_cancelled_recovery(&mut supervisor).await;
         let serving = serving.await.expect("application serving task panicked");
@@ -1532,6 +1642,7 @@ impl RunningApplicationHost {
         lifecycle: &[Arc<dyn ApplicationLifecycle>],
         shutdown: &mut Pin<&mut F>,
         readiness: &tokio::sync::watch::Sender<RecoveryState>,
+        local_registry: &crate::registered_local::HostLocalRegistry,
     ) -> Result<bool, ApplicationHostError>
     where
         F: Future<Output = ()> + Send,
@@ -1543,6 +1654,7 @@ impl RunningApplicationHost {
             _ = std::future::ready(()) => false,
         };
         if stopped {
+            local_registry.revoke();
             readiness.send_replace(RecoveryState::Failed);
             return Ok(false);
         }
@@ -1565,11 +1677,13 @@ impl RunningApplicationHost {
                 };
                 match result {
                     None => {
+                        local_registry.revoke();
                         readiness.send_replace(RecoveryState::Failed);
                         Self::shutdown_initialized(lifecycle, initialized).await?;
                         return Ok(false);
                     }
                     Some(Err(source)) => {
+                        local_registry.revoke();
                         readiness.send_replace(RecoveryState::Failed);
                         // Drain every initialized component, retaining the primary error.
                         let _ = Self::shutdown_initialized(lifecycle, initialized).await;
@@ -1595,6 +1709,7 @@ impl RunningApplicationHost {
             _ = std::future::ready(()) => false,
         };
         if stopped {
+            local_registry.revoke();
             readiness.send_replace(RecoveryState::Failed);
             Self::shutdown_initialized(lifecycle, initialized).await?;
             return Ok(false);

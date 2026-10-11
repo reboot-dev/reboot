@@ -177,7 +177,7 @@ fn counter_cargo_build_helper_executes_durable_adapters_in_a_downstream_fixture(
     std::fs::write(
         fixture.join("Cargo.toml"),
         format!(
-            "[package]\nname = \"reboot-rust-build-fixture\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[build-dependencies]\nreboot = {{ package = \"reboot-rust-schema\", path = \"{}\", features = [\"build\"] }}\n\n[dependencies]\ngoogleapis-tonic-google-rpc = \"0.11\"\nhttp = \"1\"\nprost = \"0.13\"\nprost-types = \"0.13\"\nreboot = {{ package = \"reboot-rust-schema\", path = \"{}\", features = [\"test-support\"] }}\nserde_json = \"1\"\ntokio = {{ version = \"1\", features = [\"macros\", \"rt-multi-thread\"] }}\ntokio-stream = {{ version = \"0.1\", features = [\"net\"] }}\ntonic = \"0.12\"\nuuid = \"1\"\n",
+            "[package]\nname = \"reboot-rust-build-fixture\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[build-dependencies]\nreboot = {{ package = \"reboot-rust-schema\", path = \"{}\", features = [\"build\"] }}\n\n[dependencies]\ngoogleapis-tonic-google-rpc = \"0.11\"\nhttp = \"1\"\nhttp-body-util = \"0.1\"\nbytes = \"1\"\nprost = \"0.13\"\nprost-types = \"0.13\"\nreboot = {{ package = \"reboot-rust-schema\", path = \"{}\", features = [\"test-support\"] }}\nserde_json = \"1\"\ntokio = {{ version = \"1\", features = [\"macros\", \"rt-multi-thread\"] }}\ntokio-stream = {{ version = \"0.1\", features = [\"net\"] }}\ntonic = \"0.12\"\nuuid = \"1\"\n",
             env!("CARGO_MANIFEST_DIR"),
             env!("CARGO_MANIFEST_DIR")
         ),
@@ -1046,6 +1046,92 @@ impl reboot::runtime::TransactionalChannelResolver for FixedChannelResolver {
         assert!(matches!(state_ref, "transaction-counter" | "remote-transaction-counter"));
         Ok(self.0.clone())
     }
+}
+
+#[tokio::test]
+async fn generated_local_registration_retains_exact_binding_and_invalidates_builders() {
+    use reboot::registered_local::GeneratedLocalTransactionAdapter;
+    let (endpoint, database, database_server) = start_database().await;
+    let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let sidecar = Arc::new(reboot::durable_participant::TonicParticipantSidecar::connect(&endpoint).await.unwrap());
+    let store = DatabaseActorStore::connect(&endpoint).await.unwrap();
+    let make_adapter = |state_type: &str, store: DatabaseActorStore| {
+        let participant = reboot::durable_participant::DurableActorParticipant::new(
+            sidecar.clone(), state_type, "transaction-counter",
+        );
+        let coordinator = reboot::durable_coordinator::DurableRootCoordinator::new(
+            Arc::new(TransactionCoordinatorSidecar { trace: trace.clone() }),
+            Arc::new(reboot::durable_coordinator::SingleParticipantResolver::new(
+                participant.actor_target(),
+                reboot::durable_participant::DurableActorParticipantHost::new(participant.clone()),
+            ).unwrap()),
+        );
+        transaction_generated::TransactionCounterWritesMethodsTransactionAdapter::new(
+            store, participant, coordinator, TransactionStartFactory,
+            TransactionCounter { trace: trace.clone(), fail: false, downstream: None, final_state_override: None },
+        ).with_sequential_reusable_participants()
+    };
+    let mut host = reboot::application_host::ApplicationHost::new("generated-registration");
+    for wrong_type in ["tests.reboot.protoc.Other", ".tests.reboot.protoc.TransactionCounter"] {
+        assert!(host.register_transaction_adapter(make_adapter(wrong_type, store.clone())).is_err());
+        assert_eq!(host.registered_transaction_adapter_count(), 0);
+    }
+    assert!(host.register_transaction_adapter(make_adapter(
+        "tests.reboot.protoc.TransactionCounter", DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(),
+    )).is_err());
+    assert_eq!(host.registered_transaction_adapter_count(), 0);
+    assert!(host.register_transaction_adapter(transaction_adapter(trace.clone(), false)).is_err());
+    assert_eq!(host.registered_transaction_adapter_count(), 0);
+    let adapter = make_adapter("tests.reboot.protoc.TransactionCounter", store);
+    let config = adapter.local_configuration().unwrap();
+    assert_eq!(config.database_endpoint, tonic::transport::Endpoint::from_shared(endpoint.clone()).unwrap().uri().to_string());
+    assert_eq!(config.target.state_ref, "transaction-counter");
+    assert_eq!(config.target.state_type, "tests.reboot.protoc.TransactionCounter");
+    assert_eq!(config.methods, std::collections::BTreeSet::from(["tests.reboot.protoc.TransactionCounterWritesMethods.Increment".to_owned()]));
+
+    let (registered, template) = host.register_local_transaction_service(adapter).unwrap();
+    assert_eq!(host.registered_transaction_service_count(), 1);
+    let mut erased = template.clone_service();
+    std::future::poll_fn(|cx| erased.poll_ready(cx)).await.unwrap();
+    // The plain erased generated service still enforces its default policy.
+    use http_body_util::BodyExt;
+    let encoded = proto::TransactionIncrementRequest { amount: 1 }.encode_to_vec();
+    let mut frame = vec![0];
+    frame.extend_from_slice(&u32::try_from(encoded.len()).unwrap().to_be_bytes());
+    frame.extend_from_slice(&encoded);
+    let body = http_body_util::Full::new(bytes::Bytes::from(frame))
+        .map_err(|never| match never {}).boxed_unsync();
+    let request = http::Request::builder()
+        .method("POST")
+        .uri("/tests.reboot.protoc.TransactionCounterWritesMethods/Increment")
+        .header("content-type", "application/grpc")
+        .header("te", "trailers")
+        .header("x-reboot-state-ref", "transaction-counter")
+        .body(body).unwrap();
+    let response = erased.call(request).await.unwrap();
+    let header_status = response.headers().get("grpc-status").cloned();
+    let body = response.into_body().collect().await.unwrap();
+    let status = header_status.or_else(|| body.trailers().and_then(|trailers| trailers.get("grpc-status").cloned())).unwrap();
+    assert_eq!(status, "7");
+    assert!(trace.lock().unwrap().is_empty());
+    assert!(database.store_requests().is_empty());
+    assert!(database.create_requests().is_empty());
+    registered.validate_local_registration().unwrap();
+    registered.clone().validate_local_registration().unwrap();
+    assert!(host.register_transaction_adapter(registered.clone()).is_err());
+    assert!(registered.clone().with_supervised_transaction_tree().validate_local_registration().is_err());
+    assert!(registered.clone().with_sequential_root_star().validate_local_registration().is_err());
+    assert!(registered.clone().with_sequential_reusable_participants().validate_local_registration().is_err());
+    assert!(registered.clone().with_authorization(reboot::auth::AuthorizationPolicy::default()).validate_local_registration().is_err());
+    registered.validate_local_registration().unwrap();
+    drop(host);
+    assert!(registered.validate_local_registration().is_err());
+    // Retained templates remain ordinary Tonic services, not host authority.
+    let mut after_drop = template.clone_service();
+    std::future::poll_fn(|cx| after_drop.poll_ready(cx)).await.unwrap();
+    assert!(registered.validate_local_registration().is_err());
+    database_server.abort();
+    let _ = database_server.await;
 }
 
 #[tokio::test]

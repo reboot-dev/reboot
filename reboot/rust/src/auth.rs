@@ -171,6 +171,10 @@ impl AuthorizedHandlerEntry {
 }
 
 impl AuthorizationPolicy {
+    pub(crate) fn same_entry_identity(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.entry_identity, &other.entry_identity)
+    }
+
     /// Execute the existing configured policy once, retaining the exact immutable
     /// inputs across subsequent actor/owner admission. Public construction of a
     /// policy is not a host registration and this receipt is not outbound authority.

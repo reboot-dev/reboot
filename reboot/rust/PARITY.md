@@ -12,6 +12,57 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Registered local composition prerequisites (2026-10-11)
+
+The current checkpoint adds host-owned registration and actual generated Tonic
+service templates. Exact canonical actor type/ref, Database endpoint, eligible
+exclusive non-factory method set, policy identity and adapter incarnation are
+bound together. Provisional bindings remain invalid through failed registration;
+configuration-changing generated builders invalidate the binding. Clones retain
+it. This is trusted Rust host composition, not attestation against malicious host
+code and not internal-call authority.
+
+Registration survives initial/running/serving host transitions and parked
+lifecycle cleanup, but weak bindings cannot retain host identity after destruction.
+The separate Starting/Ready/Revoked gate observes recovery and placement readiness.
+Revocation precedes early failure/shutdown cleanup; the placement epoch baseline
+is captured before monitor spawn. Revoked generations cannot reopen. This gate
+is an observation API, not an atomic execution or settlement reservation.
+
+Registry-retained templates construct the real generated Tonic server from the
+same configured adapter. Erasure releases its template lock before polling and
+uses the same service clone for readiness and invocation. An encoded in-process
+Increment RPC still receives default-policy PermissionDenied before handler or
+Database writes. Retained templates can remain Tower-ready after host destruction
+while registration validation fails: ordinary service readiness is not authority.
+The generated validation helper boxes its status error without lint suppression.
+
+Private ordered ancestor identity, duplicate/bound checks, multi-channel waits
+and settlement reservations are implemented and tested. Production ancestry is
+still empty. Immutable parent-prefix insertion is NOT yet implemented; private
+unit fixtures alone cannot establish provenance or exclude arbitrary reparenting.
+
+Fresh aggregate publication acceptance:
+`/tmp/reboot-rust-user-http-full-audit-1791752099392552443/accepted.json`.
+All **10 gates passed**: SDK **573 tests** (including nested downstream summaries),
+SDK library **473**, generated consumer **44**, default consumer **1**, plugin **4**,
+SDK and generated reactive-consumer strict Clippy, focused native **4 cases**,
+ownership/CLI units and public User/workflows/checkpoint restart/greeting.
+Frozen source hashes matched, all recorded exact descendant identities were absent,
+and the owner lock was released before this ledger update. Final resource guards
+passed. Focused reviews found no concrete remaining introduced defect in the
+registration/generated template path; identified canonical-target and lifecycle
+revocation/epoch defects were repaired and exercised before this acceptance.
+The earlier failed audit `1791751864416844683` is retained: strict generated-consumer
+Clippy rejected the unboxed validation result before the repair.
+
+This is a bounded prerequisite checkpoint. Policy-bound outbound permission,
+one-use inbound tickets binding the actual allocated B child, secured local
+transport/terminal dispatch, host execution reservations, immutable production
+ancestry insertion and same-host native A/B acceptance remain unimplemented.
+No broad native inventory, secure internal authority or overall parity is claimed.
+Earlier sections retain their original checkpoint evidence and limitations.
+
 ## Revocable generated-handler lifetime (2026-10-11)
 
 Actual guarded generated handlers receive a private lifetime-bound context.
@@ -3579,7 +3630,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: ba649e5448dbe3430da9324454c1cf4d58ed37e1f2a6ce31967666418b136775 -->
+<!-- parity-source-sha256: 37faf262aca5ff9adee9384fbbe3a4b70cae0a980a6b55acd6d2ba9327062b68 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,
