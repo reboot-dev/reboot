@@ -15,8 +15,6 @@
 
 pub mod application_host;
 pub mod auth;
-#[cfg(feature = "jwt-auth")]
-pub mod jwt_auth;
 #[cfg(feature = "build")]
 pub mod build;
 pub mod codegen;
@@ -24,6 +22,8 @@ pub mod durable_coordinator;
 pub mod durable_participant;
 pub mod explicit_abort;
 pub mod http_host;
+#[cfg(feature = "jwt-auth")]
+pub mod jwt_auth;
 pub mod legacy_coordinator;
 pub mod legacy_placement;
 pub mod live_participant;

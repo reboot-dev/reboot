@@ -12,6 +12,57 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Authorization-backed handler entry and rejection cleanup (2026-10-11)
+
+Selected generated root-star/reusable handlers now retain an opaque decision
+receipt from the existing single policy evaluation. Consumption binds the private
+policy identity, exact SDK admission incarnation, original transaction ownership,
+actor/method and immutable state/request bytes. The guard independently validates
+installed ownership and the current effective retained snapshot, rejects stale
+or pre-reservation admissions, and rechecks host ownership after awaiting the
+participant mutex. This is authorization-entry evidence, not internal-call or
+same-host dispatch authority.
+
+Generated outer rejection routes through the existing awaited root Abort or
+inbound Watch cleanup. Fixture-local emitted-code request-byte corruption tests
+that unchanged branch without an SDK fault hook. The registered-root test uses a
+direct generated service-trait future, not a Tonic client RPC: ApplicationHost
+activates its actual owner; participant Abort is parked until explicit ACK, while
+response completion, root registration, owner capacity and actor admission remain
+reserved. No handler, Prepare or Commit runs before ACK; after ACK registration
+and a normal fresh-root execution succeed. Sidecars are mocks, not native proof.
+The generated inbound rejection test preserves N1 effects and one stable Watch,
+rejects N2 before handler/effects/success metadata, and permits N3.
+
+Pre-handler cancellation transfers exact-call relinquishment to the reserved
+live owner. The cleanup obligation is synchronously disarmed before handler
+invocation, so arbitrary handler failure/cancellation gains no rollback authority.
+Mutex-blocked validation and rejection-cleanup cancellation preserve retained
+state and admit N3. Failed relinquishment instead retains the exact execution
+barrier and reports owning-host failure immediately: queued Prepare remains
+blocked, no native Prepare runs and N3 is rejected. Existing Watch ownership and
+restart/recovery uncertainty are retained; no speculative Abort is introduced.
+
+Private transport-independent unary consumption is extracted and exercised via
+actual in-process Tonic success/declared-error settlement. It grants no local
+provenance and preserves original-terminal evidence requirements.
+
+Fresh publication acceptance:
+`/tmp/reboot-rust-user-http-full-audit-1791745672651700822/accepted.json`.
+All **10 gates passed**, including SDK **550 tests** (nested generated-consumer
+summaries included), generated fixture **43 tests**, default consumer **1 test**,
+plugin **4 tests**, both strict Clippy gates, focused native **4 cases**, ownership
+and CLI units, public User, workflows/transactions, instrumented checkpoint
+restart and public greeting. Focused final applied-source repair review found no
+concrete blocker. Frozen source hashes matched; all exact owned-process identities
+were absent and the owner lock was released before this ledger update. Final
+resource guards passed. This is not full native inventory or overall parity.
+
+Secured same-host registration, revocable outbound lifetime/internal dispatch and
+exact allocated B-child binding remain unimplemented. The existing native network
+N1-success/N2-declared-rollback/N3-success regression is not secured local-dispatch
+acceptance. No production-readiness or full-parity claim is made.
+
 ## EOF-confirmed terminal evidence and retained-sibling regression (2026-10-11)
 
 The private original-wire observer now wraps a generic readied service while
@@ -3493,7 +3544,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 9d1275b8f2be66917317a487426a2003aef0fc6563b2789642ad7ba1d9e7f4c9 -->
+<!-- parity-source-sha256: b4ed1f17bbc284870bef47b9dbbd6b7a0f6d3e482761f2d379f6b70854fcf0c6 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

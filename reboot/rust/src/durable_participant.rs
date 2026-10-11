@@ -771,6 +771,55 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
         })
     }
 
+    /// SDK-minted identity for this exact admission, never caller-supplied headers.
+    #[doc(hidden)]
+    pub fn authorized_handler_admission(&self) -> crate::auth::AuthorizedHandlerAdmission {
+        crate::auth::AuthorizedHandlerAdmission {
+            owner: self.local_owner,
+        }
+    }
+
+    /// Authorization consumption requires the exact live admitted incarnation,
+    /// including the effective retained-sibling snapshot, not just cached bytes.
+    pub(crate) async fn validate_authorized_handler_execution(
+        &self,
+        context: &crate::runtime::TransactionContext,
+    ) -> Result<(), Status> {
+        let pending = self.participant.pending.lock().await;
+        if self.handed_off
+            || context.mode() != TransactionMode::Exclusive
+            || self.participant.state_ref != context.headers().state_ref
+            || !pending.as_ref().is_some_and(|current| {
+                current.root_id == self.transaction_id
+                    && current.root_id == context.transaction_root_id()
+                    && current.local_owner == Some(self.local_owner)
+                    && current.transaction_ids == context.transaction_ids()
+                    && current.coordinator_state_type
+                        == context.transaction_coordinator_state_type()
+                    && current.coordinator_state_ref == context.transaction_coordinator_state_ref()
+                    && current.execution_active
+                    && current.disposition == PendingDisposition::Commit
+                    && !current.prepared
+                    && !current.terminal_attempted
+                    && !current
+                        .reusable
+                        .as_ref()
+                        .is_some_and(|calls| calls.admitting)
+                    && current
+                        .effects
+                        .state
+                        .as_ref()
+                        .or(current.loaded_state.as_ref())
+                        == self.state.as_ref()
+            })
+        {
+            return Err(Status::failed_precondition(
+                "authorized handler incarnation or snapshot differs",
+            ));
+        }
+        Ok(())
+    }
+
     /// Scheduling authority remains tied to this admitted incarnation and lease.
     pub(crate) async fn validate_task_execution(
         &self,
@@ -4629,6 +4678,553 @@ mod tests {
             prepared_state,
             Some(vec![1]),
             "uncertified N2 effects reached Prepare"
+        );
+    }
+
+    #[tokio::test]
+    async fn authorized_entry_cancellation_transfers_exact_prehandler_cleanup() {
+        use crate::application_host::{HostRecovery, RecoveryCancellation};
+        use crate::durable_coordinator::{
+            CoordinatorSidecar, DurableRootCoordinator, ParticipantResolver, ParticipantTarget,
+        };
+        struct UnusedCoordinator;
+        impl CoordinatorSidecar for UnusedCoordinator {
+            fn coordinator_prepare(
+                &self,
+                _: database::TransactionCoordinatorPrepareRequest,
+            ) -> SidecarFuture<'_, database::TransactionCoordinatorPrepareResponse> {
+                panic!("stale guard must not coordinate")
+            }
+            fn coordinator_prepared(
+                &self,
+                _: database::TransactionCoordinatorPreparedRequest,
+            ) -> SidecarFuture<'_, database::TransactionCoordinatorPreparedResponse> {
+                panic!("stale guard must not coordinate")
+            }
+            fn coordinator_cleanup(
+                &self,
+                _: database::TransactionCoordinatorCleanupRequest,
+            ) -> SidecarFuture<'_, database::TransactionCoordinatorCleanupResponse> {
+                panic!("stale guard must not coordinate")
+            }
+            fn recover(
+                &self,
+                _: database::RecoverRequest,
+            ) -> SidecarFuture<'_, Vec<database::RecoverResponse>> {
+                panic!("stale guard must not recover")
+            }
+        }
+        struct UnusedResolver;
+        impl ParticipantResolver for UnusedResolver {
+            type Endpoint = InProcessParticipantEndpoint<MockSidecar>;
+            fn resolve(&self, _: &ParticipantTarget) -> SidecarFuture<'_, Arc<Self::Endpoint>> {
+                panic!("stale guard must not resolve")
+            }
+        }
+        struct Watch {
+            entered: tokio::sync::Semaphore,
+            release: tokio::sync::Notify,
+        }
+        impl CoordinatorWatchEndpoint for Watch {
+            fn watch(
+                &self,
+                _: database::WatchRequest,
+            ) -> crate::legacy_coordinator::CoordinatorWatchFuture<'_, database::WatchResponse>
+            {
+                self.entered.add_permits(1);
+                Box::pin(async move {
+                    self.release.notified().await;
+                    Ok(database::WatchResponse { aborted: true })
+                })
+            }
+        }
+        for mode in 0..3 {
+            let rejected = mode != 0;
+            let sidecar = Arc::new(MockSidecar::default());
+            *sidecar.load_state.lock().unwrap() = Some(vec![0]);
+            let participant = DurableActorParticipant::new(sidecar, "example.Actor", "actor/1");
+            let root = Uuid::new_v4();
+            let request = |child| {
+                let mut request = start(root);
+                request.transaction_ids.push(child);
+                request.transaction_path = TransactionPathContract::PreserveNested;
+                request
+            };
+            let watch = Arc::new(Watch {
+                entered: tokio::sync::Semaphore::new(0),
+                release: tokio::sync::Notify::new(),
+            });
+            let owner = crate::live_participant::LiveParticipantOwner::new(
+                2,
+                ParticipantTarget {
+                    state_type: "example.Coordinator".into(),
+                    state_ref: "coordinator/1".into(),
+                },
+                watch.clone(),
+            )
+            .unwrap();
+            let cancellation = RecoveryCancellation::new();
+            let mut supervisor = tokio::task::JoinSet::new();
+            owner
+                .recovery_registration()
+                .start(&mut supervisor, cancellation.clone())
+                .await
+                .unwrap();
+            let policy = crate::auth::AuthorizationPolicy::permissive_for_development();
+            let coordinator =
+                DurableRootCoordinator::new(Arc::new(UnusedCoordinator), Arc::new(UnusedResolver));
+            let n1 = Uuid::new_v4();
+            let mut first_context = rollback_context(root, n1);
+            let first = participant
+                .start_local_reusable(request(n1), ParticipantStartMode::Exclusive, true)
+                .await
+                .unwrap();
+            let first_guard = crate::explicit_abort::RootHandlerGuard::before_handler(
+                first,
+                first_context.clone(),
+                coordinator.clone(),
+                None,
+            )
+            .await
+            .unwrap()
+            .with_sequential_reusable_participants(&mut first_context, Some(&owner))
+            .await
+            .unwrap();
+            first_guard
+                .run_authorized_handler(
+                    &policy,
+                    None,
+                    &first_context,
+                    "unused",
+                    b"request",
+                    || async {},
+                )
+                .await
+                .unwrap();
+            first_guard
+                .stage_effects(PendingActorEffects {
+                    state: Some(vec![7]),
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
+            first_guard.finish_generated_inbound().await.unwrap();
+            tokio::time::timeout(std::time::Duration::from_secs(1), watch.entered.acquire())
+                .await
+                .unwrap()
+                .unwrap()
+                .forget();
+            let n2 = Uuid::new_v4();
+            let mut context = rollback_context(root, n2);
+            let local = participant
+                .start_local_reusable(request(n2), ParticipantStartMode::Exclusive, true)
+                .await
+                .unwrap();
+            let (authorization, auth) = policy
+                .verify(
+                    context.headers().clone(),
+                    "example.Actor",
+                    "example.ActorMethods.Apply",
+                )
+                .await
+                .unwrap();
+            let receipt = policy
+                .authorize_handler_entry(
+                    &local.authorized_handler_admission(),
+                    &context,
+                    &authorization,
+                    auth.as_ref(),
+                    local.state(),
+                    b"request",
+                )
+                .await
+                .unwrap();
+            let guard = crate::explicit_abort::RootHandlerGuard::before_handler(
+                local,
+                context.clone(),
+                coordinator.clone(),
+                None,
+            )
+            .await
+            .unwrap()
+            .with_sequential_reusable_participants(&mut context, Some(&owner))
+            .await
+            .unwrap();
+            if mode == 2 {
+                context.doom(Status::unavailable("fixture doomed before handler"));
+            }
+            let mut queued_prepare =
+                Box::pin(participant.prepare_with_deadline(root, false, false, None));
+            assert!(
+                tokio::time::timeout(std::time::Duration::from_millis(10), &mut queued_prepare)
+                    .await
+                    .is_err()
+            );
+            let pending = participant.pending.lock().await;
+            let invoked = std::sync::atomic::AtomicBool::new(false);
+            let mut future = Box::pin(guard.run_authorized_handler(
+                &policy,
+                Some(receipt),
+                &context,
+                "example.ActorMethods.Apply",
+                if rejected { b"mismatch" } else { b"request" },
+                || {
+                    invoked.store(true, std::sync::atomic::Ordering::SeqCst);
+                    async {}
+                },
+            ));
+            // Valid receipt waits in validation; invalid receipt waits in rollback.
+            if mode == 2 {
+                assert!(
+                    tokio::time::timeout(std::time::Duration::from_millis(20), &mut future)
+                        .await
+                        .unwrap()
+                        .is_err()
+                );
+            } else {
+                assert!(
+                    tokio::time::timeout(std::time::Duration::from_millis(20), &mut future)
+                        .await
+                        .is_err()
+                );
+            }
+            drop(future);
+            drop(guard);
+            assert!(!invoked.load(std::sync::atomic::Ordering::SeqCst));
+            drop(pending);
+            if mode == 2 {
+                // Rejection rollback fails: the reserved owner must report now,
+                // not await the retained Watch or reopen the control barrier.
+                let failed =
+                    tokio::time::timeout(std::time::Duration::from_secs(1), supervisor.join_next())
+                        .await
+                        .unwrap()
+                        .unwrap()
+                        .unwrap();
+                assert!(failed.is_err());
+                let pending = participant.pending.lock().await;
+                let current = pending.as_ref().unwrap();
+                assert!(current.execution_active);
+                assert_eq!(current.transaction_ids, vec![root, n2]);
+                drop(pending);
+                assert!(
+                    tokio::time::timeout(std::time::Duration::from_millis(20), &mut queued_prepare)
+                        .await
+                        .is_err()
+                );
+                assert!(
+                    !participant
+                        .sidecar
+                        .calls
+                        .lock()
+                        .unwrap()
+                        .iter()
+                        .any(|call| matches!(call, Call::Prepare(_)))
+                );
+                assert!(
+                    participant
+                        .start_local_reusable(
+                            request(Uuid::new_v4()),
+                            ParticipantStartMode::Exclusive,
+                            true
+                        )
+                        .await
+                        .is_err()
+                );
+                assert_eq!(watch.entered.available_permits(), 0);
+                cancellation.cancel();
+                while let Some(result) = supervisor.join_next().await {
+                    let _ = result.unwrap();
+                }
+                continue;
+            }
+            drop(queued_prepare);
+            tokio::time::timeout(std::time::Duration::from_secs(1), async {
+                loop {
+                    if participant
+                        .pending
+                        .lock()
+                        .await
+                        .as_ref()
+                        .is_some_and(|current| {
+                            current.transaction_ids.len() == 1 && !current.execution_active
+                        })
+                    {
+                        break;
+                    }
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            let n3 = Uuid::new_v4();
+            let mut third_context = rollback_context(root, n3);
+            let third = participant
+                .start_local_reusable(request(n3), ParticipantStartMode::Exclusive, true)
+                .await
+                .unwrap();
+            assert_eq!(third.state(), Some([7].as_slice()));
+            let third_guard = crate::explicit_abort::RootHandlerGuard::before_handler(
+                third,
+                third_context.clone(),
+                coordinator.clone(),
+                None,
+            )
+            .await
+            .unwrap()
+            .with_sequential_reusable_participants(&mut third_context, Some(&owner))
+            .await
+            .unwrap();
+            third_guard
+                .run_authorized_handler(
+                    &policy,
+                    None,
+                    &third_context,
+                    "unused",
+                    b"request",
+                    || async {},
+                )
+                .await
+                .unwrap();
+            third_guard.finish_generated_inbound().await.unwrap();
+            assert_eq!(watch.entered.available_permits(), 0, "no reopened Watch");
+            watch.release.notify_one();
+            tokio::time::timeout(std::time::Duration::from_secs(1), async {
+                while participant.pending.lock().await.is_some() {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            cancellation.cancel();
+            while let Some(result) = supervisor.join_next().await {
+                result.unwrap().unwrap();
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn authorized_receipt_rejects_same_path_snapshot_readmission() {
+        let sidecar = Arc::new(MockSidecar::default());
+        *sidecar.load_state.lock().unwrap() = Some(vec![0]);
+        let participant = DurableActorParticipant::new(sidecar, "example.Actor", "actor/1");
+        let root = Uuid::new_v4();
+        let n1 = Uuid::new_v4();
+        let n2 = Uuid::new_v4();
+        let request = |nested| {
+            let mut request = start(root);
+            request.transaction_ids.push(nested);
+            request.transaction_path = TransactionPathContract::PreserveNested;
+            request
+        };
+        let mut first = participant
+            .start_local_reusable(request(n1), ParticipantStartMode::Exclusive, true)
+            .await
+            .unwrap();
+        let _execution = first
+            .reserve_live_execution(&rollback_context(root, n1))
+            .await
+            .unwrap();
+        participant
+            .relinquish(root, n1, false, Some(first.local_owner))
+            .await
+            .unwrap();
+        let original = participant
+            .start_local_reusable(request(n2), ParticipantStartMode::Exclusive, true)
+            .await
+            .unwrap();
+        let context = rollback_context(root, n2);
+        let policy = crate::auth::AuthorizationPolicy::permissive_for_development();
+        let (authorization, auth) = policy
+            .verify(
+                context.headers().clone(),
+                "example.Actor",
+                "example.ActorMethods.Apply",
+            )
+            .await
+            .unwrap();
+        let original_admission = original.authorized_handler_admission();
+        let receipt = policy
+            .authorize_handler_entry(
+                &original_admission,
+                &context,
+                &authorization,
+                auth.as_ref(),
+                original.state(),
+                b"request",
+            )
+            .await
+            .unwrap();
+        drop(original);
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            loop {
+                if participant
+                    .pending
+                    .lock()
+                    .await
+                    .as_ref()
+                    .is_some_and(|current| !current.execution_active)
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let mut replacement = participant
+            .start_local_reusable(request(n2), ParticipantStartMode::Exclusive, true)
+            .await
+            .unwrap();
+        let _replacement_execution = replacement.reserve_live_execution(&context).await.unwrap();
+        replacement
+            .validate_authorized_handler_execution(&context)
+            .await
+            .unwrap();
+        assert_eq!(replacement.state(), Some([0].as_slice()));
+        assert_ne!(
+            original_admission.owner,
+            replacement.authorized_handler_admission().owner
+        );
+        assert!(
+            receipt
+                .validate(
+                    &policy,
+                    &replacement.authorized_handler_admission(),
+                    &context,
+                    "example.Actor",
+                    "actor/1",
+                    "example.ActorMethods.Apply",
+                    replacement.state(),
+                    b"request"
+                )
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn authorized_handler_execution_rejects_changed_snapshot_and_stale_incarnation() {
+        let sidecar = Arc::new(MockSidecar::default());
+        *sidecar.load_state.lock().unwrap() = Some(vec![0]);
+        let participant = DurableActorParticipant::new(sidecar, "example.Actor", "actor/1");
+        let root = Uuid::new_v4();
+        let n1 = Uuid::new_v4();
+        let n2 = Uuid::new_v4();
+        let request = |nested| {
+            let mut request = start(root);
+            request.transaction_ids.push(nested);
+            request.transaction_path = TransactionPathContract::PreserveNested;
+            request
+        };
+        let mut first = participant
+            .start_local_reusable(request(n1), ParticipantStartMode::Exclusive, true)
+            .await
+            .unwrap();
+        let first_context = rollback_context(root, n1);
+        assert!(
+            first
+                .validate_authorized_handler_execution(&first_context)
+                .await
+                .is_err()
+        );
+        let _first_execution = first.reserve_live_execution(&first_context).await.unwrap();
+        first
+            .validate_authorized_handler_execution(&first_context)
+            .await
+            .unwrap();
+        assert!(
+            first
+                .validate_authorized_handler_execution(&rollback_context(root, n2))
+                .await
+                .is_err()
+        );
+        {
+            let mut pending = participant.pending.lock().await;
+            let current = pending.as_mut().unwrap();
+            current.effects.state = Some(vec![]);
+        }
+        assert!(
+            first
+                .validate_authorized_handler_execution(&first_context)
+                .await
+                .is_err()
+        );
+        {
+            let mut pending = participant.pending.lock().await;
+            pending.as_mut().unwrap().effects.state = None;
+        }
+        first
+            .validate_authorized_handler_execution(&first_context)
+            .await
+            .unwrap();
+        first
+            .stage_mock_validated(PendingActorEffects {
+                state: Some(vec![1]),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert!(
+            first
+                .validate_authorized_handler_execution(&first_context)
+                .await
+                .is_err()
+        );
+        participant
+            .relinquish(root, n1, false, Some(first.local_owner))
+            .await
+            .unwrap();
+        let mut second = participant
+            .start_local_reusable(request(n2), ParticipantStartMode::Exclusive, true)
+            .await
+            .unwrap();
+        let second_context = rollback_context(root, n2);
+        let _second_execution = second
+            .reserve_live_execution(&second_context)
+            .await
+            .unwrap();
+        assert_eq!(second.state(), Some([1].as_slice()));
+        // The effective retained state, not the original Load result, is valid.
+        second
+            .validate_authorized_handler_execution(&second_context)
+            .await
+            .unwrap();
+        assert!(
+            first
+                .validate_authorized_handler_execution(&first_context)
+                .await
+                .is_err()
+        );
+        for terminal in [false, true] {
+            {
+                let mut pending = participant.pending.lock().await;
+                let current = pending.as_mut().unwrap();
+                current.prepared = !terminal;
+                current.terminal_attempted = terminal;
+            }
+            assert!(
+                second
+                    .validate_authorized_handler_execution(&second_context)
+                    .await
+                    .is_err()
+            );
+        }
+        {
+            let mut pending = participant.pending.lock().await;
+            let current = pending.as_mut().unwrap();
+            current.prepared = false;
+            current.terminal_attempted = false;
+        }
+        second
+            .validate_authorized_handler_execution(&second_context)
+            .await
+            .unwrap();
+        second.handoff_to_durable_recovery();
+        assert!(
+            second
+                .validate_authorized_handler_execution(&second_context)
+                .await
+                .is_err()
         );
     }
 

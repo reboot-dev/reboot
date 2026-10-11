@@ -263,6 +263,74 @@ fn assert_b(context: &TransactionContext) {
     assert_eq!(members[0].target.state_ref, "B");
     assert!(!members[0].read_only);
 }
+// Private transport regression only: this service has no internal authorization
+// capability and is not exposed through the public resolver surface.
+#[tokio::test]
+async fn owned_unary_private_service_consumes_real_tonic_success_and_declared_terminal() {
+    use tower::Layer;
+    for success in [true, false] {
+        let root = context(true);
+        let mut scope = root
+            .begin_generated_outbound_for("example.Actor", "B", METHOD)
+            .unwrap();
+        let resolver = Resolver {
+            channel: tonic::transport::Endpoint::from_static("http://127.0.0.1:1").connect_lazy(),
+            calls: Default::default(),
+            park: None,
+            entered: Arc::new(tokio::sync::Semaphore::new(0)),
+            release: None,
+        };
+        let (_, request) = scoped_generated_transactional_outbound_request(
+            &resolver,
+            &root,
+            &scope,
+            "example.Actor",
+            "B",
+            METHOD,
+            HealthCheckRequest {
+                service: "bound-message".into(),
+            },
+        )
+        .await
+        .unwrap();
+        let (admitted, mut received) = tokio::sync::mpsc::unbounded_channel();
+        let outcome = if success {
+            Outcome::Success("B", false)
+        } else {
+            Outcome::Error(declared("B"))
+        };
+        let service = crate::successful_trailers::SuccessfulParticipantTrailerLayer.layer(
+            HealthServer::new(WireServer {
+                outcomes: Arc::new(Mutex::new(vec![outcome].into())),
+                admitted,
+            }),
+        );
+        let (service, evidence) = terminal_capture::TerminalCaptureService::new(service);
+        let target = scope.binding.as_ref().unwrap().0.clone();
+        let result = consume_generated_transactional_unary::<_, _, HealthCheckResponse>(
+            service,
+            evidence,
+            request,
+            "/grpc.health.v1.Health/Check".parse().unwrap(),
+            &root,
+            &mut scope,
+            &target,
+            &schema(),
+        )
+        .await;
+        assert_eq!(received.recv().await.as_deref(), Some("B"));
+        assert!(scope.completed);
+        assert!(root.doomed_status().is_none());
+        if success {
+            assert_eq!(result.unwrap().response().get_ref().status, 1);
+            assert_b(&root);
+        } else {
+            assert_eq!(result.unwrap_err().code(), tonic::Code::Unknown);
+            assert!(root.returned_participants_snapshot()[0].read_only);
+        }
+    }
+}
+
 #[tokio::test]
 async fn owned_unary_rejects_zero_and_multiple_messages_with_valid_terminal_membership() {
     for (outcome, expected) in [

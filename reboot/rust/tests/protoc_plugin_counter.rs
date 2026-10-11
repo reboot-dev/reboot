@@ -158,6 +158,22 @@ fn counter_cargo_build_helper_executes_durable_adapters_in_a_downstream_fixture(
         ),
     )
     .unwrap();
+    let build_script = std::fs::read_to_string(fixture.join("build.rs")).unwrap();
+    let build_prefix = build_script.strip_suffix("}\n").unwrap();
+    let injection = r#"
+    let emitted_path = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("tests/reboot/protoc/transaction_counter.reboot.rs");
+    let emitted = std::fs::read_to_string(&emitted_path).unwrap();
+    let anchor = "let handler_result = match local.run_authorized_handler(&self.authorization, authorized_entry, &context, \"tests.reboot.protoc.TransactionCounterWritesMethods.Increment\"";
+    // Standalone and mixed-service adapter implementations.
+    assert_eq!(emitted.matches(anchor).count(), 2);
+    let injected = format!("let handler_request_bytes = crate::fixture_authorized_entry_request(&context, handler_request_bytes);\n{anchor}");
+    std::fs::write(emitted_path, emitted.replace(anchor, &injected)).unwrap();
+"#;
+    std::fs::write(
+        fixture.join("build.rs"),
+        format!("{build_prefix}{injection}}}\n"),
+    )
+    .unwrap();
     std::fs::write(
         fixture.join("Cargo.toml"),
         format!(
@@ -196,6 +212,36 @@ mod map_generated {
 #[allow(dead_code)]
 mod transaction_generated {
     include!(concat!(env!("OUT_DIR"), "/tests/reboot/protoc/transaction_counter.reboot.rs"));
+}
+
+#[cfg(test)]
+static FIXTURE_AUTH_REJECTION_HITS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+#[cfg(test)]
+static FIXTURE_ROOT_AUTH_REJECTION_HITS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+// Fixture-only binding corruption; the SDK and generated cleanup are unchanged.
+fn fixture_authorized_entry_request(context: &reboot::runtime::TransactionContext, bytes: Vec<u8>) -> Vec<u8> {
+    #[cfg(test)]
+    {
+        use prost::Message;
+        if (context.transaction_ids() == [uuid::Uuid::from_u128(201), uuid::Uuid::from_u128(203)]
+            && proto::TransactionIncrementRequest::decode(bytes.as_slice()).is_ok_and(|request| request.amount == 2))
+            || (context.transaction_ids() == [uuid::Uuid::from_u128(102)]
+            && proto::TransactionIncrementRequest::decode(bytes.as_slice()).is_ok_and(|request| request.amount == -999))
+        {
+            if context.transaction_ids().len() == 1 {
+                FIXTURE_ROOT_AUTH_REJECTION_HITS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            } else {
+                FIXTURE_AUTH_REJECTION_HITS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+            let mut changed = bytes;
+            changed.push(0);
+            return changed;
+        }
+    }
+    #[cfg(not(test))]
+    let _ = context;
+    bytes
 }
 
 #[cfg(test)]
@@ -715,6 +761,85 @@ impl reboot::durable_coordinator::CoordinatorSidecar for TransactionCoordinatorS
     }
 }
 
+struct AuthorizationCleanupParticipantSidecar {
+    trace: Arc<std::sync::Mutex<Vec<&'static str>>>,
+    state: Option<proto::TransactionCounter>,
+    staged_states: Arc<std::sync::Mutex<Vec<Option<Vec<u8>>>>>,
+    idempotent_recovery: Arc<std::sync::Mutex<VecDeque<Result<Vec<reboot::database_proto::RecoverIdempotentMutationsResponse>, tonic::Status>>>>,
+    aborts: std::sync::Mutex<Vec<reboot::database_proto::TransactionParticipantAbortRequest>>,
+    abort_entered: tokio::sync::Semaphore,
+    abort_release: tokio::sync::Notify,
+}
+struct AuthorizationCleanupCoordinatorSidecar {
+    trace: Arc<std::sync::Mutex<Vec<&'static str>>>,
+    decisions: std::sync::Mutex<Vec<reboot::database_proto::TransactionCoordinatorDecisionPutRequest>>,
+}
+impl reboot::durable_participant::ParticipantSidecar for AuthorizationCleanupParticipantSidecar {
+    fn database_endpoint(&self) -> Option<&str> { Some("http://127.0.0.1:1") }
+    fn load(&self, _: reboot::database_proto::LoadRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::LoadResponse, tonic::Status>> + Send + '_>> {
+        self.trace.lock().unwrap().push("participant load");
+        let state = self.state.clone().map(|state| state.encode_to_vec());
+        Box::pin(async move { Ok(reboot::database_proto::LoadResponse {
+            actors: vec![reboot::database_proto::Actor {
+                state_type: "tests.reboot.protoc.TransactionCounter".into(),
+                state_ref: "transaction-counter".into(),
+                state,
+            }],
+            ..Default::default()
+        }) })
+    }
+    fn prepare(&self, request: reboot::database_proto::TransactionParticipantPrepareRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionParticipantPrepareResponse, tonic::Status>> + Send + '_>> {
+        self.staged_states.lock().unwrap().push(request.state.clone());
+        self.trace.lock().unwrap().push("participant prepare");
+        Box::pin(async { Ok(reboot::database_proto::TransactionParticipantPrepareResponse::default()) })
+    }
+    fn commit(&self, _: reboot::database_proto::TransactionParticipantCommitRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionParticipantCommitResponse, tonic::Status>> + Send + '_>> {
+        self.trace.lock().unwrap().push("participant commit");
+        Box::pin(async { Ok(reboot::database_proto::TransactionParticipantCommitResponse::default()) })
+    }
+    fn abort(&self, request: reboot::database_proto::TransactionParticipantAbortRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionParticipantAbortResponse, tonic::Status>> + Send + '_>> {
+        self.trace.lock().unwrap().push("participant abort");
+        self.aborts.lock().unwrap().push(request);
+        self.abort_entered.add_permits(1);
+        Box::pin(async move { self.abort_release.notified().await; Ok(Default::default()) })
+    }
+    fn recover(&self, _: reboot::database_proto::RecoverRequest) -> Pin<Box<dyn Future<Output = Result<Vec<reboot::database_proto::RecoverResponse>, tonic::Status>> + Send + '_>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+    fn recover_idempotent_mutations(&self, _: reboot::database_proto::RecoverIdempotentMutationsRequest) -> Pin<Box<dyn Future<Output = Result<Vec<reboot::database_proto::RecoverIdempotentMutationsResponse>, tonic::Status>> + Send + '_>> {
+        let response = self.idempotent_recovery.lock().unwrap().pop_front().unwrap_or(Ok(Vec::new()));
+        let park = response.as_ref().is_err_and(|error| error.code() == tonic::Code::Cancelled && error.message() == "fixture park receipt lookup");
+        let trace = Arc::clone(&self.trace);
+        Box::pin(async move {
+            if park { trace.lock().unwrap().push("participant recovery parked"); std::future::pending::<()>().await; }
+            response
+        })
+    }
+}
+impl reboot::durable_coordinator::CoordinatorSidecar for AuthorizationCleanupCoordinatorSidecar {
+    fn database_endpoint(&self) -> Option<&str> { Some("http://127.0.0.1:1") }
+    fn coordinator_prepare(&self, _: reboot::database_proto::TransactionCoordinatorPrepareRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionCoordinatorPrepareResponse, tonic::Status>> + Send + '_>> {
+        self.trace.lock().unwrap().push("coordinator DB prepare");
+        Box::pin(async { Ok(reboot::database_proto::TransactionCoordinatorPrepareResponse::default()) })
+    }
+    fn coordinator_prepared(&self, _: reboot::database_proto::TransactionCoordinatorPreparedRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionCoordinatorPreparedResponse, tonic::Status>> + Send + '_>> {
+        self.trace.lock().unwrap().push("coordinator DB prepared");
+        Box::pin(async { Ok(reboot::database_proto::TransactionCoordinatorPreparedResponse::default()) })
+    }
+    fn coordinator_cleanup(&self, _: reboot::database_proto::TransactionCoordinatorCleanupRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionCoordinatorCleanupResponse, tonic::Status>> + Send + '_>> {
+        self.trace.lock().unwrap().push("coordinator DB cleanup");
+        Box::pin(async { Ok(reboot::database_proto::TransactionCoordinatorCleanupResponse::default()) })
+    }
+    fn decision_put(&self, request: reboot::database_proto::TransactionCoordinatorDecisionPutRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionCoordinatorDecisionPutResponse, tonic::Status>> + Send + '_>> {
+        self.decisions.lock().unwrap().push(request);
+        self.trace.lock().unwrap().push("coordinator DB decision");
+        Box::pin(async { Ok(reboot::database_proto::TransactionCoordinatorDecisionPutResponse::default()) })
+    }
+    fn recover(&self, _: reboot::database_proto::RecoverRequest) -> Pin<Box<dyn Future<Output = Result<Vec<reboot::database_proto::RecoverResponse>, tonic::Status>> + Send + '_>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+}
+
 struct TransactionStartFactory;
 
 impl reboot::runtime::RootTransactionStartFactory for TransactionStartFactory {
@@ -1065,6 +1190,84 @@ async fn generated_fresh_shared_transaction_authorization_precedes_handler_and_r
     assert_eq!(proto::TransactionIncrementRequest::decode(snapshots[0].1.as_slice()).unwrap(), proto::TransactionIncrementRequest { amount: 0 });
 }
 
+
+#[tokio::test]
+async fn generated_registered_root_authorized_entry_rejection_awaits_abort_ack() {
+    use reboot::durable_coordinator::ParticipantTarget;
+    use crate::FIXTURE_ROOT_AUTH_REJECTION_HITS;
+    use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
+    struct Starts(AtomicUsize);
+    impl reboot::runtime::RootTransactionStartFactory for Starts {
+        fn next_root_transaction(&self) -> Result<reboot::runtime::RootTransactionStart, tonic::Status> {
+            Ok(reboot::runtime::RootTransactionStart { transaction_id: Uuid::from_u128(self.0.fetch_add(1, Ordering::SeqCst) as u128), timestamp: prost_types::Timestamp::default() })
+        }
+    }
+    impl reboot::runtime::InboundTransactionStartFactory for Starts {
+        fn next_inbound_transaction(&self, _: &reboot::runtime::InboundTransactionContext) -> Result<Uuid, tonic::Status> { panic!("root fixture cannot admit inbound") }
+    }
+    let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let staged = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let sidecar = Arc::new(AuthorizationCleanupParticipantSidecar {
+        trace: trace.clone(), state: Some(proto::TransactionCounter { value: 4 }),
+        staged_states: staged.clone(), idempotent_recovery: Arc::new(std::sync::Mutex::new(VecDeque::new())),
+        aborts: std::sync::Mutex::new(Vec::new()), abort_entered: tokio::sync::Semaphore::new(0), abort_release: tokio::sync::Notify::new(),
+    });
+    let participant = reboot::durable_participant::DurableActorParticipant::new(sidecar.clone(), "tests.reboot.protoc.TransactionCounter", "transaction-counter");
+    let coordinator_sidecar = Arc::new(AuthorizationCleanupCoordinatorSidecar { trace: trace.clone(), decisions: std::sync::Mutex::new(Vec::new()) });
+    let coordinator = reboot::durable_coordinator::DurableRootCoordinator::new(coordinator_sidecar.clone(), Arc::new(reboot::durable_coordinator::SingleParticipantResolver::new(
+        ParticipantTarget { state_type: "tests.reboot.protoc.TransactionCounter".into(), state_ref: "transaction-counter".into() },
+        reboot::durable_participant::DurableActorParticipantHost::new(participant.clone()),
+    ).unwrap())).with_identity(ParticipantTarget { state_type: "tests.reboot.protoc.TransactionCounter".into(), state_ref: "transaction-counter".into() });
+    let owner = reboot::explicit_abort::ExplicitAbortOwner::new(2).unwrap();
+    let probe = Arc::new(AuthProbe { verifier_calls: Arc::new(AtomicUsize::new(0)), authorizer_calls: Arc::new(AtomicUsize::new(0)), handler_calls: Arc::new(AtomicUsize::new(0)), decision: AuthorizationDecision::Allow, contexts: Arc::new(std::sync::Mutex::new(Vec::new())), snapshots: Arc::new(std::sync::Mutex::new(Vec::new())) });
+    let adapter = transaction_generated::TransactionCounterWritesMethodsTransactionAdapter::new(DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(), participant.clone(), coordinator.clone(), Starts(AtomicUsize::new(102)), TransactionCounter { trace: trace.clone(), fail: false, downstream: None, final_state_override: None })
+        .with_sequential_root_star().with_explicit_abort_owner(owner.clone()).with_authorization(AuthorizationPolicy::new(Some(probe.clone()), Some(probe.clone())));
+    let socket = std::net::TcpListener::bind("127.0.0.1:0").unwrap(); let address=socket.local_addr().unwrap(); drop(socket);
+    let (stop, stopped)=tokio::sync::oneshot::channel::<()>();
+    let registration=adapter.explicit_abort_recovery_registration().unwrap(); let served=adapter.clone();
+    let server=tokio::spawn(async move { reboot::application_host::ApplicationHost::new("root-authorized-rejection").with_host_recovery(registration).add_public_service(proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethodsServer::new(served)).serve_with_shutdown(address,async { let _=stopped.await; }).await });
+    tokio::time::timeout(std::time::Duration::from_secs(3),async { loop { if tonic::transport::Endpoint::from_shared(format!("http://{address}")).unwrap().connect().await.is_ok() { break; } tokio::task::yield_now().await; } }).await.unwrap();
+    let request = |amount| { let mut headers = reboot::RebootHeaders::new("transaction-counter"); headers.bearer_token = Some("allow".into()); let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount }); *request.metadata_mut() = headers.to_metadata().unwrap(); request };
+    FIXTURE_ROOT_AUTH_REJECTION_HITS.store(0, Ordering::SeqCst);
+    let mut rpc = Box::pin(TransactionCounterWritesMethods::increment(&adapter, request(-999)));
+    assert!(tokio::time::timeout(std::time::Duration::from_millis(50), &mut rpc).await.is_err());
+    tokio::time::timeout(std::time::Duration::from_secs(1), sidecar.abort_entered.acquire()).await.unwrap().unwrap().forget();
+    assert_eq!(FIXTURE_ROOT_AUTH_REJECTION_HITS.load(Ordering::SeqCst), 1);
+    assert_eq!(probe.authorizer_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(*trace.lock().unwrap(), ["participant load", "coordinator DB decision", "participant abort"]);
+    assert!(staged.lock().unwrap().is_empty(), "no Prepare/effects");
+    let decisions = coordinator_sidecar.decisions.lock().unwrap().clone();
+    assert_eq!(decisions.len(), 1);
+    assert_eq!(decisions[0].root_transaction_id, Uuid::from_u128(102).as_bytes());
+    assert_eq!(decisions[0].decision.as_ref().unwrap().outcome, reboot::database_proto::transaction_coordinator_decision::Outcome::Abort as i32);
+    assert_eq!(sidecar.aborts.lock().unwrap().len(), 1);
+    let root_context = |id| reboot::runtime::RootTransactionContext::start(reboot::RebootHeaders::new("transaction-counter"), "tests.reboot.protoc.TransactionCounter", reboot::runtime::TransactionMode::Exclusive, Uuid::from_u128(id), prost_types::Timestamp::default()).unwrap();
+    let root = root_context(102);
+    let duplicate = reboot::explicit_abort::RegisteredRoot::before_load(&participant, root.transaction().clone(), coordinator.clone(), Some(&owner));
+    assert!(matches!(duplicate, Err(error) if error.message() == "root execution already registered"));
+    let other_root = root_context(104);
+    let spare = reboot::explicit_abort::RegisteredRoot::before_load(&participant, other_root.transaction().clone(), coordinator.clone(), Some(&owner)).unwrap();
+    let third_root = root_context(105);
+    assert!(matches!(reboot::explicit_abort::RegisteredRoot::before_load(&participant, third_root.transaction().clone(), coordinator.clone(), Some(&owner)), Err(error) if error.code() == tonic::Code::ResourceExhausted));
+    drop(spare);
+    let actor_request = reboot::durable_participant::ActorTransactionStart {
+        transaction_ids: vec![Uuid::from_u128(103)], transaction_path: reboot::durable_participant::TransactionPathContract::RootOnly,
+        coordinator_state_type: "tests.reboot.protoc.TransactionCounter".into(), coordinator_state_ref: "transaction-counter".into(),
+        mode: reboot::runtime::TransactionMode::Exclusive, read_only: false, factory: false,
+        state_type: "tests.reboot.protoc.TransactionCounter".into(), state_ref: "transaction-counter".into(),
+    };
+    assert!(tokio::time::timeout(std::time::Duration::from_millis(30), participant.start_local(actor_request, reboot::durable_participant::ParticipantStartMode::Exclusive)).await.is_err());
+    assert!(tokio::time::timeout(std::time::Duration::from_millis(30), &mut rpc).await.is_err(), "RPC must wait for participant Abort ACK");
+    sidecar.abort_release.notify_one();
+    let error = tokio::time::timeout(std::time::Duration::from_secs(2), rpc).await.unwrap().unwrap_err();
+    assert_eq!(error.code(), tonic::Code::FailedPrecondition);
+    assert_eq!(error.message(), "authorized handler entry binding differs");
+    drop(reboot::explicit_abort::RegisteredRoot::before_load(&participant, root.transaction().clone(), coordinator, Some(&owner)).unwrap());
+    let result = tokio::time::timeout(std::time::Duration::from_secs(2), TransactionCounterWritesMethods::increment(&adapter, request(3))).await.unwrap().unwrap();
+    assert_eq!(result.into_inner().value, 7);
+    assert_eq!(trace.lock().unwrap().iter().filter(|event| **event == "handler").count(), 1);
+    stop.send(()).unwrap(); server.await.unwrap().unwrap();
+}
 
 #[tokio::test]
 async fn generated_fresh_exclusive_transaction_authorization_verifies_before_replay_and_aborts_denial() {
@@ -1769,6 +1972,81 @@ async fn generated_retained_sibling_authorization_preserves_n1_for_n3_and_one_wa
         tokio::task::yield_now().await;
         assert_eq!(*trace.lock().unwrap(),["participant load","handler"]);
         assert_eq!(TransactionCounterWritesMethods::increment(&adapter,request(5)).await.unwrap().into_inner().value,12);
+        assert_eq!(*policy.states.lock().unwrap(),[4,7,7]);
+        assert_eq!(watch.count.load(Ordering::SeqCst),1);
+        assert_eq!(*trace.lock().unwrap(),["participant load","handler","handler"]);
+        InProcessParticipantEndpoint::new(host).prepare("transaction-counter",reboot::database_proto::PrepareRequest { transaction_id:Uuid::from_u128(201).as_bytes().to_vec(),..Default::default() }).await.unwrap();
+        assert_eq!(staged.lock().unwrap().len(),1);
+        assert_eq!(proto::TransactionCounter::decode(staged.lock().unwrap()[0].as_deref().unwrap()).unwrap().value,12);
+        watch.release.notify_one();
+        tokio::time::timeout(std::time::Duration::from_secs(2),async { while !trace.lock().unwrap().contains(&"participant commit") { tokio::task::yield_now().await; } }).await.unwrap();
+        assert!(!trace.lock().unwrap().contains(&"participant abort"));
+        assert_eq!(watch.count.load(Ordering::SeqCst),1);
+        stop.send(()).unwrap();server.await.unwrap().unwrap();
+    }
+}
+
+#[tokio::test]
+async fn generated_authorized_entry_rejection_transfers_watch_and_preserves_retained_siblings() {
+    use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
+    use reboot::durable_coordinator::{ParticipantTarget, ParticipantEndpoint, InProcessParticipantEndpoint};
+    struct Starts(AtomicUsize);
+    impl reboot::runtime::RootTransactionStartFactory for Starts {
+        fn next_root_transaction(&self) -> Result<reboot::runtime::RootTransactionStart, tonic::Status> { panic!("inbound only") }
+    }
+    impl reboot::runtime::InboundTransactionStartFactory for Starts {
+        fn next_inbound_transaction(&self, inbound: &reboot::runtime::InboundTransactionContext) -> Result<Uuid, tonic::Status> {
+            assert_eq!(inbound.transaction().transaction_root_id(), Uuid::from_u128(201));
+            Ok(Uuid::from_u128(self.0.fetch_add(1, Ordering::SeqCst) as u128))
+        }
+    }
+    struct Watch { count: AtomicUsize, release: tokio::sync::Notify }
+    impl reboot::legacy_coordinator::CoordinatorWatchEndpoint for Watch {
+        fn watch(&self, _: reboot::database_proto::WatchRequest) -> reboot::legacy_coordinator::CoordinatorWatchFuture<'_, reboot::database_proto::WatchResponse> {
+            Box::pin(async move { self.count.fetch_add(1, Ordering::SeqCst); self.release.notified().await; Ok(reboot::database_proto::WatchResponse { aborted: false }) })
+        }
+    }
+    struct Policy { park: bool, states: std::sync::Mutex<Vec<i64>> }
+    impl Authorizer for Policy {
+        fn authorize<'a>(&'a self, _: &'a AuthorizationContext, _: Option<&'a Auth>, state: Option<&'a [u8]>, request: &'a [u8]) -> reboot::auth::AuthorizeFuture<'a> {
+            let amount = proto::TransactionIncrementRequest::decode(request).unwrap().amount;
+            self.states.lock().unwrap().push(proto::TransactionCounter::decode(state.unwrap()).unwrap().value);
+            Box::pin(async move { if amount == 11 { if self.park { std::future::pending::<()>().await; } AuthorizationDecision::PermissionDenied { message: "retained denied".into() } } else { AuthorizationDecision::Allow } })
+        }
+    }
+    fn request(amount: i64) -> tonic::Request<proto::TransactionIncrementRequest> {
+        let mut headers = reboot::RebootHeaders::new("transaction-counter");
+        headers.transaction_ids = Some(vec![Uuid::from_u128(201)]);
+        headers.transaction_coordinator_state_type = Some("tests.reboot.protoc.Root".into());
+        headers.transaction_coordinator_state_ref = Some("root-counter".into());
+        let mut r=tonic::Request::new(proto::TransactionIncrementRequest { amount }); *r.metadata_mut()=headers.to_metadata().unwrap(); r
+    }
+    for park in [false] {
+        let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let staged = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let participant = reboot::durable_participant::DurableActorParticipant::new(Arc::new(TransactionParticipantSidecar { trace:trace.clone(), state:Some(proto::TransactionCounter { value:4 }), staged_states:staged.clone(), idempotent_recovery:Arc::new(std::sync::Mutex::new(VecDeque::new())) }), "tests.reboot.protoc.TransactionCounter", "transaction-counter");
+        let host = reboot::durable_participant::DurableActorParticipantHost::new(participant.clone());
+        let coordinator = reboot::durable_coordinator::DurableRootCoordinator::new(Arc::new(TransactionCoordinatorSidecar { trace:trace.clone() }), Arc::new(reboot::durable_coordinator::SingleParticipantResolver::new(ParticipantTarget { state_type:"tests.reboot.protoc.TransactionCounter".into(), state_ref:"transaction-counter".into() },reboot::durable_participant::DurableActorParticipantHost::new(participant.clone())).unwrap()));
+        let watch=Arc::new(Watch { count:AtomicUsize::new(0), release:tokio::sync::Notify::new() });
+        let owner=reboot::live_participant::LiveParticipantOwner::new(2,ParticipantTarget { state_type:"tests.reboot.protoc.Root".into(),state_ref:"root-counter".into() },watch.clone()).unwrap();
+        let policy=Arc::new(Policy { park, states:std::sync::Mutex::new(Vec::new()) });
+        let adapter=transaction_generated::TransactionCounterWritesMethodsTransactionAdapter::new(DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(),participant,coordinator,Starts(AtomicUsize::new(202)),TransactionCounter { trace:trace.clone(),fail:false,downstream:None,final_state_override:None }).with_sequential_reusable_participants().with_live_participant_owner(owner).with_authorization(AuthorizationPolicy::new(None,Some(policy.clone())));
+        let socket=std::net::TcpListener::bind("127.0.0.1:0").unwrap();let address=socket.local_addr().unwrap();drop(socket);
+        let (stop, stopped)=tokio::sync::oneshot::channel::<()>();
+        let registration=adapter.live_participant_recovery_registration().unwrap();let served=adapter.clone();
+        let server=tokio::spawn(async move { reboot::application_host::ApplicationHost::new("retained-preguard").with_host_recovery(registration).add_public_service(proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethodsServer::new(served)).serve_with_shutdown(address,async { let _=stopped.await; }).await });
+        tokio::time::timeout(std::time::Duration::from_secs(3),async { loop { if tonic::transport::Endpoint::from_shared(format!("http://{address}")).unwrap().connect().await.is_ok() { break; } tokio::task::yield_now().await; } }).await.unwrap();
+        assert_eq!(TransactionCounterWritesMethods::increment(&adapter,request(3)).await.unwrap().into_inner().value,7);
+        tokio::time::timeout(std::time::Duration::from_secs(2),async { while watch.count.load(Ordering::SeqCst)==0 { tokio::task::yield_now().await; } }).await.unwrap();
+        let n2=tokio::time::timeout(std::time::Duration::from_secs(2),TransactionCounterWritesMethods::increment(&adapter,request(2))).await.unwrap().unwrap_err();
+        assert_eq!(n2.code(),tonic::Code::FailedPrecondition);
+        assert_eq!(n2.message(),"authorized handler entry binding differs");
+        assert_eq!(super::FIXTURE_AUTH_REJECTION_HITS.load(Ordering::SeqCst), 1);
+        assert!(n2.metadata().get(reboot::successful_trailers::TRANSACTION_PARTICIPANTS_HEADER).is_none());
+        assert!(staged.lock().unwrap().is_empty());
+        tokio::task::yield_now().await;
+        assert_eq!(*trace.lock().unwrap(),["participant load","handler"]);
+        assert_eq!(tokio::time::timeout(std::time::Duration::from_secs(2),TransactionCounterWritesMethods::increment(&adapter,request(5))).await.unwrap().unwrap().into_inner().value,12);
         assert_eq!(*policy.states.lock().unwrap(),[4,7,7]);
         assert_eq!(watch.count.load(Ordering::SeqCst),1);
         assert_eq!(*trace.lock().unwrap(),["participant load","handler","handler"]);

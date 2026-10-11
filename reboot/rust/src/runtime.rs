@@ -622,7 +622,44 @@ where
     )
     .await?;
     let (channel, terminal_evidence) = terminal_capture::TerminalCaptureChannel::new(channel);
-    let mut client = tonic::client::Grpc::new(channel);
+    consume_generated_transactional_unary(
+        channel,
+        terminal_evidence,
+        request,
+        path,
+        context,
+        scope,
+        &target,
+        declared_errors,
+    )
+    .await
+}
+
+// Transport-independent consumption is private: supplying a service is not
+// authorization. Network and future registered-local dispatch must both retain
+// the same admission, original-terminal validation and runtime-owned settlement.
+#[allow(clippy::too_many_arguments)]
+async fn consume_generated_transactional_unary<S, Req, Resp>(
+    service: S,
+    terminal_evidence: std::sync::Arc<std::sync::Mutex<terminal_capture::RpcTerminalEvidence>>,
+    request: tonic::Request<Req>,
+    path: http::uri::PathAndQuery,
+    context: &TransactionContext,
+    scope: &mut TransactionalOutboundScope,
+    target: &crate::durable_coordinator::ParticipantTarget,
+    declared_errors: &[DeclaredTransactionalError],
+) -> Result<TransactionalCallResponse<Resp>, Status>
+where
+    S: tower::Service<
+            http::Request<tonic::body::BoxBody>,
+            Response = http::Response<tonic::body::BoxBody>,
+        >,
+    S::Future: Send,
+    S::Error: Into<Box<dyn std::error::Error + Send + Sync>> + std::fmt::Display,
+    Req: Message + Default + Send + 'static,
+    Resp: Message + Default + Send + 'static,
+{
+    let mut client = tonic::client::Grpc::new(service);
     client
         .ready()
         .await

@@ -247,6 +247,8 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> RegisteredRoot<C, R> {
         }
         Ok(RootHandlerGuard {
             local: Some(local),
+            admission_context: self.context.clone(),
+            pre_handler_cleanup: std::sync::atomic::AtomicBool::new(true),
             context: self.context.clone(),
             coordinator: self.coordinator.clone(),
             reservation: self.reservation.take(),
@@ -263,6 +265,10 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> RegisteredRoot<C, R> {
 /// The awaited handler temporary drops before this enclosing lifetime does.
 pub struct RootHandlerGuard<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver> {
     local: Option<StartedLocalTransaction<P>>,
+    // Authorization runs before host execution capabilities are installed.
+    // Retain that immutable identity separately from the live handler context.
+    admission_context: TransactionContext,
+    pre_handler_cleanup: std::sync::atomic::AtomicBool,
     context: TransactionContext,
     coordinator: DurableRootCoordinator<C, R>,
     reservation: Option<(ExplicitAbortOwner, OwnedSemaphorePermit)>,
@@ -314,6 +320,8 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
         };
         Ok(Self {
             local: Some(local),
+            admission_context: context.clone(),
+            pre_handler_cleanup: std::sync::atomic::AtomicBool::new(true),
             context,
             coordinator,
             reservation,
@@ -323,6 +331,117 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
             builtin_map_active: None,
         })
     }
+    /// Consume a previously executed policy decision against this actual admitted
+    /// actor snapshot, then invoke the generated handler. This does not mint
+    /// same-host authority or bypass any configured authorization policy.
+    #[doc(hidden)]
+    pub async fn run_authorized_handler<F, T>(
+        &self,
+        policy: &crate::auth::AuthorizationPolicy,
+        entry: Option<crate::auth::AuthorizedHandlerEntry>,
+        context: &TransactionContext,
+        method: &str,
+        request: &[u8],
+        handler: impl FnOnce() -> F,
+    ) -> Result<T, Status>
+    where
+        F: std::future::Future<Output = T>,
+    {
+        if let Some(entry) = entry {
+            let validation = async {
+                if !context.same_ownership_context(&self.context) {
+                    return Err(Status::failed_precondition(
+                        "authorized entry context differs from guard",
+                    ));
+                }
+                let local = self
+                    .local
+                    .as_ref()
+                    .ok_or_else(|| Status::failed_precondition("handler guard already consumed"))?;
+                entry.validate(
+                    policy,
+                    &local.authorized_handler_admission(),
+                    &self.admission_context,
+                    local.actor_state_type(),
+                    local.actor_state_ref(),
+                    method,
+                    local.state_bytes().as_deref(),
+                    request,
+                )?;
+                self.validate_authorized_handler_owner()?;
+                local.validate_authorized_handler_execution(context).await?;
+                // Participant validation awaited a mutex; recheck host authority.
+                self.validate_authorized_handler_owner()?;
+                if let Some(status) = context.doomed_status() {
+                    return Err(status);
+                }
+                Ok(())
+            }
+            .await;
+            if let Err(error) = validation {
+                // No handler future has been constructed: only this admitted
+                // reusable call can be discarded. Relinquishment compares its
+                // exact local owner/path and restores the saved sibling effects;
+                // Drop still transfers the reserved execution to Watch.
+                if self.inbound.is_some() && context.reusable_participants() {
+                    self.local
+                        .as_ref()
+                        .ok_or_else(|| {
+                            Status::failed_precondition("handler guard already consumed")
+                        })?
+                        .relinquish_call(context, true)
+                        .await?;
+                    self.pre_handler_cleanup
+                        .store(false, std::sync::atomic::Ordering::Release);
+                }
+                return Err(error);
+            }
+        }
+        // No suspension between disarming pre-effect rollback and invoking the
+        // handler closure. Handler cancellation keeps the historical semantics.
+        self.pre_handler_cleanup
+            .store(false, std::sync::atomic::Ordering::Release);
+        Ok(handler().await)
+    }
+
+    fn validate_authorized_handler_owner(&self) -> Result<(), Status> {
+        if self.context.is_fresh_root() {
+            let token = self.registration.as_ref().ok_or_else(|| {
+                Status::failed_precondition("authorized handler requires registered root")
+            })?;
+            if self.reservation.is_none() {
+                return Err(Status::failed_precondition(
+                    "authorized handler cancellation reservation missing",
+                ));
+            }
+            let state = token.owner.state.lock().unwrap();
+            if !state.active
+                || token.owner.failure.borrow().is_some()
+                || !state
+                    .registered_roots
+                    .contains(&self.context.transaction_root_id())
+            {
+                return Err(Status::unavailable("authorized handler root owner stopped"));
+            }
+            drop(state);
+            let (owner, _) = self.reservation.as_ref().unwrap();
+            if !owner.state.lock().unwrap().active || owner.failure.borrow().is_some() {
+                return Err(Status::unavailable(
+                    "authorized handler cancellation owner stopped",
+                ));
+            }
+        } else {
+            self.inbound
+                .as_ref()
+                .ok_or_else(|| {
+                    Status::failed_precondition("authorized handler requires reserved Watch")
+                })?
+                .0
+                .validate_active()?;
+        }
+        Ok(())
+    }
+
     /// Generated legacy factories retain ownership once handler effects may begin.
     /// This is the historical handler-lifetime boundary, not an acknowledged Prepare.
     /// Keep pre-handler policy/receipt admission Drop armed until this synchronous call.
@@ -1061,8 +1180,31 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver> Drop
             self.context.close_branch();
             let context = self.context.clone();
             let watch = reservation.endpoint();
+            // Transfer before any request-owned await can be cancelled. The
+            // reserved owner, not a detached request task, finishes pre-effect
+            // cleanup against the exact captured admission incarnation.
+            let rejected_local = if context.reusable_participants()
+                && self
+                    .pre_handler_cleanup
+                    .load(std::sync::atomic::Ordering::Acquire)
+            {
+                self.local.take()
+            } else {
+                None
+            };
             reservation.submit(Box::pin(async move {
                 context.wait_branch_quiescent().await;
+                if let Some(mut local) = rejected_local
+                    && let Err(error) = local.relinquish_call(&context, true).await
+                {
+                    // Do not clear execution_active on failed cleanup. Queued
+                    // Prepare/terminal controls remain fenced by this exact
+                    // incarnation; an existing retained root Watch stays owned.
+                    // Surface failure immediately to the reserved host, which
+                    // must restart/recover rather than retry or fabricate Abort.
+                    local.handoff_to_durable_recovery();
+                    return Err(error);
+                }
                 execution.watch(watch).await
             }));
         }

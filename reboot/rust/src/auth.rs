@@ -115,9 +115,95 @@ pub struct AuthorizationPolicy {
     authorizer: Option<Arc<dyn Authorizer>>,
     allow_missing_authorizer_for_development: bool,
     declaration: Option<(&'static str, i32)>,
+    entry_identity: Arc<()>,
+}
+
+/// Opaque, single-use authorization result for a generated handler entry.
+/// This is not internal-call authority: only the owning guard can check its
+/// snapshot/ownership binding, and no local-call exemption is granted here.
+#[doc(hidden)]
+pub struct AuthorizedHandlerAdmission {
+    pub(crate) owner: uuid::Uuid,
+}
+
+#[doc(hidden)]
+pub struct AuthorizedHandlerEntry {
+    admission_owner: uuid::Uuid,
+    policy: Arc<()>,
+    transaction: crate::runtime::TransactionContext,
+    authorization: AuthorizationContext,
+    state: Option<Vec<u8>>,
+    request: Vec<u8>,
+}
+
+impl AuthorizedHandlerEntry {
+    #[allow(clippy::too_many_arguments, clippy::result_large_err)]
+    pub(crate) fn validate(
+        self,
+        policy: &AuthorizationPolicy,
+        admission: &AuthorizedHandlerAdmission,
+        transaction: &crate::runtime::TransactionContext,
+        state_type: &str,
+        state_ref: &str,
+        method: &str,
+        state: Option<&[u8]>,
+        request: &[u8],
+    ) -> Result<(), tonic::Status> {
+        if self.admission_owner != admission.owner
+            || !Arc::ptr_eq(&self.policy, &policy.entry_identity)
+            || !self.transaction.same_ownership_context(transaction)
+            || self.transaction.headers() != transaction.headers()
+            || self.authorization.state_type != state_type
+            || self.authorization.headers.state_ref != state_ref
+            || self.authorization.method != method
+            || self.state.as_deref() != state
+            || self.request != request
+        {
+            return Err(tonic::Status::failed_precondition(
+                "authorized handler entry binding differs",
+            ));
+        }
+        if let Some(status) = transaction.doomed_status() {
+            return Err(status);
+        }
+        Ok(())
+    }
 }
 
 impl AuthorizationPolicy {
+    /// Execute the existing configured policy once, retaining the exact immutable
+    /// inputs across subsequent actor/owner admission. Public construction of a
+    /// policy is not a host registration and this receipt is not outbound authority.
+    #[doc(hidden)]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn authorize_handler_entry(
+        &self,
+        admission: &AuthorizedHandlerAdmission,
+        transaction: &crate::runtime::TransactionContext,
+        context: &AuthorizationContext,
+        auth: Option<&Auth>,
+        state: Option<&[u8]>,
+        request: &[u8],
+    ) -> Result<AuthorizedHandlerEntry, tonic::Status> {
+        if context.headers
+            != transaction
+                .headers()
+                .copy_for_token_verification_and_authorization()
+        {
+            return Err(tonic::Status::failed_precondition(
+                "authorization projection differs from transaction",
+            ));
+        }
+        self.authorize(context, auth, state, request).await?;
+        Ok(AuthorizedHandlerEntry {
+            admission_owner: admission.owner,
+            policy: self.entry_identity.clone(),
+            transaction: transaction.clone(),
+            authorization: context.clone(),
+            state: state.map(<[u8]>::to_vec),
+            request: request.to_vec(),
+        })
+    }
     pub fn new(
         verifier: Option<Arc<dyn TokenVerifier>>,
         authorizer: Option<Arc<dyn Authorizer>>,
@@ -127,6 +213,7 @@ impl AuthorizationPolicy {
             authorizer,
             allow_missing_authorizer_for_development: false,
             declaration: None,
+            entry_identity: Arc::new(()),
         }
     }
 
@@ -143,6 +230,7 @@ impl AuthorizationPolicy {
     /// Bind descriptor policy without granting authenticated internal authority.
     pub fn for_declaration<D: crate::runtime::DurableStateDeclaration>(mut self) -> Self {
         self.declaration = Some((D::STATE_TYPE, D::AUTO_CONSTRUCT));
+        self.entry_identity = Arc::new(());
         self
     }
 
@@ -255,6 +343,185 @@ impl AuthorizationPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn handler_transaction() -> crate::runtime::TransactionContext {
+        let mut headers = RebootHeaders::new("example.Actor:A");
+        headers.transaction_ids = Some(vec![uuid::Uuid::new_v4()]);
+        headers.transaction_coordinator_state_type = Some("example.Actor".into());
+        headers.transaction_coordinator_state_ref = Some("example.Actor:A".into());
+        crate::runtime::TransactionContext::from_headers(
+            headers,
+            crate::runtime::TransactionMode::Exclusive,
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn handler_entry_binds_policy_ownership_actor_method_snapshot_and_request() {
+        let policy = AuthorizationPolicy::permissive_for_development();
+        let transaction = handler_transaction();
+        let admission = AuthorizedHandlerAdmission {
+            owner: uuid::Uuid::new_v4(),
+        };
+        let (authorization, auth) = policy
+            .verify(
+                transaction.headers().clone(),
+                "example.Actor",
+                "example.ActorMethods.Apply",
+            )
+            .await
+            .unwrap();
+        for changed in 0..9 {
+            let entry = policy
+                .authorize_handler_entry(
+                    &admission,
+                    &transaction,
+                    &authorization,
+                    auth.as_ref(),
+                    Some(b"snapshot"),
+                    b"request",
+                )
+                .await
+                .unwrap();
+            let other_policy = AuthorizationPolicy::permissive_for_development();
+            let other_transaction = handler_transaction();
+            let replacement = AuthorizedHandlerAdmission {
+                owner: uuid::Uuid::new_v4(),
+            };
+            let outcome = entry.validate(
+                if changed == 1 { &other_policy } else { &policy },
+                if changed == 8 {
+                    &replacement
+                } else {
+                    &admission
+                },
+                if changed == 2 {
+                    &other_transaction
+                } else {
+                    &transaction
+                },
+                if changed == 3 {
+                    "example.Other"
+                } else {
+                    "example.Actor"
+                },
+                if changed == 4 {
+                    "example.Actor:B"
+                } else {
+                    "example.Actor:A"
+                },
+                if changed == 5 {
+                    "example.ActorMethods.Other"
+                } else {
+                    "example.ActorMethods.Apply"
+                },
+                if changed == 6 {
+                    Some(b"different")
+                } else {
+                    Some(b"snapshot")
+                },
+                if changed == 7 {
+                    b"different"
+                } else {
+                    b"request"
+                },
+            );
+            assert_eq!(outcome.is_ok(), changed == 0, "binding vector {changed}");
+        }
+        let (wrong_projection, _) = policy
+            .verify(
+                RebootHeaders::new("example.Actor:B"),
+                "example.Actor",
+                "example.ActorMethods.Apply",
+            )
+            .await
+            .unwrap();
+        assert!(
+            policy
+                .authorize_handler_entry(
+                    &admission,
+                    &transaction,
+                    &wrong_projection,
+                    None,
+                    Some(b"snapshot"),
+                    b"request"
+                )
+                .await
+                .is_err()
+        );
+        assert!(
+            AuthorizationPolicy::default()
+                .authorize_handler_entry(
+                    &admission,
+                    &transaction,
+                    &authorization,
+                    None,
+                    Some(b"snapshot"),
+                    b"request"
+                )
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn handler_entry_executes_configured_authorizer_once_and_validation_does_not_repeat_it() {
+        struct Count(std::sync::atomic::AtomicUsize);
+        impl Authorizer for Count {
+            fn authorize<'a>(
+                &'a self,
+                _: &'a AuthorizationContext,
+                _: Option<&'a Auth>,
+                state: Option<&'a [u8]>,
+                request: &'a [u8],
+            ) -> AuthorizeFuture<'a> {
+                Box::pin(async move {
+                    assert_eq!(state, Some(b"snapshot".as_slice()));
+                    assert_eq!(request, b"request");
+                    self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    AuthorizationDecision::Allow
+                })
+            }
+        }
+        let authorizer = Arc::new(Count(0.into()));
+        let policy = AuthorizationPolicy::new(None, Some(authorizer.clone()));
+        let transaction = handler_transaction();
+        let admission = AuthorizedHandlerAdmission {
+            owner: uuid::Uuid::new_v4(),
+        };
+        let (authorization, auth) = policy
+            .verify(
+                transaction.headers().clone(),
+                "example.Actor",
+                "example.ActorMethods.Apply",
+            )
+            .await
+            .unwrap();
+        let entry = policy
+            .authorize_handler_entry(
+                &admission,
+                &transaction,
+                &authorization,
+                auth.as_ref(),
+                Some(b"snapshot"),
+                b"request",
+            )
+            .await
+            .unwrap();
+        entry
+            .validate(
+                &policy.clone(),
+                &admission,
+                &transaction,
+                "example.Actor",
+                "example.Actor:A",
+                "example.ActorMethods.Apply",
+                Some(b"snapshot"),
+                b"request",
+            )
+            .unwrap();
+        assert_eq!(authorizer.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
 
     struct UserDeclaration;
     impl crate::runtime::DurableStateDeclaration for UserDeclaration {
