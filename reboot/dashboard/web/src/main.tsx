@@ -4100,7 +4100,7 @@ const Overview: FC<{
                 DashboardGetResponse_NeedsGenerateReason.MISSING ? (
                   <p className="graph-note muted">
                     Your application imports generated code that does not exist
-                    yet, so the static call graph anaysis cannot be done. Run{" "}
+                    yet, so the static call graph analysis cannot be done. Run{" "}
                     <code>rbt generate</code>.
                   </p>
                 ) : needsGenerateReason ===
