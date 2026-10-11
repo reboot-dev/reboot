@@ -39,6 +39,8 @@ class ScaffoldTest(unittest.TestCase):
             self.assertEqual(manifest['dependencies']['reboot']['features'], ['jwt-auth'])
             host = (root / 'backend/src/main.rs').read_text()
             self.assertIn('JwtTokenVerifier::rs256', host)
+            self.assertIn('--user-http', host)
+            self.assertTrue((root / 'backend/src/user_http.rs').is_file())
             self.assertNotIn('permissive_for_development', host)
             self.assertNotIn('RBT_RUST_UNAUTHORIZED_DEVELOPMENT', host)
             self.assertIn('auto_construct: PER_USER_ID', (root / 'api/user_app/v1/hello_world.proto').read_text())

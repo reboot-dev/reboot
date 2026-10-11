@@ -45,6 +45,31 @@ both local children. Rust SDK is an unpublished path dependency, edition 2024.
 
 This example does not mint tokens, automatically construct users, deliver OAuth
 claims, implement revocation lists, expose trusted internal contexts, or certify
-transactions/workflows/Tasks.Wait/HTTP/React/production deployment. An issuer's
+transactions/workflows/Tasks.Wait/React/production deployment. An issuer's
 signature remains accepted until expiry unless its key is removed on restart.
 Optional local reactive actor registration is routing, not actor creation or auth.
+
+## Optional local HTTP gateway
+
+Keep `rbt dev run` running. In another shell, start the generated app's explicit
+HTTP-only mode (a separate process, not HTTP/gRPC multiplexing):
+
+```sh
+export RBT_USER_HTTP_LISTEN_ADDR=127.0.0.1:9991
+export RBT_USER_HTTP_RPC_URL=http://127.0.0.1:9990
+export RBT_USER_HTTP_OWNER_ID="$SUBJECT"
+cargo run --manifest-path backend/Cargo.toml --bin app -- --user-http
+```
+
+`GET /user` reads the configured owner. `POST /user/create` and `POST /user/greet`
+require an explicit UUID body as the idempotency key (maximum 1024 bytes).
+Send the issuer-minted bearer credential in `Authorization`; the gateway forwards
+it to the secured RPC verifier. Caller state-reference metadata cannot change the
+configured target. HTTP 401/403 represent credential/ownership denial, 400 malformed
+input, 409 an unconstructed actor or fresh duplicate Create, and 503 upstream
+unavailability/deadline. A timeout has an unknown mutation outcome: retry the same
+UUID, not a new key. Body reads have a one-second deadline (HTTP 408). Duplicate
+Authorization headers are rejected. Stop this process separately with SIGTERM/Ctrl-C; it does
+not own Database or replace the rbt launcher's supervision. Both listen and upstream
+addresses must be explicit loopback addresses. This is a local development gateway,
+not an OAuth flow, production gateway or trusted internal authority.

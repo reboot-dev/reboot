@@ -15,6 +15,25 @@ signed-credential variant with explicit authenticated Create, reader and writer.
 Its README documents the trusted RSA public key, issuer and audience configuration;
 client credentials are supplied through `RBT_USER_BEARER_TOKEN`, not command arguments.
 The example never selects the launcher's permissive development policy.
+Its opt-in `app --user-http` mode is a separate, loopback-only HTTP gateway for
+one configured owner: GET `/user`, POST `/user/create`, POST `/user/greet`.
+Mutation bodies are explicit UUID keys; requests forward bearer credentials to
+the secured RPC adapter on every call, including replay. See the generated README
+for explicit listen/upstream/owner configuration, status codes, deadlines and
+independent shutdown. This is not HTTP/gRPC multiplexing or a production gateway.
+
+Linux acceptance is reproducible using
+`python tests/reboot/cli/rust_user_acceptance_runner.py` from the checkout root.
+Set `CARGO_TARGET_DIR`, `REBOOT_NATIVE2PC_CXX_DATABASE`, `RUST_DX_PYTHON` (a CLI-test
+Python environment with grpcio/grpcio-tools) and `RUST_DX_RBT` to your local tools.
+The runner enforces exclusive target ownership, jobs=2, no incremental/debug data,
+target <=8 GiB and free disk >=8 GiB. It preserves frozen evidence under a unique
+`/tmp/reboot-rust-user-http-full-audit-*` directory. It is a dedicated Linux child
+subreaper: failures retain the lock until tracked/adopted children exit naturally
+and are reaped. Persistent observation errors require operator reconciliation;
+never delete evidence, kill timeout owners or start competing builds to clear it.
+Acceptance is written only after ownership reconciliation. This does not protect
+against SIGKILL or arbitrary external process interference.
 
 The optional `jwt-auth` Cargo feature exports `jwt_auth::JwtTokenVerifier::rs256`.
 It pins RS256 and a structurally validated 2048..4096-bit public RSA key, verifies

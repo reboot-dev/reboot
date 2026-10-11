@@ -49,6 +49,7 @@ def initialize_rust(directory: Path, name: str, sdk: str | None, frontend: str, 
     if example == "secured-user":
         outputs.pop('rust_README.md.j2')
         outputs['rust_user_README.md.j2'] = 'README.md'
+        outputs['rust_user_http.rs.j2'] = 'backend/src/user_http.rs'
     if example == "batch-ledger":
         outputs = {
             'rust_Cargo.toml.j2': 'backend/Cargo.toml',

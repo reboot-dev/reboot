@@ -12,6 +12,42 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Signed User public HTTP checkpoint (2026-10-11)
+
+The secured User scaffold now offers opt-in `app --user-http`: a separate
+loopback-only gateway pinned to one configured owner and literal loopback RPC
+origin. GET `/user`, POST `/user/create` and POST `/user/greet` forward bearer
+credentials through the ordinary secured RPC boundary on every call, including
+receipt replay. Mutation bodies are explicit UUID keys, bounded to 1024 bytes;
+body consumption has a one-second deadline and RPC execution a five-second
+deadline. Duplicate Authorization headers and invalid configuration fail closed.
+Unknown mutation outcomes require retrying the same UUID, not a new key.
+
+Actual unmodified generated-app acceptance exercises CXX/RocksDB construction,
+HTTP/CLI historical replay versus current state, missing/invalid/expired/wrong-owner
+receipt denial before and after restart, forged headers, oversized/chunked/stalled
+bodies, and independent HTTP/RPC shutdown and upstream-unavailable responses.
+
+**Fresh acceptance based on `03a4f09622dabc0457fad0196740ea63ff38e432`:**
+`/tmp/reboot-rust-user-http-full-audit-1791725192880321920` accepted all eight gates:
+ownership regressions, SDK 527 passes, strict SDK and generated-consumer Clippy,
+focused native 4/4, CLI units, secured User public HTTP and unchanged public greeting
+regressions. All gates exited zero with no surviving recorded owned children;
+226 frozen inputs matched. The runner reconciles exact tracked and adopted Linux
+children before acceptance publication, retaining exclusive build ownership through
+observation/evidence failures and deferred interruptions. Twelve actual-runner and
+shutdown regressions cover orphan adoption, lock exclusion, torn snapshots, closed
+diagnostics, failure suppression and publication only after natural exit/reaping.
+Bounded source review approved this dedicated Linux runner, not SIGKILL resilience
+or a global process guarantee. Earlier interrupted/pre-repair audits are not this
+checkpoint's certification. Ledger fingerprint refresh is publication bookkeeping.
+
+This remains an experimental separate-process local gateway, not production
+HTTP/gRPC multiplexing, OAuth, automatic registration, public secured workflows/
+transactions/tasks/reactive parity, full-native inventory recertification or
+merge-result CI. Raw Database requires an isolated trusted network. No external
+side-effect exactly-once or zero internal-invocation claim is made.
+
 ## Signed User public CLI checkpoint (2026-10-11)
 
 `rbt init --backend=rust --rust-example=secured-user` now generates an unmodified
@@ -3291,7 +3327,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 06166d0bcbf035e06c3dcd1207a943fbb2c265303041104a0ab931a9e788b787 -->
+<!-- parity-source-sha256: 4bd568a0c0e346f2a87adba118a0b13e3a72443d2fb5d399ecbe40eaec2144b4 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

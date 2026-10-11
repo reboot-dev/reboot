@@ -14,8 +14,10 @@ import subprocess
 import tempfile
 import time
 import uuid
+import urllib.error
 import grpc
 from grpc_tools import protoc
+from rust_process_ownership import RequestedShutdown
 from rbt.v1alpha1 import database_pb2, database_pb2_grpc
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -32,6 +34,7 @@ RESULT = STAGE / 'result.json'
 proof = {'commands': [], 'sessions': [], 'passed': False}
 sessions = []
 timeout_seen = False
+http_sessions = []
 
 
 def run(args, env=ENV, expected=0, timeout=240):
@@ -75,6 +78,17 @@ manifest = APP / 'backend/Cargo.toml'
 run(['cargo', 'clippy', '--manifest-path', manifest, '--all-targets', '--', '-D', 'warnings'])
 run(['cargo', 'build', '--manifest-path', manifest, '--bins'])
 run(['cargo', 'fmt', '--manifest-path', manifest, '--', '--check'])
+http_config = dict(ENV, RBT_USER_HTTP_LISTEN_ADDR=f'127.0.0.1:{PORT+1}',
+                   RBT_USER_HTTP_RPC_URL=f'http://127.0.0.1:{PORT}', RBT_USER_HTTP_OWNER_ID='owner')
+for field in ['RBT_USER_HTTP_LISTEN_ADDR','RBT_USER_HTTP_RPC_URL','RBT_USER_HTTP_OWNER_ID']:
+    invalid=dict(http_config)
+    invalid.pop(field)
+    run([TARGET/'debug/app','--user-http'],env=invalid,expected=1,timeout=10)
+for upstream in ['http://127.0.0.1', 'http://127.0.0.1:0', f'http://127.0.0.1:{PORT+1}',
+                 f'http://127.0.0.1:{PORT}/path', f'http://127.0.0.1:{PORT}?query',
+                 f'http://user@127.0.0.1:{PORT}', f'http://192.0.2.1:{PORT}']:
+    run([TARGET/'debug/app','--user-http'],env=dict(http_config,RBT_USER_HTTP_RPC_URL=upstream),expected=1,timeout=10)
+run([TARGET/'debug/app','--user-http'],env=dict(http_config,RBT_USER_HTTP_LISTEN_ADDR=f'0.0.0.0:{PORT+1}'),expected=1,timeout=10)
 client = TARGET / 'debug/client'
 ref = run([client, 'state-ref', 'owner'])[0]
 # Inspectors are independent readers only; public Create owns construction.
@@ -128,6 +142,65 @@ class Session:
         assert status==128+signal.SIGTERM and self.data['children_absent'],self.data
 
 
+class HttpSession:
+    def __init__(self, name):
+        self.log = (STAGE / (name+'-http.log')).open('w')
+        env = dict(ENV, RBT_USER_HTTP_LISTEN_ADDR=f'127.0.0.1:{PORT+1}',
+                   RBT_USER_HTTP_RPC_URL=f'http://127.0.0.1:{PORT}', RBT_USER_HTTP_OWNER_ID='owner')
+        self.p = subprocess.Popen([TARGET/'debug/app','--user-http'], cwd=APP, env=env,
+                                  stdout=self.log, stderr=subprocess.STDOUT)
+        self.record={'pid':self.p.pid}
+        proof.setdefault('http_cleanup',[]).append(self.record)
+        self.shutdown=RequestedShutdown(self.p,self.log,self.record)
+        http_sessions.append(self)
+        deadline = time.monotonic()+15
+        while time.monotonic()<deadline:
+            assert self.p.poll() is None, 'HTTP host exited before readiness'
+            try:
+                if http_call('/user',None)[0] == 401:return
+            except (OSError, urllib.error.URLError):pass
+            time.sleep(.05)
+        global timeout_seen
+        timeout_seen=True
+        proof['http_timeout_pid']=self.p.pid
+        raise TimeoutError('HTTP readiness')
+
+    def close(self):
+        global timeout_seen
+        try:
+            self.shutdown.close()
+        except subprocess.TimeoutExpired:
+            timeout_seen=True
+            proof['http_timeout_pid']=self.p.pid
+            raise
+
+def http_call(path,credential,body=None,extra=None):
+    import urllib.request
+    headers=dict(extra or {})
+    if credential is not None:headers['Authorization']='Bearer '+credential
+    request=urllib.request.Request(f'http://127.0.0.1:{PORT+1}'+path,
+                                   data=body.encode() if body is not None else None,headers=headers)
+    try:
+        with urllib.request.urlopen(request,timeout=8) as reply:status,value=reply.status,reply.read().decode()
+    except urllib.error.HTTPError as error:status,value=error.code,error.read().decode()
+    proof.setdefault('http_calls',[]).append({'path':path,'status':status,'value':value})
+    return status,value
+
+
+def raw_http(headers,body=b'',expected=400):
+    import socket
+    with socket.create_connection(('127.0.0.1',PORT+1),timeout=4) as connection:
+        connection.sendall(b'POST /user/greet HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n'+headers+b'\r\n'+body)
+        result=b''
+        while True:
+            chunk=connection.recv(4096)
+            if not chunk:break
+            result+=chunk
+        status=int(result.split(b' ',2)[1])
+        assert status==expected, result
+        proof.setdefault('raw_http_statuses',[]).append(status)
+
+
 def call(command, credential, key=None, denied=None):
     env=dict(ENV)
     env.pop('RBT_USER_BEARER_TOKEN',None)
@@ -169,17 +242,29 @@ try:
     for credential,code in [(None,'Unauthenticated'),('unsigned','Unauthenticated'),(wrong,'PermissionDenied'),(token(exp=1),'Unauthenticated'),(token(iss='other'),'Unauthenticated'),(token(aud='other'),'Unauthenticated')]:
         for method in ['create','greet','read']:
             call(method,credential,denied=code)
+    http_first=HttpSession('first')
+    for credential,status in [(None,401),('unsigned',401),(token(exp=1),401),(wrong,403)]:
+        assert http_call('/user',credential)[0]==status
+        assert http_call('/user/create',credential,str(uuid.uuid4()))[0]==status
+        assert http_call('/user/greet',credential,str(uuid.uuid4()))[0]==status
+    assert http_call('/user',None,extra={'x-reboot-state-ref':ref,'x-reboot-application-id':'forged','x-reboot-internal':'true'})[0]==401
+    assert http_call('/user',owner)[0]==409
+    assert http_call('/user/greet',owner,'invalid')[0]==400
+    assert http_call('/user/greet',owner,'x'*1025)[0]==400
+    raw_http(b'Content-Length: 36\r\nAuthorization: Bearer '+owner.encode()+b'\r\nAuthorization: Bearer unsigned\r\n')
+    raw_http(b'Content-Length: 36\r\nAuthorization: Bearer '+owner.encode()+b'\r\n',expected=408)
+    raw_http(b'Transfer-Encoding: chunked\r\nAuthorization: Bearer '+owner.encode()+b'\r\n',b'401\r\n'+b'x'*1025+b'\r\n0\r\n\r\n')
     state(first,None)
     call('read',owner,denied='FailedPrecondition')
     call('greet',owner,denied='FailedPrecondition')
     state(first,None)
     create_key=str(uuid.uuid4())
-    assert call('create',owner,create_key)=='0'
+    assert http_call('/user/create',owner,create_key)==(200,'0')
     assert call('create',owner,create_key)=='0'
     call('create',owner,str(uuid.uuid4()),denied='FailedPrecondition')
     state(first,0)
     key=str(uuid.uuid4())
-    assert call('greet',owner,key)=='1'
+    assert http_call('/user/greet',owner,key)==(200,'1')
     assert call('greet',owner,key)=='1'
     assert call('greet',owner)=='2'
     call('greet',wrong,key,denied='PermissionDenied')
@@ -188,9 +273,26 @@ try:
         call('greet',credential,key,denied='Unauthenticated')
         call('read',credential,denied='Unauthenticated')
     assert call('read',owner)=='2'
+    for credential,status in [(None,401),('unsigned',401),(token(exp=1),401),(wrong,403)]:
+        assert http_call('/user/create',credential,create_key)[0]==status
     state(first,2)
+    assert http_call('/user',owner,extra={'x-reboot-state-ref':'other','x-reboot-application-id':'forged'})==(200,'2')
+    assert http_call('/user/greet',owner,key)==(200,'1')
+    assert http_call('/user/create',owner,str(uuid.uuid4()))[0]==409
+    state(first,2)
+    http_first.close()
+    assert call('read',owner)=='2'
     first.close()
     second=Session('restart')
+    http_second=HttpSession('restart')
+    for credential,status in [(None,401),('unsigned',401),(token(exp=1),401),(wrong,403)]:
+        assert http_call('/user',credential)[0]==status
+        assert http_call('/user/greet',credential,key)[0]==status
+        assert http_call('/user/create',credential,create_key)[0]==status
+    state(second,2)
+    assert http_call('/user/create',owner,create_key)==(200,'0')
+    assert http_call('/user/greet',owner,key)==(200,'1')
+    assert http_call('/user',owner)==(200,'2')
     for credential in [None,'unsigned',token(exp=1),token(nbf=None)]:
         call('greet',credential,key,denied='Unauthenticated')
         call('read',credential,denied='Unauthenticated')
@@ -202,12 +304,18 @@ try:
     assert call('read',owner)=='2'
     state(second,2)
     second.close()
+    assert http_call('/user',owner)[0]==503
+    assert http_call('/user/greet',owner,key)[0]==503
+    http_second.close()
     assert all(hashlib.sha256((APP/p).read_bytes()).hexdigest()==h for p,h in proof['scaffold_hashes'].items())
     proof['passed']=True
     print('SIGNED_USER_PUBLIC_CLI_ACCEPTED',STAGE,flush=True)
 finally:
     errors=[]
     if not timeout_seen:
+        for session in http_sessions:
+            try:session.close()
+            except Exception as e:errors.append(str(e))
         for session in sessions:
             if session.p.poll() is None:
                 try:session.close()
