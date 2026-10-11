@@ -1,0 +1,50 @@
+# {{ name }} — signed User credentials
+
+This opt-in experimental Rust application uses PER_USER_ID ownership selected by
+its descriptor, not the state name. `HelloWorld` is deliberately a neutral name.
+The authenticated `sub` must equal the actor's final decoded identifier.
+
+Configure the host with your identity provider's trusted RSA public verification
+key and exact issuer/audience, using environment variables or `rbt dev --env-file`:
+
+- `RBT_USER_RSA_PUBLIC_KEY_FILE`: absolute path to a trusted RSA public PEM.
+- `RBT_USER_JWT_ISSUER`: expected issuer.
+- `RBT_USER_JWT_AUDIENCE`: expected audience.
+
+Only RS256 with a structurally validated 2048..4096-bit RSA public key is accepted. Signed tokens must contain `exp`, `iss`, `aud` and a
+nonempty string `sub`; `nbf` is enforced when present, with no clock leeway.
+Dates must be nonnegative integral seconds; expiry equality is rejected. Issuer
+must be an exact string; a matching audience may occur in an audience array.
+An unverified `user_id` claim does not select ownership. Missing/invalid host
+configuration fails startup. The launcher's unauthorized-development flag does
+not bypass this example's authentication or owner policy. Keys are read once at
+startup; restart to rotate the trusted key. No discovery or key refresh occurs.
+
+```sh
+export RBT_RUST_DATABASE_BINARY=/absolute/path/to/reboot/server/database
+rbt dev run --rust-allow-insecure-database
+# In another shell, configure RBT_USER_BEARER_TOKEN with an issuer-minted token.
+REF=$(cargo run --quiet --manifest-path backend/Cargo.toml --bin client -- state-ref "$SUBJECT")
+cargo run --manifest-path backend/Cargo.toml --bin client -- create "$REF"
+cargo run --manifest-path backend/Cargo.toml --bin client -- greet "$REF" 11111111-1111-4111-8111-111111111111
+cargo run --manifest-path backend/Cargo.toml --bin client -- read "$REF"
+```
+
+`RBT_USER_BEARER_TOKEN` is the client credential; never commit it or put it in
+command arguments. Explicit authenticated Create is required. Repeat the same
+idempotency key to retrieve the historical write response without another mutation.
+A currently invalid credential cannot disclose a replay receipt. `SetClaims` is
+externally denied; its generated handler is not an internal registration API.
+
+SECURITY: the raw canonical C++ Database still listens on `0.0.0.0` without
+authentication. Use only an isolated/trusted development network. The mandatory
+`--rust-allow-insecure-database` flag acknowledges that independent limitation;
+it is not an application-authentication bypass or production mode. Public gRPC
+binds loopback. Restart reopens `.rbt/dev/{{ name }}/rust/rocksdb`; shutdown reaps
+both local children. Rust SDK is an unpublished path dependency, edition 2024.
+
+This example does not mint tokens, automatically construct users, deliver OAuth
+claims, implement revocation lists, expose trusted internal contexts, or certify
+transactions/workflows/Tasks.Wait/HTTP/React/production deployment. An issuer's
+signature remains accepted until expiry unless its key is removed on restart.
+Optional local reactive actor registration is routing, not actor creation or auth.

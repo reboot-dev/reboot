@@ -48,7 +48,7 @@ def init_subcommands() -> list[str]:
 
 def register_init(parser: ArgumentParser):
     parser.subcommand('init').add_argument(
-        '--rust-example', type=str, choices=['greeting', 'batch-ledger'], default='greeting',
+        '--rust-example', type=str, choices=['greeting', 'batch-ledger', 'secured-user'], default='greeting',
         help='opt-in Cargo-native Rust application example',
     )
     parser.subcommand('init').add_argument(

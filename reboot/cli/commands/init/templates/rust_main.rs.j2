@@ -43,14 +43,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         DatabaseActorStore::connect(endpoint).await?,
         HelloWorld,
     )
-    .with_authorization(
+{% if example == "secured-user" %}    .with_authorization({
+        let pem = std::fs::read(std::env::var("RBT_USER_RSA_PUBLIC_KEY_FILE")?)?;
+        let verifier = reboot::jwt_auth::JwtTokenVerifier::rs256(
+            &pem,
+            &std::env::var("RBT_USER_JWT_ISSUER")?,
+            &std::env::var("RBT_USER_JWT_AUDIENCE")?,
+        )
+        .map_err(std::io::Error::other)?;
+        reboot::auth::AuthorizationPolicy::new(Some(std::sync::Arc::new(verifier)), None)
+    });
+{% else %}    .with_authorization(
         if std::env::var("RBT_RUST_UNAUTHORIZED_DEVELOPMENT").as_deref() == Ok("1") {
             reboot::auth::AuthorizationPolicy::permissive_for_development()
         } else {
             reboot::auth::AuthorizationPolicy::default()
         },
     );
-    // Optional explicit allowlist; subscription metadata never creates owners.
+{% endif %}    // Optional explicit allowlist; subscription metadata never creates owners.
     // All owners use this exact store and start before public readiness.
     let mut registry = reboot::reactive::LocalReaderRegistry::new();
     let configured = match std::env::var("RBT_RUST_REACTIVE_ACTORS") {

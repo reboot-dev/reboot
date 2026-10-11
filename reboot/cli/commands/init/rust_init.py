@@ -17,7 +17,7 @@ RUST_DEPENDENCY_NAMES = {'reboot', 'prost', 'prost_types', 'tonic', 'tonic_healt
 
 def initialize_rust(directory: Path, name: str, sdk: str | None, frontend: str, example: str = "greeting") -> None:
     # Validate every prerequisite/collision before publishing any scaffold file.
-    if example not in {"greeting", "batch-ledger"}:
+    if example not in {"greeting", "batch-ledger", "secured-user"}:
         raise ValueError("Unsupported Rust example: " + example)
     if frontend != 'none':
         raise ValueError("Rust apps currently require '--frontend=none' (direct gRPC only)")
@@ -46,6 +46,9 @@ def initialize_rust(directory: Path, name: str, sdk: str | None, frontend: str, 
         'rust_rbtrc.j2': '.rbtrc',
         'rust_README.md.j2': 'README.md',
     }
+    if example == "secured-user":
+        outputs.pop('rust_README.md.j2')
+        outputs['rust_user_README.md.j2'] = 'README.md'
     if example == "batch-ledger":
         outputs = {
             'rust_Cargo.toml.j2': 'backend/Cargo.toml',

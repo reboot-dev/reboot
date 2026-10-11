@@ -20,9 +20,12 @@ path = "src/bin/protoc-gen-reboot_rust.rs"
 [features]
 build = ["dep:protoc-bin-vendored", "dep:tonic-build"]
 test-support = []
+jwt-auth = ["dep:jsonwebtoken", "dep:rsa"]
 
 [dependencies]
 base64 = "0.22"
+jsonwebtoken = { version = "9", optional = true }
+rsa = { version = "0.9", optional = true, default-features = false, features = ["pem", "std"] }
 axum = "0.7"
 bytes = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }

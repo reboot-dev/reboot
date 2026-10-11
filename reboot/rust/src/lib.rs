@@ -15,6 +15,8 @@
 
 pub mod application_host;
 pub mod auth;
+#[cfg(feature = "jwt-auth")]
+pub mod jwt_auth;
 #[cfg(feature = "build")]
 pub mod build;
 pub mod codegen;

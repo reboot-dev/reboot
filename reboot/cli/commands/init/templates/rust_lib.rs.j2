@@ -25,7 +25,17 @@ impl generated::HelloWorldMethodsDatabaseHandler for HelloWorld {
         })
     }
 
-    async fn greet(
+{% if example == "secured-user" %}    async fn set_claims(
+        &self,
+        _: &mut proto::HelloWorld,
+        _: proto::CreateRequest,
+    ) -> Result<proto::NumGreetingsResponse, tonic::Status> {
+        Err(tonic::Status::internal(
+            "external SetClaims must not reach its handler",
+        ))
+    }
+
+{% endif %}    async fn greet(
         &self,
         state: &mut proto::HelloWorld,
         _: proto::GreetRequest,

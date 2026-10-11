@@ -12,6 +12,44 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Signed User public CLI checkpoint (2026-10-11)
+
+`rbt init --backend=rust --rust-example=secured-user` now generates an unmodified
+ordinary constructor/reader/writer application using descriptor PER_USER_ID ownership
+and an application-configured signed credential verifier. The opt-in `jwt-auth`
+feature pins RS256, checked public-only RSA keys of 2048..4096 bits, exact string
+issuer, matching audience, integral nonnegative expiry strictly after now and
+optional integral not-before at or before now. Verified nonempty subject supplies
+ownership; the scaffold never selects permissive development authentication.
+Configuration failures fail closed. Ephemeral test signing material is not shipped.
+
+Fresh public acceptance launches actual rbt dev with CXX/RocksDB. Owner calls before
+explicit Create do not construct the actor. Keyed Create replays its original 0;
+fresh duplicate keys deny and leave canonical state unchanged before/after restart.
+Missing, invalid, expired and malformed credentials cannot read or disclose keyed
+writer replay. Wrong owners and external SetClaims deny. Historical writer replay
+returns 1 while current persisted state/read returns 2 after restart.
+
+**Fresh repaired-source acceptance based on
+`0f076b69cd8ad1822e71511e601407eb1123abc9`:**
+`/tmp/reboot-rust-signed-user-full-audit-1791715355637386080` records SDK 527 passes
+including nested consumers (library 430, generated consumer 41, JWT integration 4),
+strict SDK and reactive-consumer Clippy, focused native 4/4, CLI units, secured User
+public acceptance and unchanged greeting/replay/watch/restart/supervision/failed-build
+regressions, all exit 0. All 222 frozen files match and recorded owned process
+identities are absent; exclusive owner lock is released. Final applied source review
+confirmed supported RSA range and both upper-bound PEM verification tests, plus
+fresh duplicate-Create keys and state assertions. Pre-repair acceptance is retained
+but is not the certification for this checkpoint. Ledger/checker fingerprint refresh
+is subsequent publication bookkeeping, not a semantic rerun or runtime proof.
+
+This is experimental local ordinary User application acceptance, not OAuth, automatic
+registration/construction or claims delivery, revocation-list integration, public
+secured tasks/transactions/workflows/reactive integration, production deployment,
+full-native inventory recertification or merge-result CI. Canonical reads do not
+establish zero internal invocations or external effects exactly once. Raw Database
+still requires an isolated trusted network and explicit insecure-development opt-in.
+
 ## Secured User transaction/replay checkpoint (2026-10-11)
 
 A separate generated PER_USER_ID OwnerTransactions service now exercises explicit
@@ -3253,7 +3291,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: f474a7d85a9bc9cd15e16c3612f7df3b62832fc1eb8667c9c4312d1285c46a3b -->
+<!-- parity-source-sha256: 06166d0bcbf035e06c3dcd1207a943fbb2c265303041104a0ab931a9e788b787 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

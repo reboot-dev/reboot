@@ -34,6 +34,7 @@ def source_manifest():
             'reboot/server/database.cc', 'reboot/server/database.h',
             'tests/reboot/cli/rust_app_dx_test.py', 'tests/reboot/cli/rust_app_dx_e2e.py',
             'tests/reboot/cli/rust_batch_ledger_e2e.py',
+            'tests/reboot/cli/rust_user_app_e2e.py',
             'tests/reboot/cli/fixtures/rust_http_request_fixture.py',
             'tests/reboot/cli/fixtures/rust_http_request_host.rs',
         }:

@@ -2,7 +2,7 @@ syntax = "proto3";
 package {{ name }}.v1;
 import "rbt/v1alpha1/options.proto";
 message HelloWorld {
-  option (rbt.v1alpha1.state) = { implements: ["{{ name }}.v1.HelloWorldMethods"] };
+  option (rbt.v1alpha1.state) = { implements: ["{{ name }}.v1.HelloWorldMethods"]{% if example == "secured-user" %} auto_construct: PER_USER_ID{% endif %} };
   int32 number_of_greetings = 1;
   string selected_source = 2;
 }
@@ -11,7 +11,10 @@ service HelloWorldMethods {
   rpc Create(CreateRequest) returns (NumGreetingsResponse) {
     option (rbt.v1alpha1.method).writer = { constructor: {} };
   }
-  rpc Greet(GreetRequest) returns (GreetResponse) {
+{% if example == "secured-user" %}  rpc SetClaims(CreateRequest) returns (NumGreetingsResponse) {
+    option (rbt.v1alpha1.method).writer = {};
+  }
+{% endif %}  rpc Greet(GreetRequest) returns (GreetResponse) {
     option (rbt.v1alpha1.method).writer = {};
   }
   rpc SelectSource(SelectSourceRequest) returns (NumGreetingsResponse) {

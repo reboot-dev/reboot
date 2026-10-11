@@ -1,7 +1,9 @@
 use reboot::ExternalContext;
-use {{ name }}::{generated, proto};
+{% if name < "std" %}use {{ name }}::{generated, proto};
 use std::time::Duration;
-
+{% else %}use std::time::Duration;
+use {{ name }}::{generated, proto};
+{% endif %}
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
@@ -20,6 +22,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let endpoint = std::env::var("RBT_RUST_URL").unwrap_or_else(|_| "http://127.0.0.1:9990".into());
     let context = ExternalContext::new(args.get(2).cloned().unwrap_or_else(|| "hello".into()));
+{% if example == "secured-user" %}    let context = match std::env::var("RBT_USER_BEARER_TOKEN") {
+        Ok(token) => context.with_bearer_token(token),
+        Err(std::env::VarError::NotPresent) => context,
+        Err(error) => return Err(error.into()),
+    };
+{% endif %}
     let channel = tokio::time::timeout(Duration::from_secs(2), context.connect(endpoint)).await??;
     if command == "health" {
         let mut health = tonic_health::pb::health_client::HealthClient::new(channel);
@@ -103,7 +111,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .into_inner()
                     .number_of_greetings
             }
-            "read" => {
+{% if example == "secured-user" %}            "set-claims" => {
+                client
+                    .set_claims(proto::CreateRequest {})
+                    .await?
+                    .into_inner()
+                    .number_of_greetings
+            }
+{% endif %}            "read" => {
                 client
                     .num_greetings(proto::NumGreetingsRequest {})
                     .await?

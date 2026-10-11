@@ -7,6 +7,25 @@ is the single capability ledger. No separate candidate or feature-status documen
 is authoritative. See it before assuming production or general distributed
 semantics.
 
+## Signed User application
+
+`rbt init --backend=rust --frontend=none --rust-example=secured-user
+--application-name=user_app --rust-sdk=/absolute/path/to/reboot/rust` creates a
+signed-credential variant with explicit authenticated Create, reader and writer.
+Its README documents the trusted RSA public key, issuer and audience configuration;
+client credentials are supplied through `RBT_USER_BEARER_TOKEN`, not command arguments.
+The example never selects the launcher's permissive development policy.
+
+The optional `jwt-auth` Cargo feature exports `jwt_auth::JwtTokenVerifier::rs256`.
+It pins RS256 and a structurally validated 2048..4096-bit public RSA key, verifies
+exact string issuer and matching audience, requires integral nonnegative `exp`
+strictly after the current second, validates optional integral `nbf`, and maps
+only signed nonempty `sub` to `Auth::user_id`. No discovery, key refresh, token
+minting, revocation lists, OAuth or automatic user construction is provided.
+Public application authentication does not secure the raw C++ Database network.
+JWT acceptance tests generate ephemeral keys using OpenSSL; no signing keys are
+committed. Enable the feature explicitly in ordinary downstream consumers.
+
 ## Local app quickstart
 
 The crate is unpublished; init requires a checkout and a compatible canonical C++

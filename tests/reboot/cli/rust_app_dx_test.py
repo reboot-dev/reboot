@@ -28,6 +28,27 @@ RBT = str(Path(os.environ.get('RUST_DX_RBT', Path(sys.executable).parent / 'rbt'
 
 
 class ScaffoldTest(unittest.TestCase):
+    def test_secured_user_real_cli_and_nonpermissive_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run([RBT, 'init', '--backend=rust', '--frontend=none',
+                                     '--application-name=user_app', f'--rust-sdk={SDK}',
+                                     '--rust-example=secured-user'], cwd=directory, text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            root = Path(directory)
+            manifest = tomllib.loads((root / 'backend/Cargo.toml').read_text())
+            self.assertEqual(manifest['dependencies']['reboot']['features'], ['jwt-auth'])
+            host = (root / 'backend/src/main.rs').read_text()
+            self.assertIn('JwtTokenVerifier::rs256', host)
+            self.assertNotIn('permissive_for_development', host)
+            self.assertNotIn('RBT_RUST_UNAUTHORIZED_DEVELOPMENT', host)
+            self.assertIn('auto_construct: PER_USER_ID', (root / 'api/user_app/v1/hello_world.proto').read_text())
+            self.assertIn('RBT_USER_BEARER_TOKEN', (root / 'backend/src/bin/client.rs').read_text())
+            self.assertIn('not an application-authentication bypass', (root / 'README.md').read_text())
+            before = {p: p.read_bytes() for p in root.rglob('*') if p.is_file()}
+            with self.assertRaisesRegex(ValueError, 'overwrite'):
+                initialize_rust(root, 'user_app', str(SDK), 'none', 'secured-user')
+            self.assertEqual(before, {p: p.read_bytes() for p in root.rglob('*') if p.is_file()})
+
     def test_batch_selector_real_cli_and_complete_outputs(self):
         with tempfile.TemporaryDirectory() as directory:
             result = subprocess.run([RBT, 'init', '--backend=rust', '--frontend=none',
