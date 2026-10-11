@@ -12,6 +12,43 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Registered-local directory and one-use child ticket primitive
+
+The same-host directory retains the exact configured service and allocator,
+with weak binding ownership, exact target/method/configuration checks and
+fail-closed lookup. It does not itself grant execution authority.
+
+Registered outbound handlers can now issue an opaque, shared one-use ticket for
+an exact destination/request. The retained destination allocator runs once outside
+reservations; the actual child receives sanitized protocol headers and immutable
+parent ancestry, not inherited credentials, own lifetime or outbound permission.
+Mint and consume fence host, ordered lifetimes and branch ledger. A private
+per-scope admission lease is invalidated on every terminal completion and Drop;
+post-callback validation rejects doom, closure and membership uncertainty.
+
+The primitive regression loops through 28 cases: replay/input mismatch, callback
+branch invalidation, allocator/serializer host and parent revocation, terminal
+completion without Drop, and no-ledger consume-before/after-Drop orderings.
+Success/recoverable completion keeps a sibling active to isolate the exact lease;
+rollback requires one active scope. Private unit terminal fixtures are not wire
+terminal authority. No-ledger overlapping consumption may linearize before Drop;
+controlled orderings are not exhaustive concurrent-race proof. Applied read-only
+review found the prior stale-scope blocker closed at source level.
+
+Frozen ten-gate audit `1791760916562807146` accepted: SDK 588 passing results
+including nested generated consumers (488 library, 33 owned-unary, generated 44),
+both strict Clippy gates, native restart 4, process ownership, CLI unit, public
+User/workflows/checkpoint restart and greeting. All ten exits were zero; 236 frozen
+inputs matched, recorded PID/start identities were absent and the owner lock was
+released before this ledger/fingerprint update.
+
+This is a capability primitive, not secured generated dispatch. Receiver extension
+consumption, narrowly capability-bound policy handling, actual local codec/terminal
+transport, fresh B handler ownership and native A-to-B retained/task/restart
+acceptance remain unfinished. Configured B policy denial must remain effective;
+ordinary metadata/internal-call flags confer no authority and invalid local tickets
+must never fall back to network execution.
+
 ## Observed host generation reserved through ledger mutation (2026-10-12)
 
 Registered outbound admission and all three runtime-owned terminal disposition
@@ -3770,7 +3807,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 2c195c093ec70993814741b697310319d676b7c6c44048809c75aa5d8381188c -->
+<!-- parity-source-sha256: 6846017b81fcd582653e4bd1db7664ae591c596088d195c95fb4b64ba82b8e5c -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

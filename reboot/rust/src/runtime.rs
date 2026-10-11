@@ -9,6 +9,9 @@
 //! by `x-reboot-state-ref`, writes require a UUID idempotency key, and reads
 //! return the actor's last successfully written message.
 
+#[path = "runtime_local_ticket.rs"]
+mod local_ticket;
+pub use local_ticket::RegisteredLocalTicket;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::fs::{self, File, OpenOptions};
 use std::future::Future;
@@ -244,6 +247,7 @@ pub struct TransactionalOutboundScope {
     context: TransactionContext,
     binding: Option<(crate::durable_coordinator::ParticipantTarget, String)>,
     request_used: std::sync::atomic::AtomicBool,
+    admission_lease: Arc<std::sync::atomic::AtomicBool>,
 }
 
 #[cfg(test)]
@@ -252,6 +256,8 @@ impl TransactionalOutboundScope {
     // provide production completion authority.
     pub(crate) fn test_terminal_state_setup(&mut self) {
         self.completed = true;
+        self.admission_lease
+            .store(false, std::sync::atomic::Ordering::Release);
     }
 }
 
@@ -261,10 +267,15 @@ impl Drop for TransactionalOutboundScope {
             let mut state = collection
                 .lock()
                 .expect("returned participant mutex poisoned");
+            self.admission_lease
+                .store(false, std::sync::atomic::Ordering::Release);
             state.active -= 1;
             if !self.completed {
                 state.membership_uncertain = true;
             }
+        } else {
+            self.admission_lease
+                .store(false, std::sync::atomic::Ordering::Release);
         }
     }
 }
@@ -829,8 +840,14 @@ fn settle_terminal_scope(
             return Err(status);
         }
         scope.completed = true;
+        scope
+            .admission_lease
+            .store(false, std::sync::atomic::Ordering::Release);
     } else {
         scope.completed = true;
+        scope
+            .admission_lease
+            .store(false, std::sync::atomic::Ordering::Release);
     }
     Ok(())
 }
@@ -1451,6 +1468,7 @@ impl TransactionContext {
             context: self.clone(),
             binding,
             request_used: std::sync::atomic::AtomicBool::new(false),
+            admission_lease: Arc::new(std::sync::atomic::AtomicBool::new(true)),
         })
     }
 
@@ -1525,8 +1543,14 @@ impl TransactionContext {
             }
             // Exact terminal disposition and settlement share the ledger lock.
             scope.completed = true;
+            scope
+                .admission_lease
+                .store(false, std::sync::atomic::Ordering::Release);
         } else {
             scope.completed = true;
+            scope
+                .admission_lease
+                .store(false, std::sync::atomic::Ordering::Release);
         }
         Ok(())
     }
@@ -1604,6 +1628,9 @@ impl TransactionContext {
                 .entry(entries[0].target.clone())
                 .or_insert(true);
             scope.completed = true;
+            scope
+                .admission_lease
+                .store(false, std::sync::atomic::Ordering::Release);
         } else {
             // Private unit provenance setup only; no production call uses None.
             ledger.participants.insert(entries[0].target.clone(), true);
@@ -5602,7 +5629,10 @@ mod tests {
                 "seal and active outbound must never both win"
             );
             if let Ok(scope) = &mut outbound {
-                scope.completed = true; // Test-only terminal state setup; no public certification API.
+                scope.completed = true;
+                scope
+                    .admission_lease
+                    .store(false, std::sync::atomic::Ordering::Release); // Test-only terminal state setup; no public certification API.
             }
             drop(outbound);
             if sealed.is_ok() {
@@ -6050,7 +6080,10 @@ mod tests {
         branch
             .enlist_rolled_back_leaf(None, status.metadata(), "example.Actor", "C")
             .unwrap();
-        scope.completed = true; // Test-only terminal state setup; no public certification API.
+        scope.completed = true;
+        scope
+            .admission_lease
+            .store(false, std::sync::atomic::Ordering::Release); // Test-only terminal state setup; no public certification API.
         drop(scope);
         assert!(!branch.is_fresh_root());
         assert_eq!(branch.returned_participants_snapshot().len(), 1);
@@ -6261,7 +6294,10 @@ mod tests {
             &crate::successful_trailers::ReturnedParticipants::from_metadata(&metadata).unwrap(),
         )
         .unwrap();
-        scope.completed = true; // Test-only terminal state setup; no public certification API.
+        scope.completed = true;
+        scope
+            .admission_lease
+            .store(false, std::sync::atomic::Ordering::Release); // Test-only terminal state setup; no public certification API.
         drop(scope);
         assert!(
             root.begin_generated_outbound_for("example.Actor", "B", "/example.Service/Write")
@@ -6428,7 +6464,10 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(request.metadata().get(STATE_REF_HEADER).unwrap(), "tip");
-        scope.completed = true; // Test-only terminal state setup; no public certification API.
+        scope.completed = true;
+        scope
+            .admission_lease
+            .store(false, std::sync::atomic::Ordering::Release); // Test-only terminal state setup; no public certification API.
         drop(scope);
         assert_eq!(context.seal_explicit_abort().unwrap().len(), 1);
         assert!(

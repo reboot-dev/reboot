@@ -1,6 +1,7 @@
 //! Host-owned registration identity plumbing. Registration is trusted host
 //! composition, not policy admission or internal-call authority. There is no
-//! local transport lookup, ticket minting, or missing-authorizer exemption here.
+//! ticket minting or missing-authorizer exemption here. Directory lookup is trusted
+//! composition only, not dispatch authority.
 use crate::auth::AuthorizationPolicy;
 use crate::durable_coordinator::ParticipantTarget;
 use std::collections::{BTreeMap, BTreeSet};
@@ -40,6 +41,9 @@ impl GeneratedLocalAdapterConfig {
         }
         Ok(())
     }
+    pub(crate) fn same_identity_for_ticket(&self, other: &Self) -> bool {
+        self.same_identity(other)
+    }
     fn same_identity(&self, other: &Self) -> bool {
         self.target == other.target
             && self.database_endpoint == other.database_endpoint
@@ -72,7 +76,28 @@ pub struct RegisteredAdapterBinding {
     committed: Arc<std::sync::atomic::AtomicBool>,
     configuration: GeneratedLocalAdapterConfig,
     gate: tokio::sync::watch::Receiver<HostLocalState>,
+    directory: Weak<std::sync::Mutex<BTreeMap<ParticipantTarget, RegisteredLocalDestination>>>,
 }
+/// Exact registered service snapshot. Lookup supplies composition, not a ticket,
+/// authorization or readiness reservation across later execution.
+#[doc(hidden)]
+#[derive(Clone)]
+pub struct RegisteredLocalDestination {
+    binding: RegisteredAdapterBinding,
+    service: crate::registered_local_service::RegisteredServiceTemplate,
+}
+impl RegisteredLocalDestination {
+    pub fn binding(&self) -> &RegisteredAdapterBinding {
+        &self.binding
+    }
+    pub fn configuration(&self) -> &GeneratedLocalAdapterConfig {
+        &self.binding.configuration
+    }
+    pub fn service(&self) -> &crate::registered_local_service::RegisteredServiceTemplate {
+        &self.service
+    }
+}
+
 /// Short synchronous reservation against the observed local host gate.
 /// Never retain this guard across an await or while dropping/revoking its host.
 /// Do not reacquire any gate read on the same host (including cloned bindings):
@@ -156,6 +181,40 @@ impl RegisteredAdapterBinding {
             }
         }
     }
+    /// Trusted same-host composition lookup only. Never call while holding a
+    /// same-host reservation; no child allocation or execution authority minted.
+    pub fn lookup_local_destination(
+        &self,
+        configuration: &GeneratedLocalAdapterConfig,
+        target: &ParticipantTarget,
+        method: &str,
+    ) -> Result<RegisteredLocalDestination, tonic::Status> {
+        self.require_host_ready(configuration)?;
+        let directory = self
+            .directory
+            .upgrade()
+            .ok_or_else(|| tonic::Status::failed_precondition("local service directory absent"))?;
+        let destination = directory
+            .lock()
+            .expect("local service directory poisoned")
+            .get(target)
+            .cloned()
+            .ok_or_else(|| {
+                tonic::Status::failed_precondition("local destination service absent")
+            })?;
+        if !Weak::ptr_eq(&self.host, &destination.binding.host)
+            || destination.configuration().database_endpoint != configuration.database_endpoint
+            || !destination.configuration().methods.contains(method)
+        {
+            return Err(tonic::Status::failed_precondition(
+                "local destination configuration or method differs",
+            ));
+        }
+        destination
+            .binding
+            .require_host_ready(destination.configuration())?;
+        Ok(destination)
+    }
     pub fn same_registration(&self, other: &Self) -> bool {
         Weak::ptr_eq(&self.host, &other.host)
             && Arc::ptr_eq(&self.registration, &other.registration)
@@ -178,8 +237,7 @@ pub(crate) struct HostLocalRegistry {
     identity: Arc<()>,
     registrations: BTreeMap<ParticipantTarget, RegisteredAdapterBinding>,
     gate: Arc<tokio::sync::watch::Sender<HostLocalState>>,
-    services:
-        BTreeMap<ParticipantTarget, crate::registered_local_service::RegisteredServiceTemplate>,
+    services: Arc<std::sync::Mutex<BTreeMap<ParticipantTarget, RegisteredLocalDestination>>>,
 }
 impl Drop for HostLocalRegistry {
     fn drop(&mut self) {
@@ -238,7 +296,7 @@ impl Default for HostLocalRegistry {
             identity: Arc::new(()),
             gate: Arc::new(tokio::sync::watch::channel(HostLocalState::Starting).0),
             registrations: BTreeMap::new(),
-            services: BTreeMap::new(),
+            services: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
         }
     }
 }
@@ -265,6 +323,7 @@ impl HostLocalRegistry {
             configuration: config.clone(),
             committed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             gate: self.gate.subscribe(),
+            directory: Arc::downgrade(&self.services),
         };
         let registered = adapter.with_local_registration(binding.clone())?;
         if !config.same_identity(&registered.local_configuration()?) {
@@ -300,11 +359,28 @@ impl HostLocalRegistry {
                 registered.local_service(),
             ))
             .with_inbound_factory(registered.local_inbound_factory());
-        self.services.insert(target, service.clone());
+        let binding = self
+            .registrations
+            .get(&target)
+            .expect("registered service binding absent")
+            .clone();
+        self.services
+            .lock()
+            .expect("local service directory poisoned")
+            .insert(
+                target,
+                RegisteredLocalDestination {
+                    binding,
+                    service: service.clone(),
+                },
+            );
         Ok((registered, service))
     }
     pub(crate) fn service_count(&self) -> usize {
-        self.services.len()
+        self.services
+            .lock()
+            .expect("local service directory poisoned")
+            .len()
     }
     pub(crate) fn len(&self) -> usize {
         self.registrations.len()
@@ -493,6 +569,446 @@ mod tests {
             mutate: false,
         }
     }
+    #[test]
+    fn local_ticket_allocates_once_burns_replay_and_strips_credentials() {
+        thread_local! {
+            static FACTORY_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const { std::cell::RefCell::new(None) };
+            static SERIALIZER_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const { std::cell::RefCell::new(None) };
+        }
+        #[derive(Debug)]
+        struct HookMessage(tonic_health::pb::HealthCheckRequest);
+        impl prost::Message for HookMessage {
+            fn encode_raw(&self, buf: &mut impl prost::bytes::BufMut) {
+                SERIALIZER_HOOK.with(|h| {
+                    if let Some(f) = h.borrow_mut().take() {
+                        f();
+                    }
+                });
+                self.0.encode_raw(buf);
+            }
+            fn merge_field(
+                &mut self,
+                tag: u32,
+                wire: prost::encoding::WireType,
+                buf: &mut impl prost::bytes::Buf,
+                ctx: prost::encoding::DecodeContext,
+            ) -> Result<(), prost::DecodeError> {
+                self.0.merge_field(tag, wire, buf, ctx)
+            }
+            fn encoded_len(&self) -> usize {
+                self.0.encoded_len()
+            }
+            fn clear(&mut self) {
+                self.0.clear();
+            }
+        }
+        #[derive(Clone)]
+        struct CountingAdapter(Adapter, Arc<std::sync::atomic::AtomicUsize>);
+        impl GeneratedLocalTransactionAdapter for CountingAdapter {
+            fn local_configuration(&self) -> Result<GeneratedLocalAdapterConfig, tonic::Status> {
+                self.0.local_configuration()
+            }
+            fn with_local_registration(
+                self,
+                b: RegisteredAdapterBinding,
+            ) -> Result<Self, tonic::Status> {
+                Ok(Self(self.0.with_local_registration(b)?, self.1))
+            }
+        }
+        struct Count(Arc<std::sync::atomic::AtomicUsize>);
+        impl crate::runtime::InboundTransactionStartFactory for Count {
+            fn next_inbound_transaction(
+                &self,
+                _: &crate::runtime::InboundTransactionContext,
+            ) -> Result<uuid::Uuid, tonic::Status> {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                FACTORY_HOOK.with(|h| {
+                    if let Some(f) = h.borrow_mut().take() {
+                        f();
+                    }
+                });
+                Ok(uuid::Uuid::from_u128(202))
+            }
+        }
+        impl crate::registered_local_service::GeneratedLocalTransactionService for CountingAdapter {
+            type Service = StagedService;
+            fn local_service(&self) -> Self::Service {
+                StagedService
+            }
+            fn local_inbound_factory(
+                &self,
+            ) -> Arc<dyn crate::runtime::InboundTransactionStartFactory> {
+                Arc::new(Count(self.1.clone()))
+            }
+        }
+        for failure in 0..28 {
+            let mut registry = HostLocalRegistry::default();
+            let mut a = adapter();
+            a.config.target.state_ref = "A".into();
+            let a = registry.register(a).unwrap();
+            let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let (b, _) = registry
+                .register_service(CountingAdapter(adapter(), count.clone()))
+                .unwrap();
+            registry.gate.send_replace(HostLocalState::Ready);
+            let mut headers = crate::RebootHeaders::new("A");
+            headers.transaction_ids = Some(vec![uuid::Uuid::from_u128(101)]);
+            headers.transaction_coordinator_state_type = Some("example.Actor".into());
+            headers.transaction_coordinator_state_ref = Some("A".into());
+            headers.coordinator_read_only_aware = true;
+            headers.bearer_token = Some("test-only-secret".into());
+            headers.cookie = Some("test-cookie".into());
+            headers.internal_call = true;
+            let context = crate::runtime::TransactionContext::from_headers(
+                headers,
+                crate::runtime::TransactionMode::Exclusive,
+            )
+            .unwrap();
+            let context = if (21..23).contains(&failure) || failure >= 26 {
+                context
+            } else {
+                context.test_ticket_branch_collection()
+            };
+            let context = if failure == 25 {
+                context.test_ticket_supervised()
+            } else {
+                context
+            };
+            let (mut parent, lifetime) = context.with_handler_lifetime().unwrap();
+            let mut lifetime = Some(lifetime);
+            parent
+                .install_registered_outbound(RegisteredOutboundPermission {
+                    identity: Arc::new(()),
+                    binding: a.binding.clone().unwrap(),
+                    configuration: a.config.clone(),
+                })
+                .unwrap();
+            let method = "example.ActorMethods.Apply";
+            let destination = a
+                .binding
+                .as_ref()
+                .unwrap()
+                .lookup_local_destination(&a.config, &b.0.config.target, method)
+                .unwrap();
+            let mut scope = parent
+                .begin_generated_outbound_for("example.Actor", "B", method)
+                .unwrap();
+            let request = HookMessage(tonic_health::pb::HealthCheckRequest {
+                service: "bound".into(),
+            });
+            if (3..9).contains(&failure) {
+                let context = parent.clone();
+                let extra = if failure % 3 == 2 {
+                    Some(
+                        parent
+                            .begin_generated_outbound_for("example.Actor", "C", method)
+                            .unwrap(),
+                    )
+                } else {
+                    None
+                };
+                let action: Box<dyn FnOnce()> = Box::new(move || match failure % 3 {
+                    0 => context.doom(tonic::Status::aborted("test callback doom")),
+                    1 => {
+                        context.close_for_abandonment().unwrap();
+                    }
+                    _ => drop(extra),
+                });
+                if failure < 6 {
+                    FACTORY_HOOK.with(|h| *h.borrow_mut() = Some(action));
+                } else {
+                    SERIALIZER_HOOK.with(|h| *h.borrow_mut() = Some(action));
+                }
+                assert!(
+                    parent
+                        .issue_registered_local_ticket(&scope, &destination, method, &request)
+                        .is_err()
+                );
+                assert!(
+                    parent
+                        .issue_registered_local_ticket(&scope, &destination, method, &request)
+                        .is_err()
+                );
+                assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+                continue;
+            }
+            if (15..19).contains(&failure) {
+                let action: Box<dyn FnOnce()> = if failure % 2 == 1 {
+                    let gate = registry.gate.clone();
+                    Box::new(move || {
+                        gate.send_replace(HostLocalState::Revoked);
+                    })
+                } else {
+                    let lifetime = lifetime.take();
+                    Box::new(move || drop(lifetime))
+                };
+                if failure < 17 {
+                    FACTORY_HOOK.with(|h| *h.borrow_mut() = Some(action));
+                } else {
+                    SERIALIZER_HOOK.with(|h| *h.borrow_mut() = Some(action));
+                }
+                assert!(
+                    parent
+                        .issue_registered_local_ticket(&scope, &destination, method, &request)
+                        .is_err()
+                );
+                assert!(
+                    parent
+                        .issue_registered_local_ticket(&scope, &destination, method, &request)
+                        .is_err()
+                );
+                assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+                continue;
+            }
+            let ticket = parent
+                .issue_registered_local_ticket(&scope, &destination, method, &request)
+                .unwrap();
+            assert!(
+                parent
+                    .issue_registered_local_ticket(&scope, &destination, method, &request)
+                    .is_err()
+            );
+            assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+            let mut clean = crate::RebootHeaders::new("B");
+            clean.transaction_ids = Some(vec![uuid::Uuid::from_u128(101)]);
+            clean.transaction_coordinator_state_type = Some("example.Actor".into());
+            clean.transaction_coordinator_state_ref = Some("A".into());
+            clean.coordinator_read_only_aware = true;
+            if (9..15).contains(&failure) {
+                let context = parent.clone();
+                let extra = if failure % 3 == 2 {
+                    Some(
+                        parent
+                            .begin_generated_outbound_for("example.Actor", "C", method)
+                            .unwrap(),
+                    )
+                } else {
+                    None
+                };
+                let action: Box<dyn FnOnce()> = Box::new(move || match failure % 3 {
+                    0 => context.doom(tonic::Status::aborted("consume callback doom")),
+                    1 => {
+                        context.close_for_abandonment().unwrap();
+                    }
+                    _ => drop(extra),
+                });
+                if failure < 12 {
+                    action();
+                } else {
+                    SERIALIZER_HOOK.with(|h| *h.borrow_mut() = Some(action));
+                }
+            }
+            if (19..21).contains(&failure) {
+                let action: Box<dyn FnOnce()> = if failure == 19 {
+                    let gate = registry.gate.clone();
+                    Box::new(move || {
+                        gate.send_replace(HostLocalState::Revoked);
+                    })
+                } else {
+                    let lifetime = lifetime.take();
+                    Box::new(move || drop(lifetime))
+                };
+                SERIALIZER_HOOK.with(|h| *h.borrow_mut() = Some(action));
+            }
+            let _sibling = if (23..25).contains(&failure) {
+                Some(
+                    parent
+                        .begin_generated_outbound_for("example.Actor", "C", method)
+                        .unwrap(),
+                )
+            } else {
+                None
+            };
+            if (23..26).contains(&failure) {
+                parent.test_ticket_complete(&mut scope, failure - 23);
+            }
+            let clone = ticket.clone();
+            let mut scope = Some(scope);
+            if failure == 2 || failure == 22 {
+                drop(scope.take());
+            }
+            let mut drop_after_consume = None;
+            let mut drop_worker = None;
+            if failure >= 26 {
+                let scope = scope.take().unwrap();
+                let (start_tx, start_rx) = std::sync::mpsc::channel();
+                let (done_tx, done_rx) = std::sync::mpsc::channel();
+                drop_worker = Some(std::thread::spawn(move || {
+                    start_rx
+                        .recv_timeout(std::time::Duration::from_secs(5))
+                        .unwrap();
+                    drop(scope);
+                    done_tx.send(()).unwrap();
+                }));
+                if failure == 26 {
+                    SERIALIZER_HOOK.with(|h| {
+                        *h.borrow_mut() = Some(Box::new(move || {
+                            start_tx.send(()).unwrap();
+                            done_rx
+                                .recv_timeout(std::time::Duration::from_secs(5))
+                                .unwrap();
+                        }))
+                    });
+                } else {
+                    drop_after_consume = Some((start_tx, done_rx));
+                }
+            }
+            let result = ticket.consume(
+                b.0.binding.as_ref().unwrap(),
+                &b.0.config,
+                if failure == 1 { "wrong" } else { method },
+                &clean,
+                &request,
+            );
+            if let Some((start, done)) = drop_after_consume {
+                start.send(()).unwrap();
+                done.recv_timeout(std::time::Duration::from_secs(5))
+                    .unwrap();
+            }
+            if let Some(worker) = drop_worker {
+                worker.join().unwrap();
+            }
+            if failure != 0 && failure != 21 && failure != 27 {
+                assert!(result.is_err());
+            } else {
+                let child = result.unwrap();
+                assert_eq!(
+                    child.headers().transaction_ids.as_ref().unwrap(),
+                    &vec![uuid::Uuid::from_u128(101), uuid::Uuid::from_u128(202)]
+                );
+                assert!(child.headers().bearer_token.is_none());
+                assert!(child.headers().cookie.is_none());
+                assert!(!child.headers().internal_call);
+                assert!(child.require_registered_outbound().is_err());
+                drop(lifetime);
+                assert_eq!(
+                    child.with_handler_lifetime().err().unwrap().code(),
+                    tonic::Code::Cancelled
+                );
+            }
+            assert!(
+                clone
+                    .consume(
+                        b.0.binding.as_ref().unwrap(),
+                        &b.0.config,
+                        method,
+                        &clean,
+                        &request
+                    )
+                    .is_err()
+            );
+            assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+        }
+    }
+
+    #[test]
+    fn same_host_service_directory_is_exact_weak_and_fail_closed() {
+        let mut registry = HostLocalRegistry::default();
+        let mut source = adapter();
+        source.config.target.state_ref = "A".into();
+        let source = registry.register(source).unwrap();
+        let (destination, template) = registry.register_service(adapter()).unwrap();
+        let source_binding = source.binding.as_ref().unwrap();
+        let target = destination.config.target.clone();
+        let method = "example.ActorMethods.Apply";
+        assert_eq!(
+            source_binding
+                .lookup_local_destination(&source.config, &target, method)
+                .err()
+                .unwrap()
+                .code(),
+            tonic::Code::Unavailable
+        );
+        registry.gate.send_replace(HostLocalState::Ready);
+        let found = source_binding
+            .lookup_local_destination(&source.config, &target, method)
+            .unwrap();
+        assert!(
+            found
+                .binding()
+                .same_registration(destination.binding.as_ref().unwrap())
+        );
+        assert!(found.configuration().same_identity(&destination.config));
+        assert!(Arc::ptr_eq(
+            &found.service().inbound_factory().unwrap(),
+            &template.inbound_factory().unwrap()
+        ));
+        assert!(
+            source_binding
+                .lookup_local_destination(&source.config, &target, "example.ActorMethods.Other")
+                .is_err()
+        );
+        let missing = ParticipantTarget {
+            state_type: "example.Actor".into(),
+            state_ref: "absent".into(),
+        };
+        assert!(
+            source_binding
+                .lookup_local_destination(&source.config, &missing, method)
+                .is_err()
+        );
+        let mut wrong = source.config.clone();
+        wrong.incarnation = Arc::new(());
+        assert!(
+            source_binding
+                .lookup_local_destination(&wrong, &target, method)
+                .is_err()
+        );
+        let mut other_endpoint = adapter();
+        other_endpoint.config.target.state_ref = "C".into();
+        other_endpoint.config.database_endpoint = "http://different".into();
+        let (other_endpoint, _) = registry.register_service(other_endpoint).unwrap();
+        assert!(
+            source_binding
+                .lookup_local_destination(&source.config, &other_endpoint.config.target, method)
+                .is_err()
+        );
+        let mut foreign_host = HostLocalRegistry::default();
+        let (foreign, foreign_service) = foreign_host.register_service(adapter()).unwrap();
+        foreign_host.gate.send_replace(HostLocalState::Ready);
+        registry.services.lock().unwrap().insert(
+            target.clone(),
+            RegisteredLocalDestination {
+                binding: foreign.binding.unwrap(),
+                service: foreign_service,
+            },
+        );
+        assert!(
+            source_binding
+                .lookup_local_destination(&source.config, &target, method)
+                .is_err()
+        );
+        registry
+            .services
+            .lock()
+            .unwrap()
+            .insert(target.clone(), found.clone());
+        registry.revoke();
+        assert_eq!(
+            source_binding
+                .lookup_local_destination(&source.config, &target, method)
+                .err()
+                .unwrap()
+                .code(),
+            tonic::Code::Cancelled
+        );
+        let weak_directory = Arc::downgrade(&registry.services);
+        drop(registry);
+        assert!(weak_directory.upgrade().is_none());
+        assert!(
+            found
+                .binding()
+                .validate_configuration(found.configuration())
+                .is_err()
+        );
+        assert!(
+            source_binding
+                .lookup_local_destination(&source.config, &target, method)
+                .is_err()
+        );
+        assert!(found.service().inbound_factory().is_some());
+    }
+
     #[test]
     fn observed_host_reservation_serializes_revocation_and_validates_identity() {
         let registry = HostLocalRegistry::default();
