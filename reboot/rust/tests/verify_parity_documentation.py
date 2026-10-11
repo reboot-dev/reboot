@@ -38,6 +38,7 @@ def source_manifest():
             'tests/reboot/cli/rust_process_ownership.py',
             'tests/reboot/cli/rust_process_ownership_test.py',
             'tests/reboot/cli/rust_user_acceptance_runner.py',
+            'tests/reboot/cli/rust_user_checkpoint_fixture.py',
             'tests/reboot/cli/fixtures/rust_http_request_fixture.py',
             'tests/reboot/cli/fixtures/rust_http_request_host.rs',
         }:

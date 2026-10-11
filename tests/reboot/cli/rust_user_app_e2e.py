@@ -31,10 +31,11 @@ RBT = os.environ['RUST_DX_RBT']
 PORT = int(os.environ.get('RUST_USER_PORT', '12993'))
 ENV = dict(os.environ, RBT_RUST_URL=f'http://127.0.0.1:{PORT}', RBT_RUST_DATABASE_BINARY=os.environ['REBOOT_NATIVE2PC_CXX_DATABASE'])
 import sys
-WORKFLOWS = '--workflows' in sys.argv
+CHECKPOINT = '--checkpoint-fixture' in sys.argv
+WORKFLOWS = '--workflows' in sys.argv or CHECKPOINT
 if WORKFLOWS: ENV['RBT_USER_WORKFLOW_OWNER']='owner'
 RESULT = STAGE / 'result.json'
-proof = {'commands': [], 'sessions': [], 'passed': False, 'workflows': WORKFLOWS}
+proof = {'commands': [], 'sessions': [], 'passed': False, 'workflows': WORKFLOWS, 'checkpoint_fixture': CHECKPOINT}
 sessions = []
 timeout_seen = False
 http_sessions = []
@@ -75,7 +76,12 @@ def token(**changes):
 
 
 run([RBT, 'init', '--backend=rust', '--frontend=none', '--application-name=user_app', '--rust-example=secured-user', f'--rust-sdk={ROOT / "reboot/rust"}'])
-# No generated source replacements, formatting edits, or private actor seeding.
+# Default gates use the unmodified scaffold. The separate fixture gate alone
+# instruments a local pause, never seeds actors or alters runtime authorities.
+if CHECKPOINT:
+    import rust_user_checkpoint_fixture as checkpoint_fixture
+    pause=checkpoint_fixture.instrument(APP,STAGE,proof)
+    ENV['RUST_USER_FIXTURE_PAUSE']=str(pause)
 proof['scaffold_hashes'] = {str(p.relative_to(APP)): hashlib.sha256(p.read_bytes()).hexdigest() for p in APP.rglob('*') if p.is_file()}
 manifest = APP / 'backend/Cargo.toml'
 run(['cargo', 'clippy', '--manifest-path', manifest, '--all-targets', '--', '-D', 'warnings'])
@@ -235,12 +241,39 @@ def workflow(command, credential, *args, denied=None, target=None):
     env=dict(ENV)
     env.pop('RBT_USER_BEARER_TOKEN',None)
     if credential is not None: env['RBT_USER_BEARER_TOKEN']=credential
-    out,err=run([client,'workflow-'+command,target or workflow_ref,*args],env=env,expected=1 if denied else 0,timeout=15)
+    out,err=run([client,'workflow-'+command,target or workflow_ref,*args],env=env,expected=1 if denied else 0,timeout=45 if command=='wait' else 15)
     if denied: assert denied in err,(command,err)
     return out
 
 
-def workflow_state(session, expected, target=None):
+def transaction_ingress(credential):
+    from user_app.v1 import user_workflows_pb2 as proto
+    with grpc.insecure_channel(f'127.0.0.1:{PORT}') as channel:
+        for method in ['Participant/Prepare','Participant/Commit','Participant/Abort','Participant/RelinquishOwnership','Coordinator/Watch']:
+            try:
+                channel.unary_unary('/rbt.v1alpha1.'+method)(b'',timeout=3)
+                raise AssertionError('public transaction control mounted: '+method)
+            except grpc.RpcError as error:
+                assert error.code()==grpc.StatusCode.UNIMPLEMENTED,(method,error)
+        for field in ['x-reboot-transaction-ids','x-reboot-transaction-coordinator-state-type','x-reboot-transaction-coordinator-state-ref','x-reboot-transaction-retry-age','x-reboot-transaction-coordinator-read-only-aware']:
+            for method,body in [('Apply',proto.UserApply(amount=99)),('Inspect',proto.WorkflowEmpty())]:
+                try:
+                    channel.unary_unary('/user_app.v1.OwnerTransactionsMethods/'+method)(body.SerializeToString(),metadata=[('authorization','Bearer '+credential),('x-reboot-state-ref',workflow_ref),(field,'forged')],timeout=3)
+                    raise AssertionError('inbound transaction metadata admitted')
+                except grpc.RpcError as error:
+                    assert error.code()==grpc.StatusCode.PERMISSION_DENIED,(field,method,error)
+        valid_inbound=[('x-reboot-transaction-ids',json.dumps([str(uuid.uuid4())])),('x-reboot-transaction-coordinator-state-type','user_app.v1.OwnerWorkflows'),('x-reboot-transaction-coordinator-state-ref',workflow_ref)]
+        for method,body in [('Apply',proto.UserApply(amount=99)),('Inspect',proto.WorkflowEmpty())]:
+            try:
+                channel.unary_unary('/user_app.v1.OwnerTransactionsMethods/'+method)(body.SerializeToString(),metadata=[('authorization','Bearer '+credential),('x-reboot-state-ref',workflow_ref)]+valid_inbound,timeout=3)
+                raise AssertionError('valid inbound transaction metadata admitted')
+            except grpc.RpcError as error:
+                assert error.code()==grpc.StatusCode.PERMISSION_DENIED,(method,error)
+    proof.setdefault('transaction_ingress_checks',0)
+    proof['transaction_ingress_checks']+=1
+
+
+def workflow_state(session, expected, target=None, transaction=0):
     with grpc.insecure_channel(f'127.0.0.1:{session.database_port}') as channel:
         response=database_pb2_grpc.DatabaseStub(channel).Load(database_pb2.LoadRequest(actors=[database_pb2.Actor(state_type='user_app.v1.OwnerWorkflows',state_ref=target or workflow_ref)]),timeout=3)
     if expected is None: assert not response.actors,response
@@ -251,8 +284,12 @@ def workflow_state(session, expected, target=None):
         assert actor.state_type=='user_app.v1.OwnerWorkflows' and actor.state_ref==(target or workflow_ref),response
         value=user_workflows_pb2.OwnerWorkflows.FromString(actor.state)
         assert (value.first,value.second,value.schedules)==expected,value
+        assert value.transaction_value==transaction,value
     proof.setdefault('workflow_canonical_reads',[]).append({'expected':expected,'response_hex':response.SerializeToString().hex()})
 
+
+if CHECKPOINT: Session=checkpoint_fixture.session_class(globals())
+transaction_key=''
 
 try:
     first=Session('first')
@@ -275,8 +312,15 @@ try:
             workflow('create',credential,str(uuid.uuid4()),denied=code)
             workflow('read',credential,denied=code)
             workflow('wait',credential,str(uuid.uuid4()),denied=code)
+            workflow('apply',credential,str(uuid.uuid4()),'5','false',denied=code)
+            workflow('inspect',credential,denied=code)
         workflow('create',wrong,str(uuid.uuid4()),target=other_workflow_ref,denied='PermissionDenied')
         workflow_state(first,None,target=other_workflow_ref)
+        workflow_state(first,None)
+        workflow('apply',owner,str(uuid.uuid4()),'5','false',denied='FailedPrecondition')
+        workflow('inspect',owner,denied='FailedPrecondition')
+        workflow_state(first,None)
+        transaction_ingress(owner)
         workflow_state(first,None)
         workflow_create_key=str(uuid.uuid4())
         assert workflow('create',owner,workflow_create_key)=='created'
@@ -284,6 +328,22 @@ try:
         workflow_state(first,(0,0,0))
         workflow('run',owner,denied='PermissionDenied')
         workflow_state(first,(0,0,0))
+        transaction_key=str(uuid.uuid4())
+        assert workflow('apply',owner,transaction_key,'5','false')=='5'
+        assert workflow('apply',owner,transaction_key,'5','false')=='5'
+        assert workflow('apply',owner,str(uuid.uuid4()),'3','false')=='8'
+        workflow('apply',owner,str(uuid.uuid4()),'99','true',denied='InvalidArgument')
+        workflow('apply',owner,str(uuid.uuid4()),str(2**63-1),'false',denied='OutOfRange')
+        for credential,code in [(None,'Unauthenticated'),('unsigned','Unauthenticated'),(wrong,'PermissionDenied'),(token(exp=1),'Unauthenticated')]:
+            workflow('apply',credential,transaction_key,'5','false',denied=code)
+            workflow('inspect',credential,denied=code)
+        # Single-participant identity preflight rejects foreign actor targets
+        # before policy evaluation; this is not evidence of owner-policy denial.
+        workflow('apply',wrong,str(uuid.uuid4()),'5','false',target=other_workflow_ref,denied='InvalidArgument')
+        workflow_state(first,None,target=other_workflow_ref)
+        assert workflow('apply',owner,transaction_key,'5','false')=='5'
+        assert workflow('inspect',owner)=='8'
+        workflow_state(first,(0,0,0),transaction=8)
     http_first=HttpSession('first')
     for credential,status in [(None,401),('unsigned',401),(token(exp=1),401),(wrong,403)]:
         assert http_call('/user',credential)[0]==status
@@ -326,18 +386,33 @@ try:
     assert call('read',owner)=='2'
     if WORKFLOWS:
         schedule_key=str(uuid.uuid4())
-        not_before=str(int(time.time())+8)
+        not_before='0' if CHECKPOINT else str(int(time.time())+15)
         task=workflow('schedule',owner,schedule_key,not_before,'7')
         uuid.UUID(task)
         assert workflow('schedule',owner,schedule_key,not_before,'7')==task
         workflow('schedule',wrong,schedule_key,not_before,'7',denied='PermissionDenied')
-        workflow_state(first,(0,0,1))
+        if CHECKPOINT:
+            deadline=time.monotonic()+15
+            while True:
+                read=workflow('read',owner)
+                if json.loads(read)=={'first':7,'second':0,'schedules':1}: break
+                assert time.monotonic()<deadline,read
+                time.sleep(.05)
+            workflow_state(first,(7,0,1),transaction=8)
+            proof['checkpoint_before_stop']=checkpoint_fixture.inspect(first,workflow_ref,task)
+        else:
+            workflow_state(first,(0,0,1),transaction=8)
     first.close()
-    if WORKFLOWS:
+    if WORKFLOWS and not CHECKPOINT:
         stopped_at=time.time()
         assert stopped_at < int(not_before),(stopped_at,not_before)
         proof['workflow_shutdown_before_eligibility']={'stopped_at':stopped_at,'not_before':int(not_before)}
     second=Session('restart')
+    if CHECKPOINT:
+        assert checkpoint_fixture.inspect(second,workflow_ref,task)==proof['checkpoint_before_stop']
+        workflow_state(second,(7,0,1),transaction=8)
+        proof['checkpoint_after_restart_paused']=checkpoint_fixture.inspect(second,workflow_ref,task)
+        pause.unlink()
     if WORKFLOWS:
         for credential,code in [(None,'Unauthenticated'),('unsigned','Unauthenticated'),(wrong,'PermissionDenied'),(token(exp=1),'Unauthenticated')]:
             workflow('wait',credential,task,denied=code)
@@ -346,9 +421,24 @@ try:
         assert workflow('wait',owner,task)=='{"first":7,"second":7}'
         assert workflow('schedule',owner,schedule_key,not_before,'7')==task
         assert workflow('create',owner,workflow_create_key)=='created'
-        workflow_state(second,(7,7,1))
+        for credential,code in [(None,'Unauthenticated'),('unsigned','Unauthenticated'),(wrong,'PermissionDenied'),(token(exp=1),'Unauthenticated')]:
+            workflow('apply',credential,transaction_key,'5','false',denied=code)
+            workflow('inspect',credential,denied=code)
+        assert workflow('apply',owner,transaction_key,'5','false')=='5'
+        assert workflow('inspect',owner)=='8'
+        workflow_state(second,(7,7,1),transaction=8)
+        assert workflow('apply',owner,str(uuid.uuid4()),'2','false')=='10'
+        assert workflow('inspect',owner)=='10'
+        transaction_ingress(owner)
+        workflow_state(second,(7,7,1),transaction=10)
+        proof['transaction_historical_response']=5
+        proof['transaction_current_value']=10
         workflow_state(second,None,target=other_workflow_ref)
         proof['workflow_task']=task
+        if CHECKPOINT:
+            final=checkpoint_fixture.inspect(second,workflow_ref,task,completed=True)
+            assert final['records']['first-effect']==proof['checkpoint_before_stop']['records']['first-effect']
+            proof['checkpoint_completed']=final
     http_second=HttpSession('restart')
     for credential,status in [(None,401),('unsigned',401),(token(exp=1),401),(wrong,403)]:
         assert http_call('/user',credential)[0]==status
@@ -382,7 +472,7 @@ finally:
             try:session.close()
             except Exception as e:errors.append(str(e))
         for session in sessions:
-            if session.p.poll() is None:
+            if session.p is None or session.p.poll() is None or (CHECKPOINT and session.db.poll() is None):
                 try:session.close()
                 except Exception as e:errors.append(str(e))
     proof['cleanup_errors']=errors

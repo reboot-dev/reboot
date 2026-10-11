@@ -12,6 +12,54 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Signed User public transactions and instrumented checkpoint acceptance (2026-10-11)
+
+The generated secured-user scaffold adds separate `OwnerTransactionsMethods`
+(`Apply`, `Inspect`) over the configured `OwnerWorkflows` actor and its shared
+Database store/admission gate. Checked arithmetic and declared failure exercise
+real transaction rollback; keyed Apply replay returns historical results without
+reapplying mutations. Workflow and transaction services preserve each other's
+fields, with one task owner and canonical public Tasks.Wait.
+
+Participant restoration precedes durable coordinator and task recovery/readiness.
+Participant/Coordinator control services are not mounted on the public listener:
+exact single-actor in-process participant and Watch routes are used instead.
+Public transaction ingress rejects inbound transaction metadata, including a
+syntactically valid structured bundle, rather than treating loopback as authority.
+Foreign actor rejection is single-participant identity preflight, not owner-policy
+certification. Canonical owner-target credential denial is separately exercised.
+
+The unmodified generated consumer passed real public CLI/CXX/RocksDB acceptance:
+rollback, overflow, historical keyed replay, missing/invalid/expired/wrong-owner
+credentials, launcher restart and same-actor field preservation. A separate
+**instrumented generated-consumer acceptance fixture**, not the production
+scaffold, pauses after the first named checkpoint. It compares exact actor/task,
+request/iteration, named-step UUID/fingerprint/typed bytes before shutdown, after
+app exit with Database still live, and at paused restart. Canonical Wait then
+completes and replay preserves terminal state. Intentional app/Database shutdown
+requires requested shutdown, exit zero and absence; preexisting exits are rejected.
+
+Fresh combined audit passed all **ten gates**: SDK **527 tests**, strict SDK and
+consumer Clippy, focused native **4 cases**, ownership **12 regressions**, CLI
+units, ordinary public User, public workflows/transactions, instrumented checkpoint
+fixture and retained public greeting/watch/restart/supervision regression.
+Accepted artifact:
+`/tmp/reboot-rust-user-http-full-audit-1791730170412597128/accepted.json`.
+All exits were zero with matching frozen inputs and no recorded live owned
+processes at completion or subsequent exact-identity reconciliation. Targeted
+artifact `1791729805446869671` passed separately but is not publication acceptance.
+Reproduce with `tests/reboot/cli/rust_user_acceptance_runner.py`; the
+`--targeted-user-batch` mode is explicitly nonpublication. The documentation checker
+now fingerprints the checkpoint fixture too; this checker-only change and ledger
+refresh follow semantic acceptance and are verified separately.
+
+Scope is bounded fresh single-actor roots and intentional checkpoint interruption.
+No trusted public inbound tree, secured retained-sibling/deeper composition,
+authenticated cross-process internal transport, arbitrary-crash/prepared recovery,
+OAuth/production/external-exactly-once or full ignored native recertification is
+claimed. The preceding workflow checkpoint's exclusions describe its historical
+acceptance, not this additional bounded transaction/instrumented proof.
+
 ## Signed User public workflows checkpoint (2026-10-11)
 
 The generated `secured-user` scaffold now supports opt-in single-owner workflow
@@ -3372,7 +3420,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: b00cae63edb8675101f238ba9507f717d8b336b55d6545cf202ee8b74eaa73ca -->
+<!-- parity-source-sha256: 50b066105e3c4323677811fc517b3880736e8dc7627588e8b9079290cf20105c -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

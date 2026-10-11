@@ -53,6 +53,7 @@ def initialize_rust(directory: Path, name: str, sdk: str | None, frontend: str, 
         outputs['rust_user_workflow_client.rs.j2'] = 'backend/src/user_workflow_client.rs'
         outputs['rust_user_workflows.proto.j2'] = f'api/{name}/v1/user_workflows.proto'
         outputs['rust_user_workflows.rs.j2'] = 'backend/src/user_workflows.rs'
+        outputs['rust_user_transactions.rs.j2'] = 'backend/src/user_transactions.rs'
     if example == "batch-ledger":
         outputs = {
             'rust_Cargo.toml.j2': 'backend/Cargo.toml',

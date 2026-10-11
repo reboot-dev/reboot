@@ -180,12 +180,11 @@ pub async fn serve(
             owner: owner.into(),
         })),
     );
-    let (adapter, tasks) = generated::OwnerWorkflowsMethodsDatabaseAdapter::new(
-        DatabaseActorStore::connect(endpoint.clone()).await?,
-        Handler,
-    )
-    .with_authorization(workflow_policy.clone())
-    .with_workflows(reference.as_str())?;
+    let store = DatabaseActorStore::connect(endpoint.clone()).await?;
+    let (adapter, tasks) =
+        generated::OwnerWorkflowsMethodsDatabaseAdapter::new(store.clone(), Handler)
+            .with_authorization(workflow_policy.clone())
+            .with_workflows(reference.as_str())?;
     use reboot::placement_proto as p;
     let placement = reboot::legacy_placement::PlanOnlyLegacyPlacement::new();
     placement.install(p::ListenForPlanResponse {
@@ -197,6 +196,10 @@ pub async fn serve(
                     ("{{ name }}.v1.HelloWorldMethods", "{{ name }}.v1.HelloWorld"),
                     (
                         "{{ name }}.v1.OwnerWorkflowsMethods",
+                        "{{ name }}.v1.OwnerWorkflows",
+                    ),
+                    (
+                        "{{ name }}.v1.OwnerTransactionsMethods",
                         "{{ name }}.v1.OwnerWorkflows",
                     ),
                     ("rbt.v1alpha1.Tasks", "{{ name }}.v1.OwnerWorkflows"),
@@ -225,25 +228,89 @@ pub async fn serve(
             ..Default::default()
         }],
     })?;
+    use reboot::{
+        application_host::LegacyRecoveryMetadata,
+        durable_coordinator::{
+            CoordinatorRecovery, DurableRootCoordinator, ParticipantTarget,
+            SingleParticipantResolver, TonicCoordinatorSidecar,
+        },
+        durable_participant::{
+            DurableActorParticipant, DurableActorParticipantHost, ParticipantRecovery,
+            TonicParticipantSidecar,
+        },
+        legacy_coordinator::DurableCoordinatorWatchHost,
+    };
+    let participant = DurableActorParticipant::new(
+        Arc::new(TonicParticipantSidecar::connect(&endpoint).await?),
+        "{{ name }}.v1.OwnerWorkflows",
+        reference.as_str(),
+    )
+    .with_database_actor_gate(&store);
+    // Host-owned in-process capabilities: never expose transaction controls
+    // on the signed public listener, and do not accept public inbound trees.
+    let coordinator_sidecar = Arc::new(TonicCoordinatorSidecar::connect(&endpoint).await?);
+    let coordinator = DurableRootCoordinator::new(
+        coordinator_sidecar.clone(),
+        Arc::new(SingleParticipantResolver::new(
+            ParticipantTarget {
+                state_type: "{{ name }}.v1.OwnerWorkflows".into(),
+                state_ref: reference.to_string(),
+            },
+            DurableActorParticipantHost::new(participant.clone()),
+        )?),
+    );
+    let transactions = generated::OwnerTransactionsMethodsTransactionAdapter::new(
+        participant,
+        coordinator,
+        crate::user_transactions::Starts,
+        crate::user_transactions::Handler,
+    )
+    .with_authorization(workflow_policy.clone());
+    let durable_recovery = transactions.legacy_recovery_registration(
+        LegacyRecoveryMetadata {
+            participant: ParticipantRecovery {
+                shard_ids: vec!["s000000000".into()],
+                ..Default::default()
+            },
+            coordinator: CoordinatorRecovery {
+                shard_ids: vec!["s000000000".into()],
+                coordinator_state_ref: reference.to_string(),
+                ..Default::default()
+            },
+        },
+        Arc::new(crate::user_transactions::LocalWatch::new(
+            DurableCoordinatorWatchHost::new(
+                coordinator_sidecar,
+                "{{ name }}.v1.OwnerWorkflows",
+                reference.as_str(),
+            )?,
+            reference.to_string(),
+        )),
+    )?;
     let wait = ReaderTaskWaitService::new(
         [tasks.clone()],
         reboot::legacy_placement::LegacyApplicationId::new(application)?,
         "local-rust",
-        placement,
+        placement.clone(),
     )?
     .with_wait_policy(workflow_policy.for_declaration::<generated::OwnerWorkflowsDurableState>());
-    let ordinary = crate::generated::HelloWorldMethodsDatabaseAdapter::new(
-        DatabaseActorStore::connect(endpoint).await?,
-        crate::HelloWorld,
-    )
-    .with_authorization(policy);
+    let ordinary =
+        crate::generated::HelloWorldMethodsDatabaseAdapter::new(store, crate::HelloWorld)
+            .with_authorization(policy);
     ApplicationHost::new(application)
+        .with_legacy_placement_readiness(placement)
+        .with_host_recovery(durable_recovery)
         .with_host_recovery(tasks.recovery(db::RecoverRequest {
             state_tags_by_state_type:
                 [("{{ name }}.v1.OwnerWorkflows".into(), "OwnerWorkflows".into())].into(),
             shard_ids: vec!["s000000000".into()],
             skip_idempotent_mutations: true,
         }))
+        .add_public_service(
+            proto::owner_transactions_methods_server::OwnerTransactionsMethodsServer::with_interceptor(
+                transactions, crate::user_transactions::FreshRootOnly,
+            ),
+        )
         .add_public_service(
             proto::owner_workflows_methods_server::OwnerWorkflowsMethodsServer::new(adapter),
         )

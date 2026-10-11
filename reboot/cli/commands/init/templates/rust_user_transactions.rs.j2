@@ -1,0 +1,127 @@
+use crate::{proto, workflow_generated as generated};
+use reboot::runtime::{
+    InboundTransactionContext, InboundTransactionStartFactory, RootTransactionStart,
+    RootTransactionStartFactory, SharedLocalTransactionContext, TransactionContext,
+    TransactionExecution,
+};
+
+// Only fresh public roots are supported in this bounded example. Caller
+// metadata cannot acquire host-owned participant/coordinator capabilities.
+#[derive(Clone)]
+pub struct FreshRootOnly;
+impl tonic::service::Interceptor for FreshRootOnly {
+    fn call(&mut self, request: tonic::Request<()>) -> Result<tonic::Request<()>, tonic::Status> {
+        for key in [
+            "x-reboot-transaction-ids",
+            "x-reboot-transaction-coordinator-state-type",
+            "x-reboot-transaction-coordinator-state-ref",
+            "x-reboot-transaction-retry-age",
+            "x-reboot-transaction-coordinator-read-only-aware",
+        ] {
+            if request.metadata().contains_key(key) {
+                return Err(tonic::Status::permission_denied(
+                    "public inbound transactions unsupported",
+                ));
+            }
+        }
+        Ok(request)
+    }
+}
+
+pub struct LocalWatch {
+    host: reboot::legacy_coordinator::DurableCoordinatorWatchHost<
+        reboot::durable_coordinator::TonicCoordinatorSidecar,
+    >,
+    reference: String,
+}
+impl LocalWatch {
+    pub fn new(
+        host: reboot::legacy_coordinator::DurableCoordinatorWatchHost<
+            reboot::durable_coordinator::TonicCoordinatorSidecar,
+        >,
+        reference: String,
+    ) -> Self {
+        Self { host, reference }
+    }
+}
+impl reboot::legacy_coordinator::CoordinatorWatchEndpoint for LocalWatch {
+    fn watch(
+        &self,
+        request: reboot::database_proto::WatchRequest,
+    ) -> reboot::legacy_coordinator::CoordinatorWatchFuture<'_, reboot::database_proto::WatchResponse>
+    {
+        Box::pin(async move {
+            if request.state_type != "{{ name }}.v1.OwnerWorkflows"
+                || request.state_ref != self.reference
+            {
+                return Err(tonic::Status::permission_denied(
+                    "unexpected recovered participant",
+                ));
+            }
+            use reboot::database_proto::coordinator_server::Coordinator;
+            self.host
+                .watch(tonic::Request::new(request))
+                .await
+                .map(tonic::Response::into_inner)
+        })
+    }
+}
+
+pub struct Starts;
+impl RootTransactionStartFactory for Starts {
+    fn next_root_transaction(&self) -> Result<RootTransactionStart, tonic::Status> {
+        Ok(RootTransactionStart {
+            transaction_id: uuid::Uuid::new_v4(),
+            timestamp: prost_types::Timestamp::default(),
+        })
+    }
+}
+impl InboundTransactionStartFactory for Starts {
+    fn next_inbound_transaction(
+        &self,
+        _: &InboundTransactionContext,
+    ) -> Result<uuid::Uuid, tonic::Status> {
+        Ok(uuid::Uuid::new_v4())
+    }
+}
+pub struct Handler;
+#[tonic::async_trait]
+impl generated::OwnerTransactionsMethodsTransactionHandler for Handler {
+    async fn apply(
+        &self,
+        _: &TransactionContext,
+        state: &mut proto::OwnerWorkflows,
+        request: proto::UserApply,
+    ) -> Result<TransactionExecution<proto::WorkflowValue>, tonic::Status> {
+        state.transaction_value = state
+            .transaction_value
+            .checked_add(request.amount)
+            .ok_or_else(|| tonic::Status::out_of_range("transaction value overflow"))?;
+        if request.fail {
+            return Err(tonic::Status::invalid_argument("requested rollback"));
+        }
+        Ok(TransactionExecution::new(proto::WorkflowValue {
+            value: state.transaction_value,
+        }))
+    }
+    async fn inspect(
+        &self,
+        _: &TransactionContext,
+        state: &mut proto::OwnerWorkflows,
+        _: proto::WorkflowEmpty,
+    ) -> Result<TransactionExecution<proto::WorkflowValue>, tonic::Status> {
+        Ok(TransactionExecution::new(proto::WorkflowValue {
+            value: state.transaction_value,
+        }))
+    }
+    async fn inspect_fresh_shared(
+        &self,
+        _: &SharedLocalTransactionContext,
+        state: &mut proto::OwnerWorkflows,
+        _: proto::WorkflowEmpty,
+    ) -> Result<proto::WorkflowValue, tonic::Status> {
+        Ok(proto::WorkflowValue {
+            value: state.transaction_value,
+        })
+    }
+}

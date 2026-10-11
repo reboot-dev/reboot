@@ -1,5 +1,6 @@
 import pathlib, json, hashlib, time, subprocess, os, fcntl, shutil
 import sys
+targeted = '--targeted-user-batch' in sys.argv
 probe = len(sys.argv) > 1 and sys.argv[1] == "--ownership-failure-probe"
 mode = sys.argv[4] if probe and len(sys.argv) > 4 else "none"
 root=pathlib.Path(__file__).resolve().parents[3]
@@ -63,6 +64,8 @@ try:
         commands.insert(3, ('native4', ['cargo','test','--manifest-path','reboot/rust/Cargo.toml','--locked','--all-features','--test','reactive_native_restart','--','--ignored','--test-threads=1','--nocapture']))
         commands.insert(5, ('user_public',[python,str(root/'tests/reboot/cli/rust_user_app_e2e.py')]))
         commands.insert(6, ('user_workflows_public',[python,str(root/'tests/reboot/cli/rust_user_app_e2e.py'),'--workflows']))
+        commands.insert(7, ('user_checkpoint_fixture',[python,str(root/'tests/reboot/cli/rust_user_app_e2e.py'),'--checkpoint-fixture']))
+        if targeted: commands=[item for item in commands if item[0] in ['user_workflows_public','user_checkpoint_fixture']]
         commands.insert(0, ('ownership_regressions',[python,str(root/'tests/reboot/cli/rust_process_ownership_test.py')]))
     for name,cmd in commands:
         budget();assert all(hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()==h for p,h in manifest.items())
@@ -84,11 +87,11 @@ try:
         if probe:(stage/'probe-gate-exited.json').write_text(json.dumps({'exit':code}))
         assert code==0 and not item['live_owned_processes'] and not item['source_mismatch'],item
         budget()
-    if not probe:
+    if not probe and not targeted:
         proof=json.loads((stage/'greeting/acceptance-result.json').read_text())
         assert proof['passed'] and proof['frozen_sources_match_end']
         users=[json.loads(p.read_text()) for p in (stage/'greeting').glob('reboot-rust-public-user-*/result.json')]
-        assert len(users)==2 and {u['workflows'] for u in users}=={False,True}
+        assert len(users)==3 and {(u['workflows'],u['checkpoint_fixture']) for u in users}=={(False,False),(True,False),(True,True)}
         assert all(u['passed'] and not u['cleanup_errors'] for u in users)
         import re
         for item in results:
@@ -97,6 +100,10 @@ try:
                 assert item['summaries'] and all(v[0]=='ok' and v[2]=='0' for v in item['summaries'])
                 if item['suite']=='native4':assert item['summaries'][-1]==('ok','4','0','0')
                 else:assert sum(int(v[1]) for v in item['summaries'])>0
+    if not probe and targeted:
+        users=[json.loads(p.read_text()) for p in (stage/'greeting').glob('reboot-rust-public-user-*/result.json')]
+        assert len(users)==2 and {(u['workflows'],u['checkpoint_fixture']) for u in users}=={(True,False),(True,True)}
+        assert all(u['passed'] and not u['cleanup_errors'] for u in users)
     final_budget=budget()
 finally:
     # Subreaper discovery in retention covers unrecorded adopted orphans too.
@@ -145,5 +152,5 @@ finally:
         ownership.discover_owned=injected_stderr
     ownership.retain_until_owned_exit(owned, stage/'retained-owners.json', root_pid=os.getpid())
 
-(stage/'accepted.json').write_text(json.dumps({'accepted':True,'gates':results,'greeting_result':str(stage/'greeting/acceptance-result.json'),'budget':final_budget,'fixture':probe},indent=2))
-print('PUBLICATION_GATES_ACCEPTED',stage,flush=True)
+(stage/'accepted.json').write_text(json.dumps({'accepted':True,'gates':results,'greeting_result':str(stage/'greeting/acceptance-result.json'),'budget':final_budget,'fixture':probe,'publication_eligible':not targeted and not probe},indent=2))
+print('TARGETED_USER_BATCH_ACCEPTED' if targeted else 'PUBLICATION_GATES_ACCEPTED',stage,flush=True)

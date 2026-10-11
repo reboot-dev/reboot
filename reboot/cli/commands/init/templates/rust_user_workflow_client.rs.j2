@@ -39,6 +39,35 @@ pub async fn call(
     let mut client =
         proto::owner_workflows_methods_client::OwnerWorkflowsMethodsClient::new(channel.clone());
     match args[1].as_str() {
+        "workflow-apply" => {
+            let mut transactions =
+                proto::owner_transactions_methods_client::OwnerTransactionsMethodsClient::new(
+                    channel,
+                );
+            let value = transactions
+                .apply(request(
+                    proto::UserApply {
+                        amount: args.get(4).ok_or("missing amount")?.parse()?,
+                        fail: args.get(5).map(|s| s.parse()).transpose()?.unwrap_or(false),
+                    },
+                    reference,
+                    Some(args.get(3).ok_or("missing key")?),
+                )?)
+                .await?
+                .into_inner();
+            println!("{}", value.value);
+        }
+        "workflow-inspect" => {
+            let mut transactions =
+                proto::owner_transactions_methods_client::OwnerTransactionsMethodsClient::new(
+                    channel,
+                );
+            let value = transactions
+                .inspect(request(proto::WorkflowEmpty {}, reference, None)?)
+                .await?
+                .into_inner();
+            println!("{}", value.value);
+        }
         "workflow-create" => {
             client
                 .create(request(
@@ -91,11 +120,12 @@ pub async fn call(
                     .as_bytes()
                     .to_vec(),
             };
-            let result = generated::OwnerWorkflowsMethodsTasksWait::run(
-                channel,
-                request(id, reference, None)?,
-            )
-            .await?;
+            // Wait may legitimately span a future task eligibility window.
+            // This is one bounded RPC, not a status retry loop.
+            let mut wait_request = request(id, reference, None)?;
+            wait_request.set_timeout(std::time::Duration::from_secs(30));
+            let result =
+                generated::OwnerWorkflowsMethodsTasksWait::run(channel, wait_request).await?;
             {% raw %}println!(
                 "{{\"first\":{},\"second\":{}}}",
                 result.first, result.second

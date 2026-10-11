@@ -45,7 +45,7 @@ both local children. Rust SDK is an unpublished path dependency, edition 2024.
 
 This example does not mint tokens, automatically construct users, deliver OAuth
 claims, implement revocation lists, expose trusted internal contexts, or certify
-transactions/React/production deployment. An issuer's
+general distributed transactions/React/production deployment. An issuer's
 signature remains accepted until expiry unless its key is removed on restart.
 Optional local reactive actor registration is routing, not actor creation or auth.
 
@@ -76,6 +76,24 @@ recovery ingress. Credentials are verified on reads and replay, not just schedul
 Explicit construction remains required; external SetClaims is denied. Persisted
 acknowledged scheduling survives a normal launcher restart. This bounded local
 example does not promise arbitrary-crash recovery or external effects exactly once.
+
+## Same-actor secured transactions
+
+Workflow mode also mounts `OwnerTransactionsMethods` over the same explicitly
+constructed actor and shared admission gate. `workflow-apply "$WREF" UUID AMOUNT
+false` commits checked arithmetic to its independent `transaction_value` field;
+`true` requests rollback after the tentative update. `workflow-inspect "$WREF"`
+performs a fresh shared inspection. Repeating the same Apply key/request returns
+its historical response; current credentials are checked again before replay.
+Workflow effects preserve the transaction field, and transactions preserve task,
+schedule and checkpoint state.
+
+Only fresh single-actor roots are exposed. Public inbound transaction metadata is
+rejected. Participant/coordinator controls are host-owned in-process capabilities,
+not public RPC routes. Participants restore before coordinator/task recovery and
+readiness. This does not certify inbound trees, retained sibling composition or
+interrupted Prepare recovery. Acceptance-only checkpoint-pause instrumentation
+is separate from the unmodified scaffold; no pause/control API is generated.
 
 ## Optional local HTTP gateway
 

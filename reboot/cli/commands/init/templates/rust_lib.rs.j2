@@ -9,7 +9,8 @@ pub mod generated {
     ));
 }
 
-{% if example == "secured-user" %}pub mod user_workflows;
+{% if example == "secured-user" %}pub mod user_transactions;
+pub mod user_workflows;
 pub mod workflow_generated {
     include!(concat!(
         env!("OUT_DIR"),
