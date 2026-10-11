@@ -545,6 +545,9 @@ impl DeclaredTransactionalError {
     }
 }
 
+#[path = "runtime_terminal_capture.rs"]
+mod terminal_capture;
+
 /// Performs the actual bound unary RPC and consumes its one-use scope.
 /// Only this runtime-owned transport path may settle terminal membership.
 /// Cancellation, routing failure and invalid terminal data leave uncertainty.
@@ -618,6 +621,7 @@ where
         message,
     )
     .await?;
+    let (channel, terminal_evidence) = terminal_capture::TerminalCaptureChannel::new(channel);
     let mut client = tonic::client::Grpc::new(channel);
     client
         .ready()
@@ -626,16 +630,55 @@ where
     // Readiness is another transport await after routing; a retained scope
     // cannot issue work after its owner closes the branch.
     context.validate_outbound_scope_admission(scope)?;
-    let response = client
-        .unary::<Req, Resp, _>(request, path, tonic::codec::ProstCodec::default())
-        .await;
+    // Streaming consumption of the unary server method keeps initial metadata
+    // separate from actual terminal trailers. Initial headers are not receipts.
+    let response = async {
+        let streaming = client
+            .server_streaming::<Req, Resp, _>(request, path, tonic::codec::ProstCodec::default())
+            .await?;
+        context.validate_outbound_scope_admission(scope)?;
+        let (metadata, mut body, extensions) = streaming.into_parts();
+        let message = body.message().await?.ok_or_else(|| {
+            Status::failed_precondition("unary transaction returned no response message")
+        })?;
+        context.validate_outbound_scope_admission(scope)?;
+        if body.message().await?.is_some() {
+            return Err(Status::failed_precondition(
+                "unary transaction returned multiple response messages",
+            ));
+        }
+        context.validate_outbound_scope_admission(scope)?;
+        let trailers = body.trailers().await?.ok_or_else(|| {
+            Status::failed_precondition("unary transaction returned no terminal trailers")
+        })?;
+        context.validate_outbound_scope_admission(scope)?;
+        let statuses = trailers.get_all("grpc-status");
+        let mut statuses = statuses.iter();
+        if !matches!(statuses.next(), Some(value) if value.as_bytes() == b"0")
+            || statuses.next().is_some()
+        {
+            return Err(Status::failed_precondition(
+                "unary transaction requires exactly one successful terminal grpc-status",
+            ));
+        }
+        terminal_evidence
+            .lock()
+            .unwrap()
+            .validate_success(&trailers)?;
+        let returned = crate::successful_trailers::ReturnedParticipants::from_metadata(&trailers)
+            .map_err(|error| Status::failed_precondition(error.to_string()))?;
+        let mut headers = metadata.into_headers();
+        headers.extend(trailers.into_headers());
+        let metadata = tonic::metadata::MetadataMap::from_headers(headers);
+        Ok((
+            tonic::Response::from_parts(metadata, message, extensions),
+            returned,
+        ))
+    }
+    .await;
     context.validate_outbound_scope_admission(scope)?;
     match response {
-        Ok(response) => {
-            let returned = crate::successful_trailers::ReturnedParticipants::from_metadata(
-                response.metadata(),
-            )
-            .map_err(|error| Status::failed_precondition(error.to_string()))?;
+        Ok((response, returned)) => {
             context.enlist_generated_returned_participants(scope, &returned)?;
             Ok(TransactionalCallResponse::new(response, returned))
         }
@@ -644,15 +687,18 @@ where
                 if !singleton_declared_status(&status, declared_errors) {
                     return Err(status);
                 }
+                let terminal_metadata =
+                    terminal_evidence.lock().unwrap().error_metadata(&status)?;
                 context.enlist_rolled_back_leaf(
                     Some(scope),
-                    status.metadata(),
+                    &terminal_metadata,
                     &target.state_type,
                     &target.state_ref,
                 )?;
             } else if recoverable_unsupervised_status(&status, declared_errors) {
                 // Preserve legacy declared/system recoverability; no supervised
                 // rollback membership contract is imposed on the default path.
+                terminal_evidence.lock().unwrap().error_metadata(&status)?;
                 settle_terminal_scope(context, scope)?;
             }
             Err(status)

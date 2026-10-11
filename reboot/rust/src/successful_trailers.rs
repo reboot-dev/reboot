@@ -506,7 +506,82 @@ impl Body for ParticipantTrailerBody {
 }
 
 fn grpc_status_is_ok(trailers: &HeaderMap) -> bool {
-    trailers
-        .get("grpc-status")
-        .is_some_and(|value| value.as_bytes() == b"0")
+    let mut statuses = trailers.get_all("grpc-status").iter();
+    matches!(statuses.next(), Some(value) if value.as_bytes() == b"0") && statuses.next().is_none()
+}
+
+#[cfg(test)]
+mod terminal_status_tests {
+    use super::*;
+    use http_body_util::BodyExt;
+    struct StagedResponse(Option<Response<tonic::body::BoxBody>>);
+    impl Service<Request<tonic::body::BoxBody>> for StagedResponse {
+        type Response = Response<tonic::body::BoxBody>;
+        type Error = std::convert::Infallible;
+        type Future = std::future::Ready<Result<Self::Response, Self::Error>>;
+        fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+        fn call(&mut self, _: Request<tonic::body::BoxBody>) -> Self::Future {
+            std::future::ready(Ok(self.0.take().unwrap()))
+        }
+    }
+
+    #[tokio::test]
+    async fn trailer_layer_stages_only_one_definitive_success_status() {
+        for statuses in [
+            vec![],
+            vec!["0"],
+            vec!["0", "0"],
+            vec!["0", "2"],
+            vec!["2", "0"],
+            vec!["2", "2"],
+        ] {
+            let mut trailers = HeaderMap::new();
+            for value in &statuses {
+                trailers.append("grpc-status", value.parse().unwrap());
+            }
+            let inner =
+                http_body_util::StreamBody::new(tokio_stream::iter([Ok::<_, tonic::Status>(
+                    Frame::<bytes::Bytes>::trailers(trailers.clone()),
+                )]));
+            let metadata =
+                ParticipantMetadata::classified_single("example.Actor", "B", false, true).unwrap();
+            let writer = metadata.should_commit_header_value();
+            let reader = metadata.read_only_header_value().unwrap();
+            let mut response = Response::new(tonic::body::boxed(inner));
+            response
+                .extensions_mut()
+                .insert(SuccessfulParticipantMetadata::new(metadata));
+            let mut service =
+                SuccessfulParticipantTrailerLayer.layer(StagedResponse(Some(response)));
+            let response = service
+                .call(Request::new(tonic::body::empty_body()))
+                .await
+                .unwrap();
+            assert!(
+                response
+                    .extensions()
+                    .get::<SuccessfulParticipantMetadata>()
+                    .is_none()
+            );
+            let mut body = response.into_body();
+            let frame = body.frame().await.unwrap().unwrap();
+            let observed = frame.trailers_ref().unwrap();
+            assert_eq!(
+                observed.get_all("grpc-status").iter().collect::<Vec<_>>(),
+                trailers.get_all("grpc-status").iter().collect::<Vec<_>>()
+            );
+            if statuses == ["0"] {
+                assert_eq!(observed.get(TRANSACTION_PARTICIPANTS_HEADER), Some(&writer));
+                assert_eq!(
+                    observed.get(TRANSACTION_PARTICIPANTS_READ_ONLY_HEADER),
+                    Some(&reader)
+                );
+            } else {
+                assert!(!observed.contains_key(TRANSACTION_PARTICIPANTS_HEADER));
+                assert!(!observed.contains_key(TRANSACTION_PARTICIPANTS_READ_ONLY_HEADER));
+            }
+        }
+    }
 }

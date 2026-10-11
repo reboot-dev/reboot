@@ -1,4 +1,6 @@
 //! Actual Tonic wire terminals, not caller-provided futures or receipts.
+#[path = "runtime_raw_terminal_tests.rs"]
+mod raw_terminal_tests;
 use super::*;
 use std::collections::VecDeque;
 use tonic_health::pb::{
@@ -11,6 +13,9 @@ const ERROR_URL: &str = "type.googleapis.com/tests.Declared";
 
 enum Outcome {
     Success(&'static str, bool),
+    InitialOnly,
+    EmptyStream,
+    MultipleMessages,
     Error(Status),
     Lost,
 }
@@ -53,6 +58,22 @@ impl Health for WireServer {
                 crate::successful_trailers::stage_successful_participants(&mut response, metadata);
                 Ok(response)
             }
+            Outcome::InitialOnly => {
+                let mut response = tonic::Response::new(HealthCheckResponse { status: 1 });
+                let metadata = crate::successful_trailers::ParticipantMetadata::classified_single(
+                    "example.Actor",
+                    "B",
+                    false,
+                    true,
+                )
+                .unwrap();
+                let mut status = Status::failed_precondition("initial metadata only");
+                metadata.attach_to_status(&mut status);
+                // Valid membership in initial headers, without a terminal marker.
+                *response.metadata_mut() = status.metadata().clone();
+                Ok(response)
+            }
+            Outcome::EmptyStream | Outcome::MultipleMessages => unreachable!("streaming fixture"),
             Outcome::Error(status) => Err(status),
             Outcome::Lost => std::future::pending().await,
         }
@@ -60,9 +81,40 @@ impl Health for WireServer {
     type WatchStream = tokio_stream::wrappers::ReceiverStream<Result<HealthCheckResponse, Status>>;
     async fn watch(
         &self,
-        _: Request<HealthCheckRequest>,
+        request: Request<HealthCheckRequest>,
     ) -> Result<tonic::Response<Self::WatchStream>, Status> {
-        Err(Status::unimplemented("not used"))
+        let target = request
+            .metadata()
+            .get(STATE_REF_HEADER)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
+        assert_eq!(request.get_ref().service, "bound-message");
+        let outcome = self.outcomes.lock().unwrap().pop_front().unwrap();
+        let count = match outcome {
+            Outcome::EmptyStream => 0,
+            Outcome::MultipleMessages => 2,
+            _ => unreachable!("unary fixture"),
+        };
+        let _ = self.admitted.send(target);
+        let (tx, rx) = tokio::sync::mpsc::channel(2);
+        for _ in 0..count {
+            tx.send(Ok(HealthCheckResponse { status: 1 }))
+                .await
+                .unwrap();
+        }
+        drop(tx);
+        let mut response = tonic::Response::new(tokio_stream::wrappers::ReceiverStream::new(rx));
+        let metadata = crate::successful_trailers::ParticipantMetadata::classified_single(
+            "example.Actor",
+            "B",
+            false,
+            true,
+        )
+        .unwrap();
+        crate::successful_trailers::stage_successful_participants(&mut response, metadata);
+        Ok(response)
     }
 }
 struct Resolver {
@@ -165,8 +217,17 @@ async fn call(
     target: &str,
     schema: &[DeclaredTransactionalError],
 ) -> Result<TransactionalCallResponse<HealthCheckResponse>, Status> {
+    call_method(resolver, context, target, METHOD, schema).await
+}
+async fn call_method(
+    resolver: &Resolver,
+    context: &TransactionContext,
+    target: &str,
+    method: &str,
+    schema: &[DeclaredTransactionalError],
+) -> Result<TransactionalCallResponse<HealthCheckResponse>, Status> {
     let scope = context
-        .begin_generated_outbound_for("example.Actor", target, METHOD)
+        .begin_generated_outbound_for("example.Actor", target, method)
         .unwrap();
     generated_transactional_unary(
         resolver,
@@ -202,6 +263,41 @@ fn assert_b(context: &TransactionContext) {
     assert_eq!(members[0].target.state_ref, "B");
     assert!(!members[0].read_only);
 }
+#[tokio::test]
+async fn owned_unary_rejects_zero_and_multiple_messages_with_valid_terminal_membership() {
+    for (outcome, expected) in [
+        (Outcome::EmptyStream, "no response message"),
+        (Outcome::MultipleMessages, "multiple response messages"),
+    ] {
+        let (resolver, mut admitted, server) = wire(vec![outcome]).await;
+        let root = context(true);
+        let error = call_method(&resolver, &root, "B", "grpc.health.v1.Health.Watch", &[])
+            .await
+            .unwrap_err();
+        assert_eq!(error.code(), tonic::Code::FailedPrecondition);
+        assert!(error.message().contains(expected), "{error}");
+        assert_eq!(admitted.recv().await.as_deref(), Some("B"));
+        assert!(root.doomed_status().is_some());
+        assert!(root.seal_explicit_abort().is_err());
+        assert!(root.returned_participants_snapshot().is_empty());
+        server.abort();
+        let _ = server.await;
+    }
+}
+
+#[tokio::test]
+async fn owned_unary_initial_membership_is_not_terminal_evidence() {
+    let (resolver, mut admitted, server) = wire(vec![Outcome::InitialOnly]).await;
+    let root = context(true);
+    let error = call(&resolver, &root, "B", &[]).await.unwrap_err();
+    assert_eq!(error.code(), tonic::Code::FailedPrecondition);
+    assert_eq!(admitted.recv().await.as_deref(), Some("B"));
+    assert!(root.doomed_status().is_some());
+    assert!(root.seal_explicit_abort().is_err());
+    server.abort();
+    let _ = server.await;
+}
+
 #[tokio::test]
 async fn owned_unary_genuine_status_only_and_typed_success_settle_exact_b_c() {
     let (resolver, mut admitted, server) = wire(vec![

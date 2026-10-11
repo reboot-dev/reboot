@@ -12,6 +12,45 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Runtime-owned original-wire terminal validation (2026-10-11)
+
+Generated transactional unary calls now decode exactly one response message and
+settle successful membership only from actual terminal trailers carrying one
+literal `grpc-status: 0`. Initial response metadata cannot authorize membership.
+Admission is rechecked across awaits; cancellation or owner closure preserves
+uncertainty rather than admitting late membership.
+
+A private per-RPC Channel/body observer captures original header/trailer maps
+before Tonic strips error status metadata. Recovery requires a singleton canonical
+nonzero wire status, consistent rich details, and independently percent-decoded
+valid UTF-8 `grpc-message` matching the returned status. Duplicate/conflicting or
+missing statuses, duplicate message/rich headers, mismatched envelopes, malformed
+base64 and synthetic malformed-message diagnostics fail closed. Sanitization of
+malformed base64 affects only the forwarded decoder input; original evidence
+remains invalid. Genuine singleton declared-error recovery is retained.
+
+Actual raw HTTP/2 regressions cover trailers-only, before-message and after-message
+errors on supervised/default paths, genuine controls, successful cardinality and
+initial-header forgery. The server trailer regression exercises the real layer's
+extension extraction and body wrapping. Server-body pauses are synchronization
+fixtures, not proof that the client consumed a message.
+
+Fresh acceptance artifact:
+`/tmp/reboot-rust-user-http-full-audit-1791734050943922736/accepted.json`.
+All ten publication gates passed: SDK **534 tests**, strict SDK and generated
+consumer Clippy, focused native **4 cases**, ownership regressions, CLI units,
+ordinary public User, public workflows/transactions, instrumented checkpoint
+restart and public greeting/watch/restart/supervision regression. Frozen source
+hashes matched; exact retained process identities were absent and the owner lock
+was released before this ledger refresh. Applied-source safety review preceded
+this audit. Earlier pre-repair audit passes do not certify this repair.
+
+Exact immutable participant routing is also tested with distinct endpoint routes;
+that configuration seam is not public-ingress authentication or generated
+same-host composition acceptance. Secured A-to-B retained-sibling composition,
+private handler admission capabilities and host-owned local transport remain
+unfinished. No full parity, ignored-native inventory or production claim is made.
+
 ## Signed User public transactions and instrumented checkpoint acceptance (2026-10-11)
 
 The generated secured-user scaffold adds separate `OwnerTransactionsMethods`
@@ -3420,7 +3459,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 50b066105e3c4323677811fc517b3880736e8dc7627588e8b9079290cf20105c -->
+<!-- parity-source-sha256: 990ee44982644bc0ea9072a61aa6fd2e95a965e9d6660d58102dcb4d5b537bc0 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

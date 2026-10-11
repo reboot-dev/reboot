@@ -478,6 +478,55 @@ impl<C: ParticipantSidecar> ParticipantResolver for SingleParticipantResolver<C>
     }
 }
 
+/// Immutable host-owned participant routes, with no network or fallback lookup.
+/// Registration is trusted host configuration; it does not authorize public ingress.
+pub struct ExactParticipantResolver<E: ParticipantEndpoint> {
+    endpoints: std::collections::BTreeMap<ParticipantTarget, Arc<E>>,
+}
+
+impl<E: ParticipantEndpoint> ExactParticipantResolver<E> {
+    pub fn new(
+        routes: impl IntoIterator<Item = (ParticipantTarget, Arc<E>)>,
+    ) -> Result<Self, Status> {
+        let mut endpoints = std::collections::BTreeMap::new();
+        for (target, endpoint) in routes {
+            if target.state_type.is_empty() || target.state_ref.is_empty() {
+                return Err(Status::invalid_argument(
+                    "participant state type and reference must be specified",
+                ));
+            }
+            if endpoints.insert(target, endpoint).is_some() {
+                return Err(Status::invalid_argument(
+                    "duplicate local participant route",
+                ));
+            }
+        }
+        if endpoints.is_empty() {
+            return Err(Status::invalid_argument(
+                "local participant routes are empty",
+            ));
+        }
+        Ok(Self { endpoints })
+    }
+}
+
+impl<E: ParticipantEndpoint> ParticipantResolver for ExactParticipantResolver<E> {
+    type Endpoint = E;
+
+    fn resolve(&self, participant: &ParticipantTarget) -> CoordinatorFuture<'_, Arc<E>> {
+        let result = if participant.state_type.is_empty() || participant.state_ref.is_empty() {
+            Err(Status::invalid_argument(
+                "participant state type and reference must be specified",
+            ))
+        } else {
+            self.endpoints.get(participant).cloned().ok_or_else(|| {
+                Status::unavailable("configured local participant target is unavailable")
+            })
+        };
+        Box::pin(async move { result })
+    }
+}
+
 pub struct DurableRootCoordinator<C: CoordinatorSidecar, R: ParticipantResolver> {
     sidecar: Arc<C>,
     resolver: Arc<R>,
@@ -3451,6 +3500,78 @@ pub(crate) mod tests {
                 );
             }
         }
+    }
+
+    #[tokio::test]
+    async fn exact_participant_resolver_rejects_aliases_duplicates_and_empty_routes() {
+        let sidecar = Arc::new(InProcessSidecar::default());
+        let single = local_resolver(Arc::clone(&sidecar));
+        let endpoint = single.resolve(&local_target()).await.unwrap();
+        let other = ParticipantTarget {
+            state_type: "example.OtherActor".into(),
+            state_ref: "actor/1".into(),
+        };
+        let other_endpoint = Arc::new(InProcessParticipantEndpoint::new(
+            DurableActorParticipantHost::new(DurableActorParticipant::new(
+                Arc::clone(&sidecar),
+                &other.state_type,
+                &other.state_ref,
+            )),
+        ));
+        let resolver = ExactParticipantResolver::new([
+            (local_target(), Arc::clone(&endpoint)),
+            (other.clone(), Arc::clone(&other_endpoint)),
+        ])
+        .unwrap();
+        assert!(Arc::ptr_eq(
+            &resolver.resolve(&local_target()).await.unwrap(),
+            &endpoint
+        ));
+        assert!(Arc::ptr_eq(
+            &resolver.resolve(&other).await.unwrap(),
+            &other_endpoint
+        ));
+        let absent = ParticipantTarget {
+            state_ref: "actor/2".into(),
+            ..other.clone()
+        };
+        assert_eq!(
+            resolver.resolve(&absent).await.err().unwrap().code(),
+            tonic::Code::Unavailable
+        );
+        let invalid = ParticipantTarget {
+            state_type: String::new(),
+            ..other
+        };
+        assert_eq!(
+            resolver.resolve(&invalid).await.err().unwrap().code(),
+            tonic::Code::InvalidArgument
+        );
+        assert_eq!(
+            ExactParticipantResolver::new([(invalid, Arc::clone(&endpoint))])
+                .err()
+                .unwrap()
+                .code(),
+            tonic::Code::InvalidArgument
+        );
+        assert_eq!(
+            ExactParticipantResolver::new([
+                (local_target(), Arc::clone(&endpoint)),
+                (local_target(), Arc::clone(&endpoint)),
+            ])
+            .err()
+            .unwrap()
+            .code(),
+            tonic::Code::InvalidArgument
+        );
+        assert_eq!(
+            ExactParticipantResolver::<InProcessParticipantEndpoint<InProcessSidecar>>::new([])
+                .err()
+                .unwrap()
+                .code(),
+            tonic::Code::InvalidArgument
+        );
+        assert!(sidecar.calls.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
