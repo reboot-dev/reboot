@@ -8,6 +8,41 @@ use tonic_health::pb::{
     health_server::{Health, HealthServer},
 };
 
+#[test]
+fn registered_permission_identity_is_part_of_ownership_not_wire_headers() {
+    let (mut admitted, _lifetime) = context(true).with_handler_lifetime().unwrap();
+    let configuration = crate::registered_local::GeneratedLocalAdapterConfig {
+        target: crate::durable_coordinator::ParticipantTarget {
+            state_type: "example.Actor".into(),
+            state_ref: "B".into(),
+        },
+        database_endpoint: "http://ownership-test".into(),
+        policy: crate::auth::AuthorizationPolicy::permissive_for_development(),
+        methods: std::collections::BTreeSet::from(["example.ActorMethods.Apply".to_owned()]),
+        incarnation: Arc::new(()),
+    };
+    let (_registry, binding) =
+        crate::registered_local::ready_binding_for_guard_test(configuration.clone());
+    admitted
+        .install_registered_outbound(crate::registered_local::RegisteredOutboundPermission {
+            identity: Arc::new(()),
+            binding,
+            configuration,
+        })
+        .unwrap();
+    let clone = admitted.clone();
+    assert!(admitted.same_ownership_context(&clone));
+    let mut stripped = clone.clone();
+    stripped.registered_outbound = None;
+    assert!(!admitted.same_ownership_context(&stripped));
+    let mut replaced = clone;
+    replaced.registered_outbound.as_mut().unwrap().identity = Arc::new(());
+    assert!(!admitted.same_ownership_context(&replaced));
+    let reconstructed =
+        TransactionContext::from_headers(admitted.headers.clone(), admitted.mode).unwrap();
+    assert!(reconstructed.registered_outbound.is_none());
+}
+
 #[tokio::test]
 async fn admitted_handler_revocation_interrupts_routing_and_invalidates_clones() {
     struct Parked {

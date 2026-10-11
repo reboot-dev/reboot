@@ -12,6 +12,39 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Guard-bound registered outbound permission (2026-10-11)
+
+Supported generated exclusive nonfactory sequential-reusable/root-star handlers
+now receive an opaque local outbound permission only at the actual guard boundary:
+a consumed policy-entry receipt, exact admission/owner validation, matching host
+binding/configuration and an observed Ready reservation precede installation into
+the fresh live handler context. The short reservation covers synchronous field
+installation only; it is not an atomic source-placement fence. Ordinary policy
+checks remain in force. No receipt, public metadata or inherited bearer grants
+this permission. Unsupported generated modes supply no registration permission.
+
+Direct context clones retain permission identity; locally derived nested contexts
+and reconstructed wire headers do not. Ownership comparison rejects stripped or
+replaced identities. Actual guard regressions cover receipt absence, binding
+configuration mismatches, valid registrations differing from actual admission,
+revoked host rejection, host destruction during a pending handler and permission
+revocation after return/cancellation. Sequential-reusable cancellation fixtures
+retain prior sibling effects and Watch cleanup; they are not completed rejection
+results for every new case. Focused source review found no introduced blocker.
+
+Fresh aggregate acceptance:
+`/tmp/reboot-rust-user-http-full-audit-1791755709355280812/accepted.json`:
+all **10 gates** exit zero, **580 SDK tests** (including library **480**, generated
+consumer **44**), both strict Clippy gates, native **4 cases**, public User,
+workflow/checkpoint persisted restart and greeting regressions. Frozen hashes
+matched and exact recorded descendants were absent before publication bookkeeping.
+
+**Limits:** generated eligible/unsupported-mode in-handler integration and host
+loss between initial validation and final reservation remain unverified. This
+checkpoint does not implement one-use B-child tickets, secured same-host transport,
+production ancestry insertion or native A-to-B acceptance. Existing native/public
+passes are regression evidence, not acceptance of that unfinished vertical.
+
 ## Configured inbound allocator and observed host reservations (2026-10-11)
 
 Registry-held generated Tonic templates now retain the exact configured inbound
@@ -3677,7 +3710,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: c4d605ffead31e274fd51b3cf958cd9aa6042b2f4a0f43b8ebcdd3d0eb33625e -->
+<!-- parity-source-sha256: b751ff10ef26651df9855ce3a11df4d97fbadc5977a953e8a6fe6e6cbb0e10ce -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

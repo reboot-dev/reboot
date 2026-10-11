@@ -162,6 +162,18 @@ impl RegisteredAdapterBinding {
     }
 }
 
+#[derive(Clone)]
+pub(crate) struct RegisteredOutboundPermission {
+    pub(crate) identity: Arc<()>,
+    pub(crate) binding: RegisteredAdapterBinding,
+    pub(crate) configuration: GeneratedLocalAdapterConfig,
+}
+impl std::fmt::Debug for RegisteredOutboundPermission {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("RegisteredOutboundPermission(opaque)")
+    }
+}
+
 pub(crate) struct HostLocalRegistry {
     identity: Arc<()>,
     registrations: BTreeMap<ParticipantTarget, RegisteredAdapterBinding>,
@@ -297,6 +309,32 @@ impl HostLocalRegistry {
     pub(crate) fn len(&self) -> usize {
         self.registrations.len()
     }
+}
+
+#[cfg(test)]
+pub(crate) fn ready_binding_for_guard_test(
+    configuration: GeneratedLocalAdapterConfig,
+) -> (HostLocalRegistry, RegisteredAdapterBinding) {
+    struct TestAdapter(
+        GeneratedLocalAdapterConfig,
+        Option<RegisteredAdapterBinding>,
+    );
+    impl GeneratedLocalTransactionAdapter for TestAdapter {
+        fn local_configuration(&self) -> Result<GeneratedLocalAdapterConfig, tonic::Status> {
+            Ok(self.0.clone())
+        }
+        fn with_local_registration(
+            mut self,
+            binding: RegisteredAdapterBinding,
+        ) -> Result<Self, tonic::Status> {
+            self.1 = Some(binding);
+            Ok(self)
+        }
+    }
+    let mut registry = HostLocalRegistry::default();
+    let adapter = registry.register(TestAdapter(configuration, None)).unwrap();
+    registry.gate.send_replace(HostLocalState::Ready);
+    (registry, adapter.1.unwrap())
 }
 
 #[cfg(test)]

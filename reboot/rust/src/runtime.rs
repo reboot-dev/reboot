@@ -181,6 +181,7 @@ pub struct TransactionContext {
     builtin_map_admission: Option<BuiltinMapAdmission>,
     handler_lifetime: Option<tokio::sync::watch::Receiver<bool>>,
     handler_ancestors: Arc<[tokio::sync::watch::Receiver<bool>]>,
+    registered_outbound: Option<crate::registered_local::RegisteredOutboundPermission>,
 }
 
 pub(crate) struct HandlerLifetimeOwner(tokio::sync::watch::Sender<bool>);
@@ -904,6 +905,7 @@ impl TransactionContext {
             returned_participants: None,
             handler_lifetime: None,
             handler_ancestors: Arc::from([]),
+            registered_outbound: None,
             doomed: Arc::new(Mutex::new(None)),
             live_leaf: false,
             supervised_tree: false,
@@ -1039,6 +1041,11 @@ impl TransactionContext {
             && self.supervised_tree == other.supervised_tree
             && self.live_leaf == other.live_leaf
             && Arc::ptr_eq(&self.doomed, &other.doomed)
+            && match (&self.registered_outbound, &other.registered_outbound) {
+                (Some(a), Some(b)) => Arc::ptr_eq(&a.identity, &b.identity),
+                (None, None) => true,
+                _ => false,
+            }
             && self.handler_ancestors.len() == other.handler_ancestors.len()
             && self
                 .handler_ancestors
@@ -1080,6 +1087,32 @@ impl TransactionContext {
         let mut context = self.clone();
         context.handler_lifetime = Some(receiver);
         Ok((context, HandlerLifetimeOwner(sender)))
+    }
+
+    pub(crate) fn install_registered_outbound(
+        &mut self,
+        permission: crate::registered_local::RegisteredOutboundPermission,
+    ) -> Result<(), Status> {
+        self.validate_handler_lifetime()?;
+        if self.handler_lifetime.is_none() || self.registered_outbound.is_some() {
+            return Err(Status::failed_precondition(
+                "registered outbound requires a fresh actual handler lifetime",
+            ));
+        }
+        self.registered_outbound = Some(permission);
+        Ok(())
+    }
+    /// Validates guard-installed permission only. This does not issue a ticket,
+    /// allocate a child or dispatch a call; ordinary inbound policy remains intact.
+    #[doc(hidden)]
+    pub fn require_registered_outbound(&self) -> Result<(), Status> {
+        self.validate_handler_lifetime()?;
+        let permission = self.registered_outbound.as_ref().ok_or_else(|| {
+            Status::failed_precondition("no registered handler outbound permission")
+        })?;
+        permission
+            .binding
+            .require_host_ready(&permission.configuration)
     }
 
     fn handler_lifetimes(&self) -> impl Iterator<Item = &tokio::sync::watch::Receiver<bool>> {
@@ -1987,6 +2020,7 @@ impl TransactionContext {
             returned_participants: self.returned_participants.clone(),
             handler_lifetime: self.handler_lifetime.clone(),
             handler_ancestors: self.handler_ancestors.clone(),
+            registered_outbound: None,
             doomed: Arc::clone(&self.doomed),
             live_leaf: self.live_leaf,
             supervised_tree: self.supervised_tree,

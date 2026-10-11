@@ -163,7 +163,7 @@ fn counter_cargo_build_helper_executes_durable_adapters_in_a_downstream_fixture(
     let injection = r#"
     let emitted_path = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("tests/reboot/protoc/transaction_counter.reboot.rs");
     let emitted = std::fs::read_to_string(&emitted_path).unwrap();
-    let anchor = "let handler_result = match local.run_authorized_handler(&self.authorization, authorized_entry, &context, \"tests.reboot.protoc.TransactionCounterWritesMethods.Increment\"";
+    let anchor = "let handler_result = match local.run_registered_authorized_handler(&self.authorization, authorized_entry, &context, (\"tests.reboot.protoc.TransactionCounterWritesMethods.Increment\"";
     // Standalone and mixed-service adapter implementations.
     assert_eq!(emitted.matches(anchor).count(), 2);
     let injected = format!("let handler_request_bytes = crate::fixture_authorized_entry_request(&context, handler_request_bytes);\n{anchor}");

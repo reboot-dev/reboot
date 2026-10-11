@@ -347,8 +347,43 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
     where
         F: std::future::Future<Output = T>,
     {
-        if let Some(entry) = entry {
+        self.run_registered_authorized_handler(
+            policy,
+            entry,
+            context,
+            (method, request),
+            None,
+            handler,
+        )
+        .await
+    }
+
+    /// Actual policy-validated handler boundary for optional registered outbound
+    /// permission. Trusted composition supplies the same configured binding.
+    #[doc(hidden)]
+    pub async fn run_registered_authorized_handler<F, T>(
+        &self,
+        policy: &crate::auth::AuthorizationPolicy,
+        entry: Option<crate::auth::AuthorizedHandlerEntry>,
+        context: &TransactionContext,
+        call: (&str, &[u8]),
+        registration: Option<(
+            crate::registered_local::RegisteredAdapterBinding,
+            crate::registered_local::GeneratedLocalAdapterConfig,
+        )>,
+        handler: impl FnOnce(TransactionContext) -> F,
+    ) -> Result<T, Status>
+    where
+        F: std::future::Future<Output = T>,
+    {
+        let (method, request) = call;
+        if entry.is_some() || registration.is_some() {
             let validation = async {
+                let entry = entry.ok_or_else(|| {
+                    Status::failed_precondition(
+                        "registered outbound requires a validated policy entry",
+                    )
+                })?;
                 if !context.same_ownership_context(&self.context) {
                     return Err(Status::failed_precondition(
                         "authorized entry context differs from guard",
@@ -372,6 +407,18 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
                 local.validate_authorized_handler_execution(context).await?;
                 // Participant validation awaited a mutex; recheck host authority.
                 self.validate_authorized_handler_owner()?;
+                if let Some((binding, configuration)) = &registration {
+                    binding.require_host_ready(configuration)?;
+                    if configuration.target.state_type != local.actor_state_type()
+                        || configuration.target.state_ref != local.actor_state_ref()
+                        || !configuration.policy.same_entry_identity(policy)
+                        || !configuration.methods.contains(method)
+                    {
+                        return Err(Status::failed_precondition(
+                            "registered handler configuration differs from actual admission",
+                        ));
+                    }
+                }
                 if let Some(status) = context.doomed_status() {
                     return Err(status);
                 }
@@ -397,7 +444,19 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
                 return Err(error);
             }
         }
-        let (handler_context, _lifetime) = context.with_handler_lifetime()?;
+        let (mut handler_context, _lifetime) = context.with_handler_lifetime()?;
+        if let Some((binding, configuration)) = registration {
+            // No gate rereads, user code or suspension while this reservation lives.
+            let reservation = binding.reserve_host_ready(&configuration)?;
+            handler_context.install_registered_outbound(
+                crate::registered_local::RegisteredOutboundPermission {
+                    identity: Arc::new(()),
+                    binding: binding.clone(),
+                    configuration: configuration.clone(),
+                },
+            )?;
+            drop(reservation);
+        }
         // No suspension between disarming pre-effect rollback and invoking the
         // handler closure. Handler cancellation keeps the historical semantics.
         self.pre_handler_cleanup
