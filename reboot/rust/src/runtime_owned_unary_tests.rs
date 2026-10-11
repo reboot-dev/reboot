@@ -8,6 +8,195 @@ use tonic_health::pb::{
     health_server::{Health, HealthServer},
 };
 
+fn registered_context_for_host_fencing() -> (
+    TransactionContext,
+    HandlerLifetimeOwner,
+    crate::registered_local::HostLocalRegistry,
+) {
+    let (mut admitted, lifetime) = context(true).with_handler_lifetime().unwrap();
+    let configuration = crate::registered_local::GeneratedLocalAdapterConfig {
+        target: crate::durable_coordinator::ParticipantTarget {
+            state_type: "example.Actor".into(),
+            state_ref: "A".into(),
+        },
+        database_endpoint: "http://ownership-test".into(),
+        policy: crate::auth::AuthorizationPolicy::permissive_for_development(),
+        methods: std::collections::BTreeSet::from(["example.ActorMethods.Apply".to_owned()]),
+        incarnation: Arc::new(()),
+    };
+    let (registry, binding) =
+        crate::registered_local::ready_binding_for_guard_test(configuration.clone());
+    admitted
+        .install_registered_outbound(crate::registered_local::RegisteredOutboundPermission {
+            identity: Arc::new(()),
+            binding,
+            configuration,
+        })
+        .unwrap();
+    (admitted, lifetime, registry)
+}
+
+#[tokio::test]
+async fn registered_host_revoke_after_wire_admission_retains_uncertainty() {
+    let (resolver, mut received, server) = wire(vec![Outcome::Lost]).await;
+    let (admitted, _lifetime, registry) = registered_context_for_host_fencing();
+    let mut outbound = Box::pin(call(&resolver, &admitted, "B", &[]));
+    tokio::select! {
+        _ = &mut outbound => panic!("wire response must stay pending"),
+        target = received.recv() => assert_eq!(target.as_deref(), Some("B")),
+    }
+    registry.revoke();
+    assert_eq!(
+        tokio::time::timeout(std::time::Duration::from_secs(1), outbound)
+            .await
+            .unwrap()
+            .unwrap_err()
+            .code(),
+        tonic::Code::Cancelled
+    );
+    assert!(admitted.validate_handler_lifetime().is_ok());
+    {
+        let ledger = admitted
+            .returned_participants
+            .as_ref()
+            .unwrap()
+            .lock()
+            .unwrap();
+        assert!(ledger.membership_uncertain);
+        assert_eq!(ledger.active, 0);
+        assert!(ledger.participants.is_empty());
+    }
+    server.abort();
+    let _ = server.await;
+}
+
+#[tokio::test]
+async fn registered_host_revoke_before_first_poll_never_enters_ready_resolver() {
+    struct Ready(std::sync::atomic::AtomicUsize);
+    #[tonic::async_trait]
+    impl TransactionalChannelResolver for Ready {
+        async fn resolve(&self, _: &str, _: &str) -> Result<tonic::transport::Channel, Status> {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(tonic::transport::Endpoint::from_static("http://127.0.0.1:1").connect_lazy())
+        }
+    }
+    let (admitted, _lifetime, registry) = registered_context_for_host_fencing();
+    let resolver = Ready(std::sync::atomic::AtomicUsize::new(0));
+    let scope = admitted
+        .begin_generated_outbound_for("example.Actor", "B", METHOD)
+        .unwrap();
+    registry.revoke();
+    let result = generated_transactional_unary::<_, _, HealthCheckResponse>(
+        &resolver,
+        &admitted,
+        scope,
+        HealthCheckRequest::default(),
+        &[],
+    )
+    .await;
+    assert_eq!(result.unwrap_err().code(), tonic::Code::Cancelled);
+    assert_eq!(resolver.0.load(std::sync::atomic::Ordering::SeqCst), 0);
+    let ledger = admitted
+        .returned_participants
+        .as_ref()
+        .unwrap()
+        .lock()
+        .unwrap();
+    assert_eq!(ledger.active, 0);
+    assert!(ledger.membership_uncertain);
+    assert!(ledger.participants.is_empty());
+}
+
+#[tokio::test]
+async fn registered_host_destruction_interrupts_pending_resolution_and_fences_new_admission() {
+    struct Parked(Arc<std::sync::atomic::AtomicBool>);
+    struct Dropped(Arc<std::sync::atomic::AtomicBool>);
+    impl Drop for Dropped {
+        fn drop(&mut self) {
+            self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+    #[tonic::async_trait]
+    impl TransactionalChannelResolver for Parked {
+        async fn resolve(&self, _: &str, _: &str) -> Result<tonic::transport::Channel, Status> {
+            let _drop = Dropped(self.0.clone());
+            std::future::pending().await
+        }
+    }
+    let (mut admitted, _lifetime) = context(true).with_handler_lifetime().unwrap();
+    let configuration = crate::registered_local::GeneratedLocalAdapterConfig {
+        target: crate::durable_coordinator::ParticipantTarget {
+            state_type: "example.Actor".into(),
+            state_ref: "A".into(),
+        },
+        database_endpoint: "http://ownership-test".into(),
+        policy: crate::auth::AuthorizationPolicy::permissive_for_development(),
+        methods: std::collections::BTreeSet::from(["example.ActorMethods.Apply".to_owned()]),
+        incarnation: Arc::new(()),
+    };
+    let (registry, binding) =
+        crate::registered_local::ready_binding_for_guard_test(configuration.clone());
+    admitted
+        .install_registered_outbound(crate::registered_local::RegisteredOutboundPermission {
+            identity: Arc::new(()),
+            binding,
+            configuration,
+        })
+        .unwrap();
+    let dropped = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let resolver = Parked(dropped.clone());
+    let scope = admitted
+        .begin_generated_outbound_for("example.Actor", "B", METHOD)
+        .unwrap();
+    let mut call = Box::pin(generated_transactional_unary::<_, _, HealthCheckResponse>(
+        &resolver,
+        &admitted,
+        scope,
+        HealthCheckRequest {
+            service: "host-bound".into(),
+        },
+        &[],
+    ));
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(20), &mut call)
+            .await
+            .is_err()
+    );
+    drop(registry);
+    let error = tokio::time::timeout(std::time::Duration::from_secs(1), call)
+        .await
+        .unwrap()
+        .unwrap_err();
+    assert_eq!(error.code(), tonic::Code::Cancelled);
+    assert!(dropped.load(std::sync::atomic::Ordering::SeqCst));
+    assert!(
+        admitted.validate_handler_lifetime().is_ok(),
+        "host fencing is independent of actual handler lifetime"
+    );
+    let snapshot = || {
+        let ledger = admitted
+            .returned_participants
+            .as_ref()
+            .unwrap()
+            .lock()
+            .unwrap();
+        assert_eq!(ledger.active, 0);
+        assert!(ledger.membership_uncertain);
+        assert!(ledger.participants.is_empty());
+        format!("{ledger:?}")
+    };
+    let before = snapshot();
+    assert_eq!(
+        admitted
+            .begin_generated_outbound_for("example.Actor", "C", METHOD)
+            .err()
+            .expect("new admission must fail")
+            .code(),
+        tonic::Code::FailedPrecondition
+    );
+    assert_eq!(snapshot(), before);
+}
+
 #[test]
 fn registered_permission_identity_is_part_of_ownership_not_wire_headers() {
     let (mut admitted, _lifetime) = context(true).with_handler_lifetime().unwrap();

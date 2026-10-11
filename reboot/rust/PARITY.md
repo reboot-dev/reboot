@@ -12,6 +12,36 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Generated registered lifecycle and observed outbound host fencing (2026-10-12)
+
+Generated adapters expose an exact-configuration observed-Ready preflight;
+Starting, shutdown and configuration-invalidating builders fail closed. Actual
+registered root-star and sequential-reusable handler fixtures receive guard-bound
+permission, while registered plain-exclusive handlers do not. These fixtures use
+real ApplicationHost lifecycle and mock sidecars/direct generated service calls,
+not native A-to-B dispatch or durability.
+
+Contexts carrying registered permission reject new outbound admission after host
+revocation or destruction, before ledger mutation. Pending resolution and pending
+wire responses also observe host loss independently of the still-live handler
+lifetime. Cancellation drops unfinished scopes, clears activity, preserves
+membership uncertainty and returns no participants. Tests cover host destruction,
+live-registry revocation after actual Tonic wire admission, revocation before the
+first poll without entering a ready resolver, and unchanged ledger bookkeeping
+on rejected subsequent admission.
+
+This is observation-only fencing: revocation concurrent with a synchronous
+successful poll is not atomically fenced admission or settlement. No tickets,
+production ancestry insertion, secured local transport, remote cancellation or
+native retained A-to-B acceptance are claimed.
+
+Fresh combined ten-gate audit `1791757516006719869` accepted unchanged frozen
+inputs with every gate exit zero and recorded descendants absent: SDK 583 passing
+tests (483 library), generated 44, strict SDK and generated-consumer Clippy,
+native restart 4, public User restart/workflows/checkpoint and greeting regressions.
+The owner lock was released before this ledger update. Prior evidence below
+remains historical rather than certification of subsequent source.
+
 ## Guard-bound registered outbound permission (2026-10-11)
 
 Supported generated exclusive nonfactory sequential-reusable/root-star handlers
@@ -3710,7 +3740,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: b751ff10ef26651df9855ce3a11df4d97fbadc5977a953e8a6fe6e6cbb0e10ce -->
+<!-- parity-source-sha256: c9bba4c54979fab42dcba124146c8ab308d0f5b39b95b731f47fa442284983b5 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

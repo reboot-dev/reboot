@@ -1163,6 +1163,10 @@ impl TransactionContext {
                     as std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
             })
             .collect();
+        if let Some(permission) = &self.registered_outbound {
+            let binding = permission.binding.clone();
+            waits.push(Box::pin(async move { binding.host_revoked().await }));
+        }
         std::future::poll_fn(|cx| {
             for wait in &mut waits {
                 if wait.as_mut().poll(cx).is_ready() {
@@ -1360,6 +1364,9 @@ impl TransactionContext {
         binding: Option<(crate::durable_coordinator::ParticipantTarget, String)>,
     ) -> Result<TransactionalOutboundScope, Status> {
         self.require_outbound_allowed()?;
+        if self.registered_outbound.is_some() {
+            self.require_registered_outbound()?;
+        }
         if let Some(status) = self.doomed_status() {
             return Err(status);
         }

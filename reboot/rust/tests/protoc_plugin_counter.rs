@@ -564,6 +564,12 @@ impl transaction_generated::TransactionCounterWritesMethodsTransactionHandler fo
         request: proto::TransactionIncrementRequest,
     ) -> Result<reboot::runtime::TransactionExecution<proto::TransactionCounterValue>, tonic::Status> {
         self.trace.lock().unwrap().push("handler");
+        if request.amount == 7302 {
+            assert_eq!(context.require_registered_outbound().unwrap_err().message(), "no registered handler outbound permission");
+        }
+        if matches!(request.amount, 7301 | 7303) {
+            context.require_registered_outbound().expect("real generated registered eligible handler");
+        }
         if request.amount == 4242 {
             state.value += 1000;
             return Err(reboot::declared_error_status(tonic::Code::Unknown, "legacy declared", "type.googleapis.com/tests.reboot.protoc.TransactionLimitExceeded", &proto::TransactionLimitExceeded { limit: 4242 }));
@@ -775,7 +781,7 @@ struct AuthorizationCleanupCoordinatorSidecar {
     decisions: std::sync::Mutex<Vec<reboot::database_proto::TransactionCoordinatorDecisionPutRequest>>,
 }
 impl reboot::durable_participant::ParticipantSidecar for AuthorizationCleanupParticipantSidecar {
-    fn database_endpoint(&self) -> Option<&str> { Some("http://127.0.0.1:1") }
+    fn database_endpoint(&self) -> Option<&str> { Some("http://127.0.0.1:1/") }
     fn load(&self, _: reboot::database_proto::LoadRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::LoadResponse, tonic::Status>> + Send + '_>> {
         self.trace.lock().unwrap().push("participant load");
         let state = self.state.clone().map(|state| state.encode_to_vec());
@@ -817,7 +823,7 @@ impl reboot::durable_participant::ParticipantSidecar for AuthorizationCleanupPar
     }
 }
 impl reboot::durable_coordinator::CoordinatorSidecar for AuthorizationCleanupCoordinatorSidecar {
-    fn database_endpoint(&self) -> Option<&str> { Some("http://127.0.0.1:1") }
+    fn database_endpoint(&self) -> Option<&str> { Some("http://127.0.0.1:1/") }
     fn coordinator_prepare(&self, _: reboot::database_proto::TransactionCoordinatorPrepareRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionCoordinatorPrepareResponse, tonic::Status>> + Send + '_>> {
         self.trace.lock().unwrap().push("coordinator DB prepare");
         Box::pin(async { Ok(reboot::database_proto::TransactionCoordinatorPrepareResponse::default()) })
@@ -1333,12 +1339,28 @@ async fn generated_registered_root_authorized_entry_rejection_awaits_abort_ack()
     let owner = reboot::explicit_abort::ExplicitAbortOwner::new(2).unwrap();
     let probe = Arc::new(AuthProbe { verifier_calls: Arc::new(AtomicUsize::new(0)), authorizer_calls: Arc::new(AtomicUsize::new(0)), handler_calls: Arc::new(AtomicUsize::new(0)), decision: AuthorizationDecision::Allow, contexts: Arc::new(std::sync::Mutex::new(Vec::new())), snapshots: Arc::new(std::sync::Mutex::new(Vec::new())) });
     let adapter = transaction_generated::TransactionCounterWritesMethodsTransactionAdapter::new(DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(), participant.clone(), coordinator.clone(), Starts(AtomicUsize::new(102)), TransactionCounter { trace: trace.clone(), fail: false, downstream: None, final_state_override: None })
-        .with_sequential_root_star().with_explicit_abort_owner(owner.clone()).with_authorization(AuthorizationPolicy::new(Some(probe.clone()), Some(probe.clone())));
+        .with_explicit_abort_owner(owner.clone()).with_authorization(AuthorizationPolicy::new(Some(probe.clone()), Some(probe.clone())));
+    let plain = adapter.clone();
+    let adapter = adapter.with_sequential_root_star();
     let socket = std::net::TcpListener::bind("127.0.0.1:0").unwrap(); let address=socket.local_addr().unwrap(); drop(socket);
     let (stop, stopped)=tokio::sync::oneshot::channel::<()>();
+    let mut application = reboot::application_host::ApplicationHost::new("root-authorized-rejection");
+    let adapter = application.register_transaction_adapter(adapter).unwrap();
+    let starting = adapter.require_local_host_ready().unwrap_err();
+    assert_eq!(starting.code(), tonic::Code::Unavailable);
+    assert_eq!(starting.message(), "registered host not ready");
     let registration=adapter.explicit_abort_recovery_registration().unwrap(); let served=adapter.clone();
-    let server=tokio::spawn(async move { reboot::application_host::ApplicationHost::new("root-authorized-rejection").with_host_recovery(registration).add_public_service(proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethodsServer::new(served)).serve_with_shutdown(address,async { let _=stopped.await; }).await });
+    let server=tokio::spawn(async move { application.with_host_recovery(registration).add_public_service(proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethodsServer::new(served)).serve_with_shutdown(address,async { let _=stopped.await; }).await });
     tokio::time::timeout(std::time::Duration::from_secs(3),async { loop { if tonic::transport::Endpoint::from_shared(format!("http://{address}")).unwrap().connect().await.is_ok() { break; } tokio::task::yield_now().await; } }).await.unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        loop {
+            match adapter.require_local_host_ready() {
+                Ok(()) => break,
+                Err(error) if error.code() == tonic::Code::Unavailable && error.message() == "registered host not ready" => tokio::task::yield_now().await,
+                Err(error) => panic!("registration readiness failed: {error}"),
+            }
+        }
+    }).await.unwrap();
     let request = |amount| { let mut headers = reboot::RebootHeaders::new("transaction-counter"); headers.bearer_token = Some("allow".into()); let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount }); *request.metadata_mut() = headers.to_metadata().unwrap(); request };
     FIXTURE_ROOT_AUTH_REJECTION_HITS.store(0, Ordering::SeqCst);
     let mut rpc = Box::pin(TransactionCounterWritesMethods::increment(&adapter, request(-999)));
@@ -1375,10 +1397,19 @@ async fn generated_registered_root_authorized_entry_rejection_awaits_abort_ack()
     assert_eq!(error.code(), tonic::Code::FailedPrecondition);
     assert_eq!(error.message(), "authorized handler entry binding differs");
     drop(reboot::explicit_abort::RegisteredRoot::before_load(&participant, root.transaction().clone(), coordinator, Some(&owner)).unwrap());
-    let result = tokio::time::timeout(std::time::Duration::from_secs(2), TransactionCounterWritesMethods::increment(&adapter, request(3))).await.unwrap().unwrap();
-    assert_eq!(result.into_inner().value, 7);
+    let result = tokio::time::timeout(std::time::Duration::from_secs(2), TransactionCounterWritesMethods::increment(&adapter, request(7301))).await.unwrap().unwrap();
+    assert_eq!(result.into_inner().value, 7305);
     assert_eq!(trace.lock().unwrap().iter().filter(|event| **event == "handler").count(), 1);
+    // Registration alone cannot make plain exclusive execution eligible.
+    // This separate host intentionally remains Starting and serves no RPCs.
+    let mut unstarted_host = reboot::application_host::ApplicationHost::new("registered-plain-exclusive");
+    let plain = unstarted_host.register_transaction_adapter(plain).unwrap();
+    let result = TransactionCounterWritesMethods::increment(&plain, request(7302)).await.unwrap();
+    assert_eq!(result.into_inner().value, 7306);
     stop.send(()).unwrap(); server.await.unwrap().unwrap();
+    assert!(adapter.require_local_host_ready().is_err(), "shutdown host cannot remain Ready");
+    let changed = plain.clone().with_authorization(AuthorizationPolicy::permissive_for_development());
+    assert_eq!(changed.require_local_host_ready().unwrap_err().code(), tonic::Code::FailedPrecondition);
 }
 
 #[tokio::test]
@@ -2065,7 +2096,7 @@ async fn generated_retained_sibling_authorization_preserves_n1_for_n3_and_one_wa
     for park in [false, true] {
         let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
         let staged = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let participant = reboot::durable_participant::DurableActorParticipant::new(Arc::new(TransactionParticipantSidecar { trace:trace.clone(), state:Some(proto::TransactionCounter { value:4 }), staged_states:staged.clone(), idempotent_recovery:Arc::new(std::sync::Mutex::new(VecDeque::new())) }), "tests.reboot.protoc.TransactionCounter", "transaction-counter");
+        let participant = reboot::durable_participant::DurableActorParticipant::new(Arc::new(AuthorizationCleanupParticipantSidecar { trace:trace.clone(), state:Some(proto::TransactionCounter { value:4 }), staged_states:staged.clone(), idempotent_recovery:Arc::new(std::sync::Mutex::new(VecDeque::new())), aborts:std::sync::Mutex::new(Vec::new()), abort_entered:tokio::sync::Semaphore::new(0), abort_release:tokio::sync::Notify::new() }), "tests.reboot.protoc.TransactionCounter", "transaction-counter");
         let host = reboot::durable_participant::DurableActorParticipantHost::new(participant.clone());
         let coordinator = reboot::durable_coordinator::DurableRootCoordinator::new(Arc::new(TransactionCoordinatorSidecar { trace:trace.clone() }), Arc::new(reboot::durable_coordinator::SingleParticipantResolver::new(ParticipantTarget { state_type:"tests.reboot.protoc.TransactionCounter".into(), state_ref:"transaction-counter".into() },reboot::durable_participant::DurableActorParticipantHost::new(participant.clone())).unwrap()));
         let watch=Arc::new(Watch { count:AtomicUsize::new(0), release:tokio::sync::Notify::new() });
@@ -2074,22 +2105,33 @@ async fn generated_retained_sibling_authorization_preserves_n1_for_n3_and_one_wa
         let adapter=transaction_generated::TransactionCounterWritesMethodsTransactionAdapter::new(DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(),participant,coordinator,Starts(AtomicUsize::new(202)),TransactionCounter { trace:trace.clone(),fail:false,downstream:None,final_state_override:None }).with_sequential_reusable_participants().with_live_participant_owner(owner).with_authorization(AuthorizationPolicy::new(None,Some(policy.clone())));
         let socket=std::net::TcpListener::bind("127.0.0.1:0").unwrap();let address=socket.local_addr().unwrap();drop(socket);
         let (stop, stopped)=tokio::sync::oneshot::channel::<()>();
+        let mut application = reboot::application_host::ApplicationHost::new("retained-preguard");
+        let adapter = application.register_transaction_adapter(adapter).unwrap();
         let registration=adapter.live_participant_recovery_registration().unwrap();let served=adapter.clone();
-        let server=tokio::spawn(async move { reboot::application_host::ApplicationHost::new("retained-preguard").with_host_recovery(registration).add_public_service(proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethodsServer::new(served)).serve_with_shutdown(address,async { let _=stopped.await; }).await });
+        let server=tokio::spawn(async move { application.with_host_recovery(registration).add_public_service(proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethodsServer::new(served)).serve_with_shutdown(address,async { let _=stopped.await; }).await });
         tokio::time::timeout(std::time::Duration::from_secs(3),async { loop { if tonic::transport::Endpoint::from_shared(format!("http://{address}")).unwrap().connect().await.is_ok() { break; } tokio::task::yield_now().await; } }).await.unwrap();
-        assert_eq!(TransactionCounterWritesMethods::increment(&adapter,request(3)).await.unwrap().into_inner().value,7);
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            loop {
+                match adapter.require_local_host_ready() {
+                    Ok(()) => break,
+                    Err(error) if error.code() == tonic::Code::Unavailable && error.message() == "registered host not ready" => tokio::task::yield_now().await,
+                    Err(error) => panic!("registration readiness failed: {error}"),
+                }
+            }
+        }).await.unwrap();
+        assert_eq!(TransactionCounterWritesMethods::increment(&adapter,request(7301)).await.unwrap().into_inner().value,7305);
         tokio::time::timeout(std::time::Duration::from_secs(2),async { while watch.count.load(Ordering::SeqCst)==0 { tokio::task::yield_now().await; } }).await.unwrap();
         let n2=tokio::time::timeout(std::time::Duration::from_millis(50),TransactionCounterWritesMethods::increment(&adapter,request(11))).await;
         if park { assert!(n2.is_err()); } else { assert_eq!(n2.unwrap().unwrap_err().code(),tonic::Code::PermissionDenied); }
         tokio::task::yield_now().await;
         assert_eq!(*trace.lock().unwrap(),["participant load","handler"]);
-        assert_eq!(TransactionCounterWritesMethods::increment(&adapter,request(5)).await.unwrap().into_inner().value,12);
-        assert_eq!(*policy.states.lock().unwrap(),[4,7,7]);
+        assert_eq!(TransactionCounterWritesMethods::increment(&adapter,request(7303)).await.unwrap().into_inner().value,14608);
+        assert_eq!(*policy.states.lock().unwrap(),[4,7305,7305]);
         assert_eq!(watch.count.load(Ordering::SeqCst),1);
         assert_eq!(*trace.lock().unwrap(),["participant load","handler","handler"]);
         InProcessParticipantEndpoint::new(host).prepare("transaction-counter",reboot::database_proto::PrepareRequest { transaction_id:Uuid::from_u128(201).as_bytes().to_vec(),..Default::default() }).await.unwrap();
         assert_eq!(staged.lock().unwrap().len(),1);
-        assert_eq!(proto::TransactionCounter::decode(staged.lock().unwrap()[0].as_deref().unwrap()).unwrap().value,12);
+        assert_eq!(proto::TransactionCounter::decode(staged.lock().unwrap()[0].as_deref().unwrap()).unwrap().value,14608);
         watch.release.notify_one();
         tokio::time::timeout(std::time::Duration::from_secs(2),async { while !trace.lock().unwrap().contains(&"participant commit") { tokio::task::yield_now().await; } }).await.unwrap();
         assert!(!trace.lock().unwrap().contains(&"participant abort"));
