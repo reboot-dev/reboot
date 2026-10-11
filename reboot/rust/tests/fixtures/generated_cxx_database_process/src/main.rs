@@ -601,7 +601,14 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
             };
             let tree_targets: Vec<&str> = tree_next.as_deref().into_iter().collect();
             let star_targets = [optional_arg("--star-first"), optional_arg("--star-second")];
-            let star_refs: Vec<&str> = star_targets.iter().filter_map(|s| s.as_deref()).collect();
+            let mut star_refs: Vec<&str> =
+                star_targets.iter().filter_map(|s| s.as_deref()).collect();
+            if has("--reuse-third") {
+                assert!(has("--sequential-reusable"));
+                assert_eq!(star_refs.len(), 2);
+                assert_eq!(star_refs[0], star_refs[1]);
+                star_refs.push(star_refs[0]);
+            }
             let targets: &[&str] = if !star_refs.is_empty() {
                 &star_refs
             } else if tree_next.is_some() {
@@ -731,8 +738,13 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                         return Err(tonic::Status::failed_precondition("repeat denied"));
                     }
                     let mut nested_request = request;
-                    if has("--sequential-reusable") && index == 1 {
-                        nested_request.amount = 11;
+                    if has("--sequential-reusable") {
+                        nested_request.amount = match index {
+                            0 => request.amount,
+                            1 => 11,
+                            2 if has("--reuse-third") => 13,
+                            _ => panic!("unexpected reusable sibling"),
+                        };
                     }
                     match root.client
                     .increment(

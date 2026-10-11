@@ -12,6 +12,40 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## EOF-confirmed terminal evidence and retained-sibling regression (2026-10-11)
+
+The private original-wire observer now wraps a generic readied service while
+retaining the network Channel alias. Terminal trailers are withheld until actual
+body EOF; Pending does not certify them, and any subsequent frame or body error
+invalidates evidence. Successful membership and trailing-error recovery explicitly
+require confirmed EOF. Eight observer tests include genuine Tonic consumption,
+valid duplicate trailers, late DATA, rich-error controls, Pending/wakeup,
+cancellation/drop and post-trailer errors. This private seam provides no local
+provenance, public receipt or authorization capability.
+
+The separate-process generated CXX retained-participant fixture additionally
+executes N1 success, N2 declared rollback and N3 success, verifies retained writer
+state and task disposition, and restarts against persisted state. It proves
+retained-writer state rollback, not rollback of a staged N2 task: N2 aborts before
+scheduling. It does not establish secured same-host composition.
+
+Fresh full publication acceptance:
+`/tmp/reboot-rust-user-http-full-audit-1791740126459346176/accepted.json`.
+All ten gates passed, including SDK **542 tests**, both strict Clippy gates,
+focused native **4 cases**, ownership and CLI units, ordinary public User,
+workflows/transactions, instrumented checkpoint restart and public greeting.
+Separate generated N1/N2/N3 native acceptance passed before these audits.
+Applied-source review found no concrete new EOF-strengthening defect. Frozen
+hashes matched and exact owned-process identities were absent; the owner lock was
+released before this ledger update. Target/free-space guards passed. The earlier
+all-behavioral-pass audit `1791735866432902440` failed its final target-size guard
+and remains unchanged, not accepted. Only approved build-script cache cleanup was
+performed before this fresh full run.
+
+Host registration, authorization-backed handler admission and exact allocated
+child binding remain unfinished; no full native inventory, production readiness
+or full parity claim is made.
+
 ## Runtime-owned original-wire terminal validation (2026-10-11)
 
 Generated transactional unary calls now decode exactly one response message and
@@ -3459,7 +3493,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 990ee44982644bc0ea9072a61aa6fd2e95a965e9d6660d58102dcb4d5b537bc0 -->
+<!-- parity-source-sha256: 9d1275b8f2be66917317a487426a2003aef0fc6563b2789642ad7ba1d9e7f4c9 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

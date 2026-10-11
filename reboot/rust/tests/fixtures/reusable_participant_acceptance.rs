@@ -109,12 +109,13 @@ impl SupervisedTree {
 #[test]
 #[ignore = "requires real C++ Database/RocksDB"]
 fn reusable_participant_generated_commit_restart_and_abort() {
-    for (declared, abort) in [(true,false),(false,false),(true,true)] {
+    for (declared, abort, third) in [(true,false,false),(false,false,false),(true,true,false),(true,false,true)] {
         let mut tree = SupervisedTree::with_refs(["reuse-a","reuse-b","reuse-unused"].map(|id| reboot_rust_schema::state_ref::StateRef::from_id("tests.reboot.protoc.TransactionCounter",id).unwrap().to_string()));
         let mut bc = tree.reusable_command(1,declared); bc.arg("--block-task");
         let b = tree.spawn(1,&mut bc);
         let parked = tree.marker(0,"reuse-park");
         let mut ac = tree.reusable_command(0,declared);
+        if third { ac.arg("--reuse-third"); }
         ac.env("REBOOT_TEST_ROOT_AFTER_REMOTE",&parked);
         let preparing = tree.marker(0,"reuse-preparing");
         if !abort { ac.env("REBOOT_TEST_STAR_BEFORE_PREPARE_FANOUT",&preparing); }
@@ -148,10 +149,14 @@ fn reusable_participant_generated_commit_restart_and_abort() {
             }
             std::thread::sleep(Duration::from_millis(10));
         }
-        let tasks = tree.reusable_tasks();
+        let mut tasks = tree.reusable_tasks();
+        if third { tasks.push(database::Task::decode(std::fs::read(tree.marker(1,"tasks.reuse-13")).unwrap().as_slice()).unwrap()); }
         let entries = std::fs::read_to_string(tree.marker(1,"tasks.reuse-entry")).unwrap();
         let entries: Vec<_> = entries.lines().map(|s| s.split('|').collect::<Vec<_>>()).collect();
-        assert_eq!(entries.len(),2); assert_ne!(entries[0][0],entries[1][0]);
+        assert_eq!(entries.len(),if third {3} else {2});
+        let paths: std::collections::BTreeSet<_> = entries.iter().map(|entry|entry[0]).collect();
+        assert_eq!(paths.len(),entries.len(),"every sibling needs a distinct child path");
+        if third { assert_eq!(entries[2][1..],["13","27"],"N3 must observe retained N1, not rolled-back N2 state"); }
         assert_eq!(entries[0][1..],["7","20"]); assert_eq!(entries[1][1..],["11","27"],"N2 must see retained private N1 state");
         tree.reusable_states([5,20,40]); assert!(tree.records(1,&tasks).is_empty());
         assert!(!tree.marker(1,"tasks.invocations").exists());
@@ -161,25 +166,26 @@ fn reusable_participant_generated_commit_restart_and_abort() {
         await_marker(&preparing,&mut hosts[0]); tree.reusable_members();
         std::fs::write(preparing.with_extension("release"),b"fanout").unwrap();
         assert_eq!(tree.runtime.block_on(call).unwrap().unwrap().into_inner().value,12);
-        let expected_b = if declared {27} else {38}; tree.reusable_states([12,expected_b,40]);
-        let surviving = if declared { &tasks[..1] } else { &tasks[..] };
+        let expected_b = if third {40} else if declared {27} else {38}; tree.reusable_states([12,expected_b,40]);
+        let surviving: Vec<_> = tasks.iter().enumerate().filter(|(index,_)|!declared || *index != 1).map(|(_,task)|task).collect();
         await_marker(&tree.marker(1,"tasks"),&mut hosts[1]);
         let records = tree.records(1,&tasks); assert_eq!(records.len(),surviving.len());
         assert!(records.iter().all(|t|t.status == database::task::Status::Pending as i32));
-        assert!(tree.records(1,&tasks[1..]).is_empty() == declared,"N2 T2 disposition");
+        assert!(tree.records(1,&tasks[1..2]).is_empty() == declared,"N2 T2 disposition");
+        if third { assert_eq!(tree.records(1,&tasks[2..]).len(),1,"N3 task must survive"); }
         SupervisedTree::stop_reusable(&mut hosts); tree.restart();
         let mut bc = tree.reusable_command(1,declared); bc.arg("--recover");
         let b = tree.spawn(1,&mut bc);
         let mut ac = tree.reusable_command(0,declared); ac.arg("--recover");
         let a = tree.spawn(0,&mut ac); let mut hosts=[a,b];
-        for task in surviving { assert_eq!(tree.wait_task(1,task),i64::from(expected_b)); }
+        for task in &surviving { assert_eq!(tree.wait_task(1,task),i64::from(expected_b)); }
         let completed = tree.records(1,&tasks); assert_eq!(completed.len(),surviving.len());
         assert!(completed.iter().all(|t|t.status == database::task::Status::Completed as i32));
         let log = std::fs::read_to_string(tree.marker(1,"tasks.invocations")).unwrap();
         assert!(log.lines().count() > surviving.len(),"actual blocked pre-completion handler must redeliver");
         SupervisedTree::stop_reusable(&mut hosts); tree.restart();
         let b=tree.spawn(1,&mut tree.reusable_command(1,declared)); let a=tree.spawn(0,&mut tree.reusable_command(0,declared)); let mut hosts=[a,b];
-        for task in surviving { assert_eq!(tree.wait_task(1,task),i64::from(expected_b)); }
+        for task in &surviving { assert_eq!(tree.wait_task(1,task),i64::from(expected_b)); }
         std::thread::sleep(Duration::from_millis(250));
         assert_eq!(tree.records(1,&tasks),completed); assert_eq!(std::fs::read_to_string(tree.marker(1,"tasks.invocations")).unwrap(),log,"completed tasks redispatched");
         tree.reusable_states([12,expected_b,40]); SupervisedTree::stop_reusable(&mut hosts); tree.planner.stop();

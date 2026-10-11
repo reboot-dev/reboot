@@ -14,6 +14,7 @@ pub(super) struct RpcTerminalEvidence {
     headers: Option<http::HeaderMap>,
     headers_end_stream: bool,
     trailers: Option<http::HeaderMap>,
+    trailers_eof: bool,
     invalid: bool,
 }
 impl RpcTerminalEvidence {
@@ -22,6 +23,7 @@ impl RpcTerminalEvidence {
         trailers: &tonic::metadata::MetadataMap,
     ) -> Result<(), Status> {
         if self.invalid
+            || !self.trailers_eof
             || self
                 .headers
                 .as_ref()
@@ -50,7 +52,7 @@ impl RpcTerminalEvidence {
             self.trailers.as_ref(),
         ) {
             (true, true, None) => headers,
-            (false, _, Some(trailers)) => trailers,
+            (false, _, Some(trailers)) if self.trailers_eof => trailers,
             _ => return Err(reject()),
         };
         let mut statuses = terminal.get_all("grpc-status").iter();
@@ -128,12 +130,16 @@ fn safe_rich_encoding(headers: &http::HeaderMap) -> bool {
             .is_ok()
         })
 }
-pub(super) struct TerminalCaptureChannel {
-    inner: tonic::transport::Channel,
+// One observer for network and host-registered services. Genericity does not
+// grant local provenance or expose a caller-created terminal receipt.
+pub(super) type TerminalCaptureChannel = TerminalCaptureService<tonic::transport::Channel>;
+
+pub(super) struct TerminalCaptureService<S> {
+    inner: S,
     evidence: Arc<Mutex<RpcTerminalEvidence>>,
 }
-impl TerminalCaptureChannel {
-    pub(super) fn new(inner: tonic::transport::Channel) -> (Self, Arc<Mutex<RpcTerminalEvidence>>) {
+impl<S> TerminalCaptureService<S> {
+    pub(super) fn new(inner: S) -> (Self, Arc<Mutex<RpcTerminalEvidence>>) {
         let evidence = Arc::new(Mutex::new(RpcTerminalEvidence::default()));
         (
             Self {
@@ -144,9 +150,14 @@ impl TerminalCaptureChannel {
         )
     }
 }
-impl Service<http::Request<BoxBody>> for TerminalCaptureChannel {
+impl<S> Service<http::Request<BoxBody>> for TerminalCaptureService<S>
+where
+    S: Service<http::Request<BoxBody>, Response = http::Response<BoxBody>>,
+    S::Future: Send + 'static,
+    S::Error: 'static,
+{
     type Response = http::Response<BoxBody>;
-    type Error = <tonic::transport::Channel as Service<http::Request<BoxBody>>>::Error;
+    type Error = S::Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
@@ -176,6 +187,7 @@ impl Service<http::Request<BoxBody>> for TerminalCaptureChannel {
             let body = tonic::body::boxed(TerminalCaptureBody {
                 inner: body,
                 evidence,
+                pending_terminal: None,
             });
             Ok(http::Response::from_parts(parts, body))
         })
@@ -184,6 +196,7 @@ impl Service<http::Request<BoxBody>> for TerminalCaptureChannel {
 struct TerminalCaptureBody {
     inner: BoxBody,
     evidence: Arc<Mutex<RpcTerminalEvidence>>,
+    pending_terminal: Option<Frame<bytes::Bytes>>,
 }
 impl Body for TerminalCaptureBody {
     type Data = bytes::Bytes;
@@ -192,31 +205,352 @@ impl Body for TerminalCaptureBody {
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        match Pin::new(&mut self.inner).poll_frame(cx) {
-            Poll::Ready(Some(Ok(mut frame))) => {
-                if let Some(trailers) = frame.trailers_mut() {
-                    let malformed = !safe_rich_encoding(trailers);
-                    {
-                        let mut observed = self.evidence.lock().unwrap();
-                        if observed.trailers.is_some() {
-                            observed.invalid = true;
-                        }
-                        observed.trailers = Some(trailers.clone());
-                        observed.invalid |= malformed;
+        loop {
+            if self.pending_terminal.is_some() {
+                // Tonic caches the first trailer and never asks for a later frame.
+                // Establish actual EOF before granting that terminal to the decoder.
+                return match Pin::new(&mut self.inner).poll_frame(cx) {
+                    Poll::Pending => Poll::Pending,
+                    Poll::Ready(None) => {
+                        self.evidence.lock().unwrap().trailers_eof = true;
+                        Poll::Ready(self.pending_terminal.take().map(Ok))
                     }
-                    if malformed {
-                        trailers.remove("grpc-status-details-bin");
+                    Poll::Ready(Some(_)) => {
+                        self.pending_terminal.take();
+                        self.evidence.lock().unwrap().invalid = true;
+                        Poll::Ready(Some(Err(Status::failed_precondition(
+                            "wire body continued after terminal trailers",
+                        ))))
                     }
-                }
-                Poll::Ready(Some(Ok(frame)))
+                };
             }
-            other => other,
+            match Pin::new(&mut self.inner).poll_frame(cx) {
+                Poll::Ready(Some(Ok(mut frame))) => {
+                    if let Some(trailers) = frame.trailers_mut() {
+                        let malformed = !safe_rich_encoding(trailers);
+                        {
+                            let mut observed = self.evidence.lock().unwrap();
+                            if observed.trailers.is_some() {
+                                observed.invalid = true;
+                            }
+                            observed.trailers = Some(trailers.clone());
+                            observed.invalid |= malformed;
+                        }
+                        if malformed {
+                            trailers.remove("grpc-status-details-bin");
+                        }
+                        self.pending_terminal = Some(frame);
+                        continue;
+                    }
+                    return Poll::Ready(Some(Ok(frame)));
+                }
+                other => return other,
+            }
         }
     }
     fn is_end_stream(&self) -> bool {
-        self.inner.is_end_stream()
+        self.pending_terminal.is_none() && self.inner.is_end_stream()
     }
     fn size_hint(&self) -> http_body::SizeHint {
         self.inner.size_hint()
+    }
+}
+
+#[cfg(test)]
+mod service_tests {
+    use super::*;
+    use http_body_util::BodyExt;
+    use std::{collections::VecDeque, convert::Infallible};
+
+    struct Frames(VecDeque<Result<Frame<bytes::Bytes>, Status>>);
+    impl Body for Frames {
+        type Data = bytes::Bytes;
+        type Error = Status;
+        fn poll_frame(
+            mut self: Pin<&mut Self>,
+            _: &mut Context<'_>,
+        ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+            Poll::Ready(self.0.pop_front())
+        }
+        fn is_end_stream(&self) -> bool {
+            self.0.is_empty()
+        }
+    }
+    // Deliberately not Clone: readiness must belong to the called instance.
+    struct ReservedService {
+        ready: bool,
+        response: Option<http::Response<BoxBody>>,
+    }
+    impl Service<http::Request<BoxBody>> for ReservedService {
+        type Response = http::Response<BoxBody>;
+        type Error = Infallible;
+        type Future = std::future::Ready<Result<Self::Response, Self::Error>>;
+        fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            assert!(!self.ready);
+            self.ready = true;
+            Poll::Ready(Ok(()))
+        }
+        fn call(&mut self, _: http::Request<BoxBody>) -> Self::Future {
+            assert!(std::mem::replace(&mut self.ready, false));
+            std::future::ready(Ok(self.response.take().unwrap()))
+        }
+    }
+    async fn dispatch(
+        headers: http::HeaderMap,
+        frames: Vec<Result<Frame<bytes::Bytes>, Status>>,
+    ) -> (BoxBody, Arc<Mutex<RpcTerminalEvidence>>) {
+        let mut response = http::Response::new(tonic::body::boxed(Frames(frames.into())));
+        *response.headers_mut() = headers;
+        let (mut service, evidence) = TerminalCaptureService::new(ReservedService {
+            ready: false,
+            response: Some(response),
+        });
+        std::future::poll_fn(|cx| service.poll_ready(cx))
+            .await
+            .unwrap();
+        let response = service
+            .call(http::Request::new(tonic::body::empty_body()))
+            .await
+            .unwrap();
+        (response.into_body(), evidence)
+    }
+    #[tokio::test]
+    async fn registered_service_preserves_readiness_and_original_terminal_frames() {
+        let mut terminal = http::HeaderMap::new();
+        terminal.insert("grpc-status", "0".parse().unwrap());
+        let (mut body, evidence) = dispatch(
+            http::HeaderMap::new(),
+            vec![
+                Ok(Frame::data(bytes::Bytes::from_static(b"payload"))),
+                Ok(Frame::trailers(terminal.clone())),
+            ],
+        )
+        .await;
+        assert_eq!(
+            body.frame().await.unwrap().unwrap().into_data().unwrap(),
+            "payload"
+        );
+        assert_eq!(
+            body.frame()
+                .await
+                .unwrap()
+                .unwrap()
+                .into_trailers()
+                .unwrap(),
+            terminal
+        );
+        assert!(body.frame().await.is_none());
+        evidence
+            .lock()
+            .unwrap()
+            .validate_success(&tonic::metadata::MetadataMap::from_headers(terminal))
+            .unwrap();
+    }
+    #[tokio::test]
+    async fn registered_service_sanitizes_single_malformed_rich_frame() {
+        let mut terminal = http::HeaderMap::new();
+        terminal.insert("grpc-status", "2".parse().unwrap());
+        terminal.insert("grpc-status-details-bin", "!invalid!".parse().unwrap());
+        let (mut body, evidence) =
+            dispatch(http::HeaderMap::new(), vec![Ok(Frame::trailers(terminal))]).await;
+        let forwarded = body
+            .frame()
+            .await
+            .unwrap()
+            .unwrap()
+            .into_trailers()
+            .unwrap();
+        assert!(!forwarded.contains_key("grpc-status-details-bin"));
+        let observed = evidence.lock().unwrap();
+        assert!(observed.invalid);
+        assert!(
+            observed
+                .trailers
+                .as_ref()
+                .unwrap()
+                .contains_key("grpc-status-details-bin")
+        );
+        assert!(observed.error_metadata(&Status::unknown("")).is_err());
+    }
+    async fn tonic_error(
+        headers: http::HeaderMap,
+        frames: Vec<Result<Frame<bytes::Bytes>, Status>>,
+    ) -> (Status, Arc<Mutex<RpcTerminalEvidence>>) {
+        let mut response = http::Response::new(tonic::body::boxed(Frames(frames.into())));
+        *response.headers_mut() = headers;
+        response
+            .headers_mut()
+            .insert("content-type", "application/grpc".parse().unwrap());
+        let (service, evidence) = TerminalCaptureService::new(ReservedService {
+            ready: false,
+            response: Some(response),
+        });
+        let mut grpc = tonic::client::Grpc::new(service);
+        grpc.ready().await.unwrap();
+        let result = grpc
+            .server_streaming::<crate::proto::Empty, crate::proto::Empty, _>(
+                tonic::Request::new(crate::proto::Empty {}),
+                "/test.Service/Call".parse().unwrap(),
+                tonic::codec::ProstCodec::default(),
+            )
+            .await;
+        let status = match result {
+            Err(status) => status,
+            Ok(response) => response.into_inner().message().await.unwrap_err(),
+        };
+        (status, evidence)
+    }
+    fn error_headers() -> http::HeaderMap {
+        use base64::Engine;
+        let mut headers = http::HeaderMap::new();
+        headers.insert("grpc-status", "2".parse().unwrap());
+        headers.insert("grpc-message", "declared%20failure".parse().unwrap());
+        headers.insert(
+            "grpc-status-details-bin",
+            base64::engine::general_purpose::STANDARD
+                .encode(b"rich")
+                .parse()
+                .unwrap(),
+        );
+        headers
+    }
+    #[tokio::test]
+    async fn registered_service_tonic_accepts_genuine_header_and_trailer_errors() {
+        for initial in [true, false] {
+            let terminal = error_headers();
+            let (headers, frames) = if initial {
+                (terminal.clone(), vec![])
+            } else {
+                (
+                    http::HeaderMap::new(),
+                    vec![Ok(Frame::trailers(terminal.clone()))],
+                )
+            };
+            let (status, evidence) = tonic_error(headers, frames).await;
+            assert_eq!(status.message(), "declared failure");
+            assert_eq!(status.details(), b"rich");
+            let captured = evidence.lock().unwrap().error_metadata(&status).unwrap();
+            assert_eq!(captured.get("grpc-status").unwrap().as_bytes(), b"2");
+        }
+    }
+    #[tokio::test]
+    async fn registered_service_tonic_rejects_valid_terminal_followed_by_more_frames() {
+        for extra_data in [false, true] {
+            let extra = if extra_data {
+                Frame::data(bytes::Bytes::from_static(b"late"))
+            } else {
+                Frame::trailers(error_headers())
+            };
+            let (status, evidence) = tonic_error(
+                http::HeaderMap::new(),
+                vec![Ok(Frame::trailers(error_headers())), Ok(extra)],
+            )
+            .await;
+            assert_eq!(status.code(), tonic::Code::FailedPrecondition);
+            assert!(evidence.lock().unwrap().invalid);
+            assert!(evidence.lock().unwrap().error_metadata(&status).is_err());
+        }
+    }
+    #[tokio::test]
+    async fn registered_service_tonic_sanitizes_malformed_initial_rich_header() {
+        let mut headers = error_headers();
+        headers.insert("grpc-status-details-bin", "!invalid!".parse().unwrap());
+        let (status, evidence) = tonic_error(headers, vec![]).await;
+        assert!(status.details().is_empty());
+        assert!(evidence.lock().unwrap().error_metadata(&status).is_err());
+    }
+    struct PendingEof {
+        terminal: Option<http::HeaderMap>,
+        gate: Arc<Mutex<(bool, Option<std::task::Waker>)>>,
+    }
+    impl Body for PendingEof {
+        type Data = bytes::Bytes;
+        type Error = Status;
+        fn poll_frame(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+        ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+            if let Some(terminal) = self.terminal.take() {
+                return Poll::Ready(Some(Ok(Frame::trailers(terminal))));
+            }
+            let mut gate = self.gate.lock().unwrap();
+            if gate.0 {
+                Poll::Ready(None)
+            } else {
+                gate.1 = Some(cx.waker().clone());
+                Poll::Pending
+            }
+        }
+    }
+    #[tokio::test]
+    async fn registered_service_pending_eof_requires_wakeup_and_drop_never_certifies() {
+        for cancel in [false, true] {
+            let gate = Arc::new(Mutex::new((false, None)));
+            let evidence = Arc::new(Mutex::new(RpcTerminalEvidence {
+                headers: Some(http::HeaderMap::new()),
+                ..Default::default()
+            }));
+            let mut body = TerminalCaptureBody {
+                inner: tonic::body::boxed(PendingEof {
+                    terminal: Some(error_headers()),
+                    gate: gate.clone(),
+                }),
+                evidence: evidence.clone(),
+                pending_terminal: None,
+            };
+            let mut frame = Box::pin(body.frame());
+            let pending =
+                std::future::poll_fn(|cx| Poll::Ready(frame.as_mut().poll(cx).is_pending())).await;
+            assert!(pending);
+            drop(frame);
+            assert!(!body.is_end_stream());
+            let expected = Status::with_details(
+                tonic::Code::Unknown,
+                "declared failure",
+                bytes::Bytes::from_static(b"rich"),
+            );
+            assert!(evidence.lock().unwrap().error_metadata(&expected).is_err());
+            if cancel {
+                drop(body);
+                assert!(!evidence.lock().unwrap().trailers_eof);
+                assert!(evidence.lock().unwrap().error_metadata(&expected).is_err());
+            } else {
+                let waker = {
+                    let mut gate = gate.lock().unwrap();
+                    gate.0 = true;
+                    gate.1.take().unwrap()
+                };
+                waker.wake();
+                assert!(body.frame().await.unwrap().unwrap().is_trailers());
+                assert!(evidence.lock().unwrap().trailers_eof);
+                evidence.lock().unwrap().error_metadata(&expected).unwrap();
+            }
+        }
+    }
+    #[tokio::test]
+    async fn registered_service_tonic_rejects_error_after_trailers() {
+        let (status, evidence) = tonic_error(
+            http::HeaderMap::new(),
+            vec![
+                Ok(Frame::trailers(error_headers())),
+                Err(Status::unavailable("late body error")),
+            ],
+        )
+        .await;
+        assert_eq!(status.code(), tonic::Code::FailedPrecondition);
+        assert!(evidence.lock().unwrap().invalid);
+        assert!(!evidence.lock().unwrap().trailers_eof);
+        assert!(evidence.lock().unwrap().error_metadata(&status).is_err());
+    }
+    #[tokio::test]
+    async fn registered_service_body_error_is_not_a_wire_terminal() {
+        let (mut body, evidence) = dispatch(
+            http::HeaderMap::new(),
+            vec![Err(Status::unavailable("body lost"))],
+        )
+        .await;
+        let error = body.frame().await.unwrap().unwrap_err();
+        assert_eq!(error.code(), tonic::Code::Unavailable);
+        assert!(evidence.lock().unwrap().error_metadata(&error).is_err());
     }
 }
