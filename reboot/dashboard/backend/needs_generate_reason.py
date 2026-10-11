@@ -17,6 +17,19 @@ def needs_generate_reason(
     it. `MISSING` outranks `CHANGED`."""
     Reason = DashboardGetResponse.NeedsGenerateReason
 
+    # `state.generated`, the list of generated modules this compares
+    # against, is only written by a code analysis that finishes. If
+    # none has finished yet, it is empty, which would make every
+    # module look `MISSING`; if the last one failed, it is whatever an
+    # earlier one listed, which may be out of date. Either way it
+    # says nothing reliable about the developer's generated code, so
+    # nothing is said: the page shows the failure instead.
+    if (
+        not state.HasField('code_check') or
+        state.code_check.HasField('failure')
+    ):
+        return None
+
     reason: Optional['DashboardGetResponse.NeedsGenerateReason.ValueType'
                     ] = None
     for module_name, digest in state.api_digests.items():

@@ -14,6 +14,15 @@ py_test(
 )
 
 py_test(
+    name = "check_tests_py",
+    srcs = ["check_tests.py"],
+    main = "check_tests.py",
+    deps = [
+        "//reboot/dashboard/backend:check_py",
+    ],
+)
+
+py_test(
     name = "api_reader_tests_py",
     srcs = ["api_reader_tests.py"],
     data = glob(["api/**"]),

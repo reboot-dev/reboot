@@ -81,7 +81,7 @@ from reboot.aio.cooperatively import cooperatively
 from reboot.aio.workflows import at_least_once
 from reboot.cli.common.watch import file_watcher
 from reboot.dashboard.backend.changelog import code_changes_between
-from reboot.dashboard.backend.check import timed
+from reboot.dashboard.backend.check import CheckError, timed
 from reboot.dashboard.backend.pyright import Location, Pyright
 from reboot.dashboard.backend.walk import (
     GENERATED_SUFFIXES,
@@ -2026,21 +2026,54 @@ async def watch(
                 # mid-iteration records the same `Update` it was
                 # recording, which is what the idempotency of the
                 # write needs.
-                analyzed, check = await at_least_once(
-                    'Walk and analyze',
-                    context,
-                    partial(
-                        timed,
+                try:
+                    analyzed, check = await at_least_once(
+                        'Walk and analyze',
+                        context,
                         partial(
-                            _walk_and_analyze,
-                            application=application,
-                            roots=roots,
-                            generated_directory=generated_directory,
-                            known=known,
-                            generated=generated,
+                            timed,
+                            partial(
+                                _walk_and_analyze,
+                                application=application,
+                                roots=roots,
+                                generated_directory=generated_directory,
+                                known=known,
+                                generated=generated,
+                            ),
                         ),
-                    ),
-                )
+                    )
+                except CheckError as error:
+                    # The analysis failed, such as the pyright it
+                    # asks exiting. Recorded as the check, every
+                    # time, so that the page can say the analysis is
+                    # failing and why, rather than reading the
+                    # absence of what it would have recorded as
+                    # something about the developer's files.
+                    await Dashboard.ref().always().RecordCheck(
+                        context,
+                        code=error.check,
+                    )
+
+                    # We wait for a file to change rather than
+                    # raising: a raise has the workflow retried, over
+                    # and over, and each retry runs the whole analysis
+                    # again from a cold pyright, which on an
+                    # application large enough to fail takes minutes
+                    # and gigabytes, and with nothing changed most
+                    # likely fails the same way. A change, such as the
+                    # developer saving a file or running
+                    # `rbt generate`, may be what lets it succeed; a
+                    # restarted dashboard tries again too.
+                    #
+                    # Once it has waited for a change, this run is no
+                    # longer catching up after a restart, so
+                    # `restarted` is cleared: otherwise the next
+                    # iteration to succeed would skip its own wait
+                    # below and analyze everything again at once,
+                    # for nothing.
+                    restarted = False
+                    await event
+                    continue
                 known_now, generated_now, changes = analyzed
 
                 # A write wakes every browser reading `Get`, so one
