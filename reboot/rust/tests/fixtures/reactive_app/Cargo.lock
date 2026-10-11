@@ -319,6 +319,7 @@ dependencies = [
 name = "generated-reactive-app"
 version = "0.0.0"
 dependencies = [
+ "axum",
  "prost",
  "prost-types",
  "reboot-rust-schema",

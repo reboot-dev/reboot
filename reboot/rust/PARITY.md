@@ -12,6 +12,44 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Secured User native HTTP/reactive/replay checkpoint (2026-10-11)
+
+The generated reactive fixture now exercises an explicitly constructed PER_USER_ID
+OwnerAccount against actual CXX/RocksDB. Verifier-issued owner identity admits
+constructor, reader and writer calls; missing, forged and wrong-owner identities
+are denied. External SetClaims remains denied. HTTP forwards credentials into the
+generated RPC boundary, without inferring trusted internal authority.
+
+Revoked subscriptions fail before disclosing a new snapshot. The registered
+owner's actual subscription permit count is observed at 1 and then 0 before native
+host shutdown, avoiding a global-drain false positive. Each HTTP listener has an
+independent shutdown marker and mandatory exit-0 check; an HTTP-only restart while
+the native host remains alive successfully reads persisted state.
+
+A fixed writer request replays its original result without handler remutation;
+revocation denies replay before and after host plus Database restart, and regrant
+returns the original result while a fresh read verifies later persisted state.
+Invocation logs are observation only, not external-effects exactly-once proof.
+The existing Counter regression is preserved unchanged.
+
+**Fresh acceptance based on `a3c826c2338f58c2772fc8365583cb910e9034ae`:**
+`/tmp/reboot-rust-secured-user-vertical-audit-1791709997202046219` records SDK
+522 passes including nested consumers (library 429, generated consumer 41), strict
+SDK and reactive-consumer Clippy exit 0, and native reactive 2/2. All 371 frozen
+files remained unchanged and owned child processes were absent. Applied-source
+follow-up review found no blockers in the HTTP lifecycle or live reclamation paths.
+`/tmp/reboot-rust-auth-watch-public-gates-1791710347081602153` separately accepted
+CLI unit and actual generated greeting/replay/watch/RocksDB restart, supervision
+and failed-rebuild gates, with unchanged source and no owned children.
+
+This is a bounded native fixture vertical, not a secured User `rbt init` template
+or full-suite native recertification. The prior native 132/132 checkpoint below
+remains historical; this run executes only the current reactive inventory of 2.
+Automatic User construction, OAuth/claims delivery, trusted internal provenance,
+User transaction/workflow acceptance, exact preflight Load/admission counters,
+encoded/colocated/escaped StateRef coverage, Tasks.Wait result ownership and full
+reactive/production parity remain incomplete. PR/merge-result CI is separate.
+
 ## Descriptor-backed User policy checkpoint (2026-10-11)
 
 Generated database, transaction and workflow adapters bind the state's raw
@@ -28,10 +66,12 @@ The declaration constant carries metadata, not automatic actor construction.
 Generated downstream behavior exercises constructor/reader/writer owner denial,
 payload/metadata forgery, matching-owner access, custom Allow replacement and
 SetClaims denial with no handler/Store effects. Source review found no definite
-external bypass, but zero Load/root/receipt/admission counters, encoded/colocated/
-escaped StateRef matrix and User-specific transaction/workflow/HTTP/subscription/
-replay-restart coverage remain incomplete. Tasks.Wait has independent deny-default
-policy; actor ownership does not certify task-result disclosure or subscriptions.
+external bypass. At that checkpoint, zero Load/root/receipt/admission counters,
+encoded/colocated/escaped StateRef matrix and User-specific transaction/workflow/
+HTTP/subscription/replay-restart coverage remained incomplete; the newer secured
+fixture checkpoint above closes only its admitted ordinary-method native vertical.
+Tasks.Wait has independent deny-default policy; actor ownership does not certify
+task-result disclosure or arbitrary subscriptions.
 
 **Fresh regression acceptance based on `11a6598b`:**
 `/tmp/reboot-rust-user-policy-full-audit-1791708133927180921` records SDK 522
@@ -68,8 +108,9 @@ supervision and failed-rebuild acceptance. Both aggregates accepted, all gate ex
 Cargo zero-test runs are compilation checks, not behavioral acceptance.
 
 Descriptor-backed User policy and independent external SetClaims protection now
-have the bounded checkpoint above. Trusted internal provenance, secured User
-HTTP/reactive vertical and production release remain unfinished. Source review
+have the bounded checkpoints above, including secured native HTTP/reactive/replay
+acceptance. Trusted internal provenance and production release remain unfinished.
+Source review
 found no bounded generated-reader safety blocker; it is not full parity or
 merge-result/CI certification.
 
@@ -3129,7 +3170,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 478984610e4f6c1ecb59709c85c113f2e1a540d7e8f1d7241d014b336fa36e8c -->
+<!-- parity-source-sha256: f53f177269cbacd17b65845ef28e175c207055531bff85cc8dbbb80e2efe1897 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

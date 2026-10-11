@@ -1,0 +1,15 @@
+syntax = "proto3";
+package reactive.v1;
+import "rbt/v1alpha1/options.proto";
+import "reactive/v1/counter.proto";
+message OwnerAccount {
+ option (rbt.v1alpha1.state) = { implements: ["reactive.v1.OwnerAccountMethods"] auto_construct: PER_USER_ID };
+ int64 value = 1;
+}
+service OwnerAccountMethods {
+ option (rbt.v1alpha1.service) = { state: "reactive.v1.OwnerAccount" };
+ rpc Create(Empty) returns (Empty) { option (rbt.v1alpha1.method) = { writer: { constructor: {} } }; }
+ rpc Increment(Add) returns (Value) { option (rbt.v1alpha1.method) = { writer: {} }; }
+ rpc Query(Empty) returns (Value) { option (rbt.v1alpha1.method) = { reader: {} }; }
+ rpc SetClaims(Empty) returns (Empty) { option (rbt.v1alpha1.method) = { writer: {} }; }
+}

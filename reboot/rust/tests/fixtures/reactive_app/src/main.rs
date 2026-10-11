@@ -9,6 +9,7 @@ pub mod proto {
 pub mod generated {
     include!(concat!(env!("OUT_DIR"), "/reactive/v1/counter.reboot.rs"));
 }
+mod secured_user;
 struct Counter;
 struct RequireHost;
 impl reboot::auth::Authorizer for RequireHost {
@@ -98,6 +99,7 @@ async fn value(s: &mut reboot::reactive::TypedSubscription<proto::Value, tonic::
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match arg(1).as_str() {
+        command if command.starts_with("user-") => secured_user::run(command).await?,
         "info" => {
             std::fs::write(
                 arg(2),
