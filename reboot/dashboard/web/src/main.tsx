@@ -4064,6 +4064,20 @@ const Overview: FC<{
               />
             ) : page === "models" ? (
               <>
+                {response?.codeCheck?.failure !== undefined ? (
+                  <div className="graph-note muted">
+                    <p>
+                      {servicers.length === 0
+                        ? "The code analysis did not finish, so the static call graph analysis cannot be done yet."
+                        : "The code analysis did not finish, so the static call graph analysis may be out of date."}{" "}
+                      It will be tried again when a file changes. It failed
+                      with:
+                    </p>
+                    <pre className="graph-note-reason">
+                      {response.codeCheck.failure}
+                    </pre>
+                  </div>
+                ) : null}
                 {needsGenerateReason ===
                 DashboardGetResponse_NeedsGenerateReason.MISSING ? (
                   <p className="graph-note muted">
@@ -4079,10 +4093,12 @@ const Overview: FC<{
                     <code>rbt generate</code>.
                   </p>
                 ) : null}
-                {/* With a module `missing`, no servicer resolves. */}
+                {/* With a module `missing`, no servicer resolves; with
+                    the analysis failing, none was looked for. */}
                 {needsGenerateReason !==
                   DashboardGetResponse_NeedsGenerateReason.MISSING &&
                 response !== undefined &&
+                response.codeCheck?.failure === undefined &&
                 servicers.length === 0 ? (
                   <p className="graph-note muted">
                     No servicers found, so no static call graph analysis run.

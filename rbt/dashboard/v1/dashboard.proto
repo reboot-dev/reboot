@@ -95,8 +95,8 @@ message Dashboard {
   map<string, rbt.v1alpha1.bdd.Feature> features = 9;
 
   // The last check each watcher made of the developer's files: when
-  // it finished and how long it took. Absent until the watcher has
-  // checked once.
+  // it finished and how long it took, or when it failed and why.
+  // Absent until the watcher has checked once.
   optional Check api_check = 10;
   optional Check code_check = 11;
   optional Check features_check = 12;
@@ -111,11 +111,18 @@ message Dashboard {
 
 // One check a watcher made of the developer's files.
 message Check {
-  // When the check finished.
+  // When the check finished, or failed.
   google.protobuf.Timestamp at = 1;
 
-  // How long reading and analyzing the files took.
+  // How long reading and analyzing the files took, up to its failure
+  // for a check that failed.
   google.protobuf.Duration took = 2;
+
+  // Why the check failed, such as the pyright the code analysis asks
+  // having exited, as the error it failed with said it; the watcher
+  // checks again when a file changes. Absent for a check that
+  // finished.
+  optional string failure = 3;
 }
 
 message DashboardGetRequest {}
@@ -126,7 +133,9 @@ message DashboardGetResponse {
   // generated from it, by the digest both record. A module
   // recording no digest was generated before digests were, so
   // whether it came from the file as it is is unknowable, which
-  // also reads as `CHANGED`; regenerating resolves it.
+  // also reads as `CHANGED`; regenerating resolves it. Neither is
+  // said unless the last analysis of the code finished, since only
+  // that lists the generated modules.
   enum NeedsGenerateReason {
     UNKNOWN = 0;
     MISSING = 1;
