@@ -56,17 +56,38 @@ where
 /// dispatch API: normal generated authentication/admission remains in force.
 #[doc(hidden)]
 #[derive(Clone)]
-pub struct RegisteredServiceTemplate(Arc<dyn CloneTemplate>);
+pub struct RegisteredServiceTemplate {
+    service: Arc<dyn CloneTemplate>,
+    inbound_factory: Option<Arc<dyn crate::runtime::InboundTransactionStartFactory>>,
+}
 impl RegisteredServiceTemplate {
     pub fn new<S>(service: S) -> Self
     where
         S: Service<Request, Response = Response, Error = Infallible> + Clone + Send + 'static,
         S::Future: Send + 'static,
     {
-        Self(Arc::new(Template(Mutex::new(service))))
+        Self {
+            service: Arc::new(Template(Mutex::new(service))),
+            inbound_factory: None,
+        }
     }
     pub fn clone_service(&self) -> BoxLocalService {
-        self.0.service()
+        self.service.service()
+    }
+    /// Retain the actual configured allocator. This does not allocate a child,
+    /// validate a ticket or grant execution authority.
+    pub fn with_inbound_factory(
+        mut self,
+        factory: Arc<dyn crate::runtime::InboundTransactionStartFactory>,
+    ) -> Self {
+        self.inbound_factory = Some(factory);
+        self
+    }
+    /// Trusted composition access, not an authorized local dispatch operation.
+    pub fn inbound_factory(
+        &self,
+    ) -> Option<Arc<dyn crate::runtime::InboundTransactionStartFactory>> {
+        self.inbound_factory.clone()
     }
 }
 /// Generated composition uses the very same configured adapter to create its
@@ -77,6 +98,8 @@ pub trait GeneratedLocalTransactionService:
 {
     type Service: Service<Request, Response = Response, Error = Infallible> + Clone + Send + 'static;
     fn local_service(&self) -> Self::Service;
+    /// The same allocator used by this adapter's normal inbound path.
+    fn local_inbound_factory(&self) -> Arc<dyn crate::runtime::InboundTransactionStartFactory>;
 }
 
 #[cfg(test)]

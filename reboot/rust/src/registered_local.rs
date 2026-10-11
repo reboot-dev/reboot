@@ -73,6 +73,17 @@ pub struct RegisteredAdapterBinding {
     configuration: GeneratedLocalAdapterConfig,
     gate: tokio::sync::watch::Receiver<HostLocalState>,
 }
+/// Short synchronous reservation against the observed local host gate.
+/// Never retain this guard across an await or while dropping/revoking its host.
+/// Do not reacquire any gate read on the same host (including cloned bindings):
+/// reserve_host_ready, require_host_ready and polling host_revoked can deadlock
+/// behind a queued watch writer while this read reservation is held.
+/// Source readiness remains asynchronous.
+#[doc(hidden)]
+pub struct RegisteredHostReservation<'a> {
+    _gate: tokio::sync::watch::Ref<'a, HostLocalState>,
+    _host: Arc<()>,
+}
 impl RegisteredAdapterBinding {
     pub fn validate_configuration(
         &self,
@@ -102,6 +113,47 @@ impl RegisteredAdapterBinding {
             HostLocalState::Revoked => Err(tonic::Status::cancelled(
                 "registered host generation revoked",
             )),
+        }
+    }
+    /// Reserve the observed Ready generation for a short synchronous mutation.
+    /// This does not authorize a call or reserve source recovery/placement state.
+    pub fn reserve_host_ready(
+        &self,
+        configuration: &GeneratedLocalAdapterConfig,
+    ) -> Result<RegisteredHostReservation<'_>, tonic::Status> {
+        self.validate_configuration(configuration)?;
+        let host = self
+            .host
+            .upgrade()
+            .ok_or_else(|| tonic::Status::failed_precondition("registered host absent"))?;
+        let gate = self.gate.borrow();
+        match *gate {
+            HostLocalState::Ready => Ok(RegisteredHostReservation {
+                _gate: gate,
+                _host: host,
+            }),
+            HostLocalState::Starting => {
+                Err(tonic::Status::unavailable("registered host not ready"))
+            }
+            HostLocalState::Revoked => Err(tonic::Status::cancelled(
+                "registered host generation revoked",
+            )),
+        }
+    }
+    /// Wait for observed generation revocation, host destruction or gate closure.
+    /// Each waiter owns its receiver; dropping it leaves the host untouched.
+    pub async fn host_revoked(&self) {
+        let mut gate = self.gate.clone();
+        loop {
+            if self.host.upgrade().is_none()
+                || !self.committed.load(std::sync::atomic::Ordering::Acquire)
+                || *gate.borrow_and_update() == HostLocalState::Revoked
+            {
+                return;
+            }
+            if gate.changed().await.is_err() {
+                return;
+            }
         }
     }
     pub fn same_registration(&self, other: &Self) -> bool {
@@ -230,9 +282,12 @@ impl HostLocalRegistry {
     {
         let target = adapter.local_configuration()?.target;
         let registered = self.register(adapter)?;
-        let service = crate::registered_local_service::RegisteredServiceTemplate::new(
-            registered.local_service(),
-        );
+        let service =
+            crate::registered_local_service::RegisteredServiceTemplate::new(tower::Layer::layer(
+                &crate::successful_trailers::SuccessfulParticipantTrailerLayer,
+                registered.local_service(),
+            ))
+            .with_inbound_factory(registered.local_inbound_factory());
         self.services.insert(target, service.clone());
         Ok((registered, service))
     }
@@ -268,6 +323,122 @@ mod tests {
             Ok(self)
         }
     }
+    #[derive(Clone)]
+    struct StagedService;
+    impl tower::Service<http::Request<tonic::body::BoxBody>> for StagedService {
+        type Response = http::Response<tonic::body::BoxBody>;
+        type Error = std::convert::Infallible;
+        type Future = std::future::Ready<Result<Self::Response, Self::Error>>;
+        fn poll_ready(
+            &mut self,
+            _: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<Result<(), Self::Error>> {
+            std::task::Poll::Ready(Ok(()))
+        }
+        fn call(&mut self, request: http::Request<tonic::body::BoxBody>) -> Self::Future {
+            let mut trailers = http::HeaderMap::new();
+            trailers.insert(
+                "grpc-status",
+                if request.uri().path() == "/success" {
+                    "0"
+                } else {
+                    "7"
+                }
+                .parse()
+                .unwrap(),
+            );
+            let body =
+                http_body_util::StreamBody::new(tokio_stream::iter([Ok::<_, tonic::Status>(
+                    http_body::Frame::<bytes::Bytes>::trailers(trailers),
+                )]));
+            let mut response = http::Response::new(tonic::body::boxed(body));
+            response.extensions_mut().insert(
+                crate::successful_trailers::SuccessfulParticipantMetadata::new(
+                    crate::successful_trailers::ParticipantMetadata::single("example.Actor", "B")
+                        .unwrap(),
+                ),
+            );
+            std::future::ready(Ok(response))
+        }
+    }
+    struct Starts;
+    impl crate::runtime::InboundTransactionStartFactory for Starts {
+        fn next_inbound_transaction(
+            &self,
+            _: &crate::runtime::InboundTransactionContext,
+        ) -> Result<uuid::Uuid, tonic::Status> {
+            Ok(uuid::Uuid::from_u128(202))
+        }
+    }
+    impl crate::registered_local_service::GeneratedLocalTransactionService for Adapter {
+        type Service = StagedService;
+        fn local_service(&self) -> Self::Service {
+            StagedService
+        }
+        fn local_inbound_factory(&self) -> Arc<dyn crate::runtime::InboundTransactionStartFactory> {
+            Arc::new(Starts)
+        }
+    }
+    #[tokio::test]
+    async fn registered_template_emits_only_success_terminal_participants() {
+        use http_body_util::BodyExt;
+        use tower::Service;
+        let mut registry = HostLocalRegistry::default();
+        let (registered, template) = registry.register_service(adapter()).unwrap();
+        assert!(template.inbound_factory().is_some());
+        assert_eq!(registry.service_count(), 1);
+        for path in ["/success", "/denied"] {
+            let mut service = template.clone_service();
+            std::future::poll_fn(|cx| service.poll_ready(cx))
+                .await
+                .unwrap();
+            let response = service
+                .call(
+                    http::Request::builder()
+                        .uri(path)
+                        .body(tonic::body::empty_body())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert!(
+                response
+                    .headers()
+                    .get(crate::successful_trailers::TRANSACTION_PARTICIPANTS_HEADER)
+                    .is_none()
+            );
+            assert!(
+                response
+                    .extensions()
+                    .get::<crate::successful_trailers::SuccessfulParticipantMetadata>()
+                    .is_none()
+            );
+            let collected = response.into_body().collect().await.unwrap();
+            let trailers = collected.trailers().unwrap();
+            let participants =
+                trailers.get(crate::successful_trailers::TRANSACTION_PARTICIPANTS_HEADER);
+            if path == "/success" {
+                assert_eq!(
+                    serde_json::from_slice::<serde_json::Value>(participants.unwrap().as_bytes())
+                        .unwrap(),
+                    serde_json::json!({"example.Actor": ["B"]})
+                );
+            } else {
+                assert!(participants.is_none());
+            }
+        }
+        drop(registry);
+        assert!(
+            registered
+                .binding
+                .as_ref()
+                .unwrap()
+                .validate_configuration(&registered.config)
+                .is_err()
+        );
+        assert!(template.inbound_factory().is_some());
+    }
+
     fn adapter() -> Adapter {
         Adapter {
             config: GeneratedLocalAdapterConfig {
@@ -284,6 +455,151 @@ mod tests {
             mutate: false,
         }
     }
+    #[test]
+    fn observed_host_reservation_serializes_revocation_and_validates_identity() {
+        let registry = HostLocalRegistry::default();
+        let mut registry = registry;
+        let registered = registry.register(adapter()).unwrap();
+        let binding = registered.binding.as_ref().unwrap();
+        assert_eq!(
+            binding
+                .reserve_host_ready(&registered.config)
+                .err()
+                .unwrap()
+                .code(),
+            tonic::Code::Unavailable
+        );
+        registry.gate.send_replace(HostLocalState::Ready);
+        let mut wrong = registered.config.clone();
+        wrong.incarnation = Arc::new(());
+        assert_eq!(
+            binding.reserve_host_ready(&wrong).err().unwrap().code(),
+            tonic::Code::FailedPrecondition
+        );
+        let reservation = binding.reserve_host_ready(&registered.config).unwrap();
+        let gate = registry.gate.clone();
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let writer = std::thread::spawn(move || {
+            entered_tx.send(()).unwrap();
+            gate.send_replace(HostLocalState::Revoked);
+            done_tx.send(()).unwrap();
+        });
+        entered_rx.recv().unwrap();
+        assert!(done_rx.try_recv().is_err());
+        drop(reservation);
+        done_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        writer.join().unwrap();
+        assert_eq!(
+            binding
+                .reserve_host_ready(&registered.config)
+                .err()
+                .unwrap()
+                .code(),
+            tonic::Code::Cancelled
+        );
+    }
+    #[tokio::test]
+    async fn host_revocation_waiters_wake_and_drop_without_revoking_owner() {
+        let mut registry = HostLocalRegistry::default();
+        let registered = registry.register(adapter()).unwrap();
+        let binding = registered.binding.as_ref().unwrap();
+        let mut first = Box::pin(binding.host_revoked());
+        let mut second = Box::pin(binding.host_revoked());
+        std::future::poll_fn(|cx| {
+            assert!(std::future::Future::poll(first.as_mut(), cx).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+        std::future::poll_fn(|cx| {
+            assert!(std::future::Future::poll(second.as_mut(), cx).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+        drop(first);
+        assert_eq!(*registry.gate.borrow(), HostLocalState::Starting);
+        registry.gate.send_replace(HostLocalState::Ready);
+        std::future::poll_fn(|cx| {
+            assert!(std::future::Future::poll(second.as_mut(), cx).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+        registry.revoke();
+        tokio::time::timeout(std::time::Duration::from_secs(5), second)
+            .await
+            .unwrap();
+        binding.host_revoked().await;
+        drop(registry);
+        binding.host_revoked().await;
+    }
+
+    #[tokio::test]
+    async fn pending_host_waiter_observes_destruction_without_prior_revocation() {
+        let mut registry = HostLocalRegistry::default();
+        let registered = registry.register(adapter()).unwrap();
+        let binding = registered.binding.as_ref().unwrap();
+        let mut waiter = Box::pin(binding.host_revoked());
+        std::future::poll_fn(|cx| {
+            assert!(std::future::Future::poll(waiter.as_mut(), cx).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+        assert_eq!(*registry.gate.borrow(), HostLocalState::Starting);
+        drop(registry);
+        tokio::time::timeout(std::time::Duration::from_secs(5), waiter)
+            .await
+            .unwrap();
+    }
+    #[tokio::test]
+    async fn pending_host_waiter_observes_gate_closure_with_live_host_identity() {
+        let mut registry = HostLocalRegistry::default();
+        let registered = registry.register(adapter()).unwrap();
+        let mut binding = registered.binding.clone().unwrap();
+        let (sender, receiver) = tokio::sync::watch::channel(HostLocalState::Ready);
+        binding.gate = receiver;
+        let mut waiter = Box::pin(binding.host_revoked());
+        std::future::poll_fn(|cx| {
+            assert!(std::future::Future::poll(waiter.as_mut(), cx).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+        drop(sender);
+        tokio::time::timeout(std::time::Duration::from_secs(5), waiter)
+            .await
+            .unwrap();
+        assert!(binding.host.upgrade().is_some());
+        assert_eq!(*binding.gate.borrow(), HostLocalState::Ready);
+    }
+    #[tokio::test]
+    async fn uncommitted_binding_revocation_wait_returns_without_gate_change() {
+        for mode in 0..8 {
+            let mut registry = HostLocalRegistry::default();
+            let escaped = Arc::new(std::sync::Mutex::new(None));
+            assert!(
+                registry
+                    .register(Probe {
+                        config: adapter().config,
+                        escaped: escaped.clone(),
+                        mode,
+                        bound: false
+                    })
+                    .is_err()
+            );
+            let binding = escaped.lock().unwrap().take().unwrap();
+            assert!(!binding.committed.load(std::sync::atomic::Ordering::Acquire));
+            std::future::poll_fn(|cx| {
+                let mut waiter = std::pin::pin!(binding.host_revoked());
+                assert!(std::future::Future::poll(waiter.as_mut(), cx).is_ready());
+                std::task::Poll::Ready(())
+            })
+            .await;
+            assert!(binding.host.upgrade().is_some());
+            assert_eq!(*registry.gate.borrow(), HostLocalState::Starting);
+        }
+    }
+
     #[test]
     fn binding_is_exact_weak_and_host_owned() {
         let mut registry = HostLocalRegistry::default();

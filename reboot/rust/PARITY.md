@@ -12,6 +12,53 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Configured inbound allocator and observed host reservations (2026-10-11)
+
+Registry-held generated Tonic templates now retain the exact configured inbound
+factory Arc used by the registered adapter. Registration and template cloning do
+not allocate; the generated consumer checks pointer identity and one explicit
+actual factory invocation. A default-policy denied encoded RPC does not allocate
+another child. Factory access is trusted Rust composition, not an authorized
+one-use child ticket; retained factories/templates may outlive the host while
+registration binding validity cannot.
+
+The successful-participant trailer layer wraps the actual generated service before
+erasure. Tests verify staged markers are consumed, participant metadata is absent
+from initial headers and denied terminals, and exact actor/ref JSON appears only
+on a successful trailer. Errors, pending bodies and EOF are forwarded rather than
+inventing terminal evidence. This is not yet local transactional dispatch.
+
+Opaque short synchronous host reservations hold the observed Ready watch read
+lock through their caller's immediate mutation; wrong configurations, Starting and
+Revoked fail closed. Reservations must not cross await, host Drop/revocation or
+same-host reentrant gate reads through any binding clone: a queued writer plus a
+second read can deadlock. These reservations are not yet integrated with runtime
+ledger settlement or ticket issuance, and do not reserve source placement/recovery
+state; readiness monitoring remains asynchronous.
+
+Independent revocation waiters wake on generation revocation, host destruction,
+sender closure and uncommitted provisional bindings. Dropping a waiter does not
+revoke the owner. Targeted tests include pending destruction without prior revoke,
+closure while host identity remains live, and escaped uncommitted bindings across
+eight actual failed-registration modes. Focused review found no blocking
+allocator/trailer regression and identified the reentrant-read contract/test gaps,
+which were addressed before this acceptance.
+
+Fresh aggregate publication acceptance:
+`/tmp/reboot-rust-user-http-full-audit-1791753658843288282/accepted.json`.
+All **10 gates passed**: SDK **579 tests** (nested downstream summaries included),
+SDK library **479**, generated consumer **44**, default consumer **1**, plugin **4**,
+SDK and generated reactive-consumer strict Clippy, focused native **4 cases**,
+ownership/CLI units and public User/workflows/checkpoint restart/greeting. Frozen
+hashes matched, all exact recorded descendant identities were absent, owner lock
+released, and resource guards passed before this ledger update.
+
+Policy-bound outbound permission, actual allocated B-child one-use tickets,
+secured local runtime dispatch/terminal settlement, immutable production ancestry
+insertion, runtime host-reservation integration and same-host native A/B acceptance
+remain unimplemented. Earlier sections retain their checkpoint-specific evidence;
+this is not broad parity, full native inventory or secure internal authority.
+
 ## Registered local composition prerequisites (2026-10-11)
 
 The current checkpoint adds host-owned registration and actual generated Tonic
@@ -3630,7 +3677,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 37faf262aca5ff9adee9384fbbe3a4b70cae0a980a6b55acd6d2ba9327062b68 -->
+<!-- parity-source-sha256: c4d605ffead31e274fd51b3cf958cd9aa6042b2f4a0f43b8ebcdd3d0eb33625e -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

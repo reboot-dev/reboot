@@ -1051,6 +1051,20 @@ impl reboot::runtime::TransactionalChannelResolver for FixedChannelResolver {
 #[tokio::test]
 async fn generated_local_registration_retains_exact_binding_and_invalidates_builders() {
     use reboot::registered_local::GeneratedLocalTransactionAdapter;
+    use reboot::registered_local_service::GeneratedLocalTransactionService;
+    struct RegistrationStarts(Arc<AtomicUsize>);
+    impl reboot::runtime::RootTransactionStartFactory for RegistrationStarts {
+        fn next_root_transaction(&self) -> Result<reboot::runtime::RootTransactionStart, tonic::Status> {
+            reboot::runtime::RootTransactionStartFactory::next_root_transaction(&TransactionStartFactory)
+        }
+    }
+    impl reboot::runtime::InboundTransactionStartFactory for RegistrationStarts {
+        fn next_inbound_transaction(&self, inbound: &reboot::runtime::InboundTransactionContext) -> Result<Uuid, tonic::Status> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            reboot::runtime::InboundTransactionStartFactory::next_inbound_transaction(&TransactionStartFactory, inbound)
+        }
+    }
+    let allocations = Arc::new(AtomicUsize::new(0));
     let (endpoint, database, database_server) = start_database().await;
     let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
     let sidecar = Arc::new(reboot::durable_participant::TonicParticipantSidecar::connect(&endpoint).await.unwrap());
@@ -1067,7 +1081,7 @@ async fn generated_local_registration_retains_exact_binding_and_invalidates_buil
             ).unwrap()),
         );
         transaction_generated::TransactionCounterWritesMethodsTransactionAdapter::new(
-            store, participant, coordinator, TransactionStartFactory,
+            store, participant, coordinator, RegistrationStarts(allocations.clone()),
             TransactionCounter { trace: trace.clone(), fail: false, downstream: None, final_state_override: None },
         ).with_sequential_reusable_participants()
     };
@@ -1091,6 +1105,17 @@ async fn generated_local_registration_retains_exact_binding_and_invalidates_buil
 
     let (registered, template) = host.register_local_transaction_service(adapter).unwrap();
     assert_eq!(host.registered_transaction_service_count(), 1);
+    let factory = template.inbound_factory().unwrap();
+    assert!(Arc::ptr_eq(&factory, &registered.local_inbound_factory()));
+    assert!(Arc::ptr_eq(&factory, &template.clone().inbound_factory().unwrap()));
+    assert_eq!(allocations.load(Ordering::SeqCst), 0);
+    let mut headers = reboot::RebootHeaders::new("transaction-counter");
+    headers.transaction_ids = Some(vec![Uuid::from_u128(201)]);
+    headers.transaction_coordinator_state_type = Some("tests.reboot.protoc.TransactionCounter".into());
+    headers.transaction_coordinator_state_ref = Some("root".into());
+    let inbound = reboot::runtime::InboundTransactionContext::from_headers(headers, reboot::runtime::TransactionMode::Exclusive).unwrap();
+    assert_eq!(factory.next_inbound_transaction(&inbound).unwrap(), Uuid::from_u128(202));
+    assert_eq!(allocations.load(Ordering::SeqCst), 1);
     let mut erased = template.clone_service();
     std::future::poll_fn(|cx| erased.poll_ready(cx)).await.unwrap();
     // The plain erased generated service still enforces its default policy.
@@ -1113,6 +1138,7 @@ async fn generated_local_registration_retains_exact_binding_and_invalidates_buil
     let body = response.into_body().collect().await.unwrap();
     let status = header_status.or_else(|| body.trailers().and_then(|trailers| trailers.get("grpc-status").cloned())).unwrap();
     assert_eq!(status, "7");
+    assert_eq!(allocations.load(Ordering::SeqCst), 1, "denied RPC must not allocate another child");
     assert!(trace.lock().unwrap().is_empty());
     assert!(database.store_requests().is_empty());
     assert!(database.create_requests().is_empty());
