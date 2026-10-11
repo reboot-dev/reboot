@@ -2638,6 +2638,38 @@ async fn generated_external_clients_attach_reader_and_writer_context() {
 }
 
 #[tokio::test]
+async fn generated_subscription_binding_rejects_credentials_before_embedded_decode() {
+    use reboot::reactive::{ReaderBinding, wire::Query};
+    let calls = Arc::new(AtomicUsize::new(0));
+    let probe = Arc::new(AuthProbe {
+        verifier_calls: Arc::new(AtomicUsize::new(0)),
+        authorizer_calls: Arc::new(AtomicUsize::new(0)),
+        handler_calls: calls.clone(),
+        decision: AuthorizationDecision::Allow,
+        contexts: Arc::new(std::sync::Mutex::new(Vec::new())),
+        snapshots: Arc::new(std::sync::Mutex::new(Vec::new())),
+    });
+    // An unreachable store makes any accidental pre-verification Load fail.
+    let reader = generated::CounterReadsMethodsDatabaseAdapter::new(
+        DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(),
+        AuthCounter(calls.clone()),
+    ).with_authorization(AuthorizationPolicy::new(Some(probe.clone()), Some(probe.clone())));
+    let mut headers = reboot::RebootHeaders::new("subscription-denied");
+    headers.bearer_token = Some("reject".into());
+    let mut request = tonic::Request::new(Query {
+        method: "tests.reboot.protoc.CounterReadsMethods.Get".into(),
+        request: vec![0xff],
+        ..Default::default()
+    });
+    *request.metadata_mut() = headers.to_metadata().unwrap();
+    let status = ReaderBinding::read(&reader, request).await.unwrap_err();
+    assert_eq!(status.code(), tonic::Code::Unauthenticated);
+    assert_eq!(probe.verifier_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(probe.authorizer_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
 async fn generated_default_policy_denies_database_and_fresh_root_forms_before_effects() {
     use proto::counter_reads_methods_server::CounterReadsMethods;
     use proto::counter_writes_methods_server::CounterWritesMethods;

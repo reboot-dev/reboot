@@ -4167,7 +4167,40 @@ impl DatabaseActorStore {
     ) -> Result<Response<ResponseBody>, Status>
     where
         Declaration: DurableStateDeclaration,
-        RequestBody: Message + Send + 'static,
+        RequestBody: Message + Default + Send + 'static,
+        ResponseBody: Message + Default + Send + 'static,
+        F: for<'a> FnOnce(
+            &'a Declaration::State,
+            RequestBody,
+        ) -> Pin<
+            Box<dyn Future<Output = Result<ResponseBody, Status>> + Send + 'a>,
+        >,
+    {
+        let (metadata, extensions, body) = request.into_parts();
+        self.reader_async_for_with_admission_authorized_encoded::<Declaration, RequestBody, ResponseBody, F>(
+            method_identity, admission, authorization,
+            Request::from_parts(metadata, extensions, body.encode_to_vec()), invoke,
+        ).await
+    }
+
+    /// Runs a generated external reader after bearer authentication and
+    /// authorization against immutable protobuf snapshots.
+    pub async fn reader_async_for_with_admission_authorized_encoded<
+        Declaration,
+        RequestBody,
+        ResponseBody,
+        F,
+    >(
+        &self,
+        method_identity: &str,
+        admission: StateAdmission,
+        authorization: &crate::auth::AuthorizationPolicy,
+        request: Request<Vec<u8>>,
+        invoke: F,
+    ) -> Result<Response<ResponseBody>, Status>
+    where
+        Declaration: DurableStateDeclaration,
+        RequestBody: Message + Default + Send + 'static,
         ResponseBody: Message + Default + Send + 'static,
         F: for<'a> FnOnce(
             &'a Declaration::State,
@@ -4222,7 +4255,7 @@ impl DatabaseActorStore {
                 &context,
                 auth.as_ref(),
                 Some(state_bytes.as_deref().unwrap_or(&default_bytes)),
-                &request.get_ref().encode_to_vec(),
+                request.get_ref(),
             )
             .await?;
         crate::reactive::check_reader_scope(&request)?;
@@ -4235,7 +4268,9 @@ impl DatabaseActorStore {
             .get::<crate::reactive::ReaderScope>()
             .cloned();
         drop(snapshot_lease);
-        let response = invoke(&state, request.into_inner()).await?;
+        let body = RequestBody::decode(request.into_inner().as_slice())
+            .map_err(|_| Status::invalid_argument("malformed typed reader request"))?;
+        let response = invoke(&state, body).await?;
         if let Some(scope) = scope {
             scope.check()?;
         }
@@ -7482,21 +7517,105 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn encoded_reader_verifies_and_authorizes_original_bytes_before_decode() {
+        use crate::auth::{
+            Auth, AuthorizationContext, AuthorizationDecision, AuthorizationPolicy,
+            AuthorizeFuture, Authorizer, TokenVerification, TokenVerifier, VerifyFuture,
+        };
+        struct Reject;
+        impl TokenVerifier for Reject {
+            fn verify<'a>(
+                &'a self,
+                _: &'a AuthorizationContext,
+                _: Option<&'a str>,
+            ) -> VerifyFuture<'a> {
+                Box::pin(async {
+                    TokenVerification::Unauthenticated {
+                        message: "credential-first".into(),
+                    }
+                })
+            }
+        }
+        struct RawPolicy(bool);
+        impl Authorizer for RawPolicy {
+            fn authorize<'a>(
+                &'a self,
+                _: &'a AuthorizationContext,
+                _: Option<&'a Auth>,
+                _: Option<&'a [u8]>,
+                request: &'a [u8],
+            ) -> AuthorizeFuture<'a> {
+                Box::pin(async move {
+                    assert_eq!(request, &[0xff]);
+                    if self.0 {
+                        AuthorizationDecision::Allow
+                    } else {
+                        AuthorizationDecision::PermissionDenied {
+                            message: "raw-policy-first".into(),
+                        }
+                    }
+                })
+            }
+        }
+        let (endpoint, database, server) = start_database().await;
+        let store = DatabaseActorStore::connect(&endpoint).await.unwrap();
+        let before = database.admission_rpc_counts();
+        let policies = [
+            (
+                AuthorizationPolicy::new(Some(Arc::new(Reject)), None),
+                tonic::Code::Unauthenticated,
+                "credential-first",
+            ),
+            (
+                AuthorizationPolicy::new(None, Some(Arc::new(RawPolicy(false)))),
+                tonic::Code::PermissionDenied,
+                "raw-policy-first",
+            ),
+            (
+                AuthorizationPolicy::new(None, Some(Arc::new(RawPolicy(true)))),
+                tonic::Code::InvalidArgument,
+                "malformed typed reader request",
+            ),
+        ];
+        for (index, (policy, code, message)) in policies.into_iter().enumerate() {
+            let error = store.reader_async_for_with_admission_authorized_encoded::<EchoDurableState, proto::Empty, proto::Text, _>(
+                "encoded.Reader", StateAdmission::DefaultOnAbsent, &policy,
+                ExternalContext::new("encoded-reader").reader(vec![0xff]).unwrap(),
+                |_, _| Box::pin(async { panic!("malformed request must never reach handler") }),
+            ).await.unwrap_err();
+            assert_eq!(error.code(), code);
+            assert_eq!(error.message(), message);
+            if index == 0 {
+                assert_eq!(database.admission_rpc_counts(), before);
+            }
+        }
+        assert!(database.store_requests().is_empty());
+        server.abort();
+    }
+
+    #[tokio::test]
     async fn workflow_scheduling_default_policy_rejects_before_owner_or_storage() {
         let (endpoint, database, server) = start_database().await;
         let store = DatabaseActorStore::connect(&endpoint).await.unwrap();
         database.fail_actor_load(Status::unavailable("private workflow storage"));
         let before = database.admission_rpc_counts();
-        let error = store.workflow_scheduling_writer::<EchoDurableState, proto::Text, proto::Text, _>(
-            "workflow.Schedule",
-            &crate::auth::AuthorizationPolicy::default(),
-            None,
-            ExternalContext::new("workflow-denied").writer_with_key(
-                proto::Text::default(), Uuid::from_u128(9400)).unwrap(),
-            |_, _, _| Box::pin(async { panic!("denied scheduling must not invoke handler") }),
-        ).await.unwrap_err();
+        let error = store
+            .workflow_scheduling_writer::<EchoDurableState, proto::Text, proto::Text, _>(
+                "workflow.Schedule",
+                &crate::auth::AuthorizationPolicy::default(),
+                None,
+                ExternalContext::new("workflow-denied")
+                    .writer_with_key(proto::Text::default(), Uuid::from_u128(9400))
+                    .unwrap(),
+                |_, _, _| Box::pin(async { panic!("denied scheduling must not invoke handler") }),
+            )
+            .await
+            .unwrap_err();
         assert_eq!(error.code(), tonic::Code::PermissionDenied);
-        assert_eq!(error.message(), "no authorizer configured; unauthorized development must be explicitly enabled");
+        assert_eq!(
+            error.message(),
+            "no authorizer configured; unauthorized development must be explicitly enabled"
+        );
         assert_eq!(database.admission_rpc_counts(), before);
         assert!(database.store_requests().is_empty());
         server.abort();

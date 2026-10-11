@@ -56,7 +56,7 @@ fn emit_local_readers(
         } else {
             ".map_err(|error| error.into_status())"
         };
-        output.push_str(&format!("\"{identity}\" => {{ let body = <proto::{request} as prost::Message>::decode(request.get_ref().request.as_slice()).map_err(|_| tonic::Status::invalid_argument(\"malformed typed reader request\"))?; let (metadata, extensions, _) = request.into_parts(); let request = tonic::Request::from_parts(metadata, extensions, body); let handler = self.handler.clone(); let response = self.store.reader_async_for_with_admission_authorized::<{declaration}, _, _, _>(\"{identity}\", {runtime}::runtime::StateAdmission::RequireExisting, &self.authorization, request, move |state, body| Box::pin(async move {{ handler.{method}(state, body).await{error} }})).await?; Ok(prost::Message::encode_to_vec(response.get_ref())) }},\n"));
+        output.push_str(&format!("\"{identity}\" => {{ let body = request.get_ref().request.clone(); let (metadata, extensions, _) = request.into_parts(); let request = tonic::Request::from_parts(metadata, extensions, body); let handler = self.handler.clone(); let response = self.store.reader_async_for_with_admission_authorized_encoded::<{declaration}, proto::{request}, _, _>(\"{identity}\", {runtime}::runtime::StateAdmission::RequireExisting, &self.authorization, request, move |state, body| Box::pin(async move {{ handler.{method}(state, body).await{error} }})).await?; Ok(prost::Message::encode_to_vec(response.get_ref())) }},\n"));
     }
     output.push_str(
         "_ => Err(tonic::Status::unimplemented(\"not a generated local unary reader\")), } }\n",
@@ -78,7 +78,7 @@ fn emit_local_readers(
             } else {
                 ".map_err(|error| error.into_status())"
             };
-            output.push_str(&format!("\"{identity}\" => {{ let body = <proto::{request} as prost::Message>::decode(request.get_ref().request.as_slice()).map_err(|_| tonic::Status::invalid_argument(\"malformed typed reader request\"))?; let (metadata, extensions, _) = request.into_parts(); let request = tonic::Request::from_parts(metadata, extensions, body); let handler = self.handler.clone(); let response = self.store.reader_async_for_with_admission_authorized::<{declaration}, _, _, _>(\"{identity}\", {runtime}::runtime::StateAdmission::RequireExisting, &self.authorization, request, move |state, body| Box::pin(async move {{ handler.{method}_with_reader_context(state, body, context).await{error} }})).await?; Ok(prost::Message::encode_to_vec(response.get_ref())) }},\n"));
+            output.push_str(&format!("\"{identity}\" => {{ let body = request.get_ref().request.clone(); let (metadata, extensions, _) = request.into_parts(); let request = tonic::Request::from_parts(metadata, extensions, body); let handler = self.handler.clone(); let response = self.store.reader_async_for_with_admission_authorized_encoded::<{declaration}, proto::{request}, _, _>(\"{identity}\", {runtime}::runtime::StateAdmission::RequireExisting, &self.authorization, request, move |state, body| Box::pin(async move {{ handler.{method}_with_reader_context(state, body, context).await{error} }})).await?; Ok(prost::Message::encode_to_vec(response.get_ref())) }},\n"));
         }
         output.push_str(
             "_ => Err(tonic::Status::unimplemented(\"not a generated local unary reader\")), } }\n",

@@ -12,6 +12,35 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Subscription credential ordering checkpoint (2026-10-11)
+
+Both generated local ReaderBinding paths pass original embedded protobuf bytes
+through credential verification and current-state policy authorization before
+request decoding. Rejected credentials perform no Load or handler call; denied
+policy sees exact raw bytes but exposes no decoded request. Allowed malformed
+requests receive the admitted decode error. Metadata, scope cancellation and
+admission cleanup are preserved; no retry or internal-authority exemption is added.
+
+**Compatibility boundary:** ordinary typed readers now require `Message + Default`
+and encode/decode round-trip their request. Generated prost consumers are exercised;
+custom Message implementations without Default or with non-wire in-memory fields
+are not compatibility-certified. This remains a checkout-only experimental API.
+
+**Fresh acceptance based on `7f1de637`:**
+`/tmp/reboot-rust-auth-watch-full-audit-1791706095203478496` records SDK
+518 passes including nested consumers (library 427, generated consumer 39), both
+strict Clippy gates exit 0 and native 132/132 (SortedMap 3, CXX 115, reactive 1,
+workflow 5, transport 8). `/tmp/reboot-rust-auth-watch-public-gates-1791706918389372911`
+records CLI 25/25 and actual public greeting/replay/watch/RocksDB restart,
+supervision and failed-rebuild acceptance. Both aggregates accepted, all gate exits
+0, frozen hashes match and exact owned children are absent. Generated greeting
+Cargo zero-test runs are compilation checks, not behavioral acceptance.
+
+Descriptor-backed User owner policy, independent external SetClaims protection,
+trusted internal provenance, secured User HTTP/reactive vertical and production
+release remain unfinished. Source review found no bounded generated-reader safety
+blocker; it is not full parity or merge-result/CI certification.
+
 ## Scheduling authorization and live Watch checkpoint (2026-10-11)
 
 Workflow scheduling and registered-owner/generated participant admission verify
@@ -3068,7 +3097,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: f498cbd0bbc4d6e07a945c738bfff9f5af89ac7edc5a0c705a431ea3e8eb9401 -->
+<!-- parity-source-sha256: 5c7b044ac62816c4ff0f9a3e6354d62b3b0f8e32546c205f3df961b4f247de2d -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,
