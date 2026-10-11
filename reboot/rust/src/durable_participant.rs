@@ -4738,6 +4738,182 @@ mod tests {
                 })
             }
         }
+        for use_receipt in [false, true] {
+            for cancel_handler in [false, true] {
+                let sidecar = Arc::new(MockSidecar::default());
+                *sidecar.load_state.lock().unwrap() = Some(vec![0]);
+                let participant = DurableActorParticipant::new(sidecar, "example.Actor", "actor/1");
+                let root = Uuid::new_v4();
+                let child = Uuid::new_v4();
+                let mut context = rollback_context(root, child);
+                let mut request = start(root);
+                request.transaction_ids.push(child);
+                request.transaction_path = TransactionPathContract::PreserveNested;
+
+                let watch = Arc::new(Watch {
+                    entered: tokio::sync::Semaphore::new(0),
+                    release: tokio::sync::Notify::new(),
+                });
+                let owner = crate::live_participant::LiveParticipantOwner::new(
+                    2,
+                    ParticipantTarget {
+                        state_type: "example.Coordinator".into(),
+                        state_ref: "coordinator/1".into(),
+                    },
+                    watch.clone(),
+                )
+                .unwrap();
+                let cancellation = RecoveryCancellation::new();
+                let mut supervisor = tokio::task::JoinSet::new();
+                owner
+                    .recovery_registration()
+                    .start(&mut supervisor, cancellation.clone())
+                    .await
+                    .unwrap();
+
+                let policy = crate::auth::AuthorizationPolicy::permissive_for_development();
+                let local = participant
+                    .start_local(request, ParticipantStartMode::Exclusive)
+                    .await
+                    .unwrap();
+                let (authorization, auth) = policy
+                    .verify(
+                        context.headers().clone(),
+                        "example.Actor",
+                        "example.ActorMethods.Apply",
+                    )
+                    .await
+                    .unwrap();
+                let entry = if use_receipt {
+                    Some(
+                        policy
+                            .authorize_handler_entry(
+                                &local.authorized_handler_admission(),
+                                &context,
+                                &authorization,
+                                auth.as_ref(),
+                                local.state(),
+                                b"request",
+                            )
+                            .await
+                            .unwrap(),
+                    )
+                } else {
+                    // Generated non-sequential execution authorizes separately.
+                    policy
+                        .authorize(&authorization, auth.as_ref(), local.state(), b"request")
+                        .await
+                        .unwrap();
+                    None
+                };
+
+                let guard = crate::explicit_abort::RootHandlerGuard::before_handler(
+                    local,
+                    context.clone(),
+                    DurableRootCoordinator::new(
+                        Arc::new(UnusedCoordinator),
+                        Arc::new(UnusedResolver),
+                    ),
+                    None,
+                )
+                .await
+                .unwrap()
+                .with_supervised_tree(&mut context, Some(&owner))
+                .await
+                .unwrap();
+
+                // Debug includes the entire shared ledger, not just enlistments.
+                let before_handler = format!("{context:?}");
+                let retained = std::sync::Mutex::new(None);
+                let mut handler = Box::pin(guard.run_authorized_handler(
+                    &policy,
+                    entry,
+                    &context,
+                    "example.ActorMethods.Apply",
+                    b"request",
+                    |handler_context| {
+                        assert!(matches!(
+                            handler_context.with_handler_lifetime(),
+                            Err(status) if status.code() == tonic::Code::FailedPrecondition
+                        ));
+                        let nested = handler_context
+                            .with_nested_transaction_id(Uuid::new_v4())
+                            .unwrap();
+                        *retained.lock().unwrap() = Some((handler_context.clone(), nested));
+                        async move {
+                            if cancel_handler {
+                                std::future::pending::<()>().await;
+                            }
+                        }
+                    },
+                ));
+
+                if cancel_handler {
+                    assert!(
+                        tokio::time::timeout(std::time::Duration::from_millis(20), &mut handler,)
+                            .await
+                            .is_err()
+                    );
+                    // Prove this is cancellation after actual handler entry.
+                    assert!(retained.lock().unwrap().is_some());
+                } else {
+                    handler.as_mut().await.unwrap();
+                }
+                drop(handler);
+
+                // Keep the actual guard alive throughout all revocation checks.
+                assert_eq!(format!("{context:?}"), before_handler);
+                let (direct, nested) = retained.lock().unwrap().take().unwrap();
+                for escaped in [&direct, &nested] {
+                    assert!(matches!(
+                        escaped.begin_generated_outbound(),
+                        Err(status) if status.code() == tonic::Code::Cancelled
+                    ));
+                    assert!(matches!(
+                        escaped.with_handler_lifetime(),
+                        Err(status) if status.code() == tonic::Code::Cancelled
+                    ));
+                    assert_eq!(format!("{context:?}"), before_handler);
+                    assert!(context.doomed_status().is_none());
+                }
+
+                // Original guard context was not rebound or revoked.
+                let (fresh, lifetime) = context.with_handler_lifetime().unwrap();
+                drop(lifetime);
+                assert!(matches!(
+                    fresh.begin_generated_outbound(),
+                    Err(status) if status.code() == tonic::Code::Cancelled
+                ));
+                assert_eq!(format!("{context:?}"), before_handler);
+
+                // Exercise original-context outbound admission only after the
+                // no-mutation assertions: dropping this scope is intentionally
+                // membership-uncertain.
+                let scope = context.begin_generated_outbound().unwrap();
+                drop(scope);
+                assert!(context.doomed_status().is_none());
+
+                drop(guard);
+                tokio::time::timeout(std::time::Duration::from_secs(1), watch.entered.acquire())
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .forget();
+                watch.release.notify_one();
+                tokio::time::timeout(std::time::Duration::from_secs(1), async {
+                    while participant.pending.lock().await.is_some() {
+                        tokio::task::yield_now().await;
+                    }
+                })
+                .await
+                .unwrap();
+                cancellation.cancel();
+                while let Some(result) = supervisor.join_next().await {
+                    result.unwrap().unwrap();
+                }
+            }
+        }
+
         for mode in 0..3 {
             let rejected = mode != 0;
             let sidecar = Arc::new(MockSidecar::default());
@@ -4797,7 +4973,7 @@ mod tests {
                     &first_context,
                     "unused",
                     b"request",
-                    || async {},
+                    |_| async {},
                 )
                 .await
                 .unwrap();
@@ -4868,7 +5044,7 @@ mod tests {
                 &context,
                 "example.ActorMethods.Apply",
                 if rejected { b"mismatch" } else { b"request" },
-                || {
+                |_| {
                     invoked.store(true, std::sync::atomic::Ordering::SeqCst);
                     async {}
                 },
@@ -4982,7 +5158,7 @@ mod tests {
                     &third_context,
                     "unused",
                     b"request",
-                    || async {},
+                    |_| async {},
                 )
                 .await
                 .unwrap();

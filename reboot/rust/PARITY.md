@@ -12,6 +12,41 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Revocable generated-handler lifetime (2026-10-11)
+
+Actual guarded generated handlers receive a private lifetime-bound context.
+Return or cancellation revokes retained direct/nested clones; the original guard
+context remains available for ordinary post-handler staging. Rebinding a live or
+revoked lifetime fails closed. Scope identity includes its private lifetime
+channel, preventing an unbound source context from stripping revocation.
+
+Common outbound admission rejects revoked contexts before ledger/request mutation.
+Raw routing and runtime-owned unary waits observe revocation; pending routing,
+response, body and terminal consumption are interrupted. Synchronous scope
+allocation and successful/rollback/unsupervised terminal settlement hold watch
+read reservations through ledger mutation, serializing with owner revocation.
+Abandoned admitted scopes retain membership uncertainty, not invented terminal
+ACKs. No remote cancellation or exclusion of concurrently issued wire work is
+claimed. This is revocation only, not same-host registration/internal authority.
+
+The actual guard unit fixture covers valid receipt and separately-authorized
+receipt-free entry, each with normal return and cancellation after invocation;
+direct/nested retained clones fail admission without changing the source ledger.
+Raw/scoped helper rejection, rebinding, source-context scope mismatch and actual
+Tonic routing/response waits are covered. Raw HTTP/2 body/trailer pauses include
+revocation with simultaneous release and prove no terminal settlement.
+
+Fresh aggregate publication acceptance:
+`/tmp/reboot-rust-user-http-full-audit-1791747921140123379/accepted.json`.
+All **10 gates passed**: SDK **554 tests** (nested downstream summaries included),
+generated consumer **43**, default consumer **1**, plugin **4**, SDK and generated
+consumer strict Clippy, focused native **4 cases**, ownership/CLI units and public
+User/workflows/checkpoint restart/greeting regressions. Focused source review
+found no concrete blocker in lifetime identity, cleanup or watch/ledger/doom lock
+ordering. This is a bounded prerequisite checkpoint, not broad parity or secure
+local-dispatch acceptance. Registered host authority, ancestor composition,
+exact preallocated B-child tickets and same-host native acceptance remain open.
+
 ## Authorization-backed handler entry and rejection cleanup (2026-10-11)
 
 Selected generated root-star/reusable handlers now retain an opaque decision
@@ -3544,7 +3579,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: b4ed1f17bbc284870bef47b9dbbd6b7a0f6d3e482761f2d379f6b70854fcf0c6 -->
+<!-- parity-source-sha256: ba649e5448dbe3430da9324454c1cf4d58ed37e1f2a6ce31967666418b136775 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

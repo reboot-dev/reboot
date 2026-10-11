@@ -310,6 +310,56 @@ async fn owned_unary_raw_body_cancellation_and_closure_cannot_late_enlist() {
 }
 
 #[tokio::test]
+async fn owned_unary_handler_revocation_fences_body_and_terminal_release() {
+    for before_data in [false, true] {
+        for simultaneous_release in [false, true] {
+            let (entered, mut phase) = tokio::sync::mpsc::unbounded_channel();
+            let (release, receiver) = tokio::sync::oneshot::channel();
+            let pause = RawPause {
+                before_data,
+                entered,
+                release: Arc::new(Mutex::new(Some(receiver))),
+            };
+            let (resolver, mut wire_admitted, server) =
+                raw_terminal_wire_with_pause(vec!["0"], Some(pause), None).await;
+            let source = context(true);
+            let (admitted, lifetime) = source.with_handler_lifetime().unwrap();
+            let mut outbound = Box::pin(call(&resolver, &admitted, "B", &[]));
+            tokio::select! {
+                result = &mut outbound => panic!("paused wire completed: {result:?}"),
+                signal = phase.recv() => assert!(signal.is_some()),
+            }
+            assert_eq!(wire_admitted.recv().await.as_deref(), Some("B"));
+            drop(lifetime);
+            if simultaneous_release {
+                let _ = release.send(());
+            }
+            assert_eq!(
+                tokio::time::timeout(std::time::Duration::from_secs(1), outbound)
+                    .await
+                    .unwrap()
+                    .unwrap_err()
+                    .code(),
+                tonic::Code::Cancelled
+            );
+            {
+                let ledger = source
+                    .returned_participants
+                    .as_ref()
+                    .unwrap()
+                    .lock()
+                    .unwrap();
+                assert!(ledger.membership_uncertain);
+                assert_eq!(ledger.active, 0);
+                assert!(ledger.participants.is_empty());
+            }
+            server.abort();
+            let _ = server.await;
+        }
+    }
+}
+
+#[tokio::test]
 async fn owned_unary_raw_error_requires_unambiguous_original_terminal() {
     for (headers_only, with_message) in [(true, false), (true, true), (false, false), (false, true)]
     {

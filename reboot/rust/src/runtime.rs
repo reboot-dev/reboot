@@ -179,6 +179,14 @@ pub struct TransactionContext {
     sequential_root_star: bool,
     sequential_reusable: bool,
     builtin_map_admission: Option<BuiltinMapAdmission>,
+    handler_lifetime: Option<tokio::sync::watch::Receiver<bool>>,
+}
+
+pub(crate) struct HandlerLifetimeOwner(tokio::sync::watch::Sender<bool>);
+impl Drop for HandlerLifetimeOwner {
+    fn drop(&mut self) {
+        self.0.send_replace(false);
+    }
 }
 
 /// In-process authority installed only by an admitted, cancellation-owned
@@ -566,22 +574,29 @@ where
     Req: Message + Default + Send + 'static,
     Resp: Message + Default + Send + 'static,
 {
-    let result = generated_transactional_unary_inner(
-        resolver,
-        context,
-        &mut scope,
-        message,
-        declared_errors,
-    )
-    .await;
-    // Recoverable errors return the actual Status after private settlement.
-    // Every other failed outcome dooms even a handler which catches it.
-    if let Err(status) = &result
-        && !scope.completed
-    {
-        context.doom(status.clone());
+    let call = async {
+        let result = generated_transactional_unary_inner(
+            resolver,
+            context,
+            &mut scope,
+            message,
+            declared_errors,
+        )
+        .await;
+        // Recoverable errors return the actual Status after private settlement.
+        // Every other failed outcome dooms even a handler which catches it.
+        if let Err(status) = &result
+            && !scope.completed
+        {
+            context.doom(status.clone());
+        }
+        result
+    };
+    tokio::select! {
+        biased;
+        _ = context.handler_revoked() => Err(Status::cancelled("generated handler lifetime revoked")),
+        result = call => result,
     }
-    result
 }
 
 async fn generated_transactional_unary_inner<R, Req, Resp>(
@@ -793,6 +808,7 @@ fn settle_terminal_scope(
             "terminal scope ownership mismatch",
         ));
     }
+    let _lifetime = context.reserve_handler_settlement()?;
     if let Some(collection) = &scope.collection {
         let ledger = collection
             .lock()
@@ -834,7 +850,11 @@ async fn transactional_outbound_request_inner<R: TransactionalChannelResolver, M
     let metadata = headers
         .to_metadata()
         .map_err(|error| Status::invalid_argument(error.to_string()))?;
-    let channel = resolver.resolve(state_type, state_ref).await?;
+    let channel = tokio::select! {
+        biased;
+        _ = context.handler_revoked() => return Err(Status::cancelled("generated handler lifetime revoked")),
+        result = resolver.resolve(state_type, state_ref) => result?,
+    };
     context.require_outbound_allowed()?;
     if let Some(collection) = &context.returned_participants
         && collection
@@ -881,6 +901,7 @@ impl TransactionContext {
             headers,
             mode,
             returned_participants: None,
+            handler_lifetime: None,
             doomed: Arc::new(Mutex::new(None)),
             live_leaf: false,
             supervised_tree: false,
@@ -1016,6 +1037,11 @@ impl TransactionContext {
             && self.supervised_tree == other.supervised_tree
             && self.live_leaf == other.live_leaf
             && Arc::ptr_eq(&self.doomed, &other.doomed)
+            && match (&self.handler_lifetime, &other.handler_lifetime) {
+                (Some(a), Some(b)) => a.same_channel(b),
+                (None, None) => true,
+                _ => false,
+            }
             && match (&self.returned_participants, &other.returned_participants) {
                 (Some(a), Some(b)) => Arc::ptr_eq(a, b),
                 (None, None) => true,
@@ -1032,7 +1058,66 @@ impl TransactionContext {
         self.supervised_tree
     }
 
+    // This is revocation only, never same-host registration or policy authority.
+    pub(crate) fn with_handler_lifetime(&self) -> Result<(Self, HandlerLifetimeOwner), Status> {
+        self.validate_handler_lifetime()?;
+        // No caller may replace an inherited lifetime. Local dispatch will
+        // require explicit ancestor composition, not a fresh revocation grant.
+        if self.handler_lifetime.is_some() {
+            return Err(Status::failed_precondition(
+                "handler lifetime already bound",
+            ));
+        }
+        let (sender, receiver) = tokio::sync::watch::channel(true);
+        let mut context = self.clone();
+        context.handler_lifetime = Some(receiver);
+        Ok((context, HandlerLifetimeOwner(sender)))
+    }
+
+    async fn handler_revoked(&self) {
+        if let Some(receiver) = &self.handler_lifetime {
+            let mut receiver = receiver.clone();
+            loop {
+                if !*receiver.borrow_and_update() {
+                    return;
+                }
+                if receiver.changed().await.is_err() {
+                    return;
+                }
+            }
+        }
+        std::future::pending::<()>().await;
+    }
+
+    // Hold a watch read reservation through synchronous terminal ledger mutation.
+    // Owner revocation (send_replace) serializes with this reservation; no await
+    // or nested lifetime validation may occur while it is retained.
+    fn reserve_handler_settlement(
+        &self,
+    ) -> Result<Option<tokio::sync::watch::Ref<'_, bool>>, Status> {
+        let reservation = self
+            .handler_lifetime
+            .as_ref()
+            .map(|receiver| receiver.borrow());
+        if reservation.as_ref().is_some_and(|value| !**value) {
+            return Err(Status::cancelled("generated handler lifetime revoked"));
+        }
+        Ok(reservation)
+    }
+
+    fn validate_handler_lifetime(&self) -> Result<(), Status> {
+        if self
+            .handler_lifetime
+            .as_ref()
+            .is_some_and(|receiver| !*receiver.borrow())
+        {
+            return Err(Status::cancelled("generated handler lifetime revoked"));
+        }
+        Ok(())
+    }
+
     pub(crate) fn validate_open_task_branch(&self) -> Result<(), Status> {
+        self.validate_handler_lifetime()?;
         self.validate_tree_scope()?;
         if let Some(error) = self.doomed_status() {
             return Err(error);
@@ -1103,6 +1188,7 @@ impl TransactionContext {
         Ok(())
     }
     fn require_outbound_allowed(&self) -> Result<(), Status> {
+        self.validate_handler_lifetime()?;
         if self.live_leaf {
             let status = Status::failed_precondition("live inbound leaf cannot call descendants");
             self.doom(status.clone());
@@ -1196,6 +1282,7 @@ impl TransactionContext {
                 "root-star requires exact admitted root context",
             ));
         }
+        let _lifetime = self.reserve_handler_settlement()?;
         if let Some(collection) = &self.returned_participants {
             let mut state = collection
                 .lock()
@@ -1284,6 +1371,7 @@ impl TransactionContext {
         if let Some(status) = self.doomed_status() {
             return Err(status);
         }
+        let _lifetime = self.reserve_handler_settlement()?;
         if let Some(collection) = &self.returned_participants {
             let mut ledger = collection
                 .lock()
@@ -1358,6 +1446,7 @@ impl TransactionContext {
                 "error must retain exact read-only leaf membership",
             ));
         }
+        let _lifetime = self.reserve_handler_settlement()?;
         let collection = self.returned_participants.as_ref().ok_or_else(|| {
             Status::failed_precondition("recoverable error requires initialized branch")
         })?;
@@ -1843,6 +1932,7 @@ impl TransactionContext {
             mode: self.mode,
             // A locally derived path shares its branch, never root coordinator authority.
             returned_participants: self.returned_participants.clone(),
+            handler_lifetime: self.handler_lifetime.clone(),
             doomed: Arc::clone(&self.doomed),
             live_leaf: self.live_leaf,
             supervised_tree: self.supervised_tree,

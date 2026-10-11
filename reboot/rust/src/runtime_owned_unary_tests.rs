@@ -8,6 +8,204 @@ use tonic_health::pb::{
     health_server::{Health, HealthServer},
 };
 
+#[tokio::test]
+async fn admitted_handler_revocation_interrupts_routing_and_invalidates_clones() {
+    struct Parked {
+        entered: tokio::sync::Semaphore,
+        dropped: Arc<std::sync::atomic::AtomicBool>,
+    }
+    struct Dropped(Arc<std::sync::atomic::AtomicBool>);
+    impl Drop for Dropped {
+        fn drop(&mut self) {
+            self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+    #[tonic::async_trait]
+    impl TransactionalChannelResolver for Parked {
+        async fn resolve(&self, _: &str, _: &str) -> Result<tonic::transport::Channel, Status> {
+            let _drop = Dropped(self.dropped.clone());
+            self.entered.add_permits(1);
+            std::future::pending().await
+        }
+    }
+    let original = context(true);
+    let (admitted, owner) = original.with_handler_lifetime().unwrap();
+    let retained = admitted.clone();
+    assert!(
+        admitted.with_handler_lifetime().is_err(),
+        "live rebinding prohibited"
+    );
+    assert!(admitted.validate_handler_lifetime().is_ok());
+    let resolver = Parked {
+        entered: tokio::sync::Semaphore::new(0),
+        dropped: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+    };
+    let scope = admitted
+        .begin_generated_outbound_for("example.Actor", "B", METHOD)
+        .unwrap();
+    let mut call = Box::pin(generated_transactional_unary::<_, _, HealthCheckResponse>(
+        &resolver,
+        &admitted,
+        scope,
+        HealthCheckRequest {
+            service: "bound-message".into(),
+        },
+        &[],
+    ));
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(20), &mut call)
+            .await
+            .is_err()
+    );
+    resolver.entered.acquire().await.unwrap().forget();
+    drop(owner);
+    assert_eq!(
+        tokio::time::timeout(std::time::Duration::from_secs(1), call)
+            .await
+            .unwrap()
+            .unwrap_err()
+            .code(),
+        tonic::Code::Cancelled
+    );
+    assert!(resolver.dropped.load(std::sync::atomic::Ordering::SeqCst));
+    assert!(retained.validate_handler_lifetime().is_err());
+    assert!(
+        retained.with_handler_lifetime().is_err(),
+        "revoked rebinding prohibited"
+    );
+    assert!(
+        original.validate_handler_lifetime().is_ok(),
+        "unrelated context has no lifetime grant"
+    );
+    assert!(
+        admitted
+            .returned_participants
+            .as_ref()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .membership_uncertain,
+        "abandoned outbound scope retains membership uncertainty"
+    );
+}
+
+#[tokio::test]
+async fn revoked_handler_rejects_admission_and_raw_helpers_without_mutation() {
+    struct Forbidden;
+    #[tonic::async_trait]
+    impl TransactionalChannelResolver for Forbidden {
+        async fn resolve(&self, _: &str, _: &str) -> Result<tonic::transport::Channel, Status> {
+            panic!("revoked context must not enter resolver")
+        }
+    }
+    let original = context(true);
+    let (admitted, owner) = original.with_handler_lifetime().unwrap();
+    let scope = admitted
+        .begin_generated_outbound_for("example.Actor", "B", METHOD)
+        .unwrap();
+    drop(owner);
+    let snapshot = || {
+        format!(
+            "{:?}",
+            original
+                .returned_participants
+                .as_ref()
+                .unwrap()
+                .lock()
+                .unwrap()
+        )
+    };
+    let before = snapshot();
+    assert!(
+        admitted
+            .begin_generated_outbound_for("example.Actor", "C", METHOD)
+            .is_err()
+    );
+    assert_eq!(snapshot(), before);
+    assert_eq!(
+        scoped_generated_transactional_outbound_request(
+            &Forbidden,
+            &admitted,
+            &scope,
+            "example.Actor",
+            "B",
+            METHOD,
+            HealthCheckRequest::default()
+        )
+        .await
+        .unwrap_err()
+        .code(),
+        tonic::Code::Cancelled
+    );
+    assert!(
+        scoped_generated_transactional_outbound_request(
+            &Forbidden,
+            &original,
+            &scope,
+            "example.Actor",
+            "B",
+            METHOD,
+            HealthCheckRequest::default()
+        )
+        .await
+        .is_err(),
+        "unbound source cannot strip scope lifetime"
+    );
+    assert!(!scope.request_used.load(std::sync::atomic::Ordering::SeqCst));
+    assert_eq!(snapshot(), before);
+    let raw_original = context(false);
+    let (raw, raw_owner) = raw_original.with_handler_lifetime().unwrap();
+    drop(raw_owner);
+    assert_eq!(
+        transactional_outbound_request(
+            &Forbidden,
+            &raw,
+            "example.Actor",
+            "B",
+            HealthCheckRequest::default()
+        )
+        .await
+        .unwrap_err()
+        .code(),
+        tonic::Code::Cancelled
+    );
+    assert!(raw_original.require_outbound_allowed().is_ok());
+}
+
+#[tokio::test]
+async fn admitted_handler_revocation_interrupts_actual_response_await_without_settlement() {
+    let (resolver, mut received, server) = wire(vec![Outcome::Lost]).await;
+    let original = context(true);
+    let (admitted, owner) = original.with_handler_lifetime().unwrap();
+    let mut outbound = Box::pin(call(&resolver, &admitted, "B", &[]));
+    tokio::select! {
+        _ = &mut outbound => panic!("wire response must stay pending"),
+        target = received.recv() => assert_eq!(target.as_deref(), Some("B")),
+    }
+    drop(owner);
+    assert_eq!(
+        tokio::time::timeout(std::time::Duration::from_secs(1), outbound)
+            .await
+            .unwrap()
+            .unwrap_err()
+            .code(),
+        tonic::Code::Cancelled
+    );
+    {
+        let ledger = original
+            .returned_participants
+            .as_ref()
+            .unwrap()
+            .lock()
+            .unwrap();
+        assert!(ledger.membership_uncertain);
+        assert_eq!(ledger.active, 0);
+        assert!(ledger.participants.is_empty());
+    }
+    server.abort();
+    let _ = server.await;
+}
+
 const METHOD: &str = "grpc.health.v1.Health.Check";
 const ERROR_URL: &str = "type.googleapis.com/tests.Declared";
 

@@ -342,7 +342,7 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
         context: &TransactionContext,
         method: &str,
         request: &[u8],
-        handler: impl FnOnce() -> F,
+        handler: impl FnOnce(TransactionContext) -> F,
     ) -> Result<T, Status>
     where
         F: std::future::Future<Output = T>,
@@ -397,11 +397,12 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
                 return Err(error);
             }
         }
+        let (handler_context, _lifetime) = context.with_handler_lifetime()?;
         // No suspension between disarming pre-effect rollback and invoking the
         // handler closure. Handler cancellation keeps the historical semantics.
         self.pre_handler_cleanup
             .store(false, std::sync::atomic::Ordering::Release);
-        Ok(handler().await)
+        Ok(handler(handler_context).await)
     }
 
     fn validate_authorized_handler_owner(&self) -> Result<(), Status> {
