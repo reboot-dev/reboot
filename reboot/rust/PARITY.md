@@ -12,6 +12,36 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Observed host generation reserved through ledger mutation (2026-10-12)
+
+Registered outbound admission and all three runtime-owned terminal disposition
+paths now acquire an exact-configuration host Ready reservation before ordered
+ancestor/own lifetime reservations and ledger mutation. The short synchronous
+regions retain that observed-generation read through membership changes and
+completion; they contain no await, gate reread or user callback. Scope Drop stays
+unfenced so cleanup after revocation can clear activity and retain uncertainty.
+
+Ready/revoked private-seam tests cover successful membership, rollback membership
+and recoverable settlement. Channel-controlled contention tests pause actual
+reservation acquisition and exercise registry revocation against admission and
+all three disposition paths. The bounded writer-start observation is contention
+coverage, not deterministic queued-lock instrumentation. Actual Tonic network
+success/declared rollback tests with privately installed registered permission
+consume real terminals, settle exact membership and preserve it after later
+revocation. They do not prove generated B authorization or ticket dispatch.
+
+This fences ledger mutations against the observed host-gate writer only, not
+asynchronous source placement/recovery readiness. Secured one-use B-child tickets,
+production ancestry insertion, local receiver integration and native A-to-B
+retained/task/restart acceptance remain unfinished.
+
+Fresh frozen ten-gate audit `1791758675639183610` accepted: SDK 586 passing tests
+(486 library, including 33 owned-unary regressions; generated 44), strict SDK and
+generated-consumer Clippy, native restart 4, process ownership and CLI unit gates,
+public User restart/workflows/checkpoint and greeting. All exits zero, frozen
+hashes matched and recorded descendant PID/start identities were absent. The
+owner lock was released before this intentional ledger/fingerprint update.
+
 ## Generated registered lifecycle and observed outbound host fencing (2026-10-12)
 
 Generated adapters expose an exact-configuration observed-Ready preflight;
@@ -3740,7 +3770,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: c9bba4c54979fab42dcba124146c8ab308d0f5b39b95b731f47fa442284983b5 -->
+<!-- parity-source-sha256: 2c195c093ec70993814741b697310319d676b7c6c44048809c75aa5d8381188c -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

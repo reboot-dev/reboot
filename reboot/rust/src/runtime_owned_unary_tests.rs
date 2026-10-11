@@ -8,6 +8,115 @@ use tonic_health::pb::{
     health_server::{Health, HealthServer},
 };
 
+thread_local! {
+    static HOST_RESERVATION_PAUSE: std::cell::RefCell<Option<(std::sync::mpsc::Sender<()>, std::sync::mpsc::Receiver<()>)>> = const { std::cell::RefCell::new(None) };
+}
+pub(super) fn pause_reserved_host_for_test() {
+    HOST_RESERVATION_PAUSE.with(|pause| {
+        if let Some((held, release)) = pause.borrow_mut().take() {
+            held.send(()).unwrap();
+            release
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap();
+        }
+    });
+}
+
+// Actual mutation pauses after its reservation. Writer-start is not queued-lock
+// instrumentation: the bounded wait establishes contention coverage only.
+#[test]
+fn registered_host_mutations_hold_reservation_against_revocation() {
+    let timeout = std::time::Duration::from_secs(5);
+    for disposition in 0..4 {
+        let (context, _lifetime, registry) = registered_context_for_host_fencing();
+        let worker_context = context.clone();
+        let scope = (disposition != 3).then(|| {
+            context
+                .begin_generated_outbound_for("example.Actor", "B", METHOD)
+                .unwrap()
+        });
+        let (held_tx, held_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            let mut scope = scope;
+            if let Some(scope) = &scope {
+                scope
+                    .request_used
+                    .store(true, std::sync::atomic::Ordering::Release);
+            }
+            let mut status = Status::unknown("private fixture");
+            crate::successful_trailers::ParticipantMetadata::classified_single(
+                "example.Actor",
+                "B",
+                disposition == 1,
+                true,
+            )
+            .unwrap()
+            .attach_to_status(&mut status);
+            let returned =
+                crate::successful_trailers::ReturnedParticipants::from_metadata(status.metadata())
+                    .unwrap();
+            HOST_RESERVATION_PAUSE.with(|p| *p.borrow_mut() = Some((held_tx, release_rx)));
+            let result = match disposition {
+                0 => worker_context
+                    .enlist_generated_returned_participants(scope.as_mut().unwrap(), &returned),
+                1 => worker_context.enlist_rolled_back_leaf(
+                    scope.as_mut(),
+                    status.metadata(),
+                    "example.Actor",
+                    "B",
+                ),
+                2 => settle_terminal_scope(&worker_context, scope.as_mut().unwrap()),
+                _ => worker_context
+                    .begin_generated_outbound_for("example.Actor", "B", METHOD)
+                    .map(|s| {
+                        scope = Some(s);
+                    }),
+            };
+            let completed = scope.as_ref().unwrap().completed;
+            drop(scope);
+            done_tx.send((result, completed)).unwrap();
+        });
+        held_rx.recv_timeout(timeout).unwrap();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (revoked_tx, revoked_rx) = std::sync::mpsc::channel();
+        let writer = std::thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            registry.revoke();
+            revoked_tx.send(()).unwrap();
+        });
+        started_rx.recv_timeout(timeout).unwrap();
+        let blocked = revoked_rx.recv_timeout(std::time::Duration::from_millis(100));
+        release_tx.send(()).unwrap();
+        let (result, completed) = done_rx.recv_timeout(timeout).unwrap();
+        revoked_rx.recv_timeout(timeout).unwrap();
+        worker.join().unwrap();
+        writer.join().unwrap();
+        assert!(matches!(
+            blocked,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        ));
+        result.unwrap();
+        assert_eq!(completed, disposition != 3);
+        let ledger = context
+            .returned_participants
+            .as_ref()
+            .unwrap()
+            .lock()
+            .unwrap();
+        assert_eq!(ledger.active, 0);
+        assert_eq!(ledger.membership_uncertain, disposition == 3);
+        assert_eq!(ledger.participants.len(), usize::from(disposition < 2));
+        drop(ledger);
+        assert!(
+            context
+                .begin_generated_outbound_for("example.Actor", "C", METHOD)
+                .is_err()
+        );
+    }
+}
+
 fn registered_context_for_host_fencing() -> (
     TransactionContext,
     HandlerLifetimeOwner,
@@ -34,6 +143,105 @@ fn registered_context_for_host_fencing() -> (
         })
         .unwrap();
     (admitted, lifetime, registry)
+}
+
+// Private settlement seam matrix, not standalone transport-terminal authority.
+#[test]
+fn registered_host_gate_fences_all_terminal_dispositions() {
+    for disposition in 0..3 {
+        for revoked in [false, true] {
+            let (context, _lifetime, registry) = registered_context_for_host_fencing();
+            let mut scope = context
+                .begin_generated_outbound_for("example.Actor", "B", METHOD)
+                .unwrap();
+            scope
+                .request_used
+                .store(true, std::sync::atomic::Ordering::Release);
+            let mut status = Status::unknown("private terminal fixture");
+            crate::successful_trailers::ParticipantMetadata::classified_single(
+                "example.Actor",
+                "B",
+                disposition == 1,
+                true,
+            )
+            .unwrap()
+            .attach_to_status(&mut status);
+            let returned =
+                crate::successful_trailers::ReturnedParticipants::from_metadata(status.metadata())
+                    .unwrap();
+            if revoked {
+                registry.revoke();
+            }
+            let result = match disposition {
+                0 => context.enlist_generated_returned_participants(&mut scope, &returned),
+                1 => context.enlist_rolled_back_leaf(
+                    Some(&mut scope),
+                    status.metadata(),
+                    "example.Actor",
+                    "B",
+                ),
+                _ => settle_terminal_scope(&context, &mut scope),
+            };
+            assert_eq!(
+                result.is_ok(),
+                !revoked,
+                "disposition {disposition}: {result:?}"
+            );
+            assert_eq!(scope.completed, !revoked);
+            drop(scope);
+            let ledger = context
+                .returned_participants
+                .as_ref()
+                .unwrap()
+                .lock()
+                .unwrap();
+            assert_eq!(ledger.active, 0);
+            assert_eq!(ledger.membership_uncertain, revoked);
+            assert_eq!(
+                ledger.participants.len(),
+                usize::from(!revoked && disposition != 2)
+            );
+        }
+    }
+}
+
+// Real network terminals with a privately installed registered permission;
+// this is not generated B authorization or secured local ticket dispatch.
+#[tokio::test]
+async fn registered_host_ready_settles_actual_wire_success_and_rollback() {
+    for success in [true, false] {
+        let outcome = if success {
+            Outcome::Success("B", false)
+        } else {
+            Outcome::Error(declared("B"))
+        };
+        let (resolver, mut received, server) = wire(vec![outcome]).await;
+        let (root, _lifetime, registry) = registered_context_for_host_fencing();
+        let result = call(&resolver, &root, "B", &schema()).await;
+        assert_eq!(received.recv().await.as_deref(), Some("B"));
+        if success {
+            assert_eq!(result.unwrap().response().get_ref().status, 1);
+        } else {
+            assert_eq!(result.unwrap_err().code(), tonic::Code::Unknown);
+        }
+        assert!(root.doomed_status().is_none());
+        {
+            let ledger = root.returned_participants.as_ref().unwrap().lock().unwrap();
+            assert_eq!(ledger.active, 0);
+            assert!(!ledger.membership_uncertain);
+            assert_eq!(ledger.participants.len(), 1);
+            assert_eq!(*ledger.participants.values().next().unwrap(), !success);
+        }
+        // Revocation after a completed terminal cannot erase known membership.
+        registry.revoke();
+        assert_eq!(root.returned_participants_snapshot().len(), 1);
+        assert!(
+            root.begin_generated_outbound_for("example.Actor", "C", METHOD)
+                .is_err()
+        );
+        server.abort();
+        let _ = server.await;
+    }
 }
 
 #[tokio::test]

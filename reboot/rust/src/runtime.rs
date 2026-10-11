@@ -810,6 +810,7 @@ fn settle_terminal_scope(
             "terminal scope ownership mismatch",
         ));
     }
+    let _host = context.reserve_registered_host_settlement()?;
     let _lifetime = context.reserve_handler_settlement()?;
     if let Some(collection) = &scope.collection {
         let ledger = collection
@@ -1183,6 +1184,27 @@ impl TransactionContext {
     // channel insertion is private; ticket consumption must enforce an immutable
     // parent prefix (parent ancestors, parent own, fresh child own). Per-context
     // uniqueness alone cannot prevent reversed cross-context lock ordering.
+    // Acquire once, before lifetime/ledger locks. No gate rereads, awaits or
+    // user callbacks while held. This fences only the observed host generation.
+    fn reserve_registered_host_settlement(
+        &self,
+    ) -> Result<Option<crate::registered_local::RegisteredHostReservation<'_>>, Status> {
+        let reservation = self
+            .registered_outbound
+            .as_ref()
+            .map(|permission| {
+                permission
+                    .binding
+                    .reserve_host_ready(&permission.configuration)
+            })
+            .transpose()?;
+        #[cfg(test)]
+        if reservation.is_some() {
+            owned_unary_tests::pause_reserved_host_for_test();
+        }
+        Ok(reservation)
+    }
+
     fn reserve_handler_settlement(&self) -> Result<Vec<tokio::sync::watch::Ref<'_, bool>>, Status> {
         self.validate_handler_ancestry()?;
         let mut reservations = Vec::new();
@@ -1375,6 +1397,7 @@ impl TransactionContext {
                 "root-star requires exact admitted root context",
             ));
         }
+        let _host = self.reserve_registered_host_settlement()?;
         let _lifetime = self.reserve_handler_settlement()?;
         if let Some(collection) = &self.returned_participants {
             let mut state = collection
@@ -1464,6 +1487,7 @@ impl TransactionContext {
         if let Some(status) = self.doomed_status() {
             return Err(status);
         }
+        let _host = self.reserve_registered_host_settlement()?;
         let _lifetime = self.reserve_handler_settlement()?;
         if let Some(collection) = &self.returned_participants {
             let mut ledger = collection
@@ -1539,6 +1563,7 @@ impl TransactionContext {
                 "error must retain exact read-only leaf membership",
             ));
         }
+        let _host = self.reserve_registered_host_settlement()?;
         let _lifetime = self.reserve_handler_settlement()?;
         let collection = self.returned_participants.as_ref().ok_or_else(|| {
             Status::failed_precondition("recoverable error requires initialized branch")
