@@ -23,11 +23,25 @@ use std::sync::Arc;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Auth {
     payload: serde_json::Value,
+    user_id: Option<String>,
 }
 
 impl Auth {
     pub fn new(payload: serde_json::Value) -> Self {
-        Self { payload }
+        Self {
+            payload,
+            user_id: None,
+        }
+    }
+
+    /// Attach identity established by the host verifier, never caller metadata.
+    pub fn with_user_id(mut self, user_id: impl Into<String>) -> Self {
+        self.user_id = Some(user_id.into());
+        self
+    }
+
+    pub fn user_id(&self) -> Option<&str> {
+        self.user_id.as_deref()
     }
 
     pub fn payload(&self) -> &serde_json::Value {
@@ -100,6 +114,7 @@ pub struct AuthorizationPolicy {
     verifier: Option<Arc<dyn TokenVerifier>>,
     authorizer: Option<Arc<dyn Authorizer>>,
     allow_missing_authorizer_for_development: bool,
+    declaration: Option<(&'static str, i32)>,
 }
 
 impl AuthorizationPolicy {
@@ -111,6 +126,7 @@ impl AuthorizationPolicy {
             verifier,
             authorizer,
             allow_missing_authorizer_for_development: false,
+            declaration: None,
         }
     }
 
@@ -124,9 +140,33 @@ impl AuthorizationPolicy {
         }
     }
 
+    /// Bind descriptor policy without granting authenticated internal authority.
+    pub fn for_declaration<D: crate::runtime::DurableStateDeclaration>(mut self) -> Self {
+        self.declaration = Some((D::STATE_TYPE, D::AUTO_CONSTRUCT));
+        self
+    }
+
+    fn is_user(&self) -> bool {
+        self.declaration.is_some_and(|(_, mode)| mode == 1)
+    }
+
+    fn guard_method(&self, context: &AuthorizationContext) -> Result<(), tonic::Status> {
+        if self.declaration.is_some_and(|(_, mode)| mode != 0)
+            && context.method.rsplit('.').next() == Some("SetClaims")
+        {
+            return Err(tonic::Status::permission_denied(
+                "external SetClaims is not supported",
+            ));
+        }
+        Ok(())
+    }
+
     /// Reject a missing host-owned authorizer without accessing actor storage.
     pub fn require_authorizer(&self) -> Result<(), tonic::Status> {
-        if self.authorizer.is_none() && !self.allow_missing_authorizer_for_development {
+        if self.authorizer.is_none()
+            && !self.is_user()
+            && !self.allow_missing_authorizer_for_development
+        {
             Err(tonic::Status::permission_denied(
                 "no authorizer configured; unauthorized development must be explicitly enabled",
             ))
@@ -146,19 +186,21 @@ impl AuthorizationPolicy {
             state_type: state_type.into(),
             method: method.into(),
         };
-        let Some(verifier) = &self.verifier else {
-            return Ok((context, None));
+        let auth = match &self.verifier {
+            None => None,
+            Some(verifier) => match verifier
+                .verify(&context, context.headers.bearer_token.as_deref())
+                .await
+            {
+                TokenVerification::Authenticated(auth) => Some(auth),
+                TokenVerification::NoOpinion => None,
+                TokenVerification::Unauthenticated { message } => {
+                    return Err(tonic::Status::unauthenticated(message));
+                }
+            },
         };
-        match verifier
-            .verify(&context, context.headers.bearer_token.as_deref())
-            .await
-        {
-            TokenVerification::Authenticated(auth) => Ok((context, Some(auth))),
-            TokenVerification::NoOpinion => Ok((context, None)),
-            TokenVerification::Unauthenticated { message } => {
-                Err(tonic::Status::unauthenticated(message))
-            }
-        }
+        self.guard_method(&context)?;
+        Ok((context, auth))
     }
 
     /// Authorizes a generated external call against either canonical existing
@@ -171,7 +213,25 @@ impl AuthorizationPolicy {
         state: Option<&[u8]>,
         request: &[u8],
     ) -> Result<(), tonic::Status> {
+        self.guard_method(context)?;
         let Some(authorizer) = &self.authorizer else {
+            if self.is_user() {
+                let user_id = auth.and_then(Auth::user_id).ok_or_else(|| {
+                    tonic::Status::unauthenticated("verified user identity required")
+                })?;
+                let (state_type, _) = self.declaration.expect("User declaration");
+                let target = crate::state_ref::StateRef::from_maybe_readable(
+                    context.headers.state_ref.clone(),
+                )
+                .map_err(|_| tonic::Status::permission_denied("invalid User target"))?;
+                if context.state_type != state_type
+                    || !target.matches_state_type(state_type)
+                    || target.id() != user_id
+                {
+                    return Err(tonic::Status::permission_denied("User owner mismatch"));
+                }
+                return Ok(());
+            }
             return if self.allow_missing_authorizer_for_development {
                 Ok(())
             } else {
@@ -195,6 +255,67 @@ impl AuthorizationPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct UserDeclaration;
+    impl crate::runtime::DurableStateDeclaration for UserDeclaration {
+        type State = crate::proto::Empty;
+        const STATE_TYPE: &'static str = "example.Account";
+        const AUTO_CONSTRUCT: i32 = 1;
+    }
+
+    #[tokio::test]
+    async fn user_default_owner_and_setclaims_are_not_development_exemptions() {
+        let policy =
+            AuthorizationPolicy::permissive_for_development().for_declaration::<UserDeclaration>();
+        policy.require_authorizer().unwrap();
+        let context = AuthorizationContext {
+            headers: RebootHeaders::new("example.Account:owner"),
+            state_type: "example.Account".into(),
+            method: "example.AccountMethods.Get".into(),
+        };
+        let payload_only = Auth::new(serde_json::json!({"user_id":"owner"}));
+        assert_eq!(
+            policy
+                .authorize(&context, Some(&payload_only), None, &[])
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::Unauthenticated
+        );
+        let wrong = payload_only.clone().with_user_id("other");
+        assert_eq!(
+            policy
+                .authorize(&context, Some(&wrong), None, &[])
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::PermissionDenied
+        );
+        let owner = payload_only.clone().with_user_id("owner");
+        assert_eq!(owner.payload(), payload_only.payload());
+        policy
+            .authorize(&context, Some(&owner), None, &[])
+            .await
+            .unwrap();
+        let mut claims = context.clone();
+        claims.method = "example.AccountMethods.SetClaims".into();
+        assert_eq!(
+            policy
+                .authorize(&claims, Some(&owner), None, &[])
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::PermissionDenied
+        );
+        assert_eq!(
+            policy
+                .verify(claims.headers, claims.state_type, claims.method)
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::PermissionDenied
+        );
+    }
 
     struct AuthenticatedVerifier;
     impl TokenVerifier for AuthenticatedVerifier {

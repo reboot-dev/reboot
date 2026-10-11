@@ -119,6 +119,7 @@ mod reactive_symbol_tests {
     #[test]
     fn helper_names_are_rejected_before_emission_for_database_and_workflow_readers() {
         let annotation = DurableService {
+            auto_construct: 0,
             state: "demo.State".into(),
             default_constructible: false,
             methods: HashMap::new(),

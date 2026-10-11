@@ -2953,6 +2953,9 @@ pub trait DurableStateDeclaration {
 
     /// Fully-qualified protobuf state type used by the Database protocol.
     const STATE_TYPE: &'static str;
+
+    /// Raw descriptor mode; does not implement automatic construction.
+    const AUTO_CONSTRUCT: i32 = 0;
 }
 
 /// Controls whether a missing state is implicitly created by a generated call.

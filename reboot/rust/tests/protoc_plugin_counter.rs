@@ -153,7 +153,7 @@ fn counter_cargo_build_helper_executes_durable_adapters_in_a_downstream_fixture(
     std::fs::write(
         fixture.join("build.rs"),
         format!(
-            "fn main() {{\n    let repository = std::path::Path::new(\"{}\");\n    reboot::build::compile_protos_with_runtime(\n        &[\n            repository.join(\"tests/reboot/protoc/counter.proto\"),\n            repository.join(\"tests/reboot/protoc/constructor_counter.proto\"),\n            repository.join(\"tests/reboot/protoc/map_counter.proto\"),\n            repository.join(\"tests/reboot/protoc/transaction_counter.proto\"),\n        ],\n        &[repository],\n        \"crate::proto\",\n        \"reboot\",\n    ).unwrap();\n}}\n",
+            "fn main() {{\n    let repository = std::path::Path::new(\"{}\");\n    reboot::build::compile_protos_with_runtime(\n        &[\n            repository.join(\"tests/reboot/protoc/counter.proto\"),\n            repository.join(\"tests/reboot/protoc/constructor_counter.proto\"),\n            repository.join(\"tests/reboot/protoc/map_counter.proto\"),\n            repository.join(\"tests/reboot/protoc/owner_account.proto\"),\n            repository.join(\"tests/reboot/protoc/transaction_counter.proto\"),\n        ],\n        &[repository],\n        \"crate::proto\",\n        \"reboot\",\n    ).unwrap();\n}}\n",
             repository.display()
         ),
     )
@@ -184,6 +184,11 @@ mod constructor_generated {
 }
 
 #[allow(dead_code)]
+mod owner_generated {
+    include!(concat!(env!("OUT_DIR"), "/tests/reboot/protoc/owner_account.reboot.rs"));
+}
+
+#[allow(dead_code)]
 mod map_generated {
     include!(concat!(env!("OUT_DIR"), "/tests/reboot/protoc/map_counter.reboot.rs"));
 }
@@ -195,7 +200,7 @@ mod transaction_generated {
 
 #[cfg(test)]
 mod tests {
-    use super::{constructor_generated, generated, map_generated, proto, transaction_generated};
+    use super::{constructor_generated, generated, map_generated, owner_generated, proto, transaction_generated};
     use prost::Message;
     use reboot::{
         application_host::ApplicationHost,
@@ -2635,6 +2640,107 @@ async fn generated_external_clients_attach_reader_and_writer_context() {
     );
     server.abort();
     database_server.abort();
+}
+
+struct OwnerHandler(Arc<AtomicUsize>);
+#[tonic::async_trait]
+impl owner_generated::OwnerAccountMethodsDatabaseHandler for OwnerHandler {
+    async fn create(&self, state: &mut proto::OwnerAccount, request: proto::OwnerAccountRequest) -> Result<proto::OwnerAccountResponse, tonic::Status> {
+        self.0.fetch_add(1, Ordering::SeqCst); state.value = request.value; Ok(proto::OwnerAccountResponse { value: state.value })
+    }
+    async fn get(&self, state: &proto::OwnerAccount, _: proto::OwnerAccountRequest) -> Result<proto::OwnerAccountResponse, tonic::Status> {
+        self.0.fetch_add(1, Ordering::SeqCst); Ok(proto::OwnerAccountResponse { value: state.value })
+    }
+    async fn update(&self, state: &mut proto::OwnerAccount, request: proto::OwnerAccountRequest) -> Result<proto::OwnerAccountResponse, tonic::Status> {
+        self.0.fetch_add(1, Ordering::SeqCst); state.value = request.value; Ok(proto::OwnerAccountResponse { value: state.value })
+    }
+    async fn set_claims(&self, _: &proto::OwnerAccount, _: proto::OwnerAccountRequest) -> Result<proto::OwnerAccountResponse, tonic::Status> {
+        self.0.fetch_add(1, Ordering::SeqCst); panic!("external SetClaims reached handler")
+    }
+}
+struct OwnerVerifier;
+impl TokenVerifier for OwnerVerifier {
+    fn verify<'a>(&'a self, _: &'a AuthorizationContext, token: Option<&'a str>) -> reboot::auth::VerifyFuture<'a> {
+        Box::pin(async move { match token {
+            Some("owner-token") => TokenVerification::Authenticated(Auth::new(serde_json::json!({})).with_user_id("alice")),
+            Some("other-token") => TokenVerification::Authenticated(Auth::new(serde_json::json!({})).with_user_id("bob")),
+            Some("payload-forgery") => TokenVerification::Authenticated(Auth::new(serde_json::json!({"user_id":"alice"}))),
+            _ => TokenVerification::NoOpinion,
+        } })
+    }
+}
+#[tokio::test]
+async fn generated_owner_adapter_gates_constructor_reader_writer_and_custom_allow_setclaims() {
+    fn request(token: &str, value: i64) -> tonic::Request<proto::OwnerAccountRequest> {
+        let mut headers = reboot::RebootHeaders::new("tests.reboot.protoc.OwnerAccount:alice");
+        headers.bearer_token = Some(token.into());
+        headers.idempotency_key = Some(Uuid::new_v4());
+        let mut request = tonic::Request::new(proto::OwnerAccountRequest { value });
+        *request.metadata_mut() = headers.to_metadata().unwrap();
+        request.metadata_mut().insert("x-forged-user-id", "alice".parse().unwrap());
+        request
+    }
+    let (endpoint, database, database_server) = start_database().await;
+    let calls = Arc::new(AtomicUsize::new(0));
+    for custom in [false, true] {
+        let authorizer: Option<Arc<dyn Authorizer>> = if custom { Some(Arc::new(AuthProbe {
+            verifier_calls: Arc::new(AtomicUsize::new(0)), authorizer_calls: Arc::new(AtomicUsize::new(0)), handler_calls: Arc::clone(&calls), decision: AuthorizationDecision::Allow,
+            contexts: Arc::new(std::sync::Mutex::new(Vec::new())), snapshots: Arc::new(std::sync::Mutex::new(Vec::new())),
+        })) } else { None };
+        let adapter = owner_generated::OwnerAccountMethodsDatabaseAdapter::new(DatabaseActorStore::connect(&endpoint).await.unwrap(), OwnerHandler(Arc::clone(&calls)))
+            .with_authorization(AuthorizationPolicy::new(Some(Arc::new(OwnerVerifier)), authorizer));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            tonic::transport::Server::builder().add_service(proto::owner_account_methods_server::OwnerAccountMethodsServer::new(adapter))
+                .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener)).await.unwrap();
+        });
+        let mut client = proto::owner_account_methods_client::OwnerAccountMethodsClient::connect(format!("http://{address}")).await.unwrap();
+        if !custom {
+            for (token, code) in [("missing", tonic::Code::Unauthenticated), ("payload-forgery", tonic::Code::Unauthenticated), ("other-token", tonic::Code::PermissionDenied)] {
+                assert_eq!(client.create(request(token, 10)).await.unwrap_err().code(), code);
+                assert_eq!(client.get(request(token, 0)).await.unwrap_err().code(), code);
+                assert_eq!(client.update(request(token, 99)).await.unwrap_err().code(), code);
+            }
+            assert_eq!(calls.load(Ordering::SeqCst), 0);
+            assert!(database.store_requests().is_empty());
+            assert_eq!(client.create(request("owner-token", 10)).await.unwrap().into_inner().value, 10);
+            assert_eq!(client.update(request("owner-token", 20)).await.unwrap().into_inner().value, 20);
+            assert_eq!(client.get(request("owner-token", 0)).await.unwrap().into_inner().value, 20);
+        } else {
+            assert_eq!(client.update(request("other-token", 30)).await.unwrap().into_inner().value, 30);
+            assert_eq!(client.get(request("missing", 0)).await.unwrap().into_inner().value, 30);
+        }
+        let before = calls.load(Ordering::SeqCst);
+        let stores = database.store_requests().len();
+        assert_eq!(client.set_claims(request("owner-token", 0)).await.unwrap_err().code(), tonic::Code::PermissionDenied);
+        assert_eq!(calls.load(Ordering::SeqCst), before);
+        assert_eq!(database.store_requests().len(), stores);
+        server.abort();
+        let _ = server.await;
+    }
+    database_server.abort();
+    let _ = database_server.await;
+}
+
+#[tokio::test]
+async fn generated_owner_descriptor_selects_policy_without_message_name_heuristic() {
+    use reboot::runtime::DurableStateDeclaration;
+    assert_eq!(owner_generated::OwnerAccountDurableState::AUTO_CONSTRUCT, 1);
+    let policy = AuthorizationPolicy::permissive_for_development().for_declaration::<owner_generated::OwnerAccountDurableState>();
+    let context = AuthorizationContext {
+        headers: reboot::RebootHeaders::new("tests.reboot.protoc.OwnerAccount:alice"),
+        state_type: "tests.reboot.protoc.OwnerAccount".into(),
+        method: "tests.reboot.protoc.OwnerAccountMethods.Get".into(),
+    };
+    assert_eq!(policy.authorize(&context, None, None, &[]).await.unwrap_err().code(), tonic::Code::Unauthenticated);
+    let owner = Auth::new(serde_json::json!({})).with_user_id("alice");
+    policy.authorize(&context, Some(&owner), None, &[]).await.unwrap();
+    let wrong = owner.with_user_id("bob");
+    assert_eq!(policy.authorize(&context, Some(&wrong), None, &[]).await.unwrap_err().code(), tonic::Code::PermissionDenied);
+    let mut claims = context;
+    claims.method = "tests.reboot.protoc.OwnerAccountMethods.SetClaims".into();
+    assert_eq!(policy.verify(claims.headers, claims.state_type, claims.method).await.unwrap_err().code(), tonic::Code::PermissionDenied);
 }
 
 #[tokio::test]

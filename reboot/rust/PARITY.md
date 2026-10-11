@@ -12,6 +12,37 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Descriptor-backed User policy checkpoint (2026-10-11)
+
+Generated database, transaction and workflow adapters bind the state's raw
+`auto_construct` descriptor value in both constructors and `with_authorization`.
+Only PER_USER_ID (1) selects default owner authorization; names do not. Identity
+is supplied by the host verifier via `Auth::with_user_id`, never inferred from
+JSON claims or caller metadata. Missing identity is Unauthenticated; wrong final
+decoded StateRef ID/type is PermissionDenied. Explicit custom authorizers replace
+the default; development does not bypass User ownership. External SetClaims on
+any nonzero annotation is independently denied after credential verification,
+including custom Allow. No authenticated app-internal exemption is implemented.
+The declaration constant carries metadata, not automatic actor construction.
+
+Generated downstream behavior exercises constructor/reader/writer owner denial,
+payload/metadata forgery, matching-owner access, custom Allow replacement and
+SetClaims denial with no handler/Store effects. Source review found no definite
+external bypass, but zero Load/root/receipt/admission counters, encoded/colocated/
+escaped StateRef matrix and User-specific transaction/workflow/HTTP/subscription/
+replay-restart coverage remain incomplete. Tasks.Wait has independent deny-default
+policy; actor ownership does not certify task-result disclosure or subscriptions.
+
+**Fresh regression acceptance based on `11a6598b`:**
+`/tmp/reboot-rust-user-policy-full-audit-1791708133927180921` records SDK 522
+passes including nested consumers (library 429, generated consumer 41), both
+strict Clippy gates exit 0 and native 132/132 (SortedMap 3, CXX 115, reactive 1,
+workflow 5, transport 8). `/tmp/reboot-rust-auth-watch-public-gates-1791708986525211611`
+records CLI and actual greeting/replay/watch/RocksDB restart, supervision and
+failed-rebuild acceptance. Aggregates accepted with all gate exits 0, unchanged
+frozen source and no owned children. These are regression gates, not secured User
+native/public certification, production readiness, or merge-result/CI acceptance.
+
 ## Subscription credential ordering checkpoint (2026-10-11)
 
 Both generated local ReaderBinding paths pass original embedded protobuf bytes
@@ -36,10 +67,11 @@ supervision and failed-rebuild acceptance. Both aggregates accepted, all gate ex
 0, frozen hashes match and exact owned children are absent. Generated greeting
 Cargo zero-test runs are compilation checks, not behavioral acceptance.
 
-Descriptor-backed User owner policy, independent external SetClaims protection,
-trusted internal provenance, secured User HTTP/reactive vertical and production
-release remain unfinished. Source review found no bounded generated-reader safety
-blocker; it is not full parity or merge-result/CI certification.
+Descriptor-backed User policy and independent external SetClaims protection now
+have the bounded checkpoint above. Trusted internal provenance, secured User
+HTTP/reactive vertical and production release remain unfinished. Source review
+found no bounded generated-reader safety blocker; it is not full parity or
+merge-result/CI certification.
 
 ## Scheduling authorization and live Watch checkpoint (2026-10-11)
 
@@ -3097,7 +3129,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 5c7b044ac62816c4ff0f9a3e6354d62b3b0f8e32546c205f3df961b4f247de2d -->
+<!-- parity-source-sha256: 478984610e4f6c1ecb59709c85c113f2e1a540d7e8f1d7241d014b336fa36e8c -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,
