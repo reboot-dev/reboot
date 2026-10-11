@@ -1,0 +1,25 @@
+syntax = "proto3";
+package {{ name }}.v1;
+import "rbt/v1alpha1/options.proto";
+message OwnerWorkflows {
+  option (rbt.v1alpha1.state) = { implements: ["{{ name }}.v1.OwnerWorkflowsMethods"] auto_construct: PER_USER_ID };
+  int64 first = 1;
+  int64 second = 2;
+  int64 schedules = 3;
+}
+message WorkflowEmpty {}
+message WorkflowAdd { int64 amount = 1; }
+message WorkflowValue { int64 value = 1; }
+message UserSchedule { int64 not_before = 1; int64 amount = 2; }
+message UserHandle { bytes id = 1; }
+message UserResult { int64 first = 1; int64 second = 2; }
+service OwnerWorkflowsMethods {
+  option (rbt.v1alpha1.service) = { state: "{{ name }}.v1.OwnerWorkflows" };
+  rpc Create(WorkflowEmpty) returns (WorkflowEmpty) { option (rbt.v1alpha1.method).writer = { constructor: {} }; }
+  rpc Query(WorkflowEmpty) returns (OwnerWorkflows) { option (rbt.v1alpha1.method).reader = {}; }
+  rpc ScheduleWork(UserSchedule) returns (UserHandle) { option (rbt.v1alpha1.method).writer = {}; }
+  rpc First(WorkflowAdd) returns (WorkflowValue) { option (rbt.v1alpha1.method).writer = {}; }
+  rpc Second(WorkflowAdd) returns (WorkflowValue) { option (rbt.v1alpha1.method).writer = {}; }
+  rpc SetClaims(WorkflowEmpty) returns (WorkflowEmpty) { option (rbt.v1alpha1.method).writer = {}; }
+  rpc Run(WorkflowAdd) returns (UserResult) { option (rbt.v1alpha1.method).workflow = {}; }
+}

@@ -45,9 +45,37 @@ both local children. Rust SDK is an unpublished path dependency, edition 2024.
 
 This example does not mint tokens, automatically construct users, deliver OAuth
 claims, implement revocation lists, expose trusted internal contexts, or certify
-transactions/workflows/Tasks.Wait/React/production deployment. An issuer's
+transactions/React/production deployment. An issuer's
 signature remains accepted until expiry unless its key is removed on restart.
 Optional local reactive actor registration is routing, not actor creation or auth.
+
+## Optional single-owner workflows
+
+Set `RBT_USER_WORKFLOW_OWNER="$SUBJECT"` before starting `rbt dev run` to mount
+`OwnerWorkflowsMethods` and canonical `rbt.v1alpha1.Tasks.Wait` alongside ordinary
+User RPCs. Workflow Create and Wait require a valid credential for this exact
+configured owner; another principal cannot construct an extra workflow actor.
+The launcher restores the single task owner before public readiness. This mode
+rejects reactive registry/composition configuration; the ordinary mode remains
+available when `RBT_USER_WORKFLOW_OWNER` is absent.
+
+```sh
+WREF=$(cargo run --quiet --manifest-path backend/Cargo.toml --bin client -- workflow-state-ref "$SUBJECT")
+cargo run --manifest-path backend/Cargo.toml --bin client -- workflow-create "$WREF" 11111111-1111-4111-8111-111111111111
+# Schedule seconds: 0 means eligible immediately; otherwise Unix epoch seconds.
+TASK=$(cargo run --quiet --manifest-path backend/Cargo.toml --bin client -- workflow-schedule "$WREF" 22222222-2222-4222-8222-222222222222 0 7)
+cargo run --manifest-path backend/Cargo.toml --bin client -- workflow-wait "$WREF" "$TASK"
+cargo run --manifest-path backend/Cargo.toml --bin client -- workflow-read "$WREF"
+```
+
+Scheduling atomically persists its task and schedule counter. The same key and
+request retrieve the same task UUID, without adding another schedule. The workflow
+uses two named local writer checkpoints (`first-effect`, `second-effect`) and
+returns their values. Wait uses the canonical public task endpoint, never private
+recovery ingress. Credentials are verified on reads and replay, not just scheduling.
+Explicit construction remains required; external SetClaims is denied. Persisted
+acknowledged scheduling survives a normal launcher restart. This bounded local
+example does not promise arbitrary-crash recovery or external effects exactly once.
 
 ## Optional local HTTP gateway
 

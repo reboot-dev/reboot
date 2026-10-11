@@ -9,7 +9,15 @@ pub mod generated {
     ));
 }
 
-pub struct HelloWorld;
+{% if example == "secured-user" %}pub mod user_workflows;
+pub mod workflow_generated {
+    include!(concat!(
+        env!("OUT_DIR"),
+        "/{{ name }}/v1/user_workflows.reboot.rs"
+    ));
+}
+
+{% endif %}pub struct HelloWorld;
 
 #[tonic::async_trait]
 impl generated::HelloWorldMethodsDatabaseHandler for HelloWorld {

@@ -1,4 +1,6 @@
-use reboot::ExternalContext;
+{% if example == "secured-user" %}#[path = "../user_workflow_client.rs"]
+mod user_workflow_client;
+{% endif %}use reboot::ExternalContext;
 {% if name < "std" %}use {{ name }}::{generated, proto};
 use std::time::Duration;
 {% else %}use std::time::Duration;
@@ -10,7 +12,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let command = args.get(1).ok_or(
         "usage: client <create|greet|select-source|read|watch|state-ref|health> [state-ref] [idempotency-key]",
     )?;
-    if command == "state-ref" {
+{% if example == "secured-user" %}    if command == "workflow-state-ref" {
+        println!(
+            "{}",
+            reboot::state_ref::StateRef::from_id(
+                "{{ name }}.v1.OwnerWorkflows",
+                args.get(2).ok_or("missing owner")?
+            )?
+        );
+        return Ok(());
+    }
+{% endif %}    if command == "state-ref" {
         println!(
             "{}",
             reboot::state_ref::StateRef::from_id(
@@ -29,7 +41,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 {% endif %}
     let channel = tokio::time::timeout(Duration::from_secs(2), context.connect(endpoint)).await??;
-    if command == "health" {
+{% if example == "secured-user" %}    if command.starts_with("workflow-") {
+        return tokio::time::timeout(
+            Duration::from_secs(12),
+            user_workflow_client::call(channel, &args),
+        )
+        .await?;
+    }
+{% endif %}    if command == "health" {
         let mut health = tonic_health::pb::health_client::HealthClient::new(channel);
         let mut request = tonic::Request::new(tonic_health::pb::HealthCheckRequest {
             service: String::new(),

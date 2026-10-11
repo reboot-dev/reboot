@@ -62,6 +62,7 @@ try:
         ]
         commands.insert(3, ('native4', ['cargo','test','--manifest-path','reboot/rust/Cargo.toml','--locked','--all-features','--test','reactive_native_restart','--','--ignored','--test-threads=1','--nocapture']))
         commands.insert(5, ('user_public',[python,str(root/'tests/reboot/cli/rust_user_app_e2e.py')]))
+        commands.insert(6, ('user_workflows_public',[python,str(root/'tests/reboot/cli/rust_user_app_e2e.py'),'--workflows']))
         commands.insert(0, ('ownership_regressions',[python,str(root/'tests/reboot/cli/rust_process_ownership_test.py')]))
     for name,cmd in commands:
         budget();assert all(hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()==h for p,h in manifest.items())
@@ -86,7 +87,9 @@ try:
     if not probe:
         proof=json.loads((stage/'greeting/acceptance-result.json').read_text())
         assert proof['passed'] and proof['frozen_sources_match_end']
-        user_path=next((stage/'greeting').glob('reboot-rust-public-user-*/result.json'));user=json.loads(user_path.read_text());assert user['passed'] and not user['cleanup_errors']
+        users=[json.loads(p.read_text()) for p in (stage/'greeting').glob('reboot-rust-public-user-*/result.json')]
+        assert len(users)==2 and {u['workflows'] for u in users}=={False,True}
+        assert all(u['passed'] and not u['cleanup_errors'] for u in users)
         import re
         for item in results:
             if item['suite'] in ['sdk_all_targets','native4']:

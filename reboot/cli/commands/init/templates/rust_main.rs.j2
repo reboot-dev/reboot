@@ -44,11 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 {% endif %}    let endpoint = std::env::var("RBT_RUST_DATABASE_URL")?;
     let address = std::env::var("RBT_RUST_LISTEN_ADDR")?.parse()?;
     let application = std::env::var("RBT_NAME").unwrap_or_else(|_| "{{ name }}".into());
-    let adapter = generated::HelloWorldMethodsDatabaseAdapter::new(
-        DatabaseActorStore::connect(endpoint).await?,
-        HelloWorld,
-    )
-{% if example == "secured-user" %}    .with_authorization({
+{% if example == "secured-user" %}    let verifier: std::sync::Arc<dyn reboot::auth::TokenVerifier> = {
         let pem = std::fs::read(std::env::var("RBT_USER_RSA_PUBLIC_KEY_FILE")?)?;
         let verifier = reboot::jwt_auth::JwtTokenVerifier::rs256(
             &pem,
@@ -56,8 +52,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             &std::env::var("RBT_USER_JWT_AUDIENCE")?,
         )
         .map_err(std::io::Error::other)?;
-        reboot::auth::AuthorizationPolicy::new(Some(std::sync::Arc::new(verifier)), None)
-    });
+        std::sync::Arc::new(verifier)
+    };
+    let policy = reboot::auth::AuthorizationPolicy::new(Some(verifier.clone()), None);
+    match std::env::var("RBT_USER_WORKFLOW_OWNER") {
+        Ok(owner) => {
+            if std::env::var_os("RBT_RUST_REACTIVE_ACTORS").is_some()
+                || std::env::var_os("RBT_RUST_REACTIVE_COMPOSITION").is_some()
+            {
+                return Err(
+                    "workflow mode does not support reactive registry configuration".into(),
+                );
+            }
+            return {{ name }}::user_workflows::serve(
+                endpoint,
+                address,
+                &application,
+                policy,
+                verifier,
+                &owner,
+                shutdown(),
+            )
+            .await;
+        }
+        Err(std::env::VarError::NotPresent) => {}
+        Err(error) => return Err(error.into()),
+    }
+{% endif %}    let adapter = generated::HelloWorldMethodsDatabaseAdapter::new(
+        DatabaseActorStore::connect(endpoint.clone()).await?,
+        HelloWorld,
+    )
+{% if example == "secured-user" %}    .with_authorization(policy.clone());
 {% else %}    .with_authorization(
         if std::env::var("RBT_RUST_UNAUTHORIZED_DEVELOPMENT").as_deref() == Ok("1") {
             reboot::auth::AuthorizationPolicy::permissive_for_development()
@@ -101,7 +126,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         adapter
     };
-    let host = ApplicationHost::new(application).add_public_service(
+    let host = ApplicationHost::new(application.clone()).add_public_service(
         proto::hello_world_methods_server::HelloWorldMethodsServer::new(adapter),
     );
     let host = if configured.is_some() {

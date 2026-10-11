@@ -30,8 +30,11 @@ TARGET = Path(os.environ['CARGO_TARGET_DIR'])
 RBT = os.environ['RUST_DX_RBT']
 PORT = int(os.environ.get('RUST_USER_PORT', '12993'))
 ENV = dict(os.environ, RBT_RUST_URL=f'http://127.0.0.1:{PORT}', RBT_RUST_DATABASE_BINARY=os.environ['REBOOT_NATIVE2PC_CXX_DATABASE'])
+import sys
+WORKFLOWS = '--workflows' in sys.argv
+if WORKFLOWS: ENV['RBT_USER_WORKFLOW_OWNER']='owner'
 RESULT = STAGE / 'result.json'
-proof = {'commands': [], 'sessions': [], 'passed': False}
+proof = {'commands': [], 'sessions': [], 'passed': False, 'workflows': WORKFLOWS}
 sessions = []
 timeout_seen = False
 http_sessions = []
@@ -91,11 +94,13 @@ for upstream in ['http://127.0.0.1', 'http://127.0.0.1:0', f'http://127.0.0.1:{P
 run([TARGET/'debug/app','--user-http'],env=dict(http_config,RBT_USER_HTTP_LISTEN_ADDR=f'0.0.0.0:{PORT+1}'),expected=1,timeout=10)
 client = TARGET / 'debug/client'
 ref = run([client, 'state-ref', 'owner'])[0]
+workflow_ref = run([client, 'workflow-state-ref', 'owner'])[0]
+other_workflow_ref = run([client, 'workflow-state-ref', 'other'])[0]
 # Inspectors are independent readers only; public Create owns construction.
 import grpc_tools
 py = STAGE / 'python'
 py.mkdir()
-assert protoc.main(['protoc', '-I'+str(APP/'api'), '-I'+str(ROOT), '-I'+str(Path(grpc_tools.__file__).parent/'_proto'), '--python_out='+str(py), str(APP/'api/user_app/v1/hello_world.proto')]) == 0
+assert protoc.main(['protoc', '-I'+str(APP/'api'), '-I'+str(ROOT), '-I'+str(Path(grpc_tools.__file__).parent/'_proto'), '--python_out='+str(py), str(APP/'api/user_app/v1/hello_world.proto'), str(APP/'api/user_app/v1/user_workflows.proto')]) == 0
 import sys
 sys.path.insert(0,str(py))
 from user_app.v1 import hello_world_pb2
@@ -226,6 +231,29 @@ def state(session, expected):
     proof.setdefault('canonical_reads',[]).append({'expected':expected,'response_hex':response.SerializeToString().hex()})
 
 
+def workflow(command, credential, *args, denied=None, target=None):
+    env=dict(ENV)
+    env.pop('RBT_USER_BEARER_TOKEN',None)
+    if credential is not None: env['RBT_USER_BEARER_TOKEN']=credential
+    out,err=run([client,'workflow-'+command,target or workflow_ref,*args],env=env,expected=1 if denied else 0,timeout=15)
+    if denied: assert denied in err,(command,err)
+    return out
+
+
+def workflow_state(session, expected, target=None):
+    with grpc.insecure_channel(f'127.0.0.1:{session.database_port}') as channel:
+        response=database_pb2_grpc.DatabaseStub(channel).Load(database_pb2.LoadRequest(actors=[database_pb2.Actor(state_type='user_app.v1.OwnerWorkflows',state_ref=target or workflow_ref)]),timeout=3)
+    if expected is None: assert not response.actors,response
+    else:
+        from user_app.v1 import user_workflows_pb2
+        assert len(response.actors)==1,response
+        actor=response.actors[0]
+        assert actor.state_type=='user_app.v1.OwnerWorkflows' and actor.state_ref==(target or workflow_ref),response
+        value=user_workflows_pb2.OwnerWorkflows.FromString(actor.state)
+        assert (value.first,value.second,value.schedules)==expected,value
+    proof.setdefault('workflow_canonical_reads',[]).append({'expected':expected,'response_hex':response.SerializeToString().hex()})
+
+
 try:
     first=Session('first')
     bad_config = dict(ENV, RBT_RUST_DATABASE_URL=f'http://127.0.0.1:{first.database_port}', RBT_RUST_LISTEN_ADDR=f'127.0.0.1:{PORT+1}', RBT_RUST_UNAUTHORIZED_DEVELOPMENT='1')
@@ -242,6 +270,20 @@ try:
     for credential,code in [(None,'Unauthenticated'),('unsigned','Unauthenticated'),(wrong,'PermissionDenied'),(token(exp=1),'Unauthenticated'),(token(iss='other'),'Unauthenticated'),(token(aud='other'),'Unauthenticated')]:
         for method in ['create','greet','read']:
             call(method,credential,denied=code)
+    if WORKFLOWS:
+        for credential,code in [(None,'Unauthenticated'),('unsigned','Unauthenticated'),(wrong,'PermissionDenied'),(token(exp=1),'Unauthenticated')]:
+            workflow('create',credential,str(uuid.uuid4()),denied=code)
+            workflow('read',credential,denied=code)
+            workflow('wait',credential,str(uuid.uuid4()),denied=code)
+        workflow('create',wrong,str(uuid.uuid4()),target=other_workflow_ref,denied='PermissionDenied')
+        workflow_state(first,None,target=other_workflow_ref)
+        workflow_state(first,None)
+        workflow_create_key=str(uuid.uuid4())
+        assert workflow('create',owner,workflow_create_key)=='created'
+        workflow('set-claims',owner,denied='PermissionDenied')
+        workflow_state(first,(0,0,0))
+        workflow('run',owner,denied='PermissionDenied')
+        workflow_state(first,(0,0,0))
     http_first=HttpSession('first')
     for credential,status in [(None,401),('unsigned',401),(token(exp=1),401),(wrong,403)]:
         assert http_call('/user',credential)[0]==status
@@ -282,8 +324,31 @@ try:
     state(first,2)
     http_first.close()
     assert call('read',owner)=='2'
+    if WORKFLOWS:
+        schedule_key=str(uuid.uuid4())
+        not_before=str(int(time.time())+8)
+        task=workflow('schedule',owner,schedule_key,not_before,'7')
+        uuid.UUID(task)
+        assert workflow('schedule',owner,schedule_key,not_before,'7')==task
+        workflow('schedule',wrong,schedule_key,not_before,'7',denied='PermissionDenied')
+        workflow_state(first,(0,0,1))
     first.close()
+    if WORKFLOWS:
+        stopped_at=time.time()
+        assert stopped_at < int(not_before),(stopped_at,not_before)
+        proof['workflow_shutdown_before_eligibility']={'stopped_at':stopped_at,'not_before':int(not_before)}
     second=Session('restart')
+    if WORKFLOWS:
+        for credential,code in [(None,'Unauthenticated'),('unsigned','Unauthenticated'),(wrong,'PermissionDenied'),(token(exp=1),'Unauthenticated')]:
+            workflow('wait',credential,task,denied=code)
+            workflow('schedule',credential,schedule_key,not_before,'7',denied=code)
+        assert workflow('wait',owner,task)=='{"first":7,"second":7}'
+        assert workflow('wait',owner,task)=='{"first":7,"second":7}'
+        assert workflow('schedule',owner,schedule_key,not_before,'7')==task
+        assert workflow('create',owner,workflow_create_key)=='created'
+        workflow_state(second,(7,7,1))
+        workflow_state(second,None,target=other_workflow_ref)
+        proof['workflow_task']=task
     http_second=HttpSession('restart')
     for credential,status in [(None,401),('unsigned',401),(token(exp=1),401),(wrong,403)]:
         assert http_call('/user',credential)[0]==status

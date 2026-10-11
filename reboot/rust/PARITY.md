@@ -12,6 +12,51 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Signed User public workflows checkpoint (2026-10-11)
+
+The generated `secured-user` scaffold now supports opt-in single-owner workflow
+hosting via `RBT_USER_WORKFLOW_OWNER`, alongside ordinary signed User RPCs and the
+separate HTTP gateway. A distinct descriptor-backed `OwnerWorkflowsMethods`
+service provides explicit authenticated construction, atomic keyed scheduling,
+and two named local writer checkpoints (`first-effect`, `second-effect`). One
+configured actor has one task owner/recovery registration and canonical public
+`rbt.v1alpha1.Tasks.Wait`; recovery starts before public admission/readiness.
+
+The application-owned workflow authorizer requires verified identity, exact
+canonical target and state type. Descriptor User defaults alone would allow other
+principals to construct their own actors; this singleton contract explicitly
+rejects that. Ordinary User services retain their descriptor-owner policy, using
+the same signed verifier. External SetClaims and direct public Run are denied.
+Workflow mode rejects reactive registry/composition configuration.
+
+Fresh final nine-gate acceptance passed SDK **527 tests**, strict SDK and generated
+fixture Clippy, focused native **4 cases**, Linux ownership **12 regressions**,
+CLI units, ordinary signed User/HTTP, secured workflow public CLI and greeting
+watch/restart/supervision/failed-build regressions. The workflow gate uses an
+unmodified real `rbt init` scaffold and actual `rbt dev` CXX/RocksDB runtime:
+missing/invalid/expired/non-owner denial; another principal's self-target Create
+rejected with canonical actor absence; explicit owner Create; public Run denied
+without mutation; scheduling-key replay returns one task UUID/counter; old host
+shutdown completes before task eligibility; restart returns typed `7/7` through
+canonical Wait, repeated Wait and schedule replay retain actor `7/7/1`; exact
+canonical actor type/reference and process cleanup are checked. The ordinary
+User/HTTP regression matrix also runs with workflow services mounted.
+
+Accepted local artifact:
+`/tmp/reboot-rust-user-http-full-audit-1791727420716185562/accepted.json`.
+All nine exits were zero, frozen inputs matched and recorded exact process
+identities were absent after reconciliation. The earlier accepted stage
+`1791726924796292378` lacks the final three proof assertions and is not final
+checkpoint certification. Reproduce through
+`tests/reboot/cli/rust_user_acceptance_runner.py`, with a compatible canonical
+CXX Database supplier and sole-owned budgeted target.
+
+Scope remains experimental loopback, a single configured workflow owner and
+acknowledged scheduling across a normal launcher restart. This does not establish
+public interruption after the first named checkpoint, arbitrary-crash recovery,
+public secured transactions, OAuth/automatic registration, production safety,
+external exactly-once, or full ignored native inventory recertification.
+
 ## Signed User public HTTP checkpoint (2026-10-11)
 
 The secured User scaffold now offers opt-in `app --user-http`: a separate
@@ -3327,7 +3372,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 4bd568a0c0e346f2a87adba118a0b13e3a72443d2fb5d399ecbe40eaec2144b4 -->
+<!-- parity-source-sha256: b00cae63edb8675101f238ba9507f717d8b336b55d6545cf202ee8b74eaa73ca -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,
