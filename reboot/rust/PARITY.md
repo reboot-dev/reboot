@@ -12,6 +12,47 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Secured User workflow checkpoint/restart checkpoint (2026-10-11)
+
+The generated reactive fixture now includes a separate PER_USER_ID OwnerWorkflows
+service, with explicit construction and verifier-issued owner authorization.
+Truly headerless, forged, wrong-owner and rejected credentials cannot invoke the
+constructor, reader or scheduling handler on an absent actor; direct canonical
+Database Load confirms state remains absent. Owner scheduling before explicit
+Create also fails without handler entry. This does not assert an exact preflight
+Load/admission count or automatic construction.
+
+Accepted scheduling replays the same task handle. Revocation denies scheduling
+receipt disclosure before and after host plus actual CXX/RocksDB restart. An
+already accepted durable workflow recovers while the scheduling credential remains
+revoked; this is durable dispatcher authority, not an authenticated app-internal
+exemption. External SetClaims cannot invoke its handler.
+
+An acknowledged first named writer checkpoint survives restart byte-for-byte.
+Canonical inspection validates the returned exact TaskId, Run method, decoded
+request, iteration zero, named checkpoint UUIDs and request fingerprints, typed
+checkpoint values 5, and terminal result (5,5). The observed transition is pending
+with one checkpoint to completed with two; queried state is (5,5,1). Invocation
+logs show two workflow body entries but only one scheduling, first-effect and
+second-effect handler invocation. Native host exits must be zero and owned PIDs
+must be absent; the Database restart uses intentional SIGKILL, not graceful drain.
+
+**Fresh acceptance based on `7a49e65f40a588d831af1510e0e748c983fe1aea`:**
+`/tmp/reboot-rust-secured-workflow-vertical-audit-1791711676407120078` records SDK
+522 passes including nested consumers (library 429, generated consumer 41), strict
+SDK and reactive-consumer Clippy exit 0, and native reactive 3/3, preserving the
+Counter and ordinary secured User cases independently. All 373 frozen files match
+and recorded owned child identities are absent. Applied follow-up review found
+all four earlier proof gaps repaired and no blocking defect.
+`/tmp/reboot-rust-auth-watch-public-gates-1791712012159038707` separately accepted
+CLI unit and generated greeting/replay/watch/RocksDB restart, supervision and
+failed-rebuild gates, with 214 matching frozen files and no owned children.
+
+This certifies only the acknowledged-first-checkpoint native fixture vertical,
+not arbitrary crash windows, external effects exactly-once, User transactions,
+automatic construction, exhaustive secured RPC coverage, Tasks.Wait result
+ownership, production parity, current full-native inventory or merge-result CI.
+
 ## Secured User native HTTP/reactive/replay checkpoint (2026-10-11)
 
 The generated reactive fixture now exercises an explicitly constructed PER_USER_ID
@@ -46,7 +87,7 @@ This is a bounded native fixture vertical, not a secured User `rbt init` templat
 or full-suite native recertification. The prior native 132/132 checkpoint below
 remains historical; this run executes only the current reactive inventory of 2.
 Automatic User construction, OAuth/claims delivery, trusted internal provenance,
-User transaction/workflow acceptance, exact preflight Load/admission counters,
+User transaction acceptance and broader workflow coverage, exact preflight counters,
 encoded/colocated/escaped StateRef coverage, Tasks.Wait result ownership and full
 reactive/production parity remain incomplete. PR/merge-result CI is separate.
 
@@ -3170,7 +3211,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: f53f177269cbacd17b65845ef28e175c207055531bff85cc8dbbb80e2efe1897 -->
+<!-- parity-source-sha256: d6395814e0c8794f824edef4b187edc81cfdbdc1d70fa776492b290511956cc9 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

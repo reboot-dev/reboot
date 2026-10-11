@@ -9,7 +9,7 @@ use reboot::{
 };
 use std::{io::Write, path::PathBuf, sync::Arc, time::Duration};
 #[allow(dead_code)] // Fixture uses only public database/reactive clients.
-mod generated {
+pub(super) mod generated {
     include!(concat!(
         env!("OUT_DIR"),
         "/reactive/v1/secured_user.reboot.rs"
@@ -21,7 +21,7 @@ fn reference() -> String {
         .unwrap()
         .to_string()
 }
-struct Verifier(PathBuf);
+pub(super) struct Verifier(pub(super) PathBuf);
 impl TokenVerifier for Verifier {
     fn verify<'a>(
         &'a self,

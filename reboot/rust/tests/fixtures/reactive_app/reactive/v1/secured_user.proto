@@ -6,6 +6,23 @@ message OwnerAccount {
  option (rbt.v1alpha1.state) = { implements: ["reactive.v1.OwnerAccountMethods"] auto_construct: PER_USER_ID };
  int64 value = 1;
 }
+message OwnerWorkflows {
+ option (rbt.v1alpha1.state) = { implements: ["reactive.v1.OwnerWorkflowsMethods"] auto_construct: PER_USER_ID };
+ int64 first = 1; int64 second = 2; int64 schedules = 3;
+}
+message UserSchedule { int64 not_before = 1; int64 amount = 2; }
+message UserHandle { bytes id = 1; }
+message UserResult { int64 first = 1; int64 second = 2; }
+service OwnerWorkflowsMethods {
+ option (rbt.v1alpha1.service) = { state: "reactive.v1.OwnerWorkflows" };
+ rpc Create(Empty) returns (Empty) { option (rbt.v1alpha1.method).writer = { constructor: {} }; }
+ rpc Query(Empty) returns (OwnerWorkflows) { option (rbt.v1alpha1.method).reader = {}; }
+ rpc ScheduleWork(UserSchedule) returns (UserHandle) { option (rbt.v1alpha1.method).writer = {}; }
+ rpc First(Add) returns (Value) { option (rbt.v1alpha1.method).writer = {}; }
+ rpc Second(Add) returns (Value) { option (rbt.v1alpha1.method).writer = {}; }
+ rpc SetClaims(Empty) returns (Empty) { option (rbt.v1alpha1.method).writer = {}; }
+ rpc Run(Add) returns (UserResult) { option (rbt.v1alpha1.method).workflow = {}; }
+}
 service OwnerAccountMethods {
  option (rbt.v1alpha1.service) = { state: "reactive.v1.OwnerAccount" };
  rpc Create(Empty) returns (Empty) { option (rbt.v1alpha1.method) = { writer: { constructor: {} } }; }
