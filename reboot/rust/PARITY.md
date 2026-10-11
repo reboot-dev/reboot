@@ -12,6 +12,48 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Secured User transaction/replay checkpoint (2026-10-11)
+
+A separate generated PER_USER_ID OwnerTransactions service now exercises explicit
+factory construction, exclusive transactions, fresh shared inspection and ordinary
+query over actual CXX/RocksDB. Verifier-issued ownership admits the matching owner;
+headerless, JSON-only forged identity, wrong-owner and rejecting credentials deny
+absent/present calls without handler entry. Canonical Load explicitly returns no
+actor before construction (CXX omits missing keys); a positive control validates
+exactly one constructed actor, its type/reference and decoded persisted value 10.
+External SetClaims cannot invoke its handler.
+
+A keyed exclusive Apply commits/replays response 15. A fresh transaction advances
+current state to 18; a failing handler returns InvalidArgument and rolls back its
+state change. Revocation maps the credential to a different verified owner, so
+replayed calls return PermissionDenied before receipt disclosure both before and
+after host plus Database restart on the same RocksDB directory. Regrant returns
+the original response 15 without another handler entry; Query and fresh shared
+Inspect still report current state 18. Handler logs are observation, not a direct
+durable-effect inventory or external-effects exactly-once proof.
+
+Cleanup records stop failures across owned siblings and retains evidence directories.
+Once an owner wait times out, it is not killed or waited on again while running;
+intentional initial Database SIGKILL is distinct from timeout preservation. Two
+fault-injected cleanup regressions execute as part of native acceptance. Successful
+hosts must exit zero, cleanup errors fail acceptance, and owned PIDs must be absent.
+
+**Fresh acceptance based on `a64c9d4902899399cb44e9f1ff362d7b9121c312`:**
+`/tmp/reboot-rust-secured-transaction-vertical-audit-1791713364644363579` records SDK
+522 passes including nested consumers (library 429, generated consumer 41), strict
+SDK and reactive-consumer Clippy exit 0 and native reactive 4/4, retaining Counter,
+ordinary secured User and workflow regressions independently. All 377 frozen files
+match, recorded owned child identities are absent, and applied follow-up review
+found no blocker in the repaired Load control or cleanup-timeout paths.
+`/tmp/reboot-rust-auth-watch-public-gates-1791713563665777416` separately accepted
+CLI unit and generated greeting/replay/watch/RocksDB restart, supervision and
+failed-rebuild gates, with 218 matching frozen files and no owned children.
+
+This is bounded native fixture acceptance, not a secured public rbt template,
+inbound/retained-sibling transaction certification, zero preflight Load/admission,
+shared automatic receipt replay, interrupted-Prepare recovery, automatic User
+construction, full-native inventory recertification, production or merge-result CI.
+
 ## Secured User workflow checkpoint/restart checkpoint (2026-10-11)
 
 The generated reactive fixture now includes a separate PER_USER_ID OwnerWorkflows
@@ -3211,7 +3253,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: d6395814e0c8794f824edef4b187edc81cfdbdc1d70fa776492b290511956cc9 -->
+<!-- parity-source-sha256: f474a7d85a9bc9cd15e16c3612f7df3b62832fc1eb8667c9c4312d1285c46a3b -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

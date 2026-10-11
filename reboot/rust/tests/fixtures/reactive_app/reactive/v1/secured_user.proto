@@ -6,6 +6,18 @@ message OwnerAccount {
  option (rbt.v1alpha1.state) = { implements: ["reactive.v1.OwnerAccountMethods"] auto_construct: PER_USER_ID };
  int64 value = 1;
 }
+message OwnerTransactions {
+ option (rbt.v1alpha1.state) = { implements: ["reactive.v1.OwnerTransactionsMethods"] auto_construct: PER_USER_ID };
+ int64 value = 1;
+}
+service OwnerTransactionsMethods {
+ option (rbt.v1alpha1.service) = { state: "reactive.v1.OwnerTransactions" };
+ rpc Create(Add) returns (Value) { option (rbt.v1alpha1.method).transaction = { constructor: {} exclusive: {} }; }
+ rpc Apply(Add) returns (Value) { option (rbt.v1alpha1.method).transaction = { exclusive: {} }; }
+ rpc Inspect(Empty) returns (Value) { option (rbt.v1alpha1.method).transaction = { shared: {} }; }
+ rpc Query(Empty) returns (Value) { option (rbt.v1alpha1.method).reader = {}; }
+ rpc SetClaims(Empty) returns (Empty) { option (rbt.v1alpha1.method).transaction = { exclusive: {} }; }
+}
 message OwnerWorkflows {
  option (rbt.v1alpha1.state) = { implements: ["reactive.v1.OwnerWorkflowsMethods"] auto_construct: PER_USER_ID };
  int64 first = 1; int64 second = 2; int64 schedules = 3;

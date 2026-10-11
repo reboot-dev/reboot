@@ -10,6 +10,7 @@ pub mod generated {
     include!(concat!(env!("OUT_DIR"), "/reactive/v1/counter.reboot.rs"));
 }
 mod secured_user;
+mod secured_user_transactions;
 mod secured_user_workflows;
 struct Counter;
 struct RequireHost;
@@ -100,6 +101,9 @@ async fn value(s: &mut reboot::reactive::TypedSubscription<proto::Value, tonic::
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match arg(1).as_str() {
+        command if command.starts_with("user-txn-") => {
+            secured_user_transactions::run(command).await?
+        }
         command if command.starts_with("user-workflow-") => {
             secured_user_workflows::run(command).await?
         }
