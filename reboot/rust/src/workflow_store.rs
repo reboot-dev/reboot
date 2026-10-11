@@ -605,6 +605,7 @@ impl DatabaseActorStore {
                 method,
             )
             .await?;
+        authorization.require_authorizer()?;
         let state_ref = required_metadata(&request, STATE_REF_HEADER)?;
         let key = idempotency_key(&request)?;
         let fingerprint = request_fingerprint(method, request.get_ref());
@@ -621,11 +622,15 @@ impl DatabaseActorStore {
         }
         // A durable receipt is not an authorization grant. Recheck policy
         // against canonical current state before inspecting or returning replay.
-        let mut state = self
-            .load_for_declaration::<D>(&state_ref)
-            .await?
-            .ok_or_else(|| {
-                Status::failed_precondition("scheduling writer requires existing actor")
+        let snapshot = self
+            .load_state_bytes(D::STATE_TYPE, &state_ref)
+            .await
+            .map_err(|error| {
+                if error.code() == tonic::Code::Unavailable {
+                    Status::unavailable("authorization state unavailable")
+                } else {
+                    Status::permission_denied("authorization state unavailable")
+                }
             })?;
         {
             let _owner = running.lock()?;
@@ -634,13 +639,19 @@ impl DatabaseActorStore {
             .authorize(
                 &auth_context,
                 auth.as_ref(),
-                Some(&state.encode_to_vec()),
+                snapshot.as_deref(),
                 &request.get_ref().encode_to_vec(),
             )
             .await?;
         {
             let _owner = running.lock()?;
         }
+        let mut state = D::State::decode(
+            snapshot
+                .as_deref()
+                .ok_or_else(|| Status::failed_precondition("scheduling writer requires existing actor"))?,
+        )
+        .map_err(|_| Status::failed_precondition("invalid scheduling actor state"))?;
         let mut stream = self
             .database
             .clone()

@@ -1708,6 +1708,198 @@ async fn generated_tonic_fresh_exclusive_stages_handler_mutation_by_default_and_
 }
 
 #[tokio::test]
+async fn generated_retained_sibling_authorization_preserves_n1_for_n3_and_one_watch() {
+    use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
+    use reboot::durable_coordinator::{ParticipantTarget, ParticipantEndpoint, InProcessParticipantEndpoint};
+    struct Starts(AtomicUsize);
+    impl reboot::runtime::RootTransactionStartFactory for Starts {
+        fn next_root_transaction(&self) -> Result<reboot::runtime::RootTransactionStart, tonic::Status> { panic!("inbound only") }
+    }
+    impl reboot::runtime::InboundTransactionStartFactory for Starts {
+        fn next_inbound_transaction(&self, inbound: &reboot::runtime::InboundTransactionContext) -> Result<Uuid, tonic::Status> {
+            assert_eq!(inbound.transaction().transaction_root_id(), Uuid::from_u128(201));
+            Ok(Uuid::from_u128(self.0.fetch_add(1, Ordering::SeqCst) as u128))
+        }
+    }
+    struct Watch { count: AtomicUsize, release: tokio::sync::Notify }
+    impl reboot::legacy_coordinator::CoordinatorWatchEndpoint for Watch {
+        fn watch(&self, _: reboot::database_proto::WatchRequest) -> reboot::legacy_coordinator::CoordinatorWatchFuture<'_, reboot::database_proto::WatchResponse> {
+            Box::pin(async move { self.count.fetch_add(1, Ordering::SeqCst); self.release.notified().await; Ok(reboot::database_proto::WatchResponse { aborted: false }) })
+        }
+    }
+    struct Policy { park: bool, states: std::sync::Mutex<Vec<i64>> }
+    impl Authorizer for Policy {
+        fn authorize<'a>(&'a self, _: &'a AuthorizationContext, _: Option<&'a Auth>, state: Option<&'a [u8]>, request: &'a [u8]) -> reboot::auth::AuthorizeFuture<'a> {
+            let amount = proto::TransactionIncrementRequest::decode(request).unwrap().amount;
+            self.states.lock().unwrap().push(proto::TransactionCounter::decode(state.unwrap()).unwrap().value);
+            Box::pin(async move { if amount == 11 { if self.park { std::future::pending::<()>().await; } AuthorizationDecision::PermissionDenied { message: "retained denied".into() } } else { AuthorizationDecision::Allow } })
+        }
+    }
+    fn request(amount: i64) -> tonic::Request<proto::TransactionIncrementRequest> {
+        let mut headers = reboot::RebootHeaders::new("transaction-counter");
+        headers.transaction_ids = Some(vec![Uuid::from_u128(201)]);
+        headers.transaction_coordinator_state_type = Some("tests.reboot.protoc.Root".into());
+        headers.transaction_coordinator_state_ref = Some("root-counter".into());
+        let mut r=tonic::Request::new(proto::TransactionIncrementRequest { amount }); *r.metadata_mut()=headers.to_metadata().unwrap(); r
+    }
+    for park in [false, true] {
+        let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let staged = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let participant = reboot::durable_participant::DurableActorParticipant::new(Arc::new(TransactionParticipantSidecar { trace:trace.clone(), state:Some(proto::TransactionCounter { value:4 }), staged_states:staged.clone(), idempotent_recovery:Arc::new(std::sync::Mutex::new(VecDeque::new())) }), "tests.reboot.protoc.TransactionCounter", "transaction-counter");
+        let host = reboot::durable_participant::DurableActorParticipantHost::new(participant.clone());
+        let coordinator = reboot::durable_coordinator::DurableRootCoordinator::new(Arc::new(TransactionCoordinatorSidecar { trace:trace.clone() }), Arc::new(reboot::durable_coordinator::SingleParticipantResolver::new(ParticipantTarget { state_type:"tests.reboot.protoc.TransactionCounter".into(), state_ref:"transaction-counter".into() },reboot::durable_participant::DurableActorParticipantHost::new(participant.clone())).unwrap()));
+        let watch=Arc::new(Watch { count:AtomicUsize::new(0), release:tokio::sync::Notify::new() });
+        let owner=reboot::live_participant::LiveParticipantOwner::new(2,ParticipantTarget { state_type:"tests.reboot.protoc.Root".into(),state_ref:"root-counter".into() },watch.clone()).unwrap();
+        let policy=Arc::new(Policy { park, states:std::sync::Mutex::new(Vec::new()) });
+        let adapter=transaction_generated::TransactionCounterWritesMethodsTransactionAdapter::new(DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(),participant,coordinator,Starts(AtomicUsize::new(202)),TransactionCounter { trace:trace.clone(),fail:false,downstream:None,final_state_override:None }).with_sequential_reusable_participants().with_live_participant_owner(owner).with_authorization(AuthorizationPolicy::new(None,Some(policy.clone())));
+        let socket=std::net::TcpListener::bind("127.0.0.1:0").unwrap();let address=socket.local_addr().unwrap();drop(socket);
+        let (stop, stopped)=tokio::sync::oneshot::channel::<()>();
+        let registration=adapter.live_participant_recovery_registration().unwrap();let served=adapter.clone();
+        let server=tokio::spawn(async move { reboot::application_host::ApplicationHost::new("retained-preguard").with_host_recovery(registration).add_public_service(proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethodsServer::new(served)).serve_with_shutdown(address,async { let _=stopped.await; }).await });
+        tokio::time::timeout(std::time::Duration::from_secs(3),async { loop { if tonic::transport::Endpoint::from_shared(format!("http://{address}")).unwrap().connect().await.is_ok() { break; } tokio::task::yield_now().await; } }).await.unwrap();
+        assert_eq!(TransactionCounterWritesMethods::increment(&adapter,request(3)).await.unwrap().into_inner().value,7);
+        tokio::time::timeout(std::time::Duration::from_secs(2),async { while watch.count.load(Ordering::SeqCst)==0 { tokio::task::yield_now().await; } }).await.unwrap();
+        let n2=tokio::time::timeout(std::time::Duration::from_millis(50),TransactionCounterWritesMethods::increment(&adapter,request(11))).await;
+        if park { assert!(n2.is_err()); } else { assert_eq!(n2.unwrap().unwrap_err().code(),tonic::Code::PermissionDenied); }
+        tokio::task::yield_now().await;
+        assert_eq!(*trace.lock().unwrap(),["participant load","handler"]);
+        assert_eq!(TransactionCounterWritesMethods::increment(&adapter,request(5)).await.unwrap().into_inner().value,12);
+        assert_eq!(*policy.states.lock().unwrap(),[4,7,7]);
+        assert_eq!(watch.count.load(Ordering::SeqCst),1);
+        assert_eq!(*trace.lock().unwrap(),["participant load","handler","handler"]);
+        InProcessParticipantEndpoint::new(host).prepare("transaction-counter",reboot::database_proto::PrepareRequest { transaction_id:Uuid::from_u128(201).as_bytes().to_vec(),..Default::default() }).await.unwrap();
+        assert_eq!(staged.lock().unwrap().len(),1);
+        assert_eq!(proto::TransactionCounter::decode(staged.lock().unwrap()[0].as_deref().unwrap()).unwrap().value,12);
+        watch.release.notify_one();
+        tokio::time::timeout(std::time::Duration::from_secs(2),async { while !trace.lock().unwrap().contains(&"participant commit") { tokio::task::yield_now().await; } }).await.unwrap();
+        assert!(!trace.lock().unwrap().contains(&"participant abort"));
+        assert_eq!(watch.count.load(Ordering::SeqCst),1);
+        stop.send(()).unwrap();server.await.unwrap().unwrap();
+    }
+}
+
+#[tokio::test]
+async fn generated_root_star_and_reusable_policy_cancellation_releases_same_root() {
+    use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
+    struct ParkThenDeny {
+        calls: AtomicUsize,
+        snapshots: std::sync::Mutex<Vec<Option<Vec<u8>>>>,
+    }
+    impl Authorizer for ParkThenDeny {
+        fn authorize<'a>(&'a self, _: &'a AuthorizationContext, _: Option<&'a Auth>, state: Option<&'a [u8]>, _: &'a [u8]) -> reboot::auth::AuthorizeFuture<'a> {
+            self.snapshots.lock().unwrap().push(state.map(ToOwned::to_owned));
+            Box::pin(async move {
+                if self.calls.fetch_add(1, Ordering::SeqCst) == 0 { std::future::pending::<()>().await; }
+                AuthorizationDecision::PermissionDenied { message: "retry policy reached".into() }
+            })
+        }
+    }
+    fn request() -> tonic::Request<proto::TransactionIncrementRequest> {
+        let mut headers = reboot::RebootHeaders::new("transaction-counter");
+        headers.transaction_ids = Some(vec![Uuid::from_u128(201)]);
+        headers.transaction_coordinator_state_type = Some("tests.reboot.protoc.Root".into());
+        headers.transaction_coordinator_state_ref = Some("root-counter".into());
+        let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 1 });
+        *request.metadata_mut() = headers.to_metadata().unwrap();
+        request
+    }
+    for reusable in [false, true] {
+        for state in [None, Some(proto::TransactionCounter { value: 7 })] {
+            let policy = Arc::new(ParkThenDeny { calls: AtomicUsize::new(0), snapshots: std::sync::Mutex::new(Vec::new()) });
+            let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+            let staged = Arc::new(std::sync::Mutex::new(Vec::new()));
+            let adapter = factory_transaction_adapter(trace.clone(), state.clone(), staged.clone(), false, None)
+                .with_authorization(AuthorizationPolicy::new(None, Some(policy.clone())));
+            let adapter = if reusable { adapter.with_sequential_reusable_participants() }
+                else { adapter.with_sequential_root_star() };
+            assert!(tokio::time::timeout(std::time::Duration::from_millis(50), TransactionCounterWritesMethods::increment(&adapter, request())).await.is_err());
+            assert_eq!(policy.calls.load(Ordering::SeqCst), 1, "cancellation must occur inside actual authorizer");
+            assert_eq!(*trace.lock().unwrap(), ["participant load"]);
+            // Guard Drop schedules async cleanup; let that task run before
+            // probing eventual admission (there is no runtime status retry).
+            tokio::task::yield_now().await;
+            let error = tokio::time::timeout(std::time::Duration::from_secs(2), TransactionCounterWritesMethods::increment(&adapter, request())).await.expect("same-root admission must release after policy cancellation").unwrap_err();
+            assert_eq!(error.code(), tonic::Code::PermissionDenied, "reusable={reusable}, state={state:?}, error={error:?}");
+            assert_eq!(error.message(), "retry policy reached");
+            assert_eq!(policy.calls.load(Ordering::SeqCst), 2);
+            assert_eq!(*policy.snapshots.lock().unwrap(), vec![state.as_ref().map(Message::encode_to_vec); 2]);
+            assert_eq!(*trace.lock().unwrap(), ["participant load", "participant load"]);
+            assert!(staged.lock().unwrap().is_empty());
+        }
+    }
+}
+
+#[tokio::test]
+async fn generated_root_star_and_reusable_allow_absence_releases_post_allow_guard() {
+    use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
+    for reusable in [false, true] {
+        let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let staged = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let probe = Arc::new(AuthProbe {
+            verifier_calls: Arc::new(AtomicUsize::new(0)),
+            authorizer_calls: Arc::new(AtomicUsize::new(0)),
+            handler_calls: Arc::new(AtomicUsize::new(0)),
+            decision: AuthorizationDecision::Allow,
+            contexts: Arc::new(std::sync::Mutex::new(Vec::new())),
+            snapshots: Arc::new(std::sync::Mutex::new(Vec::new())),
+        });
+        let adapter = factory_transaction_adapter(trace.clone(), None, staged.clone(), false, None)
+            .with_authorization(AuthorizationPolicy::new(Some(probe.clone()), Some(probe.clone())));
+        let adapter = if reusable { adapter.with_sequential_reusable_participants() }
+            else { adapter.with_sequential_root_star() };
+        for attempt in 0..2 {
+            let mut headers = reboot::RebootHeaders::new("transaction-counter");
+            headers.transaction_ids = Some(vec![Uuid::from_u128(201)]);
+            headers.transaction_coordinator_state_type = Some("tests.reboot.protoc.Root".into());
+            headers.transaction_coordinator_state_ref = Some("root-counter".into());
+            let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 1 });
+            *request.metadata_mut() = headers.to_metadata().unwrap();
+            let error = tokio::time::timeout(std::time::Duration::from_secs(2), TransactionCounterWritesMethods::increment(&adapter, request)).await.expect("post-Allow guard must release admission").unwrap_err();
+            assert_eq!(error.code(), tonic::Code::FailedPrecondition, "reusable={reusable}, attempt={attempt}, {error:?}");
+            assert_eq!(probe.authorizer_calls.load(Ordering::SeqCst), attempt + 1);
+            assert_eq!(probe.snapshots.lock().unwrap()[attempt].0, None);
+            assert!(staged.lock().unwrap().is_empty());
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(*trace.lock().unwrap(), ["participant load", "participant load"]);
+    }
+}
+
+#[tokio::test]
+async fn generated_root_star_and_reusable_deny_absence_before_execution_handoff() {
+    use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
+    for reusable in [false, true] {
+        let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let staged = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let probe = Arc::new(AuthProbe {
+            verifier_calls: Arc::new(AtomicUsize::new(0)),
+            authorizer_calls: Arc::new(AtomicUsize::new(0)),
+            handler_calls: Arc::new(AtomicUsize::new(0)),
+            decision: AuthorizationDecision::PermissionDenied { message: "optional snapshot denied".into() },
+            contexts: Arc::new(std::sync::Mutex::new(Vec::new())),
+            snapshots: Arc::new(std::sync::Mutex::new(Vec::new())),
+        });
+        let adapter = factory_transaction_adapter(trace.clone(), None, staged.clone(), false, None)
+            .with_authorization(AuthorizationPolicy::new(Some(probe.clone()), Some(probe.clone())));
+        let adapter = if reusable { adapter.with_sequential_reusable_participants() }
+            else { adapter.with_sequential_root_star() };
+        let mut headers = reboot::RebootHeaders::new("transaction-counter");
+        headers.transaction_ids = Some(vec![Uuid::from_u128(201)]);
+        headers.transaction_coordinator_state_type = Some("tests.reboot.protoc.Root".into());
+        headers.transaction_coordinator_state_ref = Some("root-counter".into());
+        let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 1 });
+        *request.metadata_mut() = headers.to_metadata().unwrap();
+        let error = TransactionCounterWritesMethods::increment(&adapter, request).await.unwrap_err();
+        assert_eq!(error.code(), tonic::Code::PermissionDenied);
+        assert_eq!(error.message(), "optional snapshot denied");
+        assert_eq!(probe.authorizer_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(probe.snapshots.lock().unwrap()[0].0, None);
+        assert_eq!(*trace.lock().unwrap(), ["participant load"]);
+        assert!(staged.lock().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
 async fn generated_inbound_transaction_metadata_does_not_bypass_authorization() {
     use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
     fn request(token: &str) -> tonic::Request<proto::TransactionIncrementRequest> {
@@ -1741,7 +1933,7 @@ async fn generated_inbound_transaction_metadata_does_not_bypass_authorization() 
                 TransactionCounterWritesMethods::increment(&adapter, request(token)).await
             };
             assert_eq!(result.unwrap_err().code(), if kind == "reject" { tonic::Code::Unauthenticated } else { tonic::Code::PermissionDenied });
-            let expected: Vec<&str> = if kind == "reject" { vec![] }
+            let expected: Vec<&str> = if kind == "reject" || kind == "default" { vec![] }
                 else if shared { vec!["participant load"] }
                 else { vec!["participant load", "participant abort"] };
             assert_eq!(*trace.lock().unwrap(), expected, "kind={kind}, shared={shared}");
@@ -2481,14 +2673,9 @@ async fn generated_default_policy_denies_database_and_fresh_root_forms_before_ef
             _ => TransactionCounterWritesMethods::factory_increment(&adapter, request).await.unwrap_err(),
         };
         assert_eq!(status.code(), tonic::Code::PermissionDenied, "{mode}");
-        // Both exclusive forms retain their existing acknowledged Abort cleanup;
-        // fresh shared pre-handler denial leaves undurable Drop armed.
-        let expected = if mode != "shared" {
-            vec!["participant load", "participant abort"]
-        } else {
-            vec!["participant load"]
-        };
-        assert_eq!(*trace.lock().unwrap(), expected, "{mode}: denial before handler/Store/Prepare");
+        // Missing policy is rejected before root creation or participant Load.
+        let expected: Vec<&str> = vec![];
+        assert_eq!(*trace.lock().unwrap(), expected, "{mode}: denial before root/Load/handler/Store/Prepare");
         if mode == "shared" {
             let adapter = adapter.with_authorization(AuthorizationPolicy::permissive_for_development());
             let response = tokio::time::timeout(std::time::Duration::from_secs(2), async {
@@ -2505,7 +2692,7 @@ async fn generated_default_policy_denies_database_and_fresh_root_forms_before_ef
                 }
             }).await.expect("default-denied shared ownership did not release").unwrap();
             assert_eq!(response.into_inner().value, 4);
-            assert_eq!(*trace.lock().unwrap(), ["participant load", "participant load", "fresh shared handler"]);
+            assert_eq!(*trace.lock().unwrap(), ["participant load", "fresh shared handler"]);
         }
     }
     database_server.abort();

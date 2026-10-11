@@ -49,15 +49,21 @@ dp=port();ap=port();database='http://127.0.0.1:%d'%dp;app='http://127.0.0.1:%d'%
 run('info',work/'server-info.pb')
 def startdb():
  p=spawn([DB,work/'rocksdb',work/'server-info.pb',dp]);listener(p,dp);return p
-def starthost(pause=False,contract=None,framework=False):
+def launchhost(pause=False,contract=None,framework=False):
  global eventpath
  eventpath=work/('events-%d'%len(processes));shutdown=work/('shutdown-%d'%len(processes));env=os.environ.copy()
  env.update(WORKFLOW_BODY_MODE='reader-outcome',WORKFLOW_BODY_EVENTS=str(eventpath))
  if pause:env['READER_PAUSE_AFTER_ERROR']='1'
  if contract:env['READER_CONDITION_VERSION']=contract
  if framework:env['READER_RICH_FRAMEWORK_ERROR']='1'
- p=spawn([BIN,'serve',database,'127.0.0.1:%d'%ap,shutdown],env);listener(p,ap)
+ p=spawn([BIN,'serve',database,'127.0.0.1:%d'%ap,shutdown],env)
+ return p,shutdown
+
+def starthost(pause=False,contract=None,framework=False):
+ p,shutdown=launchhost(pause,contract,framework)
+ listener(p,ap)
  def ready():
+  assert p.poll() is None,(p.pid,p.returncode)
   r=subprocess.run([str(BIN),'read',app],capture_output=True,text=True,timeout=2)
   return r.returncode==0 or 'must be constructed' in r.stderr or 'state must' in r.stderr
  until(ready);return p,shutdown
@@ -74,11 +80,11 @@ try:
  assert events().count('reader-threshold-invoked')==1 and events().count('reader-error-caught')==1
  assert run('signal',app,uuid.uuid4(),10)=='11'
  stop(host,shutdown);assert host.returncode==0
- stop(db);db=startdb();host,shutdown=starthost(contract='threshold-required-two.v2')
- until(lambda:'reader-framework-failed' in events())
- # Recovery must fail closed before serving on a contract identity collision.
+ stop(db);db=startdb();host,shutdown=launchhost(contract='threshold-required-two.v2')
+ # Recovery must reject the incompatible contract, not become publicly ready.
  host.wait(timeout=15)
  assert host.returncode!=0
+ assert 'reader-framework-failed' in events()
  assert 'workflow step checkpoint identity/provenance collision' in Path(processes[-1]['log'].name).read_text()
  assert checkpoints()==before
  assert json.loads(run('inspect-state',database))=={'first':11,'second':0,'schedules':1}

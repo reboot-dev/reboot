@@ -1039,10 +1039,32 @@ impl<C: ParticipantSidecar> LiveExecution<C> {
                     ));
                 }
             }
-            let response = tokio::select! {
-                _ = &mut notified => continue,
-                response = watch.watch(database::WatchRequest { transaction_id: self.root.as_bytes().to_vec(),
-                    state_type: participant.state_type.clone(), state_ref: participant.state_ref.clone() }) => response,
+            let watch_response = watch.watch(database::WatchRequest {
+                transaction_id: self.root.as_bytes().to_vec(),
+                state_type: participant.state_type.clone(),
+                state_ref: participant.state_ref.clone(),
+            });
+            tokio::pin!(watch_response);
+            let response = loop {
+                tokio::select! {
+                    response = &mut watch_response => break response,
+                    _ = &mut notified => {
+                        // Arm before checking ownership: notify_waiters does not
+                        // retain a permit across the mutex/check/rearm gap.
+                        notified.set(participant.changed.notified());
+                        notified.as_mut().enable();
+                        let pending = participant.pending.lock().await;
+                        let Some(current) = pending.as_ref().filter(|current| {
+                            current.root_id == self.root && current.matches_live_owner(self.owner)
+                        }) else { return Ok(()); };
+                        if current.terminal_attempted {
+                            return Err(Status::unavailable("terminal ACK uncertain; ownership retained, no retry"));
+                        }
+                        // Sibling admission/cleanup does not revoke Watch ownership.
+                        // Keep the same RPC pending instead of cancelling/reopening it.
+                        drop(pending);
+                    }
+                }
             };
             match response {
                 Ok(response) => {
@@ -1292,7 +1314,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         start: ActorTransactionStart,
         mode: ParticipantStartMode,
     ) -> Result<Option<Vec<u8>>, Status> {
-        self.start_owned(start, mode, None).await
+        self.start_owned(start, mode, None, false).await
     }
 
     async fn start_owned(
@@ -1300,6 +1322,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         start: ActorTransactionStart,
         mode: ParticipantStartMode,
         local_owner: Option<Uuid>,
+        preallow_load: bool,
     ) -> Result<Option<Vec<u8>>, Status> {
         self.validate_start_with_mode(&start, mode)?;
         let _admission = self.reserve_admission(start.transaction_ids[0], false)?;
@@ -1314,7 +1337,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 ));
             }
         }
-        self.start_owned_reserved(start, mode, local_owner, false)
+        self.start_owned_reserved(start, mode, local_owner, false, preallow_load)
             .await
     }
 
@@ -1346,6 +1369,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         mode: ParticipantStartMode,
         local_owner: Option<Uuid>,
         reusable: bool,
+        preallow_load: bool,
     ) -> Result<Option<Vec<u8>>, Status> {
         #[cfg(feature = "test-support")]
         if self
@@ -1382,7 +1406,16 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 }],
                 task_ids: vec![],
             })
-            .await?;
+            .await
+            .map_err(|error| {
+                if !preallow_load {
+                    error
+                } else if error.code() == tonic::Code::Unavailable {
+                    Status::unavailable("authorization state unavailable")
+                } else {
+                    Status::permission_denied("authorization state unavailable")
+                }
+            })?;
         #[cfg(feature = "test-support")]
         if let Some(path) = std::env::var_os("REBOOT_TEST_REGISTERED_LOAD_PENDING") {
             struct LoadDrop(std::path::PathBuf);
@@ -1407,7 +1440,9 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             .into_iter()
             .next()
             .and_then(|actor| actor.state);
-        if reusable && state.is_none() {
+        // Generated ingress must authorize the optional snapshot before disclosing
+        // absence. Its post-Allow root-star guard retains the existence contract.
+        if reusable && !preallow_load && state.is_none() {
             return Err(Status::failed_precondition(
                 "reusable leaf requires existing actor",
             ));
@@ -1531,8 +1566,31 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         mode: ParticipantStartMode,
         reuse: bool,
     ) -> Result<StartedLocalTransaction<C>, Status> {
+        self.start_local_reusable_boundary(start, mode, reuse, false)
+            .await
+    }
+
+    /// Generated external admission: sanitize only pre-Allow sidecar Load errors.
+    #[doc(hidden)]
+    pub async fn start_local_reusable_preallow(
+        &self,
+        start: ActorTransactionStart,
+        mode: ParticipantStartMode,
+        reuse: bool,
+    ) -> Result<StartedLocalTransaction<C>, Status> {
+        self.start_local_reusable_boundary(start, mode, reuse, true)
+            .await
+    }
+
+    async fn start_local_reusable_boundary(
+        &self,
+        start: ActorTransactionStart,
+        mode: ParticipantStartMode,
+        reuse: bool,
+        preallow_load: bool,
+    ) -> Result<StartedLocalTransaction<C>, Status> {
         if !reuse || start.transaction_ids.len() == 1 {
-            return self.start_local(start, mode).await;
+            return self.start_local_boundary(start, mode, preallow_load).await;
         }
         self.validate_start_with_mode(&start, mode)?;
         if mode != ParticipantStartMode::Exclusive
@@ -1599,7 +1657,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             }
         }
         let state = self
-            .start_owned_reserved(start, mode, Some(owner), true)
+            .start_owned_reserved(start, mode, Some(owner), true, preallow_load)
             .await?;
         Ok(StartedLocalTransaction {
             participant: self.clone(),
@@ -1635,6 +1693,25 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         start: ActorTransactionStart,
         mode: ParticipantStartMode,
     ) -> Result<StartedLocalTransaction<C>, Status> {
+        self.start_local_boundary(start, mode, false).await
+    }
+
+    /// Generated external admission: sanitize only pre-Allow sidecar Load errors.
+    #[doc(hidden)]
+    pub async fn start_local_preallow(
+        &self,
+        start: ActorTransactionStart,
+        mode: ParticipantStartMode,
+    ) -> Result<StartedLocalTransaction<C>, Status> {
+        self.start_local_boundary(start, mode, true).await
+    }
+
+    async fn start_local_boundary(
+        &self,
+        start: ActorTransactionStart,
+        mode: ParticipantStartMode,
+        preallow_load: bool,
+    ) -> Result<StartedLocalTransaction<C>, Status> {
         let transaction_id = start
             .transaction_ids
             .first()
@@ -1648,7 +1725,9 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             && start.coordinator_state_type == self.state_type
             && start.coordinator_state_ref == self.state_ref;
         let local_owner = Uuid::new_v4();
-        let state = self.start_owned(start, mode, Some(local_owner)).await?;
+        let state = self
+            .start_owned(start, mode, Some(local_owner), preallow_load)
+            .await?;
         Ok(StartedLocalTransaction {
             participant: self.clone(),
             transaction_id,
@@ -2027,6 +2106,9 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 .map_err(|error| Status::internal(error.to_string()))?;
             }
             *pending = None;
+            // Release the parked live Watch reservation as well as the actor
+            // lease; read-only participants need no coordinator decision.
+            self.changed.notify_waiters();
             return Ok(PrepareOutcome::Prepared);
         }
         // `Database.Recover` restores a durable prepared RocksDB transaction.
@@ -2399,6 +2481,10 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             }
         }
         current.terminal_attempted = current.no_terminal_retry || current.native_started;
+        // Wake a parked live Watch even when the terminal ACK is lost. Its
+        // ownership check waits on this mutex until the attempt has resolved;
+        // it must not retain a silent RPC/permit or retry uncertain delivery.
+        self.changed.notify_waiters();
         let force_abort = commit && !current.prepared;
         if commit && !force_abort {
             let commit_gate = match self.sidecar.database_endpoint() {
@@ -3322,6 +3408,68 @@ mod tests {
         (local, context)
     }
     #[tokio::test]
+    async fn read_only_prepare_drains_parked_live_watch_without_coordinator_decision() {
+        struct ParkedWatch(tokio::sync::Notify);
+        impl CoordinatorWatchEndpoint for ParkedWatch {
+            fn watch(
+                &self,
+                _: database::WatchRequest,
+            ) -> crate::legacy_coordinator::CoordinatorWatchFuture<'_, database::WatchResponse>
+            {
+                Box::pin(async move {
+                    self.0.notify_one();
+                    std::future::pending().await
+                })
+            }
+        }
+        let sidecar = Arc::new(MockSidecar::default());
+        *sidecar.load_state.lock().unwrap() = Some(vec![42]);
+        let participant = DurableActorParticipant::new(sidecar.clone(), "example.Actor", "actor/1");
+        let root = Uuid::new_v4();
+        let child = Uuid::new_v4();
+        let context = rollback_context(root, child);
+        let mut request = start(root);
+        request.transaction_ids.push(child);
+        request.transaction_path = TransactionPathContract::PreserveNested;
+        let mut local = participant
+            .start_local(request, ParticipantStartMode::Exclusive)
+            .await
+            .unwrap();
+        let execution = local.reserve_live_execution(&context).await.unwrap();
+        local.rollback_declared_leaf(&context).await.unwrap();
+        let watch = Arc::new(ParkedWatch(tokio::sync::Notify::new()));
+        let mut watching = tokio::spawn({
+            let watch = watch.clone();
+            async move { execution.watch(watch).await }
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(1), watch.0.notified())
+            .await
+            .unwrap();
+        assert!(matches!(
+            participant.prepare(root, true, true).await.unwrap(),
+            PrepareOutcome::Prepared
+        ));
+        assert!(participant.pending.lock().await.is_none());
+        let result = tokio::time::timeout(std::time::Duration::from_secs(1), &mut watching).await;
+        if result.is_err() {
+            watching.abort();
+            let _ = watching.await;
+            panic!("read-only Prepare must drain parked Watch without coordinator decision");
+        }
+        result.unwrap().unwrap().unwrap();
+        assert!(matches!(
+            sidecar.calls.lock().unwrap().as_slice(),
+            [Call::Load(_)]
+        ));
+        tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            participant.lock.exclusive(),
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
     async fn rollback_leaf_atomic_downgrade_retains_until_readonly_prepare() {
         let sidecar = Arc::new(MockSidecar::default());
         *sidecar.load_state.lock().unwrap() = Some(vec![42]);
@@ -3703,6 +3851,78 @@ mod tests {
             }
         }
     }
+    #[tokio::test]
+    async fn parked_live_watch_keeps_one_rpc_and_observes_terminal_ack() {
+        struct ParkedWatch(std::sync::atomic::AtomicUsize);
+        impl CoordinatorWatchEndpoint for ParkedWatch {
+            fn watch(
+                &self,
+                _: database::WatchRequest,
+            ) -> crate::legacy_coordinator::CoordinatorWatchFuture<'_, database::WatchResponse>
+            {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Box::pin(std::future::pending())
+            }
+        }
+        for lost_ack in [false, true] {
+            let sidecar = Arc::new(MockSidecar::default());
+            if lost_ack {
+                sidecar
+                    .terminal_results
+                    .lock()
+                    .unwrap()
+                    .push_back(Err(Status::unavailable("lost ACK")));
+            }
+            let participant =
+                DurableActorParticipant::new(sidecar.clone(), "example.Actor", "actor/1");
+            let id = Uuid::new_v4();
+            let mut local = participant
+                .start_local(start(id), ParticipantStartMode::Exclusive)
+                .await
+                .unwrap();
+            let execution = local
+                .reserve_live_execution(&execution_context(id))
+                .await
+                .unwrap();
+            local.end_execution().await.unwrap();
+            let watch = Arc::new(ParkedWatch(std::sync::atomic::AtomicUsize::new(0)));
+            let watching = tokio::spawn({
+                let watch = watch.clone();
+                async move { execution.watch(watch).await }
+            });
+            tokio::time::timeout(std::time::Duration::from_secs(1), async {
+                while watch.0.load(std::sync::atomic::Ordering::SeqCst) == 0 {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            for _ in 0..8 {
+                participant.changed.notify_waiters();
+                tokio::task::yield_now().await;
+            }
+            assert_eq!(watch.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+            let terminal = participant
+                .terminal_live(id, local.local_owner, false)
+                .await;
+            assert_eq!(terminal.is_err(), lost_ack);
+            let result = tokio::time::timeout(std::time::Duration::from_secs(1), watching)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(result.is_err(), lost_ack);
+            if let Err(error) = result {
+                assert_eq!(error.code(), tonic::Code::Unavailable);
+            }
+            assert_eq!(watch.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+            assert_eq!(participant.pending.lock().await.is_some(), lost_ack);
+            assert!(matches!(
+                sidecar.calls.lock().unwrap().as_slice(),
+                [Call::Load(_), Call::Abort(_)]
+            ));
+        }
+    }
+
     #[tokio::test]
     async fn live_terminal_lost_ack_is_once_retained_and_prepare_staging_rejected() {
         let sidecar = Arc::new(MockSidecar::default());
@@ -4366,6 +4586,31 @@ mod tests {
         })
         .await
         .unwrap();
+        // The denied/cancelled pre-Allow sibling must not prevent N3 from
+        // obtaining the retained N1 snapshot and its existing Watch owner.
+        let n3 = Uuid::new_v4();
+        let mut third = participant
+            .start_local_reusable_preallow(
+                reusable_request(root, n3),
+                ParticipantStartMode::Exclusive,
+                true,
+            )
+            .await
+            .unwrap();
+        assert_eq!(third.state(), Some(&[1][..]));
+        let third_execution = third
+            .reserve_live_execution(&rollback_context(root, n3))
+            .await
+            .unwrap();
+        assert_eq!(third_execution.owner, execution.owner);
+        assert!(
+            !third_execution.watch_new,
+            "N3 must reuse the existing Watch obligation"
+        );
+        participant
+            .relinquish(root, n3, false, Some(third.local_owner))
+            .await
+            .unwrap();
         participant.prepare_for_test(root).await.unwrap();
         let prepared_state = {
             let calls = sidecar.calls.lock().unwrap();
@@ -4540,6 +4785,7 @@ mod tests {
         terminal_results: Mutex<VecDeque<Result<(), Status>>>,
         recover_responses: Mutex<VecDeque<Result<database::RecoverResponse, Status>>>,
         load_state: Mutex<Option<Vec<u8>>>,
+        load_error: Mutex<Option<Status>>,
     }
 
     impl ParticipantSidecar for MockSidecar {
@@ -4549,11 +4795,15 @@ mod tests {
         ) -> SidecarFuture<'_, database::LoadResponse> {
             self.calls.lock().unwrap().push(Call::Load(request));
             let state = self.load_state.lock().unwrap().clone();
+            let load_error = self.load_error.lock().unwrap().take();
             let park = self.load_park.lock().unwrap().take();
             Box::pin(async move {
                 if let Some((entered, release)) = park {
                     entered.send(()).unwrap();
                     release.await.unwrap();
+                }
+                if let Some(error) = load_error {
+                    return Err(error);
                 }
                 Ok(database::LoadResponse {
                     actors: state
@@ -4712,6 +4962,114 @@ mod tests {
             .await
             .is_err()
         );
+    }
+
+    #[tokio::test]
+    async fn reusable_preallow_absence_returns_optional_snapshot_and_drop_releases_same_root() {
+        let sidecar = Arc::new(MockSidecar::default());
+        let participant = DurableActorParticipant::new(sidecar, "example.Actor", "actor/1");
+        let root = Uuid::new_v4();
+        let local = participant
+            .start_local_reusable_preallow(
+                reusable_request(root, Uuid::new_v4()),
+                ParticipantStartMode::Exclusive,
+                true,
+            )
+            .await
+            .unwrap();
+        assert!(local.state().is_none());
+        drop(local);
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            loop {
+                let notified = participant.changed.notified();
+                tokio::pin!(notified);
+                notified.as_mut().enable();
+                if participant.pending.lock().await.is_none() {
+                    break;
+                }
+                notified.await;
+            }
+        })
+        .await
+        .unwrap();
+        let error = match participant
+            .start_local_reusable(
+                reusable_request(root, Uuid::new_v4()),
+                ParticipantStartMode::Exclusive,
+                true,
+            )
+            .await
+        {
+            Err(error) => error,
+            Ok(_) => panic!("legacy admission accepted absent actor"),
+        };
+        assert_eq!(error.code(), tonic::Code::FailedPrecondition);
+        assert_eq!(error.message(), "reusable leaf requires existing actor");
+    }
+
+    #[tokio::test]
+    async fn preallow_load_masks_only_storage_faults_and_releases_admission() {
+        for code in [tonic::Code::Unavailable, tonic::Code::Internal] {
+            for reusable in [false, true] {
+                let sidecar = Arc::new(MockSidecar::default());
+                let participant =
+                    DurableActorParticipant::new(sidecar.clone(), "example.Actor", "actor/1");
+                let fault =
+                    Status::with_details(code, "private load sentinel", vec![1, 2, 3].into());
+                *sidecar.load_error.lock().unwrap() = Some(fault);
+                let result = if reusable {
+                    {
+                        let mut request = start(Uuid::new_v4());
+                        request.transaction_ids.push(Uuid::new_v4());
+                        request.transaction_path = TransactionPathContract::PreserveNested;
+                        participant
+                            .start_local_reusable_preallow(
+                                request,
+                                ParticipantStartMode::Exclusive,
+                                true,
+                            )
+                            .await
+                    }
+                } else {
+                    participant
+                        .start_local_preallow(
+                            start(Uuid::new_v4()),
+                            ParticipantStartMode::Exclusive,
+                        )
+                        .await
+                };
+                let error = match result {
+                    Err(error) => error,
+                    Ok(_) => panic!("faulted Load admitted"),
+                };
+                assert_eq!(
+                    error.code(),
+                    if code == tonic::Code::Unavailable {
+                        code
+                    } else {
+                        tonic::Code::PermissionDenied
+                    }
+                );
+                assert_eq!(error.message(), "authorization state unavailable");
+                assert!(error.details().is_empty());
+                assert!(error.metadata().is_empty());
+                let mut local = participant
+                    .start_local(start(Uuid::new_v4()), ParticipantStartMode::Exclusive)
+                    .await
+                    .unwrap();
+                local.abort_legacy().await.unwrap();
+                *sidecar.load_error.lock().unwrap() = Some(Status::internal("legacy diagnostic"));
+                let error = match participant
+                    .start_local(start(Uuid::new_v4()), ParticipantStartMode::Exclusive)
+                    .await
+                {
+                    Err(error) => error,
+                    Ok(_) => panic!("faulted legacy Load admitted"),
+                };
+                assert_eq!(error.code(), tonic::Code::Internal);
+                assert_eq!(error.message(), "legacy diagnostic");
+            }
+        }
     }
 
     #[tokio::test]

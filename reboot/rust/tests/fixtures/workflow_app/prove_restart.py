@@ -91,9 +91,12 @@ with tempfile.TemporaryDirectory(prefix="rust-workflow-cxx-") as d:
     run("info",work/"server-info.pb")
     def start_db():
         p=spawn([DB,work/"rocksdb",work/"server-info.pb",db_port]);wait_port(p,db_port);return p
+    policy=work/"scheduling-policy"
+    policy.write_text("allow")
     def start_host(marker=None):
         shutdown=work/("shutdown-%d"%len(processes))
         env=os.environ.copy()
+        env["WORKFLOW_SCHEDULING_POLICY"]=str(policy)
         if marker:
             env["WORKFLOW_FIRST_ACK"]=str(marker)
         p=spawn([BIN,"serve",database,"127.0.0.1:%d"%app_port,shutdown],env);wait_port(p,app_port)
@@ -136,12 +139,24 @@ with tempfile.TemporaryDirectory(prefix="rust-workflow-cxx-") as d:
         after_first=json.loads(run("inspect",database,handle))
         assert after_first=={"status":1,"iteration":0,"step_mutations":1,"timestamp":future},after_first
         # Actual process kill at first ACK, native restart then workflow recovery.
+        policy.write_text("deny")
         stop(host);stop(db);db=start_db();host,shutdown=start_host()
+        run("schedule",app,key,future,7,ok=False)
+        assert "PermissionDenied" in commands[-1]["stderr"] and "workflow scheduling revoked" in commands[-1]["stderr"]
+        # Persisted pending work retains canonical recovery authority despite
+        # revoked public scheduling, with no new schedule mutation.
         assert json.loads(run("wait",app,handle))=={"first":7,"second":7}
         read({"first":7,"second":7,"schedules":1})
         completed=json.loads(run("inspect",database,handle))
         assert completed=={"status":2,"iteration":0,"step_mutations":2,"timestamp":future},completed
+        run("schedule",app,key,future,7,ok=False)
+        assert "PermissionDenied" in commands[-1]["stderr"] and "workflow scheduling revoked" in commands[-1]["stderr"]
+        assert json.loads(run("inspect",database,handle))==completed
+        read({"first":7,"second":7,"schedules":1})
+        policy.write_text("allow")
         assert run("schedule",app,key,future,7)==handle
+        read({"first":7,"second":7,"schedules":1})
+        result["revoked_pending_recovery_and_completed_replay"]=True
         # Further restart proves terminal and response durable (not only state).
         stop(host,True,shutdown);stop(db);db=start_db();host,shutdown=start_host()
         assert json.loads(run("wait",app,handle))=={"first":7,"second":7}

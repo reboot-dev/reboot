@@ -48,6 +48,97 @@ mod workflow_admission_tests {
         type State = crate::proto::Counter;
         const STATE_TYPE: &'static str = "tests.reboot.protoc.Counter";
     }
+    #[tokio::test]
+    async fn registered_scheduling_policy_observes_raw_state_and_cancel_releases_lease() {
+        use crate::auth::*;
+        use crate::runtime::test_support::start_database;
+        use crate::ExternalContext;
+        use prost::Message;
+        struct Policy {
+            park: bool,
+            calls: std::sync::atomic::AtomicUsize,
+            snapshots: std::sync::Mutex<Vec<Option<Vec<u8>>>>,
+        }
+        impl Authorizer for Policy {
+            fn authorize<'a>(&'a self, context: &'a AuthorizationContext, _: Option<&'a Auth>, state: Option<&'a [u8]>, request: &'a [u8]) -> AuthorizeFuture<'a> {
+                assert_eq!(request, crate::proto::Counter { value: 7 }.encode_to_vec());
+                assert_eq!(context.method, "tests.Service.Step");
+                assert_eq!(context.state_type, D::STATE_TYPE);
+                assert_eq!(context.headers.state_ref, "workflow-auth");
+                self.snapshots.lock().unwrap().push(state.map(ToOwned::to_owned));
+                Box::pin(async move {
+                    let call = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    if self.park && call == 0 { std::future::pending::<()>().await; }
+                    AuthorizationDecision::PermissionDenied { message: "workflow policy denied".into() }
+                })
+            }
+        }
+        for park in [false, true] {
+            for raw in [None, Some(vec![255])] {
+                let (endpoint, database, server) = start_database().await;
+                let store = DatabaseActorStore::connect(&endpoint).await.unwrap();
+                let actor = "workflow-auth";
+                let method = "tests.Service.Step";
+                if let Some(bytes) = &raw { database.seed_actor(D::STATE_TYPE, actor, bytes.clone()); }
+                let tasks = OneShotTasks::new_with_declarations(store.clone(), D::STATE_TYPE.into(), actor.into(), Binding(true), vec![TaskMethodDeclaration::new::<D, crate::proto::Counter, crate::proto::Counter>(method, "type.googleapis.com/Counter", vec![]).workflow_writer_step()]).unwrap();
+                let _owner = DispatchOwner::claim(tasks.clone()).unwrap();
+                *tasks.inner.recovery_request.lock().unwrap() = Some(db::RecoverRequest::default());
+                tasks.inner.active.store(true, std::sync::atomic::Ordering::Release);
+                let probe = Arc::new(Policy { park, calls: std::sync::atomic::AtomicUsize::new(0), snapshots: std::sync::Mutex::new(Vec::new()) });
+                let policy = AuthorizationPolicy::new(None, Some(probe.clone()));
+                // Rich failed Load must never enter policy or leak sidecar diagnostics.
+                for code in [tonic::Code::Internal, tonic::Code::Unavailable] {
+                    let mut fault = Status::with_details(code, "private-sidecar-path", vec![1, 2, 3].into());
+                    fault.metadata_mut().insert("x-private-sidecar", "secret".parse().unwrap());
+                    database.fail_actor_load(fault);
+                    let before = database.admission_rpc_counts();
+                    let error = store.workflow_scheduling_writer::<D, crate::proto::Counter, crate::proto::Counter, _>(method, &policy, Some(&tasks), ExternalContext::new(actor).writer_with_key(crate::proto::Counter { value: 7 }, uuid::Uuid::from_u128(9400)).unwrap(), |_, _, _| Box::pin(async { panic!("failed Load invoked handler") })).await.unwrap_err();
+                    assert_eq!(error.code(), if code == tonic::Code::Unavailable { code } else { tonic::Code::PermissionDenied });
+                    assert_eq!(error.message(), "authorization state unavailable");
+                    assert!(error.details().is_empty());
+                    assert!(error.metadata().get("x-private-sidecar").is_none());
+                    assert_eq!(probe.calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+                    let after = database.admission_rpc_counts();
+                    assert_eq!(after.0 - before.0, 1);
+                    assert_eq!(after.1, before.1);
+                }
+                struct Reject;
+                impl TokenVerifier for Reject {
+                    fn verify<'a>(&'a self, _: &'a AuthorizationContext, _: Option<&'a str>) -> VerifyFuture<'a> {
+                        Box::pin(async { TokenVerification::Unauthenticated { message: "workflow credential rejected".into() } })
+                    }
+                }
+                for configured in [false, true] {
+                    let rejected = AuthorizationPolicy::new(Some(Arc::new(Reject)), if configured { Some(probe.clone()) } else { None });
+                    let before = database.admission_rpc_counts();
+                    let error = store.workflow_scheduling_writer::<D, crate::proto::Counter, crate::proto::Counter, _>(method, &rejected, Some(&tasks), ExternalContext::new(actor).writer_with_key(crate::proto::Counter { value: 7 }, uuid::Uuid::from_u128(9400)).unwrap(), |_, _, _| Box::pin(async { panic!("rejected verifier invoked handler") })).await.unwrap_err();
+                    assert_eq!(error.code(), tonic::Code::Unauthenticated);
+                    assert_eq!(error.message(), "workflow credential rejected");
+                    assert_eq!(database.admission_rpc_counts(), before);
+                    assert_eq!(probe.calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+                }
+                database.clear_actor_load_failure();
+                let before = database.admission_rpc_counts();
+                for attempt in 0..2 {
+                    let future = store.workflow_scheduling_writer::<D, crate::proto::Counter, crate::proto::Counter, _>(method, &policy, Some(&tasks), ExternalContext::new(actor).writer_with_key(crate::proto::Counter { value: 7 }, uuid::Uuid::from_u128(9400)).unwrap(), |_, _, _| Box::pin(async { panic!("pre-Allow failure invoked handler") }));
+                    let result = tokio::time::timeout(std::time::Duration::from_millis(100), future).await;
+                    if park && attempt == 0 { assert!(result.is_err()); }
+                    else { let error = result.expect("policy cancellation must release lease").unwrap_err(); assert_eq!(error.code(), tonic::Code::PermissionDenied); assert_eq!(error.message(), "workflow policy denied"); }
+                    assert_eq!(probe.calls.load(std::sync::atomic::Ordering::SeqCst), attempt + 1);
+                    assert!(tasks.workflow_running_admission().is_ok());
+                    assert!(!*tasks.inner.uncertain.borrow());
+                }
+                assert_eq!(*probe.snapshots.lock().unwrap(), vec![raw.clone(), raw]);
+                let after = database.admission_rpc_counts();
+                assert_eq!(after.0 - before.0, 2);
+                assert_eq!(after.1, before.1);
+                assert!(database.store_requests().is_empty());
+                assert!(database.create_requests().is_empty());
+                server.abort();
+            }
+        }
+    }
+
     struct Binding(bool);
     #[tonic::async_trait]
     impl ReaderTaskBinding for Binding {

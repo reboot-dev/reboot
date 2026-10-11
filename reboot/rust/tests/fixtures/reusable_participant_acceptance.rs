@@ -2,6 +2,41 @@
 
 #[test]
 #[ignore = "requires real C++ Database/RocksDB"]
+fn reusable_authorization_denied_or_cancelled_n2_aborts_without_certifying_effects() {
+    for park in [false, true] {
+        let mut tree = SupervisedTree::with_refs(["reuse-auth-a", "reuse-auth-b", "reuse-auth-unused"].map(|id| reboot_rust_schema::state_ref::StateRef::from_id("tests.reboot.protoc.TransactionCounter", id).unwrap().to_string()));
+        let policy = tree.marker(1, "reuse-policy");
+        let mut bc = tree.reusable_command(1, false);
+        bc.arg("--block-task").arg(if park { "--reuse-policy-park" } else { "--reuse-policy-deny" });
+        bc.args(["--reuse-policy-trace", policy.to_str().unwrap()]);
+        let b = tree.spawn(1, &mut bc);
+        let a = tree.spawn(0, &mut tree.reusable_command(0, false));
+        let mut hosts = [a, b];
+        let error = tree.rpc(0, "Increment", 7, Duration::from_secs(3)).unwrap_err();
+        if !park { assert_eq!(error.code(), tonic::Code::PermissionDenied); }
+        await_marker(&policy, &mut hosts[1]);
+        assert_eq!(std::fs::read_to_string(&policy).unwrap(), "N2:Some(27)", "policy must observe retained N1 private state before N2 handler");
+        assert!(!tree.marker(1, "tasks.reuse-11").exists(), "denied/cancelled N2 reached task handler");
+        let n1 = database::Task::decode(std::fs::read(tree.marker(1, "tasks.reuse-7")).unwrap().as_slice()).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(8);
+        loop {
+            if tree.rpc(1, "Apply", 0, Duration::from_millis(100)).is_ok() { break; }
+            assert!(std::time::Instant::now() < deadline, "root Abort/Watch failed to release retained participant");
+        }
+        tree.reusable_states([5, 20, 40]);
+        assert!(tree.records(1, std::slice::from_ref(&n1)).is_empty(), "doomed root certified N1 task");
+        assert!(!tree.marker(1, "tasks.invocations").exists());
+        SupervisedTree::stop_reusable(&mut hosts);
+        tree.restart();
+        tree.reusable_states([5, 20, 40]);
+        assert!(tree.records(1, &[n1]).is_empty());
+        tree.planner.stop();
+    }
+}
+
+
+#[test]
+#[ignore = "requires real C++ Database/RocksDB"]
 fn reusable_rfix_guard_completed_and_unknown_n2_no_commit() {
     for completed in [true, false] {
         let mut tree = SupervisedTree::with_refs(["rfix-a","rfix-b","rfix-unused"].map(|id| reboot_rust_schema::state_ref::StateRef::from_id("tests.reboot.protoc.TransactionCounter",id).unwrap().to_string()));

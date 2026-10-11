@@ -12,6 +12,50 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Scheduling authorization and live Watch checkpoint (2026-10-11)
+
+Workflow scheduling and registered-owner/generated participant admission verify
+credentials and require policy before owner/storage admission. Policy sees the
+immutable raw optional state before decoding, absence/replay checks or retained
+ownership handoff. Pre-Allow Load failures strip diagnostic messages, details and
+metadata; ordinary post-Allow errors and uncertainty semantics are unchanged.
+Denied/cancelled independent inbound calls preserve retained siblings; outbound
+failures still doom the caller root. Scheduling revocation, pending/completed
+replay denial, and regrant of the original task handle are exercised across restart.
+
+Live Watch keeps one pinned RPC across sibling notifications, enables rearm before
+checking ownership, and receives notifications for terminal sealing and read-only
+Prepare release. Lost ACK and cancellation retain uncertainty without fabricated
+retries or Abort. The generated retained-inbound regression proves state and one
+Watch, not full durable task preservation. Dedicated terminal in-flight
+cancellation/retry-backoff coverage and broader production authorization remain gaps.
+
+Fixture readiness markers use unique, exclusively created sibling temporary files
+and atomic rename with a deterministic concurrent-publisher regression. This is
+complete-byte visibility, not power-loss durability. Expected incompatible workflow
+recovery launches without requiring readiness, then asserts the exact checkpoint
+collision, invariant records and subsequent valid recovery; arbitrary nonzero exit
+is not an acceptance oracle.
+
+**Fresh repaired-source acceptance based on `4ef375d7`:**
+`/tmp/reboot-rust-auth-watch-full-audit-1791701164129097601` records SDK
+516 passes including nested consumers, both strict Clippy gates exit 0 and native
+132/132 (SortedMap 3, CXX 115, reactive 1, workflow 5, transport 8), all exits 0
+with exact owned-process cleanup and frozen hashes verified.
+`/tmp/reboot-rust-auth-watch-public-gates-1791702659385473122` records CLI
+25/25 and actual public greeting E2E exit 0, durable `0801`, same-key replay,
+watch add/restore, RocksDB restart, signal/child-exit and failed-rebuild cleanup.
+Its runner failed only its final disk-budget guard, not either behavioral gate.
+After approved old-cache cleanup, the separate immutable continuation
+`/tmp/reboot-rust-public-budget-reconciliation-1791704915700213052`
+revalidated unchanged source/binary hashes, gate exits, greeting evidence, exact
+PID/start cleanup and restored budgets under exclusive ownership. This is staged
+acceptance, not one uninterrupted successful public runner or green CI.
+
+Full parity, User/trusted provenance, broader HTTP/subscription authorization,
+packaging/release and merge-result/CI acceptance remain unclaimed. Earlier failed
+marker/workflow stages remain historical evidence, not accepted snapshots.
+
 ## Echo authorization and checkout contract checkpoint (2026-10-11)
 
 Legacy Echo memory, file and Database hosts now default deny. The standalone
@@ -3024,7 +3068,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: fa1639e50d88c1e1fe8e982ba7d6b7a4ddfa4427311aa28013c8bea2af19bec3 -->
+<!-- parity-source-sha256: f498cbd0bbc4d6e07a945c738bfff9f5af89ac7edc5a0c705a431ea3e8eb9401 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

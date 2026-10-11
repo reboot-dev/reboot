@@ -7482,6 +7482,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn workflow_scheduling_default_policy_rejects_before_owner_or_storage() {
+        let (endpoint, database, server) = start_database().await;
+        let store = DatabaseActorStore::connect(&endpoint).await.unwrap();
+        database.fail_actor_load(Status::unavailable("private workflow storage"));
+        let before = database.admission_rpc_counts();
+        let error = store.workflow_scheduling_writer::<EchoDurableState, proto::Text, proto::Text, _>(
+            "workflow.Schedule",
+            &crate::auth::AuthorizationPolicy::default(),
+            None,
+            ExternalContext::new("workflow-denied").writer_with_key(
+                proto::Text::default(), Uuid::from_u128(9400)).unwrap(),
+            |_, _, _| Box::pin(async { panic!("denied scheduling must not invoke handler") }),
+        ).await.unwrap_err();
+        assert_eq!(error.code(), tonic::Code::PermissionDenied);
+        assert_eq!(error.message(), "no authorizer configured; unauthorized development must be explicitly enabled");
+        assert_eq!(database.admission_rpc_counts(), before);
+        assert!(database.store_requests().is_empty());
+        server.abort();
+    }
+
+    #[tokio::test]
     async fn database_authorized_require_existing_and_constructor_mask_preallow_faults() {
         let (endpoint, database, server) = start_database().await;
         let store = DatabaseActorStore::connect(&endpoint).await.unwrap();

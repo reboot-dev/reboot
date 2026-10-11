@@ -1,3 +1,5 @@
+mod marker_publication;
+
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -278,7 +280,14 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                     .to_string(),
             )
             .unwrap();
-            std::fs::write(marker, state.value.to_string()).unwrap();
+            // Existence publishes complete bytes to the crash monitor.
+            let pending = format!("{marker}.{}.pending", Uuid::new_v4());
+            marker_publication::publish(
+                std::path::Path::new(marker),
+                std::path::Path::new(&pending),
+                state.value.to_string().as_bytes(),
+            )
+            .unwrap();
             if block {
                 struct ReaderDrop(String);
                 impl Drop for ReaderDrop {
@@ -1608,6 +1617,41 @@ async fn shared_barrier(transaction_id: Uuid) -> Result<(), tonic::Status> {
     ))
 }
 
+// Exercise external policy at the retained sibling boundary, not handler errors.
+struct ReusableSiblingPolicy {
+    park: bool,
+    trace: std::path::PathBuf,
+}
+impl reboot::auth::Authorizer for ReusableSiblingPolicy {
+    fn authorize<'a>(
+        &'a self,
+        _: &'a reboot::auth::AuthorizationContext,
+        _: Option<&'a reboot::auth::Auth>,
+        state: Option<&'a [u8]>,
+        request: &'a [u8],
+    ) -> reboot::auth::AuthorizeFuture<'a> {
+        Box::pin(async move {
+            let request =
+                proto::TransactionIncrementRequest::decode(request).expect("policy request");
+            if request.amount != 11 {
+                return reboot::auth::AuthorizationDecision::Allow;
+            }
+            let value = state.map(|bytes| {
+                proto::TransactionCounter::decode(bytes)
+                    .expect("policy snapshot")
+                    .value
+            });
+            std::fs::write(&self.trace, format!("N2:{value:?}")).unwrap();
+            if self.park {
+                std::future::pending::<()>().await;
+            }
+            reboot::auth::AuthorizationDecision::PermissionDenied {
+                message: "retained sibling denied".into(),
+            }
+        })
+    }
+}
+
 // Explicit state-sensitive policy for real public transaction replay acceptance.
 struct ReplayStatePolicy {
     ceiling: i64,
@@ -2002,6 +2046,17 @@ async fn main() {
             Some(Arc::new(ReplayStatePolicy {
                 ceiling: ceiling.parse().expect("auth ceiling"),
                 trace: arg("--replay-auth-trace").into(),
+            })),
+        ))
+    } else {
+        adapter
+    };
+    let adapter = if has("--reuse-policy-deny") || has("--reuse-policy-park") {
+        adapter.with_authorization(reboot::auth::AuthorizationPolicy::new(
+            None,
+            Some(Arc::new(ReusableSiblingPolicy {
+                park: has("--reuse-policy-park"),
+                trace: arg("--reuse-policy-trace").into(),
             })),
         ))
     } else {

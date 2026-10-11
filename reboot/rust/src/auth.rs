@@ -125,7 +125,7 @@ impl AuthorizationPolicy {
     }
 
     /// Reject a missing host-owned authorizer without accessing actor storage.
-    pub(crate) fn require_authorizer(&self) -> Result<(), tonic::Status> {
+    pub fn require_authorizer(&self) -> Result<(), tonic::Status> {
         if self.authorizer.is_none() && !self.allow_missing_authorizer_for_development {
             Err(tonic::Status::permission_denied(
                 "no authorizer configured; unauthorized development must be explicitly enabled",

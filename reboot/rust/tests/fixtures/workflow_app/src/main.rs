@@ -479,6 +479,17 @@ impl generated::LedgerMethodsDatabaseHandler for Ledger {
         })
     }
 }
+struct SchedulingPolicy { path: std::path::PathBuf }
+impl reboot::auth::Authorizer for SchedulingPolicy {
+    fn authorize<'a>(&'a self, context: &'a reboot::auth::AuthorizationContext, _: Option<&'a reboot::auth::Auth>, _: Option<&'a [u8]>, _: &'a [u8]) -> reboot::auth::AuthorizeFuture<'a> {
+        Box::pin(async move {
+            if context.method.ends_with(".ScheduleWork") && std::fs::read_to_string(&self.path).unwrap().trim() == "deny" {
+                reboot::auth::AuthorizationDecision::PermissionDenied { message: "workflow scheduling revoked".into() }
+            } else { reboot::auth::AuthorizationDecision::Allow }
+        })
+    }
+}
+
 fn arg(index: usize) -> String {
     std::env::args().nth(index).unwrap()
 }
@@ -555,9 +566,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if mode == "serve" {
         let store = DatabaseActorStore::connect(arg(2)).await?;
         let address: std::net::SocketAddr = arg(3).parse()?;
+        let policy = match std::env::var("WORKFLOW_SCHEDULING_POLICY") {
+            Ok(path) => reboot::auth::AuthorizationPolicy::new(None, Some(std::sync::Arc::new(SchedulingPolicy { path: path.into() }))),
+            Err(_) => reboot::auth::AuthorizationPolicy::permissive_for_development(),
+        };
         let (adapter, tasks) =
             generated::LedgerMethodsDatabaseAdapter::new(store, Ledger::default())
-                .with_authorization(reboot::auth::AuthorizationPolicy::permissive_for_development())
+                .with_authorization(policy)
                 .with_workflows(&reference())?;
         if let Ok(limit) = std::env::var("CONTROL_MAX_LIVE") {
             tasks.set_max_live_deliveries(limit.parse()?)?;
