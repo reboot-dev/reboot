@@ -611,11 +611,29 @@ const secondsOfCheck = (check: dashboard_pb.Check): number =>
     : Number(check.took.seconds) + check.took.nanos / 1_000_000_000;
 
 // One line at the foot of the sidebar: when a watcher last checked
-// the developer's files, in red when the check took too long.
+// the developer's files, in red when the check took too long, or that
+// its last check failed, in red, with why.
 const CheckLine: FC<{
   what: string;
   check: dashboard_pb.Check | undefined;
 }> = ({ what, check }) => {
+  if (check?.failure !== undefined) {
+    const at = check.at?.toDate();
+    return (
+      <div
+        className="check is-failing"
+        title={
+          (at === undefined
+            ? "Failed"
+            : `Failed at ${at.toLocaleTimeString()}`) +
+          ` after ${secondsOfCheck(check).toFixed(1)} seconds` +
+          `: ${check.failure}`
+        }
+      >
+        {what} check failing
+      </div>
+    );
+  }
   if (check?.at === undefined) {
     return <div className="check">{what} not checked yet</div>;
   }

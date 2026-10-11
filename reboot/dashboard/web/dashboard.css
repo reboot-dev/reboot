@@ -246,7 +246,8 @@ nav {
   text-overflow: ellipsis;
 }
 
-.check.is-slow {
+.check.is-slow,
+.check.is-failing {
   color: hsl(4 65% 45%);
   opacity: 1;
 }
