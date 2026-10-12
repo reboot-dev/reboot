@@ -1,7 +1,7 @@
 //! Bounded generated same-local-actor reader and ordinary-writer tasks.
-//! Declared terminals persist canonical method-typed errors; writer handler failures
-//! proven before Store receive at most three host-owned attempts. Reader failures,
-//! transport/ACK uncertainty and cancellation are not retried.
+//! Declared terminals persist canonical method-typed errors; only sealed synchronous
+//! immutable precheck rejection retries with cancellable capped backoff. Arbitrary
+//! async handler errors, transport/ACK uncertainty and cancellation are not retried.
 //! Absolute UTC schedules are durable, with no sleeping child per task.
 //! Explicit named workflows have separate immutable admission/execution and
 //! per-step leases; explicit clean local body failures receive three host-owned
@@ -93,7 +93,8 @@ pub struct AdmittedWriterTask<'a> {
     pub(crate) method: &'static str,
     pub(crate) response_type: &'static str,
     pub(crate) started: &'a std::sync::atomic::AtomicBool,
-    cancel: &'a RecoveryCancellation,
+    pub(crate) admission: &'a RunningTaskAdmission,
+    pub(crate) cancel: &'a RecoveryCancellation,
     pub(crate) tasks: &'a OneShotTasks,
 }
 impl AdmittedWriterTask<'_> {
@@ -158,9 +159,30 @@ impl TaskHandlerError {
         })
     }
 }
+/// Rejection by an immutable, synchronous local state/request precheck.
+///
+/// Prechecks must be bounded and perform no IO or observable effects. Rust does
+/// not enforce callback purity; application authors must uphold this contract.
+/// This type intentionally has no conversion from transport or handler Status.
+#[derive(Debug)]
+pub struct LocalStateNotReady {
+    message: String,
+}
+impl LocalStateNotReady {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+    /// Unary calls reject once; only the admitted runtime may seal a retry.
+    pub fn into_status(self) -> Status {
+        Status::failed_precondition(self.message)
+    }
+}
 pub(crate) enum WriterTaskOutcome {
     Terminal(db::task::ResponseOrError),
     PreStoreFailure(Status),
+    LocalPreStoreRetry(LocalStateNotReady),
 }
 // Declaration order at call sites matters: this guard drops BEFORE the lease.
 // Arm synchronously before the first potentially durable await; no cancellation gap.
@@ -797,6 +819,19 @@ impl OneShotTasks {
                     Status::failed_precondition("task dispatcher has no running host owner")
                 })?,
         };
+        self.validate_staged_for_admission(tasks, &admission)
+            .await?;
+        Ok(admission)
+    }
+
+    // Admitted execution must retain its original generation, never snapshot
+    // replacement scheduling authority after an asynchronous handler.
+    pub(crate) async fn validate_staged_for_admission(
+        &self,
+        tasks: &[db::Task],
+        admission: &RunningTaskAdmission,
+    ) -> Result<(), Status> {
+        self.validate(tasks)?;
         let request = self
             .inner
             .recovery_request
@@ -864,7 +899,7 @@ impl OneShotTasks {
         {
             let _owner = admission.lock()?;
         }
-        Ok(admission)
+        Ok(())
     }
 
     /// Transfers a scheduling root to host-owned failure supervision before
@@ -917,31 +952,63 @@ impl OneShotTasks {
         self.validate(&pending)?;
         Ok(pending)
     }
+    pub(crate) fn local_execution_admission(&self) -> Result<RunningTaskAdmission, Status> {
+        let generation = self
+            .inner
+            .running_owner
+            .lock()
+            .expect("task owner mutex poisoned")
+            .clone()
+            .ok_or_else(|| Status::failed_precondition("task dispatcher not running"))?;
+        let admission = RunningTaskAdmission {
+            tasks: self.clone(),
+            generation,
+        };
+        admission.check_execution()?;
+        Ok(admission)
+    }
     async fn execute(&self, task: db::Task, cancel: &RecoveryCancellation) -> Result<(), Status> {
         if self.is_workflow(&task) {
             return self.execute_workflow_task(task, cancel).await;
         }
-        // Framework-owned bounded retry, only for runtime-sealed pre-Store failure.
-        // Each attempt reloads and readmits the same durable identity and schedule.
-        for attempt in 0..3u32 {
-            match self.execute_once(task.clone(), cancel).await? {
+        let admission = self.local_execution_admission()?;
+        let mut attempt = 0u32;
+        loop {
+            admission.check_execution()?;
+            cancel.public_ready().await?;
+            admission.check_execution()?;
+            match self.execute_once(task.clone(), cancel, &admission).await? {
                 None => return Ok(()),
-                Some(error) if attempt == 2 => return Err(error),
-                Some(_) => {
-                    self.inner
-                        .listing
-                        .retry(&task, std::time::Duration::from_millis(25 << attempt));
-                    tokio::time::sleep(std::time::Duration::from_millis(25 << attempt)).await
+                Some(error) => {
+                    // execute_once returned and dropped the exclusive actor lease.
+                    // Only a sealed immutable precheck rejection reaches this branch.
+                    admission.check_execution()?;
+                    let delay = std::time::Duration::from_millis(25 << attempt.min(6));
+                    attempt = attempt.saturating_add(1);
+                    self.inner.listing.retry(&task, delay);
+                    eprintln!(
+                        "local-state task retry: {}: {}",
+                        task.method,
+                        error.message()
+                    );
+                    tokio::select! {
+                        biased;
+                        _ = cancel.cancelled() => return Err(Status::cancelled("local task retry stopped")),
+                        _ = tokio::time::sleep(delay) => {}
+                    }
+                    admission.check_execution()?;
                 }
             }
         }
-        unreachable!("bounded task retry")
     }
     async fn execute_once(
         &self,
         mut task: db::Task,
         cancel: &RecoveryCancellation,
+        admission: &RunningTaskAdmission,
     ) -> Result<Option<Status>, Status> {
+        // Retry attempts retain the execution's original generation as well.
+        admission.check_execution()?;
         let id = task.task_id.clone().expect("validated task identity");
         // Process-fixture scheduling barrier: leave this canonical task Pending
         // without taking its actor lease, so an already-durable successor can run.
@@ -958,6 +1025,7 @@ impl OneShotTasks {
         if self.inner.binding.is_writer(&task) {
             let _lease = gate.exclusive().await;
             cancel.public_ready().await?;
+            admission.check_execution()?;
             let loaded = self
                 .inner
                 .store
@@ -968,6 +1036,8 @@ impl OneShotTasks {
                 })
                 .await?
                 .into_inner();
+            cancel.public_ready().await?;
+            admission.check_execution()?;
             if loaded.tasks.len() != 1 {
                 return Err(Status::failed_precondition(
                     "committed writer task missing or ambiguous",
@@ -1014,6 +1084,7 @@ impl OneShotTasks {
                         Status::failed_precondition("missing generated writer response descriptor")
                     })?,
                 started: &started,
+                admission,
                 cancel,
                 tasks: self,
             };
@@ -1026,6 +1097,8 @@ impl OneShotTasks {
                     return Err(error);
                 }
             };
+            cancel.public_ready().await?;
+            admission.check_execution()?;
             if receipt.task != task {
                 return Err(Status::failed_precondition(
                     "durable receipt task identity mismatch",
@@ -1033,6 +1106,10 @@ impl OneShotTasks {
             }
             let terminal = match receipt.outcome {
                 WriterTaskOutcome::Terminal(terminal) => terminal,
+                WriterTaskOutcome::LocalPreStoreRetry(error) => {
+                    whole_execution.acknowledged();
+                    return Ok(Some(error.into_status()));
+                }
                 WriterTaskOutcome::PreStoreFailure(error) => {
                     // Pre-Store does not establish local computation provenance:
                     // handlers can perform external IO. Never implicitly retry
@@ -1048,6 +1125,8 @@ impl OneShotTasks {
                     .map_err(|error| Status::internal(error.to_string()))?;
                 std::future::pending::<()>().await;
             }
+            cancel.public_ready().await?;
+            admission.check_execution()?;
             task.status = db::task::Status::Completed as i32;
             task.response_or_error = Some(terminal.clone());
             let mut operation = DurableTaskOperation {
@@ -1077,6 +1156,9 @@ impl OneShotTasks {
                 }
                 return Err(Status::unavailable("lost actual CompleteTask ACK"));
             }
+            // Keep both guards armed if cancellation/replacement crossed CAS.
+            cancel.public_ready().await?;
+            admission.check_execution()?;
             if !completed {
                 let loaded = self
                     .inner
@@ -1088,6 +1170,8 @@ impl OneShotTasks {
                     })
                     .await?
                     .into_inner();
+                cancel.public_ready().await?;
+                admission.check_execution()?;
                 if loaded.tasks.len() != 1 {
                     return Err(Status::failed_precondition(
                         "losing completion has no canonical result",
@@ -1280,6 +1364,11 @@ pub(crate) struct RunningTaskAdmission {
     generation: Arc<()>,
 }
 impl RunningTaskAdmission {
+    // Execution fencing does not confer singleton scheduling/capacity authority.
+    pub(crate) fn check_execution(&self) -> Result<(), Status> {
+        drop(self.lock_result()?);
+        Ok(())
+    }
     pub(crate) fn lock(&self) -> Result<std::sync::MutexGuard<'_, Option<Arc<()>>>, Status> {
         self.lock_owner(true)
     }

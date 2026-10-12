@@ -3491,6 +3491,54 @@ impl crate::one_shot_tasks::AdmittedWriterTask<'_> {
             >,
         >,
     {
+        self.execute_scheduling_outcome_with_precheck::<Declaration, RequestBody, ResponseBody, _, _>(
+            |_, _| Ok(()), invoke,
+        ).await
+    }
+
+    /// Run a bounded, immutable local predicate before user async code. No IO or
+    /// observable effects are permitted in the predicate. Only its rejection is retryable.
+    pub async fn execute_scheduling_outcome_with_precheck<
+        Declaration,
+        RequestBody,
+        ResponseBody,
+        P,
+        F,
+    >(
+        self,
+        precheck: P,
+        invoke: F,
+    ) -> Result<crate::one_shot_tasks::WriterTaskReceipt, Status>
+    where
+        Declaration: DurableStateDeclaration + 'static,
+        RequestBody: Message + Default + Send + 'static,
+        ResponseBody: Message + Default + Clone + Send + 'static,
+        P: FnOnce(
+                &Declaration::State,
+                &RequestBody,
+            ) -> Result<(), crate::one_shot_tasks::LocalStateNotReady>
+            + Send,
+        F: for<'a> FnOnce(
+            &'a mut Declaration::State,
+            RequestBody,
+            String,
+        ) -> Pin<
+            Box<
+                dyn Future<
+                        Output = Result<
+                            WriterExecution<ResponseBody>,
+                            crate::one_shot_tasks::TaskHandlerError,
+                        >,
+                    > + Send
+                    + 'a,
+            >,
+        >,
+    {
+        // Carry the dispatcher's original generation through generated/custom
+        // binding awaits. Never mint replacement authority here.
+        let admission = self.admission;
+        self.cancel.public_ready().await?;
+        admission.check_execution()?;
         let id = self
             .task
             .task_id
@@ -3523,6 +3571,8 @@ impl crate::one_shot_tasks::AdmittedWriterTask<'_> {
             )
             .await?
         {
+            self.cancel.public_ready().await?;
+            admission.check_execution()?;
             self.started
                 .store(true, std::sync::atomic::Ordering::Release);
             return Ok(crate::one_shot_tasks::WriterTaskReceipt {
@@ -3535,6 +3585,9 @@ impl crate::one_shot_tasks::AdmittedWriterTask<'_> {
                 ),
             });
         }
+        // A checkpoint miss is still an awaited boundary: fence before actor IO.
+        self.cancel.public_ready().await?;
+        admission.check_execution()?;
         let loaded = self
             .store
             .load_for_declaration::<Declaration>(&id.state_ref)
@@ -3548,10 +3601,23 @@ impl crate::one_shot_tasks::AdmittedWriterTask<'_> {
                 ));
             }
         };
+        self.cancel.public_ready().await?;
+        admission.check_execution()?;
+        if let Err(error) = precheck(&state, &request) {
+            return Ok(crate::one_shot_tasks::WriterTaskReceipt {
+                task: self.task.clone(),
+                outcome: crate::one_shot_tasks::WriterTaskOutcome::LocalPreStoreRetry(error),
+            });
+        }
         // An absent actor is materialized only by the successful atomic Store.
         // Handler failure still discards this private default state.
 
-        let execution = match invoke(&mut state, request, id.state_ref.clone()).await {
+        let invoked = invoke(&mut state, request, id.state_ref.clone()).await;
+        // Both successes and declared errors need the original capability.
+        // Never prepare effects or mint terminal authority for a stale handler.
+        self.cancel.public_ready().await?;
+        admission.check_execution()?;
+        let execution = match invoked {
             Ok(response) => response,
             Err(error) => {
                 // No durable operation has started; this private state is discarded.
@@ -3574,14 +3640,23 @@ impl crate::one_shot_tasks::AdmittedWriterTask<'_> {
                 });
             }
         };
-        let admission = self
-            .store
-            .prepare_ordinary_effects::<Declaration, RequestBody, ResponseBody>(
-                (&id.state_ref, self.method, self.response_type),
-                Some(self.tasks),
-                &execution.task_upserts,
-            )
-            .await?;
+        if !execution.task_upserts.is_empty() {
+            self.tasks.validate_scheduling_store(
+                self.store,
+                Declaration::STATE_TYPE,
+                &id.state_ref,
+            )?;
+            self.tasks
+                .validate_ordinary_writer::<Declaration, RequestBody, ResponseBody>(
+                    self.method,
+                    self.response_type,
+                )?;
+            self.tasks
+                .validate_staged_for_admission(&execution.task_upserts, admission)
+                .await?;
+        }
+        self.cancel.public_ready().await?;
+        admission.check_execution()?;
         let mut operation = self.durable();
         self.store
             .persist_ordinary_writer::<Declaration, ResponseBody>(
@@ -3590,7 +3665,7 @@ impl crate::one_shot_tasks::AdmittedWriterTask<'_> {
                 fingerprint,
                 state,
                 &execution,
-                admission.as_ref(),
+                Some(admission),
             )
             .await?;
         let response = execution.response;
@@ -3606,6 +3681,9 @@ impl crate::one_shot_tasks::AdmittedWriterTask<'_> {
                 return Err(Status::unavailable("lost actual writer Store ACK"));
             }
         }
+        // Do not clear the armed uncertainty guard across a stale Store ACK.
+        self.cancel.public_ready().await?;
+        admission.check_execution()?;
         operation.acknowledged();
         Ok(crate::one_shot_tasks::WriterTaskReceipt {
             task: self.task.clone(),
@@ -5010,7 +5088,15 @@ pub mod test_support {
         #[cfg(test)]
         task_load_park: TaskRpcPark,
         #[cfg(test)]
+        actor_load_park: TaskRpcPark,
+        #[cfg(test)]
         task_recover_park: TaskRpcPark,
+        #[cfg(test)]
+        checkpoint_recover_park: TaskRpcPark,
+        #[cfg(test)]
+        store_park: TaskRpcPark,
+        #[cfg(test)]
+        complete_park: TaskRpcPark,
     }
 
     #[derive(Default)]
@@ -5022,6 +5108,8 @@ pub mod test_support {
         participant_prepares: Vec<database::TransactionParticipantPrepareRequest>,
         participant_commits: Vec<database::TransactionParticipantCommitRequest>,
         create_requests: Vec<database::CreateActorRequest>,
+        model_task_completion: bool,
+        complete_calls: usize,
         #[cfg(test)]
         load_calls: usize,
         #[cfg(test)]
@@ -5031,6 +5119,14 @@ pub mod test_support {
     }
 
     impl FakeDatabase {
+        #[cfg(test)]
+        pub(crate) fn model_task_completion(&self) {
+            self.state.lock().unwrap().model_task_completion = true;
+        }
+        #[cfg(test)]
+        pub(crate) fn complete_calls(&self) -> usize {
+            self.state.lock().unwrap().complete_calls
+        }
         #[cfg(test)]
         pub(crate) fn seed_task(&self, task: database::Task) {
             self.state
@@ -5076,6 +5172,18 @@ pub mod test_support {
                 .insert((state_type.into(), state_ref.into()), bytes);
         }
         #[cfg(test)]
+        pub(crate) fn park_actor_load(
+            &self,
+        ) -> (
+            tokio::sync::oneshot::Receiver<()>,
+            tokio::sync::oneshot::Sender<()>,
+        ) {
+            let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+            let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+            *self.actor_load_park.lock().unwrap() = Some((entered_tx, release_rx));
+            (entered_rx, release_tx)
+        }
+        #[cfg(test)]
         pub(crate) fn park_task_load(
             &self,
         ) -> (
@@ -5097,6 +5205,42 @@ pub mod test_support {
             let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
             let (release_tx, release_rx) = tokio::sync::oneshot::channel();
             *self.task_recover_park.lock().unwrap() = Some((entered_tx, release_rx));
+            (entered_rx, release_tx)
+        }
+        #[cfg(test)]
+        pub(crate) fn park_checkpoint_recover(
+            &self,
+        ) -> (
+            tokio::sync::oneshot::Receiver<()>,
+            tokio::sync::oneshot::Sender<()>,
+        ) {
+            let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+            let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+            *self.checkpoint_recover_park.lock().unwrap() = Some((entered_tx, release_rx));
+            (entered_rx, release_tx)
+        }
+        #[cfg(test)]
+        pub(crate) fn park_store(
+            &self,
+        ) -> (
+            tokio::sync::oneshot::Receiver<()>,
+            tokio::sync::oneshot::Sender<()>,
+        ) {
+            let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+            let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+            *self.store_park.lock().unwrap() = Some((entered_tx, release_rx));
+            (entered_rx, release_tx)
+        }
+        #[cfg(test)]
+        pub(crate) fn park_complete(
+            &self,
+        ) -> (
+            tokio::sync::oneshot::Receiver<()>,
+            tokio::sync::oneshot::Sender<()>,
+        ) {
+            let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+            let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+            *self.complete_park.lock().unwrap() = Some((entered_tx, release_rx));
             (entered_rx, release_tx)
         }
         pub fn participant_prepare_requests(
@@ -5185,6 +5329,14 @@ pub mod test_support {
                     let _ = release.await;
                 }
             }
+            #[cfg(test)]
+            if !request.get_ref().actors.is_empty() {
+                let park = self.actor_load_park.lock().unwrap().take();
+                if let Some((entered, release)) = park {
+                    let _ = entered.send(());
+                    let _ = release.await;
+                }
+            }
             let state = self.state.lock().expect("fake database mutex poisoned");
             let request = request.into_inner();
             let tasks = request
@@ -5219,17 +5371,71 @@ pub mod test_support {
 
         async fn complete_task(
             &self,
-            _request: Request<database::CompleteTaskRequest>,
+            request: Request<database::CompleteTaskRequest>,
         ) -> Result<Response<database::CompleteTaskResponse>, Status> {
-            // The RocksDB/gRPC suite owns CAS evidence. This actor-store fake
-            // intentionally does not simulate durable task completion.
-            Err(Status::unimplemented("task completion is not modeled"))
+            #[cfg(test)]
+            {
+                let park = self.complete_park.lock().unwrap().take();
+                if let Some((entered, release)) = park {
+                    let _ = entered.send(());
+                    let _ = release.await;
+                }
+            }
+            // Opt-in transport fake for local retry tests; NOT durable RocksDB CAS proof.
+            let request = request.into_inner();
+            let mut state = self.state.lock().unwrap();
+            state.complete_calls += 1;
+            if !state.model_task_completion {
+                return Err(Status::unimplemented("task completion is not modeled"));
+            }
+            let task = request
+                .task
+                .ok_or_else(|| Status::invalid_argument("missing task"))?;
+            if !request.sync
+                || task.status != database::task::Status::Completed as i32
+                || task.response_or_error.is_none()
+            {
+                return Err(Status::invalid_argument("invalid completion"));
+            }
+            let key = task
+                .task_id
+                .as_ref()
+                .ok_or_else(|| Status::invalid_argument("missing ID"))?
+                .encode_to_vec();
+            let Some(canonical) = state.tasks.get_mut(&key) else {
+                return Err(Status::not_found("missing task"));
+            };
+            if canonical.status == database::task::Status::Completed as i32 {
+                return Ok(Response::new(database::CompleteTaskResponse {
+                    completed: false,
+                    timestamp: None,
+                }));
+            }
+            let mut pending = task.clone();
+            pending.status = database::task::Status::Pending as i32;
+            pending.response_or_error = None;
+            if canonical != &pending {
+                return Err(Status::failed_precondition("completion identity changed"));
+            }
+            *canonical = task;
+            Ok(Response::new(database::CompleteTaskResponse {
+                completed: true,
+                timestamp: None,
+            }))
         }
 
         async fn store(
             &self,
             request: Request<database::StoreRequest>,
         ) -> Result<Response<database::StoreResponse>, Status> {
+            #[cfg(test)]
+            {
+                let park = self.store_park.lock().unwrap().take();
+                if let Some((entered, release)) = park {
+                    let _ = entered.send(());
+                    let _ = release.await;
+                }
+            }
             let request = request.into_inner();
             let [actor] = request.actor_upserts.as_slice() else {
                 return Err(Status::failed_precondition(
@@ -5353,6 +5559,14 @@ pub mod test_support {
             &self,
             request: Request<database::RecoverIdempotentMutationsRequest>,
         ) -> Result<Response<Self::RecoverIdempotentMutationsStream>, Status> {
+            #[cfg(test)]
+            {
+                let park = self.checkpoint_recover_park.lock().unwrap().take();
+                if let Some((entered, release)) = park {
+                    let _ = entered.send(());
+                    let _ = release.await;
+                }
+            }
             #[cfg(test)]
             {
                 self.state.lock().unwrap().receipt_recovery_calls += 1;

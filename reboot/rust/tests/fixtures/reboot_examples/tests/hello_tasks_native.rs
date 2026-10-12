@@ -1,4 +1,6 @@
 //! Real C++ Database/RocksDB happy-path and restart proof, not full Python retry parity.
+#[path = "support/hello_tasks_local_retry.rs"]
+mod local_retry;
 use prost::Message;
 use reboot::{database_proto as db, runtime::DatabaseActorStore};
 use reboot_rust_upstream_examples::{
@@ -130,6 +132,7 @@ impl Drop for Native {
     }
 }
 struct Host {
+    tasks: reboot::one_shot_tasks::OneShotTasks,
     endpoint: String,
     shutdown: tokio::sync::oneshot::Sender<()>,
     task: tokio::task::JoinHandle<Result<(), reboot::application_host::ApplicationHostError>>,
@@ -181,11 +184,19 @@ impl Host {
                 }],
             })
             .unwrap();
-        let wait = tasks.wait_service_with_policy(
-            reboot::legacy_placement::LegacyApplicationId::new("hello-tasks").unwrap(),
-            "hello-server",
-            placement.clone(),
-            reboot::auth::AuthorizationPolicy::permissive_for_development(),
+        let wait = db::tasks_server::TasksServer::new(
+            reboot::one_shot_tasks::ReaderTaskWaitService::new(
+                [tasks.clone()],
+                reboot::legacy_placement::LegacyApplicationId::new("hello-tasks").unwrap(),
+                "hello-server",
+                placement.clone(),
+            )
+            .unwrap()
+            .with_wait_policy(reboot::auth::AuthorizationPolicy::permissive_for_development())
+            .with_admin_authorization(
+                std::sync::Arc::new(local_retry::FixtureAdmin),
+                std::sync::Arc::new(local_retry::FixtureAdmin),
+            ),
         );
         let host = reboot::application_host::ApplicationHost::new("hello-tasks")
             .with_legacy_placement_readiness(placement)
@@ -217,6 +228,7 @@ impl Host {
                 {
                     Ok(_) => {
                         return Self {
+                            tasks,
                             endpoint,
                             shutdown,
                             task,

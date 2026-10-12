@@ -1,5 +1,5 @@
 //! Pinned hello-tasks happy path: ordinary Send -> Warning -> Erase writers.
-//! Missing-message failures are explicit Status failures, not Python local retries.
+//! Missing IDs reject in a pure immutable precheck; admitted tasks retry locally.
 use crate::{hello_tasks::v1 as proto, tasks_adapter as generated};
 use reboot::runtime::WriterExecution;
 pub struct HelloTasks;
@@ -23,6 +23,42 @@ fn public_id(task: &reboot::database_proto::Task) -> crate::rbt::v1alpha1::TaskI
 }
 #[tonic::async_trait]
 impl generated::HelloMethodsDatabaseHandler for HelloTasks {
+    fn warning_local_precheck(
+        &self,
+        state: &proto::Hello,
+        request: &proto::WarningRequest,
+    ) -> Result<(), reboot::one_shot_tasks::LocalStateNotReady> {
+        if state
+            .messages
+            .iter()
+            .any(|message| message.id == request.message_id)
+        {
+            Ok(())
+        } else {
+            Err(reboot::one_shot_tasks::LocalStateNotReady::new(format!(
+                "ID {} not found",
+                request.message_id
+            )))
+        }
+    }
+    fn erase_local_precheck(
+        &self,
+        state: &proto::Hello,
+        request: &proto::EraseRequest,
+    ) -> Result<(), reboot::one_shot_tasks::LocalStateNotReady> {
+        if state
+            .messages
+            .iter()
+            .any(|message| message.id == request.message_id)
+        {
+            Ok(())
+        } else {
+            Err(reboot::one_shot_tasks::LocalStateNotReady::new(format!(
+                "ID {} not found",
+                request.message_id
+            )))
+        }
+    }
     async fn messages(
         &self,
         state: &proto::Hello,

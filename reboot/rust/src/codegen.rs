@@ -1481,6 +1481,16 @@ fn emit_durable(
                 **kind,
                 DurableKind::Writer(WriterMetadata { constructor: false })
             ) {
+                let precheck = format!("{method}_local_precheck");
+                if database_methods
+                    .iter()
+                    .any(|(_, other, _, _, _)| other == &precheck)
+                {
+                    return Err(format!(
+                        "{service_name}: local precheck hook `{precheck}` collides"
+                    ));
+                }
+                output.push_str(&format!("    /// Bounded immutable local inspection only: no IO or observable effects.\n    fn {precheck}(&self, _state: &proto::{state}, _request: &proto::{request}) -> Result<(), {runtime_module}::one_shot_tasks::LocalStateNotReady> {{ Ok(()) }}\n"));
                 let hook = format!("{method}_with_tasks");
                 if database_methods
                     .iter()
@@ -1593,7 +1603,17 @@ fn emit_durable(
             } else {
                 ("state, request", format!("{method}(state, request)"))
             };
-            output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n{unary_composition}        let handler = self.handler.clone();\n        self.store.{envelope}::<{declaration}, _, _, _>(\n            {prefix}request, move |{callback_args}| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ handler.{callback_method}.await{map_declared_error} }})\n            }},\n        ).await\n    }}\n"));
+            let precheck = if matches!(
+                **kind,
+                DurableKind::Writer(WriterMetadata { constructor: false })
+            ) {
+                format!(
+                    "handler.{method}_local_precheck(state, &request).map_err(|error| error.into_status())?; "
+                )
+            } else {
+                String::new()
+            };
+            output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n{unary_composition}        let handler = self.handler.clone();\n        self.store.{envelope}::<{declaration}, _, _, _>(\n            {prefix}request, move |{callback_args}| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ {precheck}handler.{callback_method}.await{map_declared_error} }})\n            }},\n        ).await\n    }}\n"));
         }
         output.push_str("}\n\n");
         emit_local_readers(
@@ -2562,12 +2582,22 @@ fn emit_reader_tasks(
             )
         } else {
             (
-                "execute_scheduling_outcome",
+                "execute_scheduling_outcome_with_precheck",
                 "state, request, state_ref",
                 format!("{rust_name}_with_tasks(state, request, state_ref)"),
             )
         };
-        output.push_str(&format!("        \"{name}\" => {{ let handler = self.handler.clone(); admitted.{executor}::<{state}DurableState, proto::{request}, proto::{response}, _>(move |{args}| {{ Box::pin(async move {{ handler.{call}.await{error_map} }}) }}).await }},\n"));
+        let (extra_generic, precheck) = if mixed {
+            ("", String::new())
+        } else {
+            (
+                ", _",
+                format!(
+                    "{{ let handler = handler.clone(); move |state, request| handler.{rust_name}_local_precheck(state, request) }}, "
+                ),
+            )
+        };
+        output.push_str(&format!("        \"{name}\" => {{ let handler = self.handler.clone(); admitted.{executor}::<{state}DurableState, proto::{request}, proto::{response}, _{extra_generic}>({precheck}move |{args}| {{ Box::pin(async move {{ handler.{call}.await{error_map} }}) }}).await }},\n"));
     }
     output.push_str(
         "        _ => Err(tonic::Status::invalid_argument(\"unsupported writer task\")), } }\n}\n",
@@ -3860,6 +3890,55 @@ mod tests {
     }
 
     #[test]
+    fn ordinary_writer_local_precheck_collision_and_default_surface() {
+        let annotations = HashMap::from([(
+            "counter.proto".to_owned(),
+            HashMap::from([(
+                "CounterWritesMethods".to_owned(),
+                DurableService {
+                    auto_construct: 0,
+                    state: "Counter".into(),
+                    default_constructible: true,
+                    methods: HashMap::from([(
+                        "Increment".into(),
+                        DurableKind::Writer(WriterMetadata { constructor: false }),
+                    )]),
+                    declared_errors: HashMap::new(),
+                },
+            )]),
+        )]);
+        let content = generate_inner(request(), annotations.clone())
+            .unwrap()
+            .remove(0)
+            .content
+            .unwrap();
+        assert!(content.contains("fn increment_local_precheck("));
+        assert!(content.contains("handler.increment_local_precheck(state, &request).map_err(|error| error.into_status())?"));
+        assert!(content.contains("execute_scheduling_outcome_with_precheck"));
+        let mut collision = request();
+        let service = collision.proto_file[0]
+            .service
+            .iter_mut()
+            .find(|s| s.name.as_deref() == Some("CounterWritesMethods"))
+            .unwrap();
+        let mut method = service.method[0].clone();
+        method.name = Some("IncrementLocalPrecheck".into());
+        service.method.push(method);
+        let mut annotations = annotations;
+        annotations
+            .get_mut("counter.proto")
+            .unwrap()
+            .get_mut("CounterWritesMethods")
+            .unwrap()
+            .methods
+            .insert("IncrementLocalPrecheck".into(), DurableKind::Reader);
+        let error = generate_inner(collision, annotations).unwrap_err();
+        assert!(
+            error.contains("local precheck hook `increment_local_precheck` collides"),
+            "{error}"
+        );
+    }
+    #[test]
     fn runtime_module_parameter_controls_durable_import_and_defaults() {
         let annotations = HashMap::from([(
             "counter.proto".to_owned(),
@@ -3938,7 +4017,9 @@ mod tests {
             assert!(content.contains("pub fn with_authorization("));
             assert!(content.contains("(\"tests.reboot.protoc.CounterWritesMethods.Increment\", \"type.googleapis.com/tests.reboot.protoc.CounterValue\", reboot_rust_schema::runtime::StateAdmission::DefaultOnAbsent), &self.authorization, self.tasks.as_ref(), request"));
             assert!(content.contains("async fn increment_with_tasks"));
-            assert!(content.contains("execute_scheduling_outcome::<CounterDurableState"));
+            assert!(
+                content.contains("execute_scheduling_outcome_with_precheck::<CounterDurableState")
+            );
             assert!(content.contains("handler.increment_with_tasks(state, request, state_ref)"));
             assert!(!content.contains("\"Counter\", request"));
         }

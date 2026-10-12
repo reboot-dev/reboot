@@ -35,6 +35,20 @@ fn observe(method: &str) {
 }
 #[tonic::async_trait]
 impl HelloMethodsDatabaseHandler for ObservedHelloTasks {
+    fn warning_local_precheck(
+        &self,
+        state: &proto::Hello,
+        req: &proto::WarningRequest,
+    ) -> Result<(), reboot::one_shot_tasks::LocalStateNotReady> {
+        HelloTasks.warning_local_precheck(state, req)
+    }
+    fn erase_local_precheck(
+        &self,
+        state: &proto::Hello,
+        req: &proto::EraseRequest,
+    ) -> Result<(), reboot::one_shot_tasks::LocalStateNotReady> {
+        HelloTasks.erase_local_precheck(state, req)
+    }
     async fn messages(
         &self,
         state: &proto::Hello,

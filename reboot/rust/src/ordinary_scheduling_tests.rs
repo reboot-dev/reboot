@@ -1,4 +1,6 @@
 //! Focused transport-backed fake tests: payload/replay authority, not RocksDB CAS proof.
+#[path = "local_retry_tests.rs"]
+mod local_retry_tests;
 use super::*;
 use crate::proto::Counter;
 use crate::runtime::{
@@ -13,7 +15,57 @@ impl DurableStateDeclaration for Implicit {
 }
 const METHOD: &str = "tests.reboot.protoc.CounterWritesMethods.Increment";
 const RESPONSE: &str = "type.googleapis.com/tests.reboot.protoc.Counter";
-struct Binding;
+#[derive(Default)]
+struct Probe {
+    prechecks: std::sync::atomic::AtomicUsize,
+    handlers: std::sync::atomic::AtomicUsize,
+    handler_error: std::sync::atomic::AtomicUsize,
+    replace_before_executor: std::sync::atomic::AtomicBool,
+    handler_park: RpcPark,
+    receipt_park: RpcPark,
+    successors: Mutex<Vec<db::Task>>,
+}
+type RpcPark = Mutex<
+    Option<(
+        tokio::sync::oneshot::Sender<()>,
+        tokio::sync::oneshot::Receiver<()>,
+    )>,
+>;
+fn park(
+    slot: &RpcPark,
+) -> (
+    tokio::sync::oneshot::Receiver<()>,
+    tokio::sync::oneshot::Sender<()>,
+) {
+    let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+    let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+    *slot.lock().unwrap() = Some((entered_tx, release_rx));
+    (entered_rx, release_tx)
+}
+async fn parked(slot: &RpcPark) {
+    let parked = slot.lock().unwrap().take();
+    if let Some((entered, release)) = parked {
+        let _ = entered.send(());
+        release.await.unwrap();
+    }
+}
+fn declared_error() -> prost_types::Any {
+    prost_types::Any {
+        type_url: "type.googleapis.com/google.rpc.Status".into(),
+        value: googleapis_tonic_google_rpc::google::rpc::Status {
+            code: tonic::Code::FailedPrecondition as i32,
+            message: "declared rejection".into(),
+            details: vec![prost_types::Any {
+                type_url: RESPONSE.into(),
+                value: Counter::default().encode_to_vec(),
+            }],
+        }
+        .encode_to_vec(),
+    }
+}
+struct Binding {
+    probe: Arc<Probe>,
+}
 #[tonic::async_trait]
 impl ReaderTaskBinding for Binding {
     fn validate(&self, task: &db::Task) -> Result<(), Status> {
@@ -26,6 +78,75 @@ impl ReaderTaskBinding for Binding {
     }
     async fn execute(&self, _: &db::Task) -> Result<prost_types::Any, Status> {
         panic!("no dispatcher")
+    }
+    fn writer_method(&self, _: &db::Task) -> Option<&'static str> {
+        Some(METHOD)
+    }
+    fn writer_response_type(&self, _: &db::Task) -> Option<&'static str> {
+        Some(RESPONSE)
+    }
+    async fn execute_writer(
+        &self,
+        admitted: AdmittedWriterTask<'_>,
+    ) -> Result<WriterTaskReceipt, Status> {
+        if self
+            .probe
+            .replace_before_executor
+            .load(std::sync::atomic::Ordering::SeqCst)
+        {
+            tokio::task::yield_now().await;
+            *admitted.tasks.inner.running_owner.lock().unwrap() = Some(Arc::new(()));
+        }
+        let receipt = admitted
+            .execute_scheduling_outcome_with_precheck::<Implicit, Counter, Counter, _, _>(
+                |state, _| {
+                    self.probe
+                        .prechecks
+                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    if state.value == 0 {
+                        Err(LocalStateNotReady::new("ID missing"))
+                    } else {
+                        Ok(())
+                    }
+                },
+                |state, request, _| {
+                    let probe = self.probe.clone();
+                    Box::pin(async move {
+                        probe
+                            .handlers
+                            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        parked(&probe.handler_park).await;
+                        match probe
+                            .handler_error
+                            .load(std::sync::atomic::Ordering::SeqCst)
+                        {
+                            1 => {
+                                return Err(TaskHandlerError::Failed(Status::failed_precondition(
+                                    "ID missing",
+                                )));
+                            }
+                            2 => {
+                                return Err(TaskHandlerError::Failed(Status::unavailable(
+                                    "external IO failed",
+                                )));
+                            }
+                            3 => return Err(TaskHandlerError::Declared(declared_error())),
+                            _ => {}
+                        }
+                        state.value += request.value;
+                        Ok(WriterExecution {
+                            response: *state,
+                            task_upserts: probe.successors.lock().unwrap().clone(),
+                        })
+                    })
+                },
+            )
+            .await?;
+        parked(&self.probe.receipt_park).await;
+        Ok(receipt)
+    }
+    fn validate_error(&self, _: &db::Task, error: &prost_types::Any) -> Result<(), Status> {
+        decode_task_error(error).map(|_| ())
     }
     fn writer_capable(&self) -> bool {
         true
@@ -47,11 +168,13 @@ struct Fixture {
     server: tokio::task::JoinHandle<()>,
     reference: String,
     tasks: OneShotTasks,
+    probe: Arc<Probe>,
     _owner: DispatchOwner,
 }
 impl Fixture {
     async fn new() -> Self {
         let (endpoint, database, server) = crate::runtime::test_support::start_database().await;
+        database.model_task_completion();
         let store = DatabaseActorStore::connect_lazy(endpoint).unwrap();
         let reference = crate::state_ref::StateRef::from_id(
             Implicit::STATE_TYPE,
@@ -59,15 +182,18 @@ impl Fixture {
         )
         .unwrap()
         .to_string();
+        let probe = Arc::new(Probe::default());
         let tasks = OneShotTasks::new_with_declarations(
             store.clone(),
             Implicit::STATE_TYPE.into(),
             reference.clone(),
-            Binding,
+            Binding {
+                probe: probe.clone(),
+            },
             vec![TaskMethodDeclaration::new::<Implicit, Counter, Counter>(
                 METHOD,
                 RESPONSE,
-                vec![],
+                vec![DeclaredTaskError::new::<Counter>(RESPONSE)],
             )],
         )
         .unwrap();
@@ -83,6 +209,7 @@ impl Fixture {
             server,
             reference,
             tasks,
+            probe,
             _owner: owner,
         }
     }
@@ -216,12 +343,14 @@ async fn admitted_writer_schedules_atomically_and_replays_before_actor_load() {
     let successor = fixture.successor();
     let (cancel, _) = RecoveryCancellation::test_host();
     let started = std::sync::atomic::AtomicBool::new(false);
+    let admission = fixture.tasks.local_execution_admission().unwrap();
     let admitted = || AdmittedWriterTask {
         store: &fixture.store,
         task: &parent,
         method: METHOD,
         response_type: RESPONSE,
         started: &started,
+        admission: &admission,
         cancel: &cancel,
         tasks: &fixture.tasks,
     };
@@ -257,9 +386,10 @@ async fn admitted_writer_schedules_atomically_and_replays_before_actor_load() {
         .database
         .seed_actor(Implicit::STATE_TYPE, &fixture.reference, vec![255]);
     let replay = admitted()
-        .execute_scheduling_outcome::<Implicit, Counter, Counter, _>(|_, _, _| {
-            Box::pin(async { panic!("checkpoint replay handler") })
-        })
+        .execute_scheduling_outcome_with_precheck::<Implicit, Counter, Counter, _, _>(
+            |_, _| panic!("checkpoint replay precheck"),
+            |_, _, _| Box::pin(async { panic!("checkpoint replay handler") }),
+        )
         .await
         .unwrap();
     assert!(matches!(replay.outcome, WriterTaskOutcome::Terminal(_)));

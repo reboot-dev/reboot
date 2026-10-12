@@ -77,14 +77,22 @@ async fn admitted_implicit_creation_failure_success_and_checkpoint_replay() {
         )],
     )
     .unwrap();
+    let _dispatch_owner = DispatchOwner::claim(owner.clone()).unwrap();
+    *owner.inner.recovery_request.lock().unwrap() = Some(db::RecoverRequest::default());
+    owner
+        .inner
+        .active
+        .store(true, std::sync::atomic::Ordering::Release);
     let (cancel, _) = RecoveryCancellation::test_host();
     let started = std::sync::atomic::AtomicBool::new(false);
+    let admission = owner.local_execution_admission().unwrap();
     let admitted = || AdmittedWriterTask {
         store: &store,
         task: &task,
         method: METHOD,
         response_type: RESPONSE,
         started: &started,
+        admission: &admission,
         cancel: &cancel,
         tasks: &owner,
     };
@@ -177,12 +185,20 @@ async fn admitted_implicit_creation_failure_success_and_checkpoint_replay() {
         )],
     )
     .unwrap();
+    let _explicit_dispatch_owner = DispatchOwner::claim(explicit_owner.clone()).unwrap();
+    *explicit_owner.inner.recovery_request.lock().unwrap() = Some(db::RecoverRequest::default());
+    explicit_owner
+        .inner
+        .active
+        .store(true, std::sync::atomic::Ordering::Release);
+    let explicit_admission = explicit_owner.local_execution_admission().unwrap();
     let explicit_admitted = AdmittedWriterTask {
         store: &store,
         task: &explicit_task,
         method: METHOD,
         response_type: RESPONSE,
         started: &started,
+        admission: &explicit_admission,
         cancel: &cancel,
         tasks: &explicit_owner,
     };

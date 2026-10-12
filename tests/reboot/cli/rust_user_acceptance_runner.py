@@ -72,7 +72,7 @@ try:
         ])
         commands.extend([
          ('upstream_schema_strict_clippy', ['cargo','clippy','--manifest-path','reboot/rust/tests/fixtures/reboot_examples/Cargo.toml','--locked','--all-targets','--','-D','warnings']),
-         ('upstream_tasks_native', ['cargo','test','--manifest-path','reboot/rust/tests/fixtures/reboot_examples/Cargo.toml','--locked','--features','native-test-support','--test','hello_tasks_native','pinned_','--','--ignored','--test-threads=1','--nocapture']),
+         ('upstream_tasks_native', ['cargo','test','--manifest-path','reboot/rust/tests/fixtures/reboot_examples/Cargo.toml','--locked','--features','native-test-support','--test','hello_tasks_native','--','--ignored','--test-threads=1','--nocapture']),
          ('upstream_consumer_tests', ['cargo','test','--manifest-path','reboot/rust/tests/fixtures/reboot_examples/imported_error/Cargo.toml','--locked']),
          ('upstream_consumer_strict_clippy', ['cargo','clippy','--manifest-path','reboot/rust/tests/fixtures/reboot_examples/imported_error/Cargo.toml','--locked','--all-targets','--','-D','warnings']),
          ('upstream_constructor_strict_clippy', ['cargo','clippy','--manifest-path','reboot/rust/tests/fixtures/reboot_examples/hello-constructors/backend/Cargo.toml','--locked','--all-targets','--','-D','warnings']),
@@ -130,7 +130,8 @@ try:
         assert tasks_public_proof['invocation_counts'] == {'Send': 2, 'WarningBefore': 2, 'WarningAfter': 2, 'Erase': 2}
         assert all(hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest() == h for p,h in tasks_public_proof['source_hashes'].items())
         tasks_gate = next(item for item in results if item['suite'] == 'upstream_tasks_native')
-        assert re.findall(r'test result: (ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored;', pathlib.Path(tasks_gate['log']).read_text()) == [('ok', '2', '0', '0')]
+        assert re.findall(r'test result: (ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored;', pathlib.Path(tasks_gate['log']).read_text()) == [('ok', '4', '0', '0')]
+        assert 'test local_retry::native_missing_ids_retry_then_ordinary_writer_insertion_completes_once ...' in pathlib.Path(tasks_gate['log']).read_text()
         for item in results:
             if item['suite'] in ['sdk_all_targets','native4','native_local11']:
                 item['summaries']=re.findall(r'test result: (ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored;',pathlib.Path(item['log']).read_text())
