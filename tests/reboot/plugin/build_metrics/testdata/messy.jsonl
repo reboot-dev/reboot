@@ -1,0 +1,15 @@
+{"type": "user", "timestamp": "2026-10-05T09:00:00Z", "message": {"role": "user", "content": "<command-name>/reboot:app</command-name><command-args>A messy build</command-args>"}}
+this line is not JSON
+["a", "list", "not", "a", "record"]
+{"type": "summary", "summary": "a record with no timestamp"}
+{"type": "user", "timestamp": "2026-10-05T09:00:01Z", "isMeta": true, "message": {"role": "user", "content": [{"type": "text", "text": "Base directory for this skill: /Users/alice/.claude/plugins/cache/reboot-next/reboot/abc123/skills/app\n\n# app\nword word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word "}]}}
+{"type": "assistant", "timestamp": "2026-10-05T09:00:05Z", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "rm -rf /"}}]}}
+{"type": "user", "timestamp": "2026-10-05T09:00:06Z", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "is_error": true, "content": "The user doesn't want to proceed with this tool use."}]}}
+{"type": "assistant", "timestamp": "2026-10-05T09:00:10Z", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "t2", "name": "Bash", "input": {"command": "uv run rbt generate"}}]}}
+{"type": "user", "timestamp": "2026-10-05T09:00:12Z", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t2", "content": "Traceback (most recent call last):\n  File \"x.py\"\nValueError: 'schedule' is a reserved method name"}]}}
+{"type": "assistant", "timestamp": "2026-10-05T09:00:20Z", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "t3", "name": "Bash", "input": {"command": "cat > api/messy/v1/messy.py <<'EOF'\n...\nEOF"}}]}}
+{"type": "user", "timestamp": "2026-10-05T09:00:21Z", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t3", "content": ""}]}}
+{"type": "assistant", "timestamp": "2026-10-05T09:00:30Z", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "t4", "name": "Bash", "input": {"command": "uv run pytest"}}]}}
+{"type": "user", "timestamp": "2026-10-05T09:00:40Z", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t4", "content": "==== 2 failed, 3 passed in 9.1s ===="}]}}
+{"type": "assistant", "timestamp": "2026-10-05T09:00:50Z", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "t5", "name": "Bash", "input": {"command": "uv run pytest"}}]}}
+{"type": "user", "timestamp": "2026-10-05T09:01:00Z", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t5", "content": "==== 5 passed in 9.4s ===="}]}}
