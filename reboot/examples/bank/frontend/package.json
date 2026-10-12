@@ -23,9 +23,13 @@
     "vitest": "^3.2.4"
   },
   "scripts": {
-    "lint": "cd web && eslint ./src",
-    "start": "cd web && vite --port 3000 --host",
-    "build": "npm run lint && cd web && tsc --noEmit && vite build",
-    "test": "cd web && vitest src"
+    "lint": "eslint web/src",
+    "start": "vite",
+    "build": "npm run lint && tsc -b && vite build",
+    "test": "vitest web/src"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "vite-plugin-singlefile": "^2.0.3"
   }
 }

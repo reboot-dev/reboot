@@ -209,9 +209,11 @@ exactly one of them — the step that needs it.
 
 > **Never read `mcp-app/references/*` for a web app.** They cover
 > the MCP frontend — `UI()` artifacts, the MCPJam inspector,
-> `mcp/<name>/index.html` entries, the `vite.config.ts` that
-> serves MCP Apps through Envoy, `mcp=Tool()`
-> markers, popping a widget out into a web app. Reaching into them
+> `mcp/<name>/index.html` entries, one-file MCP App bundles,
+> `mcp=Tool()` markers, popping a widget out into a web app. (The
+> `frontend/` shell itself — `vite.config.ts` with `reboot()` — is
+> the same for both, and
+> `references/react-client.md` has it.) Reaching into them
 > costs context and produces MCP App-shaped code (`mcp=Tool()`
 > markers and `UI()` methods in an app with no MCP frontend). The
 > web equivalents are
@@ -512,7 +514,7 @@ The layout is the one every Reboot app has, `frontend/` included
     ├── tsconfig.json
     ├── tsconfig.app.json
     ├── tsconfig.node.json
-    ├── vite.config.ts       # Stock Vite SPA config, rooted at `web/`
+    ├── vite.config.ts       # The stock Vite file plus `reboot({ webAppPath: "web", ... })`
     ├── api/                 # Generated TypeScript client
     │                        # (output of `rbt generate --react=`)
     └── web/
@@ -543,10 +545,10 @@ host can serve at `/`, or the backend can with
 `--frontend-url` has Envoy send `/` to the Vite dev server instead,
 so the SPA is on the backend's origin with HMR; see
 `python/references/lifecycle-rbtrc.md`.
-An app that later adds an MCP frontend keeps this tree, adds
-`frontend/mcp/<name>/` beside `web/`, and swaps in the `mcp-app`
-skill's `vite.config.ts` and `npm run build`, which build both and
-serve the MCP Apps through Envoy.
+An app that later adds an MCP frontend keeps this tree and this
+config: it adds `frontend/mcp/<name>/` beside `web/` and
+`mcpAppPath: "mcp"` to `reboot()`, and the same dev server and
+`npm run build` serve and build both.
 
 ## Step-by-Step Build Flow
 

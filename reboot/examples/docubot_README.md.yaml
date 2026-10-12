@@ -7,6 +7,7 @@ overview: |
 backend_locations: "`backend/`"
 backend_language: typescript
 has_frontend: true
+web_app_url: http://localhost:5173
 has_non_react_frontend: false
 has_mcp: false
 has_mobile: false

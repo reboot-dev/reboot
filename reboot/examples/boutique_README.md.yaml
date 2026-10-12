@@ -9,6 +9,7 @@ overview: |
 backend_locations: "`backend/`"
 backend_language: python
 has_frontend: true
+web_app_url: http://localhost:9991
 has_non_react_frontend: false
 has_mcp: false
 has_mobile: false
