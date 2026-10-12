@@ -91,7 +91,7 @@ npm start
 ```
 
 If using VSCode, the page will load automatically.
-If not using VSCode, visit [http://127.0.0.1:3000](http://127.0.0.1:3000).
+If not using VSCode, visit [http://localhost:9991](http://localhost:9991).
 
 ### Non-React front end
 
