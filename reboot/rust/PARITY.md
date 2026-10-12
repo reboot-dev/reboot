@@ -80,9 +80,11 @@ Erase tasks. The first Erase removes the message before the original Warning and
 second Erase run. Both remain Pending with public SCHEDULED_RETRY and counts >3.
 The observation wrapper forwards the shared consumer's immutable prechecks too;
 otherwise its default precheck silently bypasses the retry contract. Full Pending
-records and actor state survive shutdown inspection and a third public rbt start;
-missing-ID rejection adds no observed handler invocations. Generated typed Wait
-RPC deadlines cancel observation without changing Pending records. Another faithful
+records are compared in app-free shutdown inspection and after a third public rbt
+start; actor equality is checked before shutdown and after restart, not during the
+app-free inspection. Missing-ID rejection adds no observed handler invocations.
+Generated typed Wait RPC deadlines cancel observation without changing Pending
+records. Another faithful
 Send/typed chain completes while both old tasks retry, demonstrating public writer
 usability, not eventual matching-ID completion. Administrative CancelTask rejects
 these ordinary tasks (FailedPrecondition); graceful dispatcher shutdown cancels
@@ -101,6 +103,14 @@ Native rejection checks do not directly establish checkpoint absence.
 Cancellation/generation/ACK boundary regressions remain transport-fake-backed;
 scheduling-specific lost-ACK/cancellation/stale-generation native proof is open.
 The current focused checkpoint is not a rerun of the prior nineteen-gate audit.
+Focused public receipt `/tmp/reboot-rust-upstream-tasks-9wjofwb2/result.json`
+passed three public sessions, two shutdown inspections and nine commands (including
+strict staged Clippy), with 314 frozen inputs matching and 20 exact owned process
+identities reconciled. Fifteen ownership regressions and 26 CLI regressions passed;
+the feature-enabled native suite passed three scenarios plus its recovery helper.
+The updated aggregate's Tasks validator accepted these actual focused receipts.
+These manifests certify their original source snapshot; this subsequent ledger
+clarification and fingerprint bookkeeping are not a new behavioral acceptance.
 Bank shared transactions remain unfinished; Bank generation is an explicit opt-in
 probe, not a supported runnable sample.
 
@@ -4149,7 +4159,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 3eb226890715329e620092e4e7e811e451124d6ef992ceec8c73f9571a8e3b06 -->
+<!-- parity-source-sha256: 604c55906fbb390bb5aeefc7672f8c797d9d9aed9e02672b1cb58afcad118c22 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,
