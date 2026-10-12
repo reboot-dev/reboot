@@ -129,7 +129,13 @@ with tempfile.TemporaryDirectory(prefix='rust-control-flow-cxx-') as d:
    assert run('signal',app,uuid.uuid4(),-1)=='0'
    racing=run('schedule',app,uuid.uuid4(),0,1)
    until(marker.exists)
-   assert marker.read_text()==boundary
+   observation=json.loads(marker.read_text())
+   assert observation['version']==1 and observation['clock']=='CLOCK_MONOTONIC'
+   assert observation['hook']==boundary
+   assert observation['case']==os.environ.get('RBT_TEST_CRASH_CASE','observation')
+   assert observation['pid']==host.pid and host.poll() is None
+   assert observation['task_uuid']==str(uuid.UUID(racing))
+   assert 0<=time.monotonic_ns()-observation['created_ns']<10_000_000_000
    assert run('signal',app,uuid.uuid4(),1)=='1'
    marker.with_suffix('.release').touch()
    terminal=json.loads(run('wait',app,racing))

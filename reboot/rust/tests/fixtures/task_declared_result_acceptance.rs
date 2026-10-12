@@ -209,6 +209,16 @@ fn generated_declared_reader_writer_restart_and_fenced_handler_failure() {
                 4242
             );
         }
+        // Durable task completion (or the pre-CAS barrier) can be observed
+        // before the scheduling RPC's client has written its response marker.
+        // Join that distinct acknowledgement before killing the initial host;
+        // otherwise removing its never-published marker races a healthy RPC.
+        task_vertical_acceptance::await_marker(&ack, &mut host);
+        assert_eq!(
+            std::fs::read_to_string(&ack).unwrap(),
+            "acknowledged",
+            "initial scheduling RPC must acknowledge before restart"
+        );
         host.kill().unwrap();
         host.wait().unwrap();
         drop(host);

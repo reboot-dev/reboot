@@ -110,6 +110,16 @@ fn remote_leaf_reader_tasks_commit_delayed_prepared_restart_and_redelivery() {
     for scenario in ["immediate", "delayed", "prepared-restart"] {
         let mut fixture = DistributedTasks::new();
         let mut target_command = fixture.leaf_command();
+        let target_commit = fixture
+            .markers
+            .path()
+            .join("initial-target-database-commit");
+        if scenario == "prepared-restart" {
+            // The target's live Watch may commit after the durable decision,
+            // independently of the root's parked direct terminal fan-out.
+            // Park its actual native Commit before issuance instead.
+            target_command.env("REBOOT_TEST_DATABASE_COMMIT_PARK", &target_commit);
+        }
         let due = chrono::Utc::now().timestamp() + 4;
         if scenario == "delayed" {
             target_command.args(["--task-vector", &format!("delayed:{due}")]);
@@ -170,9 +180,21 @@ fn remote_leaf_reader_tasks_commit_delayed_prepared_restart_and_redelivery() {
                 fixture.decision().unwrap().outcome,
                 database::transaction_coordinator_decision::Outcome::Commit as i32
             );
+            await_marker(&target_commit, &mut target);
+            assert_eq!(
+                database::TransactionParticipantCommitRequest::decode(
+                    std::fs::read(&target_commit).unwrap().as_slice()
+                )
+                .unwrap(),
+                database::TransactionParticipantCommitRequest {
+                    state_type: "tests.reboot.protoc.TransactionCounter".into(),
+                    state_ref: "target".into(),
+                }
+            );
+            assert!(!target_commit.with_extension("ack").exists());
             fixture.leaf_states(5, 20);
-            // Real durable target Prepare includes the actual task before any
-            // terminal control; scans cannot deliver the uncommitted record.
+            // Real durable target Prepare includes the actual task before
+            // native Commit issuance; scans cannot deliver the uncommitted record.
             let prepared = fixture.runtime.block_on(async {
                 let mut db = database::database_client::DatabaseClient::connect(
                     fixture.target_db.endpoint(),
@@ -200,6 +222,7 @@ fn remote_leaf_reader_tasks_commit_delayed_prepared_restart_and_redelivery() {
             let id = fixture.leaf_id();
             assert_eq!(prepared[0].uncommitted_tasks[0].task_id.as_ref(), Some(&id));
             std::thread::sleep(Duration::from_millis(350));
+            assert!(!target_commit.with_extension("ack").exists());
             assert!(
                 !fixture.marker().exists(),
                 "reader ran before target Commit ACK"
@@ -225,7 +248,9 @@ fn remote_leaf_reader_tasks_commit_delayed_prepared_restart_and_redelivery() {
             root = fixture.spawn(&mut root_recovery, "leaf-recovery-root-log");
             await_marker(&root_commit, &mut root);
             await_marker(&fixture.marker(), &mut target);
-            eprintln!("prepared-restart: remote task entered while actual root Database Commit parked");
+            eprintln!(
+                "prepared-restart: remote task entered while actual root Database Commit parked"
+            );
             // Watch recovery on the remote singleton proves only its own
             // Commit. It must not be used as a root Database Commit barrier.
             // Causally retain the root's real native Commit before issuance,
@@ -248,8 +273,11 @@ fn remote_leaf_reader_tasks_commit_delayed_prepared_restart_and_redelivery() {
                     .status,
                 database::task::Status::Pending as i32
             );
-            std::fs::write(root_commit.with_extension("release"), b"issue actual root Commit")
-                .unwrap();
+            std::fs::write(
+                root_commit.with_extension("release"),
+                b"issue actual root Commit",
+            )
+            .unwrap();
             await_marker(&root_commit.with_extension("ack"), &mut root);
             assert_eq!(
                 std::fs::read(root_commit.with_extension("ack")).unwrap(),

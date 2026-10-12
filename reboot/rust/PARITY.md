@@ -12,6 +12,56 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Current native inventory and acceptance-barrier repair (2026-10-12)
+
+**Fresh full native inventory: 152 tests passed, zero failed and zero left ignored
+in the selected executions.** The five discovered suites contain generated canonical
+Database/process cases (130), workflow restart/control cases (5), reactive/User
+cases (4), SortedMap cases (3), and isolated Native2pc cases (8). The library unit
+effects-restart test and separately owned initializer admission test add one each.
+Exact executed names match the nonempty, duplicate-free inventories. Focused
+retries are excluded from this distinct native total. Eight Native2pc tests prove
+the isolated Rust protocol, not Python legacy interoperability or public Bank.
+
+This is a five-file **acceptance-fixture repair**, not a production SDK change:
+- The remote target's live Watch may commit after a durable coordinator decision
+  while root direct fan-out is parked. The test now parks the actual target native
+  Commit before issuance and checks its request identity, absent ACK, prepared
+  task and reader silence; restart/redelivery and root/target independence remain.
+- Active-child controls are probed while the actual B handler and generated child
+  JoinHandle are causally held and A's RPC remains unfinished. Returning B then
+  requires exact handler-lifetime Cancelled, successful child join, no late clone
+  resolution, independently owned C handler cleanup, durable Abort and readmission.
+- Workflow wait observers validate the producer's versioned JSON, exact hook,
+  host PID, task UUID and monotonic deadline rather than expecting obsolete text.
+- Canonical task completion/pre-CAS visibility is separate from the scheduling
+  client's response marker. The declared-result fixture now joins its exact
+  scheduling acknowledgement before kill/restart/removal, without mutation retries
+  or weakening terminal, typed-error, private-state or pre-CAS assertions.
+
+Strict all-feature/all-target SDK and generated native-consumer Clippy passed;
+unchanged `Bank.Transfer` rejected for its exact unsupported declared-error
+schema. The receipt has 13 named gates, including two discovery-only inventories.
+Initializer admission reused the same task ID and typed Empty across two host
+incarnations with one workflow-body entry against the same real Database process;
+this particular test does not prove Database process restart or the public sample.
+The earlier public Legacy/Constructor/Tasks and default/all-target SDK unit evidence
+retains its own checkpoint; those gates were not rerun or relabelled here.
+
+Evidence: [current native checkpoint](tests/evidence/native-inventory-checkpoint-20261012.json),
+SHA-256 `9e77a266aa709c547c85e26fd848b1f91fa346d128b37f0979f5839bff3d4826`.
+All 7,347 recorded process identities across failed, focused and final attempts
+were independently absent, including matching zombies; final source, Database
+binary and log hashes matched. Earlier 128/2, 129/1 and workflow 4/1 failed attempts
+remain failures, not aggregate acceptance. Source reviews cover the applied repairs;
+marker-publication liveness risk fails closed. Historical 131-case/queued-inventory
+wording below describes earlier checkpoints. GitHub fork approval and merge-result
+validation remain separate; this is not full SDK parity or production readiness.
+
+The per-root shared-slot implementation is still isolated and unpublished. Its
+compatibility native-control ownership defect blocks integration pending repair,
+new review and parent execution. Shared/public Bank remains unsupported.
+
 ## Legacy gRPC and serving initializer checkpoint (2026-10-12)
 
 The pinned `hello-legacy-grpc` now has a faithful Rust-only port using its original
@@ -1645,9 +1695,10 @@ Bounds are contracts to review, not automatic defects. New behavior needs matchi
 Python/Rust request/result/error acceptance and crash/cancellation/lost-response
 boundaries. Canonical schemas alone do not certify generated API/protocol parity.
 
-**Validation distinction:** default Cargo currently skips 131 native integration
-cases; explicitly selected prerequisites/CLI modes do not substitute for all of
-those tests. A full-suite run is queued with fresh evidence, not yet certified.
+**Validation distinction:** ordinary Cargo runs still leave native tests ignored,
+with feature-dependent inventory. The current all-feature native inventory of
+152 cases has now been explicitly executed and audited (see the current native
+checkpoint above); selected earlier prerequisites were not its substitute.
 General Bazel CI does not provide the Cargo/runtime/generated-consumer/native gate.
 PR #216 remains draft and fork CI awaits approval, an execution gate rather than a
 failing result. Release-readiness requires exact-head and current-merge-result
@@ -4301,7 +4352,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 847cb7e2cd49856c678b9a79612a8fde377b3f9726ee0e044a04c9367a75383f -->
+<!-- parity-source-sha256: 286616ad5b1caafa0124fb0602ab1d4c1c75a9227a6d279c7dbe16a7c368c8e6 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

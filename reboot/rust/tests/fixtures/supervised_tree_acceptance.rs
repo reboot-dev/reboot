@@ -472,28 +472,106 @@ fn supervised_tree_active_child_blocks_prepare_terminal_and_closed_clone() {
     cc.env("REBOOT_TEST_TARGET_UNFINISHED_OUTBOUND", &barrier)
         .arg("--release-parked-target");
     let c = tree.spawn(2, &mut cc);
+    let resolver_log = tree.marker(1, "active-resolver");
     let mut bc = tree.command(1);
     bc.args([
         "--tree-active-child",
         "--tree-active-marker",
         barrier.to_str().unwrap(),
+        "--star-resolver-log",
+        resolver_log.to_str().unwrap(),
     ]);
     let b = tree.spawn(1, &mut bc);
     let a = tree.spawn(0, &mut tree.command(0));
     let mut hosts = [a, b, c];
-    let error = tree
-        .rpc(0, "Increment", 7, Duration::from_secs(3))
-        .unwrap_err();
-    assert_eq!(error.code(), tonic::Code::FailedPrecondition);
+    let endpoint = format!("http://127.0.0.1:{}", tree.ports[0]);
+    let call = tree.runtime.spawn(async move {
+        let mut client = tonic::client::Grpc::new(
+            tonic::transport::Endpoint::from_shared(endpoint)
+                .unwrap()
+                .connect_lazy(),
+        );
+        client.ready().await.unwrap();
+        let mut request = tonic::Request::new(TaskQueryRequest { amount: 7 });
+        request
+            .metadata_mut()
+            .insert("x-reboot-state-ref", "root".parse().unwrap());
+        request.set_timeout(Duration::from_secs(30));
+        client
+            .unary::<_, TaskQueryResponse, _>(
+                request,
+                "/tests.reboot.protoc.TransactionCounterWritesMethods/Increment"
+                    .parse()
+                    .unwrap(),
+                tonic::codec::ProstCodec::default(),
+            )
+            .await
+    });
+    let active_marker =
+        |suffix: &str| std::path::PathBuf::from(format!("{}.{suffix}", barrier.display()));
+    await_marker(&active_marker("parent-hold-ready"), &mut hosts[1]);
+    let assert_held = || {
+        assert!(
+            barrier.exists(),
+            "actual generated C handler must have entered"
+        );
+        assert!(
+            !call.is_finished(),
+            "A transport ended before B parent release"
+        );
+        assert!(
+            !barrier.with_extension("handler-dropped").exists(),
+            "C handler ended during B hold"
+        );
+        for suffix in [
+            "parent-release",
+            "parent-released",
+            "child-ended",
+            "child-joined",
+            "clone-denied",
+            "unexpected-child-completion",
+        ] {
+            assert!(
+                !active_marker(suffix).exists(),
+                "active hold lost: {suffix}"
+            );
+        }
+        for actor in [1, 2] {
+            assert!(
+                !tree.marker(actor, "terminal").exists(),
+                "actor {actor} terminalized during B hold"
+            );
+        }
+        assert!(
+            !tree.marker(0, "members").exists(),
+            "root certified unfinished subtree"
+        );
+    };
+    assert_held();
+    for actor in 0..3 {
+        let actual: Vec<Uuid> = std::fs::read_to_string(tree.marker(actor, "path"))
+            .unwrap()
+            .lines()
+            .map(|id| Uuid::parse_str(id).unwrap())
+            .collect();
+        let mut expected = vec![tree.root];
+        expected.extend_from_slice(&tree.children[..actor]);
+        assert_eq!(
+            actual, expected,
+            "held generated transaction path at actor {actor}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(tree.marker(actor, "path").with_extension("coordinator"))
+                .unwrap(),
+            "tests.reboot.protoc.TransactionCounter\nroot",
+            "held generated root/coordinator identity at actor {actor}"
+        );
+    }
     assert!(
-        barrier.exists(),
-        "actual generated child future must be active"
+        tree.decision().is_none(),
+        "root decided before held RPC returned"
     );
-    assert!(!tree.marker(0, "members").exists());
-    assert_eq!(
-        tree.decision().unwrap().outcome,
-        database::transaction_coordinator_decision::Outcome::Abort as i32
-    );
+    // Probe while B owns the real child future, not after root Abort cleanup.
     tree.runtime.block_on(async {
         let mut client = database::participant_client::ParticipantClient::connect(format!(
             "http://127.0.0.1:{}",
@@ -517,6 +595,7 @@ fn supervised_tree_active_child_blocks_prepare_terminal_and_closed_clone() {
             ),
             "Prepare bypassed active descendant execution: {error}"
         );
+        assert_held();
         let mut request = tonic::Request::new(database::AbortRequest {
             transaction_id: tree.root.as_bytes().to_vec(),
         });
@@ -532,33 +611,84 @@ fn supervised_tree_active_child_blocks_prepare_terminal_and_closed_clone() {
             ),
             "Abort bypassed active descendant execution: {error}"
         );
+        assert_held();
     });
-    let error = tree
-        .rpc(1, "Apply", 0, Duration::from_millis(150))
-        .unwrap_err();
-    assert!(matches!(
-        error.code(),
-        tonic::Code::Cancelled | tonic::Code::DeadlineExceeded
-    ));
+    for actor in [1, 2] {
+        let error = tree
+            .rpc(actor, "Apply", 0, Duration::from_millis(150))
+            .unwrap_err();
+        assert!(
+            matches!(
+                error.code(),
+                tonic::Code::Cancelled | tonic::Code::DeadlineExceeded
+            ),
+            "competing Apply bypassed held actor {actor}: {error}"
+        );
+        assert_held();
+    }
     tree.states([5, 20, 40]);
+    assert_held();
+    assert!(tree.decision().is_none());
+    // Release B first: returning an unfinished-child handler revokes its grant.
+    // Do not release C to manufacture a successful child response instead.
     std::fs::write(
-        barrier.with_extension("release"),
-        b"actual child handler may finish",
+        active_marker("parent-release"),
+        b"B may return with unfinished child",
     )
     .unwrap();
-    await_marker(
-        &std::path::PathBuf::from(format!("{}.child-ended", barrier.display())),
-        &mut hosts[1],
+    await_marker(&active_marker("parent-released"), &mut hosts[1]);
+    await_marker(&active_marker("child-joined"), &mut hosts[1]);
+    assert_eq!(
+        std::fs::read_to_string(active_marker("child-joined")).unwrap(),
+        "Ok(())",
+        "actual child task must be awaited without panic"
     );
-    let outcome = std::fs::read_to_string(format!("{}.child-ended", barrier.display())).unwrap();
-    assert!(
-        outcome.starts_with("Err(Grpc(Status { code: FailedPrecondition"),
-        "closed subtree must reject actual late child outcome: {outcome}"
+    for (suffix, prefix) in [
+        ("child-ended", "Err(Grpc(Status { code: Cancelled"),
+        ("clone-denied", "Grpc(Status { code: Cancelled"),
+    ] {
+        let outcome = std::fs::read_to_string(active_marker(suffix)).unwrap();
+        assert!(
+            outcome.starts_with(prefix)
+                && outcome.contains("message: \"generated handler lifetime revoked\""),
+            "exact handler-lifetime revocation required for {suffix}: {outcome}"
+        );
+    }
+    assert!(!active_marker("unexpected-child-completion").exists());
+    assert_eq!(
+        std::fs::read_to_string(&resolver_log).unwrap(),
+        "tests.reboot.protoc.TransactionCounter|tip\n",
+        "late revoked clone must never reach resolution or new actor admission"
     );
-    await_marker(
-        &std::path::PathBuf::from(format!("{}.clone-denied", barrier.display())),
-        &mut hosts[1],
+    let error = tree.runtime.block_on(async {
+        tokio::time::timeout(Duration::from_secs(5), call)
+            .await
+            .expect("root transport did not finish after B release")
+            .expect("root RPC task panicked")
+            .unwrap_err()
+    });
+    assert_eq!(
+        error.code(),
+        tonic::Code::FailedPrecondition,
+        "root must fail closed: {error}"
     );
+    assert_eq!(
+        error.message(),
+        "unsupported explicit-abort uncertainty: collection sealed or generated outbound calls still active; ownership retained"
+    );
+    assert!(!tree.marker(0, "members").exists());
+    tree.states([5, 20, 40]);
+    // The server-side handler has its own lifetime. Only after actual B child
+    // cancellation has been joined may its independent parked C handler finish.
+    std::fs::write(
+        barrier.with_extension("release"),
+        b"cancelled child's server handler may finish",
+    )
+    .unwrap();
+    await_marker(&barrier.with_extension("handler-dropped"), &mut hosts[2]);
+    for actor in [1, 2] {
+        await_marker(&tree.marker(actor, "terminal"), &mut hosts[actor]);
+    }
     tree.abort_and_readmit(&mut hosts);
     SupervisedTree::stop(&mut hosts);
     tree.planner.stop();

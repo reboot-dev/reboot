@@ -625,7 +625,7 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                 let child = targets[0].to_owned();
                 let marker = arg("--tree-active-marker");
                 let child_marker = marker.clone();
-                tokio::spawn(async move {
+                let mut child_task = tokio::spawn(async move {
                     let result = client
                         .increment(
                             &context,
@@ -635,6 +635,12 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                         .await;
                     std::fs::write(format!("{child_marker}.child-ended"), format!("{result:?}"))
                         .unwrap();
+                    assert!(
+                        matches!(result, Err(generated::TransactionCounterWritesMethodsIncrementError::Grpc(ref status))
+                            if status.code() == tonic::Code::Cancelled
+                                && status.message() == "generated handler lifetime revoked"),
+                        "unfinished generated child was not lifetime-revoked: {result:?}"
+                    );
                     let error = client
                         .increment(
                             &context,
@@ -646,17 +652,59 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for Handler {
                         .await
                         .unwrap_err();
                     assert!(
-                        matches!(error, generated::TransactionCounterWritesMethodsIncrementError::Grpc(ref status) if status.code() == tonic::Code::FailedPrecondition)
+                        matches!(error, generated::TransactionCounterWritesMethodsIncrementError::Grpc(ref status)
+                            if status.code() == tonic::Code::Cancelled
+                                && status.message() == "generated handler lifetime revoked"),
+                        "late clone was not lifetime-revoked: {error:?}"
                     );
+                    std::fs::write(format!("{child_marker}.clone-denied"), format!("{error:?}"))
+                        .unwrap();
+                });
+                // Admission is historical evidence only. Keep the actual B
+                // handler grant alive and continuously observe its child's
+                // JoinHandle throughout the test-owned active interval.
+                let hold = async {
+                    while !std::path::Path::new(&marker).exists() {
+                        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                    }
                     std::fs::write(
-                        format!("{child_marker}.clone-denied"),
-                        b"closed clone denied generated call before resolution",
+                        format!("{marker}.parent-hold-ready"),
+                        b"B handler held after actual generated C admission",
                     )
                     .unwrap();
-                });
-                while !std::path::Path::new(&marker).exists() {
-                    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                    while !std::path::Path::new(&format!("{marker}.parent-release")).exists() {
+                        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                    }
+                };
+                tokio::select! {
+                    biased;
+                    ended = &mut child_task => {
+                        std::fs::write(
+                            format!("{marker}.unexpected-child-completion"),
+                            format!("{ended:?}"),
+                        ).unwrap();
+                        panic!("actual generated child ended during B parent hold: {ended:?}");
+                    }
+                    () = hold => {}
                 }
+                assert!(
+                    !child_task.is_finished(),
+                    "child finished before B handler release"
+                );
+                std::fs::write(
+                    format!("{marker}.parent-released"),
+                    b"B returning with actual generated child unfinished",
+                )
+                .unwrap();
+                // Returning B must revoke the grant. An observer, not B's
+                // handler, awaits the retained handle so child panics cannot
+                // be mistaken for successful cancellation/clone rejection.
+                tokio::spawn(async move {
+                    let outcome = child_task.await;
+                    std::fs::write(format!("{marker}.child-joined"), format!("{outcome:?}"))
+                        .unwrap();
+                    outcome.expect("active child cancellation/late-clone proof failed");
+                });
             } else {
                 for (index, target) in targets.iter().enumerate() {
                     if index == 1
