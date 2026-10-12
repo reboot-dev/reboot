@@ -39,7 +39,12 @@ class TypeCheckTestCase(unittest.IsolatedAsyncioTestCase):
         'the errors.\n'
     )
 
-    async def type_check(self, script: str) -> tuple[bool, str]:
+    async def type_check(
+        self,
+        script: str,
+        *,
+        search_path: list[str] = [],
+    ) -> tuple[bool, str]:
         """Runs `type_check()` with `script`, a shell script, in place
         of the Python interpreter that runs mypy. Returns its result
         and what it printed."""
@@ -56,6 +61,7 @@ class TypeCheckTestCase(unittest.IsolatedAsyncioTestCase):
             passed = await type_check(
                 Subprocesses(),
                 os.path.abspath('backend/src/main.py'),
+                search_path=search_path,
             )
 
         return passed, output.getvalue()
@@ -73,6 +79,28 @@ class TypeCheckTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(output, self.CHECKING)
         with open('arguments') as file:
             self.assertEqual(file.read(), '-m mypy backend/src/main.py\n')
+
+    async def test_search_path(self) -> None:
+        # mypy does not read `PYTHONPATH`, so the generated code the
+        # application imports is given to it as `MYPYPATH`, ahead of
+        # whatever the developer exported.
+        script = 'echo "${MYPYPATH-unset}" > mypypath\n'
+
+        with patch.dict(os.environ, {'MYPYPATH': 'theirs'}):
+            await self.type_check(script, search_path=['backend/api', 'api'])
+        with open('mypypath') as file:
+            self.assertEqual(file.read(), 'backend/api:api:theirs\n')
+
+        with patch.dict(os.environ, {'MYPYPATH': 'theirs'}):
+            await self.type_check(script)
+        with open('mypypath') as file:
+            self.assertEqual(file.read(), 'theirs\n')
+
+        with patch.dict(os.environ):
+            os.environ.pop('MYPYPATH', None)
+            await self.type_check(script)
+        with open('mypypath') as file:
+            self.assertEqual(file.read(), 'unset\n')
 
     async def test_errors(self) -> None:
         passed, output = await self.type_check(

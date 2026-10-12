@@ -7,6 +7,7 @@ import os
 import sys
 from reboot.cli.common import terminal
 from reboot.cli.common.subprocesses import Subprocesses
+from typing import Sequence
 
 
 def mypy_installed() -> bool:
@@ -36,12 +37,29 @@ def missing_mypy() -> str:
     )
 
 
-async def type_check(subprocesses: Subprocesses, application: str) -> bool:
+async def type_check(
+    subprocesses: Subprocesses,
+    application: str,
+    *,
+    search_path: Sequence[str] = (),
+) -> bool:
     """Runs mypy on `application`, which checks it and every module of
     the project that it imports. Returns whether mypy reported no
     errors. Prints its report otherwise.
+
+    `search_path` is where mypy looks for the project's modules besides
+    the directories of the files it checks: the generated code and
+    proto directories that `rbt dev run` puts on the application's
+    `PYTHONPATH`, which mypy does not read.
     """
     target = os.path.relpath(application)
+
+    env = os.environ.copy()
+    if len(search_path) > 0:
+        # Ahead of whatever the developer exported.
+        env['MYPYPATH'] = os.pathsep.join(
+            [*search_path] + ([env['MYPYPATH']] if 'MYPYPATH' in env else [])
+        )
 
     terminal.info(
         f'Type-checking `{target}` and the code it imports with mypy ...\n'
@@ -56,6 +74,7 @@ async def type_check(subprocesses: Subprocesses, application: str) -> bool:
         # A configuration file that mypy can not parse is reported on
         # stderr.
         stderr=asyncio.subprocess.STDOUT,
+        env=env,
     ) as process:
         stdout, _ = await process.communicate()
 
