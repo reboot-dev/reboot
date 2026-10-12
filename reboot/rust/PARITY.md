@@ -102,7 +102,7 @@ strategy. Controlled-ID native eventual-insert coverage remains SDK-seam only.
 Native rejection checks do not directly establish checkpoint absence.
 Cancellation/generation/ACK boundary regressions remain transport-fake-backed;
 scheduling-specific lost-ACK/cancellation/stale-generation native proof is open.
-The current focused checkpoint is not a rerun of the prior nineteen-gate audit.
+The earlier focused checkpoint was not a rerun of the prior nineteen-gate audit.
 Focused public receipt `/tmp/reboot-rust-upstream-tasks-9wjofwb2/result.json`
 passed three public sessions, two shutdown inspections and nine commands (including
 strict staged Clippy), with 314 frozen inputs matching and 20 exact owned process
@@ -111,6 +111,24 @@ the feature-enabled native suite passed three scenarios plus its recovery helper
 The updated aggregate's Tasks validator accepted these actual focused receipts.
 These manifests certify their original source snapshot; this subsequent ledger
 clarification and fingerprint bookkeeping are not a new behavioral acceptance.
+
+Subsequent publication audit `1791803454128973513` passed all nineteen gates
+against published implementation `3a4f1f02d5cf2224bab4287e5e3c81900fd929bd`.
+All 278 aggregate frozen inputs matched, every gate recorded exit zero and empty
+live-owned lists, and 678 recorded PID/start identities were independently absent
+before this ledger-only publication update. SDK all-targets logged 516 unit tests
+and 618 summed passing outcomes including nested consumers; ignored native inventory
+is not included as executed acceptance. The audit also passed four reactive native
+cases, eleven same-host native cases and the four-test Hello Tasks native suite
+(three scenarios plus helper), strict checks, CLI/ownership regressions and all
+public sample gates. Fresh Tasks receipt is
+`/tmp/reboot-rust-upstream-tasks-htt9gt_h/result.json` (three sessions, two app-free
+shutdown inspections, nine commands, invocation counts 4/5/5/4).
+Evidence: `/tmp/reboot-rust-user-http-full-audit-1791803454128973513/accepted.json`;
+SHA-256 `4d6a510274cd7a71d36a7db0e0ba7df9618dbbcca936bad2aac43a3e0a6632fc`.
+Local aggregate acceptance is not GitHub CI approval or full SDK parity; the
+unchanged-public eventual-matching-ID and scheduling ACK claim limits above remain.
+
 Bank shared transactions remain unfinished; Bank generation is an explicit opt-in
 probe, not a supported runnable sample.
 
