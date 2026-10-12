@@ -12,14 +12,15 @@ a change to the skills must not make worse (`build_metrics.GATED`).
 import argparse
 import sys
 from pathlib import Path
-
-import build_metrics
+from tests.reboot.plugin.build_metrics import build_metrics
 
 
 def transcript(arg: str) -> Path:
     path = Path(arg).expanduser()
     if path.is_dir():
-        sessions = sorted(path.glob("*.jsonl"), key=lambda p: p.stat().st_mtime)
+        sessions = sorted(
+            path.glob("*.jsonl"), key=lambda p: p.stat().st_mtime
+        )
         if not sessions:
             raise SystemExit(f"{path} holds no transcript (*.jsonl)")
         return sessions[-1]
@@ -44,7 +45,9 @@ def main() -> int:
     if args.baseline:
         base = build_metrics.read(transcript(args.baseline))
     print(f"plugin: {build.plugin or 'unknown'}")
-    rows = build_metrics.COMPARED + (("passed", "Scenarios passed, last run"),)
+    rows = build_metrics.COMPARED + (
+        ("passed", "Scenarios passed, last run"),
+    )
     for key, label in rows:
         line = f"{label:<44}{shown(key, getattr(build, key)):>10}"
         if base is not None:

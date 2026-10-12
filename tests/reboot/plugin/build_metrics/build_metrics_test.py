@@ -18,8 +18,7 @@
 import os
 import unittest
 from pathlib import Path
-
-import build_metrics
+from tests.reboot.plugin.build_metrics import build_metrics
 
 TESTDATA = Path(
     os.environ.get(
@@ -131,12 +130,14 @@ class PluginSource(unittest.TestCase):
     def test_where_a_skill_came_from(self) -> None:
         cases = {
             "/Users/a/Library/Application Support/Claude/"
-            "local-agent-mode-sessions/x/rpm/plugin_1": "Claude app upload",
+            "local-agent-mode-sessions/x/rpm/plugin_1":
+                "Claude app upload",
             "/Users/a/.claude/plugins/cache/reboot-plugin/reboot/abc":
                 "reboot-plugin (installed)",
             "/Users/a/.codex/.tmp/marketplaces/reboot-plugin/plugins/reboot":
                 "reboot-plugin (installed)",
-            "/Users/a/projects/reboot-next/reboot/plugin": "plugin",
+            "/Users/a/projects/reboot-next/reboot/plugin":
+                "plugin",
         }
         for base, expected in cases.items():
             with self.subTest(base=base):

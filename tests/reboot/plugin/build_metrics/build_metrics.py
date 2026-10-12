@@ -202,7 +202,11 @@ def _claude_assistant(at: datetime, block: dict) -> Iterator[Event]:
     if name == "AskUserQuestion":
         questions = len(args.get("questions") or [])
     yield Event(
-        at, "call", id=str(block.get("id")), name=name, writes=writes,
+        at,
+        "call",
+        id=str(block.get("id")),
+        name=name,
+        writes=writes,
         questions=questions,
     )
 
@@ -212,7 +216,10 @@ def _claude_user(at: datetime, block: object) -> Iterator[Event]:
         text = text_of(block.get("content"))
         failed = bool(block.get("is_error")) and DECLINED not in text
         yield Event(
-            at, "result", id=str(block.get("tool_use_id")), text=text,
+            at,
+            "result",
+            id=str(block.get("tool_use_id")),
+            text=text,
             failed=failed,
         )
         return
@@ -257,13 +264,20 @@ def codex_events(path: Path) -> Iterator[Event]:
                 writes += tuple(SHELL_WRITE.findall(command))
             questions = source.count("request_user_input")
             yield Event(
-                at, "call", id=str(payload.get("call_id")), name=name,
-                writes=writes, questions=questions,
+                at,
+                "call",
+                id=str(payload.get("call_id")),
+                name=name,
+                writes=writes,
+                questions=questions,
             )
         elif kind in CODEX_RESULTS:
             text = text_of(payload.get("output"))
             yield Event(
-                at, "result", id=str(payload.get("call_id")), text=text,
+                at,
+                "result",
+                id=str(payload.get("call_id")),
+                text=text,
             )
 
 
