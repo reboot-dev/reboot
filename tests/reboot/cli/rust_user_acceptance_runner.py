@@ -66,7 +66,7 @@ try:
         commands.insert(6, ('user_workflows_public',[python,str(root/'tests/reboot/cli/rust_user_app_e2e.py'),'--workflows']))
         commands.insert(7, ('user_checkpoint_fixture',[python,str(root/'tests/reboot/cli/rust_user_app_e2e.py'),'--checkpoint-fixture']))
         commands.extend([
-         ('native_local6', ['cargo','test','--manifest-path','reboot/rust/Cargo.toml','--locked','--all-features','--test','generated_cxx_database_process','registered_same_host_generated_','--','--ignored','--test-threads=1','--nocapture']),
+         ('native_local9', ['cargo','test','--manifest-path','reboot/rust/Cargo.toml','--locked','--all-features','--test','generated_cxx_database_process','registered_same_host_generated_','--','--ignored','--test-threads=1','--nocapture']),
          ('native_fixture_strict_clippy', ['cargo','clippy','--manifest-path','reboot/rust/tests/fixtures/generated_cxx_database_process/Cargo.toml','--locked','--all-targets','--','-D','warnings']),
         ])
         if targeted: commands=[item for item in commands if item[0] in ['user_workflows_public','user_checkpoint_fixture']]
@@ -99,11 +99,11 @@ try:
         assert all(u['passed'] and not u['cleanup_errors'] for u in users)
         import re
         for item in results:
-            if item['suite'] in ['sdk_all_targets','native4','native_local6']:
+            if item['suite'] in ['sdk_all_targets','native4','native_local9']:
                 item['summaries']=re.findall(r'test result: (ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored;',pathlib.Path(item['log']).read_text())
                 assert item['summaries'] and all(v[0]=='ok' and v[2]=='0' for v in item['summaries'])
                 if item['suite']=='native4':assert item['summaries'][-1]==('ok','4','0','0')
-                elif item['suite']=='native_local6':assert item['summaries'][-1]==('ok','6','0','0')
+                elif item['suite']=='native_local9':assert item['summaries'][-1]==('ok','9','0','0')
                 else:assert sum(int(v[1]) for v in item['summaries'])>0
     if not probe and targeted:
         users=[json.loads(p.read_text()) for p in (stage/'greeting').glob('reboot-rust-public-user-*/result.json')]

@@ -12,6 +12,47 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Registered reusable reader tasks and additional host-crash phases
+
+The generated same-host public-root fixture now calls the same registered B
+sequentially as N1/N2/N3 with fresh child paths under one root coordinator. N1
+succeeds, N2 returns its genuine declared limit error without dooming the root,
+and N3 observes N1's retained private value 27 rather than N2's rolled-back value.
+The final committed values are A=12/B=40. N2 retains exactly one returned B writer.
+N1/N3 task intents are admitted; N2's constructed intent returns before admission.
+This proves private-state rollback and task non-admission, **not rollback of an
+already staged N2 task**.
+
+Only B owns singleton reader tasks. Task/policy/ownership configuration precedes
+local registration, and all participants restore before coordinator/owner/task
+recovery and readiness. Before Prepare fanout, original public values 5/20,
+absent requested task records, no reader invocation and A/B writer membership are
+observed. Actual blocked reader entry after Commit reads value 40; two Pending
+records survive an owned-host kill and same-RocksDB Database restart. A fresh
+recovery-only host uses generated typed Wait for both N1/N3 results equal to 40.
+Completed records, invocation logs and mutation-entry logs remain unchanged across
+another host launch. Completed stability across a further Database restart is
+not yet asserted. Preprepare reusable coverage does not assert zero participant
+records; membership assertions compare references within the fixture state type
+and empty read-only membership, not absence of other state-type keys.
+
+Additional two-actor crash cases park before Prepare fanout or after immutable
+Commit before direct delivery (with live Watch parked). The former observes zero
+participant records, one preparing coordinator and no terminal decision, then
+recovers Abort with state 4. The latter observes prepared participants, a fully
+prepared coordinator and immutable Commit membership before host death and again
+after Database restart, then recovers state 5. Both clear outstanding worklists.
+These are pre-fanout and post-decision cases, not interrupted partial-prepare proof.
+
+Frozen twelve-gate audit `1791775682349426738` accepted all twelve exits zero:
+SDK 591 passing results including nested consumers (490 library, 45 generated),
+strict SDK/generated-consumer Clippy, native restart 4, ownership regressions,
+CLI unit, public User/workflow/checkpoint restart, greeting, native registered-local
+9 and strict native-fixture Clippy. All 238 frozen inputs matched before ledger
+bookkeeping; recorded descendant PID/start identities were absent and the owner
+lock was released. Source-only applied safety review found no scoped blocker and
+identified the coverage limits above; it is distinct from execution acceptance.
+
 ## Registered chains, siblings and prepared-host-crash recovery
 
 Exclusive nonfactory generated receipt-backed admission now includes bounded
@@ -37,9 +78,10 @@ restores all participants before canonical coordinator recovery/readiness, reads
 state 5 without initialization or mutation rerun, and clears both worklists.
 No-rerun evidence is source control flow, not an independent invocation counter;
 prepared snapshots check counts/flags, not exact transaction-path identities.
-This crash point precedes immutable Commit publication. Post-decision and partial
-prepare crashes, reusable registered reader-task composition, independent recovered
-Watch settlement and C-specific Watch gate release remain unproved. The separate
+This historical crash point precedes immutable Commit publication. The newer
+section above adds pre-fanout/post-decision and reusable reader-task acceptance;
+partial-prepare crashes, independent recovered Watch settlement and C-specific
+Watch gate release remain unproved. The separate
 live Watch acceptance still covers B in the two-actor case.
 
 Frozen twelve-gate audit `1791773771269816780` accepted all twelve exits zero:
@@ -3957,7 +3999,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 89c332e9b67bb6d6d5e1f3abbb2bdd488154ea339e0fc6a6a28a3d5ea2372d0e -->
+<!-- parity-source-sha256: 15b6f59130ffe4abede70857b5e79d436d1cb007cbd3913d20fd3a21b09183a2 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,
