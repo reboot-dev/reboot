@@ -1,5 +1,6 @@
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
+#[cfg(feature = "test-support")]
 fn custom_declared_registration_association_and_completion_winners_fail_closed() {
     for vector in [
         "declared-wrong-full",

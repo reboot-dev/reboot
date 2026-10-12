@@ -39,6 +39,7 @@ def source_manifest():
             'tests/reboot/cli/rust_process_ownership_test.py',
             'tests/reboot/cli/rust_user_acceptance_runner.py',
             'tests/reboot/cli/rust_examples_tasks_e2e.py',
+            'tests/reboot/cli/rust_examples_budget_test.py',
             'tests/reboot/cli/rust_user_checkpoint_fixture.py',
             'tests/reboot/cli/fixtures/rust_http_request_fixture.py',
             'tests/reboot/cli/fixtures/rust_http_request_host.rs',
@@ -87,6 +88,10 @@ class CheckerTests(unittest.TestCase):
         manifest = source_manifest()
         name = 'tests/reboot/cli/rust_examples_tasks_e2e.py'
         self.assertEqual(manifest[name], hashlib.sha256((ROOT / name).read_bytes()).hexdigest())
+
+    def test_resource_budget_regression_is_fingerprinted(self):
+        name = 'tests/reboot/cli/rust_examples_budget_test.py'
+        self.assertEqual(source_manifest()[name], hashlib.sha256((ROOT / name).read_bytes()).hexdigest())
 
     def test_real_links(self):
         self.assertGreater(check_links((SDK / 'PARITY.md').read_text(), SDK), 0)

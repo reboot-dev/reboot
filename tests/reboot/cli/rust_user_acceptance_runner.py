@@ -24,8 +24,10 @@ def sample(parent,owned):
 def budget():
     if probe:return (0,shutil.disk_usage(stage).free)
     size=int(subprocess.check_output(['du','-sb',str(target)]).split()[0]);free=shutil.disk_usage('/tmp').free
-    # User-approved target ceiling: 10 GB; retain the 8 GiB free-space floor.
-    assert size<=10*1000**3 and free>=8*1024**3,(size,free)
+    # Preserve the original default; operators explicitly pass an approved ceiling.
+    ceiling=int(os.environ.get('RUST_DX_TARGET_CEILING_BYTES','10000000000'))
+    assert ceiling>0,ceiling
+    assert size<=ceiling and free>=8*1024**3,(size,free,ceiling)
     return size,free
 results=[]
 try:

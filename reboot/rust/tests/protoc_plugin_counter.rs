@@ -44,9 +44,8 @@ fn protoc_plugin_emits_durable_counter_adapters() {
     assert!(content.contains("authorization: reboot::auth::AuthorizationPolicy"));
     assert!(content.contains("pub fn with_authorization("));
     assert!(
-        content.contains(
-            "store.scheduling_writer_async_for_method_authorized::<CounterDurableState"
-        )
+        content
+            .contains("store.scheduling_writer_async_for_method_authorized::<CounterDurableState")
     );
     assert!(
         content.contains("store.reader_async_for_with_admission_authorized::<CounterDurableState")
@@ -131,8 +130,7 @@ fn protoc_plugin_canonicalizes_relative_durable_state_annotation() {
     .unwrap();
     assert!(content.contains("pub struct EchoDurableState;"));
     assert!(
-        content
-            .contains("store.scheduling_writer_async_for_method_authorized::<EchoDurableState")
+        content.contains("store.scheduling_writer_async_for_method_authorized::<EchoDurableState")
     );
     assert!(
         content.contains("store.reader_async_for_with_admission_authorized::<EchoDurableState")
@@ -287,6 +285,49 @@ impl generated::CounterWritesMethodsDatabaseHandler for Counter {
         state.value += request.amount;
         Ok(proto::CounterValue { value: state.value })
     }
+}
+
+#[tonic::async_trait]
+impl generated::CounterWritesMethodsTransactionHandler for Counter {
+    async fn increment(&self, state: &mut proto::Counter, request: proto::IncrementRequest) -> Result<proto::CounterValue, generated::CounterWritesMethodsIncrementError> {
+        generated::CounterWritesMethodsDatabaseHandler::increment(self, state, request).await
+    }
+}
+
+#[tokio::test]
+async fn writer_only_generated_transaction_adapter_registers_and_keeps_external_writers_usable() {
+    use reboot::registered_local::GeneratedLocalTransactionAdapter;
+    use proto::counter_writes_methods_server::CounterWritesMethods;
+    let (endpoint, _, database_server) = start_database().await;
+    let store = DatabaseActorStore::connect_lazy(&endpoint).unwrap();
+    let participant = reboot::durable_participant::DurableActorParticipant::new(
+        Arc::new(reboot::durable_participant::TonicParticipantSidecar::connect(&endpoint).await.unwrap()),
+        "tests.reboot.protoc.Counter", "writer-only-counter");
+    let resolver = reboot::durable_coordinator::ExactParticipantResolver::new([(participant.actor_target(), Arc::new(reboot::durable_coordinator::InProcessParticipantEndpoint::new(reboot::durable_participant::DurableActorParticipantHost::new(participant.clone()))))]).unwrap();
+    let coordinator = reboot::durable_coordinator::DurableRootCoordinator::new(
+        Arc::new(TransactionCoordinatorSidecar { trace: Arc::new(std::sync::Mutex::new(Vec::new())) }), Arc::new(resolver)).with_identity(participant.actor_target());
+    let adapter = generated::CounterWritesMethodsTransactionAdapter::new(store, participant, coordinator, TransactionStartFactory, Counter)
+        .with_authorization(AuthorizationPolicy::permissive_for_development());
+    assert_eq!(adapter.local_configuration().unwrap().methods, std::collections::BTreeSet::from(["tests.reboot.protoc.CounterWritesMethods.Increment".to_owned()]));
+    let mut host = reboot::application_host::ApplicationHost::new("writer-only-fixture");
+    let (adapter, _) = host.register_local_transaction_service(adapter).unwrap();
+    assert_eq!(host.registered_transaction_adapter_count(), 1);
+    for expected in [3, 6] {
+        let mut headers = reboot::RebootHeaders::new("writer-only-counter");
+        headers.idempotency_key = Some(Uuid::new_v4());
+        let mut request = tonic::Request::new(proto::IncrementRequest { amount: 3 });
+        *request.metadata_mut() = headers.to_metadata().unwrap();
+        assert_eq!(adapter.increment(request).await.unwrap().get_ref().value, expected);
+        let mut headers = reboot::RebootHeaders::new("writer-only-counter");
+        headers.transaction_ids = Some(vec![Uuid::from_u128(201)]);
+        headers.transaction_coordinator_state_type = Some("tests.reboot.protoc.Counter".into());
+        headers.transaction_coordinator_state_ref = Some("forged-root".into());
+        let mut request = tonic::Request::new(proto::IncrementRequest { amount: 1000 });
+        *request.metadata_mut() = headers.to_metadata().unwrap();
+        assert_eq!(adapter.increment(request).await.unwrap_err().message(), "inbound ordinary writer requires registered local ticket");
+    }
+    drop(host);
+    database_server.abort(); let _ = database_server.await;
 }
 
 #[tonic::async_trait]
@@ -555,6 +596,15 @@ impl transaction_generated::TransactionCounterWritesMethodsTransactionHandler fo
         self.trace.lock().unwrap().push("writer handler");
         state.value += request.amount;
         Ok(proto::TransactionCounterValue { value: state.value })
+    }
+
+    async fn apply_transaction_result(
+        &self,
+        context: &reboot::runtime::TransactionContext,
+        state: &mut proto::TransactionCounter,
+        request: proto::TransactionIncrementRequest,
+    ) -> Result<reboot::runtime::TransactionExecution<proto::TransactionCounterValue>, tonic::Status> {
+        self.increment(context, state, request).await
     }
 
     async fn increment(
@@ -1160,8 +1210,9 @@ impl tonic::codegen::Body for PendingLocalEof {
 
 #[tokio::test]
 async fn generated_ticket_receiver_uses_live_parent_child_once_and_burns_replay() {
-    for mode in 0..16 { run(mode).await; }
-    async fn run(mode: usize) {
+    for mode in 0..16 { run(mode, false).await; }
+    for mode in 0..9 { run(mode, true).await; }
+    async fn run(mode: usize, writer: bool) {
     use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
     use reboot::registered_local::GeneratedLocalTransactionAdapter;
     use reboot::durable_coordinator::ParticipantTarget;
@@ -1227,6 +1278,7 @@ impl reboot::durable_coordinator::CoordinatorSidecar for TicketCoordinatorSideca
     }
     struct Probe {
         mode: usize,
+        writer: bool,
         auth_probe: Arc<AuthProbe>,
         receiver: Arc<dyn TransactionCounterWritesMethods + Send + Sync>,
         unregistered: Arc<dyn TransactionCounterWritesMethods + Send + Sync>,
@@ -1239,6 +1291,21 @@ impl reboot::durable_coordinator::CoordinatorSidecar for TicketCoordinatorSideca
     impl TicketReceiverProbe for Probe {
         async fn run(&self, context: &reboot::runtime::TransactionContext) {
             context.require_registered_outbound().unwrap();
+            if self.writer && self.mode == 8 {
+                let mut headers = reboot::RebootHeaders::new(&self.target.state_ref);
+                headers.transaction_ids = Some(context.transaction_ids().to_vec());
+                headers.transaction_coordinator_state_type = Some(context.transaction_coordinator_state_type().into());
+                headers.transaction_coordinator_state_ref = Some(context.transaction_coordinator_state_ref().into());
+                let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 7311 });
+                *request.metadata_mut() = headers.to_metadata().unwrap();
+                let before = self.trace.lock().unwrap().clone();
+                let error = self.receiver.apply(request).await.unwrap_err();
+                assert_eq!(error.code(), tonic::Code::FailedPrecondition);
+                assert_eq!(error.message(), "inbound ordinary writer requires registered local ticket");
+                assert_eq!(*self.trace.lock().unwrap(), before, "forged metadata must not load or enter writer");
+                assert_eq!(self.allocations.load(Ordering::SeqCst), 0);
+                return;
+            }
             if matches!(self.mode, 14 | 15) {
                 let client = transaction_generated::TransactionCounterWritesMethodsClient::new(LocalOnly { context: context.clone(), mode: self.mode });
                 let target = transaction_generated::TransactionCounterWritesMethodsTarget::new(&self.target.state_ref);
@@ -1313,7 +1380,7 @@ impl reboot::durable_coordinator::CoordinatorSidecar for TicketCoordinatorSideca
                 }
                 return;
             }
-            let method = "tests.reboot.protoc.TransactionCounterWritesMethods.Increment";
+            let method = if self.writer { "tests.reboot.protoc.TransactionCounterWritesMethods.Apply" } else { "tests.reboot.protoc.TransactionCounterWritesMethods.Increment" };
             let destination = context.lookup_registered_local_destination(&self.target, method).unwrap();
             let scope = context.begin_generated_outbound_for(&self.target.state_type, &self.target.state_ref, method).unwrap();
             let message = proto::TransactionIncrementRequest { amount: 7311 };
@@ -1333,6 +1400,7 @@ impl reboot::durable_coordinator::CoordinatorSidecar for TicketCoordinatorSideca
             let receiver = if self.mode == 0 { self.unregistered.clone() } else { self.receiver.clone() };
             let mut request = make_request(ticket);
             let mode = self.mode;
+            let writer = self.writer;
             if mode == 3 { request.metadata_mut().insert("x-reboot-transaction-ids", "malformed".parse().unwrap()); }
             if mode == 4 { request.get_mut().amount += 1; }
             let before = self.trace.lock().unwrap().clone();
@@ -1340,6 +1408,7 @@ impl reboot::durable_coordinator::CoordinatorSidecar for TicketCoordinatorSideca
                 match mode {
                     1 => receiver.factory_increment(request).await,
                     2 => receiver.shared_read(request).await,
+                    _ if writer => receiver.apply(request).await,
                     _ => receiver.increment(request).await,
                 }
             }).await.unwrap().unwrap_err();
@@ -1361,7 +1430,7 @@ impl reboot::durable_coordinator::CoordinatorSidecar for TicketCoordinatorSideca
             let before = self.trace.lock().unwrap().clone();
             let receiver = self.receiver.clone();
             let request = make_request(replay);
-            let error = tokio::spawn(async move { receiver.increment(request).await }).await.unwrap().unwrap_err();
+            let error = tokio::spawn(async move { if writer { receiver.apply(request).await } else { receiver.increment(request).await } }).await.unwrap().unwrap_err();
             assert_eq!(error.message(), "local ticket already consumed");
             assert_eq!(*self.trace.lock().unwrap(), before, "replay must fail before participant/storage/handler");
             if mode >= 6 {
@@ -1436,7 +1505,7 @@ impl reboot::durable_coordinator::CoordinatorSidecar for TicketCoordinatorSideca
     let mut headers = reboot::RebootHeaders::new("transaction-counter");
     headers.bearer_token = Some("test-only-parent-token".into()); headers.cookie = Some("parent-cookie".into());
     *request.metadata_mut() = headers.to_metadata().unwrap();
-    let probe: Arc<dyn TicketReceiverProbe> = Arc::new(Probe { mode, auth_probe, receiver: Arc::new(b), unregistered: Arc::new(make("remote-transaction-counter")), target, allocations: allocations.clone(), trace: trace.clone(), readiness });
+    let probe: Arc<dyn TicketReceiverProbe> = Arc::new(Probe { mode, writer, auth_probe, receiver: Arc::new(b), unregistered: Arc::new(make("remote-transaction-counter")), target, allocations: allocations.clone(), trace: trace.clone(), readiness });
     let result = tokio::time::timeout(std::time::Duration::from_secs(5), TICKET_RECEIVER_PROBE.scope(probe, a.increment(request))).await.unwrap();
     if mode == 10 {
         assert_eq!(result.unwrap().get_ref().value, 5);
@@ -1460,7 +1529,7 @@ impl reboot::durable_coordinator::CoordinatorSidecar for TicketCoordinatorSideca
         let error = result.unwrap_err();
         if mode < 8 { assert_eq!(error.message(), "parent probe complete"); }
     }
-    assert_eq!(allocations.load(Ordering::SeqCst), usize::from(!matches!(mode, 9 | 11 | 12)));
+    assert_eq!(allocations.load(Ordering::SeqCst), usize::from(!matches!(mode, 9 | 11 | 12) && !(writer && mode == 8)));
     if matches!(mode, 13 | 14 | 15) {
         assert!(database.participant_prepare_requests().is_empty());
         assert!(database.participant_commit_requests().is_empty());
@@ -1523,7 +1592,11 @@ async fn generated_local_registration_retains_exact_binding_and_invalidates_buil
     assert_eq!(config.database_endpoint, tonic::transport::Endpoint::from_shared(endpoint.clone()).unwrap().uri().to_string());
     assert_eq!(config.target.state_ref, "transaction-counter");
     assert_eq!(config.target.state_type, "tests.reboot.protoc.TransactionCounter");
-    assert_eq!(config.methods, std::collections::BTreeSet::from(["tests.reboot.protoc.TransactionCounterWritesMethods.Increment".to_owned()]));
+    assert_eq!(config.methods, std::collections::BTreeSet::from([
+        "tests.reboot.protoc.TransactionCounterWritesMethods.Increment".to_owned(),
+        "tests.reboot.protoc.TransactionCounterWritesMethods.Apply".to_owned(),
+        "tests.reboot.protoc.TransactionCounterWritesMethods.ApplyDeclared".to_owned(),
+    ]));
 
     let (registered, template) = host.register_local_transaction_service(adapter).unwrap();
     assert_eq!(host.registered_transaction_service_count(), 1);

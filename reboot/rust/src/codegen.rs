@@ -1234,9 +1234,15 @@ fn reject_generated_symbol_collisions(
                     format!("{service_name}DatabaseAdapter"),
                 ]);
             }
-            if durable_kinds
+            if durable_kinds.iter().any(|kind| {
+                matches!(
+                    kind,
+                    DurableKind::Transaction(_)
+                        | DurableKind::Writer(WriterMetadata { constructor: false })
+                )
+            }) && !durable_kinds
                 .iter()
-                .any(|kind| matches!(kind, DurableKind::Transaction(_)))
+                .any(|kind| matches!(kind, DurableKind::Workflow))
             {
                 symbols.extend([
                     format!("{service_name}TransactionHandler"),
@@ -1643,7 +1649,7 @@ fn emit_durable(
     }
     for (kind, method, _, _, method_identity) in &methods {
         let declared_errors = declared_transactional_errors(annotation, kind, method_identity);
-        if !declared_errors.is_empty() {
+        if !declared_errors.is_empty() && matches!(kind, DurableKind::Transaction(_)) {
             emit_declared_error_enum(
                 output,
                 service_name,
@@ -1727,7 +1733,7 @@ fn declared_transactional_errors<'a>(
         DurableKind::Transaction(TransactionMetadata {
             mode: TransactionMode::Exclusive,
             ..
-        })
+        }) | DurableKind::Writer(WriterMetadata { constructor: false })
     ) {
         return &[];
     }
@@ -2035,6 +2041,7 @@ struct TransactionFlow<'a> {
     mode: &'a str,
     factory: bool,
     declared_error: bool,
+    writer: bool,
     inbound: TransactionInbound,
     shared_root_ownership_seam: bool,
     authorize_after_load: bool,
@@ -2054,6 +2061,7 @@ fn emit_transaction_flow(output: &mut String, flow: TransactionFlow<'_>) {
         mode,
         factory,
         declared_error,
+        writer,
         inbound,
         shared_root_ownership_seam,
         authorize_after_load,
@@ -2138,7 +2146,9 @@ fn emit_transaction_flow(output: &mut String, flow: TransactionFlow<'_>) {
     // Python transaction.state owns the mutated state for both root and inbound
     // exclusive execution. An explicit envelope override remains authoritative.
     let default_mutated_state = !factory && mode == "Exclusive";
-    let handler_method = if declared_error && !factory {
+    let handler_method = if writer {
+        format!("{method}_transaction_result")
+    } else if declared_error && !factory {
         format!("{method}_typed_transaction_result")
     } else {
         method.to_owned()
@@ -2667,7 +2677,14 @@ fn emit_transactions(
         .iter()
         .filter(|(kind, _, _, _, _)| matches!(kind, DurableKind::Transaction(_)))
         .collect();
-    if transactions.is_empty() {
+    if transactions.is_empty()
+        && !database_methods.iter().any(|(kind, _, _, _, _)| {
+            matches!(
+                **kind,
+                DurableKind::Writer(WriterMetadata { constructor: false })
+            )
+        })
+    {
         return Ok(());
     }
     if database_methods
@@ -2684,6 +2701,40 @@ fn emit_transactions(
             "{service_name}: method collides with reserved local reader helper"
         ));
     }
+    // RPCs and synthesized hooks share one Rust trait-method namespace. In
+    // particular, Foo's typed transaction hook can collide with writer FooTyped.
+    let mut handler_methods: HashSet<String> = methods
+        .iter()
+        .map(|(_, method, _, _, _)| method.clone())
+        .collect();
+    for (kind, method, _, _, identity) in methods {
+        let (hook, label) = match kind {
+            DurableKind::Reader => (
+                format!("{method}_with_reader_context"),
+                "composed reader hook",
+            ),
+            DurableKind::Writer(WriterMetadata { constructor: false }) => (
+                format!("{method}_transaction_result"),
+                "transactional writer hook",
+            ),
+            DurableKind::Transaction(metadata) if metadata.mode == TransactionMode::Shared => {
+                (format!("{method}_fresh_shared"), "fresh shared hook")
+            }
+            DurableKind::Transaction(metadata)
+                if !metadata.factory
+                    && !declared_transactional_errors(annotation, kind, identity).is_empty() =>
+            {
+                (
+                    format!("{method}_typed_transaction_result"),
+                    "typed transaction hook",
+                )
+            }
+            _ => continue,
+        };
+        if !handler_methods.insert(hook.clone()) {
+            return Err(format!("{service_name}: {label} `{hook}` collides"));
+        }
+    }
     let handler = format!("{service_name}TransactionHandler");
     let adapter = format!("{service_name}TransactionAdapter");
     let declaration = format!("{state}DurableState");
@@ -2697,6 +2748,18 @@ fn emit_transactions(
             declared_error_type(service_name, method)
         };
         output.push_str(&format!("    async fn {method}(&self, state: {}proto::{state}, request: proto::{request}) -> Result<proto::{response}, {error}>;\n", if matches!(**kind, DurableKind::Writer(_)) { "&mut " } else { "&" }));
+        if matches!(
+            **kind,
+            DurableKind::Writer(WriterMetadata { constructor: false })
+        ) {
+            let hook = format!("{method}_transaction_result");
+            if methods.iter().any(|(_, other, _, _, _)| other == &hook) {
+                return Err(format!(
+                    "{service_name}: transactional writer hook `{hook}` collides"
+                ));
+            }
+            output.push_str(&format!("    /// Inbound ordinary writer: stage under the caller's transaction, never Store independently.\n    async fn {method}_transaction_result(&self, _context: &{runtime_module}::runtime::TransactionContext, state: &mut proto::{state}, request: proto::{request}) -> Result<{runtime_module}::runtime::TransactionExecution<proto::{response}>, {error}> {{ self.{method}(state, request).await.map({runtime_module}::runtime::TransactionExecution::new) }}\n"));
+        }
     }
     // Backward-compatible optional composed snapshot hook. Ordinary unary
     // readers keep their original handlers and envelopes.
@@ -2777,6 +2840,17 @@ fn emit_transactions(
             }
             _ => None,
         })
+        .chain(
+            database_methods
+                .iter()
+                .filter(|(kind, _, _, _, _)| {
+                    matches!(
+                        **kind,
+                        DurableKind::Writer(WriterMetadata { constructor: false })
+                    )
+                })
+                .map(|(_, _, _, _, identity)| format!("{identity:?}.to_owned()")),
+        )
         .collect::<Vec<_>>()
         .join(", ");
     output.push_str(&format!("impl<H, P, C, R, F> {runtime_module}::registered_local::GeneratedLocalTransactionAdapter for {adapter}<H, P, C, R, F> where P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{ fn local_configuration(&self) -> Result<{runtime_module}::registered_local::GeneratedLocalAdapterConfig, tonic::Status> {{ let target = self.participant.actor_target(); if target.state_type != <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE {{ return Err(tonic::Status::failed_precondition(\"participant state type differs from generated declaration\")); }} let sidecar = self.participant.sidecar(); let endpoint = sidecar.database_endpoint().ok_or_else(|| tonic::Status::failed_precondition(\"local registration requires an exact Database endpoint\"))?; {local_store_check} Ok({runtime_module}::registered_local::GeneratedLocalAdapterConfig {{ target, database_endpoint: endpoint.to_owned(), policy: self.authorization.clone(), methods: std::collections::BTreeSet::from([{eligible_local_methods}]), incarnation: self.local_incarnation.clone() }}) }} fn with_local_registration(mut self, binding: {runtime_module}::registered_local::RegisteredAdapterBinding) -> Result<Self, tonic::Status> {{ if self.local_registration.is_some() {{ return Err(tonic::Status::failed_precondition(\"adapter already has local registration\")); }} self.local_registration = Some(binding); Ok(self) }} }}\n"));
@@ -2847,7 +2921,40 @@ fn emit_transactions(
         } else {
             String::new()
         };
-        output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n{unary_composition}        let handler = self.handler.clone();\n        self.store.{envelope}::<{declaration}, _, _, _>(\n            {prefix}request, move |state, request| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ handler.{method}(state, request).await{error_map} }})\n            }},\n        ).await\n    }}\n"));
+        let mut transactional_writer = String::new();
+        if matches!(
+            **kind,
+            DurableKind::Writer(WriterMetadata { constructor: false })
+        ) {
+            transactional_writer.push_str(&format!("        let headers = {runtime_module}::RebootHeaders::from_request(&request).map_err(|error| {{ if let Some(ticket) = request.extensions().get::<{runtime_module}::runtime::RegisteredLocalTicket>() {{ ticket.discard(); }} tonic::Status::invalid_argument(error.to_string()) }})?;\n        let inbound = headers.transaction_ids.is_some();\n        if let Some(ticket) = request.extensions().get::<{runtime_module}::runtime::RegisteredLocalTicket>().filter(|_| !inbound) {{ ticket.discard(); return Err(tonic::Status::failed_precondition(\"local writer ticket requires inbound transaction metadata\")); }}\n        if inbound {{ return Box::pin(async move {{\n            let local_child = if let Some(ticket) = request.extensions_mut().remove::<{runtime_module}::runtime::RegisteredLocalTicket>() {{ let binding = self.local_registration.as_ref().ok_or_else(|| {{ ticket.discard(); tonic::Status::failed_precondition(\"local ticket requires registered receiver\") }})?; let configuration = {runtime_module}::registered_local::GeneratedLocalTransactionAdapter::local_configuration(self).inspect_err(|_| {{ ticket.discard(); }})?; Some(ticket.consume(binding, &configuration, \"{method_identity}\", &headers, request.get_ref())?) }} else {{ None }};\n            if local_child.is_none() {{ return Err(tonic::Status::failed_precondition(\"inbound ordinary writer requires registered local ticket\")); }}\n            let (authorization_context, authorization_auth) = self.authorization.verify(headers.clone(), <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, \"{method_identity}\").await?;\n"));
+            emit_transaction_flow(
+                &mut transactional_writer,
+                TransactionFlow {
+                    method,
+                    request,
+                    response,
+                    method_identity,
+                    state,
+                    declaration: &declaration,
+                    runtime_module,
+                    mode: "Exclusive",
+                    factory: false,
+                    declared_error: !declared_database_errors(annotation, kind, method_identity)
+                        .is_empty(),
+                    writer: true,
+                    inbound: TransactionInbound::KnownLocalInbound,
+                    shared_root_ownership_seam: false,
+                    authorize_after_load: true,
+                },
+            );
+            transactional_writer.push_str("        }).await; }\n");
+        }
+        let request_mutability = if transactional_writer.is_empty() {
+            ""
+        } else {
+            "mut "
+        };
+        output.push_str(&format!("    async fn {method}(&self, {request_mutability}request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n{transactional_writer}{unary_composition}        let handler = self.handler.clone();\n        self.store.{envelope}::<{declaration}, _, _, _>(\n            {prefix}request, move |state, request| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ handler.{method}(state, request).await{error_map} }})\n            }},\n        ).await\n    }}\n"));
     }
     for (kind, method, request, response, method_identity) in transactions {
         let metadata = match kind {
@@ -2869,6 +2976,7 @@ fn emit_transactions(
             factory: metadata.factory,
             declared_error: !declared_transactional_errors(annotation, kind, method_identity)
                 .is_empty(),
+            writer: false,
             inbound: TransactionInbound::Dynamic,
             shared_root_ownership_seam: false,
             authorize_after_load: false,
@@ -2882,14 +2990,20 @@ fn emit_transactions(
         }
     }
     output.push_str("}\n\n");
-    emit_local_readers(
-        output,
-        service_name,
-        &declaration,
-        runtime_module,
-        annotation,
-        database_methods,
-    )?;
+    if annotation
+        .methods
+        .values()
+        .any(|kind| matches!(kind, DurableKind::Transaction(_)))
+    {
+        emit_local_readers(
+            output,
+            service_name,
+            &declaration,
+            runtime_module,
+            annotation,
+            database_methods,
+        )?;
+    }
     Ok(())
 }
 
@@ -3210,6 +3324,7 @@ mod tests {
             mode: "Exclusive",
             factory: false,
             declared_error: false,
+            writer: false,
             inbound: TransactionInbound::Dynamic,
             shared_root_ownership_seam: false,
             authorize_after_load: true,
@@ -3677,7 +3792,11 @@ mod tests {
         assert!(content.contains("pub struct CounterWritesMethodsTasksWait;"));
         assert!(content.contains("pub struct CounterWritesMethodsTasksWaitRouted<R>"));
         assert!(content.contains("ReaderTaskBinding<H>"));
-        assert!(!content.contains("TransactionAdapter<H"));
+        assert!(content.contains("pub struct CounterWritesMethodsTransactionAdapter<H"));
+        assert!(content.contains("increment_transaction_result"));
+        assert!(content.contains("if inbound { return Box::pin(async move"));
+        assert!(content.contains("TransactionPathContract::PreserveNested"));
+        assert!(content.contains("local.finish_generated_inbound().await?"));
         assert!(content.contains("with_one_shot_writer_tasks"));
         assert!(content.contains(
             "impl<H: CounterWritesMethodsDatabaseHandler> CounterWritesMethodsDatabaseAdapter<H>"
@@ -5996,6 +6115,108 @@ mod tests {
         assert!(content.contains("&self.authorization, request"));
         assert!(!content.contains("constructor_writer_async_for_method::<CounterDurableState"));
         assert!(!content.contains("constructor writers are not supported"));
+    }
+
+    #[test]
+    fn raw_transaction_handler_hook_namespace_rejects_rpc_and_synthesized_collisions() {
+        fn append(output: &mut Vec<u8>, field: u8, value: &[u8]) {
+            output.push(field);
+            let mut length = value.len();
+            while length >= 0x80 {
+                output.push((length as u8 & 0x7f) | 0x80);
+                length >>= 7;
+            }
+            output.push(length as u8);
+            output.extend_from_slice(value);
+        }
+        let wire = |shared: bool, writer: &str| {
+            let mut service = RawService {
+                name: Some("CounterWritesMethods".into()),
+                methods: vec![],
+                options: None,
+            }
+            .encode_to_vec();
+            for (name, kind, errors) in [
+                (
+                    "Foo",
+                    reboot_method_options::Kind::Transaction(RebootTransactionMethodOptions {
+                        constructor: None,
+                        mode: Some(if shared {
+                            reboot_transaction_method_options::Mode::Shared(Empty {})
+                        } else {
+                            reboot_transaction_method_options::Mode::Exclusive(Empty {})
+                        }),
+                    }),
+                    if shared {
+                        vec![]
+                    } else {
+                        vec![".tests.reboot.protoc.CounterError".into()]
+                    },
+                ),
+                (
+                    writer,
+                    reboot_method_options::Kind::Writer(RebootWriterMethodOptions {
+                        constructor: None,
+                    }),
+                    vec![],
+                ),
+            ] {
+                let mut option = RebootMethodOptions { kind: Some(kind) }.encode_to_vec();
+                option.extend(RebootMethodErrorOptions { errors }.encode_to_vec());
+                let options = ExtensionOptions {
+                    reboot: Some(option),
+                }
+                .encode_to_vec();
+                let mut method = MethodDescriptorProto {
+                    name: Some(name.into()),
+                    input_type: Some(".tests.reboot.protoc.IncrementRequest".into()),
+                    output_type: Some(".tests.reboot.protoc.CounterValue".into()),
+                    ..Default::default()
+                }
+                .encode_to_vec();
+                append(&mut method, 0x22, &options);
+                append(&mut service, 0x12, &method);
+            }
+            let mut request = request();
+            request.file_to_generate = vec!["tests/reboot/protoc/counter.proto".into()];
+            let mut file = request.proto_file.remove(0);
+            file.name = Some("tests/reboot/protoc/counter.proto".into());
+            file.service.clear();
+            file.message_type.push(prost_types::DescriptorProto {
+                name: Some("CounterError".into()),
+                ..Default::default()
+            });
+            let mut file = file.encode_to_vec();
+            append(&mut file, 0x32, &service);
+            let mut request = request.encode_to_vec();
+            append(&mut request, 0x7a, &file);
+            request
+        };
+        for shared in [false, true] {
+            let response = generate_from_wire(&wire(shared, "FooOther"));
+            assert!(
+                response.error.is_none(),
+                "valid neighboring RPCs: {response:?}"
+            );
+        }
+        for (shared, writer, hook) in [
+            (false, "FooTyped", "foo_typed_transaction_result"),
+            (
+                false,
+                "FooTypedTransactionResult",
+                "foo_typed_transaction_result",
+            ),
+            (true, "FooFreshShared", "foo_fresh_shared"),
+        ] {
+            let response = generate_from_wire(&wire(shared, writer));
+            let error = response
+                .error
+                .expect("generated trait hooks must have one namespace");
+            assert!(
+                error.contains(hook) && error.contains("collides"),
+                "{error}"
+            );
+        }
     }
 
     #[test]

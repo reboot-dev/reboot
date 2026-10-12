@@ -260,6 +260,7 @@ async fn checkpoint_records(
 }
 #[test]
 #[ignore = "requires REBOOT_NATIVE2PC_CXX_DATABASE real C++ Database/RocksDB"]
+#[cfg(feature = "test-support")]
 fn custom_writer_receipt_store_and_replay_binding_drop_fails_graceful_shutdown() {
     for vector in ["discard", "store", "replay", "declared-park"] {
         let mut db = CxxDatabase::start(std::env::var("REBOOT_NATIVE2PC_CXX_DATABASE").unwrap());

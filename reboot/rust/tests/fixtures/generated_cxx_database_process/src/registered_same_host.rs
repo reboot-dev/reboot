@@ -155,6 +155,27 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for LocalHandl
             .await
             .map_err(generated::TransactionCounterWritesMethodsApplyDeclaredError::Grpc)
     }
+    async fn apply_declared_transaction_result(
+        &self,
+        context: &TransactionContext,
+        state: &mut proto::TransactionCounter,
+        request: proto::TransactionIncrementRequest,
+    ) -> Result<
+        TransactionExecution<proto::TransactionCounterValue>,
+        generated::TransactionCounterWritesMethodsApplyDeclaredError,
+    > {
+        if !self.reusable {
+            return self
+                .apply_declared(state, request)
+                .await
+                .map(TransactionExecution::new);
+        }
+        self.increment_typed_transaction_result(context, state, request).await.map_err(|error| match error {
+            generated::TransactionCounterWritesMethodsIncrementError::TransactionLimitExceeded(detail) => generated::TransactionCounterWritesMethodsApplyDeclaredError::TransactionLimitExceeded(detail),
+            generated::TransactionCounterWritesMethodsIncrementError::System(error) => generated::TransactionCounterWritesMethodsApplyDeclaredError::System(error),
+            generated::TransactionCounterWritesMethodsIncrementError::Grpc(status) => generated::TransactionCounterWritesMethodsApplyDeclaredError::Grpc(status),
+        })
+    }
     async fn increment_typed_transaction_result(
         &self,
         context: &TransactionContext,
@@ -166,10 +187,16 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for LocalHandl
     > {
         use generated::TransactionCounterWritesMethodsIncrementError as Error;
         if !self.reusable {
-            return self
+            let execution = self
                 .increment(context, state, request)
                 .await
-                .map_err(Error::Grpc);
+                .map_err(Error::Grpc)?;
+            if self.depth == 1 && has("--ordinary-writer-abort") {
+                return Err(Error::TransactionLimitExceeded(
+                    proto::TransactionLimitExceeded { limit: 4242 },
+                ));
+            }
+            return Ok(execution);
         }
         context.require_registered_outbound().map_err(Error::Grpc)?;
         assert_eq!(context.transaction_ids().len(), self.depth);
@@ -179,13 +206,16 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for LocalHandl
                 generated::TransactionCounterWritesMethodsClient::new(LocalOnly(child.clone()));
             let target = generated::TransactionCounterWritesMethodsTarget::new(child);
             for amount in [7, 11, 13] {
-                let result = client
-                    .increment(
-                        context,
-                        &target,
-                        proto::TransactionIncrementRequest { amount },
-                    )
-                    .await;
+                let request = proto::TransactionIncrementRequest { amount };
+                let result = if has("--ordinary-writer") {
+                    client.apply_declared(context, &target, request).await.map_err(|error| match error {
+                        generated::TransactionCounterWritesMethodsApplyDeclaredError::TransactionLimitExceeded(detail) => Error::TransactionLimitExceeded(detail),
+                        generated::TransactionCounterWritesMethodsApplyDeclaredError::System(error) => Error::System(error),
+                        generated::TransactionCounterWritesMethodsApplyDeclaredError::Grpc(status) => Error::Grpc(status),
+                    })
+                } else {
+                    client.increment(context, &target, request).await
+                };
                 if amount == 11 {
                     let Error::TransactionLimitExceeded(error) = result.unwrap_err() else {
                         panic!("N2 must be declared rollback")
@@ -260,14 +290,12 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for LocalHandl
                 generated::TransactionCounterWritesMethodsClient::new(LocalOnly(child.clone()));
             let target = generated::TransactionCounterWritesMethodsTarget::new(child);
             // Inline dispatch on the ordinary outer root-call Tokio worker.
-            let response = client
-                .increment(
-                    context,
-                    &target,
-                    proto::TransactionIncrementRequest { amount: 1 },
-                )
-                .await
-                .unwrap();
+            let request = proto::TransactionIncrementRequest { amount: 1 };
+            let response = if has("--ordinary-writer") {
+                client.apply(context, &target, request).await.unwrap()
+            } else {
+                client.increment(context, &target, request).await.unwrap()
+            };
             assert_eq!(response.response().get_ref().value, 5);
         }
         if self.children.is_empty() {
@@ -568,6 +596,51 @@ pub async fn run() {
             }
         );
     }
+    if has("--ordinary-writer") {
+        // Wire-shaped coordinator metadata is not same-host execution authority.
+        // Reject before admission, then prove exclusive re-admission on that actor.
+        for (adapter, reference) in adapters.iter().zip(&refs) {
+            for declared in [false, true] {
+                let mut headers = reboot::RebootHeaders::new(reference);
+                headers.transaction_ids = Some(vec![Uuid::parse_str(&arg("--root-id")).unwrap()]);
+                headers.transaction_coordinator_state_type = Some(STATE.into());
+                headers.transaction_coordinator_state_ref = Some(refs[0].clone());
+                let mut forged =
+                    tonic::Request::new(proto::TransactionIncrementRequest { amount: 1000 });
+                *forged.metadata_mut() = headers.to_metadata().unwrap();
+                let result = if declared {
+                    adapter.apply_declared(forged).await
+                } else {
+                    adapter.apply(forged).await
+                };
+                let error = result.unwrap_err();
+                assert_eq!(error.code(), tonic::Code::FailedPrecondition);
+                assert_eq!(
+                    error.message(),
+                    "inbound ordinary writer requires registered local ticket"
+                );
+            }
+            let value = adapter
+                .query(request(reference, 0, false))
+                .await
+                .unwrap()
+                .get_ref()
+                .value;
+            assert_eq!(
+                adapter
+                    .apply(request(reference, 0, true))
+                    .await
+                    .unwrap()
+                    .get_ref()
+                    .value,
+                value
+            );
+        }
+        eprintln!(
+            "ORDINARY_WRITER_FORGED_METADATA_REJECTED {} actors; plain and declared; exclusive readmitted",
+            adapters.len()
+        );
+    }
     let mut client = proto::transaction_counter_writes_methods_client::TransactionCounterWritesMethodsClient::connect(format!("http://{listen}")).await.unwrap();
     let root_ref = refs[0].clone();
     let call = tokio::spawn(async move {
@@ -602,16 +675,39 @@ pub async fn run() {
         );
         std::fs::write(marker, b"registered B gate released by Watch").unwrap();
     }
-    assert_eq!(
-        tokio::time::timeout(std::time::Duration::from_secs(30), call)
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap()
-            .get_ref()
-            .value,
-        if reusable { 12 } else { 5 }
-    );
+    let result = tokio::time::timeout(std::time::Duration::from_secs(30), call)
+        .await
+        .unwrap()
+        .unwrap();
+    if has("--ordinary-writer-abort") {
+        let status = result.unwrap_err();
+        let rich = reboot::declared_error_details(&status).unwrap().unwrap();
+        assert_eq!(rich.details.len(), 1);
+        assert_eq!(
+            rich.details[0].type_url,
+            "type.googleapis.com/tests.reboot.protoc.TransactionLimitExceeded"
+        );
+        let error =
+            proto::TransactionLimitExceeded::decode(rich.details[0].value.as_slice()).unwrap();
+        assert_eq!(error.limit, 4242);
+        // Ordinary external writers can readmit every actor after root Abort ACK.
+        for (adapter, reference) in adapters.iter().zip(&refs) {
+            assert_eq!(
+                adapter
+                    .apply(request(reference, 0, true))
+                    .await
+                    .unwrap()
+                    .get_ref()
+                    .value,
+                4
+            );
+        }
+    } else {
+        assert_eq!(
+            result.unwrap().get_ref().value,
+            if reusable { 12 } else { 5 }
+        );
+    }
     if reusable {
         let marker = arg("--local-task-marker");
         tokio::time::timeout(std::time::Duration::from_secs(15), async {

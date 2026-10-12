@@ -118,8 +118,21 @@ fn await_file(path: &std::path::Path, host: &mut WaitHostGuard) {
     }
 }
 fn run(watch: bool, chain: bool, crash_phase: usize, siblings: bool) {
+    run_writers(watch, chain, crash_phase, siblings, false);
+}
+fn run_writers(watch: bool, chain: bool, crash_phase: usize, siblings: bool, writers: bool) {
+    run_writers_outcome(watch, chain, crash_phase, siblings, writers, false);
+}
+fn run_writers_outcome(
+    watch: bool,
+    chain: bool,
+    crash_phase: usize,
+    siblings: bool,
+    writers: bool,
+    abort: bool,
+) {
     let crash_prepared = crash_phase != 0;
-    let expected_value = if crash_phase == 2 || crash_phase == 5 {
+    let expected_value = if crash_phase == 2 || crash_phase == 5 || abort {
         4
     } else {
         5
@@ -153,6 +166,12 @@ fn run(watch: bool, chain: bool, crash_phase: usize, siblings: bool) {
     let terminal = markers.join("terminal");
     let released = markers.join("released");
     let mut command = Command::new(generated_host_binary(&fixture));
+    if abort {
+        command.arg("--ordinary-writer-abort");
+    }
+    if writers {
+        command.arg("--ordinary-writer");
+    }
     command.args([
         "--registered-same-host",
         "--database",
@@ -491,6 +510,21 @@ fn registered_same_host_generated_commit_restart_readback() {
 }
 #[test]
 #[ignore = "requires real C++ Database/RocksDB"]
+fn registered_ordinary_writer_siblings_commit_restart_readback() {
+    run_writers(false, false, 0, true, true);
+}
+#[test]
+#[ignore = "requires real C++ Database/RocksDB"]
+fn registered_ordinary_writer_prepared_crash_recovery() {
+    run_writers(false, false, 1, false, true);
+}
+#[test]
+#[ignore = "requires real C++ Database/RocksDB"]
+fn registered_ordinary_writer_siblings_root_error_abort_restart() {
+    run_writers_outcome(false, false, 0, true, true, true);
+}
+#[test]
+#[ignore = "requires real C++ Database/RocksDB"]
 fn registered_same_host_generated_chain_restart_readback() {
     run(false, true, 0, false);
 }
@@ -551,6 +585,14 @@ async fn task_records(endpoint: &str, tasks: &[database::Task]) -> Vec<database:
 #[test]
 #[ignore = "requires real C++ Database/RocksDB"]
 fn registered_same_host_generated_reusable_reader_pending_restart() {
+    reusable_reader_pending_restart(false);
+}
+#[test]
+#[ignore = "requires real C++ Database/RocksDB"]
+fn registered_ordinary_writer_reusable_declared_rollback_pending_restart() {
+    reusable_reader_pending_restart(true);
+}
+fn reusable_reader_pending_restart(writers: bool) {
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/generated_cxx_database_process");
     prepare_generated_host(&fixture);
@@ -576,6 +618,9 @@ fn registered_same_host_generated_reusable_reader_pending_restart() {
     let listen_port = port();
     let listen = format!("127.0.0.1:{listen_port}");
     let mut command = Command::new(generated_host_binary(&fixture));
+    if writers {
+        command.arg("--ordinary-writer");
+    }
     command
         .args([
             "--registered-same-host",

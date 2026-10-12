@@ -132,6 +132,71 @@ unchanged-public eventual-matching-ID and scheduling ACK claim limits above rema
 Bank shared transactions remain unfinished; Bank generation is an explicit opt-in
 probe, not a supported runnable sample.
 
+## Ordinary writer participation prerequisite (2026-10-12)
+
+**Accepted bounded prerequisite, not Bank acceptance:** the retained candidate was
+reviewed, repaired and freshly verified against one frozen implementation snapshot.
+Generated-native strict Clippy, twenty registered real-C++ Database tests, three
+custom native safety tests, SDK all-feature/all-target regression (620 passing
+outcomes, zero failed, 150 ignored), strict SDK/example checks, and the Hello Tasks
+native suite passed. The latter has three scenarios plus a child-worker entry
+helper; ignored inventory is not executed acceptance. Fresh public Constructor
+and Tasks generation/startup/restart/retry scenarios also passed. This is thirteen
+focused gates, not a rerun of every capability in the historical nineteen-gate audit.
+
+Read-only review exposed a synthesized writer/typed-transaction hook collision.
+A real raw-descriptor RED control reproduced it; all emitted handler RPC/helper
+names now share one collision check. The repaired regression covers rejected
+writer/typed and shared helper collisions and accepted neighboring shapes. Final
+frozen gates include the repair. Resource guards retain a 10 GB default and require
+an explicit approved override; five boundary tests cover the 12 GB override and
+independent 8 GiB free-space floor. Vlad authorized 12 GB after the initial build
+crossed 10 GB; no source, proof or Cargo cache was deleted to manufacture a pass.
+
+Ordinary non-constructor writers on generated transaction adapters can now join an
+exclusive registered same-host caller transaction. They consume the one-use local
+ticket before token verification, actor admission or handler execution; missing
+or mismatched tickets fail closed rather than falling back to a metadata-created
+transaction. The default `*_transaction_result` hook stages the mutated state in
+the existing participant flow, not an independent Store/idempotent writer. Typed
+method-declared errors use the existing rich-status and acknowledged leaf rollback
+contract. Local registration includes ordinary writer identities; writer-only
+services emit and compile their own transaction adapter without a dummy transaction
+RPC. Ordinary external/database adapters retain their existing unary behavior.
+
+The downstream generated receiver matrix additionally exercises ordinary writers:
+unregistered receiver, wrong method/kind, malformed headers, changed request,
+validated child path, policy denial, burned-ticket replay, and forged metadata
+without a ticket. A writer-only generated adapter registers its exact method set,
+rejects forged inbound metadata and remains usable for successive external writes.
+Real generated/C++ Database tests cover sibling commit, prepared-crash recovery,
+root typed-error Abort with exclusive readmission, and N1/N2/N3 same-actor reuse
+with a caught declared N2 rollback and durable reader-task restart. Native writer
+cases freshly execute plain/declared forged inbound metadata rejection and actor
+readmission against the final frozen generated host.
+N2 constructs but does not admit its task intent: this is not staged-task rollback.
+The process fixture uses exact in-process participant resolution/static placement;
+this is not public Bank, live-planner distributed or Python shared-Transfer proof.
+
+Final source/evidence hashes, exact commands, counts and failure boundaries are in
+[the checkpoint receipt](tests/evidence/ordinary-writer-checkpoint-20261012.json).
+Its SHA-256 is `6505dc54f7772de6154242a254d3f569a078295b8f1a3f901f556bcfe07dc2e7`.
+Core logs remain under `/tmp/reboot-writer-final-20261012`; public regression logs
+are under `/tmp/reboot-writer-public-regressions-20261012`. All 259 selected source
+hashes matched. Exact recorded PID/birth reconciliation covered 1,039 identities
+across all four attempts: no matching live or zombie process remained, and the
+shared owner lock was released. Earlier recovery/aborted-budget and namespace RED
+logs are retained as failures, not acceptance. The pre-refresh ledger hash in the
+public Tasks receipt records its execution snapshot; this documentation update
+is separate bookkeeping. Historical aggregate `1791803454128973513` certifies only
+its original checkpoint. The previously failing default-feature compile referenced test-support-only
+uncertainty/completion inspections: both affected native acceptances are now explicitly
+feature-gated and must still be executed with `test-support`; their assertions were not removed.
+Unchanged shared `Bank.Transfer` still rejects its declared-error schema. True shared
+multi-actor ownership, account lock upgrade/rollback, public Bank sample acceptance
+and broad shared/factory/distributed writer participation remain unimplemented.
+
+
 Publication audit `1791795011447592919` passed all 18 gates, including two Hello
 Tasks native tests, all 11 same-host recovery cases, SDK all-feature/all-target tests,
 strict SDK/consumer checks and the existing public User/workflow/greeting and
@@ -4177,7 +4242,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 604c55906fbb390bb5aeefc7672f8c797d9d9aed9e02672b1cb58afcad118c22 -->
+<!-- parity-source-sha256: 5db9987ec1da28b1d050160d59d549afcb093bbecfaf9dcc91fe91fba40067b5 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

@@ -82,8 +82,10 @@ evidence['source_hashes'].update({str(p): hashlib.sha256(p.read_bytes()).hexdige
 def budget():
     size = int(subprocess.check_output(['du', '-sb', str(TARGET)]).split()[0])
     free = shutil.disk_usage('/tmp').free
-    assert size <= 10 * 1000**3 and free >= 8 * 1024**3, (size, free)
-    evidence.setdefault('budgets', []).append({'target_bytes': size, 'free_bytes': free})
+    ceiling = int(os.environ.get('RUST_DX_TARGET_CEILING_BYTES', '10000000000'))
+    assert ceiling > 0, ceiling
+    assert size <= ceiling and free >= 8 * 1024**3, (size, free, ceiling)
+    evidence.setdefault('budgets', []).append({'target_bytes': size, 'free_bytes': free, 'target_ceiling_bytes': ceiling})
 
 
 timeout_seen = False
