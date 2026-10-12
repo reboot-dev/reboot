@@ -1,0 +1,32 @@
+schema_version: "1.1"
+name: checkout-workflow
+description: "Work that calls outside systems and must survive a restart is a durable workflow, with each external call guarded."
+tags: [workflow, code]
+runs: 3
+execution:
+  prompt: "Add checkout to a small shop app on Reboot. When a customer checks out an order, charge their card with Stripe, then email them a receipt through Postmark. Checkout has to finish even if the server restarts halfway through, and must never charge anyone twice. Write the API in `api/shop/v1/order.py`, and all the backend code for orders and checkout, the Stripe and Postmark calls included, in `backend/src/servicers/order.py`."
+  max_turns: 50
+  timeout_seconds: 900
+  allowed_tools: [Read, Glob, Grep, Skill, Write, Edit]
+  append_system_prompt: "This session can read files, load skills, and write and edit files in the working directory. It cannot run commands, so nothing is generated, installed, tested or started. No one will answer questions in this session: where you would ask, choose, say what you chose, and go on. Do the work the request asks for and write its files."
+graders:
+  - name: reboot-skill
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"reboot:[\w-]+"'
+  - name: workflow-is-classmethod
+    type: regex
+    target: {source: file, path: backend/src/servicers/order.py}
+    pattern: '@classmethod\s*\n\s*async\s+def'
+  - name: workflow-context
+    type: regex
+    target: {source: file, path: backend/src/servicers/order.py}
+    pattern: 'WorkflowContext'
+  - name: uses-call-primitives
+    type: regex
+    target: {source: file, path: backend/src/servicers/order.py}
+    pattern: '\bat_(least|most)_once\('
+  - name: guarded-external-calls
+    type: llm
+    focus: {source: file, path: backend/src/servicers/order.py}
+    criteria: "PASS if checkout runs as a Reboot `Workflow` method, the Stripe charge runs inside `at_least_once(...)` with a Stripe idempotency key that stays the same when the workflow replays after a crash (built from the order, and perhaps an attempt number kept in state for a customer's new checkout, but never random or time-based) or inside `at_most_once(...)`, and the receipt email runs inside `at_least_once(...)` or `at_most_once(...)` with an alias of its own. FAIL if checkout is a `Writer` or `Transaction` that calls Stripe or Postmark, if either call is awaited directly in the workflow outside those primitives, or if the charge runs under `at_least_once` with no idempotency key or one that would differ on a replay (a fresh `uuid4()`, the current time). Checking with Stripe before charging, a writer that starts the workflow, and helper functions in the same file are all fine. Quote the code you relied on."
