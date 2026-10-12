@@ -163,7 +163,7 @@ fn counter_cargo_build_helper_executes_durable_adapters_in_a_downstream_fixture(
     let injection = r#"
     let emitted_path = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("tests/reboot/protoc/transaction_counter.reboot.rs");
     let emitted = std::fs::read_to_string(&emitted_path).unwrap();
-    let anchor = "let handler_result = match local.run_registered_authorized_handler(&self.authorization, authorized_entry, &context, (\"tests.reboot.protoc.TransactionCounterWritesMethods.Increment\"";
+    let anchor = "let handler_result = match Box::pin(local.run_registered_authorized_handler(&self.authorization, authorized_entry, &context, (\"tests.reboot.protoc.TransactionCounterWritesMethods.Increment\"";
     // Standalone and mixed-service adapter implementations.
     assert_eq!(emitted.matches(anchor).count(), 2);
     let injected = format!("let handler_request_bytes = crate::fixture_authorized_entry_request(&context, handler_request_bytes);\n{anchor}");
@@ -177,7 +177,7 @@ fn counter_cargo_build_helper_executes_durable_adapters_in_a_downstream_fixture(
     std::fs::write(
         fixture.join("Cargo.toml"),
         format!(
-            "[package]\nname = \"reboot-rust-build-fixture\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[build-dependencies]\nreboot = {{ package = \"reboot-rust-schema\", path = \"{}\", features = [\"build\"] }}\n\n[dependencies]\ngoogleapis-tonic-google-rpc = \"0.11\"\nhttp = \"1\"\nhttp-body-util = \"0.1\"\nbytes = \"1\"\nprost = \"0.13\"\nprost-types = \"0.13\"\nreboot = {{ package = \"reboot-rust-schema\", path = \"{}\", features = [\"test-support\"] }}\nserde_json = \"1\"\ntokio = {{ version = \"1\", features = [\"macros\", \"rt-multi-thread\"] }}\ntokio-stream = {{ version = \"0.1\", features = [\"net\"] }}\ntonic = \"0.12\"\nuuid = \"1\"\n",
+            "[package]\nname = \"reboot-rust-build-fixture\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[build-dependencies]\nreboot = {{ package = \"reboot-rust-schema\", path = \"{}\", features = [\"build\"] }}\n\n[dependencies]\ngoogleapis-tonic-google-rpc = \"0.11\"\nhttp = \"1\"\nhttp-body-util = \"0.1\"\nbytes = \"1\"\ntower = \"0.5\"\nhttp-body = \"1\"\nprost = \"0.13\"\nprost-types = \"0.13\"\nreboot = {{ package = \"reboot-rust-schema\", path = \"{}\", features = [\"test-support\"] }}\nserde_json = \"1\"\ntokio = {{ version = \"1\", features = [\"macros\", \"rt-multi-thread\"] }}\ntokio-stream = {{ version = \"0.1\", features = [\"net\"] }}\ntonic = \"0.12\"\nuuid = \"1\"\n",
             env!("CARGO_MANIFEST_DIR"),
             env!("CARGO_MANIFEST_DIR")
         ),
@@ -570,6 +570,14 @@ impl transaction_generated::TransactionCounterWritesMethodsTransactionHandler fo
             if request.amount == 7310 { return Err(tonic::Status::invalid_argument("parent probe complete")); }
             state.value += 1;
             return Ok(reboot::runtime::TransactionExecution::new(proto::TransactionCounterValue { value: state.value }));
+        }
+        if request.amount == 7314 {
+            let probe = LOCAL_CANCELLATION_PROBE.with(Arc::clone);
+            *probe.context.lock().unwrap() = Some(context.clone());
+            let _drop = LocalCancellationDrop(probe.clone());
+            probe.entered.notify_one();
+            std::future::pending::<()>().await;
+            unreachable!("cancelled child cannot return success");
         }
         if request.amount == 7312 {
             assert_eq!(context.transaction_ids(), &[Uuid::from_u128(201), Uuid::from_u128(202)]);
@@ -1079,10 +1087,80 @@ trait TicketReceiverProbe: Send + Sync {
     async fn run(&self, context: &reboot::runtime::TransactionContext);
 }
 tokio::task_local! { static TICKET_RECEIVER_PROBE: Arc<dyn TicketReceiverProbe>; }
+#[derive(Default)]
+struct LocalCancellationProbe {
+    entered: tokio::sync::Notify,
+    dropped: AtomicUsize,
+    context: std::sync::Mutex<Option<reboot::runtime::TransactionContext>>,
+}
+struct LocalCancellationDrop(Arc<LocalCancellationProbe>);
+impl Drop for LocalCancellationDrop {
+    fn drop(&mut self) { self.0.dropped.fetch_add(1, Ordering::SeqCst); }
+}
+tokio::task_local! { static LOCAL_CANCELLATION_PROBE: Arc<LocalCancellationProbe>; }
+
+#[derive(Clone)]
+struct ParkedLocalAdapter<A> { inner: A, parked: Arc<LocalCancellationProbe>, mode: usize }
+impl<A: reboot::registered_local::GeneratedLocalTransactionAdapter> reboot::registered_local::GeneratedLocalTransactionAdapter for ParkedLocalAdapter<A> {
+    fn local_configuration(&self) -> Result<reboot::registered_local::GeneratedLocalAdapterConfig, tonic::Status> { self.inner.local_configuration() }
+    fn with_local_registration(self, binding: reboot::registered_local::RegisteredAdapterBinding) -> Result<Self, tonic::Status> {
+        Ok(Self { inner: self.inner.with_local_registration(binding)?, ..self })
+    }
+}
+#[derive(Clone)]
+struct ParkedLocalService<S> { inner: S, parked: Arc<LocalCancellationProbe>, mode: usize }
+impl<S> tower::Service<http::Request<tonic::body::BoxBody>> for ParkedLocalService<S>
+where S: tower::Service<http::Request<tonic::body::BoxBody>, Response=http::Response<tonic::body::BoxBody>, Error=std::convert::Infallible> + Send + 'static, S::Future: Send + 'static {
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = reboot::registered_local_service::LocalServiceFuture;
+    fn poll_ready(&mut self, cx: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> {
+        if self.mode == 14 { self.parked.entered.notify_one(); std::task::Poll::Pending }
+        else { self.inner.poll_ready(cx) }
+    }
+    fn call(&mut self, request: http::Request<tonic::body::BoxBody>) -> Self::Future {
+        self.parked.dropped.fetch_add(1, Ordering::SeqCst); // Receiver call count for readiness case.
+        let future = self.inner.call(request);
+        let mode = self.mode;
+        let probe = self.parked.clone();
+        Box::pin(async move {
+            let response = future.await?;
+            if mode != 15 { return Ok(response); }
+            let (parts, body) = response.into_parts();
+            use http_body_util::BodyExt;
+            Ok(http::Response::from_parts(parts, PendingLocalEof { inner: body, trailers_seen: false, probe }.boxed_unsync()))
+        })
+    }
+}
+impl<A> reboot::registered_local_service::GeneratedLocalTransactionService for ParkedLocalAdapter<A>
+where A: reboot::registered_local_service::GeneratedLocalTransactionService, <A::Service as tower::Service<http::Request<tonic::body::BoxBody>>>::Future: Send + 'static {
+    type Service = ParkedLocalService<reboot::successful_trailers::SuccessfulParticipantTrailerService<A::Service>>;
+    fn local_service(&self) -> Self::Service { ParkedLocalService { inner: tower::Layer::layer(&reboot::successful_trailers::SuccessfulParticipantTrailerLayer, self.inner.local_service()), parked: self.parked.clone(), mode: self.mode } }
+    fn local_inbound_factory(&self) -> Arc<dyn reboot::runtime::InboundTransactionStartFactory> { self.inner.local_inbound_factory() }
+}
+
+struct PendingLocalEof { inner: tonic::body::BoxBody, trailers_seen: bool, probe: Arc<LocalCancellationProbe> }
+impl Drop for PendingLocalEof { fn drop(&mut self) { self.probe.dropped.fetch_add(1, Ordering::SeqCst); } }
+impl tonic::codegen::Body for PendingLocalEof {
+    type Data = bytes::Bytes;
+    type Error = tonic::Status;
+    fn poll_frame(mut self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Option<Result<http_body::Frame<Self::Data>, Self::Error>>> {
+        if self.trailers_seen { self.probe.entered.notify_one(); return std::task::Poll::Pending; }
+        let frame = Pin::new(&mut self.inner).poll_frame(cx);
+        if let std::task::Poll::Ready(Some(Ok(ref frame))) = frame {
+            if let Some(trailers) = frame.trailers_ref() {
+                assert!(trailers.contains_key(reboot::successful_trailers::TRANSACTION_PARTICIPANTS_HEADER));
+                self.trailers_seen = true;
+            }
+        }
+        frame
+    }
+    fn is_end_stream(&self) -> bool { false }
+}
 
 #[tokio::test]
 async fn generated_ticket_receiver_uses_live_parent_child_once_and_burns_replay() {
-    for mode in 0..13 { run(mode).await; }
+    for mode in 0..16 { run(mode).await; }
     async fn run(mode: usize) {
     use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
     use reboot::registered_local::GeneratedLocalTransactionAdapter;
@@ -1155,11 +1233,50 @@ impl reboot::durable_coordinator::CoordinatorSidecar for TicketCoordinatorSideca
         target: ParticipantTarget,
         allocations: Arc<AtomicUsize>,
         trace: Arc<std::sync::Mutex<Vec<&'static str>>>,
+        readiness: Arc<LocalCancellationProbe>,
     }
     #[tonic::async_trait]
     impl TicketReceiverProbe for Probe {
         async fn run(&self, context: &reboot::runtime::TransactionContext) {
             context.require_registered_outbound().unwrap();
+            if matches!(self.mode, 14 | 15) {
+                let client = transaction_generated::TransactionCounterWritesMethodsClient::new(LocalOnly { context: context.clone(), mode: self.mode });
+                let target = transaction_generated::TransactionCounterWritesMethodsTarget::new(&self.target.state_ref);
+                let before = self.trace.lock().unwrap().clone();
+                let mut call = Box::pin(client.increment(context, &target, proto::TransactionIncrementRequest { amount: if self.mode == 15 { 7312 } else { 7311 } }));
+                tokio::select! {
+                    result = &mut call => panic!("parked readiness returned: {result:?}"),
+                    _ = self.readiness.entered.notified() => {}
+                }
+                drop(call);
+                if self.mode == 14 {
+                    assert_eq!(self.readiness.dropped.load(Ordering::SeqCst), 0, "B service never called");
+                    assert_eq!(*self.trace.lock().unwrap(), before, "B never loads or enters handler");
+                } else {
+                    assert_eq!(self.readiness.dropped.load(Ordering::SeqCst), 2, "B called once and EOF body dropped once");
+                }
+                assert!(context.returned_participants_snapshot().is_empty());
+                assert_eq!(self.allocations.load(Ordering::SeqCst), 1);
+                return;
+            }
+            if self.mode == 13 {
+                let probe = Arc::new(LocalCancellationProbe::default());
+                let client = transaction_generated::TransactionCounterWritesMethodsClient::new(LocalOnly { context: context.clone(), mode: self.mode });
+                let target = transaction_generated::TransactionCounterWritesMethodsTarget::new(&self.target.state_ref);
+                LOCAL_CANCELLATION_PROBE.scope(probe.clone(), async {
+                    let mut call = Box::pin(client.increment(context, &target, proto::TransactionIncrementRequest { amount: 7314 }));
+                    tokio::select! {
+                        result = &mut call => panic!("parked child unexpectedly returned: {result:?}"),
+                        _ = probe.entered.notified() => {}
+                    }
+                    drop(call);
+                }).await;
+                assert_eq!(probe.dropped.load(Ordering::SeqCst), 1);
+                assert!(probe.context.lock().unwrap().as_ref().unwrap().require_registered_outbound().is_err());
+                assert!(context.returned_participants_snapshot().is_empty(), "cancelled child has no terminal membership");
+                assert_eq!(self.allocations.load(Ordering::SeqCst), 1);
+                return;
+            }
             if self.mode >= 8 {
                 let target_ref = if self.mode == 9 { "not-registered" } else { &self.target.state_ref };
                 let client = transaction_generated::TransactionCounterWritesMethodsClient::new(LocalOnly { context: context.clone(), mode: self.mode });
@@ -1289,7 +1406,9 @@ impl reboot::durable_coordinator::CoordinatorSidecar for TicketCoordinatorSideca
     let b = if mode == 6 { b.with_authorization(AuthorizationPolicy::new(Some(auth_probe.clone()), None)) }
         else if mode == 7 { b.with_authorization(AuthorizationPolicy::new(Some(auth_probe.clone()), Some(auth_probe.clone()))) }
         else { b };
-    let (b, _) = application.register_local_transaction_service(b).unwrap();
+    let readiness = Arc::new(LocalCancellationProbe::default());
+    let (b, _) = application.register_local_transaction_service(ParkedLocalAdapter { inner: b, parked: readiness.clone(), mode }).unwrap();
+    let b = b.inner;
     let target = b.local_configuration().unwrap().target;
     let registration = a.explicit_abort_recovery_registration().unwrap();
     let b_registration = b.live_participant_recovery_registration().unwrap();
@@ -1317,7 +1436,7 @@ impl reboot::durable_coordinator::CoordinatorSidecar for TicketCoordinatorSideca
     let mut headers = reboot::RebootHeaders::new("transaction-counter");
     headers.bearer_token = Some("test-only-parent-token".into()); headers.cookie = Some("parent-cookie".into());
     *request.metadata_mut() = headers.to_metadata().unwrap();
-    let probe: Arc<dyn TicketReceiverProbe> = Arc::new(Probe { mode, auth_probe, receiver: Arc::new(b), unregistered: Arc::new(make("remote-transaction-counter")), target, allocations: allocations.clone(), trace: trace.clone() });
+    let probe: Arc<dyn TicketReceiverProbe> = Arc::new(Probe { mode, auth_probe, receiver: Arc::new(b), unregistered: Arc::new(make("remote-transaction-counter")), target, allocations: allocations.clone(), trace: trace.clone(), readiness });
     let result = tokio::time::timeout(std::time::Duration::from_secs(5), TICKET_RECEIVER_PROBE.scope(probe, a.increment(request))).await.unwrap();
     if mode == 10 {
         assert_eq!(result.unwrap().get_ref().value, 5);
@@ -1342,6 +1461,11 @@ impl reboot::durable_coordinator::CoordinatorSidecar for TicketCoordinatorSideca
         if mode < 8 { assert_eq!(error.message(), "parent probe complete"); }
     }
     assert_eq!(allocations.load(Ordering::SeqCst), usize::from(!matches!(mode, 9 | 11 | 12)));
+    if matches!(mode, 13 | 14 | 15) {
+        assert!(database.participant_prepare_requests().is_empty());
+        assert!(database.participant_commit_requests().is_empty());
+        // Owned root abort may persist an abort decision; that is not Commit authority.
+    }
     stop.send(()).unwrap(); server.await.unwrap().unwrap(); database_server.abort(); let _ = database_server.await;
     }
 }

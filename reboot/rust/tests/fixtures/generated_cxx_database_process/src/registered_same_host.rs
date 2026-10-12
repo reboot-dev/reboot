@@ -148,20 +148,15 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for LocalHandl
             let client =
                 generated::TransactionCounterWritesMethodsClient::new(LocalOnly(child.clone()));
             let target = generated::TransactionCounterWritesMethodsTarget::new(child);
-            let context = context.clone();
-            // Fixture-only stack separation, awaited; production dispatch remains inline.
-            let response = tokio::spawn(async move {
-                client
-                    .increment(
-                        &context,
-                        &target,
-                        proto::TransactionIncrementRequest { amount: 1 },
-                    )
-                    .await
-            })
-            .await
-            .unwrap()
-            .unwrap();
+            // Inline dispatch on the ordinary outer root-call Tokio worker.
+            let response = client
+                .increment(
+                    context,
+                    &target,
+                    proto::TransactionIncrementRequest { amount: 1 },
+                )
+                .await
+                .unwrap();
             assert_eq!(response.response().get_ref().value, 5);
         } else {
             assert_eq!(context.transaction_ids().len(), 2);

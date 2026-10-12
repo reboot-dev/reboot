@@ -12,6 +12,38 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Inline registered transport and call-drop cancellation
+
+Generated exclusive transaction flows now construct cleanup/abort futures through
+synchronous non-inlined `boxed_generated_future` thunks. They invoke each closure
+once and box without polling or introducing a scheduling boundary. The native
+registered A-to-B fixture directly awaits the local call on a normal Tokio worker,
+without the former inner child task or a worker-stack-size override. Both native
+commit/restart and live decision-Watch cleanup cases pass with `RUST_MIN_STACK`
+unset. This is bounded execution evidence, not an all-path stack-safety proof or
+a measured post-repair frame-size claim.
+
+The generated fixture additionally drops calls inside the real B handler, during
+registered service readiness before B is called, and after forwarding genuine
+successful participant trailers but before actual EOF. It observes future/body
+drop, revoked retained B-context outbound permission where applicable, empty
+parent returned membership and no participant Prepare/Commit requests. Actual EOF
+remains necessary for private terminal settlement; the two real trailer layers
+introduce no synthetic receipt or duplicate authority. These are call-drop cases,
+not host-revocation variants. The Database fixture is ACK-only, not native
+cancellation durability evidence; explicit private-ledger uncertainty assertions
+and outstanding-work crash recovery remain unproved.
+
+Frozen twelve-gate audit `1791770034263609620` accepted all twelve exits zero:
+SDK 590 passing results (489 library, 45 generated), strict SDK and generated
+consumer Clippy, native restart 4, ownership regressions, CLI unit, public User,
+workflow and checkpoint restart, greeting, native registered-local 2 and strict
+native-fixture Clippy. All 238 inputs matched; exact recorded descendant
+PID/start identities were absent and the owner lock released before publication
+bookkeeping. Applied source reviews found no blockers within these stated limits.
+Earlier audit `1791769861828261311` failed two codegen assertions expecting the
+old direct cleanup spelling; only the replacement audit certifies their repair.
+
 ## Registered same-host generated transport and native settlement
 
 Explicit `TransactionalRoute::RegisteredSameHost` now dispatches through the
@@ -43,9 +75,9 @@ reviews are separate from execution acceptance.
 Scope is exclusive nonfactory single A-to-B, live decision Watch settlement and
 post-cleanup Database restart durability. Outstanding-work host-crash recovery,
 deeper/sibling/task composition, factory/shared eligibility and authorization
-exemptions are not certified. Fixture-only awaited child spawning does not prove
-normal-worker inline production stack depth or midtransport cancellation. Those
-remain the next combined acceptance batch; no retries/manual settlement or
+exemptions are not certified. The later inline/call-drop checkpoint above removes
+the inner native fixture child task and supplies bounded normal-worker execution
+and midtransport call-drop evidence. No retries/manual settlement or
 metadata-based internal authority have been added.
 
 ## Generated registered-local ticket receiver
@@ -3883,7 +3915,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 6fb504a896dfa8315803b7cd5d70b10ceb63b88e515db51ab774bf6288bda318 -->
+<!-- parity-source-sha256: 288fa760a3062d41c8d84c8f58fdadb4831ab66221140e067523cb60e880e122 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

@@ -588,6 +588,16 @@ impl DeclaredTransactionalError {
 #[path = "runtime_terminal_capture.rs"]
 mod terminal_capture;
 
+/// Constructs and boxes a generated future synchronously, without polling it.
+/// The non-inlined thunk keeps construction scratch out of the caller's poll frame.
+#[doc(hidden)]
+#[inline(never)]
+pub fn boxed_generated_future<F: std::future::Future>(
+    make: impl FnOnce() -> F,
+) -> std::pin::Pin<Box<F>> {
+    Box::pin(make())
+}
+
 /// Performs the actual bound unary RPC and consumes its one-use scope.
 /// Only this runtime-owned transport path may settle terminal membership.
 /// Cancellation, routing failure and invalid terminal data leave uncertainty.
@@ -607,13 +617,13 @@ where
     Resp: Message + Default + Send + 'static,
 {
     let call = async {
-        let result = generated_transactional_unary_inner(
+        let result = Box::pin(generated_transactional_unary_inner(
             resolver,
             context,
             &mut scope,
             message,
             declared_errors,
-        )
+        ))
         .await;
         // Recoverable errors return the actual Status after private settlement.
         // Every other failed outcome dooms even a handler which catches it.
