@@ -66,8 +66,8 @@ else
 fi
 
 # Run the frontends' real build commands, so we exercise the exact
-# commands a developer runs. `npm run build` builds the `web/`
-# workspace; the non-React web app is its own workspace and builds
+# commands a developer runs. `npm run build` builds the React web
+# app (`web/`); the non-React web app is its own workspace and builds
 # separately.
 npm run build
 npm run build --workspace reboot-non-react-web
