@@ -547,6 +547,9 @@ MCP frontend keeps this tree, adds `frontend/mcp/<name>/` beside
    ```sh
    generate --react=frontend/api
    ```
+   Then give the project its `AGENTS.md` and `CLAUDE.md` with the
+   [`agents-md` skill](../agents-md/SKILL.md), naming the API and
+   servicer files the design settled on.
 2. `uv sync`.
 3. Start the developer dashboard — load the
    [`dashboard` skill](../dashboard/SKILL.md) and follow it — so
@@ -625,8 +628,8 @@ MCP frontend keeps this tree, adds `frontend/mcp/<name>/` beside
 
 When modifying an existing app:
 
-1. Read `.rbtrc`, the API definition, servicer, `main.py`, and
-   `frontend/web/src/App.tsx`.
+1. Read `AGENTS.md`, `.rbtrc`, the API definition, servicer,
+   `main.py`, and `frontend/web/src/App.tsx`.
 2. Assess state model changes. If the app has persisted state or
    has been deployed, read
    `python/references/api-schema-evolution.md` to understand the
@@ -651,6 +654,9 @@ When modifying an existing app:
    restart needed. Editing `.env` likewise triggers a restart, so
    a new or changed secret is re-read by `--env-file` without a
    manual relaunch.
+9. If the change moved a file, added a state type or a page,
+   changed a command, or taught a rule, update `AGENTS.md` in the
+   same change ([`agents-md` skill](../agents-md/SKILL.md)).
 
 Specific patterns and file shapes live in the `python` skill's
 references and the table above — read them on demand based on
