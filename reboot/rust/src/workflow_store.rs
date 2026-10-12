@@ -207,6 +207,124 @@ mod workflow_checkpoint_tests {
 }
 
 impl DatabaseActorStore {
+    // Caller holds the actor gate and retains dispatcher-minted scope authority.
+    // Canonical Store is unconditional: singleton owner + gate is arbitration.
+    pub(crate) async fn workflow_at_most_once_load(
+        &self,
+        scope: &crate::one_shot_tasks::WorkflowContext<'_>,
+        key: Uuid,
+        contract: &crate::one_shot_tasks::AtMostOnceUnitContract,
+    ) -> Result<Option<crate::one_shot_tasks::AtMostOnceUnitCheckpoint>, Status> {
+        use crate::one_shot_tasks::{AT_MOST_ONCE_UNIT_TYPE, AtMostOnceUnitCheckpoint};
+        let id = scope
+            .task()
+            .task_id
+            .as_ref()
+            .ok_or_else(|| Status::failed_precondition("missing workflow identity"))?;
+        let fingerprint = request_fingerprint("reboot.workflow.at-most-once.unit.v1", contract);
+        let mut saved = None;
+        // Match existing workflow recovery: exact scoped replay first; reject
+        // legacy unscoped records before any first Start.
+        for scoped in [true, false] {
+            if !scoped && saved.is_some() {
+                break;
+            }
+            let mut stream = self
+                .database
+                .clone()
+                .recover_idempotent_mutations(database::RecoverIdempotentMutationsRequest {
+                    state_type: id.state_type.clone(),
+                    state_ref: id.state_ref.clone(),
+                    idempotency_key: Some(key.as_bytes().to_vec()),
+                    workflow_id: scoped.then(|| id.task_uuid.clone()),
+                    workflow_iteration: if scoped {
+                        scope.checkpoint_iteration()
+                    } else {
+                        None
+                    },
+                })
+                .await?
+                .into_inner();
+            scope.validate_scope().await?;
+            while let Some(batch) = stream.message().await? {
+                scope.validate_scope().await?;
+                for mutation in batch.idempotent_mutations {
+                    if !scoped || saved.is_some() {
+                        return Err(Status::failed_precondition(
+                            "duplicate/unscoped at-most-once checkpoint",
+                        ));
+                    }
+                    let any = decode_workflow_checkpoint_envelope(
+                        &mutation,
+                        id,
+                        key,
+                        &fingerprint,
+                        AT_MOST_ONCE_UNIT_TYPE,
+                        scope.checkpoint_iteration(),
+                    )?;
+                    if any.type_url != AT_MOST_ONCE_UNIT_TYPE {
+                        return Err(Status::data_loss("at-most-once checkpoint type collision"));
+                    }
+                    let checkpoint = AtMostOnceUnitCheckpoint::decode(any.value.as_slice())
+                        .map_err(|_| Status::data_loss("malformed at-most-once checkpoint"))?;
+                    checkpoint.validate()?;
+                    saved = Some(checkpoint);
+                }
+            }
+        }
+        scope.validate_scope().await?;
+        Ok(saved)
+    }
+    pub(crate) async fn workflow_at_most_once_save(
+        &self,
+        scope: &crate::one_shot_tasks::WorkflowContext<'_>,
+        key: Uuid,
+        contract: &crate::one_shot_tasks::AtMostOnceUnitContract,
+        checkpoint: crate::one_shot_tasks::AtMostOnceUnitCheckpoint,
+    ) -> Result<(), Status> {
+        use crate::one_shot_tasks::AT_MOST_ONCE_UNIT_TYPE;
+        checkpoint.validate()?;
+        scope.validate_scope().await?;
+        let id = scope
+            .task()
+            .task_id
+            .as_ref()
+            .ok_or_else(|| Status::failed_precondition("missing workflow identity"))?;
+        let fingerprint = request_fingerprint("reboot.workflow.at-most-once.unit.v1", contract);
+        // These guards must drop before the caller's actor lease on unknown ACK.
+        let mut operation = scope.durable();
+        let commit_attempt = self
+            .actor_gate(&id.state_type, &id.state_ref)
+            .commit_attempt();
+        self.database
+            .clone()
+            .store(database::StoreRequest {
+                actor_upserts: vec![],
+                task_upserts: vec![],
+                colocated_upserts: vec![],
+                transaction: None,
+                ensure_state_types_created: vec![],
+                sync: true,
+                idempotent_mutation: Some(database::IdempotentMutation {
+                    state_type: id.state_type.clone(),
+                    state_ref: id.state_ref.clone(),
+                    key: key.as_bytes().to_vec(),
+                    response: prost_types::Any {
+                        type_url: AT_MOST_ONCE_UNIT_TYPE.into(),
+                        value: checkpoint.encode_to_vec(),
+                    }
+                    .encode_to_vec(),
+                    workflow_id: Some(id.task_uuid.clone()),
+                    workflow_iteration: scope.checkpoint_iteration(),
+                    request_fingerprint: Some(fingerprint),
+                    task_ids: vec![],
+                }),
+            })
+            .await?;
+        commit_attempt.checkpoint_acknowledged();
+        operation.acknowledged();
+        Ok(())
+    }
     pub(crate) async fn workflow_writer_step<D, Q, R, F>(
         &self,
         scope: &crate::one_shot_tasks::WorkflowContext<'_>,
@@ -646,11 +764,9 @@ impl DatabaseActorStore {
         {
             let _owner = running.lock()?;
         }
-        let mut state = D::State::decode(
-            snapshot
-                .as_deref()
-                .ok_or_else(|| Status::failed_precondition("scheduling writer requires existing actor"))?,
-        )
+        let mut state = D::State::decode(snapshot.as_deref().ok_or_else(|| {
+            Status::failed_precondition("scheduling writer requires existing actor")
+        })?)
         .map_err(|_| Status::failed_precondition("invalid scheduling actor state"))?;
         let mut stream = self
             .database

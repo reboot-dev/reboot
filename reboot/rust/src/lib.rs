@@ -31,6 +31,7 @@ pub mod http_host;
 #[cfg(feature = "jwt-auth")]
 pub mod jwt_auth;
 pub mod legacy_coordinator;
+pub mod legacy_grpc;
 pub mod legacy_placement;
 pub mod live_participant;
 pub mod native_2pc;

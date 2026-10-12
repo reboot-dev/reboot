@@ -1,0 +1,25 @@
+[package]
+name = "upstream-hello-legacy-grpc"
+version = "0.0.0"
+edition = "2024"
+publish = false
+autobins = false
+[[bin]]
+name = "app"
+path = "src/main.rs"
+[[bin]]
+name = "client"
+path = "src/bin/client.rs"
+[features]
+native-test-support = ["reboot/test-support"]
+[dependencies]
+reboot = { package = "reboot-rust-schema", path = "../../../../../" }
+prost = "0.13"
+prost-types = "0.13"
+tonic = "0.12"
+tonic-health = "0.12"
+rand = "0.8"
+uuid = { version = "1", features = ["v4"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
+[build-dependencies]
+reboot = { package = "reboot-rust-schema", path = "../../../../../", features = ["build"] }

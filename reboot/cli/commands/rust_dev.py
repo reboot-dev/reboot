@@ -48,10 +48,56 @@ async def stop_process(process: asyncio.subprocess.Process) -> None:
             await asyncio.sleep(0.01)
 
 
+def launch_receipt(process, command: tuple[str, ...], label: str) -> dict:
+    """Observe kernel birth and argv together, never confer PID-only authority.
+
+    Called immediately after spawn, before any startup await. A child already
+    reaped by asyncio is reported honestly as unobserved, not reconstructed.
+    Only executable/argv are recorded, never environment or private metadata.
+    """
+    def birth():
+        try:
+            return Path(f'/proc/{process.pid}/stat').read_text().rsplit(')', 1)[1].split()[19]
+        except FileNotFoundError:
+            return None
+    before = birth()
+    try:
+        argv = [os.fsdecode(x) for x in Path(f'/proc/{process.pid}/cmdline').read_bytes().rstrip(b'\0').split(b'\0')]
+    except FileNotFoundError:
+        argv = []
+    after = birth()
+    observed = before is not None and before == after and argv == list(command)
+    return {'version': 1, 'label': label, 'pid': process.pid,
+            'starttime': before if observed else None,
+            'executable': str(Path(command[0]).resolve()),
+            'argv': argv if observed else None, 'birth_and_argv_observed': observed}
+
+
+def database_port_candidate(exclude: set[int]) -> int:
+    """Best-effort released candidate, not atomic/inherited-fd allocation."""
+    low, high = map(int, Path('/proc/sys/net/ipv4/ip_local_port_range').read_text().split())
+    for candidate in range(20000, 30000):
+        if candidate in exclude or low <= candidate <= high:
+            continue
+        with socket.socket() as listener:
+            try:
+                listener.bind(('127.0.0.1', candidate))
+            except OSError:
+                continue
+            return candidate
+    raise RustDevError('No free non-ephemeral Rust development Database port')
+
+
 @asynccontextmanager
-async def owned_process(*command: str, **kwargs):
+async def owned_process(*command: str, launch_label=None, report=print, **kwargs):
     process = await asyncio.create_subprocess_exec(*command, start_new_session=True, **kwargs)
     try:
+        if launch_label is not None:
+            receipt = "RUST_CHILD_LAUNCH " + json.dumps(launch_receipt(process, command, launch_label), sort_keys=True)
+            if report is print:
+                print(receipt, flush=True)
+            else:
+                report(receipt)
         yield process
     finally:
         await stop_process(process)
@@ -203,31 +249,19 @@ async def run_rust_dev(*, manifest: Path, database_binary: Path, state: Path,
             raise RustDevError(f'Rust dev state already in use: {state}') from error
         baseline = await build_rust_app(manifest, cwd, environment, watch or [])
         await checked_command(str(host_binary), '--server-info', str(state / 'server-info.pb'), env=environment)
-        # Allocate sidecar listener outside the outbound ephemeral range when
-        # possible. This avoids startup connect claiming a released listener.
-        database_port = None
-        for candidate in range(20000, 30000):
-            if candidate == port:
-                continue
-            with socket.socket() as listener:
-                try:
-                    listener.bind(('127.0.0.1', candidate))
-                except OSError:
-                    continue
-                database_port = candidate
-                break
-        if database_port is None:
-            raise RustDevError('No free Rust development Database port')
+        database_port = database_port_candidate({port})
         environment['RBT_RUST_DATABASE_URL'] = f'http://127.0.0.1:{database_port}'
         with (state / 'database.log').open('ab') as database_log, (state / 'host.log').open('ab') as host_log:
             async with owned_process(str(database_binary), str(state / 'rocksdb'),
                                      str(state / 'server-info.pb'), str(database_port),
-                                     stdout=database_log, stderr=database_log, env=environment) as database:
+                                     stdout=database_log, stderr=database_log, env=environment,
+                                     launch_label="Database", report=report) as database:
                 report(f'Rust Database PID={database.pid}, durable state={state / "rocksdb"}')
                 await wait_for_port(database, database_port)
                 while True:
                     async with owned_process(str(host_binary), env=environment,
-                                             stdout=host_log, stderr=host_log) as host:
+                                             stdout=host_log, stderr=host_log,
+                                             launch_label="app", report=report) as host:
                         report(f'Rust app PID={host.pid}, endpoint={environment["RBT_RUST_URL"]}')
                         await wait_for_health(host, database, client, environment)
                         report('Rust app SERVING (canonical gRPC health check)')

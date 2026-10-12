@@ -503,6 +503,25 @@ fn emit_workflow_service(
             }
         }
     }
+    let mut initializer_names = std::collections::HashMap::new();
+    for method in &service.method {
+        let name = method.name.as_deref().unwrap();
+        if !matches!(annotation.methods.get(name), Some(DurableKind::Workflow)) {
+            continue;
+        }
+        let rust = snake_case(name);
+        for helper in [
+            rust.clone(),
+            format!("{rust}_spawn"),
+            format!("{rust}_wait"),
+        ] {
+            if let Some(previous) = initializer_names.insert(helper.clone(), name) {
+                return Err(format!(
+                    "initializer workflow helper {helper} collision: {previous} and {name}"
+                ));
+            }
+        }
+    }
     let mut declarations = String::from("vec![");
     let mut validations = String::new();
     let mut responses = String::new();
@@ -510,6 +529,7 @@ fn emit_workflow_service(
     let mut executions = String::new();
     let mut writers = String::new();
     let mut scheduling = String::new();
+    let mut initializer_methods = String::new();
     let mut waits = String::new();
     let mut step_methods = String::new();
     let mut rpc_methods = String::new();
@@ -560,6 +580,7 @@ fn emit_workflow_service(
                 responses.push_str(&format!("\"{name}\" if response.type_url == \"{response_type}\" => {{ <proto::{response} as prost::Message>::decode(response.value.as_slice()).map_err(|_| tonic::Status::data_loss(\"malformed workflow result\"))?; Ok(()) }},"));
                 executions.push_str(&format!("\"{name}\" => {{ let request = <proto::{request} as prost::Message>::decode(context.task().request.as_slice()).map_err(|_| tonic::Status::data_loss(\"malformed canonical workflow request\"))?; let response = match self.handler.{rust}_attempt(&context, request).await {{ Ok(response)=>response, Err(error)=>return context.body_failed(error).await }}; context.finish::<{declaration},proto::{request},proto::{response}>(\"{response_type}\",response).await }},"));
                 scheduling.push_str(&format!("pub fn {rust}(state_ref: &str, request: &proto::{request}, timestamp: Option<prost_types::Timestamp>) -> {runtime_module}::database_proto::Task {{ {runtime_module}::database_proto::Task {{ task_id: Some({runtime_module}::database_proto::TaskId {{ state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: state_ref.to_owned(), task_uuid: uuid::Uuid::new_v4().as_bytes().to_vec() }}), method: \"{name}\".to_owned(), request: <proto::{request} as prost::Message>::encode_to_vec(request), timestamp, iteration: 0, status: {runtime_module}::database_proto::task::Status::Pending as i32, response_or_error: None }} }}\n"));
+                initializer_methods.push_str(&format!("pub async fn {rust}_spawn(context: &{runtime_module}::application_host::ServingInitializeContext, request: &proto::{request}) -> Result<{runtime_module}::database_proto::TaskId, tonic::Status> {{ context.spawn_workflow::<{declaration},proto::{request},proto::{response}>(\"{identity}\",\"{response_type}\",request).await }}\n pub async fn {rust}_wait(context: &{runtime_module}::application_host::ServingInitializeContext, id: &{runtime_module}::database_proto::TaskId) -> Result<proto::{response},tonic::Status> {{ context.wait_workflow::<proto::{response}>(id,\"{identity}\",\"{response_type}\").await }}\n pub async fn {rust}(context: &{runtime_module}::application_host::ServingInitializeContext, request: &proto::{request}) -> Result<proto::{response},tonic::Status> {{ let id=Self::{rust}_spawn(context,request).await?; Self::{rust}_wait(context,&id).await }}\n"));
                 let conversion = if errors.is_empty() { "" } else { ".into()" };
                 let cancellation_terminal = format!(
                     "Some({runtime_module}::database_proto::task_response_or_error::ResponseOrError::Error(error)) if {runtime_module}::one_shot_tasks::task_cancellation_status(&error)?.is_some() => {{ Err({runtime_module}::one_shot_tasks::task_cancellation_status(&error)?.expect(\"validated cancellation\"){conversion}) }},"
@@ -680,7 +701,7 @@ fn emit_workflow_service(
     output.push_str("}\n");
     let writers = writers.strip_suffix(" | ").unwrap_or("\"\"");
     declarations.push(']');
-    output.push_str(&format!("pub struct {tasks}; impl {tasks} {{ {scheduling} }}\npub struct {tasks}Wait; impl {tasks}Wait {{ {waits} }}\npub struct {steps}; impl {steps} {{ {step_methods} }}\n"));
+    output.push_str(&format!("pub struct {tasks}Initialize; impl {tasks}Initialize {{ {initializer_methods} }}\npub struct {tasks}; impl {tasks} {{ {scheduling} }}\npub struct {tasks}Wait; impl {tasks}Wait {{ {waits} }}\npub struct {steps}; impl {steps} {{ {step_methods} }}\n"));
     output.push_str(&format!("pub struct {adapter}<H> {{ store: {runtime_module}::runtime::DatabaseActorStore, handler: std::sync::Arc<H>, authorization: {runtime_module}::auth::AuthorizationPolicy, tasks: Option<{runtime_module}::one_shot_tasks::OneShotTasks>, reader_registry: Option<{runtime_module}::reactive::LocalReaderRegistry>, legacy_reader_roots: Vec<String>, reader_binding_id: std::sync::Arc<()> }}\nimpl<H> Clone for {adapter}<H> {{ fn clone(&self) -> Self {{ Self {{ store: self.store.clone(), handler: self.handler.clone(), authorization: self.authorization.clone(), tasks: self.tasks.clone(), reader_registry: self.reader_registry.clone(), legacy_reader_roots: self.legacy_reader_roots.clone(), reader_binding_id: self.reader_binding_id.clone() }} }} }}\nimpl<H> {adapter}<H> {{ pub fn new(store: {runtime_module}::runtime::DatabaseActorStore, handler: H) -> Self {{ Self {{ store, handler: std::sync::Arc::new(handler), authorization: {runtime_module}::auth::AuthorizationPolicy::default().for_declaration::<{declaration}>(), tasks: None, reader_registry: None, legacy_reader_roots: Vec::new(), reader_binding_id: std::sync::Arc::new(()) }} }} /// Configure authorization before registering readers. Reconfiguration detaches a stale registry and rotates its binding identity.\npub fn with_authorization(mut self, authorization: {runtime_module}::auth::AuthorizationPolicy) -> Self {{ self.authorization = authorization.for_declaration::<{declaration}>(); self.reader_registry = None; self.legacy_reader_roots.clear(); self.reader_binding_id = std::sync::Arc::new(()); self }} /// Attach the completed registry used by this adapter's registered owners.\npub fn with_reader_registry(mut self, registry: {runtime_module}::reactive::LocalReaderRegistry) -> Result<Self, Box<tonic::Status>> where Self: {runtime_module}::reactive::ReaderBinding {{ registry.validate_unary_binding_methods::<{declaration}>(self.store.database_endpoint(), &self.reader_binding_id, <Self as {runtime_module}::reactive::ReaderBinding>::reader_method_names(&self))?; self.reader_registry = Some(registry); self.legacy_reader_roots.clear(); Ok(self) }} /// Explicit exact legacy roots only; never a fallback for registered evaluation errors.\npub fn with_legacy_unary_roots(mut self, roots: Vec<String>) -> Result<Self, Box<tonic::Status>> {{ self.reader_registry.as_ref().ok_or_else(|| tonic::Status::failed_precondition(\"legacy unary roots require attached registry\"))?.validate_legacy_unary_roots(&roots)?; self.legacy_reader_roots = roots; Ok(self) }} }}\n\n"));
     output.push_str(&format!("impl<H:{handler}> {adapter}<H> {{ #[allow(clippy::result_large_err)] pub fn with_workflows(mut self,state_ref:&str)->Result<(Self,{runtime_module}::one_shot_tasks::OneShotTasks),tonic::Status> {{ let tasks={runtime_module}::one_shot_tasks::OneShotTasks::new_with_declarations(self.store.clone(),<{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(),state_ref.to_owned(),{binding}{{handler:self.handler.clone()}},{declarations})?;self.tasks=Some(tasks.clone());self.reader_registry=None;self.legacy_reader_roots.clear();self.reader_binding_id=std::sync::Arc::new(());Ok((self,tasks)) }} }}\n#[tonic::async_trait]\nimpl<H:{handler}> proto::{server}::{service_name} for {adapter}<H> {{ {rpc_methods} }}\n"));
     let error_dispatch = if error_validations.is_empty() {

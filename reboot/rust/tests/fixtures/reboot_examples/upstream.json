@@ -21,6 +21,46 @@
     {
       "upstream_path": "api/bank/v1/errors.proto",
       "sha256": "7993ba5445e9a600f6bd2e0bf327d09b66c747030b10b22bacde8116d1b424e3"
+    },
+    {
+      "upstream_path": "api/hello_legacy_grpc/v1/greeter.proto",
+      "sha256": "6adccf9ab0d1c6ace11ce05de74cbe0dc936c233af0d2b93dcccced03aa2d814",
+      "reference_path": "hello-legacy-grpc/upstream/api/hello_legacy_grpc/v1/greeter.proto"
+    },
+    {
+      "upstream_path": "hello-legacy-grpc/.rbtrc",
+      "sha256": "287133bd598bcc98cf5af23a9d511c5b43a8ca5715bea122f9b0cafc1ec56fd4",
+      "reference_path": "hello-legacy-grpc/upstream/hello-legacy-grpc/.rbtrc"
+    },
+    {
+      "upstream_path": "hello-legacy-grpc/backend/.pytest.ini",
+      "sha256": "f1863943db91359344c235b3b55a4b0eeae61b48046b03cfdd15b950ecfccce6",
+      "reference_path": "hello-legacy-grpc/upstream/hello-legacy-grpc/backend/.pytest.ini"
+    },
+    {
+      "upstream_path": "hello-legacy-grpc/backend/src/deprecated_greeter_servicer.py",
+      "sha256": "12338bfc8a72138ce2b921baf33142028374fc599fa19765a05f03b19ed2d5ae",
+      "reference_path": "hello-legacy-grpc/upstream/hello-legacy-grpc/backend/src/deprecated_greeter_servicer.py"
+    },
+    {
+      "upstream_path": "hello-legacy-grpc/backend/src/main.py",
+      "sha256": "8448ce29d3e8639e0af8320501ce0c9784db868d41b539a0b34280cd29e54c5d",
+      "reference_path": "hello-legacy-grpc/upstream/hello-legacy-grpc/backend/src/main.py"
+    },
+    {
+      "upstream_path": "hello-legacy-grpc/backend/src/proxy_greeter_servicer.py",
+      "sha256": "f4491a036b8e3b5d13d324ebabc1cef4fb7f50430a04fbaca33f124d186afc4e",
+      "reference_path": "hello-legacy-grpc/upstream/hello-legacy-grpc/backend/src/proxy_greeter_servicer.py"
+    },
+    {
+      "upstream_path": "hello-legacy-grpc/backend/src/reboot_greeter_servicer.py",
+      "sha256": "f628094fbd4bdafe4f02defa2e61efd6d67812cc1fdb9a98e847d7038fb3d758",
+      "reference_path": "hello-legacy-grpc/upstream/hello-legacy-grpc/backend/src/reboot_greeter_servicer.py"
+    },
+    {
+      "upstream_path": "hello-legacy-grpc/backend/tests/greeter_servicer_test.py",
+      "sha256": "53a0bce4e7e35a03a1b063cfd282d67e6b7ebcc983db8ca6f08c5e916a240d76",
+      "reference_path": "hello-legacy-grpc/upstream/hello-legacy-grpc/backend/tests/greeter_servicer_test.py"
     }
   ],
   "status": "Pinned original schemas; Rust ports and execution acceptance in progress."

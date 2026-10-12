@@ -74,7 +74,7 @@ ENV['RBT_TEST_TASKS_EVIDENCE'] = str(STAGE)
 ENV['RBT_TEST_TASKS_INVOCATIONS'] = str(STAGE / 'invocations.log')
 pinned = json.loads((SOURCE / 'upstream.json').read_text())
 assert pinned['revision'] == '5c332a2910122d6035799bfaf2a314bf1de830b8'
-assert all(hashlib.sha256((SOURCE / entry['upstream_path']).read_bytes()).hexdigest() == entry['sha256'] for entry in pinned['files'])
+assert all(hashlib.sha256((SOURCE / entry.get('reference_path', entry['upstream_path'])).read_bytes()).hexdigest() == entry['sha256'] for entry in pinned['files'])
 freeze = [p for d in [SDK, ROOT / 'reboot/cli', ROOT / 'tests/reboot/cli'] for p in d.rglob('*') if p.is_file() and p.suffix != '.pyc' and not {'target', '__pycache__', '.rbt'}.intersection(p.parts)]
 freeze += [Path(ENV['RBT_RUST_DATABASE_BINARY'])]
 evidence['source_hashes'].update({str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in freeze})

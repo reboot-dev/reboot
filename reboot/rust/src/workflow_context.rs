@@ -1,3 +1,5 @@
+include!("workflow_at_most_once.rs");
+
 async fn workflow_reader_lease(
     gate: &crate::runtime::ActorGate,
     revisions: &mut tokio::sync::watch::Receiver<(u64, bool)>,
@@ -1022,8 +1024,8 @@ mod declared_reader_serial_tests {
 
 /// Private, dispatcher-minted workflow authority. Explicit named same-actor
 /// typed named writer steps and checkpointed immutable-reader waits. Explicit
-/// finite indexed replay scopes only; no unbounded Task cursor, external effects
-/// or cross-actor calls. Nested finite scopes do not create nested transactions.
+/// finite indexed replay scopes and named at-most-once unit external blocks;
+/// no unbounded Task cursor. Nested finite scopes do not create transactions.
 /// Construction is private, even to generated application consumers:
 /// ```compile_fail
 /// use reboot_rust_schema::one_shot_tasks::WorkflowContext;
@@ -1705,7 +1707,42 @@ impl<'a> WorkflowContext<'a> {
     async fn wait_test_pause(&self, name: &str) -> Result<(), Status> {
         if let Some(path) = std::env::var_os(name) {
             let path = std::path::PathBuf::from(path);
-            std::fs::write(&path, name).map_err(|e| Status::internal(e.to_string()))?;
+            // Linux producer/observer share CLOCK_MONOTONIC, not discovery time.
+            if !cfg!(target_os = "linux") {
+                return Err(Status::internal("observation clock requires Linux"));
+            }
+            #[repr(C)]
+            struct Timespec {
+                sec: std::ffi::c_long,
+                nsec: std::ffi::c_long,
+            }
+            unsafe extern "C" {
+                fn clock_gettime(clock: std::ffi::c_int, value: *mut Timespec) -> std::ffi::c_int;
+            }
+            let mut stamp = Timespec { sec: 0, nsec: 0 };
+            if unsafe { clock_gettime(1, &mut stamp) } != 0
+                || stamp.sec < 0
+                || !(0..1_000_000_000).contains(&stamp.nsec)
+            {
+                return Err(Status::internal("CLOCK_MONOTONIC unavailable"));
+            }
+            let ns = stamp.sec as u128 * 1_000_000_000 + stamp.nsec as u128;
+            let case =
+                std::env::var("RBT_TEST_CRASH_CASE").unwrap_or_else(|_| "observation".into());
+            let pid = std::process::id();
+            let task = self
+                .task
+                .task_id
+                .as_ref()
+                .ok_or_else(|| Status::internal("missing task identity"))?;
+            let task = uuid::Uuid::from_slice(&task.task_uuid)
+                .map_err(|e| Status::internal(e.to_string()))?;
+            let payload = serde_json::json!({"version": 1, "clock": "CLOCK_MONOTONIC", "created_ns": ns,
+                "hook": name, "case": case, "pid": pid, "task_uuid": task.to_string()});
+            let creating = path.with_extension("creating");
+            std::fs::write(&creating, payload.to_string())
+                .map_err(|e| Status::internal(e.to_string()))?;
+            std::fs::rename(&creating, &path).map_err(|e| Status::internal(e.to_string()))?;
             let release = path.with_extension("release");
             tokio::time::timeout(std::time::Duration::from_secs(10),async {
                 while !release.exists() {

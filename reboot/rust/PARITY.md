@@ -12,6 +12,64 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Legacy gRPC and serving initializer checkpoint (2026-10-12)
+
+The pinned `hello-legacy-grpc` now has a faithful Rust-only port using its original
+schema: Deprecated/Proxy/Reboot services, unchanged random routing and salutations,
+real same-actor generated writers, and ten Proxy calls inside the named
+`at_most_once_unit("make greetings", 1, ...)` effect. Python reference files are
+provenance, not a running backend. Canonical Empty RPCs render as Rust unit without
+colliding with valid generated module/runtime identifiers.
+
+The gRPC serving initializer runs after recovery and required public routes are
+usable; health becomes SERVING only after success. Its noncloneable capability is
+bound to the actual private host recovery cancellation root, exact task instance,
+live generation and callback lifetime. Foreign-host dispatchers reject before
+callback construction or Store, including through forwarding recovery wrappers.
+Admission persists one immutable alias/task contract and reuses the same task;
+typed Wait retains that authority. Fatal initialization cancels and joins owned
+deliveries/listener. Seven host and two admission regressions passed on an isolated
+snapshot; the subsequently frozen SDK regression covers the same host-binding bytes.
+This is not an HTTP initializer, detached-registrar sandbox, distributed CAS or
+cross-state-type alias migration claim.
+
+The public CLI/canonical C++ Database/RocksDB crash matrix passed all five windows:
+Pending before Started; Started before callback; three acknowledged Proxy replies;
+all ten replies before Stored; and Stored before completion. Each application was
+killed through a birth-validated kernel pidfd within the producer-relative barrier
+budget, then inspected without an app and restarted against the same RocksDB/task.
+Pending recovery executes one ten-call block; Stored recovery completes without
+reentering it. All three incomplete-Started variants fail on two successive fresh
+restarts without callback/effect replay or successful terminal. Three Proxy replies
+are not necessarily three Reboot mutations: branch counts come from actual replies.
+Canonical actor/task/checkpoint RPC artifacts validate exact scope/key/fingerprint;
+inspection exports every configured shard within the selected state-type column
+family, rather than confusing nonworkflow recovery with workflow absence.
+
+Fresh public happy/restart also passed: ten initializer calls, no initializer replay,
+identical saved writer responses, both Proxy branches, canonical Completed/Stored
+readback and strict generated sample Clippy. Constructor and Tasks public regressions
+passed. The aggregate has 15 named gates: unchanged SDK all-feature/all-target
+643 passing outcomes/0 failed/152 ignored, default 634/0/150 ignored, strict SDK and
+native-consumer Clippy, one real native effects-restart test, 20 registered native
+safety tests, four launch-receipt units, three inspector units, ten crash-driver units,
+26 current-CLI regressions, the four public sample gates, and exact Bank rejection.
+Counts are per gate, not deduplicated SDK coverage. All 924 recorded aggregate
+process identities were independently absent; binary and compatible source hashes
+matched. Failed earlier harness stages are retained and are not accepted evidence.
+Only affected public/inspector gates were rerun after harness-only fixes.
+
+Evidence: [accepted Legacy receipt](tests/evidence/legacy-grpc-checkpoint-20261012.json).
+Public stage: `/tmp/reboot-rust-legacy-public10-20261012/result.json`; five-case proof:
+`/tmp/reboot-rust-legacy-crash-p0ouip5y/result.json`; happy/restart proof:
+`/tmp/reboot-rust-upstream-legacy-76ebrh87/result.json`. Source reviews approve their
+bounded applied repairs; runtime acceptance is the executed evidence above.
+At-most-once unit effects are not arbitrary external exactly-once, ACK-loss crash
+certification, production readiness or complete SDK parity. Started without Stored
+is deliberately permanent failure. Shared/public Bank remains unsupported and its
+declared-error rejection remains intact. GitHub fork approval/merge-result evidence
+is separate from local acceptance.
+
 ## Pinned upstream examples checkpoint (2026-10-12)
 
 Schemas and provenance are pinned to `reboot-dev/reboot-examples` commit
@@ -1575,9 +1633,10 @@ Inbound transaction/recovery authority must not be inferred from user headers.
   unresolved coordination; do not claim unproved superiority.
 - **A5:** external HTTP routes/lifecycle hooks exist; gRPC multiplexing, mounts,
   trusted internal contexts and application OAuth/user-state integration remain.
-- **A6:** pre-listener component hooks and durable recovery are not Python's
-  post-servicer InitializeContext with application calls. Define ordering/context,
-  actor access and restart behavior explicitly.
+- **A6:** gRPC serving-time initialization now has exact host-bound authority,
+  stable durable workflow admission/typed Wait, and public Legacy restart/crash
+  acceptance (see the Legacy checkpoint above). HTTP initialization, general
+  application-context parity and cross-state-type alias migration remain open.
 
 **Order:** finish the active accepted-slice delivery and full native validation;
 then A1/A2 plus reproducible Rust release gates; W1–W6; T1–T3;
@@ -4242,7 +4301,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 5db9987ec1da28b1d050160d59d549afcb093bbecfaf9dcc91fe91fba40067b5 -->
+<!-- parity-source-sha256: 847cb7e2cd49856c678b9a79612a8fde377b3f9726ee0e044a04c9367a75383f -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

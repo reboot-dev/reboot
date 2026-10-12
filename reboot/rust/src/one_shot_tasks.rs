@@ -19,6 +19,8 @@ use std::{
 include!("workflow_context.rs");
 include!("task_listing.rs");
 include!("task_cancellation.rs");
+include!("initializer_admission.rs");
+include!("initializer_admission_tests.rs");
 const MAX_TASKS: usize = 1024;
 use tokio::{sync::mpsc, task::JoinSet};
 use tonic::Status;
@@ -348,6 +350,9 @@ struct Inner {
     active: std::sync::atomic::AtomicBool,
     recovery_request: Mutex<Option<db::RecoverRequest>>,
     running_owner: Mutex<Option<Arc<()>>>,
+    // Read/write only while running_owner is locked. Bound to the cancellation
+    // actually supplied to OneShotTaskRecovery::start, never an erased wrapper.
+    recovery_owner: Mutex<Option<RecoveryCancellation>>,
     uncertain: tokio::sync::watch::Sender<bool>,
     max_live: std::sync::atomic::AtomicUsize,
     listing: TaskListing,
@@ -425,6 +430,7 @@ impl OneShotTasks {
                 active: false.into(),
                 recovery_request: Mutex::new(None),
                 running_owner: Mutex::new(None),
+                recovery_owner: Mutex::new(None),
                 uncertain: tokio::sync::watch::channel(false).0,
                 max_live: std::sync::atomic::AtomicUsize::new(MAX_TASKS),
                 listing: TaskListing::default(),
@@ -1364,6 +1370,28 @@ pub(crate) struct RunningTaskAdmission {
     generation: Arc<()>,
 }
 impl RunningTaskAdmission {
+    pub(crate) fn lock_initializer(
+        &self,
+        cancel: &RecoveryCancellation,
+        tasks: &OneShotTasks,
+    ) -> Result<std::sync::MutexGuard<'_, Option<Arc<()>>>, Status> {
+        let owner = self.lock()?;
+        if !Arc::ptr_eq(&self.tasks.inner, &tasks.inner)
+            || !self
+                .tasks
+                .inner
+                .recovery_owner
+                .lock()
+                .expect("task recovery owner mutex poisoned")
+                .as_ref()
+                .is_some_and(|actual| actual.same_recovery_owner(cancel))
+        {
+            return Err(Status::failed_precondition(
+                "initializer task dispatcher belongs to a different recovery host",
+            ));
+        }
+        Ok(owner)
+    }
     // Execution fencing does not confer singleton scheduling/capacity authority.
     pub(crate) fn check_execution(&self) -> Result<(), Status> {
         drop(self.lock_result()?);
@@ -1458,6 +1486,12 @@ impl DispatchOwner {
             .lock()
             .expect("task owner mutex poisoned");
         *owner = None;
+        *self
+            .tasks
+            .inner
+            .recovery_owner
+            .lock()
+            .expect("task recovery owner mutex poisoned") = None;
         self.tasks.inner.listing.clear();
         self.tasks
             .inner
@@ -1520,6 +1554,12 @@ impl Drop for DispatchOwner {
             .lock()
             .expect("task owner mutex poisoned");
         *owner = None;
+        *self
+            .tasks
+            .inner
+            .recovery_owner
+            .lock()
+            .expect("task recovery owner mutex poisoned") = None;
         self.tasks.inner.listing.clear();
         self.tasks
             .inner
@@ -1559,6 +1599,20 @@ impl HostRecovery for OneShotTaskRecovery {
             ));
         }
         let owner = DispatchOwner::claim(self.tasks.clone())?;
+        {
+            let _generation = self
+                .tasks
+                .inner
+                .running_owner
+                .lock()
+                .expect("task owner mutex poisoned");
+            *self
+                .tasks
+                .inner
+                .recovery_owner
+                .lock()
+                .expect("task recovery owner mutex poisoned") = Some(cancel.clone());
+        }
         let max_live = self
             .tasks
             .inner

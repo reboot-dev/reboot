@@ -80,17 +80,27 @@ impl RecoveryReadiness {
 struct HostHealth {
     readiness: RecoveryReadiness,
     placement: tokio::sync::watch::Receiver<bool>,
+    initialization: tokio::sync::watch::Receiver<ServingInitializeState>,
 }
 impl HostHealth {
     fn terminal(&self) -> bool {
         self.readiness.state() == RecoveryState::Failed
             || self.readiness.state.has_changed().is_err()
             || self.placement.has_changed().is_err()
+            || self.initialization.has_changed().is_err()
+            || matches!(
+                *self.initialization.borrow(),
+                ServingInitializeState::Failed | ServingInitializeState::Cancelled
+            )
     }
     fn status(&self) -> ServingStatus {
         if !self.terminal()
             && self.readiness.state() == RecoveryState::Ready
             && *self.placement.borrow()
+            && matches!(
+                *self.initialization.borrow(),
+                ServingInitializeState::Disabled | ServingInitializeState::Succeeded
+            )
         {
             ServingStatus::Serving
         } else {
@@ -129,7 +139,14 @@ impl tokio_stream::Stream for HostHealthWatch {
         let recovery = *health.readiness.state.borrow_and_update();
         let placement = *health.placement.borrow_and_update();
         let terminal = terminal || recovery == RecoveryState::Failed;
-        let status = if !terminal && recovery == RecoveryState::Ready && placement {
+        let initialization = *health.initialization.borrow_and_update();
+        let status = if !terminal
+            && recovery == RecoveryState::Ready
+            && placement
+            && matches!(
+                initialization,
+                ServingInitializeState::Disabled | ServingInitializeState::Succeeded
+            ) {
             ServingStatus::Serving
         } else {
             ServingStatus::NotServing
@@ -149,6 +166,7 @@ impl tokio_stream::Stream for HostHealthWatch {
             tokio::select! {
                 _ = health.readiness.state.changed() => {},
                 _ = health.placement.changed() => {},
+                _ = health.initialization.changed() => {},
             }
             health
         }));
@@ -333,6 +351,12 @@ impl RecoveryCancellation {
             }
             tokio::select! { _ = self.cancelled() => return, result = readiness.changed() => if result.is_err() { return; }, result = placement.changed() => if result.is_err() { return; }, }
         }
+    }
+    // The cancellation root is the actual supervisor owner, not registration
+    // metadata. Clones forwarded by custom HostRecovery wrappers preserve it;
+    // separately created hosts cannot manufacture the same private allocation.
+    pub(crate) fn same_recovery_owner(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.state, &other.state)
     }
     pub(crate) fn is_cancelled(&self) -> bool {
         *self.state.borrow()
@@ -820,6 +844,7 @@ pub enum ApplicationHostError {
         source: tonic::Status,
     },
     RecoveryTask(tonic::Status),
+    ServingInitialize(tonic::Status),
     Reflection(tonic_reflection::server::Error),
     Bind(std::io::Error),
     HttpTransport(std::io::Error),
@@ -837,6 +862,9 @@ impl fmt::Display for ApplicationHostError {
                 formatter,
                 "application lifecycle component {component} failed during {phase:?}: {source}"
             ),
+            Self::ServingInitialize(source) => {
+                write!(formatter, "serving initializer failed: {source}")
+            }
             Self::RecoveryTask(source) => {
                 write!(formatter, "application recovery task failed: {source}")
             }
@@ -864,7 +892,7 @@ impl Error for ApplicationHostError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Lifecycle { source, .. } => Some(source),
-            Self::RecoveryTask(source) => Some(source),
+            Self::RecoveryTask(source) | Self::ServingInitialize(source) => Some(source),
             Self::Reflection(source) => Some(source),
             Self::Bind(source) => Some(source),
             Self::HttpTransport(source) => Some(source),
@@ -956,12 +984,17 @@ where
     }
 }
 
+include!("serving_initialize.rs");
+include!("serving_initialize_tests.rs");
+
 /// First-stage generic host. It owns one immutable application ID and has no
 /// service routes until [`Self::add_service`] is called.
 pub struct ApplicationHost {
     application_id: String,
     router: Router<RecoveryIngressStack>,
     lifecycle: Vec<Arc<dyn ApplicationLifecycle>>,
+    initializer: Option<ServingInitializer>,
+    initialize_state: tokio::sync::watch::Sender<ServingInitializeState>,
     recovery: Vec<Arc<dyn HostRecovery>>,
     readiness: tokio::sync::watch::Sender<RecoveryState>,
     placement_gate: LegacyPlacementGate,
@@ -1024,6 +1057,8 @@ impl ApplicationHost {
         );
         let (readiness, state) = tokio::sync::watch::channel(RecoveryState::Ready);
         let placement_gate = LegacyPlacementGate::new();
+        let (initialize_state, initialize_receiver) =
+            tokio::sync::watch::channel(ServingInitializeState::Disabled);
         // Health is host-owned: it is never a generated, placement-routable
         // service and reports lifecycle readiness independently of public ingress.
         let health_service = HealthServer::new(HostHealth {
@@ -1031,6 +1066,7 @@ impl ApplicationHost {
                 state: state.clone(),
             },
             placement: placement_gate.state.clone(),
+            initialization: initialize_receiver,
         });
         Self {
             router: Server::builder()
@@ -1043,6 +1079,8 @@ impl ApplicationHost {
                 .add_service(health_service),
             application_id,
             lifecycle: Vec::new(),
+            initializer: None,
+            initialize_state,
             recovery: Vec::new(),
             readiness,
             placement_gate,
@@ -1067,6 +1105,10 @@ impl ApplicationHost {
     /// Consumes this initial host stage into bounded external-only HTTP route
     /// registration. HTTP and gRPC multiplexing are deliberately out of scope.
     pub fn http(self) -> crate::http_host::HttpApplicationHost {
+        assert!(
+            self.initializer.is_none(),
+            "serving initializers require the gRPC application host"
+        );
         crate::http_host::HttpApplicationHost::new(self.application_id, self.lifecycle)
     }
 
@@ -1126,6 +1168,8 @@ impl ApplicationHost {
         RunningApplicationHost {
             application_id: self.application_id,
             lifecycle: self.lifecycle,
+            initializer: self.initializer,
+            initialize_state: self.initialize_state,
             recovery: self.recovery,
             readiness: self.readiness,
             placement_gate: self.placement_gate,
@@ -1172,6 +1216,8 @@ impl ApplicationHost {
         RunningApplicationHost {
             application_id: self.application_id,
             lifecycle: self.lifecycle,
+            initializer: self.initializer,
+            initialize_state: self.initialize_state,
             recovery: self.recovery,
             readiness: self.readiness,
             placement_gate: self.placement_gate,
@@ -1188,6 +1234,8 @@ impl ApplicationHost {
 pub struct RunningApplicationHost {
     application_id: String,
     lifecycle: Vec<Arc<dyn ApplicationLifecycle>>,
+    initializer: Option<ServingInitializer>,
+    initialize_state: tokio::sync::watch::Sender<ServingInitializeState>,
     recovery: Vec<Arc<dyn HostRecovery>>,
     readiness: tokio::sync::watch::Sender<RecoveryState>,
     placement_gate: LegacyPlacementGate,
@@ -1311,6 +1359,8 @@ impl RunningApplicationHost {
         Self {
             application_id: self.application_id,
             lifecycle: self.lifecycle,
+            initializer: self.initializer,
+            initialize_state: self.initialize_state,
             recovery: self.recovery,
             readiness: self.readiness,
             placement_gate: self.placement_gate,
@@ -1354,6 +1404,8 @@ impl RunningApplicationHost {
         Self {
             application_id: self.application_id,
             lifecycle: self.lifecycle,
+            initializer: self.initializer,
+            initialize_state: self.initialize_state,
             recovery: self.recovery,
             readiness: self.readiness,
             placement_gate: self.placement_gate,
@@ -1406,7 +1458,10 @@ impl RunningApplicationHost {
         B: Future<Output = std::io::Result<tokio::net::TcpListener>> + Send,
     {
         let RunningApplicationHost {
+            application_id,
             lifecycle,
+            initializer,
+            initialize_state,
             recovery,
             readiness,
             placement_gate,
@@ -1563,6 +1618,78 @@ impl RunningApplicationHost {
                 true
             }
         });
+        if let Some(initializer) = initializer {
+            enum InitializeEvent {
+                Shutdown,
+                Result(Result<(), tonic::Status>),
+                Recovery(tonic::Status),
+                Serving(Result<Result<(), tonic::transport::Error>, tokio::task::JoinError>),
+            }
+            // No detached callback: the select owns and drops its future before
+            // revocation/drain. It cannot start until placement/public readiness.
+            let event = tokio::select! {
+                biased;
+                _ = &mut shutdown => InitializeEvent::Shutdown,
+                result = Self::next_recovery_child(&mut supervisor), if supervisor.iter().any(|group| !group.is_empty()) => InitializeEvent::Recovery(Self::recovery_child_failure(result)),
+                result = &mut serving => InitializeEvent::Serving(result),
+                result = async {
+                    cancel.public_ready().await?;
+                    let owner = initializer.tasks.require_initializer_owner(&cancel)?;
+                    initialize_state.send_replace(ServingInitializeState::Running);
+                    let live = Arc::new(std::sync::atomic::AtomicBool::new(true));
+                    let _lease = ServingInitializeLease(live.clone());
+                    let context = ServingInitializeContext {
+                        application_id,
+                        alias: initializer.alias,
+                        owner,
+                        tasks: initializer.tasks,
+                        cancel: cancel.clone(),
+                        live,
+                    };
+                    await_serving_initializer(&initializer.callback, context).await
+                } => InitializeEvent::Result(result),
+            };
+            if !matches!(&event, InitializeEvent::Result(Ok(()))) {
+                initialize_state.send_replace(if matches!(&event, InitializeEvent::Shutdown) {
+                    ServingInitializeState::Cancelled
+                } else {
+                    ServingInitializeState::Failed
+                });
+                local_registry.revoke();
+                readiness.send_replace(RecoveryState::Failed);
+                cancel.cancel();
+                Self::join_cancelled_recovery(&mut supervisor).await;
+                let already_served = matches!(&event, InitializeEvent::Serving(_));
+                let served = if already_served {
+                    None
+                } else {
+                    Some(serving.await)
+                };
+                let cleanup = Self::shutdown_lifecycle(&lifecycle).await;
+                return match event {
+                    InitializeEvent::Shutdown => Self::shutdown_result(
+                        &cancel,
+                        served
+                            .expect("serving joined")
+                            .expect("application serving task panicked"),
+                    )
+                    .and(cleanup),
+                    InitializeEvent::Result(Err(source)) => {
+                        Err(ApplicationHostError::ServingInitialize(source))
+                    }
+                    InitializeEvent::Recovery(source) => {
+                        Err(ApplicationHostError::RecoveryTask(source))
+                    }
+                    InitializeEvent::Serving(result) => Self::shutdown_result(
+                        &cancel,
+                        result.expect("application serving task panicked"),
+                    )
+                    .and(cleanup),
+                    InitializeEvent::Result(Ok(())) => unreachable!(),
+                };
+            }
+            initialize_state.send_replace(ServingInitializeState::Succeeded);
+        }
         tokio::select! {
             _ = &mut shutdown => {
                 // Revoke readiness before the router can observe cancellation.
@@ -1916,12 +2043,14 @@ mod health_watch_tests {
     fn health(
         state: &tokio::sync::watch::Sender<RecoveryState>,
         placement: &tokio::sync::watch::Sender<bool>,
+        initialization: &tokio::sync::watch::Sender<ServingInitializeState>,
     ) -> HostHealth {
         HostHealth {
             readiness: RecoveryReadiness {
                 state: state.subscribe(),
             },
             placement: placement.subscribe(),
+            initialization: initialization.subscribe(),
         }
     }
     async fn next(stream: &mut <HostHealth as Health>::WatchStream) -> i32 {
@@ -1936,7 +2065,8 @@ mod health_watch_tests {
     async fn check_and_watch_follow_placement_and_failure_without_producer() {
         let (state, _) = tokio::sync::watch::channel(RecoveryState::Ready);
         let (placement, _) = tokio::sync::watch::channel(false);
-        let health = health(&state, &placement);
+        let (initialization, _) = tokio::sync::watch::channel(ServingInitializeState::Disabled);
+        let health = health(&state, &placement, &initialization);
         assert_eq!(
             health
                 .check(Request::new(HealthCheckRequest::default()))
@@ -1969,7 +2099,8 @@ mod health_watch_tests {
     async fn duplicate_and_slow_observations_coalesce_and_drop_releases_receivers() {
         let (state, _) = tokio::sync::watch::channel(RecoveryState::Ready);
         let (placement, _) = tokio::sync::watch::channel(true);
-        let health = health(&state, &placement);
+        let (initialization, _) = tokio::sync::watch::channel(ServingInitializeState::Disabled);
+        let health = health(&state, &placement, &initialization);
         let before = (state.receiver_count(), placement.receiver_count());
         let mut stream = health
             .watch(Request::new(HealthCheckRequest::default()))
@@ -1992,7 +2123,8 @@ mod health_watch_tests {
     async fn dropped_owner_never_leaves_a_serving_stream() {
         let (state, _) = tokio::sync::watch::channel(RecoveryState::Ready);
         let (placement, _) = tokio::sync::watch::channel(true);
-        let health = health(&state, &placement);
+        let (initialization, _) = tokio::sync::watch::channel(ServingInitializeState::Disabled);
+        let health = health(&state, &placement, &initialization);
         let mut stream = health
             .watch(Request::new(HealthCheckRequest::default()))
             .await

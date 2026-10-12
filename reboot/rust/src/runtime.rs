@@ -5109,6 +5109,8 @@ pub mod test_support {
         participant_commits: Vec<database::TransactionParticipantCommitRequest>,
         create_requests: Vec<database::CreateActorRequest>,
         model_task_completion: bool,
+        #[cfg(test)]
+        model_control_only_store: bool,
         complete_calls: usize,
         #[cfg(test)]
         load_calls: usize,
@@ -5119,6 +5121,10 @@ pub mod test_support {
     }
 
     impl FakeDatabase {
+        #[cfg(test)]
+        pub(crate) fn model_control_only_store(&self) {
+            self.state.lock().unwrap().model_control_only_store = true;
+        }
         #[cfg(test)]
         pub(crate) fn model_task_completion(&self) {
             self.state.lock().unwrap().model_task_completion = true;
@@ -5437,6 +5443,62 @@ pub mod test_support {
                 }
             }
             let request = request.into_inner();
+            #[cfg(test)]
+            if request.actor_upserts.is_empty()
+                && self.state.lock().unwrap().model_control_only_store
+            {
+                // Explicit opt-in transport model only. Default fixtures retain
+                // the exact actor+mutation contract below. This is not CAS proof.
+                if !request.sync
+                    || request.transaction.is_some()
+                    || !request.colocated_upserts.is_empty()
+                {
+                    return Err(Status::failed_precondition("invalid control-only Store"));
+                }
+                let mut state = self.state.lock().unwrap();
+                if let Some(mutation) = request.idempotent_mutation.clone() {
+                    if !request.task_upserts.is_empty()
+                        || !request.ensure_state_types_created.is_empty()
+                    {
+                        return Err(Status::failed_precondition(
+                            "checkpoint Store must not mutate actor/tasks",
+                        ));
+                    }
+                    state.mutations.insert(
+                        (
+                            mutation.state_type.clone(),
+                            mutation.state_ref.clone(),
+                            mutation.key.clone(),
+                        ),
+                        mutation,
+                    );
+                } else {
+                    // Canonical Pending-task arrangement for these private tests.
+                    if request.task_upserts.is_empty() {
+                        return Err(Status::failed_precondition("empty control-only Store"));
+                    }
+                    for task in &request.task_upserts {
+                        let id = task
+                            .task_id
+                            .as_ref()
+                            .ok_or_else(|| Status::invalid_argument("missing task ID"))?;
+                        if task.status != database::task::Status::Pending as i32
+                            || state.tasks.contains_key(&id.encode_to_vec())
+                        {
+                            return Err(Status::failed_precondition(
+                                "invalid fresh task arrangement",
+                            ));
+                        }
+                    }
+                    for task in &request.task_upserts {
+                        state
+                            .tasks
+                            .insert(task.task_id.as_ref().unwrap().encode_to_vec(), task.clone());
+                    }
+                }
+                state.store_requests.push(request);
+                return Ok(Response::new(database::StoreResponse { timestamp: None }));
+            }
             let [actor] = request.actor_upserts.as_slice() else {
                 return Err(Status::failed_precondition(
                     "expected exactly one actor upsert",

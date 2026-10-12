@@ -1124,6 +1124,10 @@ fn generate_file(
             )?;
         }
     }
+    // Prost's canonical google.protobuf.Empty binding is Rust unit. Emit a
+    // private rendering token while the bounded templates qualify local types,
+    // then resolve it here; no synthetic proto::Empty alias is required from apps.
+    let content = content.replace("proto::{{google.protobuf.Empty}}", "()");
     Ok(code_generator_response::File {
         name: Some(output_name(file_name)?),
         content: Some(content),
@@ -1411,7 +1415,7 @@ fn emit_durable(
         .values()
         .any(|kind| matches!(kind, DurableKind::Workflow))
     {
-        return emit_workflow_service(
+        emit_workflow_service(
             output,
             service,
             annotation,
@@ -1419,7 +1423,23 @@ fn emit_durable(
             &state,
             runtime_module,
             package,
+        )?;
+        // Workflow RPCs remain private scheduling targets, but ordinary unary
+        // reader/writer methods in the same service still need external clients.
+        let unary_methods: Vec<_> = methods
+            .iter()
+            .filter(|(kind, _, _, _, _)| {
+                matches!(kind, DurableKind::Reader | DurableKind::Writer(_))
+            })
+            .collect();
+        emit_external_client(
+            output,
+            service_name,
+            runtime_module,
+            annotation,
+            &unary_methods,
         );
+        return Ok(());
     }
     let database_methods: Vec<_> = methods
         .iter()
@@ -1835,7 +1855,7 @@ fn emit_external_client(
                 let declared_errors = declared_database_errors(annotation, kind, method_identity);
                 if declared_errors.is_empty() {
                     output.push_str(&format!(
-                        "    pub async fn {method}(&mut self, request: proto::{request}) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{ let original_request = prost::Message::encode_to_vec(&request); let mut retry_backoff = {runtime_module}::ExternalUnaryRetryBackoff::new(); loop {{ let request = <proto::{request} as prost::Message>::decode(original_request.as_slice()).map_err(|error| tonic::Status::internal(error.to_string()))?; let request = self.context.reader(request).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?; match self.client.{method}(request).await {{ Err(status) if {runtime_module}::is_retryable_status(&status) && !{runtime_module}::reactive::is_terminal_unary_evaluation(&status) => {{ retry_backoff.wait().await; continue }}, result => return result, }} }} }}\n"
+                        "    pub async fn {method}(&mut self, request: proto::{request}) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{ let original_request = prost::Message::encode_to_vec(&request); let mut retry_backoff = {runtime_module}::ExternalUnaryRetryBackoff::new(); loop {{ let request = self.context.reader(<proto::{request} as prost::Message>::decode(original_request.as_slice()).map_err(|error| tonic::Status::internal(error.to_string()))?).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?; match self.client.{method}(request).await {{ Err(status) if {runtime_module}::is_retryable_status(&status) && !{runtime_module}::reactive::is_terminal_unary_evaluation(&status) => {{ retry_backoff.wait().await; continue }}, result => return result, }} }} }}\n"
                     ));
                 } else {
                     let error = declared_error_type(service_name, method);
@@ -3063,6 +3083,11 @@ fn same_package_type(
     kind: &str,
     value: &Option<String>,
 ) -> Result<String, String> {
+    if value.as_deref() == Some(".google.protobuf.Empty") {
+        // Non-Rust template token: local types and validated module/runtime
+        // identifier paths cannot contain braces or this qualified proto token.
+        return Ok("{{google.protobuf.Empty}}".to_owned());
+    }
     Ok(same_package_proto_type(file, package, service, method, kind, value)?.to_upper_camel_case())
 }
 
@@ -3188,6 +3213,59 @@ fn same_package_proto_type<'a>(
     }
     Ok(name)
 }
+#[cfg(test)]
+mod well_known_empty_tests {
+    use super::*;
+
+    #[test]
+    fn empty_rpcs_render_canonical_unit_without_proto_alias() {
+        let file = FileDescriptorProto {
+            name: Some("example/v1/legacy.proto".into()),
+            package: Some("example.v1".into()),
+            syntax: Some("proto3".into()),
+            service: vec![ServiceDescriptorProto {
+                name: Some("Legacy".into()),
+                method: vec![MethodDescriptorProto {
+                    name: Some("Ping".into()),
+                    input_type: Some(".google.protobuf.Empty".into()),
+                    output_type: Some(".google.protobuf.Empty".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let content = generate_file(&file, "crate::proto", "reboot", None)
+            .unwrap()
+            .content
+            .unwrap();
+        assert!(content.contains("tonic::Request<()>"));
+        assert!(content.contains("tonic::Response<()>"));
+        assert!(!content.contains("__reboot_google_protobuf_empty"));
+        assert!(!content.contains("proto::Empty"));
+        assert!(!content.contains("{{google.protobuf.Empty}}"));
+        // Previously global replacement corrupted legal caller-selected paths.
+        let module = "crate::proto::__reboot_google_protobuf_empty";
+        let runtime = "crate::proto::__reboot_google_protobuf_empty_runtime";
+        let alternate = generate_file(&file, module, runtime, None)
+            .unwrap()
+            .content
+            .unwrap();
+        assert!(alternate.contains(&format!("use {module} as proto;")));
+        assert!(alternate.contains(runtime));
+        assert!(alternate.contains("tonic::Request<()>"));
+        let foreign = Some(".other.v1.Empty".into());
+        assert!(
+            same_package_type("f", "example.v1", "Legacy", "Ping", "request", &foreign).is_err()
+        );
+        let local = Some(".example.v1.Empty".into());
+        assert_eq!(
+            same_package_type("f", "example.v1", "Legacy", "Ping", "request", &local).unwrap(),
+            "Empty"
+        );
+    }
+}
+
 fn output_name(file: &str) -> Result<String, String> {
     file.strip_suffix(".proto")
         .map(|stem| format!("{stem}.reboot.rs"))
