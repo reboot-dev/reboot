@@ -572,8 +572,23 @@ async fn supervised_recovery_task_failure_closes_the_host() {
 }
 
 #[tokio::test]
+async fn prebound_listener_precompleted_shutdown_releases_socket_without_startup() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    assert!(tokio::net::TcpListener::bind(address).await.is_err());
+    let host = ApplicationHost::new("prebound-shutdown")
+        .add_public_service(proto::echo_methods_server::EchoMethodsServer::new(IdentityEcho));
+    host.serve_with_listener_shutdown(listener, std::future::ready(()))
+        .await
+        .unwrap();
+    let rebound = tokio::net::TcpListener::bind(address).await.unwrap();
+    assert_eq!(rebound.local_addr().unwrap(), address);
+}
+
+#[tokio::test]
 async fn legacy_coordinator_watch_is_reachable_while_public_ingress_is_gated() {
-    let address = unused_local_address();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
     let (started_tx, started_rx) = tokio::sync::oneshot::channel();
     let (release_tx, release_rx) = tokio::sync::oneshot::channel();
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
@@ -597,7 +612,7 @@ async fn legacy_coordinator_watch_is_reachable_while_public_ingress_is_gated() {
             IdentityEcho,
         ));
     let server = tokio::spawn(async move {
-        host.serve_with_shutdown(address, async move { shutdown_rx.await.unwrap() })
+        host.serve_with_listener_shutdown(listener, async move { shutdown_rx.await.unwrap() })
             .await
             .unwrap()
     });

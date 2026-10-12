@@ -1382,6 +1382,29 @@ impl RunningApplicationHost {
     where
         F: Future<Output = ()> + Send + 'static,
     {
+        self.serve_with_bind(tokio::net::TcpListener::bind(address), shutdown)
+            .await
+    }
+
+    /// Serves an already-bound listener without releasing its socket reservation.
+    /// Lifecycle startup and recovery gating are identical to address-based serving.
+    pub async fn serve_with_listener_shutdown<F>(
+        self,
+        listener: tokio::net::TcpListener,
+        shutdown: F,
+    ) -> Result<(), ApplicationHostError>
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        self.serve_with_bind(std::future::ready(Ok(listener)), shutdown)
+            .await
+    }
+
+    async fn serve_with_bind<F, B>(self, bind: B, shutdown: F) -> Result<(), ApplicationHostError>
+    where
+        F: Future<Output = ()> + Send + 'static,
+        B: Future<Output = std::io::Result<tokio::net::TcpListener>> + Send,
+    {
         let RunningApplicationHost {
             lifecycle,
             recovery,
@@ -1421,7 +1444,7 @@ impl RunningApplicationHost {
         // Bind before recovery so peers can reach the fixed Participant and
         // Coordinator control routes while public generated routes remain
         // gated by `RecoveryIngressLayer`.
-        let listener = match tokio::net::TcpListener::bind(address).await {
+        let listener = match bind.await {
             Ok(listener) => listener,
             Err(source) => {
                 local_registry.revoke();
