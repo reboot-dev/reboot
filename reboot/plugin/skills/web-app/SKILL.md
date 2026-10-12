@@ -355,19 +355,19 @@ wrong means regenerating everything across the project.
    below.
 2. State the design you are about to build:
    - Application types: state shape (fields, types, tags).
-   - Method map: which operations, which method type
-     (Reader/Writer/Transaction/Workflow).
+   - Method map, one line per method: its method type
+     (Reader/Writer/Transaction/Workflow) and its role for an AI
+     caller (a tool the AI calls, a `UI()` view, or for people only),
+     even though the MCP UI comes later.
    - Route surface: which pages does the SPA need; which methods
      each page calls.
    - `User` type: always. It owns per-user state and routes creation,
      and it is the MCP front door if an MCP UI is added later.
    - Auth: who signs in, and what an anonymous visitor may read.
-   - Ready for an MCP UI: for each method, its role for an AI caller
-     (a tool the AI calls, a `UI()` view, or for people only), and a
-     `description=` written for that caller from the start. A web app
-     keeps `mcp=None` until an MCP UI is added; then only `mcp=`
-     changes, which a deployed app allows
-     (`python/references/api-schema-evolution.md`).
+   - Ready for an MCP UI: each method's `description=` written for
+     an AI caller from the start. A web app keeps `mcp=None` until an
+     MCP UI is added; then only `mcp=` changes, which a deployed app
+     allows (`python/references/api-schema-evolution.md`).
 3. Then execute the Step-by-Step Build Flow.
 
 For updates to existing apps, still work the design first: read
