@@ -23,7 +23,9 @@ struct TicketState {
 pub(super) fn local_headers(parent: &RebootHeaders, target: &str) -> RebootHeaders {
     RebootHeaders {
         state_ref: target.to_owned(),
-        application_id: parent.application_id.clone(),
+        // Host-injected identity is not a wire assertion: the receiver discards
+        // application metadata unless its own trusted extension supplies it.
+        application_id: None,
         server_id: parent.server_id.clone(),
         workflow_id: None,
         workflow_iteration: None,
@@ -245,5 +247,26 @@ impl RegisteredLocalTicket {
         let _lifetime = state.parent.reserve_handler_settlement()?;
         let _ledger = state.parent.reserve_local_ticket_branch(&state.lease)?;
         Ok(state.child)
+    }
+}
+
+#[cfg(test)]
+mod local_header_tests {
+    use super::*;
+    #[test]
+    fn local_wire_headers_do_not_reencode_host_injected_application_identity() {
+        let mut parent = RebootHeaders::new("parent");
+        parent.application_id = Some("trusted-parent-application".into());
+        parent.server_id = Some("server".into());
+        parent.bearer_token = Some("parent-token".into());
+        parent.cookie = Some("parent-cookie".into());
+        let child = local_headers(&parent, "child");
+        assert!(child.application_id.is_none());
+        assert!(child.bearer_token.is_none());
+        assert!(child.cookie.is_none());
+        assert_eq!(
+            RebootHeaders::from_metadata(&child.to_metadata().unwrap()).unwrap(),
+            child
+        );
     }
 }

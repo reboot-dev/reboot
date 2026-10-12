@@ -36,7 +36,7 @@ fn await_file(path: &std::path::Path, host: &mut WaitHostGuard) {
         std::thread::sleep(Duration::from_millis(10));
     }
 }
-fn run(watch: bool) {
+fn run(watch: bool, chain: bool, crash_prepared: bool, siblings: bool) {
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/generated_cxx_database_process");
     prepare_generated_host(&fixture);
@@ -45,11 +45,15 @@ fn run(watch: bool) {
     assert!(std::path::Path::new(&binary).is_file());
     let mut db = CxxDatabase::start(binary);
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    let refs = ["local-native-a", "local-native-b"].map(|id| {
-        reboot_rust_schema::state_ref::StateRef::from_id(STATE, id)
-            .unwrap()
-            .to_string()
-    });
+    let refs: Vec<_> = ["local-native-a", "local-native-b", "local-native-c"]
+        .into_iter()
+        .take(if chain || siblings { 3 } else { 2 })
+        .map(|id| {
+            reboot_rust_schema::state_ref::StateRef::from_id(STATE, id)
+                .unwrap()
+                .to_string()
+        })
+        .collect();
     let markers = tempfile::Builder::new()
         .prefix("reboot-rust-local-native-proof-")
         .tempdir()
@@ -75,6 +79,15 @@ fn run(watch: bool) {
         "--root-id",
         "00000000-0000-0000-0000-000000000201",
     ]);
+    if chain {
+        command.args(["--local-chain", "--local-grandchild-ref", &refs[2]]);
+    }
+    if siblings {
+        command.args(["--local-siblings", "--local-grandchild-ref", &refs[2]]);
+    }
+    if crash_prepared {
+        command.env("REBOOT_TEST_PAUSE_PREPARED_BEFORE_DECISION", &prepared);
+    }
     if watch {
         command
             .env("REBOOT_TEST_LIVE_WATCH_BEFORE_LOOKUP", &lookup)
@@ -85,6 +98,50 @@ fn run(watch: bool) {
             .arg(&released);
     }
     let mut host = WaitHostGuard(command.spawn().unwrap());
+    if crash_prepared {
+        await_file(&prepared, &mut host);
+        runtime.block_on(async {
+            for reference in &refs {
+                assert_eq!(
+                    load_state(&db.endpoint(), reference).await,
+                    Some(vec![0x08, 4])
+                );
+            }
+            let batches = records(&db.endpoint()).await;
+            let participants: Vec<_> = batches
+                .iter()
+                .flat_map(|batch| &batch.participant_transactions)
+                .collect();
+            assert_eq!(participants.len(), refs.len());
+            assert!(participants.iter().all(|record| record.prepared));
+            let coordinators: Vec<_> = batches
+                .iter()
+                .flat_map(|batch| batch.transaction_coordinators.values())
+                .collect();
+            assert_eq!(coordinators.len(), 1);
+            assert!(!coordinators[0].preparing);
+        });
+        // Deliberate process death, not graceful Abort/Watch cleanup. Own only this child.
+        host.kill().unwrap();
+        assert!(!host.wait().unwrap().success());
+        runtime.block_on(async {
+            let batches = records(&db.endpoint()).await;
+            assert_eq!(
+                batches
+                    .iter()
+                    .map(|b| b.participant_transactions.len())
+                    .sum::<usize>(),
+                refs.len()
+            );
+            assert_eq!(
+                batches
+                    .iter()
+                    .map(|b| b.transaction_coordinators.len())
+                    .sum::<usize>(),
+                1
+            );
+        });
+    }
     if watch {
         await_file(&prepared, &mut host);
         runtime.block_on(async {
@@ -122,10 +179,12 @@ fn run(watch: bool) {
     let deadline = std::time::Instant::now() + Duration::from_secs(35);
     loop {
         if let Some(status) = host.try_wait().unwrap() {
-            assert!(
-                status.success(),
-                "native same-host fixture failed: {status}"
-            );
+            if !crash_prepared {
+                assert!(
+                    status.success(),
+                    "native same-host fixture failed: {status}"
+                );
+            }
             break;
         }
         assert!(
@@ -152,17 +211,103 @@ fn run(watch: bool) {
             }
         })
     };
-    verify();
+    if !crash_prepared {
+        verify();
+    }
     db.restart();
+    if crash_prepared {
+        runtime.block_on(async {
+            for reference in &refs {
+                assert_eq!(load_state(&endpoint, reference).await, Some(vec![0x08, 4]));
+            }
+            let batches = records(&endpoint).await;
+            let participants: Vec<_> = batches
+                .iter()
+                .flat_map(|b| &b.participant_transactions)
+                .collect();
+            assert_eq!(participants.len(), refs.len());
+            assert!(participants.iter().all(|p| p.prepared));
+            let coordinators: Vec<_> = batches
+                .iter()
+                .flat_map(|b| b.transaction_coordinators.values())
+                .collect();
+            assert_eq!(coordinators.len(), 1);
+            assert!(!coordinators[0].preparing);
+        });
+    }
+    if !crash_prepared {
+        verify();
+    }
+    let recovered = markers.join("recovered");
+    let mut command = Command::new(generated_host_binary(&fixture));
+    command.args([
+        "--registered-same-host",
+        "--database",
+        &db.endpoint(),
+        "--listen",
+        &format!("127.0.0.1:{}", port()),
+        "--state-ref",
+        &refs[0],
+        "--local-child-ref",
+        &refs[1],
+        "--root-id",
+        "00000000-0000-0000-0000-000000000301",
+        "--local-recovered-marker",
+        recovered.to_str().unwrap(),
+    ]);
+    if chain {
+        command.args(["--local-chain", "--local-grandchild-ref", &refs[2]]);
+    }
+    if siblings {
+        command.args(["--local-siblings", "--local-grandchild-ref", &refs[2]]);
+    }
+    let mut restarted = WaitHostGuard(command.spawn().unwrap());
+    await_file(&recovered, &mut restarted);
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Some(status) = restarted.try_wait().unwrap() {
+            assert!(status.success(), "recovery-only host failed: {status}");
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "recovery-only host did not finish"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(
+        std::fs::read_to_string(recovered).unwrap(),
+        "recovered A/B readback without initialization\n"
+    );
     verify();
 }
 #[test]
 #[ignore = "requires real C++ Database/RocksDB"]
 fn registered_same_host_generated_commit_restart_readback() {
-    run(false);
+    run(false, false, false, false);
+}
+#[test]
+#[ignore = "requires real C++ Database/RocksDB"]
+fn registered_same_host_generated_chain_restart_readback() {
+    run(false, true, false, false);
+}
+#[test]
+#[ignore = "requires real C++ Database/RocksDB"]
+fn registered_same_host_generated_prepared_host_crash_recovery() {
+    run(false, false, true, false);
+}
+#[test]
+#[ignore = "requires real C++ Database/RocksDB"]
+fn registered_same_host_generated_siblings_restart_readback() {
+    run(false, false, false, true);
+}
+#[test]
+#[ignore = "requires real C++ Database/RocksDB"]
+fn registered_same_host_generated_chain_prepared_host_crash_recovery() {
+    run(false, true, true, false);
 }
 #[test]
 #[ignore = "requires real C++ Database/RocksDB"]
 fn registered_same_host_generated_decision_watch_cleanup() {
-    run(true);
+    run(true, false, false, false);
 }

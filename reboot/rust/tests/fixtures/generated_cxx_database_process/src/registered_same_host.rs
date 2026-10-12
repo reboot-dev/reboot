@@ -48,7 +48,8 @@ impl reboot::runtime::TransactionalChannelResolver for LocalOnly {
     }
 }
 struct LocalHandler {
-    child: Option<String>,
+    children: Vec<String>,
+    depth: usize,
 }
 #[tonic::async_trait]
 impl generated::TransactionCounterWritesMethodsTransactionHandler for LocalHandler {
@@ -144,7 +145,8 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for LocalHandl
         request: proto::TransactionIncrementRequest,
     ) -> Result<TransactionExecution<proto::TransactionCounterValue>, tonic::Status> {
         context.require_registered_outbound()?;
-        if let Some(child) = &self.child {
+        assert_eq!(context.transaction_ids().len(), self.depth);
+        for child in &self.children {
             let client =
                 generated::TransactionCounterWritesMethodsClient::new(LocalOnly(child.clone()));
             let target = generated::TransactionCounterWritesMethodsTarget::new(child);
@@ -158,8 +160,9 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for LocalHandl
                 .await
                 .unwrap();
             assert_eq!(response.response().get_ref().value, 5);
-        } else {
-            assert_eq!(context.transaction_ids().len(), 2);
+        }
+        if self.children.is_empty() {
+            assert!(context.transaction_ids().len() >= 2);
             assert!(context.headers().bearer_token.is_none());
             assert!(context.headers().cookie.is_none());
         }
@@ -188,13 +191,21 @@ fn request(
 pub async fn run() {
     let endpoint = arg("--database");
     let listen = arg("--listen");
-    let refs = [arg("--state-ref"), arg("--local-child-ref")];
+    let chain = has("--local-chain");
+    let siblings = has("--local-siblings");
+    let mut refs = vec![arg("--state-ref"), arg("--local-child-ref")];
+    if chain || siblings {
+        refs.push(arg("--local-grandchild-ref"));
+    }
     let store = DatabaseActorStore::connect(&endpoint).await.unwrap();
     let sidecar = Arc::new(TonicParticipantSidecar::connect(&endpoint).await.unwrap());
-    let participants = refs.each_ref().map(|reference| {
-        DurableActorParticipant::new(sidecar.clone(), STATE, reference)
-            .with_database_actor_gate(&store)
-    });
+    let participants: Vec<_> = refs
+        .iter()
+        .map(|reference| {
+            DurableActorParticipant::new(sidecar.clone(), STATE, reference)
+                .with_database_actor_gate(&store)
+        })
+        .collect();
     let resolver = Arc::new(
         ExactParticipantResolver::new(participants.iter().map(|participant| {
             (
@@ -207,50 +218,76 @@ pub async fn run() {
         .unwrap(),
     );
     let coordinator_sidecar = Arc::new(TonicCoordinatorSidecar::connect(&endpoint).await.unwrap());
-    let coordinators = participants.each_ref().map(|participant| {
-        reboot::durable_coordinator::DurableRootCoordinator::new(
-            coordinator_sidecar.clone(),
-            resolver.clone(),
-        )
-        .with_identity(participant.actor_target())
-    });
+    let coordinators: Vec<_> = participants
+        .iter()
+        .map(|participant| {
+            reboot::durable_coordinator::DurableRootCoordinator::new(
+                coordinator_sidecar.clone(),
+                resolver.clone(),
+            )
+            .with_identity(participant.actor_target())
+        })
+        .collect();
     let watch = Arc::new(ObservedWatch(
         reboot::legacy_coordinator::TonicCoordinatorWatchEndpoint::lazy(format!("http://{listen}"))
             .unwrap(),
     ));
-    let live = reboot::live_participant::LiveParticipantOwner::new(
-        2,
-        participants[0].actor_target(),
-        watch.clone(),
-    )
-    .unwrap();
     let make = |index: usize| {
-        generated::TransactionCounterWritesMethodsTransactionAdapter::new(
+        let adapter = generated::TransactionCounterWritesMethodsTransactionAdapter::new(
             store.clone(),
             participants[index].clone(),
             coordinators[index].clone(),
             Starts {
                 root: Uuid::parse_str(&arg("--root-id")).unwrap(),
-                child: Uuid::from_u128(202),
+                child: Uuid::from_u128(202 + index as u128),
             },
             LocalHandler {
-                child: (index == 0).then(|| refs[1].clone()),
+                children: if siblings {
+                    if index == 0 {
+                        refs[1..].to_vec()
+                    } else {
+                        vec![]
+                    }
+                } else {
+                    refs.get(index + 1).cloned().into_iter().collect()
+                },
+                depth: if siblings && index > 0 { 2 } else { index + 1 },
             },
         )
-        .with_authorization(reboot::auth::AuthorizationPolicy::permissive_for_development())
-        .with_sequential_root_star()
+        .with_authorization(reboot::auth::AuthorizationPolicy::permissive_for_development());
+        if chain {
+            adapter.with_supervised_transaction_tree()
+        } else {
+            adapter.with_sequential_root_star()
+        }
     };
-    let a = make(0)
-        .with_explicit_abort_owner(reboot::explicit_abort::ExplicitAbortOwner::new(2).unwrap());
-    let b = make(1).with_live_participant_owner(live);
     let mut host = ApplicationHost::new("native-registered-same-host");
-    let (a, _) = host.register_local_transaction_service(a).unwrap();
-    let (b, _) = host.register_local_transaction_service(b).unwrap();
+    let mut adapters = Vec::new();
+    for index in 0..refs.len() {
+        let adapter = if index == 0 {
+            make(index).with_explicit_abort_owner(
+                reboot::explicit_abort::ExplicitAbortOwner::new(2).unwrap(),
+            )
+        } else {
+            make(index).with_live_participant_owner(
+                reboot::live_participant::LiveParticipantOwner::new(
+                    2,
+                    participants[0].actor_target(),
+                    watch.clone(),
+                )
+                .unwrap(),
+            )
+        };
+        let (adapter, _) = host.register_local_transaction_service(adapter).unwrap();
+        adapters.push(adapter);
+    }
+    let a = adapters[0].clone();
+    let b = adapters[1].clone();
     let recovery_metadata = ParticipantRecovery {
         shard_ids: vec!["s000000000".into()],
         ..Default::default()
     };
-    let recovery = a
+    let mut recovery = a
         .legacy_recovery_registration(
             LegacyRecoveryMetadata {
                 participant: recovery_metadata.clone(),
@@ -262,17 +299,23 @@ pub async fn run() {
             },
             watch,
         )
-        .unwrap()
-        .with_participant(participants[1].clone(), recovery_metadata)
         .unwrap();
+    for participant in participants.iter().skip(1) {
+        recovery = recovery
+            .with_participant(participant.clone(), recovery_metadata.clone())
+            .unwrap();
+    }
     let control = a
         .legacy_coordinator_control_service(STATE, &refs[0])
         .unwrap();
     let public = proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethodsServer::new(a.clone());
-    let host = host
+    let mut host = host
         .with_host_recovery(recovery)
-        .with_host_recovery(a.explicit_abort_recovery_registration().unwrap())
-        .with_host_recovery(b.live_participant_recovery_registration().unwrap())
+        .with_host_recovery(a.explicit_abort_recovery_registration().unwrap());
+    for adapter in adapters.iter().skip(1) {
+        host = host.with_host_recovery(adapter.live_participant_recovery_registration().unwrap());
+    }
+    let host = host
         .add_legacy_control_service(control)
         .add_public_service(public);
     let (stop, stopped) = tokio::sync::oneshot::channel();
@@ -286,7 +329,29 @@ pub async fn run() {
     })
     .await
     .unwrap();
-    for (adapter, reference) in [(&a, &refs[0]), (&b, &refs[1])] {
+    if let Some(marker) = optional_arg("--local-recovered-marker") {
+        // Recovery-only launch must not initialize or rerun transaction handlers.
+        for (adapter, reference) in adapters.iter().zip(&refs) {
+            assert_eq!(
+                adapter
+                    .query(request(reference, 0, false))
+                    .await
+                    .unwrap()
+                    .get_ref()
+                    .value,
+                5
+            );
+        }
+        stop.send(()).unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(5), server)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        std::fs::write(marker, b"recovered A/B readback without initialization\n").unwrap();
+        return;
+    }
+    for (adapter, reference) in adapters.iter().zip(&refs) {
         assert_eq!(
             adapter
                 .apply(request(reference, 4, true))
@@ -297,9 +362,9 @@ pub async fn run() {
             4
         );
     }
-    let called = a.clone();
+    let mut client = proto::transaction_counter_writes_methods_client::TransactionCounterWritesMethodsClient::connect(format!("http://{listen}")).await.unwrap();
     let root_ref = refs[0].clone();
-    let call = tokio::spawn(async move { called.increment(request(&root_ref, 1, false)).await });
+    let call = tokio::spawn(async move { client.increment(request(&root_ref, 1, false)).await });
     if let Some(marker) = optional_arg("--local-watch-released-marker") {
         let terminal = std::env::var("REBOOT_TEST_TARGET_WATCH_TERMINALIZED").unwrap();
         tokio::time::timeout(std::time::Duration::from_secs(20), async {

@@ -12,6 +12,47 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Registered chains, siblings and prepared-host-crash recovery
+
+Exclusive nonfactory generated receipt-backed admission now includes bounded
+supervised chains alongside root-star and reusable modes. Shared/factory methods
+retain ordinary authorization without registered outbound permission. Sanitized
+local wire headers do not reencode host-injected application identity; exact
+one-use ticket equality and receiver verification remain mandatory.
+
+Synchronous non-inlined future construction boxing now also covers guard
+admission, ownership transitions and authorized-handler construction. Actual
+public-root A-to-B-to-C and sequential A-to-B then A-to-C execute inline on normal
+Tokio workers with `RUST_MIN_STACK` unset, commit state 5, and survive same-RocksDB
+Database restart plus a fresh recovery-only host. This is bounded execution
+acceptance, not arbitrary-depth stack safety. Source/disassembly review measured
+large remaining branch frames; no stack override or detached local dispatch was
+introduced.
+
+Both A/B and A/B/C prepared-host-crash cases observe committed state 4, prepared
+participant records and one fully prepared coordinator (`preparing == false`),
+kill only their owned host child, and observe outstanding work again after
+restarting the same RocksDB Database before starting recovery. The fresh host
+restores all participants before canonical coordinator recovery/readiness, reads
+state 5 without initialization or mutation rerun, and clears both worklists.
+No-rerun evidence is source control flow, not an independent invocation counter;
+prepared snapshots check counts/flags, not exact transaction-path identities.
+This crash point precedes immutable Commit publication. Post-decision and partial
+prepare crashes, reusable registered reader-task composition, independent recovered
+Watch settlement and C-specific Watch gate release remain unproved. The separate
+live Watch acceptance still covers B in the two-actor case.
+
+Frozen twelve-gate audit `1791773771269816780` accepted all twelve exits zero:
+SDK 591 passing results including nested consumers (490 library, 45 generated),
+strict SDK/generated-consumer Clippy, native restart 4, ownership regressions,
+CLI unit, public User/workflow/checkpoint restart, greeting, native registered-local
+6 and strict native-fixture Clippy. All 238 inputs matched; recorded descendant
+PID/start identities were absent and the owner lock was released before this
+ledger/fingerprint bookkeeping. Applied source reviews found no scoped blockers;
+reviews are distinct from execution. Failed audits `1791773106084911634` and
+`1791773377460667822` exposed test-module placement and generated constant-boolean
+lint failures respectively; only this replacement certifies the repairs.
+
 ## Inline registered transport and call-drop cancellation
 
 Generated exclusive transaction flows now construct cleanup/abort futures through
@@ -32,7 +73,8 @@ remains necessary for private terminal settlement; the two real trailer layers
 introduce no synthetic receipt or duplicate authority. These are call-drop cases,
 not host-revocation variants. The Database fixture is ACK-only, not native
 cancellation durability evidence; explicit private-ledger uncertainty assertions
-and outstanding-work crash recovery remain unproved.
+remain unproved. The later bounded prepared-host-crash checkpoint above
+supplies outstanding-work recovery evidence for its specified crash point.
 
 Frozen twelve-gate audit `1791770034263609620` accepted all twelve exits zero:
 SDK 590 passing results (489 library, 45 generated), strict SDK and generated
@@ -72,7 +114,7 @@ were absent and the owner lock released before this ledger/fingerprint update.
 Applied source-only transport and native reviews found no introduced blockers;
 reviews are separate from execution acceptance.
 
-Scope is exclusive nonfactory single A-to-B, live decision Watch settlement and
+This earlier checkpoint scope is exclusive nonfactory single A-to-B, live decision Watch settlement and
 post-cleanup Database restart durability. Outstanding-work host-crash recovery,
 deeper/sibling/task composition, factory/shared eligibility and authorization
 exemptions are not certified. The later inline/call-drop checkpoint above removes
@@ -3915,7 +3957,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 288fa760a3062d41c8d84c8f58fdadb4831ab66221140e067523cb60e880e122 -->
+<!-- parity-source-sha256: 89c332e9b67bb6d6d5e1f3abbb2bdd488154ea339e0fc6a6a28a3d5ea2372d0e -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,
