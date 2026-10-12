@@ -308,7 +308,9 @@ def _register_dev_run(parser: ArgumentParser):
         type=int,
         help='port on which the developer dashboard, started separately '
         f'with `rbt dashboard`, is serving; defaults to '
-        f'{DEFAULT_DASHBOARD_PORT}',
+        f'{DEFAULT_DASHBOARD_PORT}, or under `--portless` to finding it by '
+        'name, `https://dashboard.<application-name>.localhost`, where '
+        '`rbt dashboard --portless` serves it',
     )
 
     parser.subcommand('dev run').add_argument(
@@ -1759,19 +1761,44 @@ async def __dev_run(
     # The developer dashboard runs separately, started by
     # `rbt dashboard`; this run only decides whether to open a window
     # on it.
-    dashboard_port = args.dashboard_port or DEFAULT_DASHBOARD_PORT
-
     open_dashboard = (
         args.open_dashboard is True or
         (_AUTO_OPEN_DASHBOARD and args.open_dashboard is not False)
     )
 
-    if open_dashboard and not await _dashboard_reachable(dashboard_port):
-        terminal.fail(
-            'You asked for a dashboard, but no developer dashboard is '
-            f'serving on port {dashboard_port}. Start one with '
-            '`rbt dashboard`, then run this again.'
-        )
+    dashboard_url: Optional[str] = None
+
+    if open_dashboard:
+        # Under `--portless` the dashboard is found by its name, the
+        # way a browser finds it, unless `--dashboard-port` says
+        # where it is; a dashboard the proxy routes nowhere, or to
+        # nothing, is as good as none.
+        if args.portless and args.dashboard_port is None:
+            dashboard_host = reboot.portless.dashboard_hostname(
+                args.application_name
+            )
+            # Also where an automatic open (`_AUTO_OPEN_DASHBOARD`)
+            # would ask about viewers and the reopen preference, which
+            # needs the channel to trust portless's CA; the forced
+            # open of `--open-dashboard` asks nothing.
+            dashboard_url = f'https://{dashboard_host}'
+            if not await portless.reachable(dashboard_host):
+                terminal.fail(
+                    'You asked for a dashboard, but no developer '
+                    f'dashboard is serving as {dashboard_url}. Start '
+                    'one with `rbt dashboard --portless`, then run '
+                    'this again.'
+                )
+        else:
+            dashboard_port = args.dashboard_port or DEFAULT_DASHBOARD_PORT
+            dashboard_url = f'http://127.0.0.1:{dashboard_port}'
+            if not await _dashboard_reachable(dashboard_port):
+                terminal.fail(
+                    'You asked for a dashboard, but no developer '
+                    f'dashboard is serving on port {dashboard_port}. '
+                    'Start one with `rbt dashboard`, then run this '
+                    'again.'
+                )
 
     application_serving_event = (asyncio.Event() if open_dashboard else None)
 
@@ -1859,10 +1886,11 @@ async def __dev_run(
 
     if open_dashboard:
         assert application_serving_event is not None
+        assert dashboard_url is not None
         background_command_tasks.append(
             asyncio.create_task(
                 _open_dashboard(
-                    dashboard_url=f'http://127.0.0.1:{dashboard_port}',
+                    dashboard_url=dashboard_url,
                     forced=args.open_dashboard is True,
                     application_serving_event=application_serving_event,
                 ),

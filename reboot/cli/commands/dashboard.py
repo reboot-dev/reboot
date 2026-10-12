@@ -2,6 +2,7 @@
 import argparse
 import asyncio
 import os
+import reboot.portless
 import secrets
 import shutil
 import sys
@@ -16,7 +17,7 @@ from reboot.cli.commands.dev import (
     check_local_envoy_mode,
     try_and_become_child_subreaper_on_linux,
 )
-from reboot.cli.common import terminal
+from reboot.cli.common import portless, terminal
 from reboot.cli.common.dev_extra import dev_extra_installed, missing_dev_extra
 from reboot.cli.common.directories import (
     add_working_directory_options,
@@ -72,7 +73,24 @@ def register_dashboard(parser: ArgumentParser):
         '--port',
         type=int,
         help='port on which the dashboard will serve traffic; defaults to '
-        f'{DEFAULT_DASHBOARD_PORT}',
+        f'{DEFAULT_DASHBOARD_PORT}, or under `--portless`, where the name '
+        'is the address, to a free port',
+    )
+
+    parser.subcommand('dashboard').add_argument(
+        '--portless',
+        type=bool,
+        default=False,
+        help=(
+            'serve under a named `.localhost` URL via portless '
+            '(https://github.com/vercel-labs/portless): registers '
+            'the dashboard with the running portless proxy as '
+            '`https://dashboard.<application-name>.localhost`, where '
+            '`rbt dev run --portless` finds it. The name is the '
+            "application's, from `dev run --application-name` in "
+            f'{parser.dot_rc_filename}. Requires the `portless` CLI on '
+            'PATH with its proxy started (`portless proxy start`).'
+        ),
     )
 
 
@@ -122,6 +140,30 @@ def _application(parser: ArgumentParser) -> Optional[str]:
             return value
 
     return None
+
+
+def _application_name(parser: ArgumentParser) -> str:
+    """Returns the developer's application's name, which is the one
+    they tell `rbt dev run` to save state under, and under `--portless`
+    the hostname: the dashboard is `https://dashboard.<name>.localhost`
+    beside the application's `https://<name>.localhost`.
+
+    Read rather than asked for again, so that `rbt dev run --portless`
+    and this agree on the name without anybody keeping them so.
+    """
+    for argument in parser.dot_rc_arguments('dev run'):
+        name, separator, value = argument.partition('=')
+        if name == '--application-name' and separator == '=':
+            return value
+
+    terminal.fail(
+        '`--portless` needs the application\'s name, which is the '
+        'hostname (`https://dashboard.<application-name>.localhost`). '
+        f'`rbt dashboard` reads it from your {parser.dot_rc_filename}, '
+        'where `rbt dev run` does:\n'
+        '\n'
+        '    dev run --application-name=<application-name>\n'
+    )
 
 
 def _generated_directory(parser: ArgumentParser) -> Optional[str]:
@@ -293,7 +335,7 @@ async def _run_dashboard(
         await backoff()
 
 
-async def _open_when_serving(*, port: int) -> None:
+async def _open_when_serving(*, port: int, origin: str) -> None:
     """Opens the dashboard once it is serving, unless somebody is
     already looking at one: the page subscribes to `Presence` for as
     long as it is open, so a tab left up keeps a second one from
@@ -301,10 +343,14 @@ async def _open_when_serving(*, port: int) -> None:
 
     Also stays shut when the developer clicked "Don't reopen
     automatically" in the notice an automatic open shows.
+
+    `origin` is what the browser is sent to: the loopback port, or
+    under `--portless` the dashboard's name. The checks go to the
+    port directly either way.
     """
     dashboard_url = f'http://127.0.0.1:{port}'
     # The root, which forwards to the page wherever it is served.
-    page_url = f'{dashboard_url}/'
+    page_url = f'{origin}/'
 
     try:
         backoff = Backoff()
@@ -334,7 +380,7 @@ async def _open_when_serving(*, port: int) -> None:
         # because Envoy's gRPC-JSON transcoder fails `/` with a query
         # (see `automatically_opened_url`).
         if not await asyncio.to_thread(
-            webbrowser.open, automatically_opened_url(dashboard_url)
+            webbrowser.open, automatically_opened_url(origin)
         ):
             terminal.warn(
                 f"Could not open a browser; your dashboard is at {page_url}"
@@ -372,7 +418,21 @@ async def dashboard(
         # executable runs. Fail otherwise.
         await check_local_envoy_mode(subprocesses)
 
-        port = args.port or DEFAULT_DASHBOARD_PORT
+        # Under `--portless` the name is the address, so unless `--port`
+        # says otherwise the port behind the proxy is any free one,
+        # and the dashboards of several applications run at once.
+        portless_name = _application_name(parser) if args.portless else None
+        if portless_name is not None:
+            await portless.check('--portless')
+            port = args.port or portless.free_port()
+            origin = (
+                'https://' + reboot.portless.dashboard_hostname(portless_name)
+            )
+            aside = f' (also at http://127.0.0.1:{port}/)'
+        else:
+            port = args.port or DEFAULT_DASHBOARD_PORT
+            origin = f'http://127.0.0.1:{port}'
+            aside = ''
 
         env = _dashboard_env(
             args,
@@ -383,10 +443,17 @@ async def dashboard(
             generated_directory=_generated_directory(parser),
         )
 
-        terminal.info(f'Your dashboard is at http://127.0.0.1:{port}/\n')
+        if portless_name is not None:
+            await portless.alias(
+                subprocesses,
+                reboot.portless.dashboard_name(portless_name),
+                port,
+            )
+
+        terminal.info(f'Your dashboard is at {origin}/{aside}\n')
 
         open_task = asyncio.create_task(
-            _open_when_serving(port=port),
+            _open_when_serving(port=port, origin=origin),
             name=f'_open_when_serving(...) in {__name__}',
         )
 
@@ -398,6 +465,11 @@ async def dashboard(
             )
         finally:
             open_task.cancel()
+            # The name points at an Envoy that is gone once we are.
+            if portless_name is not None:
+                await portless.unalias(
+                    reboot.portless.dashboard_name(portless_name)
+                )
 
     return 0
 

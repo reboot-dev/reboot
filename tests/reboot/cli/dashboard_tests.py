@@ -1,4 +1,5 @@
 import os
+import reboot.portless
 import tempfile
 import unittest
 from reboot.cli.commands import dashboard
@@ -70,6 +71,43 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
             )
 
             self.assertEqual(env['RBT_APPLICATION'], 'backend/src/main.py')
+
+    async def test_portless_takes_the_name_from_dev_run(self) -> None:
+        """`https://dashboard.<name>.localhost` beside `rbt dev run
+        --portless`'s `https://<name>.localhost`: one name, read
+        where `rbt dev run` already needs it."""
+        with tempfile.TemporaryDirectory() as state_directory:
+            _, parser = self._parse(
+                state_directory,
+                rbtrc=(
+                    'generate api/\n'
+                    'dev run --application-name=bank\n'
+                    'dev run --application=backend/src/main.py\n'
+                    'dashboard --portless'
+                ),
+            )
+
+            self.assertEqual(dashboard._application_name(parser), 'bank')
+            self.assertEqual(
+                reboot.portless.dashboard_hostname(
+                    dashboard._application_name(parser)
+                ),
+                'dashboard.bank.localhost',
+            )
+
+    async def test_portless_needs_an_application_name(self) -> None:
+        """Without a name there is no hostname to serve as."""
+        with tempfile.TemporaryDirectory() as state_directory:
+            _, parser = self._parse(
+                state_directory,
+                rbtrc=(
+                    'generate api/\n'
+                    'dev run --application=backend/src/main.py'
+                ),
+            )
+
+            with self.assertRaises(SystemExit):
+                dashboard._application_name(parser)
 
     async def test_an_rbtrc_that_names_no_application(self) -> None:
         """Somebody who names none gets a dashboard that looks for no

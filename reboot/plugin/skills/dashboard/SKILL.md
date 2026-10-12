@@ -86,20 +86,28 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ## Step 3 — Is a dashboard already serving?
 
-The dashboard serves at `http://127.0.0.1:9871/`, which forwards to
+Where the dashboard serves depends on `.rbtrc`. With a
+`dashboard --portless` line (every `.rbtrc` these skills write has
+one; see `../python/references/lifecycle-rbtrc.md`) it is
+`https://dashboard.<app>.localhost/`, `<app>` being the `.rbtrc`'s
+`dev run --application-name`, through the portless proxy, which
+must be running: check on it, and start it, as the run skill's
+"Named URLs with portless" section says, before Step 4. Without
+that line it is `http://127.0.0.1:9871/`. Either forwards to
 wherever its page is. Probe it:
 
 ```sh
-curl -sf -o /dev/null --max-time 2 http://127.0.0.1:9871/
+curl -sf -o /dev/null --max-time 2 https://dashboard.<app>.localhost/
 ```
 
 If that succeeds, a dashboard is already up — do not start a second
 one. Surface the URL and stop.
 
-(If port 9871 is held by something that is _not_ this project's
-dashboard — rare — start on another port with `--port=<port>`, and
-remember that a later `rbt dev run` then needs
-`--dashboard-port=<port>` to find it.)
+(Without portless, if port 9871 is held by something that is _not_
+this project's dashboard — rare — start on another port with
+`--port=<port>`, and remember that a later `rbt dev run` then needs
+`--dashboard-port=<port>` to find it. Under portless the port is a
+free one, and `rbt dev run` finds the dashboard by its name.)
 
 ## Step 4 — Start the dashboard
 
@@ -113,14 +121,16 @@ It takes the API directory from the `generate <dir>` line in
 `.rbtrc` (Step 2), spelled relative to the project root — that is how
 file names are shown in the dashboard.
 
-It prints `Your dashboard is at http://127.0.0.1:9871/`
-immediately and keeps running; wait until the probe from Step 3
-succeeds before calling it up. It stays running for the life of the
+It prints `Your dashboard is at <URL>` immediately (under portless,
+with the port behind the proxy as an aside) and keeps running; wait
+until the probe from Step 3 succeeds before calling it up. It stays running for the life of the
 session — leave it alone afterwards; it never needs a restart when
 code changes, and `rbt dev run` coexists with it.
 
 If it fails to come up (for example the local Envoy check fails
-because neither Docker nor an `envoy` executable is available), warn
+because neither Docker nor an `envoy` executable is available, or
+the user declined portless and the proxy is not running: then
+`uv run rbt dashboard --no-portless`, on the plain port), warn
 the user in one sentence and continue the build without it.
 
 ## Step 5 — Open it once
@@ -128,9 +138,9 @@ the user in one sentence and continue the build without it.
 Open the URL in the browser, best-effort, exactly once:
 
 ```sh
-"$BROWSER" http://127.0.0.1:9871/ || \
-  xdg-open http://127.0.0.1:9871/ || \
-  python3 -m webbrowser http://127.0.0.1:9871/
+"$BROWSER" https://dashboard.<app>.localhost/ || \
+  xdg-open https://dashboard.<app>.localhost/ || \
+  python3 -m webbrowser https://dashboard.<app>.localhost/
 ```
 
 Once is enough for good: the page tracks its own viewers
@@ -140,4 +150,4 @@ re-open the page yourself on reloads or restarts.
 
 Then tell the user the dashboard is up and what it is for — e.g.
 "Developer dashboard (watch the API as I build it) at
-http://127.0.0.1:9871/" — and get on with the build.
+https://dashboard.<app>.localhost/" — and get on with the build.

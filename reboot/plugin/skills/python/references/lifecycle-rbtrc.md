@@ -153,6 +153,10 @@ dev run:portless --mcp-app-url=https://vite.<app>.localhost
 # A web app is served by that same Vite; serve it at `/` from there.
 dev run:portless --web-app-url=https://vite.<app>.localhost
 
+# The developer dashboard (`rbt dashboard`) too: https://dashboard.<app>.localhost,
+# where `rbt dev run --open-dashboard` finds it.
+dashboard --portless
+
 # Plain ports, no portless: `rbt dev run --config=hmr`, Vite from
 # `npm run dev:hmr`.
 dev run:hmr --mcp-app-url=http://localhost:5173
@@ -167,6 +171,10 @@ Run with `rbt dev run` (uses `--default-config=portless`), or
 `rbt dev run --config=hmr` or `--config=dist` to switch. `--portless`
 requires `--application-name` (the name is the hostname), the
 `portless` CLI, and its proxy running (`portless proxy start`).
+`dashboard --portless` has `rbt dashboard` serve as
+`https://dashboard.<app>.localhost`, on a free port the proxy
+routes to, so the dashboards of several applications run at once;
+`rbt dashboard --no-portless` is the plain `http://127.0.0.1:9871/`.
 The frontend's `package.json` mirrors these configs as scripts:
 `dev` is the default, `dev:portless`, which runs
 `portless vite.<app> vite` with `portless` as a dev dependency, and

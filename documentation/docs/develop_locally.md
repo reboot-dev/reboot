@@ -321,7 +321,14 @@ dev run --default-config=portless
 dev run:portless --portless
 dev run:portless --mcp-app-url=https://vite.bank.localhost
 dev run:portless --web-app-url=https://vite.bank.localhost
+dashboard --portless
 ```
+
+`rbt dashboard --portless` serves the developer dashboard the same
+way, as `https://dashboard.<app>.localhost` on a free port the proxy
+routes to (the name is the `.rbtrc`'s `dev run --application-name`),
+and `rbt dev run --portless --open-dashboard` finds it by that name
+rather than on `--dashboard-port`.
 
 ### Inspecting state
 

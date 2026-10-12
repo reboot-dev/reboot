@@ -47,6 +47,18 @@ def vite_hostname(name: str) -> str:
     return hostname(vite_name(name))
 
 
+def dashboard_name(name: str) -> str:
+    """The name `rbt dashboard --portless` registers an application's
+    developer dashboard under, `dashboard.<name>`."""
+    return f'dashboard.{name}'
+
+
+def dashboard_hostname(name: str) -> str:
+    """`dashboard.<name>.localhost`: where an application's developer
+    dashboard is."""
+    return hostname(dashboard_name(name))
+
+
 def ssl_context() -> ssl.SSLContext:
     """A client context for reaching a server the portless proxy
     serves as `https://<name>.localhost`: the system's trust, plus

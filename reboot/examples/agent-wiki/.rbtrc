@@ -34,6 +34,11 @@ dev run --mcp-app-path-prefix=frontend
 dev run:portless --portless
 dev run:portless --mcp-app-url=https://vite.agent-wiki.localhost
 
+# The developer dashboard (`rbt dashboard`) too: it is
+# https://dashboard.agent-wiki.localhost, where `rbt dev run --open-dashboard`
+# finds it. `rbt dashboard --no-portless` for a plain port.
+dashboard --portless
+
 # Plain ports instead: `rbt dev run --config=hmr`, with Vite run as
 # `cd frontend && npm run dev:hmr`.
 dev run:hmr --mcp-app-url=http://localhost:5173

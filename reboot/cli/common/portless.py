@@ -8,10 +8,11 @@ this is what talks to the `portless` CLI and the proxy.
 
 import asyncio
 import socket
+import ssl
 from reboot.cli.common import terminal
 from reboot.cli.common.directories import is_on_path
 from reboot.cli.common.subprocesses import Subprocesses
-from reboot.portless import hostname, proxy_port
+from reboot.portless import hostname, proxy_port, ssl_context
 
 # How to get the `portless` CLI, for messages.
 INSTALL_HINT = (
@@ -54,6 +55,46 @@ async def check(flag: str) -> None:
             '`portless proxy start` (or set `PORTLESS_PORT` to where '
             'it is listening).'
         )
+
+
+async def reachable(host: str) -> bool:
+    """Whether something answers at `https://<host>` through the proxy:
+    the name is registered, and what it routes to is up. The proxy
+    answers 404 for a name it has no route for and 502 for a route
+    whose target is not responding, so a request for `/` tells the
+    two apart from a server that is there. Asked at the loopback
+    address with the name as SNI and `Host`, the way a browser's
+    request arrives, so that no resolver has to know the name."""
+    context = ssl_context()
+    context.set_alpn_protocols(['http/1.1'])
+    try:
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(
+                '127.0.0.1',
+                proxy_port(),
+                ssl=context,
+                server_hostname=host,
+            ),
+            timeout=2.0,
+        )
+    except (OSError, asyncio.TimeoutError, ssl.SSLError):
+        return False
+    try:
+        writer.write(
+            f'GET / HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n'.
+            encode()
+        )
+        await writer.drain()
+        status_line = await asyncio.wait_for(reader.readline(), timeout=2.0)
+    except (OSError, asyncio.TimeoutError, ssl.SSLError):
+        return False
+    finally:
+        writer.close()
+    # `HTTP/1.1 200 OK`: anything the server itself said, including a
+    # redirect, means it is there; the proxy's own 404 and 502 mean
+    # it is not.
+    parts = status_line.decode(errors='replace').split()
+    return len(parts) >= 2 and parts[1].isdigit() and int(parts[1]) < 400
 
 
 async def alias(subprocesses: Subprocesses, name: str, port: int) -> None:

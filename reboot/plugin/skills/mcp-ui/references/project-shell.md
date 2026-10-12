@@ -73,6 +73,11 @@ dev run:portless --mcp-app-url=https://vite.<project-name>.localhost
 # A dual-frontend app also serves the web app Vite serves at `/`:
 # dev run:portless --web-app-url=https://vite.<project-name>.localhost
 
+# The developer dashboard (`rbt dashboard`) too: it is
+# https://dashboard.<project-name>.localhost, where `rbt dev run --open-dashboard`
+# finds it.
+dashboard --portless
+
 # Plain ports instead: `rbt dev run --config=hmr`, with Vite run as
 # `cd frontend && npm run dev:hmr`.
 dev run:hmr --mcp-app-url=http://localhost:5173
