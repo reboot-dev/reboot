@@ -83,6 +83,7 @@ from reboot.settings import (
     ENVVAR_RBT_PORTLESS_NAME,
     ENVVAR_RBT_SERVERS,
     ENVVAR_RBT_STATE_DIRECTORY,
+    ENVVAR_RBT_TUNNEL_URL,
     ENVVAR_RBT_WEB_APP,
     ENVVAR_RBT_WEB_APP_DIST_PATH,
     ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
@@ -300,6 +301,16 @@ def _register_dev_run(parser: ArgumentParser):
         help='port on which the Reboot app will serve traffic; defaults to '
         f'{DEFAULT_LOCAL_ENVOY_PORT}, or under `--portless`, where the name '
         'is the address, to a free port',
+    )
+
+    parser.subcommand('dev run').add_argument(
+        '--tunnel-url',
+        type=str,
+        help='the public URL this application is reachable at through '
+        'a tunnel (e.g., https://<name>.trycloudflare.com), which the '
+        'setup wizard shows and verifies; without it the wizard asks '
+        'ngrok and cloudflared, through their local APIs on their '
+        'default ports, for a tunnel of their own',
     )
 
     parser.subcommand('dev run').add_argument(
@@ -1573,6 +1584,14 @@ async def __dev_run(
     # web app at `/`, independent of how the MCP Apps are served.
     if args.web_app_dist_path:
         env[ENVVAR_RBT_WEB_APP_DIST_PATH] = args.web_app_dist_path
+    if args.tunnel_url:
+        parsed = urlparse(args.tunnel_url)
+        if parsed.scheme not in ('http', 'https') or not parsed.hostname:
+            terminal.fail(
+                f"`--tunnel-url={args.tunnel_url}` must be an http:// or "
+                "https:// URL."
+            )
+        env[ENVVAR_RBT_TUNNEL_URL] = args.tunnel_url.rstrip('/')
 
     health_check_task: Optional[asyncio.Task] = None
 

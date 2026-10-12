@@ -741,6 +741,59 @@ REBOOT_DEV_CASES: list[tuple[str, str, Where, Decision]] = [
         Decision.APPROVE,
     ),
     (
+        # Under portless the tunnel reaches the backend by name
+        # through the proxy: the name as Host and SNI, portless's
+        # CA trusted for the hop.
+        "dev: cloudflared tunnel by name under portless",
+        "cloudflared tunnel --metrics localhost:4040 "
+        "--url https://127.0.0.1:443 "
+        "--http-host-header bank.localhost "
+        "--origin-server-name bank.localhost "
+        "--origin-ca-pool ~/.portless/ca.pem",
+        Where.PROJECT,
+        Decision.APPROVE,
+    ),
+    (
+        # Host and SNI naming different apps is a slip, not a tunnel
+        # the skill asks for.
+        "dev: cloudflared tunnel whose Host and SNI disagree",
+        "cloudflared tunnel --metrics localhost:4040 "
+        "--url https://127.0.0.1:443 "
+        "--http-host-header bank.localhost "
+        "--origin-server-name other.localhost "
+        "--origin-ca-pool ~/.portless/ca.pem",
+        Where.PROJECT,
+        Decision.REJECT,
+    ),
+    (
+        # Trusting any certificate is never what the skill asks for.
+        "dev: cloudflared tunnel without TLS verification",
+        "cloudflared tunnel --metrics localhost:4040 "
+        "--url https://127.0.0.1:443 "
+        "--http-host-header bank.localhost "
+        "--origin-server-name bank.localhost "
+        "--no-tls-verify",
+        Where.PROJECT,
+        Decision.REJECT,
+    ),
+    (
+        # A plain-port tunnel has no business rewriting Host.
+        "dev: cloudflared tunnel at a plain port with a Host rewrite",
+        "cloudflared tunnel --metrics localhost:4040 "
+        "--url http://localhost:9991 "
+        "--http-host-header bank.localhost",
+        Where.PROJECT,
+        Decision.REJECT,
+    ),
+    (
+        # `run` skill looks for a tunnel already up before starting
+        # one; the command lines say which app each one is for.
+        "dev: pgrep for cloudflared",
+        "pgrep -af cloudflared",
+        Where.PROJECT,
+        Decision.APPROVE,
+    ),
+    (
         # `run` skill checks on the portless proxy before deciding
         # whether to start it.
         "dev: portless doctor",

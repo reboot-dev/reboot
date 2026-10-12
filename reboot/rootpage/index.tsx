@@ -63,6 +63,7 @@ const WizardConnected = ({ applicationId }: { applicationId: string }) => {
       title={title}
       description={response.description}
       titleReady
+      tunnelUrl={response.tunnelUrl}
       ngrokDetectedUrl={response.ngrokPublicUrl}
       cloudflaredDetectedUrl={response.cloudflaredPublicUrl}
       connections={response.connections ?? []}

@@ -317,23 +317,63 @@ case "$tool" in
                         approved=$((approved + 1))
                         ;;
                     'cloudflared tunnel '* )
-                        # `run` skill — start the Cloudflare quick tunnel before `rbt dev run`.
+                        # `run` skill — the Cloudflare quick tunnel in
+                        # front of the backend: at a plain port
+                        # (`--url http://localhost:<port>`), or under
+                        # portless by name through the proxy (`--url
+                        # https://127.0.0.1:<port>`, the name as
+                        # `--http-host-header` and
+                        # `--origin-server-name`, portless's CA as
+                        # `--origin-ca-pool`), plus `--metrics
+                        # localhost:<port>`; flags in any order.
                         in_reboot_project "$effective_dir" || exit 1
-                        args="${trimmed#cloudflared tunnel }"
-                        # Require exactly: --metrics localhost:<port> and --url http://localhost:<port> (either order).
-                        set -- $args
-                        [ "$#" -eq 4 ] || exit 1
-                        if [ "$1" = "--metrics" ] && [ "$3" = "--url" ]; then
-                            metrics="$2"; url="$4"
-                        elif [ "$1" = "--url" ] && [ "$3" = "--metrics" ]; then
-                            metrics="$4"; url="$2"
-                        else
-                            exit 1
-                        fi
+                        set -- ${trimmed#cloudflared tunnel }
+                        metrics=; url=; host_header=; server_name=; ca_pool=
+                        while [ "$#" -gt 0 ]; do
+                            [ "$#" -ge 2 ] || exit 1
+                            case "$1" in
+                                --metrics) metrics="$2" ;;
+                                --url) url="$2" ;;
+                                --http-host-header) host_header="$2" ;;
+                                --origin-server-name) server_name="$2" ;;
+                                --origin-ca-pool) ca_pool="$2" ;;
+                                *) exit 1 ;;
+                            esac
+                            shift 2
+                        done
                         case "$metrics" in localhost:*) mport="${metrics#localhost:}" ;; *) exit 1 ;; esac
-                        case "$url" in http://localhost:*) bport="${url#http://localhost:}" ;; *) exit 1 ;; esac
                         case "$mport" in ''|*[!0-9]*) exit 1 ;; esac
+                        case "$url" in
+                            http://localhost:*)
+                                bport="${url#http://localhost:}"
+                                [ -z "$host_header$server_name$ca_pool" ] || exit 1
+                                ;;
+                            https://127.0.0.1:*)
+                                bport="${url#https://127.0.0.1:}"
+                                [ "$ca_pool" = '~/.portless/ca.pem' ] || exit 1
+                                [ -n "$host_header" ] || exit 1
+                                [ "$host_header" = "$server_name" ] || exit 1
+                                case "$host_header" in
+                                    *.localhost)
+                                        name="${host_header%.localhost}"
+                                        ;;
+                                    *) exit 1 ;;
+                                esac
+                                case "$name" in
+                                    ''|*[!A-Za-z0-9-]*|-*) exit 1 ;;
+                                esac
+                                ;;
+                            *) exit 1 ;;
+                        esac
                         case "$bport" in ''|*[!0-9]*) exit 1 ;; esac
+                        approved=$((approved + 1))
+                        ;;
+                    'pgrep -af cloudflared')
+                        # `run` skill — is a tunnel already up for this
+                        # app, from earlier in the session or from
+                        # another? Read-only: the tunnel to reuse, and
+                        # its metrics port, are on its command line.
+                        in_reboot_project "$effective_dir" || exit 1
                         approved=$((approved + 1))
                         ;;
                     'npx @mcpjam/inspector'* | 'mcpjam-inspector'*)
