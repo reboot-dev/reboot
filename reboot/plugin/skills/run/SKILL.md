@@ -147,22 +147,49 @@ If they accept, before the backend and frontend:
 
 ### Tunnel — MCP UIs only
 
-Before starting an MCP UI's backend, kick off a Cloudflare quick
-tunnel pointed at the dev server's port so external MCP clients
-(e.g. ChatGPT) can reach it. Skip the tunnel for a **Web App**: it
-has no MCP clients, and a tunnel would publish a dev server where
-the `Development()` picker lets anyone sign in as anyone. Run the
-bundled `cloudflared` shim in its own background shell with two
-flags you choose:
+An MCP UI's backend needs a Cloudflare quick tunnel so external MCP
+clients (e.g. ChatGPT) can reach it. Skip the tunnel for a **Web
+App**: it has no MCP clients, and a tunnel would publish a dev server
+where the `Development()` picker lets anyone sign in as anyone.
 
-- `--url http://localhost:<BACKEND_PORT>` — the dev server's HTTP
-  port (the default is `9991`; pick a different free port if `9991`
-  is taken and configure `rbt dev run` to match below).
-- `--metrics localhost:<METRICS_PORT>` — a free local port for
-  cloudflared's metrics endpoint (the default is `4040`; pick a
-  different free port if `4040` is taken). Once the tunnel is up,
-  `http://localhost:<METRICS_PORT>/quicktunnel` returns the
-  allocated `*.trycloudflare.com` URL.
+One tunnel per app, for the whole session: a quick tunnel's
+`*.trycloudflare.com` URL is new every time one starts, and the
+user's MCP client holds the old one. So first look for one that is
+already up, from earlier in this session or from another:
+
+```sh
+pgrep -af cloudflared
+```
+
+A `cloudflared tunnel` line whose target is this app is the tunnel
+to use: under portless, `--http-host-header <app>.localhost`;
+otherwise `--url http://localhost:<BACKEND_PORT>`. Its
+`--metrics localhost:<METRICS_PORT>` says where
+`http://localhost:<METRICS_PORT>/quicktunnel` returns the URL. Leave
+every other line alone; those are other apps' tunnels.
+
+If there is none, run the bundled `cloudflared` shim in its own
+background shell, with `--metrics localhost:<METRICS_PORT>` a free
+local port for its metrics endpoint: `4040`, unless another app's
+tunnel holds it. Under portless the tunnel reaches the backend by
+name through the portless proxy, so it needs no port, can start
+before the backend, and outlives every `rbt dev run` after it:
+
+```sh
+cloudflared tunnel \
+    --metrics localhost:4040 \
+    --url https://127.0.0.1:443 \
+    --http-host-header <app>.localhost \
+    --origin-server-name <app>.localhost \
+    --origin-ca-pool ~/.portless/ca.pem
+```
+
+(`443` is `PORTLESS_PORT` if the user set it.) cloudflared passes
+the public hostname on as `X-Forwarded-Host`, which the backend uses
+for the URLs it hands the MCP client. Without portless, point the
+tunnel at the backend's port instead, `9991` unless `rbt dev run` is
+given `--port` (see `python/references/lifecycle-rbtrc.md` for the
+`application_port` knob):
 
 ```sh
 cloudflared tunnel \
@@ -170,14 +197,13 @@ cloudflared tunnel \
     --url http://localhost:9991
 ```
 
-Pass the **same** `<BACKEND_PORT>` to `rbt dev run` so the dev
-server and the tunnel agree on the port. Under portless pass it
-as `--port=<BACKEND_PORT>` every time: the backend's name is its
-address there, so without `--port` it takes a free port the tunnel
-cannot know. Without portless Reboot's default is `9991`, so no
-extra flag is needed if you stuck with the default; otherwise see
-`python/references/lifecycle-rbtrc.md` for the `application_port`
-knob.
+Either way, read the tunnel's URL,
+`https://<hostname>` from `http://localhost:<METRICS_PORT>/quicktunnel`
+(it can take a few seconds to appear), and pass it to `rbt dev run`
+below as `--tunnel-url=<URL>`: the setup wizard then shows and
+verifies this app's tunnel at once, rather than looking for one
+through the providers' local APIs, which with several apps up can
+find another app's.
 
 ### Backend — both app types
 
@@ -187,7 +213,8 @@ Start the backend in its own background shell:
 uv run rbt dev run --no-chaos
 ```
 
-`--env-file=.env` in `.rbtrc` loads the secrets into the process;
+For an MCP UI, add `--tunnel-url=<URL>`, the tunnel's URL from
+above. `--env-file=.env` in `.rbtrc` loads the secrets into the process;
 `--no-chaos` disables the Chaos Monkey, a useful bug-finder that is
 confusing to a developer who cannot see the backend terminal. With
 portless, the `.rbtrc`'s default config passes `--portless` (add it

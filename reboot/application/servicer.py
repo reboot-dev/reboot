@@ -1,5 +1,6 @@
 import aiohttp
 import asyncio
+import os
 import rbt.v1alpha1.errors_pb2
 from log.log import get_logger
 from rbt.v1alpha1.application.application_rbt import (
@@ -20,6 +21,7 @@ from rbt.v1alpha1.application.application_rbt import (
 from reboot.aio.auth.authorizers import allow, allow_if, is_app_internal
 from reboot.aio.contexts import ReaderContext, WorkflowContext, WriterContext
 from reboot.run_environments import running_rbt_dev
+from reboot.settings import ENVVAR_RBT_TUNNEL_URL
 from typing import Optional
 
 logger = get_logger(__name__)
@@ -30,7 +32,9 @@ _NGROK_TUNNELS_URL = "http://localhost:4040/api/tunnels"
 
 # cloudflared's local management endpoint, exposed when the user
 # passes `--metrics localhost:4040`. For quick tunnels (`--url ...`)
-# it returns `{"hostname": "<random>.trycloudflare.com"}`.
+# it returns `{"hostname": "<random>.trycloudflare.com"}`. A tunnel
+# whose metrics are on another port, or that cloudflared is not
+# running at all, is named outright with `rbt dev run --tunnel-url`.
 _CLOUDFLARED_QUICKTUNNEL_URL = "http://localhost:4040/quicktunnel"
 
 # How long to wait between polling for tunnels, in seconds. Tight
@@ -189,6 +193,11 @@ class ApplicationServicer(Application.Servicer):
             example_prompts=self.state.example_prompts,
             mcp=self.state.mcp,
             dev=dev,
+            # Told to `rbt dev run`, so known at once and for this
+            # application alone; the provider probes above are for a
+            # tunnel nobody named.
+            tunnel_url=(os.environ.get(ENVVAR_RBT_TUNNEL_URL) or None)
+            if dev else None,
         )
 
     async def record_connection(

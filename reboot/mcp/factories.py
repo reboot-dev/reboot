@@ -12,6 +12,7 @@ from mcp.server.auth.middleware.bearer_auth import BearerAuthBackend
 from mcp.server.fastmcp import FastMCP
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.streamable_http import StreamableHTTPServerTransport
+from reboot.aio.auth.oauth_providers import origin_from_request
 from reboot.aio.external import ExternalContext
 from reboot.mcp.context import (
     _REBOOT_CONTEXT_KEY,
@@ -355,8 +356,11 @@ def create_mcp_factory(
                     # code defined by RFC 6750 Section 3.1 for expired,
                     # revoked, or malformed tokens. Per RFC 9728,
                     # include `resource_metadata` so clients can
-                    # discover where to authenticate.
-                    base = str(request.base_url).rstrip("/")
+                    # discover where to authenticate. The origin is
+                    # the public one (`X-Forwarded-Host`, when a
+                    # tunnel or proxy rewrote `Host`), as in the
+                    # metadata document itself.
+                    base = origin_from_request(request)
                     resource_metadata_url = (
                         f"{base}/.well-known/oauth-protected-resource"
                     )

@@ -86,6 +86,7 @@ from reboot.settings import (
     ENVVAR_RBT_PORTLESS,
     ENVVAR_RBT_SERVERS,
     ENVVAR_RBT_STATE_DIRECTORY,
+    ENVVAR_RBT_TUNNEL_URL,
     ENVVAR_RBT_WEB_APP_DIST_PATH,
     ENVVAR_RBT_WEB_APP_URL,
     ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
@@ -311,6 +312,16 @@ def _register_dev_run(parser: ArgumentParser):
         f'{DEFAULT_DASHBOARD_PORT}, or under `--portless` to finding it by '
         'name, `https://dashboard.<application-name>.localhost`, where '
         '`rbt dashboard --portless` serves it',
+    )
+
+    parser.subcommand('dev run').add_argument(
+        '--tunnel-url',
+        type=str,
+        help='the public URL this application is reachable at through '
+        'a tunnel (e.g., https://<name>.trycloudflare.com), which the '
+        'setup wizard shows and verifies; without it the wizard asks '
+        'ngrok and cloudflared, through their local APIs on their '
+        'default ports, for a tunnel of their own',
     )
 
     parser.subcommand('dev run').add_argument(
@@ -1740,6 +1751,14 @@ async def __dev_run(
                 "server, where the built MCP UIs are not."
             )
         env[ENVVAR_RBT_WEB_APP_URL] = args.web_app_url
+    if args.tunnel_url:
+        parsed = urlparse(args.tunnel_url)
+        if parsed.scheme not in ('http', 'https') or not parsed.hostname:
+            terminal.fail(
+                f"`--tunnel-url={args.tunnel_url}` must be an http:// or "
+                "https:// URL."
+            )
+        env[ENVVAR_RBT_TUNNEL_URL] = args.tunnel_url.rstrip('/')
 
     health_check_task: Optional[asyncio.Task] = None
 

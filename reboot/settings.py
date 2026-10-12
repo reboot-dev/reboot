@@ -160,6 +160,11 @@ ENVVAR_RBT_WEB_APP_URL = 'RBT_WEB_APP_URL'
 # `https://vite.<RBT_NAME>.localhost`, where its frontend dev server
 # is expected, is trusted as a browser origin.
 ENVVAR_RBT_PORTLESS = 'RBT_PORTLESS'
+# The public URL this application is reachable at through a tunnel
+# (e.g., "https://<name>.trycloudflare.com"), which the setup wizard
+# shows and verifies instead of asking ngrok or cloudflared for one
+# (`rbt dev run --tunnel-url`).
+ENVVAR_RBT_TUNNEL_URL = 'RBT_TUNNEL_URL'
 
 # Environment variable indicating that `rbt` is being invoked from
 # Node.js.
