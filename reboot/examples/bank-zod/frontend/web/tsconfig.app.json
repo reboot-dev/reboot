@@ -13,6 +13,10 @@
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
     "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@api/*": ["../api/*"]
+    },
     "jsx": "react-jsx",
 
     /* Linting */
