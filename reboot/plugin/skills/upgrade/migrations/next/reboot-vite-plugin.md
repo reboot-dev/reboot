@@ -43,5 +43,22 @@ adding `server: { port: 4444 }` to the config. `vite`, `@vitejs/plugin-react` an
 stay in `devDependencies`; the plugin imports the last two from the
 project, as optional peer dependencies.
 
-`build.mjs` and the `build` script are unchanged: they set
-`RBT_BUILD_TARGET` per UI, which the plugin reads.
+## `build.mjs` calls the package's `build()`
+
+The `build.mjs` beside each `vite.config.ts` was the same file
+everywhere too: one `vite build` per UI with `RBT_BUILD_TARGET` set.
+That loop is now `build()` in `@reboot-dev/reboot-react/vite`, which
+builds the UIs the `reboot()` plugin declares. Replace the body of
+`frontend/build.mjs` with
+
+```js
+import { build } from "@reboot-dev/reboot-react/vite";
+
+await build();
+```
+
+keeping any steps of your own around the call; the `build` script in
+`frontend/package.json` stays `tsc -b && node build.mjs`. A frontend
+with one UI, a web app alone, needs no `build.mjs` at all: delete it
+and make the script `tsc -b && vite build`, since the plugin builds
+the one UI it declares when no target is set.

@@ -74,6 +74,7 @@ ts_project(
         ":internal/index.ts",
         ":internal/useAppSafe.ts",
         ":native/index.ts",
+        ":vite/build.ts",
         ":vite/index.ts",
     ],
     declaration = True,
