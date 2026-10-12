@@ -29,31 +29,38 @@ FRONT_DOORS = ("web-app", "mcp-ui")
 # a front door doesn't need it, and its references come in through the
 # reading list instead.
 SKILLS_LOADED = {
-    door: ("app", door, "dashboard", "feature", "run")
-    for door in FRONT_DOORS
+    door: ("app", door, "dashboard", "feature", "run") for door in FRONT_DOORS
 }
 
 # Every reference a reading list makes conditional, with the words in
 # its entry that say so. `reading_budget_test` checks that each entry
 # still says it, so rewording an entry can't silently move the budget.
 CONDITIONAL = {
-    "web-app": {
-        "python/references/api-errors.md": "when the API declares",
-        "python/references/servicer-workflow.md": "only when",
-        "python/references/auth-external-api-calls.md": "calling an external",
-        "python/references/stdlib-oauth-tokens.md": "calling an external",
-        "python/references/testing-harness.md": "custom steps",
-        "python/references/testing-external-context.md": "custom steps",
-    },
-    "mcp-ui": {
-        "python/references/api-errors.md": "when the API declares",
-        "python/references/servicer-workflow.md": "only when",
-        "mcp-ui/references/auth-custom-oauth-provider.md": "when none of",
-        "mcp-ui/references/auth-store-tokens.md": "when the",
-        "mcp-ui/references/pop-out-to-web-app.md": "only when",
-        "python/references/testing-harness.md": "custom steps",
-        "python/references/testing-external-context.md": "custom steps",
-    },
+    "web-app":
+        {
+            "python/references/api-errors.md":
+                "when the API declares",
+            "python/references/servicer-workflow.md":
+                "only when",
+            "python/references/auth-external-api-calls.md":
+                "calling an external",
+            "python/references/stdlib-oauth-tokens.md":
+                "calling an external",
+            "python/references/testing-harness.md":
+                "custom steps",
+            "python/references/testing-external-context.md":
+                "custom steps",
+        },
+    "mcp-ui":
+        {
+            "python/references/api-errors.md": "when the API declares",
+            "python/references/servicer-workflow.md": "only when",
+            "mcp-ui/references/auth-custom-oauth-provider.md": "when none of",
+            "mcp-ui/references/auth-store-tokens.md": "when the",
+            "mcp-ui/references/pop-out-to-web-app.md": "only when",
+            "python/references/testing-harness.md": "custom steps",
+            "python/references/testing-external-context.md": "custom steps",
+        },
 }
 
 READING_LIST = "## Which References to Read, and When"

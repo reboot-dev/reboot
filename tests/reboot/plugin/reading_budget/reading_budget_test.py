@@ -9,9 +9,11 @@ ceiling. The parser is checked on small, made-up lists.
 import os
 import unittest
 from pathlib import Path
-
-import reading_budget
-from reading_budget import CONDITIONAL, FRONT_DOORS
+from tests.reboot.plugin.reading_budget import reading_budget
+from tests.reboot.plugin.reading_budget.reading_budget import (
+    CONDITIONAL,
+    FRONT_DOORS,
+)
 
 # The plugin's `skills/` folder: under Bazel, the runfiles path of
 # `//reboot/plugin:skills`; otherwise `REBOOT_PLUGIN_SKILLS`.
@@ -47,12 +49,14 @@ class TheSkillsAsTheyAre(unittest.TestCase):
             for path, words in CONDITIONAL[door].items():
                 with self.subTest(door=door, reference=path):
                     self.assertIn(
-                        path, listed,
+                        path,
+                        listed,
                         f"CONDITIONAL names {path}, which {door}'s reading "
                         "list no longer names; remove it from CONDITIONAL",
                     )
                     self.assertIn(
-                        words, listed[path],
+                        words,
+                        listed[path],
                         f"{door}'s entry for {path} no longer says "
                         f"{words!r}; if it is now read by every build, "
                         "remove it from CONDITIONAL, else update the words",
@@ -76,7 +80,8 @@ class TheSkillsAsTheyAre(unittest.TestCase):
             )
             with self.subTest(door=door):
                 self.assertLessEqual(
-                    path.minimal, CEILINGS[door],
+                    path.minimal,
+                    CEILINGS[door],
                     f"{door}'s minimal reading path is {path.minimal:,} "
                     f"words, over its ceiling of {CEILINGS[door]:,}. Every "
                     "build reads these words and sends them again on each "
