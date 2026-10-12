@@ -5,7 +5,6 @@ import type { UiEntryWithPackage } from "./discover.js";
 // `{{variable}}` placeholders filled by `render()`.
 import appModuleCssTmpl from "../templates/App.module.css.tmpl";
 import appTsxTmpl from "../templates/App.tsx.tmpl";
-import buildMjsTmpl from "../templates/build.mjs.tmpl";
 import indexCssTmpl from "../templates/index.css.tmpl";
 import indexHtmlTmpl from "../templates/index.html.tmpl";
 import mainTsxTmpl from "../templates/main.tsx.tmpl";
@@ -36,13 +35,14 @@ function appName(ui: UiEntryWithPackage): string {
 
 /**
  * Generate web/package.json. `build` typechecks then runs
- * `build.mjs`, which discovers and builds every UI (each
+ * `reboot-vite-build` (from `@reboot-dev/reboot-react`), which
+ * builds every UI the `reboot()` plugin declares (each
  * `mcp/<name>` plus the `web/` SPA).
  */
 export function packageJson(projectName: string): string {
   const scripts: Record<string, string> = {
     dev: "vite",
-    build: "tsc -b && node build.mjs",
+    build: "tsc -b && reboot-vite-build",
   };
 
   const pkg = {
@@ -80,10 +80,6 @@ export function packageJson(projectName: string): string {
 
 export function viteConfig(): string {
   return viteConfigTmpl;
-}
-
-export function buildMjs(): string {
-  return buildMjsTmpl;
 }
 
 export function tsconfigJson(): string {

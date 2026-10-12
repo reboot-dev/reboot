@@ -17,7 +17,7 @@
 //   });
 //
 // One config drives three jobs, told apart by Vite's `command` and the
-// `RBT_BUILD_TARGET` env var, set per UI by the build script. `mode`
+// `RBT_BUILD_TARGET` env var, set per UI by `reboot-vite-build`. `mode`
 // keeps its conventional Vite values — `development` (serve) /
 // `production` (build) — so the matching `.env.<mode>` files load as
 // usual:
@@ -119,7 +119,7 @@ export function buildTarget(options: RebootOptions, root: string): BuildTarget {
     throw new Error(
       `Unknown build target: ${target || "(unset)"}. ` +
         `Set RBT_BUILD_TARGET to one of: ${valid.join(", ")}; ` +
-        "`npm run build` does so for each in turn."
+        "`reboot-vite-build` (`npm run build`) does so for each in turn."
     );
   }
   return target === "web"

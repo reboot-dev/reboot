@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite",
     "lint": "eslint web/src mcp",
-    "build": "npm run lint && tsc -b && node build.mjs",
+    "build": "npm run lint && tsc -b && reboot-vite-build",
     "test": "vitest web/src"
   },
   "dependencies": {

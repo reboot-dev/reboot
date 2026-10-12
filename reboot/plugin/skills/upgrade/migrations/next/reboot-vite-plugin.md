@@ -43,5 +43,12 @@ the config sets `server.port`. Change `--mcp-app-url` (and
 stay in `devDependencies`; the plugin imports the last two from the
 project, as optional peer dependencies.
 
-`build.mjs` and the `build` script are unchanged: they set
-`RBT_BUILD_TARGET` per UI, which the plugin reads.
+## `build.mjs` is now `reboot-vite-build`
+
+The `build.mjs` beside each `vite.config.ts` was the same file
+everywhere too: one `vite build` per UI with `RBT_BUILD_TARGET` set.
+`@reboot-dev/reboot-react` now installs it as the `reboot-vite-build`
+command, which builds the UIs the `reboot()` plugin declares. Delete
+`frontend/build.mjs` and change the `build` script in
+`frontend/package.json` from `tsc -b && node build.mjs` to
+`tsc -b && reboot-vite-build`.

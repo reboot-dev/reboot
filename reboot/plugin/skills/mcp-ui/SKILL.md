@@ -210,8 +210,8 @@ under Key Framework Concepts):
 
 - [`references/react-scaffolding.md`](references/react-scaffolding.md)
   — the `frontend/` shell: `package.json` (`npm run build` runs
-  `build.mjs`, which auto-discovers and builds every UI),
-  `vite.config.ts` (the stock Vite file plus `reboot()`), `build.mjs`,
+  `reboot-vite-build`, which builds every UI the plugin declares),
+  `vite.config.ts` (the stock Vite file plus `reboot()`),
   `tsconfig.json` / `tsconfig.app.json` / `tsconfig.node.json`,
   `index.css` theme variables, `mcp/<name>/index.html`,
   `mcp/<name>/main.tsx`.
@@ -689,7 +689,6 @@ a worked set are in
 │   └── <name>_test.py       # `application` fixture + `scenarios(...)`
 └── frontend/
     ├── package.json
-    ├── build.mjs            # Discovers + builds every UI
     ├── tsconfig.json
     ├── tsconfig.app.json
     ├── tsconfig.node.json

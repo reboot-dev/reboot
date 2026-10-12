@@ -1,8 +1,8 @@
 ---
 title: React Scaffolding — package.json, vite.config.ts, tsconfigs, index.css
 impact: CRITICAL
-impactDescription: The shell files for the `frontend/` tree. `vite.config.ts` is the stock Vite file plus `reboot()` from `@reboot-dev/reboot-react/vite`, which builds each MCP UI into the **nested** `frontend/dist/mcp/<name>/index.html` the server resolves. `npm run build` runs `build.mjs`, which auto-discovers and builds every UI; tsconfigs split into `app` and `node` halves.
-tags: web, react, vite, tsconfig, package-json, css, build, hmr, scaffolding, build-mjs
+impactDescription: The shell files for the `frontend/` tree. `vite.config.ts` is the stock Vite file plus `reboot()` from `@reboot-dev/reboot-react/vite`, which builds each MCP UI into the **nested** `frontend/dist/mcp/<name>/index.html` the server resolves. `npm run build` runs the package's `reboot-vite-build`, which builds every UI the plugin declares; tsconfigs split into `app` and `node` halves.
+tags: web, react, vite, tsconfig, package-json, css, build, hmr, scaffolding, reboot-vite-build
 ---
 
 ## React Scaffolding — package.json, vite.config.ts, tsconfigs, index.css
@@ -12,9 +12,10 @@ owned by this skill — `python` knows nothing about it.
 
 ## `frontend/package.json`
 
-**`npm run build` type-checks and then runs `build.mjs`, which
-auto-discovers and builds every UI. Don't hand-maintain per-UI
-`build:<name>` scripts.**
+**`npm run build` type-checks and then runs `reboot-vite-build`, a
+command installed by `@reboot-dev/reboot-react`, which builds every UI
+the `reboot()` plugin in `vite.config.ts` declares. Don't
+hand-maintain per-UI `build:<name>` scripts.**
 
 ```json
 {
@@ -24,7 +25,7 @@ auto-discovers and builds every UI. Don't hand-maintain per-UI
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && node build.mjs"
+    "build": "tsc -b && reboot-vite-build"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "1.5.0",
@@ -47,9 +48,13 @@ auto-discovers and builds every UI. Don't hand-maintain per-UI
 }
 ```
 
-Adding or removing a UI needs no script changes: `build.mjs`
-discovers every `mcp/<name>/index.html` (and the `web/` SPA) and
-builds each one.
+Adding or removing a UI needs no script changes: `reboot-vite-build`
+loads `vite.config.ts`, asks `reboot()` for the frontend's UIs (every
+`mcp/<name>/index.html`, then the `web/` SPA), and runs one
+`vite build` per UI with `RBT_BUILD_TARGET` set to it. `vite` and
+`vite-plugin-singlefile` are optional peer dependencies of
+`@reboot-dev/reboot-react` that the plugin imports, so they stay in
+`devDependencies`.
 
 ## `frontend/vite.config.ts`
 
@@ -78,8 +83,9 @@ the frontend doesn't have — an MCP-only frontend passes
 `reboot({ mcpUiPath: "mcp", apiPath: "api" })`. With those it drives
 three jobs: the `serve` dev server (HMR for every MCP UI and the web
 app under `/__/frontend/`, on Vite's default port unless the config
-sets `server.port`, listening on every interface), and two builds selected by `RBT_BUILD_TARGET`
-(set per UI by `build.mjs`) — `mcp:<name>` builds one MCP UI, rooted
+sets `server.port`, listening on every interface), and two builds
+selected by `RBT_BUILD_TARGET` (set per UI by `reboot-vite-build`) —
+`mcp:<name>` builds one MCP UI, rooted
 at `mcp/<name>/` so its `index.html` lands at the **nested**
 `dist/mcp/<name>/index.html` the MCP server resolves, with the JS/CSS
 inlined by `vite-plugin-singlefile`; `web` builds the web app into
@@ -103,55 +109,6 @@ the config resolve against each build's root (`mcp/<name>/` or
 `Web artifact 'frontend/dist/mcp/<name>/index.html' is missing`, the
 fix is `cd frontend && npm run build`, **not** a Vite config that
 emits a flat `dist/<name>.html`; that breaks discovery.
-
-## `frontend/build.mjs`
-
-`npm run build` runs this after `tsc`. It discovers every UI and
-builds each through `vite.config.ts` (selecting the UI via
-`RBT_BUILD_TARGET`), so adding or removing a UI never touches the
-build script.
-
-```javascript
-// Builds every Reboot UI in this frontend in one shot, so
-// `npm run build` keeps working as UIs are added or removed.
-//
-// `vite.config.ts` knows how to build a *single* target, selected by
-// the `RBT_BUILD_TARGET` env var (`mcp:<name>` for one MCP UI, or
-// `web` for the SPA). This script is the discover-and-loop around it:
-// it finds every `mcp/<name>/index.html`, builds each into
-// `dist/mcp/<name>/index.html`, then builds the `web/` SPA into
-// `dist/web/` if a `web/index.html` exists.
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
-import { build } from "vite";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-// Auto-discover MCP UIs: every `mcp/<name>/` with an `index.html`.
-const mcpDir = path.resolve(__dirname, "mcp");
-const mcpNames = fs.existsSync(mcpDir)
-  ? fs
-      .readdirSync(mcpDir)
-      .filter((name) => fs.existsSync(path.resolve(mcpDir, name, "index.html")))
-  : [];
-
-// Build each MCP UI. `vite.config.ts` reads the target from
-// `RBT_BUILD_TARGET`; we leave Vite's `mode` at its build default
-// (`production`) so a `web/.env.production` would be honored.
-for (const name of mcpNames) {
-  console.log(`Building mcp/${name} ...`);
-  process.env.RBT_BUILD_TARGET = `mcp:${name}`;
-  await build();
-}
-
-// Build the standalone `web/` SPA if it exists.
-if (fs.existsSync(path.resolve(__dirname, "web", "index.html"))) {
-  console.log("Building web ...");
-  process.env.RBT_BUILD_TARGET = "web";
-  await build();
-}
-```
 
 ## `frontend/tsconfig.json`
 

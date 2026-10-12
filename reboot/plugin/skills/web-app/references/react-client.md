@@ -9,9 +9,9 @@ tags: web-app, react, vite, hooks, errors, RebootClientProvider
 
 Everything the standalone browser frontend needs. This is the
 web-app equivalent of the `mcp-ui` skill's scaffolding references —
-**do not read those**: their `vite.config.ts` and `build.mjs` serve
-MCP UIs through Envoy and build one-file `mcp/<name>/index.html`
-bundles, which a web app has no use for.
+**do not read those**: their `vite.config.ts` (Reboot's Vite plugin)
+and `reboot-vite-build` serve MCP UIs through Envoy and build one-file
+`mcp/<name>/index.html` bundles, which a web app has no use for.
 
 ## The `frontend/` Shell
 

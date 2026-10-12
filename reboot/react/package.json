@@ -57,5 +57,8 @@
     "vite-plugin-singlefile": {
       "optional": true
     }
+  },
+  "bin": {
+    "reboot-vite-build": "./vite/build.js"
   }
 }

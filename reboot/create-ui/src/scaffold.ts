@@ -58,7 +58,6 @@ export function scaffold(
   // Shared files (written once, never updated).
   const sharedFiles: Array<[string, string]> = [
     ["package.json", templates.packageJson(name)],
-    ["build.mjs", templates.buildMjs()],
     ["vite.config.ts", templates.viteConfig()],
     ["tsconfig.json", templates.tsconfigJson()],
     ["tsconfig.app.json", templates.tsconfigAppJson()],
