@@ -346,23 +346,11 @@ export function reboot(options: RebootOptions = {}): Plugin[] {
         );
         claim(
           config,
-          "server.port",
-          "to `RBT_VITE_PORT` or 4444, the port `.rbtrc`'s `--frontend-host` names; set `RBT_VITE_PORT` to change it"
-        );
-        claim(
-          config,
-          "server.strictPort",
-          "since `--frontend-host` names the port"
-        );
-        claim(
-          config,
           "server.allowedHosts",
           "to every host, since requests come through Envoy (and tunnels)"
         );
         result.base = BASE;
         result.server = {
-          port: parseInt(process.env.RBT_VITE_PORT || "4444", 10),
-          strictPort: true,
           // Every interface unless the config, or the command line,
           // which Vite merges into it before plugins see it, says
           // where to listen (a runner such as portless passes
