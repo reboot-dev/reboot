@@ -2058,6 +2058,8 @@ async def __dev_run(
                                 *(generate_proto_directories or []),
                             ] if generate_python_directory is not None else [],
                         ):
+                            if args.terminate_after_health_check:
+                                terminal.fail('Type-check failed')
                             terminal.warn(
                                 '\n'
                                 'Type-check failed ... waiting for modification'
