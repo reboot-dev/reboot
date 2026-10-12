@@ -72,6 +72,7 @@ try:
         ])
         commands.extend([
          ('upstream_schema_strict_clippy', ['cargo','clippy','--manifest-path','reboot/rust/tests/fixtures/reboot_examples/Cargo.toml','--locked','--all-targets','--','-D','warnings']),
+         ('upstream_tasks_native', ['cargo','test','--manifest-path','reboot/rust/tests/fixtures/reboot_examples/Cargo.toml','--locked','--features','native-test-support','--test','hello_tasks_native','pinned_','--','--ignored','--test-threads=1','--nocapture']),
          ('upstream_consumer_tests', ['cargo','test','--manifest-path','reboot/rust/tests/fixtures/reboot_examples/imported_error/Cargo.toml','--locked']),
          ('upstream_consumer_strict_clippy', ['cargo','clippy','--manifest-path','reboot/rust/tests/fixtures/reboot_examples/imported_error/Cargo.toml','--locked','--all-targets','--','-D','warnings']),
          ('upstream_constructor_strict_clippy', ['cargo','clippy','--manifest-path','reboot/rust/tests/fixtures/reboot_examples/hello-constructors/backend/Cargo.toml','--locked','--all-targets','--','-D','warnings']),
@@ -114,7 +115,9 @@ try:
         assert all(s['requested_shutdown'] and s['children_absent'] for s in constructor_proof['sessions'])
         assert len(constructor_proof['commands']) == 8 and all(c['exit'] == 0 for c in constructor_proof['commands'])
         assert all(hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest() == h for p,h in constructor_proof['source_hashes'].items())
-        assert len(results) == 17, len(results)
+        assert len(results) == 18, len(results)
+        tasks_gate = next(item for item in results if item['suite'] == 'upstream_tasks_native')
+        assert re.findall(r'test result: (ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored;', pathlib.Path(tasks_gate['log']).read_text()) == [('ok', '2', '0', '0')]
         for item in results:
             if item['suite'] in ['sdk_all_targets','native4','native_local11']:
                 item['summaries']=re.findall(r'test result: (ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored;',pathlib.Path(item['log']).read_text())

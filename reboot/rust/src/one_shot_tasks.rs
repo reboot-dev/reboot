@@ -517,6 +517,16 @@ impl OneShotTasks {
         expected: &[db::Task],
         loaded: &[db::Task],
     ) -> Result<(), Status> {
+        if expected.iter().any(|task| !self.is_workflow(task)) {
+            return Err(Status::failed_precondition("workflow successor required"));
+        }
+        self.validate_ordinary_scheduling_replay(expected, loaded)
+    }
+    pub(crate) fn validate_ordinary_scheduling_replay(
+        &self,
+        expected: &[db::Task],
+        loaded: &[db::Task],
+    ) -> Result<(), Status> {
         self.validate(expected)?;
         if loaded.len() != expected.len() {
             return Err(Status::failed_precondition(
@@ -528,7 +538,7 @@ impl OneShotTasks {
                 .iter()
                 .filter(|t| t.task_id == task.task_id)
                 .collect();
-            if matches.len() != 1 || !self.is_workflow(task) {
+            if matches.len() != 1 {
                 return Err(Status::failed_precondition(
                     "scheduling replay task authority mismatch",
                 ));
@@ -576,14 +586,37 @@ impl OneShotTasks {
         &self,
         method: &str,
     ) -> Result<(), Status> {
+        if !self
+            .inner
+            .declarations
+            .iter()
+            .any(|d| d.method == method && d.workflow_writer_step)
+        {
+            return Err(Status::failed_precondition("not a workflow writer step"));
+        }
+        self.validate_ordinary_writer::<D, Q, R>(
+            method,
+            self.workflow_writer_response_type(method)?,
+        )
+    }
+    pub(crate) fn validate_ordinary_writer<
+        D: crate::runtime::DurableStateDeclaration + 'static,
+        Q: 'static,
+        R: 'static,
+    >(
+        &self,
+        method: &str,
+        response_type: &str,
+    ) -> Result<(), Status> {
         let declaration = self
             .inner
             .declarations
             .iter()
             .find(|d| d.method == method)
             .ok_or_else(|| Status::failed_precondition("unregistered scheduling writer"))?;
-        if declaration.workflow
-            || !declaration.workflow_writer_step
+        if !self.inner.binding.writer_capable()
+            || declaration.workflow
+            || declaration.response_type != response_type
             || declaration.declaration != std::any::TypeId::of::<D>()
             || declaration.request != std::any::TypeId::of::<Q>()
             || declaration.response != std::any::TypeId::of::<R>()
@@ -910,6 +943,17 @@ impl OneShotTasks {
         cancel: &RecoveryCancellation,
     ) -> Result<Option<Status>, Status> {
         let id = task.task_id.clone().expect("validated task identity");
+        // Process-fixture scheduling barrier: leave this canonical task Pending
+        // without taking its actor lease, so an already-durable successor can run.
+        // This never changes task identity, schedule, checkpoint, or completion.
+        #[cfg(feature = "test-support")]
+        if std::env::var("REBOOT_TEST_TASK_DEFER_METHOD").as_deref() == Ok(task.method.as_str()) {
+            if let Some(path) = std::env::var_os("REBOOT_TEST_TASK_DEFER_MARKER") {
+                std::fs::write(path, b"canonical dispatch deferred before actor admission")
+                    .map_err(|error| Status::internal(error.to_string()))?;
+            }
+            return Ok(None);
+        }
         let gate = self.inner.store.actor_gate(&id.state_type, &id.state_ref);
         if self.inner.binding.is_writer(&task) {
             let _lease = gate.exclusive().await;
@@ -1232,7 +1276,7 @@ impl Drop for SchedulingRootHandoff {
 // Private, non-cloneable capability. Arc identity cannot ABA while this
 // capability retains the old allocation; no public validation receipt exists.
 pub(crate) struct RunningTaskAdmission {
-    tasks: OneShotTasks,
+    pub(crate) tasks: OneShotTasks,
     generation: Arc<()>,
 }
 impl RunningTaskAdmission {
@@ -2199,6 +2243,9 @@ fn schedule_due(task: &db::Task) -> Result<bool, Status> {
     Ok(scheduled_at(task)?.is_none_or(|schedule| schedule <= chrono::Utc::now()))
 }
 
+#[cfg(test)]
+#[path = "ordinary_scheduling_tests.rs"]
+mod ordinary_scheduling_tests;
 #[cfg(test)]
 #[path = "ordinary_task_admission_tests.rs"]
 mod ordinary_task_admission_tests;

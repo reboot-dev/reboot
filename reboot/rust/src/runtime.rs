@@ -3457,6 +3457,40 @@ impl crate::one_shot_tasks::AdmittedWriterTask<'_> {
             >,
         >,
     {
+        self.execute_scheduling_outcome::<Declaration, RequestBody, ResponseBody, _>(
+            move |state, request, _reference| {
+                let future = invoke(state, request);
+                Box::pin(async move { future.await.map(WriterExecution::new) })
+            },
+        )
+        .await
+    }
+
+    /// Execute the same generated scheduling hook as an ordinary unary writer.
+    pub async fn execute_scheduling_outcome<Declaration, RequestBody, ResponseBody, F>(
+        self,
+        invoke: F,
+    ) -> Result<crate::one_shot_tasks::WriterTaskReceipt, Status>
+    where
+        Declaration: DurableStateDeclaration + 'static,
+        RequestBody: Message + Default + Send + 'static,
+        ResponseBody: Message + Default + Clone + Send + 'static,
+        F: for<'a> FnOnce(
+            &'a mut Declaration::State,
+            RequestBody,
+            String,
+        ) -> Pin<
+            Box<
+                dyn Future<
+                        Output = Result<
+                            WriterExecution<ResponseBody>,
+                            crate::one_shot_tasks::TaskHandlerError,
+                        >,
+                    > + Send
+                    + 'a,
+            >,
+        >,
+    {
         let id = self
             .task
             .task_id
@@ -3481,11 +3515,11 @@ impl crate::one_shot_tasks::AdmittedWriterTask<'_> {
         let fingerprint = request_fingerprint(self.method, &request);
         if let Some(response) = self
             .store
-            .replay_task_checkpoint::<ResponseBody>(
-                &id.state_type,
-                &id.state_ref,
+            .replay_ordinary_writer::<Declaration, RequestBody, ResponseBody>(
+                (&id.state_ref, self.method, self.response_type),
                 key,
                 &fingerprint,
+                Some(self.tasks),
             )
             .await?
         {
@@ -3517,7 +3551,7 @@ impl crate::one_shot_tasks::AdmittedWriterTask<'_> {
         // An absent actor is materialized only by the successful atomic Store.
         // Handler failure still discards this private default state.
 
-        let response = match invoke(&mut state, request).await {
+        let execution = match invoke(&mut state, request, id.state_ref.clone()).await {
             Ok(response) => response,
             Err(error) => {
                 // No durable operation has started; this private state is discarded.
@@ -3540,17 +3574,26 @@ impl crate::one_shot_tasks::AdmittedWriterTask<'_> {
                 });
             }
         };
-        let mut operation = self.durable();
-        self.store
-            .store_type(
-                &id.state_type,
-                &id.state_ref,
-                key,
-                state,
-                response.clone(),
-                Some(fingerprint),
+        let admission = self
+            .store
+            .prepare_ordinary_effects::<Declaration, RequestBody, ResponseBody>(
+                (&id.state_ref, self.method, self.response_type),
+                Some(self.tasks),
+                &execution.task_upserts,
             )
             .await?;
+        let mut operation = self.durable();
+        self.store
+            .persist_ordinary_writer::<Declaration, ResponseBody>(
+                (&id.state_ref, self.response_type),
+                key,
+                fingerprint,
+                state,
+                &execution,
+                admission.as_ref(),
+            )
+            .await?;
+        let response = execution.response;
         #[cfg(feature = "test-support")]
         if let Some(path) = std::env::var_os("REBOOT_TEST_WRITER_AFTER_STORE") {
             let path = std::path::PathBuf::from(path);
@@ -3626,6 +3669,7 @@ pub fn writer_task_key(id: &database::TaskId, method_identity: &str) -> Result<U
 }
 
 include!("workflow_store.rs");
+include!("ordinary_writer_store.rs");
 
 impl DatabaseActorStore {
     /// Connects to an existing Reboot Database sidecar.
@@ -3762,6 +3806,20 @@ impl DatabaseActorStore {
         while let Some(response) = stream.message().await.map_err(database_status)? {
             for mutation in response.idempotent_mutations {
                 if mutation.key == key.as_bytes() {
+                    if !mutation.task_ids.is_empty()
+                        || mutation
+                            .request_fingerprint
+                            .as_deref()
+                            .is_some_and(|stored| {
+                                stored.starts_with(
+                                    b"reboot.ordinary-writer.scheduling-checkpoint.v1\0",
+                                )
+                            })
+                    {
+                        return Err(Status::failed_precondition(
+                            "scheduling checkpoint requires scheduling replay authority",
+                        ));
+                    }
                     if request_fingerprint.is_some_and(|expected| {
                         mutation
                             .request_fingerprint
@@ -3783,45 +3841,6 @@ impl DatabaseActorStore {
             }
         }
         Ok(None)
-    }
-
-    async fn replay_task_checkpoint<Response: Message + Default>(
-        &self,
-        state_type: &str,
-        state_ref: &str,
-        key: Uuid,
-        fingerprint: &[u8],
-    ) -> Result<Option<Response>, Status> {
-        let mut stream = self
-            .database
-            .clone()
-            .recover_idempotent_mutations(database::RecoverIdempotentMutationsRequest {
-                state_type: state_type.to_owned(),
-                state_ref: state_ref.to_owned(),
-                idempotency_key: Some(key.as_bytes().to_vec()),
-                workflow_id: None,
-                workflow_iteration: None,
-            })
-            .await?
-            .into_inner();
-        let mut result = None;
-        while let Some(batch) = stream.message().await? {
-            for mutation in batch.idempotent_mutations {
-                if result.is_some() {
-                    return Err(Status::failed_precondition(
-                        "duplicate writer task checkpoint",
-                    ));
-                }
-                result = Some(decode_writer_task_checkpoint::<Response>(
-                    &mutation,
-                    state_type,
-                    state_ref,
-                    key,
-                    fingerprint,
-                )?);
-            }
-        }
-        Ok(result)
     }
 
     /// Atomically stores state and its idempotent writer response.
@@ -4997,6 +5016,7 @@ pub mod test_support {
     #[derive(Default)]
     struct FakeDatabaseState {
         actors: HashMap<(String, String), Vec<u8>>,
+        tasks: HashMap<Vec<u8>, database::Task>,
         mutations: HashMap<(String, String, Vec<u8>), database::IdempotentMutation>,
         store_requests: Vec<database::StoreRequest>,
         participant_prepares: Vec<database::TransactionParticipantPrepareRequest>,
@@ -5011,6 +5031,29 @@ pub mod test_support {
     }
 
     impl FakeDatabase {
+        #[cfg(test)]
+        pub(crate) fn seed_task(&self, task: database::Task) {
+            self.state
+                .lock()
+                .unwrap()
+                .tasks
+                .insert(task.task_id.as_ref().unwrap().encode_to_vec(), task);
+        }
+        #[cfg(test)]
+        pub(crate) fn remove_task(&self, id: &database::TaskId) {
+            self.state.lock().unwrap().tasks.remove(&id.encode_to_vec());
+        }
+        #[cfg(test)]
+        pub(crate) fn seed_mutation(&self, mutation: database::IdempotentMutation) {
+            self.state.lock().unwrap().mutations.insert(
+                (
+                    mutation.state_type.clone(),
+                    mutation.state_ref.clone(),
+                    mutation.key.clone(),
+                ),
+                mutation,
+            );
+        }
         #[cfg(test)]
         pub(crate) fn clear_actor_load_failure(&self) {
             self.state.lock().unwrap().load_failure = None;
@@ -5143,8 +5186,13 @@ pub mod test_support {
                 }
             }
             let state = self.state.lock().expect("fake database mutex poisoned");
+            let request = request.into_inner();
+            let tasks = request
+                .task_ids
+                .iter()
+                .filter_map(|id| state.tasks.get(&id.encode_to_vec()).cloned())
+                .collect();
             let actors = request
-                .into_inner()
                 .actors
                 .into_iter()
                 .map(|actor| database::Actor {
@@ -5157,7 +5205,7 @@ pub mod test_support {
                 .collect();
             Ok(Response::new(database::LoadResponse {
                 actors,
-                tasks: vec![],
+                tasks,
                 timestamp: None,
             }))
         }
@@ -5219,6 +5267,12 @@ pub mod test_support {
                 ),
                 mutation,
             );
+            for task in &request.task_upserts {
+                state.tasks.insert(
+                    task.task_id.as_ref().expect("task ID").encode_to_vec(),
+                    task.clone(),
+                );
+            }
             state.store_requests.push(request);
             Ok(Response::new(database::StoreResponse::default()))
         }
@@ -5278,7 +5332,21 @@ pub mod test_support {
                     let _ = release.await;
                 }
             }
-            Ok(Response::new(tokio_stream::iter(vec![])))
+            let tasks = self
+                .state
+                .lock()
+                .unwrap()
+                .tasks
+                .values()
+                .filter(|task| task.status == database::task::Status::Pending as i32)
+                .cloned()
+                .collect();
+            Ok(Response::new(tokio_stream::iter(vec![Ok(
+                database::RecoverResponse {
+                    pending_tasks: tasks,
+                    ..Default::default()
+                },
+            )])))
         }
 
         async fn recover_idempotent_mutations(

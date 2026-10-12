@@ -1,3 +1,6 @@
+#[path = "hello_tasks.rs"]
+pub mod hello_tasks_consumer;
+
 pub mod rbt {
     pub mod v1alpha1 {
         tonic::include_proto!("rbt.v1alpha1");

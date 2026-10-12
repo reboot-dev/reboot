@@ -1477,6 +1477,26 @@ fn emit_durable(
         // Backward-compatible optional composed snapshot hook. Ordinary unary
         // readers keep their original handlers and envelopes.
         for (kind, method, request, response, identity) in &database_methods {
+            if matches!(
+                **kind,
+                DurableKind::Writer(WriterMetadata { constructor: false })
+            ) {
+                let hook = format!("{method}_with_tasks");
+                if database_methods
+                    .iter()
+                    .any(|(_, other, _, _, _)| other == &hook)
+                {
+                    return Err(format!(
+                        "{service_name}: scheduling writer hook `{hook}` collides"
+                    ));
+                }
+                let error = if declared_database_errors(annotation, kind, identity).is_empty() {
+                    "tonic::Status".to_owned()
+                } else {
+                    declared_error_type(service_name, method)
+                };
+                output.push_str(&format!("    async fn {hook}(&self, state: &mut proto::{state}, request: proto::{request}, _state_ref: String) -> Result<{runtime_module}::runtime::WriterExecution<proto::{response}>, {error}> {{ self.{method}(state, request).await.map({runtime_module}::runtime::WriterExecution::new) }}\n"));
+            }
             if matches!(**kind, DurableKind::Reader) {
                 let hook = format!("{method}_with_reader_context");
                 if database_methods
@@ -1509,6 +1529,13 @@ fn emit_durable(
                 )
             });
         for (kind, method, request, response, method_identity) in &database_methods {
+            let response_full = service
+                .method
+                .iter()
+                .find(|descriptor| descriptor.name.as_deref() == method_identity.rsplit('.').next())
+                .and_then(|descriptor| descriptor.output_type.as_deref())
+                .expect("validated output type")
+                .trim_start_matches('.');
             let (envelope, prefix) = match kind {
                 DurableKind::Writer(WriterMetadata { constructor: true }) => (
                     "constructor_writer_async_for_method_authorized",
@@ -1527,15 +1554,15 @@ fn emit_durable(
                     ),
                 ),
                 DurableKind::Writer(_) if requires_constructor => (
-                    "writer_async_for_method_with_admission_authorized",
+                    "scheduling_writer_async_for_method_authorized",
                     format!(
-                        "\"{method_identity}\", {runtime_module}::runtime::StateAdmission::RequireExisting, &self.authorization, "
+                        "(\"{method_identity}\", \"type.googleapis.com/{response_full}\", {runtime_module}::runtime::StateAdmission::RequireExisting), &self.authorization, self.tasks.as_ref(), "
                     ),
                 ),
                 DurableKind::Writer(_) => (
-                    "writer_async_for_method_with_admission_authorized",
+                    "scheduling_writer_async_for_method_authorized",
                     format!(
-                        "\"{method_identity}\", {runtime_module}::runtime::StateAdmission::DefaultOnAbsent, &self.authorization, "
+                        "(\"{method_identity}\", \"type.googleapis.com/{response_full}\", {runtime_module}::runtime::StateAdmission::DefaultOnAbsent), &self.authorization, self.tasks.as_ref(), "
                     ),
                 ),
                 DurableKind::Transaction(_) | DurableKind::Workflow => {
@@ -1555,7 +1582,18 @@ fn emit_durable(
             } else {
                 String::new()
             };
-            output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n{unary_composition}        let handler = self.handler.clone();\n        self.store.{envelope}::<{declaration}, _, _, _>(\n            {prefix}request, move |state, request| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ handler.{method}(state, request).await{map_declared_error} }})\n            }},\n        ).await\n    }}\n"));
+            let (callback_args, callback_method) = if matches!(
+                **kind,
+                DurableKind::Writer(WriterMetadata { constructor: false })
+            ) {
+                (
+                    "state, request, state_ref",
+                    format!("{method}_with_tasks(state, request, state_ref)"),
+                )
+            } else {
+                ("state, request", format!("{method}(state, request)"))
+            };
+            output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n{unary_composition}        let handler = self.handler.clone();\n        self.store.{envelope}::<{declaration}, _, _, _>(\n            {prefix}request, move |{callback_args}| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ handler.{callback_method}.await{map_declared_error} }})\n            }},\n        ).await\n    }}\n"));
         }
         output.push_str("}\n\n");
         emit_local_readers(
@@ -2516,7 +2554,20 @@ fn emit_reader_tasks(
         } else {
             format!(".map_err({runtime_module}::one_shot_tasks::TaskHandlerError::Failed)")
         };
-        output.push_str(&format!("        \"{name}\" => {{ let handler = self.handler.clone(); admitted.execute_outcome::<{state}DurableState, proto::{request}, proto::{response}, _>(move |state, request| {{ Box::pin(async move {{ handler.{rust_name}(state, request).await{error_map} }}) }}).await }},\n"));
+        let (executor, args, call) = if mixed {
+            (
+                "execute_outcome",
+                "state, request",
+                format!("{rust_name}(state, request)"),
+            )
+        } else {
+            (
+                "execute_scheduling_outcome",
+                "state, request, state_ref",
+                format!("{rust_name}_with_tasks(state, request, state_ref)"),
+            )
+        };
+        output.push_str(&format!("        \"{name}\" => {{ let handler = self.handler.clone(); admitted.{executor}::<{state}DurableState, proto::{request}, proto::{response}, _>(move |{args}| {{ Box::pin(async move {{ handler.{call}.await{error_map} }}) }}).await }},\n"));
     }
     output.push_str(
         "        _ => Err(tonic::Status::invalid_argument(\"unsupported writer task\")), } }\n}\n",
@@ -3881,11 +3932,14 @@ mod tests {
                     .contains("const STATE_TYPE: &'static str = \"tests.reboot.protoc.Counter\";")
             );
             assert!(content.contains(
-                "store.writer_async_for_method_with_admission_authorized::<CounterDurableState"
+                "store.scheduling_writer_async_for_method_authorized::<CounterDurableState"
             ));
             assert!(content.contains("AuthorizationPolicy::default()"));
             assert!(content.contains("pub fn with_authorization("));
-            assert!(content.contains("\"tests.reboot.protoc.CounterWritesMethods.Increment\", reboot_rust_schema::runtime::StateAdmission::DefaultOnAbsent, &self.authorization, request"));
+            assert!(content.contains("(\"tests.reboot.protoc.CounterWritesMethods.Increment\", \"type.googleapis.com/tests.reboot.protoc.CounterValue\", reboot_rust_schema::runtime::StateAdmission::DefaultOnAbsent), &self.authorization, self.tasks.as_ref(), request"));
+            assert!(content.contains("async fn increment_with_tasks"));
+            assert!(content.contains("execute_scheduling_outcome::<CounterDurableState"));
+            assert!(content.contains("handler.increment_with_tasks(state, request, state_ref)"));
             assert!(!content.contains("\"Counter\", request"));
         }
     }
@@ -5847,9 +5901,7 @@ mod tests {
             .content
             .unwrap();
         assert!(
-            content.contains(
-                "writer_async_for_method_with_admission_authorized::<CounterDurableState"
-            )
+            content.contains("scheduling_writer_async_for_method_authorized::<CounterDurableState")
         );
         assert!(
             content.contains("reader_async_for_with_admission_authorized::<CounterDurableState")

@@ -26,9 +26,31 @@ URL; foreign URLs and corrupt payloads retain transport-error fallback. Plain
 reader/writer services now generate task-owner bindings. Constructor-free writer
 admission follows ordinary-method implicit creation, while constructor-required and
 mixed-transaction declarations remain require-existing. Registration and admitted
-execution regressions pass; Hello Tasks scheduling/chained atomic successor staging
-and Bank shared-transaction runtime acceptance remain unfinished. Bank generation
-is an explicit opt-in probe, not a supported runnable sample.
+execution regressions pass. Hello Tasks ordinary writers now atomically persist actor
+state, typed response checkpoints and successor tasks in a synchronous Store.
+Native C++ Database acceptance covers Send -> Warning -> Erase, seven-/three-second
+bounded timestamp windows, host and same-RocksDB Database restarts, and actual
+admitted Pending Warning recovery after Store but before completion. Recovery
+preserves saved Erase identity without reinvoking Warning, duplicating its suffix,
+resurrecting a Completed successor or overwriting later actor changes. The
+Completed-successor setup deliberately defers Warning through test-support; it is
+not proof of natural distributed concurrency. A replay-disabled mutation fails on
+saved response identity; exact source restoration and a fresh native run pass.
+
+Hello Tasks is not yet fully accepted: missing-message retry parity, public `rbt`
+sample acceptance and scheduling-specific lost-ACK/cancellation/stale-generation
+native proof remain open. Generic handler/transport failures were not made retryable.
+Bank shared transactions remain unfinished; Bank generation is an explicit opt-in
+probe, not a supported runnable sample.
+
+Publication audit `1791795011447592919` passed all 18 gates, including two Hello
+Tasks native tests, all 11 same-host recovery cases, SDK all-feature/all-target tests,
+strict SDK/consumer checks and the existing public User/workflow/greeting and
+Constructor regressions. Every gate reported matching frozen sources and no live
+owned processes. Evidence: `/tmp/reboot-rust-user-http-full-audit-1791795011447592919`;
+focused recovery evidence: `/tmp/hello-warning-recovery-20261012T083304Z`.
+Independent read-only review found no concrete blocker for this bounded recovery
+proof. GitHub CI remains separate from local publication acceptance.
 
 Publication audit `1791788930944937425` passed all 17 gates, including strict SDK
 and generated-consumer Clippy, existing public User/workflow/greeting regressions,

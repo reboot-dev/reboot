@@ -45,13 +45,13 @@ fn protoc_plugin_emits_durable_counter_adapters() {
     assert!(content.contains("pub fn with_authorization("));
     assert!(
         content.contains(
-            "store.writer_async_for_method_with_admission_authorized::<CounterDurableState"
+            "store.scheduling_writer_async_for_method_authorized::<CounterDurableState"
         )
     );
     assert!(
         content.contains("store.reader_async_for_with_admission_authorized::<CounterDurableState")
     );
-    assert!(content.contains("\"tests.reboot.protoc.CounterWritesMethods.Increment\", reboot::runtime::StateAdmission::DefaultOnAbsent, &self.authorization, request"));
+    assert!(content.contains("\"tests.reboot.protoc.CounterWritesMethods.Increment\", \"type.googleapis.com/tests.reboot.protoc.CounterValue\", reboot::runtime::StateAdmission::DefaultOnAbsent), &self.authorization, self.tasks.as_ref(), request"));
     assert!(content.contains("let handler = self.handler.clone();"));
     assert!(content.contains("Box::pin(async move"));
     assert!(content.contains("reboot::runtime::DatabaseActorStore"));
@@ -132,7 +132,7 @@ fn protoc_plugin_canonicalizes_relative_durable_state_annotation() {
     assert!(content.contains("pub struct EchoDurableState;"));
     assert!(
         content
-            .contains("store.writer_async_for_method_with_admission_authorized::<EchoDurableState")
+            .contains("store.scheduling_writer_async_for_method_authorized::<EchoDurableState")
     );
     assert!(
         content.contains("store.reader_async_for_with_admission_authorized::<EchoDurableState")
