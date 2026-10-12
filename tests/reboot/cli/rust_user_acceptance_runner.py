@@ -77,6 +77,7 @@ try:
          ('upstream_consumer_strict_clippy', ['cargo','clippy','--manifest-path','reboot/rust/tests/fixtures/reboot_examples/imported_error/Cargo.toml','--locked','--all-targets','--','-D','warnings']),
          ('upstream_constructor_strict_clippy', ['cargo','clippy','--manifest-path','reboot/rust/tests/fixtures/reboot_examples/hello-constructors/backend/Cargo.toml','--locked','--all-targets','--','-D','warnings']),
          ('upstream_constructors_public', [python, str(root/'tests/reboot/cli/rust_examples_constructor_e2e.py')]),
+         ('upstream_tasks_public', [python, str(root/'tests/reboot/cli/rust_examples_tasks_e2e.py')]),
         ])
         if targeted: commands=[item for item in commands if item[0] in ['user_workflows_public','user_checkpoint_fixture']]
         commands.insert(0, ('ownership_regressions',[python,str(root/'tests/reboot/cli/rust_process_ownership_test.py')]))
@@ -115,7 +116,19 @@ try:
         assert all(s['requested_shutdown'] and s['children_absent'] for s in constructor_proof['sessions'])
         assert len(constructor_proof['commands']) == 8 and all(c['exit'] == 0 for c in constructor_proof['commands'])
         assert all(hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest() == h for p,h in constructor_proof['source_hashes'].items())
-        assert len(results) == 18, len(results)
+        assert len(results) == 19, len(results)
+        tasks_public_gate = next(item for item in results if item['suite'] == 'upstream_tasks_public')
+        handles = re.findall(r'^UPSTREAM_TASKS_ACCEPTED (.+)$', pathlib.Path(tasks_public_gate['log']).read_text(), re.MULTILINE)
+        assert len(handles) == 1, handles
+        tasks_public_proof = json.loads(pathlib.Path(handles[0]).read_text())
+        assert tasks_public_proof['passed'] and tasks_public_proof['pending_at_shutdown_exact']
+        assert not tasks_public_proof['live_owned_processes']
+        assert len(tasks_public_proof['sessions']) == 2
+        assert all(s['requested_shutdown'] and s['children_absent'] for s in tasks_public_proof['sessions'])
+        assert tasks_public_proof['shutdown_inspection']['requested_shutdown'] and tasks_public_proof['shutdown_inspection']['process_absent']
+        assert len(tasks_public_proof['commands']) == 6 and all(c['exit'] == 0 for c in tasks_public_proof['commands'])
+        assert tasks_public_proof['invocation_counts'] == {'Send': 2, 'WarningBefore': 2, 'WarningAfter': 2, 'Erase': 2}
+        assert all(hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest() == h for p,h in tasks_public_proof['source_hashes'].items())
         tasks_gate = next(item for item in results if item['suite'] == 'upstream_tasks_native')
         assert re.findall(r'test result: (ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored;', pathlib.Path(tasks_gate['log']).read_text()) == [('ok', '2', '0', '0')]
         for item in results:

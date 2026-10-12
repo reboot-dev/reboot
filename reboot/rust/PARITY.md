@@ -37,9 +37,26 @@ Completed-successor setup deliberately defers Warning through test-support; it i
 not proof of natural distributed concurrency. A replay-disabled mutation fails on
 saved response identity; exact source restoration and a fresh native run pass.
 
-Hello Tasks is not yet fully accepted: missing-message retry parity, public `rbt`
-sample acceptance and scheduling-specific lost-ACK/cancellation/stale-generation
-native proof remain open. Generic handler/transport failures were not made retryable.
+Hello Tasks now also has a valid-ID public `rbt dev run --rust` sample gate, using
+Cargo-native public generation/startup, canonical C++ Database, generated typed
+Warning/Erase Wait, exact seven-/three-second scheduling windows, exact message
+suffix and erased counters, Pending-at-shutdown protobuf identity read back before
+recovery-host launch, same-RocksDB restart and same-key duplicate-free replay.
+Read-only Database inspection and an observation-only forwarding consumer wrapper
+provide evidence; all mutations and Wait calls use the public app listener. The
+aggregate includes this as its nineteenth gate with explicit evidence validation.
+Publication audit `1791797064076702020` passed all nineteen gates, with matching
+frozen sources and no live owned processes at every gate. Evidence:
+`/tmp/reboot-rust-user-http-full-audit-1791797064076702020`. Independent read-only
+review found no blocker for bounded valid-ID acceptance under the aggregate.
+Scheduling windows do not establish exact execution times; replay checks response
+and task-ID identity, visible state and invocation counts rather than comparing
+whole task protobufs on every replay. Standalone failure-path retention still
+needs hardening; the aggregate supplies the outer ownership safeguard.
+
+Hello Tasks is not yet fully accepted: missing-message retry parity and
+scheduling-specific lost-ACK/cancellation/stale-generation native proof remain
+open. Generic handler/transport failures were not made retryable.
 Bank shared transactions remain unfinished; Bank generation is an explicit opt-in
 probe, not a supported runnable sample.
 
