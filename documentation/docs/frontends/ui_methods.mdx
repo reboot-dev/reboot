@@ -188,8 +188,8 @@ Use [Vite](https://vite.dev/) with
 [`vite-plugin-singlefile`](https://www.npmjs.com/package/vite-plugin-singlefile).
 
 The [agent skills](/get_started/claude_code) write the
-`vite.config.ts` and `build.mjs` below for you. If you are setting a
-project up by hand, copy them from an example such as
+`vite.config.ts` below for you. If you are setting a project up by
+hand, copy it from an example such as
 [`bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic/tree/main/frontend).
 
 ### Dependencies
@@ -203,7 +203,7 @@ npm install -D @vitejs/plugin-react vite vite-plugin-singlefile
 The config comes with `@reboot-dev/reboot-react`: the `reboot()`
 plugin from its `vite` entry point drives three jobs — the dev
 server, and two builds selected by the `RBT_BUILD_TARGET` env var (set
-per UI by `build.mjs`) — a per-UI MCP build
+per UI by the package's `build()`, which `build.mjs` calls) — a per-UI MCP build
 (`RBT_BUILD_TARGET=mcp:<name>`) and the standalone `web/` SPA build
 (`RBT_BUILD_TARGET=web`). It takes the frontend's directories:
 `mcpAppPath`, whose `<name>/index.html` subdirectories are the MCP
@@ -239,7 +239,8 @@ config too is an error, which the plugin raises by name.
 ### Building
 
 Build one UI by name by setting `RBT_BUILD_TARGET` (or build every UI and
-the `web/` SPA at once with `npm run build`):
+the `web/` SPA at once with `npm run build`, whose `build.mjs` calls
+`build()` from `@reboot-dev/reboot-react/vite`):
 
 ```sh
 cd frontend && RBT_BUILD_TARGET=mcp:clicker npx vite build

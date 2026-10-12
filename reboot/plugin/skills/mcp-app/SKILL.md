@@ -209,9 +209,10 @@ under Key Framework Concepts):
 **Before the frontend:**
 
 - [`references/react-scaffolding.md`](references/react-scaffolding.md)
-  — the `frontend/` shell: `package.json` (`npm run build` runs
-  `build.mjs`, which auto-discovers and builds every UI),
-  `vite.config.ts` (the stock Vite file plus `reboot()`), `build.mjs`,
+  — the `frontend/` shell: `package.json` and `build.mjs` (`npm run
+  build` calls the package's `build()`, which builds every UI the
+  plugin declares; a frontend with one UI could use plain `vite build`, as the web-only shell does),
+  `vite.config.ts` (the stock Vite file plus `reboot()`),
   `tsconfig.json` / `tsconfig.app.json` / `tsconfig.node.json`,
   `index.css` theme variables, `mcp/<name>/index.html`,
   `mcp/<name>/main.tsx`.
@@ -689,7 +690,6 @@ a worked set are in
 │   └── <name>_test.py       # `application` fixture + `scenarios(...)`
 └── frontend/
     ├── package.json
-    ├── build.mjs            # Discovers + builds every UI
     ├── tsconfig.json
     ├── tsconfig.app.json
     ├── tsconfig.node.json

@@ -17,7 +17,7 @@
 //   });
 //
 // One config drives three jobs, told apart by Vite's `command` and the
-// `RBT_BUILD_TARGET` env var, set per UI by the build script. `mode`
+// `RBT_BUILD_TARGET` env var, set per UI by `build()` (`./build`). `mode`
 // keeps its conventional Vite values — `development` (serve) /
 // `production` (build) — so the matching `.env.<mode>` files load as
 // usual:
@@ -34,6 +34,9 @@
 //     `/__/frontend/web/` so asset URLs resolve when served at that
 //     prefix. In Vite's `production` mode, it reads
 //     `<webAppPath>/.env.production`.
+//
+// A frontend that declares one UI, a web app alone, needs no target:
+// a bare `vite build` builds it.
 //
 // The plugin sets what the layout requires (`root`, `base`, the
 // output directories, the dev server's port and host) and raises an
@@ -108,17 +111,20 @@ export function buildTargets(options: RebootOptions, root: string): string[] {
 }
 
 /**
- * The target of this `vite build`, from `RBT_BUILD_TARGET`, checked
- * against the frontend's UIs.
+ * The target of this `vite build`: `RBT_BUILD_TARGET`, checked against
+ * the frontend's UIs, or, when it is unset, the one UI the frontend
+ * declares, so that a frontend with a single UI (a web app alone)
+ * builds with plain `vite build`.
  */
 export function buildTarget(options: RebootOptions, root: string): BuildTarget {
-  const target = process.env.RBT_BUILD_TARGET ?? "";
   const valid = buildTargets(options, root);
+  const target =
+    process.env.RBT_BUILD_TARGET ?? (valid.length === 1 ? valid[0] : "");
   if (!valid.includes(target)) {
     throw new Error(
       `Unknown build target: ${target || "(unset)"}. ` +
         `Set RBT_BUILD_TARGET to one of: ${valid.join(", ")}; ` +
-        "`npm run build` does so for each in turn."
+        "`build()` from `@reboot-dev/reboot-react/vite` does so for each in turn."
     );
   }
   return target === "web"
@@ -448,3 +454,5 @@ export function reboot(options: RebootOptions = {}): Plugin[] {
   }
   return plugins;
 }
+
+export { build, type BuildOptions } from "./build.js";

@@ -36,8 +36,9 @@ function appName(ui: UiEntryWithPackage): string {
 
 /**
  * Generate web/package.json. `build` typechecks then runs
- * `build.mjs`, which discovers and builds every UI (each
- * `mcp/<name>` plus the `web/` SPA).
+ * `build.mjs`, which calls `build()` from
+ * `@reboot-dev/reboot-react/vite` to build every UI the `reboot()`
+ * plugin declares (each `mcp/<name>` plus the `web/` SPA).
  */
 export function packageJson(projectName: string): string {
   const scripts: Record<string, string> = {

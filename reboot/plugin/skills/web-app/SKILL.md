@@ -209,8 +209,8 @@ exactly one of them — the step that needs it.
 
 > **Never read `mcp-app/references/*` for a web app.** They cover
 > the MCP frontend — `UI()` artifacts, the MCPJam inspector,
-> `mcp/<name>/index.html` entries, the `vite.config.ts` and
-> `build.mjs` that serve MCP Apps through Envoy, `mcp=Tool()`
+> `mcp/<name>/index.html` entries, the `vite.config.ts` that
+> serves MCP Apps through Envoy, `mcp=Tool()`
 > markers, popping a widget out into a web app. Reaching into them
 > costs context and produces MCP App-shaped code (`mcp=Tool()`
 > markers and `UI()` methods in an app with no MCP frontend). The
@@ -534,7 +534,7 @@ it lands in `frontend/dist/web/` with `base: "/"`, which a static
 host, or the backend, can serve at `/`. An app that later adds an
 MCP frontend keeps this tree, adds `frontend/mcp/<name>/` beside
 `web/`, and swaps in the `mcp-app` skill's `vite.config.ts` and
-`build.mjs`, which serve both frontends through Envoy.
+`npm run build`, which serve both frontends through Envoy.
 
 ## Step-by-Step Build Flow
 
