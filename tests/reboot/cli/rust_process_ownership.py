@@ -119,6 +119,18 @@ def retain_until_owned_exit(owned, evidence, interval=0.1, root_pid=None):
         raise RuntimeError('retention failed; tracked/adopted owners subsequently reconciled')
 
 
+def protected_owned_exit(owned, evidence, observe, root_pid=None):
+    """Even preliminary receipt/discovery failure must enter retaining ownership.
+
+    The observer may fail, but retention always runs before that failure escapes.
+    Call only from the dedicated subreaper after the final subprocess launch.
+    """
+    try:
+        observe()
+    finally:
+        retain_until_owned_exit(owned, evidence, root_pid=root_pid)
+
+
 class RequestedShutdown:
     """A repeated intentional close is safe; a preexisting exit is not shutdown proof."""
     def __init__(self, process, log, record, expected_exits=(0,)):

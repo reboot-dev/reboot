@@ -80,11 +80,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }],
         })
         .unwrap();
-    let wait = tasks.wait_service_with_policy(
-        reboot::legacy_placement::LegacyApplicationId::new("hello-tasks").unwrap(),
-        "hello-server",
-        placement.clone(),
-        policy,
+    // Acceptance-only local administration, separate from result access.
+    // This does not change the pinned schema or shared consumer.
+    let wait = reboot::database_proto::tasks_server::TasksServer::new(
+        reboot::one_shot_tasks::ReaderTaskWaitService::new(
+            [tasks.clone()],
+            reboot::legacy_placement::LegacyApplicationId::new("hello-tasks").unwrap(),
+            "hello-server",
+            placement.clone(),
+        )?
+        .with_wait_policy(policy)
+        .with_admin_authorization(
+            std::sync::Arc::new(observed::FixtureAdmin),
+            std::sync::Arc::new(observed::FixtureAdmin),
+        ),
     );
     let host = reboot::application_host::ApplicationHost::new("hello-tasks")
         .with_legacy_placement_readiness(placement)

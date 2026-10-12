@@ -123,11 +123,16 @@ try:
         tasks_public_proof = json.loads(pathlib.Path(handles[0]).read_text())
         assert tasks_public_proof['passed'] and tasks_public_proof['pending_at_shutdown_exact']
         assert not tasks_public_proof['live_owned_processes']
-        assert len(tasks_public_proof['sessions']) == 2
+        assert len(tasks_public_proof['sessions']) == 3
         assert all(s['requested_shutdown'] and s['children_absent'] for s in tasks_public_proof['sessions'])
-        assert tasks_public_proof['shutdown_inspection']['requested_shutdown'] and tasks_public_proof['shutdown_inspection']['process_absent']
-        assert len(tasks_public_proof['commands']) == 6 and all(c['exit'] == 0 for c in tasks_public_proof['commands'])
-        assert tasks_public_proof['invocation_counts'] == {'Send': 2, 'WarningBefore': 2, 'WarningAfter': 2, 'Erase': 2}
+        assert tasks_public_proof['missing_pending_at_shutdown_exact']
+        assert len(tasks_public_proof['shutdown_inspections']) == 2
+        assert all(s['requested_shutdown'] and s['process_absent'] for s in tasks_public_proof['shutdown_inspections'])
+        assert len(tasks_public_proof['commands']) == 9 and all(c['exit'] == 0 for c in tasks_public_proof['commands'])
+        assert tasks_public_proof['invocation_counts'] == {'Send': 4, 'WarningBefore': 5, 'WarningAfter': 5, 'Erase': 4}
+        output = '\n'.join(c['stdout'] for c in tasks_public_proof['commands'])
+        for marker in ['MISSING_IDS_PENDING_AT_SHUTDOWN_EXACT', 'MISSING_IDS_PUBLIC_PENDING_RETRY_ACCEPTED missing-seed', 'MISSING_IDS_PUBLIC_PENDING_RETRY_ACCEPTED missing-recover']:
+            assert marker in output, marker
         assert all(hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest() == h for p,h in tasks_public_proof['source_hashes'].items())
         tasks_gate = next(item for item in results if item['suite'] == 'upstream_tasks_native')
         assert re.findall(r'test result: (ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored;', pathlib.Path(tasks_gate['log']).read_text()) == [('ok', '4', '0', '0')]

@@ -6,6 +6,8 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use upstream_hello_tasks::{generated, proto};
+#[path = "client/missing.rs"]
+mod missing;
 const STATE: &str = "hello_tasks.v1.Hello";
 fn now() -> i128 {
     SystemTime::now()
@@ -59,6 +61,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let command = std::env::args().nth(1).ok_or("missing command")?;
     let directory = PathBuf::from(std::env::var("RBT_TEST_TASKS_EVIDENCE")?);
     let path = directory.join("pending-warning.pb");
+    if command == "inspect-missing" {
+        missing::inspect(&directory).await;
+        return Ok(());
+    }
     if command == "inspect-pending" {
         let saved = db::Task::decode(std::fs::read(path)?.as_slice())?;
         assert_eq!(saved.status, db::task::Status::Pending as i32);
@@ -98,6 +104,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = proto::hello_methods_client::HelloMethodsClient::new(channel.clone());
     let key_base = uuid::Uuid::parse_str(&std::env::var("RBT_TEST_TASKS_KEY_BASE")?)?;
     assert_eq!(key_base.get_version_num(), 7);
+    if command.starts_with("missing-") {
+        return missing::run(
+            &command, &directory, &reference, &context, channel, key_base,
+        )
+        .await;
+    }
     let key = uuid::Uuid::from_u128(key_base.as_u128() + if command == "scenario" { 1 } else { 2 });
     let text = if command == "scenario" {
         "public chain"

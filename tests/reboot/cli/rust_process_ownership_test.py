@@ -126,6 +126,48 @@ class OwnershipTests(unittest.TestCase):
     def test_actual_runner_evidence_error_retains_lock(self):
         self.runner_failure_probe('evidence')
 
+    def standalone_failure_probe(self, mode):
+        harness = Path(__file__).with_name('rust_examples_tasks_e2e.py')
+        with tempfile.TemporaryDirectory(prefix='reboot-tasks-retention-') as directory:
+            root = Path(directory)
+            with (root / 'stderr.log').open('w') as err:
+                worker = subprocess.Popen([sys.executable, str(harness), '--ownership-failure-probe', directory, mode], stderr=err)
+                try:
+                    deadline = time.monotonic() + 8
+                    while not (root / 'retained-owners.json').exists():
+                        self.assertIsNone(worker.poll(), (root / 'stderr.log').read_text())
+                        self.assertLess(time.monotonic(), deadline)
+                        time.sleep(.01)
+                    held = json.loads((root / 'retained-owners.json').read_text())
+                    self.assertTrue(held['publication_blocked'])
+                    self.assertTrue(held['live_owned_process_starttimes'])
+                    with (root / 'owner.lock').open('a') as lock:
+                        with self.assertRaises(BlockingIOError):
+                            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        for pid, start in held['live_owned_process_starttimes'].items():
+                            self.assertEqual(ownership.process_info(pid)[:2], (start, str(worker.pid)))
+                        self.assertFalse((root / 'accepted.json').exists())
+                        (root / 'release-child').write_text('release')
+                        self.assertEqual(worker.wait(timeout=8), 1)
+                        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        fcntl.flock(lock, fcntl.LOCK_UN)
+                    for pid, start in held['live_owned_process_starttimes'].items():
+                        self.assertNotEqual(ownership.process_start(pid), start)
+                    self.assertIn('injected', (root / 'stderr.log').read_text())
+                finally:
+                    # Release only this probe's exact child. Never broad-kill.
+                    (root / 'release-child').write_text('release')
+                    worker.wait(timeout=8)
+
+    def test_standalone_tasks_receipt_failure_retains_unsampled_orphan(self):
+        self.standalone_failure_probe('receipt')
+
+    def test_standalone_tasks_discovery_failure_retains_unsampled_orphan(self):
+        self.standalone_failure_probe('discover')
+
+    def test_standalone_tasks_assertion_failure_retains_unsampled_orphan(self):
+        self.standalone_failure_probe('none')
+
     def test_real_lock_retained_until_child_natural_exit(self):
         with tempfile.TemporaryDirectory(prefix='reboot-owner-regression-') as directory:
             root = Path(directory)

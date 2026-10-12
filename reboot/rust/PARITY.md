@@ -51,8 +51,11 @@ frozen sources and no live owned processes at every gate. Evidence:
 review found no blocker for bounded valid-ID acceptance under the aggregate.
 Scheduling windows do not establish exact execution times; replay checks response
 and task-ID identity, visible state and invocation counts rather than comparing
-whole task protobufs on every replay. Standalone failure-path retention still
-needs hardening; the aggregate supplies the outer ownership safeguard.
+whole task protobufs on every replay. Standalone final receipt/discovery now
+executes inside a protected ownership boundary: retention runs even when either
+preliminary observation fails. Real standalone assertion, receipt-write and
+discovery failure probes retain flock, adopt an unsampled orphan and reap its
+natural exit before allowing the failure to escape. No broad kill is used.
 
 Ordinary generated writers now expose a default synchronous immutable local-state
 precheck. Only its sealed rejection retries, with cancellable capped-delay backoff,
@@ -70,12 +73,34 @@ Independent re-review found the post-handler fencing blocker resolved and no new
 blocking defect. Focused evidence under `/tmp/reboot-rust-local-retry-checkpoint`
 records 14 retry/fencing regressions and 512 SDK units passing.
 
-Hello Tasks is not yet fully accepted: controlled-ID native retry is SDK-seam
-proof, not unchanged public missing-ID sample acceptance. Native rejection checks
-state/Pending and retry counts, not direct checkpoint absence or handler counts.
-Cancellation/generation/ACK boundary regressions are transport-fake-backed;
-scheduling-specific lost-ACK/cancellation/stale-generation native proof remains
-open.
+The public Hello Tasks gate now exercises missing-ID retries without changing
+schemas/shared consumer, replacing a handler, seeding tasks, or raw Database writes.
+Faithful Send schedules Warning; two early public Warning calls schedule distinct
+Erase tasks. The first Erase removes the message before the original Warning and
+second Erase run. Both remain Pending with public SCHEDULED_RETRY and counts >3.
+The observation wrapper forwards the shared consumer's immutable prechecks too;
+otherwise its default precheck silently bypasses the retry contract. Full Pending
+records and actor state survive shutdown inspection and a third public rbt start;
+missing-ID rejection adds no observed handler invocations. Generated typed Wait
+RPC deadlines cancel observation without changing Pending records. Another faithful
+Send/typed chain completes while both old tasks retry, demonstrating public writer
+usability, not eventual matching-ID completion. Administrative CancelTask rejects
+these ordinary tasks (FailedPrecondition); graceful dispatcher shutdown cancels
+retry work and preserves Pending storage, not a durable cancelled terminal.
+
+No supported deterministic eventual matching-ID arrangement was found. Pinned
+Python `hello-tasks/backend/src/hello_servicer.py` Send uses `uuid.uuid4()`; the
+unchanged Rust shared Send uses `Uuid::new_v4()`. SendRequest exposes only text,
+not an ID. Idempotency keys replay the saved response, not determine the message ID.
+Neither Warning nor Erase inserts messages. Tasks service exposes Wait/List/Cancel,
+not submission. Thus the public proof schedules tasks while the message exists,
+then removes it; it does NOT schedule missing IDs before their first insertion or
+prove eventual reinsertion/completion. A random UUID collision is not a safe proof
+strategy. Controlled-ID native eventual-insert coverage remains SDK-seam only.
+Native rejection checks do not directly establish checkpoint absence.
+Cancellation/generation/ACK boundary regressions remain transport-fake-backed;
+scheduling-specific lost-ACK/cancellation/stale-generation native proof is open.
+The current focused checkpoint is not a rerun of the prior nineteen-gate audit.
 Bank shared transactions remain unfinished; Bank generation is an explicit opt-in
 probe, not a supported runnable sample.
 

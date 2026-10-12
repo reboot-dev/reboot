@@ -1,4 +1,4 @@
-"""Pinned Hello Tasks valid-ID public acceptance; missing-ID retry parity remains open."""
+"""Pinned Hello Tasks public chains and missing-ID Pending/retry restart proof."""
 from pathlib import Path
 import hashlib
 import json
@@ -9,10 +9,45 @@ import subprocess
 import tempfile
 import time
 import uuid
-from rust_process_ownership import (RequestedShutdown, process_start, enable_subreaper, discover_owned, retain_until_owned_exit)
+from rust_process_ownership import (RequestedShutdown, process_start, enable_subreaper, discover_owned, protected_owned_exit)
 enable_subreaper()
 owned = {}
 import signal
+import sys
+
+
+def finalize_receipt(result, evidence, owned, stage, failure=None):
+    def observe_final():
+        if failure == 'receipt':
+            raise OSError('injected final receipt write failure')
+        result.write_text(json.dumps(evidence, indent=2))
+        if failure == 'discover':
+            raise OSError('injected preliminary ownership observation failure')
+        discover_owned(owned, os.getpid())
+    protected_owned_exit(owned, stage / 'retained-owners.json', observe_final, root_pid=os.getpid())
+    evidence['live_owned_processes'] = list(discover_owned(owned, os.getpid()))
+    evidence['owned_process_starttimes'] = dict(owned)
+    evidence['passed'] = bool(evidence.get('checks_passed')) and not evidence['live_owned_processes']
+    result.write_text(json.dumps(evidence, indent=2))
+
+
+if len(sys.argv) > 1 and sys.argv[1] == '--ownership-failure-probe':
+    import fcntl
+    stage = Path(sys.argv[2])
+    mode = sys.argv[3]
+    with (stage / 'owner.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        # The immediate parent exits before sampling; the dedicated subreaper
+        # must discover/reap the unsampled orphan, never kill another process.
+        parent = subprocess.Popen([sys.executable, '-c',
+            'import os,time,sys\npid=os.fork()\nif pid==0:\n while not os.path.exists(sys.argv[1]):time.sleep(.01)\nos._exit(0)',
+            str(stage / 'release-child')])
+        parent.wait(timeout=5)
+        try:
+            raise AssertionError('injected standalone harness failure')
+        finally:
+            finalize_receipt(stage / 'result.json', {'passed': False}, owned, stage, mode)
+    raise AssertionError('unreachable acceptance')
 
 ROOT = Path(__file__).resolve().parents[3]
 SOURCE = ROOT / 'reboot/rust/tests/fixtures/reboot_examples'
@@ -74,7 +109,7 @@ def start(name):
     log_path = STAGE / (name + '.log')
     log = log_path.open('w')
     process = subprocess.Popen([str(RBT), 'dev', 'run', '--rust-allow-insecure-database', '--port=14991'], cwd=APP, env=ENV, stdout=log, stderr=subprocess.STDOUT)
-    record = {'pid': process.pid, 'name': name, 'log': str(log_path)}
+    record = {'pid': process.pid, 'name': name, 'log': str(log_path), 'process_starttime': process_start(process.pid)}
     owned[str(process.pid)] = process_start(process.pid)
     evidence['sessions'].append(record)
     # CLI's documented signal exit is 128 + SIGTERM; direct HTTP hosts retain
@@ -110,6 +145,44 @@ def stop(owner, record):
     assert record['children_absent'], record
     RESULT.write_text(json.dumps(evidence, indent=2))
 
+def inspect_shutdown(record, client, inspection_command):
+    # Reopen only the CLI-owned durable directory, with no application running.
+    # This proves Pending at shutdown, not merely "we restarted and it passed".
+    import socket
+    with socket.socket() as listener:
+        listener.bind(('127.0.0.1', 0))
+        database_port = listener.getsockname()[1]
+    log = (STAGE / f'{inspection_command}-database.log').open('w')
+    database = subprocess.Popen([ENV['RBT_RUST_DATABASE_BINARY'], record['rocksdb'], record['server_info'], str(database_port)], stdout=log, stderr=subprocess.STDOUT)
+    inspection = {'pid': database.pid, 'process_starttime': process_start(database.pid)}
+    evidence.setdefault('shutdown_inspections', []).append(inspection)
+    owned[str(database.pid)] = process_start(database.pid)
+    inspection_owner = RequestedShutdown(database, log, inspection, expected_exits=(0, -signal.SIGTERM))
+    ENV['RBT_TEST_DATABASE_URL'] = f'http://127.0.0.1:{database_port}'
+    try:
+        deadline = time.monotonic() + 10
+        while True:
+            assert database.poll() is None, (STAGE / f'{inspection_command}-database.log').read_text()
+            try:
+                with socket.create_connection(('127.0.0.1', database_port), timeout=.2):
+                    break
+            except OSError:
+                assert time.monotonic() < deadline, 'inspection Database startup timeout'
+                time.sleep(.05)
+        command(client, inspection_command)
+        if inspection_command == 'inspect-pending':
+            assert (STAGE / 'pending-warning.pb').read_bytes() == (STAGE / 'shutdown-pending-warning.pb').read_bytes()
+            evidence['pending_at_shutdown_exact'] = True
+        else:
+            for i, name in enumerate(['warning', 'erase']):
+                assert (STAGE / f'missing-{name}.pb').read_bytes() == (STAGE / f'shutdown-missing-{i}.pb').read_bytes()
+            evidence['missing_pending_at_shutdown_exact'] = True
+    finally:
+        if not timeout_seen:
+            inspection_owner.close()
+            inspection['process_absent'] = process_start(database.pid) != owned[str(database.pid)]
+            assert inspection['process_absent']
+
 # Cargo generation is driven by actual public rbt dev run; no prebuilt host substitute.
 try:
     budget()
@@ -122,61 +195,35 @@ try:
         if not timeout_seen:
             stop(owner, record)
     budget()
-    # Reopen only the CLI-owned durable directory, with no application running.
-    # This proves Pending at shutdown, not merely "we restarted and it passed".
-    import socket
-    with socket.socket() as listener:
-        listener.bind(('127.0.0.1', 0))
-        database_port = listener.getsockname()[1]
-    log = (STAGE / 'shutdown-inspection.log').open('w')
-    database = subprocess.Popen([ENV['RBT_RUST_DATABASE_BINARY'], record['rocksdb'], record['server_info'], str(database_port)], stdout=log, stderr=subprocess.STDOUT)
-    inspection = {'pid': database.pid}
-    evidence['shutdown_inspection'] = inspection
-    owned[str(database.pid)] = process_start(database.pid)
-    inspection_owner = RequestedShutdown(database, log, inspection, expected_exits=(0, -signal.SIGTERM))
-    ENV['RBT_TEST_DATABASE_URL'] = f'http://127.0.0.1:{database_port}'
-    try:
-        deadline = time.monotonic() + 10
-        while True:
-            assert database.poll() is None, (STAGE / 'shutdown-inspection.log').read_text()
-            try:
-                with socket.create_connection(('127.0.0.1', database_port), timeout=.2):
-                    break
-            except OSError:
-                assert time.monotonic() < deadline, 'inspection Database startup timeout'
-                time.sleep(.05)
-        command(client, 'inspect-pending')
-        assert (STAGE / 'pending-warning.pb').read_bytes() == (STAGE / 'shutdown-pending-warning.pb').read_bytes()
-        evidence['pending_at_shutdown_exact'] = True
-    finally:
-        if not timeout_seen:
-            inspection_owner.close()
-            inspection['process_absent'] = process_start(database.pid) != owned[str(database.pid)]
-            assert inspection['process_absent']
+    inspect_shutdown(record, client, 'inspect-pending')
     owner, record = start('restart')
     try:
         command(client, 'recover')
         command(client, 'verify')
+        command(client, 'missing-seed')
+    finally:
+        if not timeout_seen:
+            stop(owner, record)
+    inspect_shutdown(record, client, 'inspect-missing')
+    owner, record = start('missing-restart')
+    try:
+        command(client, 'missing-recover')
     finally:
         if not timeout_seen:
             stop(owner, record)
     command('cargo', 'clippy', '--manifest-path', 'backend/Cargo.toml', '--locked', '--all-targets', '--', '-D', 'warnings')
     budget()
     counts = {method: sum(line.startswith(method + ' ') for line in (STAGE / 'invocations.log').read_text().splitlines()) for method in ['Send', 'WarningBefore', 'WarningAfter', 'Erase']}
-    assert counts == {'Send': 2, 'WarningBefore': 2, 'WarningAfter': 2, 'Erase': 2}, counts
+    assert counts == {'Send': 4, 'WarningBefore': 5, 'WarningAfter': 5, 'Erase': 4}, counts
     evidence['invocation_counts'] = counts
-    assert evidence['sessions'][0]['rocksdb'] == evidence['sessions'][1]['rocksdb']
+    assert len({session['rocksdb'] for session in evidence['sessions']}) == 1
     assert all(hashlib.sha256(Path(p).read_bytes()).hexdigest() == h for p, h in evidence['source_hashes'].items())
     # Explicit assertion markers are checked by the aggregate, not only exit status.
     output = '\n'.join(c['stdout'] for c in evidence['commands'])
-    for marker in ['TYPED_WAIT_CHAIN_ACCEPTED scenario', 'PENDING_BEFORE_SHUTDOWN', 'PENDING_AT_SHUTDOWN_EXACT', 'TYPED_WAIT_CHAIN_ACCEPTED recover', 'SAME_KEY_COMPLETED_NO_RESURRECTION']:
+    for marker in ['TYPED_WAIT_CHAIN_ACCEPTED scenario', 'PENDING_BEFORE_SHUTDOWN', 'PENDING_AT_SHUTDOWN_EXACT', 'TYPED_WAIT_CHAIN_ACCEPTED recover', 'SAME_KEY_COMPLETED_NO_RESURRECTION', 'FAITHFUL_PUBLIC_SEND_USABLE_DURING_MISSING_RETRY', 'MISSING_IDS_PENDING_AT_SHUTDOWN_EXACT', 'MISSING_IDS_PUBLIC_PENDING_RETRY_ACCEPTED missing-seed', 'MISSING_IDS_PUBLIC_PENDING_RETRY_ACCEPTED missing-recover']:
         assert marker in output, marker
-    evidence['passed'] = True
+    evidence['checks_passed'] = True
 finally:
-    RESULT.write_text(json.dumps(evidence, indent=2))
-    discover_owned(owned, os.getpid())
-    retain_until_owned_exit(owned, STAGE / 'retained-owners.json', root_pid=os.getpid())
-    evidence['live_owned_processes'] = list(discover_owned(owned, os.getpid()))
-    RESULT.write_text(json.dumps(evidence, indent=2))
+    finalize_receipt(RESULT, evidence, owned, STAGE)
 assert evidence['passed'] and not evidence['live_owned_processes']
 print('UPSTREAM_TASKS_ACCEPTED', RESULT, flush=True)

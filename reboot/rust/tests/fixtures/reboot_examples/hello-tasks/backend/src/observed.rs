@@ -3,6 +3,28 @@ use reboot::runtime::WriterExecution;
 use std::io::Write;
 use upstream_hello_tasks::{HelloTasks, generated::HelloMethodsDatabaseHandler, proto};
 pub struct ObservedTasks;
+// Explicit acceptance administration; never selected by production SDK defaults.
+pub struct FixtureAdmin;
+impl reboot::auth::TokenVerifier for FixtureAdmin {
+    fn verify<'a>(
+        &'a self,
+        _: &'a reboot::auth::AuthorizationContext,
+        _: Option<&'a str>,
+    ) -> reboot::auth::VerifyFuture<'a> {
+        Box::pin(async { reboot::auth::TokenVerification::NoOpinion })
+    }
+}
+impl reboot::auth::Authorizer for FixtureAdmin {
+    fn authorize<'a>(
+        &'a self,
+        _: &'a reboot::auth::AuthorizationContext,
+        _: Option<&'a reboot::auth::Auth>,
+        _: Option<&'a [u8]>,
+        _: &'a [u8],
+    ) -> reboot::auth::AuthorizeFuture<'a> {
+        Box::pin(async { reboot::auth::AuthorizationDecision::Allow })
+    }
+}
 fn record(label: &str) {
     if let Ok(path) = std::env::var("RBT_TEST_TASKS_INVOCATIONS") {
         let time = std::time::SystemTime::now()
@@ -20,6 +42,20 @@ fn record(label: &str) {
 }
 #[tonic::async_trait]
 impl HelloMethodsDatabaseHandler for ObservedTasks {
+    fn warning_local_precheck(
+        &self,
+        state: &proto::Hello,
+        request: &proto::WarningRequest,
+    ) -> Result<(), reboot::one_shot_tasks::LocalStateNotReady> {
+        HelloTasks.warning_local_precheck(state, request)
+    }
+    fn erase_local_precheck(
+        &self,
+        state: &proto::Hello,
+        request: &proto::EraseRequest,
+    ) -> Result<(), reboot::one_shot_tasks::LocalStateNotReady> {
+        HelloTasks.erase_local_precheck(state, request)
+    }
     async fn messages(
         &self,
         state: &proto::Hello,
