@@ -1035,6 +1035,8 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
                 {
                     self.persist_abort(transaction_id, &record.state_ref)
                         .await?;
+                    #[cfg(feature = "test-support")]
+                    test_support::pause_recovery_before_terminals().await?;
                     self.terminal_all(transaction_id, &participants.should_commit, false)
                         .await?;
                     self.cleanup(transaction_id, &record.state_ref).await?;

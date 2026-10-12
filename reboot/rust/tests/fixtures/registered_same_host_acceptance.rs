@@ -20,7 +20,7 @@ async fn records(endpoint: &str) -> Vec<database::RecoverResponse> {
     }
     batches
 }
-async fn decision(
+async fn durable_decision(
     endpoint: &str,
     coordinator: &str,
 ) -> Option<database::TransactionCoordinatorDecision> {
@@ -48,15 +48,34 @@ async fn crash_snapshot(endpoint: &str, refs: &[String], phase: usize) {
         .iter()
         .flat_map(|b| &b.participant_transactions)
         .collect();
-    assert_eq!(participants.len(), if phase == 2 { 0 } else { refs.len() });
+    assert_eq!(
+        participants.len(),
+        if phase == 2 {
+            0
+        } else if phase == 5 {
+            refs.len() - 1
+        } else {
+            refs.len()
+        }
+    );
     assert!(participants.iter().all(|p| p.prepared));
+    if phase == 5 {
+        let mut actual: Vec<_> = participants.iter().map(|p| p.state_ref.clone()).collect();
+        actual.sort();
+        let mut expected = vec![refs[0].clone(), refs[2].clone()];
+        expected.sort();
+        assert_eq!(
+            actual, expected,
+            "only A and C durably prepared; B never prepared"
+        );
+    }
     let coordinators: Vec<_> = batches
         .iter()
         .flat_map(|b| b.transaction_coordinators.values())
         .collect();
     assert_eq!(coordinators.len(), 1);
-    assert_eq!(coordinators[0].preparing, phase == 2);
-    let terminal = decision(endpoint, &refs[0]).await;
+    assert_eq!(coordinators[0].preparing, phase == 2 || phase == 5);
+    let terminal = durable_decision(endpoint, &refs[0]).await;
     if phase == 3 {
         let terminal = terminal.expect("immutable decision required before crash");
         assert_eq!(
@@ -64,6 +83,11 @@ async fn crash_snapshot(endpoint: &str, refs: &[String], phase: usize) {
             database::transaction_coordinator_decision::Outcome::Commit as i32
         );
         let participants = terminal.participants.unwrap();
+        assert_eq!(
+            participants.should_commit.len(),
+            1,
+            "no extra state-type membership"
+        );
         let mut actual = participants.should_commit[STATE].state_refs.clone();
         actual.sort();
         let mut expected = refs.to_vec();
@@ -95,7 +119,11 @@ fn await_file(path: &std::path::Path, host: &mut WaitHostGuard) {
 }
 fn run(watch: bool, chain: bool, crash_phase: usize, siblings: bool) {
     let crash_prepared = crash_phase != 0;
-    let expected_value = if crash_phase == 2 { 4 } else { 5 };
+    let expected_value = if crash_phase == 2 || crash_phase == 5 {
+        4
+    } else {
+        5
+    };
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/generated_cxx_database_process");
     prepare_generated_host(&fixture);
@@ -146,7 +174,7 @@ fn run(watch: bool, chain: bool, crash_phase: usize, siblings: bool) {
     }
     if crash_prepared {
         match crash_phase {
-            1 => {
+            1 | 4 => {
                 command.env("REBOOT_TEST_PAUSE_PREPARED_BEFORE_DECISION", &prepared);
             }
             2 => {
@@ -156,6 +184,11 @@ fn run(watch: bool, chain: bool, crash_phase: usize, siblings: bool) {
                 command
                     .env("REBOOT_TEST_PAUSE_AFTER_COORDINATOR_PREPARE", &prepared)
                     .env("REBOOT_TEST_LIVE_WATCH_BEFORE_LOOKUP", &lookup);
+            }
+            5 => {
+                command
+                    .env("REBOOT_TEST_PAUSE_PARTICIPANT_PREPARE_REF", &refs[1])
+                    .env("REBOOT_TEST_PAUSE_PARTICIPANT_PREPARE", &prepared);
             }
             _ => panic!("unknown crash phase"),
         }
@@ -172,6 +205,27 @@ fn run(watch: bool, chain: bool, crash_phase: usize, siblings: bool) {
     let mut host = WaitHostGuard(command.spawn().unwrap());
     if crash_prepared {
         await_file(&prepared, &mut host);
+        if crash_phase == 5 {
+            let deadline = std::time::Instant::now() + Duration::from_secs(10);
+            loop {
+                let count = runtime.block_on(async {
+                    records(&db.endpoint())
+                        .await
+                        .iter()
+                        .map(|b| b.participant_transactions.len())
+                        .sum::<usize>()
+                });
+                if count == refs.len() - 1 {
+                    break;
+                }
+                assert!(host.try_wait().unwrap().is_none());
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "proper subset not prepared"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
         runtime.block_on(crash_snapshot(&db.endpoint(), &refs, crash_phase));
         // Deliberate process death, not graceful Abort/Watch cleanup. Own only this child.
         host.kill().unwrap();
@@ -183,7 +237,13 @@ fn run(watch: bool, chain: bool, crash_phase: usize, siblings: bool) {
                     .iter()
                     .map(|b| b.participant_transactions.len())
                     .sum::<usize>(),
-                if crash_phase == 2 { 0 } else { refs.len() }
+                if crash_phase == 2 {
+                    0
+                } else if crash_phase == 5 {
+                    refs.len() - 1
+                } else {
+                    refs.len()
+                }
             );
             assert_eq!(
                 batches
@@ -277,13 +337,15 @@ fn run(watch: bool, chain: bool, crash_phase: usize, siblings: bool) {
         verify();
     }
     let recovered = markers.join("recovered");
+    let recovery_park = markers.join("recovery-park");
+    let recovery_port = port();
     let mut command = Command::new(generated_host_binary(&fixture));
     command.args([
         "--registered-same-host",
         "--database",
         &db.endpoint(),
         "--listen",
-        &format!("127.0.0.1:{}", port()),
+        &format!("127.0.0.1:{recovery_port}"),
         "--state-ref",
         &refs[0],
         "--local-child-ref",
@@ -300,7 +362,99 @@ fn run(watch: bool, chain: bool, crash_phase: usize, siblings: bool) {
         command.args(["--local-siblings", "--local-grandchild-ref", &refs[2]]);
     }
     command.args(["--local-recovered-value", &expected_value.to_string()]);
+    if crash_phase == 4 || crash_phase == 5 {
+        command.env(
+            "REBOOT_TEST_PAUSE_RECOVERY_BEFORE_TERMINALS",
+            &recovery_park,
+        );
+    }
     let mut restarted = WaitHostGuard(command.spawn().unwrap());
+    if crash_phase == 4 || crash_phase == 5 {
+        await_file(&recovery_park, &mut restarted);
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            let settled = runtime.block_on(async {
+                let batches = records(&db.endpoint()).await;
+                if !batches
+                    .iter()
+                    .all(|b| b.participant_transactions.is_empty())
+                {
+                    return false;
+                }
+                assert_eq!(
+                    batches
+                        .iter()
+                        .map(|b| b.transaction_coordinators.len())
+                        .sum::<usize>(),
+                    1,
+                    "direct recovery is still parked before cleanup"
+                );
+                for reference in &refs {
+                    assert_eq!(
+                        load_state(&db.endpoint(), reference).await,
+                        Some(vec![8, expected_value])
+                    );
+                }
+                assert_eq!(
+                    durable_decision(&db.endpoint(), &refs[0])
+                        .await
+                        .unwrap()
+                        .outcome,
+                    if crash_phase == 5 {
+                        database::transaction_coordinator_decision::Outcome::Abort as i32
+                    } else {
+                        database::transaction_coordinator_decision::Outcome::Commit as i32
+                    }
+                );
+                true
+            });
+            if settled {
+                break;
+            }
+            assert!(restarted.try_wait().unwrap().is_none());
+            assert!(
+                std::time::Instant::now() < deadline,
+                "recovered Watch did not settle independently"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(
+            !recovered.exists(),
+            "readiness must await parked coordinator"
+        );
+        runtime.block_on(async {
+            let channel = tonic::transport::Endpoint::from_shared(format!(
+                "http://127.0.0.1:{recovery_port}"
+            ))
+            .unwrap()
+            .connect()
+            .await
+            .unwrap();
+            let mut grpc = tonic::client::Grpc::new(channel);
+            grpc.ready().await.unwrap();
+            let mut request = tonic::Request::new(TaskQueryRequest { amount: 0 });
+            request
+                .metadata_mut()
+                .insert("x-reboot-state-ref", refs[0].parse().unwrap());
+            request.set_timeout(Duration::from_secs(2));
+            let error = grpc
+                .unary::<_, TaskQueryResponse, _>(
+                    request,
+                    "/tests.reboot.protoc.TransactionCounterWritesMethods/Query"
+                        .parse()
+                        .unwrap(),
+                    tonic::codec::ProstCodec::default(),
+                )
+                .await
+                .unwrap_err();
+            assert_eq!(
+                error.code(),
+                tonic::Code::Unavailable,
+                "public ingress must remain Recovering"
+            );
+        });
+        std::fs::remove_file(&recovery_park).unwrap();
+    }
     await_file(&recovered, &mut restarted);
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
     loop {
@@ -319,6 +473,16 @@ fn run(watch: bool, chain: bool, crash_phase: usize, siblings: bool) {
         "recovered A/B readback without initialization\n"
     );
     verify();
+}
+#[test]
+#[ignore = "requires real C++ Database/RocksDB"]
+fn registered_same_host_generated_chain_partial_prepare_abort_recovered_watch() {
+    run(false, true, 5, false);
+}
+#[test]
+#[ignore = "requires real C++ Database/RocksDB"]
+fn registered_same_host_generated_chain_independent_recovered_watch() {
+    run(false, true, 4, false);
 }
 #[test]
 #[ignore = "requires real C++ Database/RocksDB"]
@@ -361,6 +525,16 @@ fn registered_same_host_generated_decision_watch_cleanup() {
     run(true, false, 0, false);
 }
 
+#[derive(Clone, PartialEq, prost::Message)]
+struct TaskQueryRequest {
+    #[prost(int64, tag = "1")]
+    amount: i64,
+}
+#[derive(Clone, PartialEq, prost::Message)]
+struct TaskQueryResponse {
+    #[prost(int64, tag = "1")]
+    value: i64,
+}
 async fn task_records(endpoint: &str, tasks: &[database::Task]) -> Vec<database::Task> {
     database::database_client::DatabaseClient::connect(endpoint.to_owned())
         .await
@@ -470,6 +644,20 @@ fn registered_same_host_generated_reusable_reader_pending_restart() {
             .flat_map(|b| b.transaction_coordinators.values())
             .collect();
         assert_eq!(coordinators.len(), 1);
+        assert_eq!(
+            coordinators[0]
+                .participants
+                .as_ref()
+                .unwrap()
+                .should_commit
+                .len(),
+            1
+        );
+        assert!(
+            batches
+                .iter()
+                .all(|batch| batch.participant_transactions.is_empty())
+        );
         let mut actual = coordinators[0].participants.as_ref().unwrap().should_commit[STATE]
             .state_refs
             .clone();
@@ -511,13 +699,13 @@ fn registered_same_host_generated_reusable_reader_pending_restart() {
         runtime.block_on(task_records(&db.endpoint(), &tasks)),
         snapshot
     );
-    let launch = || {
+    let launch = |endpoint: &str| {
         let mut command = Command::new(generated_host_binary(&fixture));
         command.args([
             "--registered-same-host",
             "--sequential-reusable",
             "--database",
-            &db.endpoint(),
+            endpoint,
             "--listen",
             &listen,
             "--state-ref",
@@ -535,7 +723,7 @@ fn registered_same_host_generated_reusable_reader_pending_restart() {
         ]);
         WaitHostGuard(command.spawn().unwrap())
     };
-    let mut recovery = launch();
+    let mut recovery = launch(&db.endpoint());
     assert!(recovery.wait().unwrap().success());
     assert!(recovered.exists());
     let completed = runtime.block_on(task_records(&db.endpoint(), &tasks));
@@ -548,7 +736,12 @@ fn registered_same_host_generated_reusable_reader_pending_restart() {
     let invocations = std::fs::read_to_string(format!("{}.invocations", marker.display())).unwrap();
     assert!(invocations.lines().count() > 2);
     assert!(invocations.lines().all(|line| line == "40"));
-    let mut again = launch();
+    db.restart();
+    assert_eq!(
+        runtime.block_on(task_records(&db.endpoint(), &tasks)),
+        completed
+    );
+    let mut again = launch(&db.endpoint());
     assert!(again.wait().unwrap().success());
     assert_eq!(
         runtime.block_on(task_records(&db.endpoint(), &tasks)),

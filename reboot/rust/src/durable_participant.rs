@@ -2166,6 +2166,21 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         if current.prepared {
             return Ok(PrepareOutcome::Prepared);
         }
+        // Deterministic native crash seam: park one exact participant before
+        // its first durable Prepare, without blocking other Tokio workers.
+        #[cfg(feature = "test-support")]
+        if std::env::var("REBOOT_TEST_PAUSE_PARTICIPANT_PREPARE_REF")
+            .ok()
+            .as_deref()
+            == Some(self.state_ref.as_str())
+            && let Some(marker) = std::env::var_os("REBOOT_TEST_PAUSE_PARTICIPANT_PREPARE")
+        {
+            std::fs::write(&marker, b"before-native-prepare\n")
+                .map_err(|error| Status::internal(error.to_string()))?;
+            while std::path::Path::new(&marker).exists() {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        }
         self.sidecar
             .prepare(database::TransactionParticipantPrepareRequest {
                 state_type: self.state_type.clone(),

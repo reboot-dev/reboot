@@ -12,6 +12,49 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Independent recovered Watch and partial-Prepare crash recovery
+
+All registered participant ownership restores finish before coordinator recovery
+and recovered Watch convergence are polled concurrently. Readiness waits for both;
+participant Watches remain sequential among themselves. Existing sticky terminal
+ownership, native ACK serialization and uncertainty failures remain authoritative.
+
+Real registered A/B/C host-crash acceptance now covers a proper Prepare subset:
+A/C are durably prepared, B is parked before its first durable Prepare, full
+coordinator membership is persisted with `preparing == true`, and no terminal
+decision exists. Original values and exact A/C-only prepared records survive a
+same-RocksDB Database restart before recovery-host startup. Re-Prepare encounters
+absent B, definitively rejects, and publishes immutable Abort. No presumed-absence
+Abort or retry-policy change was introduced.
+
+Both fully-prepared Commit and partial-Prepare Abort recovery park direct terminal
+delivery after the immutable decision. Recovered Watches clear participant records
+while the coordinator record remains, with values 5 for Commit and 4 for Abort.
+Public ingress returns Unavailable and readiness remains blocked until coordinator
+recovery is released. These cases assert terminal outcomes, not exact immutable
+membership for every phase; exact Commit membership remains separately asserted.
+
+Reusable reader acceptance now excludes extra state-type membership, asserts zero
+preprepare participant records, and preserves Completed records through a second
+actual Database restart and subsequent host launch with unchanged invocation and
+mutation-entry logs. Fixture append logging writes each record as one buffer;
+three reusable invocations have explicitly bounded Watch capacity three. Typed
+Wait observes durable completion, not worker ACK receipt: a normal B reader acquires
+the completion worker's actor gate before intentional shutdown, preserving rather
+than suppressing the uncertain-shutdown safety failure.
+
+Frozen twelve-gate audit `1791780883957777774` accepted all twelve exits zero:
+SDK 592 passing results including nested consumers (491 library, 45 generated),
+strict SDK/generated-consumer Clippy, native restart 4, ownership regressions,
+CLI unit, public User/workflow/checkpoint restart, greeting, native registered-local
+11 and strict native-fixture Clippy. All 238 frozen inputs matched before ledger
+bookkeeping; recorded descendant PID/start identities were absent and the owner
+lock was released. Applied static safety review found no scoped blocker; review
+is distinct from execution. The user-approved target ceiling is 10 GB with an
+unchanged 8 GiB free-space floor. Earlier failed audits remain uncertified.
+No staged-N2-task rollback, general task-owner composition, arbitrary-depth stack
+safety, parallel participant Watches or external exactly-once delivery is claimed.
+
 ## Registered reusable reader tasks and additional host-crash phases
 
 The generated same-host public-root fixture now calls the same registered B
@@ -31,10 +74,9 @@ observed. Actual blocked reader entry after Commit reads value 40; two Pending
 records survive an owned-host kill and same-RocksDB Database restart. A fresh
 recovery-only host uses generated typed Wait for both N1/N3 results equal to 40.
 Completed records, invocation logs and mutation-entry logs remain unchanged across
-another host launch. Completed stability across a further Database restart is
-not yet asserted. Preprepare reusable coverage does not assert zero participant
-records; membership assertions compare references within the fixture state type
-and empty read-only membership, not absence of other state-type keys.
+another host launch. Those historical coverage limits are superseded by the newer
+Database-restart, zero-participant-record and all-state-type membership assertions
+in the accepted checkpoint above.
 
 Additional two-actor crash cases park before Prepare fanout or after immutable
 Commit before direct delivery (with live Watch parked). The former observes zero
@@ -80,8 +122,8 @@ No-rerun evidence is source control flow, not an independent invocation counter;
 prepared snapshots check counts/flags, not exact transaction-path identities.
 This historical crash point precedes immutable Commit publication. The newer
 section above adds pre-fanout/post-decision and reusable reader-task acceptance;
-partial-prepare crashes, independent recovered Watch settlement and C-specific
-Watch gate release remain unproved. The separate
+partial-prepare crashes and independent recovered Watch settlement are now
+proved by the newer checkpoint above; C-specific Watch gate release remains unproved. The separate
 live Watch acceptance still covers B in the two-actor case.
 
 Frozen twelve-gate audit `1791773771269816780` accepted all twelve exits zero:
@@ -3999,7 +4041,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 15b6f59130ffe4abede70857b5e79d436d1cb007cbd3913d20fd3a21b09183a2 -->
+<!-- parity-source-sha256: 3eb226890715329e620092e4e7e811e451124d6ef992ceec8c73f9571a8e3b06 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

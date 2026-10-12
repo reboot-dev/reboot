@@ -74,7 +74,7 @@ impl ParticipantSidecar for Participant {
         })
     }
 }
-struct Coordinator(Trace);
+struct Coordinator(Trace, Option<Arc<tokio::sync::Notify>>);
 impl CoordinatorSidecar for Coordinator {
     fn coordinator_prepare(
         &self,
@@ -97,6 +97,9 @@ impl CoordinatorSidecar for Coordinator {
     fn recover(&self, _: db::RecoverRequest) -> F<'_, Vec<db::RecoverResponse>> {
         Box::pin(async move {
             self.0.lock().unwrap().push("coordinator-recover".into());
+            if let Some(release) = &self.1 {
+                release.notified().await;
+            }
             Ok(vec![])
         })
     }
@@ -121,6 +124,9 @@ type Assembly = (
 );
 
 fn assembly(fail: bool) -> Assembly {
+    assembly_with_gate(fail, None)
+}
+fn assembly_with_gate(fail: bool, coordinator_gate: Option<Arc<tokio::sync::Notify>>) -> Assembly {
     use crate::durable_participant::DurableActorParticipantHost;
     let trace = Arc::new(Mutex::new(Vec::new()));
     let entered = Arc::new(tokio::sync::Notify::new());
@@ -145,8 +151,10 @@ fn assembly(fail: bool) -> Assembly {
         DurableActorParticipantHost::new(app.clone()),
     )
     .unwrap();
-    let coordinator =
-        DurableRootCoordinator::new(Arc::new(Coordinator(trace.clone())), Arc::new(resolver));
+    let coordinator = DurableRootCoordinator::new(
+        Arc::new(Coordinator(trace.clone(), coordinator_gate)),
+        Arc::new(resolver),
+    );
     let metadata = ParticipantRecovery {
         shard_ids: vec!["shard".into()],
         ..Default::default()
@@ -213,6 +221,56 @@ async fn failed_second_restoration_never_reaches_coordinator_watch_or_tasks() {
     let error = running.await.unwrap().unwrap_err();
     assert_eq!(error.code(), tonic::Code::DataLoss);
     assert_eq!(*trace.lock().unwrap(), ["app-restore", "map-restore"]);
+}
+#[tokio::test]
+async fn recovered_watches_progress_before_coordinator_finishes_but_not_before_restore() {
+    let gate = Arc::new(tokio::sync::Notify::new());
+    let (recovery, trace, entered, release) = assembly_with_gate(false, Some(gate.clone()));
+    let (cancel, _) = RecoveryCancellation::test_host();
+    let later = trace.clone();
+    let running = tokio::spawn(async move {
+        recovery.start(&mut JoinSet::new(), cancel).await.unwrap();
+        later.lock().unwrap().push("tasks-readers".into());
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(2), entered.notified())
+        .await
+        .unwrap();
+    assert_eq!(*trace.lock().unwrap(), ["app-restore", "map-restore"]);
+    release.notify_one();
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            if trace
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|event| event == "map-commit")
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(!running.is_finished());
+    assert_eq!(
+        *trace.lock().unwrap(),
+        [
+            "app-restore",
+            "map-restore",
+            "coordinator-recover",
+            "app-watch",
+            "app-commit",
+            "map-watch",
+            "map-commit"
+        ]
+    );
+    gate.notify_one();
+    tokio::time::timeout(std::time::Duration::from_secs(2), running)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(trace.lock().unwrap().last().unwrap(), "tasks-readers");
 }
 #[test]
 fn duplicate_target_is_rejected_before_recovery() {

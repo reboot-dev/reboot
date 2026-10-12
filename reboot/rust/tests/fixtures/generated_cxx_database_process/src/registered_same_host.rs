@@ -108,16 +108,15 @@ impl generated::TransactionCounterWritesMethodsTransactionHandler for LocalHandl
         if self.reusable && request.amount == 9000 {
             use std::io::Write;
             let marker = arg("--local-task-marker");
-            writeln!(
-                std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(format!("{marker}.invocations"))
-                    .unwrap(),
-                "{}",
-                state.value
-            )
-            .unwrap();
+            // One append buffer: concurrent reader deliveries must not split
+            // the value and newline into separately interleavable writes.
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(format!("{marker}.invocations"))
+                .unwrap()
+                .write_all(format!("{}\n", state.value).as_bytes())
+                .unwrap();
             if has("--block-task") {
                 std::future::pending::<()>().await;
             }
@@ -386,7 +385,9 @@ pub async fn run() {
         } else {
             make(index).with_live_participant_owner(
                 reboot::live_participant::LiveParticipantOwner::new(
-                    2,
+                    // Three sequential invocations may overlap retiring Watch
+                    // jobs until the supervisor observes their completion.
+                    if reusable { 3 } else { 2 },
                     participants[0].actor_target(),
                     watch.clone(),
                 )
@@ -521,6 +522,19 @@ pub async fn run() {
                     40
                 );
             }
+            // Wait can observe persisted completion before CompleteTask's ACK
+            // reaches its worker. The completion operation holds B's exclusive
+            // actor lease until ACK validation and uncertainty disarm finish.
+            // A normal reader must acquire that same gate before shutdown.
+            assert_eq!(
+                adapters[1]
+                    .query(request(&refs[1], 0, false))
+                    .await
+                    .unwrap()
+                    .get_ref()
+                    .value,
+                40
+            );
         }
         stop.send(()).unwrap();
         tokio::time::timeout(std::time::Duration::from_secs(5), server)

@@ -606,48 +606,21 @@ where
         for (participant, recovery) in &self.additional_participants {
             participant.recover_ownership(recovery.clone()).await?;
         }
-        // A restarted root can reach a peer's fixed control listener before
-        // that peer has restored its prepared participant ownership. The
-        // coordinator record remains durable, so an Unavailable terminal
-        // delivery is non-definitive and must be retried from that record
-        // rather than failing the host and stranding recovery.
-        let mut retry_delay = std::time::Duration::from_millis(25);
-        loop {
-            tokio::select! {
-                result = self.coordinator.recover(self.metadata.coordinator.clone()) => match result {
-                    Ok(()) => break,
-                    Err(status) if status.code() == tonic::Code::Unavailable => {}
-                    Err(status) => return Err(status),
-                },
-                _ = cancel.cancelled() => return Ok(()),
-            }
-            tokio::select! {
-                _ = cancel.cancelled() => return Ok(()),
-                _ = tokio::time::sleep(retry_delay) => {}
-            }
-            retry_delay = (retry_delay * 2).min(std::time::Duration::from_secs(1));
-        }
-
-        // A public RPC cannot observe a recovered prepared participant before
-        // its authoritative Watch has either terminalized it or confirmed that
-        // there is no pending durable work. Control routes are already bound by
-        // ApplicationHost before it invokes recovery, so this wait never
-        // deadlocks a recovering remote coordinator.
-        for participant in std::iter::once(&self.participant).chain(
-            self.additional_participants
-                .iter()
-                .map(|(participant, _)| participant),
-        ) {
+        // Restore every participant before polling either recovery path. After
+        // that barrier, authoritative Watch and coordinator delivery may make
+        // progress independently, but public/task readiness still awaits both.
+        let coordinator_recovery = async {
+            // A restarted root can reach a peer's fixed control listener before
+            // that peer has restored its prepared participant ownership. The
+            // coordinator record remains durable, so an Unavailable terminal
+            // delivery is non-definitive and must be retried from that record
+            // rather than failing the host and stranding recovery.
             let mut retry_delay = std::time::Duration::from_millis(25);
             loop {
                 tokio::select! {
-                    result = participant.watch_recovered(self.watch.as_ref()) => match result {
+                    result = self.coordinator.recover(self.metadata.coordinator.clone()) => match result {
                         Ok(()) => break,
-                        Err(status) if status.code() == tonic::Code::Unavailable => {
-                            // The remote coordinator may still be binding its
-                            // recovery-only control listener. This is non-definitive;
-                            // retain ownership and retry without inventing abort.
-                        }
+                        Err(status) if status.code() == tonic::Code::Unavailable => {}
                         Err(status) => return Err(status),
                     },
                     _ = cancel.cancelled() => return Ok(()),
@@ -658,7 +631,44 @@ where
                 }
                 retry_delay = (retry_delay * 2).min(std::time::Duration::from_secs(1));
             }
-        }
+
+            Ok::<(), tonic::Status>(())
+        };
+        let participant_watches = async {
+            // A public RPC cannot observe a recovered prepared participant before
+            // its authoritative Watch has either terminalized it or confirmed that
+            // there is no pending durable work. Control routes are already bound by
+            // ApplicationHost before it invokes recovery, so this wait never
+            // deadlocks a recovering remote coordinator.
+            for participant in std::iter::once(&self.participant).chain(
+                self.additional_participants
+                    .iter()
+                    .map(|(participant, _)| participant),
+            ) {
+                let mut retry_delay = std::time::Duration::from_millis(25);
+                loop {
+                    tokio::select! {
+                        result = participant.watch_recovered(self.watch.as_ref()) => match result {
+                            Ok(()) => break,
+                            Err(status) if status.code() == tonic::Code::Unavailable => {
+                                // The remote coordinator may still be binding its
+                                // recovery-only control listener. This is non-definitive;
+                                // retain ownership and retry without inventing abort.
+                            }
+                            Err(status) => return Err(status),
+                        },
+                        _ = cancel.cancelled() => return Ok(()),
+                    }
+                    tokio::select! {
+                        _ = cancel.cancelled() => return Ok(()),
+                        _ = tokio::time::sleep(retry_delay) => {}
+                    }
+                    retry_delay = (retry_delay * 2).min(std::time::Duration::from_secs(1));
+                }
+            }
+            Ok::<(), tonic::Status>(())
+        };
+        tokio::try_join!(coordinator_recovery, participant_watches)?;
         Ok(())
     }
 }
