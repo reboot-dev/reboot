@@ -61,3 +61,6 @@ serve run --tls=external
 serve run --application=backend/src/main.py
 
 cloud logs --application-name=chat-room
+
+# Serve the web app at `/` from Vite, on its default port.
+dev run --web-app-url=http://localhost:5173

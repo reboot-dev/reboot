@@ -3,12 +3,34 @@
   "version": "0.1.0",
   "private": true,
   "workspaces": [
-    "web",
     "mobile",
     "reboot-non-react-web"
   ],
   "scripts": {
-    "start": "npm start --workspace web",
-    "build": "npm run build --workspace web"
+    "lint": "cd web && eslint ./src",
+    "start": "vite",
+    "build": "npm run lint && (cd web && tsc --noEmit) && reboot-vite-build",
+    "test": "cd web && vitest src"
+  },
+  "type": "module",
+  "dependencies": {
+    "@bufbuild/protobuf": "1.10.1",
+    "@eslint/js": "^9.34.0",
+    "@reboot-dev/reboot-react": "1.6.0",
+    "@types/eslint__js": "^8.42.3",
+    "@types/react": "~19.2.0",
+    "@types/react-dom": "~19.2.0",
+    "@vitejs/plugin-react": "^4.7.0",
+    "eslint": "^9.34.0",
+    "jsdom": "^26.1.0",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.41.0",
+    "vite": "^6.3.5",
+    "vitest": "^3.2.4"
+  },
+  "devDependencies": {
+    "vite-plugin-singlefile": "^2.0.3"
   }
 }
