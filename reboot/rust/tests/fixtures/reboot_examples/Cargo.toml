@@ -1,0 +1,20 @@
+[package]
+name = "reboot-rust-upstream-examples"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[features]
+# Capability probe for the unchanged shared Transfer schema; currently rejected.
+bank-shared = []
+
+[build-dependencies]
+reboot = { package = "reboot-rust-schema", path = "../../../", features = ["build"] }
+
+[dependencies]
+reboot = { package = "reboot-rust-schema", path = "../../../", features = ["build"] }
+prost = "0.13"
+prost-types = "0.13"
+tonic = "0.12"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+uuid = { version = "1", features = ["v4"] }

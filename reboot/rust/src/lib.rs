@@ -13,6 +13,12 @@
 //! wire compatibility, persisted-state migration or release certification.
 //! See `reboot/rust/PARITY.md` for exercised capabilities and remaining limits.
 
+/// Canonical task-result transport payload used by generated task bindings.
+pub use prost_types::Any as TaskResponsePayload;
+/// Canonical absolute UTC schedule type used by generated task APIs.
+/// Re-exported so task descriptors do not add a consumer dependency requirement.
+pub use prost_types::Timestamp as TaskScheduleTimestamp;
+
 pub mod application_host;
 pub mod auth;
 #[cfg(feature = "build")]

@@ -3338,6 +3338,10 @@ pub trait DurableStateDeclaration {
 
     /// Raw descriptor mode; does not implement automatic construction.
     const AUTO_CONSTRUCT: i32 = 0;
+
+    /// Immutable generated policy for admitted writer-task state creation.
+    /// Legacy/manual declarations stay fail-closed unless explicitly registered otherwise.
+    const TASK_STATE_ADMISSION: StateAdmission = StateAdmission::RequireExisting;
 }
 
 /// Controls whether a missing state is implicitly created by a generated call.
@@ -3497,11 +3501,22 @@ impl crate::one_shot_tasks::AdmittedWriterTask<'_> {
                 ),
             });
         }
-        let mut state = self
+        let loaded = self
             .store
             .load_for_declaration::<Declaration>(&id.state_ref)
-            .await?
-            .ok_or_else(|| Status::failed_precondition("writer task requires existing actor"))?;
+            .await?;
+        let mut state = match (loaded, Declaration::TASK_STATE_ADMISSION) {
+            (Some(state), _) => state,
+            (None, StateAdmission::DefaultOnAbsent) => Declaration::State::default(),
+            (None, StateAdmission::RequireExisting) => {
+                return Err(Status::failed_precondition(
+                    "writer task requires existing actor",
+                ));
+            }
+        };
+        // An absent actor is materialized only by the successful atomic Store.
+        // Handler failure still discards this private default state.
+
         let response = match invoke(&mut state, request).await {
             Ok(response) => response,
             Err(error) => {

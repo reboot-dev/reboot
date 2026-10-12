@@ -70,6 +70,13 @@ try:
          ('native_local11', ['cargo','test','--manifest-path','reboot/rust/Cargo.toml','--locked','--all-features','--test','generated_cxx_database_process','registered_same_host_generated_','--','--ignored','--test-threads=1','--nocapture']),
          ('native_fixture_strict_clippy', ['cargo','clippy','--manifest-path','reboot/rust/tests/fixtures/generated_cxx_database_process/Cargo.toml','--locked','--all-targets','--','-D','warnings']),
         ])
+        commands.extend([
+         ('upstream_schema_strict_clippy', ['cargo','clippy','--manifest-path','reboot/rust/tests/fixtures/reboot_examples/Cargo.toml','--locked','--all-targets','--','-D','warnings']),
+         ('upstream_consumer_tests', ['cargo','test','--manifest-path','reboot/rust/tests/fixtures/reboot_examples/imported_error/Cargo.toml','--locked']),
+         ('upstream_consumer_strict_clippy', ['cargo','clippy','--manifest-path','reboot/rust/tests/fixtures/reboot_examples/imported_error/Cargo.toml','--locked','--all-targets','--','-D','warnings']),
+         ('upstream_constructor_strict_clippy', ['cargo','clippy','--manifest-path','reboot/rust/tests/fixtures/reboot_examples/hello-constructors/backend/Cargo.toml','--locked','--all-targets','--','-D','warnings']),
+         ('upstream_constructors_public', [python, str(root/'tests/reboot/cli/rust_examples_constructor_e2e.py')]),
+        ])
         if targeted: commands=[item for item in commands if item[0] in ['user_workflows_public','user_checkpoint_fixture']]
         commands.insert(0, ('ownership_regressions',[python,str(root/'tests/reboot/cli/rust_process_ownership_test.py')]))
     for name,cmd in commands:
@@ -99,6 +106,15 @@ try:
         assert len(users)==3 and {(u['workflows'],u['checkpoint_fixture']) for u in users}=={(False,False),(True,False),(True,True)}
         assert all(u['passed'] and not u['cleanup_errors'] for u in users)
         import re
+        constructor_gate = next(item for item in results if item['suite'] == 'upstream_constructors_public')
+        handles = re.findall(r'^UPSTREAM_CONSTRUCTORS_ACCEPTED (.+)$', pathlib.Path(constructor_gate['log']).read_text(), re.MULTILINE)
+        assert len(handles) == 1, handles
+        constructor_proof = json.loads(pathlib.Path(handles[0]).read_text())
+        assert constructor_proof['passed'] and len(constructor_proof['sessions']) == 2
+        assert all(s['requested_shutdown'] and s['children_absent'] for s in constructor_proof['sessions'])
+        assert len(constructor_proof['commands']) == 8 and all(c['exit'] == 0 for c in constructor_proof['commands'])
+        assert all(hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest() == h for p,h in constructor_proof['source_hashes'].items())
+        assert len(results) == 17, len(results)
         for item in results:
             if item['suite'] in ['sdk_all_targets','native4','native_local11']:
                 item['summaries']=re.findall(r'test result: (ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored;',pathlib.Path(item['log']).read_text())

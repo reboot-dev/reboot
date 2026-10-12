@@ -12,6 +12,31 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Pinned upstream examples checkpoint (2026-10-12)
+
+Schemas and provenance are pinned to `reboot-dev/reboot-examples` commit
+`5c332a2910122d6035799bfaf2a314bf1de830b8` without changing their annotations.
+Hello Constructors now has a faithful generated Rust application exercised through
+public `rbt` startup, canonical C++ Database persistence, restart, exact initializer
+and scenario messages, and duplicate-free same-key replay. Both requested shutdowns
+verify owned-process exit. This is sample acceptance, not full SDK parity.
+
+Imported Account overdraft errors preserve their original protobuf payload and type
+URL; foreign URLs and corrupt payloads retain transport-error fallback. Plain
+reader/writer services now generate task-owner bindings. Constructor-free writer
+admission follows ordinary-method implicit creation, while constructor-required and
+mixed-transaction declarations remain require-existing. Registration and admitted
+execution regressions pass; Hello Tasks scheduling/chained atomic successor staging
+and Bank shared-transaction runtime acceptance remain unfinished. Bank generation
+is an explicit opt-in probe, not a supported runnable sample.
+
+Publication audit `1791788930944937425` passed all 17 gates, including strict SDK
+and generated-consumer Clippy, existing public User/workflow/greeting regressions,
+11 same-host native recovery cases, pinned-example consumer checks and Hello
+Constructors public restart acceptance. All 261 frozen inputs matched and every
+gate reported no live owned processes. Evidence is local under
+`/tmp/reboot-rust-user-http-full-audit-1791788930944937425`; GitHub CI is separate.
+
 ## Independent recovered Watch and partial-Prepare crash recovery
 
 All registered participant ownership restores finish before coordinator recovery

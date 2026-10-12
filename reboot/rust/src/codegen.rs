@@ -238,10 +238,11 @@ pub fn generate_from_wire(input: &[u8]) -> CodeGeneratorResponse {
         Err(error) => return error_response(error.to_string()),
     };
     let generated_files: HashSet<_> = request.file_to_generate.iter().cloned().collect();
-    let annotations = match annotations_for_generated_files(raw.files, &generated_files) {
-        Ok(value) => value,
-        Err(error) => return error_response(error),
-    };
+    let annotations =
+        match annotations_for_generated_files(raw.files, &generated_files, &request.proto_file) {
+            Ok(value) => value,
+            Err(error) => return error_response(error),
+        };
     respond(generate_inner(request, annotations))
 }
 
@@ -276,10 +277,11 @@ pub fn generate_from_descriptor_set_wire(
         return error_response(error);
     }
     let generated_files: HashSet<_> = file_to_generate.iter().cloned().collect();
-    let annotations = match annotations_for_generated_files(raw.files, &generated_files) {
-        Ok(value) => value,
-        Err(error) => return error_response(error),
-    };
+    let annotations =
+        match annotations_for_generated_files(raw.files, &generated_files, &request.proto_file) {
+            Ok(value) => value,
+            Err(error) => return error_response(error),
+        };
     respond(generate_inner(request, annotations))
 }
 
@@ -309,12 +311,17 @@ fn annotations(
         .iter()
         .filter_map(|file| file.name.clone())
         .collect();
-    annotations_for_generated_files(raw_files, &generated_files)
+    let descriptors: Vec<_> = raw_files
+        .iter()
+        .map(|file| FileDescriptorProto::decode(file.encode_to_vec().as_slice()).unwrap())
+        .collect();
+    annotations_for_generated_files(raw_files, &generated_files, &descriptors)
 }
 
 fn annotations_for_generated_files(
     raw_files: Vec<RawFile>,
     generated_files: &HashSet<String>,
+    descriptor_files: &[FileDescriptorProto],
 ) -> Result<HashMap<String, HashMap<String, DurableService>>, String> {
     let state_files = raw_files.clone();
     let mut output = HashMap::new();
@@ -475,9 +482,20 @@ fn annotations_for_generated_files(
                         &service_name,
                         &method_name,
                         declared_error,
-                        &file.messages,
+                        descriptor_files,
                     )?;
                     *declared_error = declared_error_name.to_owned();
+                }
+                let mut error_variants = HashSet::new();
+                for name in &method_declared_errors {
+                    let variant = name.to_upper_camel_case();
+                    if matches!(variant.as_str(), "Grpc" | "System")
+                        || !error_variants.insert(variant)
+                    {
+                        return Err(format!(
+                            "{file_name}: declared errors for `{service_name}/{method_name}` produce a duplicate or reserved Rust error variant `{name}`"
+                        ));
+                    }
                 }
                 if method_name.chars().next().is_some_and(char::is_lowercase) {
                     return Err(format!(
@@ -1225,6 +1243,27 @@ fn reject_generated_symbol_collisions(
                     format!("{service_name}TransactionAdapter"),
                 ]);
             }
+            if durable_kinds.iter().any(|kind| {
+                matches!(
+                    kind,
+                    DurableKind::Reader
+                        | DurableKind::Writer(WriterMetadata { constructor: false })
+                )
+            }) && !durable_kinds
+                .iter()
+                .any(|kind| matches!(kind, DurableKind::Workflow))
+            {
+                symbols.extend(
+                    [
+                        "Tasks",
+                        "TasksAt",
+                        "TasksWait",
+                        "TasksWaitRouted",
+                        "ReaderTaskBinding",
+                    ]
+                    .map(|suffix| format!("{service_name}{suffix}")),
+                );
+            }
             if durable_kinds
                 .iter()
                 .any(|kind| !matches!(kind, DurableKind::Transaction(_)))
@@ -1336,9 +1375,29 @@ fn emit_durable(
         return Ok(());
     }
     let auto_construct = annotation.auto_construct;
+    // Preserve the established mixed-transaction task admission contract.
+    // Plain declarations follow ordinary-method constructor admission, including
+    // method-only schemas which do not carry the legacy service option.
+    let requires_constructor = !annotation.default_constructible
+        && annotation.methods.values().any(|kind| {
+            matches!(
+                kind,
+                DurableKind::Writer(WriterMetadata { constructor: true })
+            )
+        });
+    let task_admission = if !requires_constructor
+        && !annotation
+            .methods
+            .values()
+            .any(|kind| matches!(kind, DurableKind::Transaction(_)))
+    {
+        "DefaultOnAbsent"
+    } else {
+        "RequireExisting"
+    };
     if durable_states.insert(declaration.clone()) {
         output.push_str(&format!(
-            "/// Durable state declaration generated for `proto::{state}`.\npub struct {declaration};\n\nimpl {runtime_module}::runtime::DurableStateDeclaration for {declaration} {{\n    type State = proto::{state};\n    const STATE_TYPE: &'static str = \"{state_type}\";\n    const AUTO_CONSTRUCT: i32 = {auto_construct};\n}}\n\n"
+            "/// Durable state declaration generated for `proto::{state}`.\npub struct {declaration};\n\nimpl {runtime_module}::runtime::DurableStateDeclaration for {declaration} {{\n    type State = proto::{state};\n    const STATE_TYPE: &'static str = \"{state_type}\";\n    const AUTO_CONSTRUCT: i32 = {auto_construct};\n    const TASK_STATE_ADMISSION: {runtime_module}::runtime::StateAdmission = {runtime_module}::runtime::StateAdmission::{task_admission};\n}}\n\n"
         ));
     }
     if annotation
@@ -1372,6 +1431,16 @@ fn emit_durable(
                 || method == "local_readers"
                 || method == "with_reader_registry"
                 || method == "with_legacy_unary_roots"
+                || (matches!(
+                    method.as_str(),
+                    "with_one_shot_reader_tasks" | "with_one_shot_writer_tasks"
+                ) && database_methods.iter().any(|(kind, _, _, _, _)| {
+                    matches!(
+                        **kind,
+                        DurableKind::Reader
+                            | DurableKind::Writer(WriterMetadata { constructor: false })
+                    )
+                }))
         }) {
             return Err(format!(
                 "{service_name}: method collides with reserved local reader helper"
@@ -1427,7 +1496,7 @@ fn emit_durable(
             }
         }
         output.push_str("}\n\n");
-        output.push_str(&format!("pub struct {adapter}<H> {{ store: {runtime_module}::runtime::DatabaseActorStore, handler: std::sync::Arc<H>, authorization: {runtime_module}::auth::AuthorizationPolicy, reader_registry: Option<{runtime_module}::reactive::LocalReaderRegistry>, legacy_reader_roots: Vec<String>, reader_binding_id: std::sync::Arc<()> }}\nimpl<H> Clone for {adapter}<H> {{ fn clone(&self) -> Self {{ Self {{ store: self.store.clone(), handler: self.handler.clone(), authorization: self.authorization.clone(), reader_registry: self.reader_registry.clone(), legacy_reader_roots: self.legacy_reader_roots.clone(), reader_binding_id: self.reader_binding_id.clone() }} }} }}\nimpl<H> {adapter}<H> {{ pub fn new(store: {runtime_module}::runtime::DatabaseActorStore, handler: H) -> Self {{ Self {{ store, handler: std::sync::Arc::new(handler), authorization: {runtime_module}::auth::AuthorizationPolicy::default().for_declaration::<{declaration}>(), reader_registry: None, legacy_reader_roots: Vec::new(), reader_binding_id: std::sync::Arc::new(()) }} }} /// Configure authorization before registering readers. Reconfiguration detaches a stale registry and rotates its binding identity.\npub fn with_authorization(mut self, authorization: {runtime_module}::auth::AuthorizationPolicy) -> Self {{ self.authorization = authorization.for_declaration::<{declaration}>(); self.reader_registry = None; self.legacy_reader_roots.clear(); self.reader_binding_id = std::sync::Arc::new(()); self }} /// Attach the completed registry used by this adapter's registered owners.\npub fn with_reader_registry(mut self, registry: {runtime_module}::reactive::LocalReaderRegistry) -> Result<Self, Box<tonic::Status>> where Self: {runtime_module}::reactive::ReaderBinding {{ registry.validate_unary_binding_methods::<{declaration}>(self.store.database_endpoint(), &self.reader_binding_id, <Self as {runtime_module}::reactive::ReaderBinding>::reader_method_names(&self))?; self.reader_registry = Some(registry); self.legacy_reader_roots.clear(); Ok(self) }} /// Explicit exact legacy roots only; never a fallback for registered evaluation errors.\npub fn with_legacy_unary_roots(mut self, roots: Vec<String>) -> Result<Self, Box<tonic::Status>> {{ self.reader_registry.as_ref().ok_or_else(|| tonic::Status::failed_precondition(\"legacy unary roots require attached registry\"))?.validate_legacy_unary_roots(&roots)?; self.legacy_reader_roots = roots; Ok(self) }} }}\n\n"));
+        output.push_str(&format!("pub struct {adapter}<H> {{ store: {runtime_module}::runtime::DatabaseActorStore, handler: std::sync::Arc<H>, tasks: Option<{runtime_module}::one_shot_tasks::OneShotTasks>, authorization: {runtime_module}::auth::AuthorizationPolicy, reader_registry: Option<{runtime_module}::reactive::LocalReaderRegistry>, legacy_reader_roots: Vec<String>, reader_binding_id: std::sync::Arc<()> }}\nimpl<H> Clone for {adapter}<H> {{ fn clone(&self) -> Self {{ Self {{ store: self.store.clone(), handler: self.handler.clone(), tasks: self.tasks.clone(), authorization: self.authorization.clone(), reader_registry: self.reader_registry.clone(), legacy_reader_roots: self.legacy_reader_roots.clone(), reader_binding_id: self.reader_binding_id.clone() }} }} }}\nimpl<H> {adapter}<H> {{ pub fn new(store: {runtime_module}::runtime::DatabaseActorStore, handler: H) -> Self {{ Self {{ store, handler: std::sync::Arc::new(handler), tasks: None, authorization: {runtime_module}::auth::AuthorizationPolicy::default().for_declaration::<{declaration}>(), reader_registry: None, legacy_reader_roots: Vec::new(), reader_binding_id: std::sync::Arc::new(()) }} }} /// Configure authorization before registering readers. Reconfiguration detaches a stale registry and rotates its binding identity.\npub fn with_authorization(mut self, authorization: {runtime_module}::auth::AuthorizationPolicy) -> Self {{ self.authorization = authorization.for_declaration::<{declaration}>(); self.reader_registry = None; self.legacy_reader_roots.clear(); self.reader_binding_id = std::sync::Arc::new(()); self }} /// Attach the completed registry used by this adapter's registered owners.\npub fn with_reader_registry(mut self, registry: {runtime_module}::reactive::LocalReaderRegistry) -> Result<Self, Box<tonic::Status>> where Self: {runtime_module}::reactive::ReaderBinding {{ registry.validate_unary_binding_methods::<{declaration}>(self.store.database_endpoint(), &self.reader_binding_id, <Self as {runtime_module}::reactive::ReaderBinding>::reader_method_names(&self))?; self.reader_registry = Some(registry); self.legacy_reader_roots.clear(); Ok(self) }} /// Explicit exact legacy roots only; never a fallback for registered evaluation errors.\npub fn with_legacy_unary_roots(mut self, roots: Vec<String>) -> Result<Self, Box<tonic::Status>> {{ self.reader_registry.as_ref().ok_or_else(|| tonic::Status::failed_precondition(\"legacy unary roots require attached registry\"))?.validate_legacy_unary_roots(&roots)?; self.legacy_reader_roots = roots; Ok(self) }} }}\n\n"));
         output.push_str("#[tonic::async_trait]\n");
         output.push_str(&format!(
             "impl<H: {handler}> proto::{server}::{service_name} for {adapter}<H> {{\n"
@@ -1543,14 +1612,12 @@ fn emit_durable(
         annotation,
         &database_methods,
     );
-    if has_transactions
-        && database_methods.iter().any(|(kind, _, _, _, _)| {
-            matches!(
-                **kind,
-                DurableKind::Reader | DurableKind::Writer(WriterMetadata { constructor: false })
-            )
-        })
-    {
+    if database_methods.iter().any(|(kind, _, _, _, _)| {
+        matches!(
+            **kind,
+            DurableKind::Reader | DurableKind::Writer(WriterMetadata { constructor: false })
+        )
+    }) {
         emit_reader_tasks(
             output,
             service,
@@ -2125,18 +2192,22 @@ fn specialize_empty_task_dispatch(code: &str) -> String {
         let prefix = format!("match {scrutinee} {{\n        _ => ");
         while let Some(start) = code.find(&prefix) {
             let body = start + prefix.len();
-            let end = code[body..]
-                .find(", } }")
-                .expect("task fallback closes dispatch")
-                + body;
+            // Reader execution closes on a new line; boolean/writer dispatch
+            // closes inline. Pick the nearest boundary, never a later method.
+            let (relative_end, boundary_len) = [", } }", ",\n    } }"]
+                .into_iter()
+                .filter_map(|boundary| code[body..].find(boundary).map(|end| (end, boundary.len())))
+                .min_by_key(|(end, _)| *end)
+                .expect("task fallback closes dispatch");
+            let end = relative_end + body;
             let replacement = format!("let _ = {unused}; {} }}", &code[body..end]);
-            code.replace_range(start..end + 5, &replacement);
+            code.replace_range(start..end + boundary_len, &replacement);
         }
     }
     code
 }
 
-fn emit_reader_tasks(
+fn emit_task_apis(
     output: &mut String,
     service: &ServiceDescriptorProto,
     annotation: &DurableService,
@@ -2145,10 +2216,7 @@ fn emit_reader_tasks(
     runtime_module: &str,
     package: &str,
 ) {
-    let handler = format!("{service_name}TransactionHandler");
-    let binding = format!("{service_name}ReaderTaskBinding");
     let scheduler = format!("{service_name}Tasks");
-    let dispatch_start = output.len();
     let mut scheduled_methods = String::new();
     let mut wait_methods = String::new();
     let mut routed_wait_methods = String::new();
@@ -2171,7 +2239,7 @@ fn emit_reader_tasks(
             .unwrap()
             .to_upper_camel_case();
         output.push_str(&format!("    pub fn {rust_name}(state_ref: &str, request: &proto::{request}) -> {runtime_module}::database_proto::Task {{ {runtime_module}::database_proto::Task {{ task_id: Some({runtime_module}::database_proto::TaskId {{ state_type: <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: state_ref.to_owned(), task_uuid: uuid::Uuid::new_v4().as_bytes().to_vec() }}), method: \"{name}\".to_owned(), status: {runtime_module}::database_proto::task::Status::Pending as i32, request: <proto::{request} as prost::Message>::encode_to_vec(request), timestamp: None, iteration: 0, response_or_error: None }} }}\n"));
-        scheduled_methods.push_str(&format!("    /// Schedule at a canonical absolute UTC protobuf timestamp.\n    pub fn {rust_name}(state_ref: &str, request: &proto::{request}, schedule: prost_types::Timestamp) -> {runtime_module}::database_proto::Task {{ let mut task = {scheduler}::{rust_name}(state_ref, request); task.timestamp = Some(schedule); task }}\n"));
+        scheduled_methods.push_str(&format!("    /// Schedule at a canonical absolute UTC protobuf timestamp.\n    pub fn {rust_name}(state_ref: &str, request: &proto::{request}, schedule: {runtime_module}::TaskScheduleTimestamp) -> {runtime_module}::database_proto::Task {{ let mut task = {scheduler}::{rust_name}(state_ref, request); task.timestamp = Some(schedule); task }}\n"));
         let response_full = method
             .output_type
             .as_deref()
@@ -2224,6 +2292,46 @@ fn emit_reader_tasks(
         "pub struct {scheduler}Wait;\nimpl {scheduler}Wait {{\n{wait_methods}}}\n"
     ));
     output.push_str(&format!("/// Placement-aware task results using an explicit caller-owned resolver.\n/// With LegacyApplicationResolver this follows the latest accepted legacy plan.\npub struct {scheduler}WaitRouted<R> {{ resolver: R }}\nimpl<R: {runtime_module}::runtime::TransactionalChannelResolver> {scheduler}WaitRouted<R> {{ pub fn new(resolver: R) -> Self {{ Self {{ resolver }} }}\n{routed_wait_methods}}}\n"));
+}
+
+fn emit_reader_tasks(
+    output: &mut String,
+    service: &ServiceDescriptorProto,
+    annotation: &DurableService,
+    service_name: &str,
+    state: &str,
+    runtime_module: &str,
+    package: &str,
+) {
+    emit_task_apis(
+        output,
+        service,
+        annotation,
+        service_name,
+        state,
+        runtime_module,
+        package,
+    );
+    let mixed = annotation
+        .methods
+        .values()
+        .any(|kind| matches!(kind, DurableKind::Transaction(_)));
+    let handler = format!(
+        "{service_name}{}Handler",
+        if mixed { "Transaction" } else { "Database" }
+    );
+    let binding = format!("{service_name}ReaderTaskBinding");
+    let reader_state_binding = if service.method.iter().any(|method| {
+        method
+            .name
+            .as_deref()
+            .is_some_and(|name| matches!(annotation.methods.get(name), Some(DurableKind::Reader)))
+    }) {
+        "state"
+    } else {
+        "_state"
+    };
+    let dispatch_start = output.len();
     output.push_str(&format!("struct {binding}<H> {{ handler: std::sync::Arc<H>, store: {runtime_module}::runtime::DatabaseActorStore, writers: bool }}\n#[tonic::async_trait]\nimpl<H: {handler}> {runtime_module}::one_shot_tasks::ReaderTaskBinding for {binding}<H> {{\n    fn validate(&self, task: &{runtime_module}::database_proto::Task) -> Result<(), tonic::Status> {{ match task.method.as_str() {{\n"));
     for method in &service.method {
         let name = method.name.as_deref().unwrap();
@@ -2255,8 +2363,8 @@ fn emit_reader_tasks(
     }
     output.push_str("        _ => Err(tonic::Status::invalid_argument(\"unknown or unsupported reader task method\")),\n    } }\n");
     output.push_str("    async fn execute(&self, _: &");
-    output.push_str(&format!("{runtime_module}::database_proto::Task) -> Result<prost_types::Any, tonic::Status> {{ Err(tonic::Status::failed_precondition(\"use terminal execution\")) }}\n"));
-    output.push_str(&format!("    async fn execute_terminal(&self, task: &{runtime_module}::database_proto::Task) -> Result<{runtime_module}::database_proto::task::ResponseOrError, tonic::Status> {{ let id = task.task_id.as_ref().ok_or_else(|| tonic::Status::invalid_argument(\"missing task identity\"))?; let state = self.store.load_for_declaration::<{state}DurableState>(&id.state_ref).await?.ok_or_else(|| tonic::Status::failed_precondition(\"reader task requires existing actor\"))?; match task.method.as_str() {{\n"));
+    output.push_str(&format!("{runtime_module}::database_proto::Task) -> Result<{runtime_module}::TaskResponsePayload, tonic::Status> {{ Err(tonic::Status::failed_precondition(\"use terminal execution\")) }}\n"));
+    output.push_str(&format!("    async fn execute_terminal(&self, task: &{runtime_module}::database_proto::Task) -> Result<{runtime_module}::database_proto::task::ResponseOrError, tonic::Status> {{ let id = task.task_id.as_ref().ok_or_else(|| tonic::Status::invalid_argument(\"missing task identity\"))?; let {reader_state_binding} = self.store.load_for_declaration::<{state}DurableState>(&id.state_ref).await?.ok_or_else(|| tonic::Status::failed_precondition(\"reader task requires existing actor\"))?; match task.method.as_str() {{\n"));
     for method in &service.method {
         let name = method.name.as_deref().unwrap();
         if !matches!(annotation.methods.get(name), Some(DurableKind::Reader)) {
@@ -2296,12 +2404,12 @@ fn emit_reader_tasks(
         } else {
             format!("self.handler.{rust_name}(&state, request).await{error_map}")
         };
-        output.push_str(&format!("        \"{name}\" => {{ let request = <proto::{request} as prost::Message>::decode(task.request.as_slice()).map_err(|_| tonic::Status::invalid_argument(\"malformed task request\"))?; let response = match {invoke} {{ Ok(response) => response, Err({runtime_module}::one_shot_tasks::TaskHandlerError::Declared(error)) => return Ok({runtime_module}::database_proto::task::ResponseOrError::Error(error)), Err({runtime_module}::one_shot_tasks::TaskHandlerError::Failed(error)) => return Err(error), }}; Ok({runtime_module}::database_proto::task::ResponseOrError::Response(prost_types::Any {{ type_url: \"type.googleapis.com/{response_name}\".to_owned(), value: <proto::{response} as prost::Message>::encode_to_vec(&response) }})) }},\n"));
+        output.push_str(&format!("        \"{name}\" => {{ let request = <proto::{request} as prost::Message>::decode(task.request.as_slice()).map_err(|_| tonic::Status::invalid_argument(\"malformed task request\"))?; let response = match {invoke} {{ Ok(response) => response, Err({runtime_module}::one_shot_tasks::TaskHandlerError::Declared(error)) => return Ok({runtime_module}::database_proto::task::ResponseOrError::Error(error)), Err({runtime_module}::one_shot_tasks::TaskHandlerError::Failed(error)) => return Err(error), }}; Ok({runtime_module}::database_proto::task::ResponseOrError::Response({runtime_module}::TaskResponsePayload {{ type_url: \"type.googleapis.com/{response_name}\".to_owned(), value: <proto::{response} as prost::Message>::encode_to_vec(&response) }})) }},\n"));
     }
     output.push_str(
         "        _ => Err(tonic::Status::invalid_argument(\"unknown reader task\")),\n    } }\n",
     );
-    output.push_str(&format!("    fn validate_response(&self, task: &{runtime_module}::database_proto::Task, response: &prost_types::Any) -> Result<(), tonic::Status> {{ match task.method.as_str() {{\n"));
+    output.push_str(&format!("    fn validate_response(&self, task: &{runtime_module}::database_proto::Task, response: &{runtime_module}::TaskResponsePayload) -> Result<(), tonic::Status> {{ match task.method.as_str() {{\n"));
     for method in &service.method {
         let name = method.name.as_deref().unwrap();
         if !matches!(
@@ -2315,7 +2423,7 @@ fn emit_reader_tasks(
         output.push_str(&format!("        \"{name}\" => {{ if response.type_url != \"type.googleapis.com/{full}\" {{ return Err(tonic::Status::data_loss(\"mismatched typed writer task response\")); }} <proto::{response} as prost::Message>::decode(response.value.as_slice()).map_err(|_| tonic::Status::data_loss(\"malformed typed writer task response\"))?; Ok(()) }},\n"));
     }
     output.push_str("        _ => Err(tonic::Status::failed_precondition(\"unsupported completed task method\")), } }\n");
-    output.push_str(&format!("    fn validate_error(&self, task: &{runtime_module}::database_proto::Task, error: &prost_types::Any) -> Result<(), tonic::Status> {{ let _ = error; match task.method.as_str() {{\n"));
+    output.push_str(&format!("    fn validate_error(&self, task: &{runtime_module}::database_proto::Task, error: &{runtime_module}::TaskResponsePayload) -> Result<(), tonic::Status> {{ let _ = error; match task.method.as_str() {{\n"));
     for method in &service.method {
         let name = method.name.as_deref().unwrap();
         if annotation
@@ -2452,6 +2560,16 @@ fn emit_reader_tasks(
         declarations.push_str(&format!("{runtime_module}::one_shot_tasks::TaskMethodDeclaration::new::<{state}DurableState, proto::{request}, proto::{response}>(\"{package}.{service_name}.{name}\", \"type.googleapis.com/{response_full}\", {errors}),"));
     }
     declarations.push(']');
+    if !mixed {
+        output.push_str(&format!(
+            "impl<H: {handler}> {service_name}DatabaseAdapter<H> {{\n"
+        ));
+        for (name, writers) in [("reader", false), ("writer", true)] {
+            output.push_str(&format!("    /// Attach one actor-scoped owner; the ApplicationHost must supervise recovery before dispatch.\n    pub fn with_one_shot_{name}_tasks(mut self, state_ref: &str) -> Result<(Self, {runtime_module}::one_shot_tasks::OneShotTasks), Box<tonic::Status>> {{ if self.tasks.is_some() {{ return Err(Box::new(tonic::Status::failed_precondition(\"task owner already attached\"))); }} let reference = {runtime_module}::state_ref::StateRef::from_maybe_readable(state_ref).map_err(|_| Box::new(tonic::Status::invalid_argument(\"invalid task owner state reference\")))?; if !{runtime_module}::state_ref::StateRef::is_encoded(state_ref) || !reference.matches_state_type(<{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE) {{ return Err(Box::new(tonic::Status::invalid_argument(\"task owner reference must be encoded for its declared state type\"))); }} let canonical = {runtime_module}::state_ref::StateRef::from_id(<{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, &reference.id()).map_err(|_| Box::new(tonic::Status::invalid_argument(\"invalid task owner state id\")))?; if state_ref.rsplit('/').next() != Some(canonical.as_str()) {{ return Err(Box::new(tonic::Status::invalid_argument(\"noncanonical task owner state reference\"))); }} let tasks = {runtime_module}::one_shot_tasks::OneShotTasks::new_with_declarations(self.store.clone(), <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref.to_owned(), {binding} {{ handler: self.handler.clone(), store: self.store.clone(), writers: {writers} }}, {declarations})?; self.tasks = Some(tasks.clone()); Ok((self, tasks)) }}\n"));
+        }
+        output.push_str("}\n");
+        return;
+    }
     output.push_str(&format!("impl<H, P, C, R, F> {service_name}TransactionAdapter<H, P, C, R, F> where H: {handler}, P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{\n    pub fn with_one_shot_reader_tasks(mut self, state_ref: &str) -> Result<(Self, {runtime_module}::one_shot_tasks::OneShotTasks), Box<tonic::Status>> {{ self.participant.validate_task_owner(&self.store, <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, state_ref)?; let tasks = {runtime_module}::one_shot_tasks::OneShotTasks::new_with_declarations(self.store.clone(), <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref.to_owned(), {binding} {{ handler: self.handler.clone(), store: self.store.clone(), writers: false }}, {declarations})?; self.local_registration = None; self.local_incarnation = std::sync::Arc::new(()); self.tasks = Some(tasks.clone()); Ok((self, tasks)) }}\n    pub fn with_one_shot_writer_tasks(mut self, state_ref: &str) -> Result<(Self, {runtime_module}::one_shot_tasks::OneShotTasks), Box<tonic::Status>> {{ self.participant.validate_task_owner(&self.store, <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, state_ref)?; let tasks = {runtime_module}::one_shot_tasks::OneShotTasks::new_with_declarations(self.store.clone(), <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref.to_owned(), {binding} {{ handler: self.handler.clone(), store: self.store.clone(), writers: true }}, {declarations})?; self.local_registration = None; self.local_incarnation = std::sync::Arc::new(()); self.tasks = Some(tasks.clone()); Ok((self, tasks)) }}\n}}\n"));
 }
 
@@ -2761,7 +2879,7 @@ fn resolve_declared_error_name<'a>(
     service: &str,
     method: &str,
     name: &'a str,
-    messages: &[RawMessage],
+    descriptors: &[FileDescriptorProto],
 ) -> Result<&'a str, String> {
     let relative = name.strip_prefix('.').unwrap_or(name);
     let local = if relative.contains('.') {
@@ -2779,15 +2897,78 @@ fn resolve_declared_error_name<'a>(
             .bytes()
             .enumerate()
             .all(|(i, c)| c == b'_' || c.is_ascii_alphabetic() || (i > 0 && c.is_ascii_digit()))
-        || !messages
-            .iter()
-            .any(|message| message.name.as_deref() == Some(local))
     {
         return Err(format!(
             "{file}: declared error type `{name}` is not a present local protobuf message"
         ));
     }
+    // Rust's bounded type paths support visible same-package top-level errors.
+    // Python resolves through its descriptor pool; do not flatten nested symbols
+    // or silently choose one of duplicate definitions here.
+    let symbol = qualify(package, local);
+    let owners: Vec<_> = descriptors
+        .iter()
+        .flat_map(|descriptor| {
+            descriptor.message_type.iter().filter_map(|message| {
+                (qualify(
+                    descriptor.package.as_deref().unwrap_or_default(),
+                    message.name.as_deref().unwrap_or_default(),
+                ) == symbol)
+                    .then_some(descriptor.name.as_deref().unwrap_or_default())
+            })
+        })
+        .collect();
+    let visible = declared_error_visible_files(file, descriptors)?;
+    if owners.len() != 1 || !visible.contains(owners[0]) {
+        return Err(format!(
+            "{file}: declared error type `{name}` is not a unique visible top-level protobuf message"
+        ));
+    }
     Ok(local)
+}
+
+fn declared_error_visible_files(
+    source: &str,
+    descriptors: &[FileDescriptorProto],
+) -> Result<HashSet<String>, String> {
+    let find = |name: &str| -> Result<&FileDescriptorProto, String> {
+        let mut matches = descriptors
+            .iter()
+            .filter(|d| d.name.as_deref() == Some(name));
+        let descriptor = matches
+            .next()
+            .ok_or_else(|| format!("{source}: missing descriptor `{name}`"))?;
+        if matches.next().is_some() {
+            return Err(format!("{source}: duplicate descriptor `{name}`"));
+        }
+        Ok(descriptor)
+    };
+    let root = find(source)?;
+    for index in &root.public_dependency {
+        if usize::try_from(*index)
+            .ok()
+            .and_then(|index| root.dependency.get(index))
+            .is_none()
+        {
+            return Err(format!("{source}: invalid public dependency in `{source}`"));
+        }
+    }
+    let mut visible = HashSet::from([source.to_owned()]);
+    let mut pending = root.dependency.clone();
+    while let Some(name) = pending.pop() {
+        if !visible.insert(name.clone()) {
+            continue;
+        }
+        let descriptor = find(&name)?;
+        for index in &descriptor.public_dependency {
+            let dependency = usize::try_from(*index)
+                .ok()
+                .and_then(|index| descriptor.dependency.get(index))
+                .ok_or_else(|| format!("{source}: invalid public dependency in `{name}`"))?;
+            pending.push(dependency.clone());
+        }
+    }
+    Ok(visible)
 }
 
 fn same_package_proto_type<'a>(
@@ -3053,9 +3234,14 @@ mod tests {
 
     #[test]
     fn declared_error_names_resolve_local_qualified_and_absolute_only_within_package() {
-        let messages = vec![RawMessage {
-            name: Some("InvalidRangeError".to_owned()),
-            options: None,
+        let messages = vec![FileDescriptorProto {
+            name: Some("sorted_map.proto".into()),
+            package: Some("rbt.std.collections.v1".into()),
+            message_type: vec![prost_types::DescriptorProto {
+                name: Some("InvalidRangeError".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
         }];
         for name in [
             "InvalidRangeError",
@@ -3099,6 +3285,327 @@ mod tests {
     }
 
     #[test]
+    fn imported_declared_errors_require_unique_visible_top_level_symbols() {
+        let source = FileDescriptorProto {
+            name: Some("account.proto".into()),
+            package: Some("bank.v1".into()),
+            dependency: vec!["bridge.proto".into()],
+            ..Default::default()
+        };
+        let bridge = FileDescriptorProto {
+            name: Some("bridge.proto".into()),
+            dependency: vec!["errors.proto".into()],
+            public_dependency: vec![0],
+            ..Default::default()
+        };
+        let errors = FileDescriptorProto {
+            name: Some("errors.proto".into()),
+            package: Some("bank.v1".into()),
+            message_type: vec![prost_types::DescriptorProto {
+                name: Some("OverdraftError".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let resolve = |name, pool: &[FileDescriptorProto]| {
+            resolve_declared_error_name(
+                "account.proto",
+                "bank.v1",
+                "AccountMethods",
+                "Withdraw",
+                name,
+                pool,
+            )
+            .map(str::to_owned)
+        };
+        let mut pool = vec![source.clone(), bridge, errors.clone()];
+        for name in [
+            "OverdraftError",
+            "bank.v1.OverdraftError",
+            ".bank.v1.OverdraftError",
+        ] {
+            assert_eq!(resolve(name, &pool).unwrap(), "OverdraftError");
+        }
+        pool[1].public_dependency.clear();
+        assert!(
+            resolve("OverdraftError", &pool).is_err(),
+            "private transitive import"
+        );
+        pool[0].dependency = vec!["errors.proto".into()];
+        assert!(resolve("OverdraftError", &pool).is_ok(), "direct import");
+        pool[0].dependency.clear();
+        assert!(
+            resolve("OverdraftError", &pool).is_err(),
+            "unimported pool member"
+        );
+        pool[0].dependency = vec!["errors.proto".into()];
+        let mut duplicate = errors.clone();
+        duplicate.name = Some("other.proto".into());
+        pool.push(duplicate);
+        assert!(resolve("OverdraftError", &pool).is_err());
+        pool.reverse();
+        assert!(
+            resolve("OverdraftError", &pool).is_err(),
+            "descriptor ordering"
+        );
+        pool = vec![source, errors.clone()];
+        pool[0].dependency = vec!["errors.proto".into()];
+        pool[1].package = Some("foreign.v1".into());
+        assert!(resolve("OverdraftError", &pool).is_err());
+        assert!(resolve("foreign.v1.OverdraftError", &pool).is_err());
+        pool[1].package = Some("bank.v1".into());
+        pool[1].message_type = vec![prost_types::DescriptorProto {
+            name: Some("Container".into()),
+            nested_type: errors.message_type,
+            ..Default::default()
+        }];
+        assert!(resolve("OverdraftError", &pool).is_err());
+        assert!(resolve("bank.v1.Container.OverdraftError", &pool).is_err());
+    }
+
+    #[test]
+    fn declared_error_visibility_rejects_malformed_pools_and_traverses_public_cycles() {
+        let file = |name: &str, dependencies: &[&str], public: &[i32]| FileDescriptorProto {
+            name: Some(name.into()),
+            dependency: dependencies.iter().map(|s| s.to_string()).collect(),
+            public_dependency: public.to_vec(),
+            ..Default::default()
+        };
+        let root = file("root", &["left", "right"], &[0]);
+        let left = file("left", &["leaf"], &[0]);
+        let right = file("right", &["leaf"], &[0]);
+        let leaf = file("leaf", &["left"], &[0]);
+        let pool = vec![root.clone(), left.clone(), right.clone(), leaf.clone()];
+        assert_eq!(
+            declared_error_visible_files("root", &pool).unwrap(),
+            HashSet::from(["root", "left", "right", "leaf"].map(str::to_owned))
+        );
+        assert!(declared_error_visible_files("absent", &pool).is_err());
+        let mut duplicate_root = pool.clone();
+        duplicate_root.push(root.clone());
+        assert!(declared_error_visible_files("root", &duplicate_root).is_err());
+        let mut duplicate_dependency = pool.clone();
+        duplicate_dependency.push(left.clone());
+        assert!(declared_error_visible_files("root", &duplicate_dependency).is_err());
+        assert!(declared_error_visible_files("root", std::slice::from_ref(&root)).is_err());
+        for bad_index in [-1, 2, i32::MAX] {
+            let mut malformed = pool.clone();
+            malformed[0].public_dependency = vec![bad_index];
+            assert!(declared_error_visible_files("root", &malformed).is_err());
+            malformed = pool.clone();
+            malformed[1].public_dependency = vec![bad_index];
+            assert!(declared_error_visible_files("root", &malformed).is_err());
+        }
+    }
+
+    #[test]
+    fn wire_entries_resolve_imported_errors_without_emitting_dependencies() {
+        fn push_length_delimited(out: &mut Vec<u8>, tag: u8, bytes: &[u8]) {
+            out.push(tag);
+            let mut length = bytes.len();
+            while length >= 128 {
+                out.push((length as u8 & 127) | 128);
+                length >>= 7;
+            }
+            out.push(length as u8);
+            out.extend_from_slice(bytes);
+        }
+        let encode_source = |names: &[&str], imported: bool| {
+            let mut request = request();
+            let mut file = request.proto_file.remove(0);
+            file.name = Some("tests/reboot/protoc/counter.proto".into());
+            if imported {
+                file.dependency.push("errors.proto".into());
+            }
+            let mut method = file.service[0].method[0].clone().encode_to_vec();
+            let mut options = RebootMethodOptions {
+                kind: Some(reboot_method_options::Kind::Transaction(
+                    RebootTransactionMethodOptions {
+                        constructor: None,
+                        mode: Some(reboot_transaction_method_options::Mode::Exclusive(Empty {})),
+                    },
+                )),
+            }
+            .encode_to_vec();
+            options.extend(
+                RebootMethodErrorOptions {
+                    errors: names.iter().map(|name| (*name).to_owned()).collect(),
+                }
+                .encode_to_vec(),
+            );
+            let options = ExtensionOptions {
+                reboot: Some(options),
+            }
+            .encode_to_vec();
+            push_length_delimited(&mut method, 0x22, &options);
+            let mut service = RawService {
+                name: file.service[0].name.clone(),
+                methods: vec![],
+                options: None,
+            }
+            .encode_to_vec();
+            push_length_delimited(&mut service, 0x12, &method);
+            file.service.clear();
+            let mut source = file.encode_to_vec();
+            push_length_delimited(&mut source, 0x32, &service);
+            source
+        };
+        let dependency = FileDescriptorProto {
+            name: Some("errors.proto".into()),
+            package: Some("tests.reboot.protoc".into()),
+            syntax: Some("proto3".into()),
+            message_type: ["CounterError", "Grpc", "System"]
+                .map(|name| prost_types::DescriptorProto {
+                    name: Some(name.into()),
+                    ..Default::default()
+                })
+                .to_vec(),
+            // Linked services stay opaque to generated-file annotation checks.
+            service: vec![ServiceDescriptorProto {
+                name: Some("OpaqueDependency".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+        .encode_to_vec();
+        for imported in [true, false] {
+            for name in [
+                "CounterError",
+                "tests.reboot.protoc.CounterError",
+                ".tests.reboot.protoc.CounterError",
+            ] {
+                let source = encode_source(&[name], imported);
+                let request = CodeGeneratorRequest {
+                    file_to_generate: vec!["tests/reboot/protoc/counter.proto".into()],
+                    parameter: Some("module=crate::proto".into()),
+                    ..Default::default()
+                };
+                let mut wire = request.encode_to_vec();
+                push_length_delimited(&mut wire, 0x7a, &source);
+                push_length_delimited(&mut wire, 0x7a, &dependency);
+                let mut descriptors = Vec::new();
+                push_length_delimited(&mut descriptors, 0x0a, &source);
+                push_length_delimited(&mut descriptors, 0x0a, &dependency);
+                for response in [
+                    generate_from_wire(&wire),
+                    generate_from_descriptor_set_wire(
+                        &descriptors,
+                        &["tests/reboot/protoc/counter.proto".into()],
+                        "crate::proto",
+                        "reboot_rust_schema",
+                    ),
+                ] {
+                    if imported {
+                        assert!(response.error.is_none(), "{response:?}");
+                        assert_eq!(response.file.len(), 1);
+                        let content = response.file[0].content.as_ref().unwrap();
+                        assert!(content.contains("proto::CounterError"));
+                        assert!(
+                            content
+                                .contains("type.googleapis.com/tests.reboot.protoc.CounterError")
+                        );
+                        assert!(!content.contains("OpaqueDependency"));
+                    } else {
+                        assert!(response.error.is_some(), "unimported pool symbol accepted");
+                    }
+                }
+            }
+        }
+        for names in [
+            vec!["Grpc"],
+            vec!["System"],
+            vec!["CounterError", "tests.reboot.protoc.CounterError"],
+            vec!["CounterError", ".tests.reboot.protoc.CounterError"],
+        ] {
+            let source = encode_source(&names, true);
+            let mut descriptors = Vec::new();
+            push_length_delimited(&mut descriptors, 0x0a, &source);
+            push_length_delimited(&mut descriptors, 0x0a, &dependency);
+            let response = generate_from_descriptor_set_wire(
+                &descriptors,
+                &["tests/reboot/protoc/counter.proto".into()],
+                "crate::proto",
+                "reboot_rust_schema",
+            );
+            assert!(
+                response
+                    .error
+                    .as_ref()
+                    .unwrap()
+                    .contains("duplicate or reserved Rust error variant")
+            );
+        }
+    }
+
+    #[test]
+    fn plain_task_owner_helpers_reject_descriptor_rpc_collisions() {
+        for rpc in ["WithOneShotReaderTasks", "WithOneShotWriterTasks"] {
+            for kind in [
+                DurableKind::Reader,
+                DurableKind::Writer(WriterMetadata { constructor: false }),
+            ] {
+                let mut request = request();
+                request.proto_file[0].service[0].method[0].name = Some(rpc.into());
+                let annotations = HashMap::from([(
+                    "counter.proto".into(),
+                    HashMap::from([(
+                        "CounterWritesMethods".into(),
+                        DurableService {
+                            auto_construct: 0,
+                            state: "Counter".into(),
+                            default_constructible: true,
+                            methods: HashMap::from([(rpc.into(), kind)]),
+                            declared_errors: HashMap::new(),
+                        },
+                    )]),
+                )]);
+                assert!(
+                    generate_inner(request, annotations)
+                        .unwrap_err()
+                        .contains("collides with reserved")
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn plain_writer_services_emit_task_api_and_database_owned_binding() {
+        let annotations = HashMap::from([(
+            "counter.proto".to_owned(),
+            HashMap::from([(
+                "CounterWritesMethods".to_owned(),
+                DurableService {
+                    auto_construct: 0,
+                    state: "Counter".into(),
+                    default_constructible: true,
+                    methods: HashMap::from([(
+                        "Increment".into(),
+                        DurableKind::Writer(WriterMetadata { constructor: false }),
+                    )]),
+                    declared_errors: HashMap::new(),
+                },
+            )]),
+        )]);
+        let content = generate_inner(request(), annotations)
+            .unwrap()
+            .remove(0)
+            .content
+            .unwrap();
+        assert!(content.contains("pub struct CounterWritesMethodsTasks;"));
+        assert!(content.contains("pub struct CounterWritesMethodsTasksAt;"));
+        assert!(content.contains("pub struct CounterWritesMethodsTasksWait;"));
+        assert!(content.contains("pub struct CounterWritesMethodsTasksWaitRouted<R>"));
+        assert!(content.contains("ReaderTaskBinding<H>"));
+        assert!(!content.contains("TransactionAdapter<H"));
+        assert!(content.contains("with_one_shot_writer_tasks"));
+        assert!(content.contains(
+            "impl<H: CounterWritesMethodsDatabaseHandler> CounterWritesMethodsDatabaseAdapter<H>"
+        ));
+        assert!(content.contains("task owner already attached"));
+        assert!(!content.contains("self.participant.validate_task_owner"));
+    }
+
+    #[test]
     fn empty_task_dispatch_is_fail_closed_without_degenerate_match() {
         let source = "fn is_writer(task: &Task) -> bool { match task.method.as_str() {\n        _ => false, } }\nfn execute_writer(admitted: Admitted) { match admitted.task().method.as_str() {\n        _ => Err(Status::invalid_argument(\"unsupported writer task\")), } }";
         let rendered = specialize_empty_task_dispatch(source);
@@ -3108,6 +3615,12 @@ mod tests {
         let nonempty =
             "match task.method.as_str() {\n        \"Write\" => true,\n        _ => false, } }";
         assert_eq!(specialize_empty_task_dispatch(nonempty), nonempty);
+        let multiline = "fn reader(task: &Task) { match task.method.as_str() {\n        _ => Err(Status::invalid_argument(\"unknown reader task\")),\n    } }\nfn validate(task: &Task) { match task.method.as_str() {\n        \"Write\" => Ok(()),\n        _ => Err(Status::invalid_argument(\"unknown\")), } }";
+        let rendered = specialize_empty_task_dispatch(multiline);
+        assert!(rendered.contains(
+            "let _ = task; Err(Status::invalid_argument(\"unknown reader task\")) }\nfn validate"
+        ));
+        assert!(rendered.contains("match task.method.as_str() {\n        \"Write\" => Ok(())"));
     }
 
     #[test]
@@ -3146,7 +3659,7 @@ mod tests {
         );
         assert!(output.contains("pub fn query(state_ref:"));
         assert!(output.contains("pub struct ActorMethodsTasksAt;"));
-        assert!(output.contains("schedule: prost_types::Timestamp"));
+        assert!(output.contains("schedule: reboot::TaskScheduleTimestamp"));
         assert!(output.contains("pub struct ActorMethodsTasksWait;"));
         assert!(output.contains("pub struct ActorMethodsTasksWaitRouted<R>"));
         assert!(output.contains("self.resolver.resolve(&id.state_type, &id.state_ref).await?"));
@@ -4597,6 +5110,7 @@ mod tests {
             let map = annotations_for_generated_files(
                 vec![state, service],
                 &HashSet::from(["methods.proto".into()]),
+                &[],
             )
             .unwrap();
             assert_eq!(map["methods.proto"]["AccountMethods"].auto_construct, mode);
@@ -4887,21 +5401,19 @@ mod tests {
             }
             .encode_to_vec();
             push_length_delimited(&mut service, 0x12, &method);
-            let mut descriptor = RawFile {
-                name: Some("tests/reboot/protoc/counter.proto".to_owned()),
-                package: Some("tests.reboot.protoc".to_owned()),
-                messages: vec![RawMessage {
-                    name: Some("CounterError".to_owned()),
-                    options: None,
-                }],
-                services: vec![],
-            }
-            .encode_to_vec();
-            push_length_delimited(&mut descriptor, 0x32, &service);
-            descriptor.extend([0x62, 0x06, b'p', b'r', b'o', b't', b'o', b'3']);
             let mut request = request();
             request.file_to_generate = vec!["tests/reboot/protoc/counter.proto".to_owned()];
-            request.proto_file[0].name = Some("tests/reboot/protoc/counter.proto".to_owned());
+            let mut file = request.proto_file.remove(0);
+            file.name = Some("tests/reboot/protoc/counter.proto".to_owned());
+            file.service.clear();
+            file.message_type.push(prost_types::DescriptorProto {
+                name: Some("CounterError".into()),
+                ..Default::default()
+            });
+            // One complete descriptor, not two same-name pool entries with a
+            // raw overlay. Duplicate descriptors now correctly fail closed.
+            let mut descriptor = file.encode_to_vec();
+            push_length_delimited(&mut descriptor, 0x32, &service);
             let mut wire = request.encode_to_vec();
             push_length_delimited(&mut wire, 0x7a, &descriptor);
             wire

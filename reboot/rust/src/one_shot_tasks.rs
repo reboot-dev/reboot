@@ -2200,6 +2200,10 @@ fn schedule_due(task: &db::Task) -> Result<bool, Status> {
 }
 
 #[cfg(test)]
+#[path = "ordinary_task_admission_tests.rs"]
+mod ordinary_task_admission_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     #[tokio::test]

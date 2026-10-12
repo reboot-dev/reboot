@@ -1,0 +1,27 @@
+{
+  "repository": "reboot-dev/reboot-examples",
+  "revision": "5c332a2910122d6035799bfaf2a314bf1de830b8",
+  "files": [
+    {
+      "upstream_path": "api/hello_constructors/v1/hello.proto",
+      "sha256": "c144183d68a73783f260886469706b865fcddbb393aae3899808f971ee5717c1"
+    },
+    {
+      "upstream_path": "api/hello_tasks/v1/hello.proto",
+      "sha256": "6362f4a635766e534bcc2db0936af80ef412f3560d8216aa5a328e3d84997941"
+    },
+    {
+      "upstream_path": "api/bank/v1/account.proto",
+      "sha256": "35704f425b4e987182274f6475fab7bf9958245f996f3ebc0b51e18bca5f9d4d"
+    },
+    {
+      "upstream_path": "api/bank/v1/bank.proto",
+      "sha256": "058fb0fa6db9844d9f6f2131cf4810982a4d871a888f0466e7b3a09c2667dad5"
+    },
+    {
+      "upstream_path": "api/bank/v1/errors.proto",
+      "sha256": "7993ba5445e9a600f6bd2e0bf327d09b66c747030b10b22bacde8116d1b424e3"
+    }
+  ],
+  "status": "Pinned original schemas; Rust ports and execution acceptance in progress."
+}

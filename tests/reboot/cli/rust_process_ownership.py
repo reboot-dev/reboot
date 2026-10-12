@@ -121,8 +121,9 @@ def retain_until_owned_exit(owned, evidence, interval=0.1, root_pid=None):
 
 class RequestedShutdown:
     """A repeated intentional close is safe; a preexisting exit is not shutdown proof."""
-    def __init__(self, process, log, record):
+    def __init__(self, process, log, record, expected_exits=(0,)):
         self.process = process
+        self.expected_exits = expected_exits
         self.log = log
         self.record = record
         self.closed = False
@@ -149,5 +150,5 @@ class RequestedShutdown:
         self.log.close()
         self.closed = True
         self.record.update(exit=status, requested_shutdown=True)
-        if status != 0:
+        if status not in self.expected_exits:
             raise RuntimeError(f'HTTP requested shutdown returned {status}')
