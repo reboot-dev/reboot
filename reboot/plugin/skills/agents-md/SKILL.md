@@ -76,9 +76,8 @@ says where things are in this project and what it has learned.
 1. A feature starts as a `@wip` feature file agreed in plain English,
    before the API or the code changes.
 2. Once the app has persisted state or is deployed, the API only grows:
-   add fields, methods and types, never remove or rename one, and never
-   reword a `description=`, which is schema. See the `python` skill's
-   `references/api-schema-evolution.md`.
+   add fields, methods and types, and never remove or rename one. See
+   the `python` skill's `references/api-schema-evolution.md`.
 3. Run `uv run rbt generate` after every API change, and never edit
    generated code.
 4. Every servicer has a real `authorizer()`. `allow()` makes a method
