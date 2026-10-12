@@ -2047,7 +2047,17 @@ async def __dev_run(
                     async with watcher.watch(
                         [application]
                     ) as application_event_task:
-                        if not await type_check(subprocesses, application):
+                        if not await type_check(
+                            subprocesses,
+                            application,
+                            # What `compose_env()` puts on the
+                            # application's `PYTHONPATH`, so that mypy
+                            # finds the generated code it imports.
+                            search_path=[
+                                generate_python_directory,
+                                *(generate_proto_directories or []),
+                            ] if generate_python_directory is not None else [],
+                        ):
                             terminal.warn(
                                 '\n'
                                 'Type-check failed ... waiting for modification'
