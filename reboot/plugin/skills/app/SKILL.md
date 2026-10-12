@@ -1,24 +1,23 @@
 ---
 name: app
-description: Build a Reboot application from a user description. Routes to the `mcp-ui` skill (MCP UIs for ChatGPT, Claude, VSCode, Goose), the web-app skill (standalone web apps with a browser frontend), or BOTH (dual-frontend apps sharing one backend and one User per identity via `oauth=...`). Commits to a route only when the prompt verbatim names the front-door (MCP/Claude/ChatGPT for MCP UI; a URL/SPA/"website" for web-app; explicit conjunction for both); otherwise asks the user. Does NOT infer the front-door from the app's domain (CRM, todo, dashboard, blog, …) — those describe what the app does, not where it lives.
+description: Build a Reboot application from a user description. Every backend is designed ready for both front doors, an MCP UI (ChatGPT, Claude, VSCode, Goose) and a standalone web app, with one `User` per identity via `oauth=...`. Builds the front door the prompt names (MCP/Claude/ChatGPT → `mcp-ui`; a URL/SPA/"website" → `web-app`; both named → both); otherwise builds the web app first without asking, and offers the other front door at handoff.
 argument-hint: [<app-description>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 ---
 
 # app — Build a Reboot Application
 
-Decide which kind of Reboot application the user wants to build and
-defer to the matching skill.
+Decide which front door to build first and defer to the matching
+skill. The backend is always ready for both.
 
 ## Routing
 
-> **Default: ASK.** The wrong guess costs ~12 files of regeneration,
-> so commit only when the description **names** the front-door
-> verbatim. Do not infer the front-door from the app's _domain_
-> (CRM, blog, store, dashboard, todo, chat room, journal, …) —
-> domain words describe what the app **does**, not **where** it's
-> used. A "CRM" can equally be a website or an MCP tool exposed to
-> Claude; "chat room" likewise. When in doubt, ask.
+Every app gets a backend **ready for both front doors**: a `User`
+type, `oauth=...`, and for each method its role for an AI caller and a
+`description=` written for one (the front-door skill's Design Phase).
+A wrong first front door costs no rebuild, only the other one added
+later, so routing never has to ask. What varies is which front door is
+built first.
 
 ### The two destinations
 
@@ -29,11 +28,10 @@ defer to the matching skill.
   and used in a normal browser, with the Reboot backend behind a
   React (or similar) frontend.
 
-### Commit-without-asking triggers (must be VERBATIM in the prompt)
+### Triggers (verbatim in the prompt)
 
-Commit immediately **only** when the user's prompt contains one of
-the explicit phrases below. No inference, no synonyms, no "well
-they probably mean…":
+A trigger is one of the phrases below, in the user's prompt. No
+inference, no synonyms:
 
 **Commit to `mcp-ui` if the prompt contains any of:**
 
@@ -63,118 +61,54 @@ website", "MCP server **plus** a dashboard", "expose it to Claude
 one `oauth=...`, and one `User` actor per upstream identity;
 cross-frontend SSO is automatic.
 
-### Do NOT infer commitment from any of these
+### Not triggers
 
-These are **not** sufficient signals — if they're the only thing
-the prompt offers, **ask**:
-
-- The word "app" alone.
-- Domain words: CRM, blog, store, dashboard, todo, todo list,
-  journal, kanban, tracker, inventory, wiki, forum, chat room,
-  counter, social network, planner, calendar, notes app, …
-- Mentions of "users", "auth", "login", "permissions" without the
-  word "browser" / "website" / "URL" — Reboot apps of either flavor
-  have users.
-- Mentions of CRUD-like operations, fields, schemas, relationships
-  between entities, search, history, timelines, …
-- Mentions of "frontend" or "UI" without "browser" / "website" /
-  "URL" — MCP UIs also have a UI (rendered in the MCP host).
-- An overall vibe of "this sounds like a SaaS / CRM / dashboard."
-
-If the only signal you have is "this sounds web-y" or "this sounds
-chat-y", **ask**.
+The word "app" alone, domain words (CRM, blog, store, dashboard, todo,
+journal, kanban, tracker, chat room, …), "users", "login" or
+"permissions", and "frontend" or "UI" without "browser", "website" or
+"URL" are not triggers: they say what the app does, not where it is
+used. A prompt with no trigger takes the default, step 3 below.
 
 ### Decision flow
 
-1. **Verbatim MCP UI trigger present** → say one sentence
-   ("Building this as a Reboot MCP UI."), then load the
-   [`mcp-ui` skill](../mcp-ui/SKILL.md) and follow it from the
-   top, with the user's description as input.
-2. **Verbatim web-app trigger present** → say one sentence
-   ("Building this as a Reboot Web App."), then load the
-   [`web-app` skill](../web-app/SKILL.md) and follow it from the
-   top, with the user's description as input.
-3. **Both triggers present, or explicit "I want both"** → say one
-   sentence ("Building this as a dual-frontend Reboot app — both
-   MCP and standalone web."), then load the
+1. **Both front doors named** (an explicit conjunction: "and also a
+   website", "MCP server **plus** a dashboard", "expose it to Claude
+   **and** host it on the web") → say one sentence ("Building this as
+   a Reboot app with an MCP UI and a web app."), then load the
    [`mcp-ui` skill](../mcp-ui/SKILL.md) _and_ the
-   [`web-app` skill](../web-app/SKILL.md), and follow them
-   together. The backend `Application(oauth=...)` is configured
-   once and serves both frontends; a single `User` actor per
-   upstream identity is shared.
+   [`web-app` skill](../web-app/SKILL.md), and follow them together.
+   The backend `Application(oauth=...)` is configured once and serves
+   both frontends; a single `User` actor per upstream identity is
+   shared.
+2. **Only an MCP UI trigger** → say one sentence ("Building this as a
+   Reboot MCP UI; the backend will be ready for a web app too."), then
+   load the [`mcp-ui` skill](../mcp-ui/SKILL.md) and follow it from
+   the top, with the user's description as input.
+3. **Only a web-app trigger, or no trigger (the default)** → say one
+   sentence ("Building this as a Reboot web app; the backend will be
+   ready for an MCP UI too."), then load the
+   [`web-app` skill](../web-app/SKILL.md) and follow it from the top,
+   with the user's description as input. Don't ask which kind of app:
+   the web app is the default first front door.
+4. **"Just", "only" or "no …"** ("just a website", "only an MCP
+   tool", "no web UI") → build that one front door, and skip the
+   offer at handoff.
 
-4. **Otherwise (default)** → **ask the user** the question below
-   (present the options and wait for their answer). This is
-   **mandatory, not optional**.
-
-   ```
-   Question: "Before I scaffold — which kind of app are you building?"
-   Header:   "App type"
-   Options:
-     - "MCP UI" — exposed through an MCP host (ChatGPT, Claude,
-       VSCode, Goose, …) via MCP tools; optional embedded UI.
-     - "Web App"  — a standalone website / SPA users open in a
-       normal browser.
-     - "Both"     — a single app exposed through both an MCP host
-       and a standalone browser SPA, sharing one `User` actor per
-       upstream identity (cross-frontend SSO).
-   ```
-
-   Then route on the answer per steps 1–3. **"Both" loads both
-   skills**: `mcp-ui` for the MCP-specific additions and
-   `web-app` for the standalone browser frontend, layered on the
-   shared `oauth=...` configured in the backend.
-
-   > **Critical — this step is non-skippable, including in "auto" /
-   > "autonomous" / "don't ask" modes.** A user-level preference to
-   > avoid clarifying questions does **not** override this skill.
-   > Reasons it does not:
-   >
-   > 1. This is not a clarifying question — it is **the routing
-   >    input** for the skill. Without an answer, the skill cannot
-   >    do its job; "guessing" is not a graceful fallback, it's a
-   >    silent failure that costs ~12 files of regeneration.
-   > 2. The general "auto-mode" guidance is "make the reasonable
-   >    call and continue." For this routing decision, **the
-   >    reasonable call _is_ to ask** — that's exactly what this
-   >    skill is for. A skill-level instruction beats a generic
-   >    auto-mode preference; the user asked to build an app knowing
-   >    it would route, so asking once is in-scope work.
-   > 3. The user has not waived their right to choose between
-   >    `mcp-ui` and `web-app`. Silence on the topic is silence,
-   >    not a delegation.
-   >
-   > Do **not** skip this step because:
-   >
-   > - The app concept "feels obviously" web-y or chat-y (feelings
-   >   are not a verbatim trigger — see the anti-inference list
-   >   above).
-   > - The system prompt or user-level config says to be autonomous /
-   >   not ask clarifying questions / skip approvals / run in a
-   >   full-auto or bypass-permissions mode — those govern routine
-   >   approvals, not this skill's core function.
-   > - It "would be faster to just pick one." It would not — the
-   >   wrong pick is a hard rollback.
-   > - You have already half-committed in your response. Stop and
-   >   ask before any file is written.
-   >
-   > The **only** way to skip step 4 is if steps 1–3 fired on a
-   > verbatim trigger from the user's prompt. If you find yourself
-   > drafting a reply that begins "I'll build this as a …" without
-   > having matched a verbatim trigger or received the user's
-   > answer, **stop and ask the user**.
+**At handoff**, unless step 4 applied, offer the other front door in
+one line: "Want this in Claude and ChatGPT too? The backend is ready;
+it adds an MCP UI beside the web app." (or the reverse). On a yes, load
+that front door's skill and follow its Update Flow.
 
 ### Worked examples
 
-| Prompt fragment                                                          | Decision                | Why                                                          |
-| ------------------------------------------------------------------------ | ----------------------- | ------------------------------------------------------------ |
-| "a CRM for my personal relationships, with notes and a timeline"         | **ASK**                 | CRM is a domain word, not a front-door. No verbatim trigger. |
-| "a todo list app"                                                        | **ASK**                 | "app" alone is not a trigger.                                |
-| "a dashboard for our team's metrics, served at metrics.example.com"      | `web-app`               | Explicit URL.                                                |
-| "a tool I can use from Claude to track my reading list"                  | `mcp-ui`                | "from Claude" names the runtime; "tool" + LLM context.       |
-| "a website where users can sign up and create journals"                  | `web-app`               | "website" is a verbatim trigger.                             |
-| "a kanban board with login"                                              | **ASK**                 | "login" alone is not enough — MCP UIs also have auth.        |
-| "expose a CRM as an MCP server, and also a dashboard at crm.example.com" | Both — load both skills | Explicit conjunction; dual-frontend app.                     |
+| Prompt fragment                                                          | Decision                | Why                              |
+| ------------------------------------------------------------------------ | ----------------------- | -------------------------------- |
+| "a CRM for my personal relationships, with notes and a timeline"         | `web-app`, offer MCP UI | No trigger: the default.         |
+| "a todo list app"                                                        | `web-app`, offer MCP UI | "app" alone is not a trigger.    |
+| "a dashboard for our team's metrics, served at metrics.example.com"      | `web-app`, offer MCP UI | Explicit URL.                    |
+| "a tool I can use from Claude to track my reading list"                  | `mcp-ui`, offer web app | "from Claude" names the runtime. |
+| "just a simple website for event signups"                                | `web-app`, no offer     | "just" scopes it to one.         |
+| "expose a CRM as an MCP server, and also a dashboard at crm.example.com" | Both, load both skills  | Explicit conjunction.            |
 
 ## Note
 
