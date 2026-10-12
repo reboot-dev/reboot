@@ -1,5 +1,5 @@
 ---
-description: "No front door named: ask which kind of app before committing."
+description: "Domain words are not triggers: web app first, no question."
 runs: 3
 max_turns: 20
 timeout_seconds: 420

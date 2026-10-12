@@ -1,5 +1,5 @@
 ---
-description: "An MCP host named as the runtime: MCP App first."
+description: "An MCP host named as the runtime: MCP App first, backend ready for a web app."
 runs: 3
 max_turns: 20
 timeout_seconds: 420
