@@ -78,7 +78,11 @@ class TypeCheckTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(passed)
         self.assertEqual(output, self.CHECKING)
         with open('arguments') as file:
-            self.assertEqual(file.read(), '-m mypy backend/src/main.py\n')
+            self.assertEqual(
+                file.read(),
+                '-m mypy --disable-error-code=import-untyped '
+                'backend/src/main.py\n',
+            )
 
     async def test_search_path(self) -> None:
         # mypy does not read `PYTHONPATH`, so the generated code the
