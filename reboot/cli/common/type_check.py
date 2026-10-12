@@ -69,6 +69,11 @@ async def type_check(
         sys.executable,
         '-m',
         'mypy',
+        # A library without stubs, which the generated code's `grpc`
+        # and `google.rpc` are, is not an error in the application; a
+        # module that is not installed at all still is
+        # (`import-not-found`).
+        '--disable-error-code=import-untyped',
         target,
         stdout=asyncio.subprocess.PIPE,
         # A configuration file that mypy can not parse is reported on
