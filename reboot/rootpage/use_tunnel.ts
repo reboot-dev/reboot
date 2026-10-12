@@ -8,11 +8,11 @@ import { useStoredState } from "./use_stored_state";
 // `false` after a probe failed.
 export type TunnelReachability = null | true | false;
 
-// Source of the currently-effective tunnel URL — either a URL polled
-// out of a provider's local API on the backend (ngrok or
-// cloudflared), or one the user typed in themselves and we cached
-// in `localStorage`.
-export type TunnelUrlSource = "detected" | "user" | null;
+// Source of the currently-effective tunnel URL — the one
+// `rbt dev run --tunnel-url` was given, a URL polled out of a
+// provider's local API on the backend (ngrok or cloudflared), or one
+// the user typed in themselves and we cached in `localStorage`.
+export type TunnelUrlSource = "configured" | "detected" | "user" | null;
 
 export interface Tunnel {
   // The provider-detected URL for the currently-selected radio.
@@ -24,9 +24,9 @@ export interface Tunnel {
   // `localStorage`. Empty when unset.
   userSpecifiedUrl: string;
   // The URL we should use everywhere downstream — user override
-  // wins, then detected, else empty.
+  // wins, then the configured one, then detected, else empty.
   effectiveUrl: string;
-  // Which of the two `effectiveUrl` came from.
+  // Which of the three `effectiveUrl` came from.
   urlSource: TunnelUrlSource;
   // Latest connectivity probe result against `effectiveUrl`.
   reachability: TunnelReachability;
@@ -83,6 +83,10 @@ const probeReachability = async (
 };
 
 interface UseTunnelOptions {
+  // Public URL `rbt dev run --tunnel-url` named, or absent when it
+  // named none: whoever started the tunnel told the backend where it
+  // is, so there is nothing to detect.
+  configuredUrl?: string;
   // Public URL the backend's `WatchTunnel` workflow last discovered
   // for ngrok, or absent when ngrok's local API didn't respond / had
   // no matching tunnel for our port.
@@ -107,6 +111,7 @@ interface UseTunnelOptions {
 // the user has selected. The `"other"` radio has no detection
 // signal; the user must paste their tunnel URL into the editor.
 export const useTunnel = ({
+  configuredUrl,
   ngrokDetectedUrl,
   cloudflaredDetectedUrl,
   selectedProviderName,
@@ -138,9 +143,14 @@ export const useTunnel = ({
   // drive the active tunnel until the user picks `"other"` again.
   const userTrimmedUrl =
     selectedProviderName === "other" ? userSpecifiedUrl.trim() : "";
-  const effectiveUrl = userTrimmedUrl || detectedUrl;
+  // A configured URL is this app's tunnel whichever radio is
+  // selected; the radios then only say which commands to show.
+  const configuredTrimmedUrl = configuredUrl?.trim() ?? "";
+  const effectiveUrl = userTrimmedUrl || configuredTrimmedUrl || detectedUrl;
   const urlSource: TunnelUrlSource = userTrimmedUrl
     ? "user"
+    : configuredTrimmedUrl
+    ? "configured"
     : detectedUrl
     ? "detected"
     : null;

@@ -164,6 +164,11 @@ ENVVAR_RBT_WEB_APP_DIST_PATH = 'RBT_WEB_APP_DIST_PATH'
 # under `rbt dev run --portless`, and `dashboard.<application-name>`
 # for `rbt dashboard --portless`. Unset when not under portless.
 ENVVAR_RBT_PORTLESS_NAME = 'RBT_PORTLESS_NAME'
+# The public URL this application is reachable at through a tunnel
+# (e.g., "https://<name>.trycloudflare.com"), which the setup wizard
+# shows and verifies instead of asking ngrok or cloudflared for one
+# (`rbt dev run --tunnel-url`).
+ENVVAR_RBT_TUNNEL_URL = 'RBT_TUNNEL_URL'
 
 # Environment variable indicating that `rbt` is being invoked from
 # Node.js.

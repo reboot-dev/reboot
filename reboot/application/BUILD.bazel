@@ -14,6 +14,7 @@ py_library(
         "//rbt/v1alpha1/application:application_py_proto",
         "//rbt/v1alpha1/application:application_py_reboot",
         "//reboot:run_environments_py",
+        "//reboot:settings_py",
         "//reboot/aio:contexts_py",
         "//reboot/aio:workflows_py",
         "//reboot/aio/auth:authorizers_py",
