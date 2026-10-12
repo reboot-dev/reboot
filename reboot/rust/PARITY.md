@@ -12,6 +12,45 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Generated registered-local ticket receiver
+
+Exclusive non-factory generated transaction receivers now consume the opaque
+local ticket before verification or participant/storage access, validating the
+actual registered binding/configuration, canonical method, sanitized headers and
+request bytes. They use the issued child context directly, retaining ancestry
+and avoiding a second allocator. Invalid tickets never fall back to ordinary
+inbound execution. Missing registration/configuration, malformed headers and
+unsupported factory/shared execution burn the shared ticket state on rejection.
+Ordinary verification and authorization remain mandatory; no policy exemption
+has been introduced.
+
+An actual live registered parent fixture exercises eight independent cases:
+unregistered receiver, factory/shared rejection, malformed transaction metadata,
+modified body, exact child handler execution, missing authorizer and configured
+policy denial. Every case allocates once at issuance and rejects a retained
+clone before further participant/handler access or policy verification. The
+positive child receives path `[201, 202]` without bearer/cookie credentials.
+Actors are initialized through ordinary public generated writers. Each fixture
+intentionally aborts the parent; direct receiver tests do not establish successful
+codec/trailer transport, parent settlement or native same-host A-to-B durability.
+Configuration-failure burning has source review but no dedicated injected case.
+Applied read-only review found no introduced safety blocker.
+
+Frozen ten-gate audit `1791764187375442648` accepted: SDK 590 passing results
+including nested generated consumers (489 library, 33 owned-unary, generated 45),
+both strict Clippy gates, native restart 4, process ownership, CLI unit, public
+User/workflows/checkpoint restart and greeting. All ten exits were zero; 236
+frozen inputs matched, recorded descendant PID/start identities were absent and
+the owner lock was released before this ledger/fingerprint update. Earlier audit
+`1791763951454249950` failed generated-consumer Clippy on an error-inspection
+idiom; emitted `inspect_err` repairs it without suppressing warnings. Only the
+replacement audit certifies the repaired checkpoint.
+
+Explicit registered same-host transport, private terminal settlement, narrowly
+capability-bound missing-authorizer handling and native A-to-B retained/task/
+restart acceptance remain unfinished. Configured denial stays authoritative;
+ordinary metadata/internal-call flags confer no authority.
+
 ## Registered-local directory and one-use child ticket primitive
 
 The same-host directory retains the exact configured service and allocator,
@@ -42,10 +81,10 @@ User/workflows/checkpoint restart and greeting. All ten exits were zero; 236 fro
 inputs matched, recorded PID/start identities were absent and the owner lock was
 released before this ledger/fingerprint update.
 
-This is a capability primitive, not secured generated dispatch. Receiver extension
-consumption, narrowly capability-bound policy handling, actual local codec/terminal
-transport, fresh B handler ownership and native A-to-B retained/task/restart
-acceptance remain unfinished. Configured B policy denial must remain effective;
+The primitive alone is not secured generated dispatch. Receiver consumption is
+now exercised above; narrowly capability-bound policy handling, actual local
+codec/terminal transport and native A-to-B retained/task/restart acceptance remain
+unfinished. Configured B policy denial must remain effective;
 ordinary metadata/internal-call flags confer no authority and invalid local tickets
 must never fall back to network execution.
 
@@ -3807,7 +3846,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 6846017b81fcd582653e4bd1db7664ae591c596088d195c95fb4b64ba82b8e5c -->
+<!-- parity-source-sha256: c6e3de9874393972da057a2fa93544157080346ca734fec1107055d7d1a738de -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

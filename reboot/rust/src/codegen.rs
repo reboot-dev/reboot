@@ -1795,10 +1795,11 @@ fn emit_exclusive_transaction_method(output: &mut String, flow: TransactionFlow<
     // Both fresh and validated inbound execution enforce the service policy;
     // factories authorize optional state before revealing whether it exists.
     output.push_str(&format!(
-        "    async fn {}(&self, request: tonic::Request<proto::{}>) -> Result<tonic::Response<proto::{}>, tonic::Status> {{\n        let headers = {}::RebootHeaders::from_request(&request).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?;\n        let inbound = headers.transaction_ids.is_some();\n",
-        flow.method, flow.request, flow.response, flow.runtime_module,
+        "    async fn {}(&self, mut request: tonic::Request<proto::{}>) -> Result<tonic::Response<proto::{}>, tonic::Status> {{\n        let headers = {}::RebootHeaders::from_request(&request).map_err(|error| {{ if let Some(ticket) = request.extensions().get::<{}::runtime::RegisteredLocalTicket>() {{ ticket.discard(); }} tonic::Status::invalid_argument(error.to_string()) }})?;\n        let inbound = headers.transaction_ids.is_some();\n",
+        flow.method, flow.request, flow.response, flow.runtime_module, flow.runtime_module,
     ));
     if flow.factory {
+        output.push_str(&format!("        if let Some(ticket) = request.extensions_mut().remove::<{}::runtime::RegisteredLocalTicket>() {{ ticket.discard(); return Err(tonic::Status::failed_precondition(\"local tickets exclude factory execution\")); }}\n", flow.runtime_module));
         output.push_str("        if inbound { return Err(tonic::Status::unimplemented(\"factory transactions must be exclusive root transactions\")); }\n");
         output.push_str("        if self.supervised_tree { return Err(tonic::Status::failed_precondition(\"tree excludes factory execution\")); }\n");
         output.push_str(&format!(
@@ -1813,6 +1814,7 @@ fn emit_exclusive_transaction_method(output: &mut String, flow: TransactionFlow<
             },
         );
     } else {
+        output.push_str(&format!("        let local_child = if let Some(ticket) = request.extensions_mut().remove::<{runtime}::runtime::RegisteredLocalTicket>() {{ let binding = self.local_registration.as_ref().ok_or_else(|| {{ ticket.discard(); tonic::Status::failed_precondition(\"local ticket requires registered receiver\") }})?; let configuration = {runtime}::registered_local::GeneratedLocalTransactionAdapter::local_configuration(self).inspect_err(|_| {{ ticket.discard(); }})?; Some(ticket.consume(binding, &configuration, \"{method}\", &headers, request.get_ref())?) }} else {{ None }};\n", runtime=flow.runtime_module, method=flow.method_identity));
         output.push_str("        if inbound {\n");
         output.push_str(&format!(
             "            let (authorization_context, authorization_auth) = self.authorization.verify(headers.clone(), <{} as {}::runtime::DurableStateDeclaration>::STATE_TYPE, \"{}\").await?;\n",
@@ -1821,7 +1823,7 @@ fn emit_exclusive_transaction_method(output: &mut String, flow: TransactionFlow<
         emit_transaction_flow(
             output,
             TransactionFlow {
-                inbound: TransactionInbound::KnownInbound,
+                inbound: TransactionInbound::KnownLocalInbound,
                 authorize_after_load: true,
                 ..flow
             },
@@ -1844,7 +1846,7 @@ fn emit_exclusive_transaction_method(output: &mut String, flow: TransactionFlow<
 }
 fn emit_shared_transaction_method(output: &mut String, flow: TransactionFlow<'_>) {
     output.push_str(&format!(
-        "    async fn {}(&self, request: tonic::Request<proto::{}>) -> Result<tonic::Response<proto::{}>, tonic::Status> {{\n        let headers = {}::RebootHeaders::from_request(&request).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?;\n        let inbound = headers.transaction_ids.is_some();\n        if inbound {{\n            // Shared inbound execution remains read-only; it never promotes.\n", flow.method, flow.request, flow.response, flow.runtime_module
+        "    async fn {}(&self, request: tonic::Request<proto::{}>) -> Result<tonic::Response<proto::{}>, tonic::Status> {{\n        let headers = {}::RebootHeaders::from_request(&request).map_err(|error| {{ if let Some(ticket) = request.extensions().get::<{runtime}::runtime::RegisteredLocalTicket>() {{ ticket.discard(); }} tonic::Status::invalid_argument(error.to_string()) }})?;\n        if let Some(ticket) = request.extensions().get::<{runtime}::runtime::RegisteredLocalTicket>() {{ ticket.discard(); return Err(tonic::Status::failed_precondition(\"local tickets exclude shared execution\")); }}\n        let inbound = headers.transaction_ids.is_some();\n        if inbound {{\n            // Shared inbound execution remains read-only; it never promotes.\n", flow.method, flow.request, flow.response, flow.runtime_module, runtime = flow.runtime_module
     ));
     output.push_str("            if self.supervised_tree { return Err(tonic::Status::failed_precondition(\"tree excludes shared execution\")); }\n");
     output.push_str(&format!(
@@ -1891,6 +1893,7 @@ fn emit_fresh_shared_local_flow(output: &mut String, flow: TransactionFlow<'_>) 
 enum TransactionInbound {
     Dynamic,
     KnownInbound,
+    KnownLocalInbound,
 }
 
 #[derive(Clone, Copy)]
@@ -1939,6 +1942,14 @@ fn emit_transaction_flow(output: &mut String, flow: TransactionFlow<'_>) {
         ),
         TransactionInbound::KnownInbound => (
             format!("let mut context = {{ let inbound_context = {runtime_module}::runtime::InboundTransactionContext::from_headers(headers, {runtime_module}::runtime::TransactionMode::{mode}).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?; let child_id = self.root_start.next_inbound_transaction(&inbound_context)?; inbound_context.with_nested_transaction_id(child_id).map_err(|error| tonic::Status::invalid_argument(error.to_string()))? }};"),
+            format!("{runtime_module}::durable_participant::TransactionPathContract::PreserveNested"),
+            "if false".to_owned(),
+            format!("Some({runtime_module}::successful_trailers::ParticipantMetadata::classified_single(<{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, &context.headers().state_ref, true, context.headers().coordinator_read_only_aware).map_err(|error| tonic::Status::failed_precondition(error.to_string()))?)"),
+            "Vec::new()".to_owned(),
+            "if let Some(metadata) = participant_metadata { reboot_metadata } else { coordinator_completion }".to_owned(),
+        ),
+        TransactionInbound::KnownLocalInbound => (
+            format!("let mut context = if let Some(child) = local_child {{ child }} else {{ let inbound_context = {runtime_module}::runtime::InboundTransactionContext::from_headers(headers, {runtime_module}::runtime::TransactionMode::{mode}).map_err(|error| tonic::Status::invalid_argument(error.to_string()))?; let child_id = self.root_start.next_inbound_transaction(&inbound_context)?; inbound_context.with_nested_transaction_id(child_id).map_err(|error| tonic::Status::invalid_argument(error.to_string()))? }};"),
             format!("{runtime_module}::durable_participant::TransactionPathContract::PreserveNested"),
             "if false".to_owned(),
             format!("Some({runtime_module}::successful_trailers::ParticipantMetadata::classified_single(<{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, &context.headers().state_ref, true, context.headers().coordinator_read_only_aware).map_err(|error| tonic::Status::failed_precondition(error.to_string()))?)"),
@@ -2912,6 +2923,72 @@ fn snake_case(value: &str) -> String {
 mod tests {
     use super::*;
     use prost_types::{FileDescriptorProto, MethodDescriptorProto, ServiceDescriptorProto};
+    #[test]
+    fn local_ticket_receiver_consumes_before_verifier_and_uses_actual_child() {
+        let flow = TransactionFlow {
+            method: "apply",
+            request: "Request",
+            response: "Response",
+            method_identity: "example.ActorMethods.Apply",
+            state: "Actor",
+            declaration: "Declaration",
+            runtime_module: "reboot",
+            mode: "Exclusive",
+            factory: false,
+            declared_error: false,
+            inbound: TransactionInbound::Dynamic,
+            shared_root_ownership_seam: false,
+            authorize_after_load: true,
+        };
+        let mut output = String::new();
+        emit_exclusive_transaction_method(&mut output, flow);
+        let consume = output
+            .find("ticket.consume(binding, &configuration")
+            .unwrap();
+        assert!(consume < output.find("self.authorization.verify").unwrap());
+        assert!(
+            consume
+                < output
+                    .find("self.participant.start_local_reusable_preallow")
+                    .unwrap()
+        );
+        assert!(output.contains("if let Some(child) = local_child { child } else {"));
+        assert!(output.contains("self.authorization.require_authorizer()?"));
+        assert!(output.contains("self.authorization.authorize_handler_entry"));
+        assert!(output.contains("self.authorization.authorize("));
+        assert!(!output.contains("allow_missing_authorizer_for_development"));
+        let mut factory = String::new();
+        emit_exclusive_transaction_method(
+            &mut factory,
+            TransactionFlow {
+                factory: true,
+                ..flow
+            },
+        );
+        assert!(
+            factory
+                .find("local tickets exclude factory execution")
+                .unwrap()
+                < factory.find("self.authorization.verify").unwrap()
+        );
+        assert!(!factory.contains("ticket.consume"));
+        let mut shared = String::new();
+        emit_shared_transaction_method(
+            &mut shared,
+            TransactionFlow {
+                mode: "Shared",
+                ..flow
+            },
+        );
+        assert!(
+            shared
+                .find("local tickets exclude shared execution")
+                .unwrap()
+                < shared.find("if inbound").unwrap()
+        );
+        assert!(!shared.contains("local_child"));
+    }
+
     #[test]
     fn canonical_map_generates_only_fixed_builtin_and_rejects_schema_spoofing() {
         let response = generate_from_descriptor_set_wire(

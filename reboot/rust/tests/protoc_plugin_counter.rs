@@ -564,6 +564,17 @@ impl transaction_generated::TransactionCounterWritesMethodsTransactionHandler fo
         request: proto::TransactionIncrementRequest,
     ) -> Result<reboot::runtime::TransactionExecution<proto::TransactionCounterValue>, tonic::Status> {
         self.trace.lock().unwrap().push("handler");
+        if request.amount == 7310 {
+            let probe = TICKET_RECEIVER_PROBE.try_with(Arc::clone).unwrap();
+            probe.run(context).await;
+            return Err(tonic::Status::invalid_argument("parent probe complete"));
+        }
+        if request.amount == 7311 {
+            assert_eq!(context.transaction_ids(), &[Uuid::from_u128(201), Uuid::from_u128(202)]);
+            assert!(context.headers().bearer_token.is_none());
+            assert!(context.headers().cookie.is_none());
+            return Err(tonic::Status::invalid_argument("child probe reached"));
+        }
         if request.amount == 7302 {
             assert_eq!(context.require_registered_outbound().unwrap_err().message(), "no registered handler outbound permission");
         }
@@ -1051,6 +1062,203 @@ impl reboot::runtime::TransactionalChannelResolver for FixedChannelResolver {
         assert_eq!(state_type, "tests.reboot.protoc.TransactionCounter");
         assert!(matches!(state_ref, "transaction-counter" | "remote-transaction-counter"));
         Ok(self.0.clone())
+    }
+}
+
+#[tonic::async_trait]
+trait TicketReceiverProbe: Send + Sync {
+    async fn run(&self, context: &reboot::runtime::TransactionContext);
+}
+tokio::task_local! { static TICKET_RECEIVER_PROBE: Arc<dyn TicketReceiverProbe>; }
+
+#[tokio::test]
+async fn generated_ticket_receiver_uses_live_parent_child_once_and_burns_replay() {
+    for mode in 0..8 { run(mode).await; }
+    async fn run(mode: usize) {
+    use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
+    use reboot::registered_local::GeneratedLocalTransactionAdapter;
+    use reboot::durable_coordinator::ParticipantTarget;
+    struct Starts(Arc<AtomicUsize>);
+    impl reboot::runtime::RootTransactionStartFactory for Starts {
+        fn next_root_transaction(&self) -> Result<reboot::runtime::RootTransactionStart, tonic::Status> {
+            Ok(reboot::runtime::RootTransactionStart { transaction_id: Uuid::from_u128(201), timestamp: prost_types::Timestamp::default() })
+        }
+    }
+    impl reboot::runtime::InboundTransactionStartFactory for Starts {
+        fn next_inbound_transaction(&self, _: &reboot::runtime::InboundTransactionContext) -> Result<Uuid, tonic::Status> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(Uuid::from_u128(202))
+        }
+    }
+    struct TicketCoordinatorSidecar {
+        trace: Arc<std::sync::Mutex<Vec<&'static str>>>,
+        endpoint: String,
+    }
+impl reboot::durable_coordinator::CoordinatorSidecar for TicketCoordinatorSidecar {
+    fn database_endpoint(&self) -> Option<&str> { Some(&self.endpoint) }
+    fn coordinator_prepare(&self, _: reboot::database_proto::TransactionCoordinatorPrepareRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionCoordinatorPrepareResponse, tonic::Status>> + Send + '_>> {
+        self.trace.lock().unwrap().push("coordinator DB prepare");
+        Box::pin(async { Ok(reboot::database_proto::TransactionCoordinatorPrepareResponse::default()) })
+    }
+    fn coordinator_prepared(&self, _: reboot::database_proto::TransactionCoordinatorPreparedRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionCoordinatorPreparedResponse, tonic::Status>> + Send + '_>> {
+        self.trace.lock().unwrap().push("coordinator DB prepared");
+        Box::pin(async { Ok(reboot::database_proto::TransactionCoordinatorPreparedResponse::default()) })
+    }
+    fn coordinator_cleanup(&self, _: reboot::database_proto::TransactionCoordinatorCleanupRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionCoordinatorCleanupResponse, tonic::Status>> + Send + '_>> {
+        self.trace.lock().unwrap().push("coordinator DB cleanup");
+        Box::pin(async { Ok(reboot::database_proto::TransactionCoordinatorCleanupResponse::default()) })
+    }
+    fn decision_put(&self, _: reboot::database_proto::TransactionCoordinatorDecisionPutRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionCoordinatorDecisionPutResponse, tonic::Status>> + Send + '_>> {
+        self.trace.lock().unwrap().push("coordinator DB decision");
+        Box::pin(async { Ok(reboot::database_proto::TransactionCoordinatorDecisionPutResponse::default()) })
+    }
+    fn recover(&self, _: reboot::database_proto::RecoverRequest) -> Pin<Box<dyn Future<Output = Result<Vec<reboot::database_proto::RecoverResponse>, tonic::Status>> + Send + '_>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+}
+
+
+    struct Watch;
+    impl reboot::legacy_coordinator::CoordinatorWatchEndpoint for Watch {
+        fn watch(&self, _: reboot::database_proto::WatchRequest) -> reboot::legacy_coordinator::CoordinatorWatchFuture<'_, reboot::database_proto::WatchResponse> {
+            Box::pin(std::future::pending())
+        }
+    }
+    struct Probe {
+        mode: usize,
+        auth_probe: Arc<AuthProbe>,
+        receiver: Arc<dyn TransactionCounterWritesMethods + Send + Sync>,
+        unregistered: Arc<dyn TransactionCounterWritesMethods + Send + Sync>,
+        target: ParticipantTarget,
+        allocations: Arc<AtomicUsize>,
+        trace: Arc<std::sync::Mutex<Vec<&'static str>>>,
+    }
+    #[tonic::async_trait]
+    impl TicketReceiverProbe for Probe {
+        async fn run(&self, context: &reboot::runtime::TransactionContext) {
+            context.require_registered_outbound().unwrap();
+            let method = "tests.reboot.protoc.TransactionCounterWritesMethods.Increment";
+            let destination = context.lookup_registered_local_destination(&self.target, method).unwrap();
+            let scope = context.begin_generated_outbound_for(&self.target.state_type, &self.target.state_ref, method).unwrap();
+            let message = proto::TransactionIncrementRequest { amount: 7311 };
+            let ticket = context.issue_registered_local_ticket(&scope, &destination, method, &message).unwrap();
+            let replay = ticket.clone();
+            let mut headers = reboot::RebootHeaders::new(&self.target.state_ref);
+            headers.transaction_ids = Some(context.transaction_ids().to_vec());
+            headers.transaction_coordinator_state_type = Some(context.transaction_coordinator_state_type().into());
+            headers.transaction_coordinator_state_ref = Some(context.transaction_coordinator_state_ref().into());
+            headers.coordinator_read_only_aware = context.headers().coordinator_read_only_aware;
+            let make_request = |ticket| {
+                let mut request = tonic::Request::new(message.clone());
+                *request.metadata_mut() = headers.to_metadata().unwrap();
+                request.extensions_mut().insert(ticket);
+                request
+            };
+            let receiver = if self.mode == 0 { self.unregistered.clone() } else { self.receiver.clone() };
+            let mut request = make_request(ticket);
+            let mode = self.mode;
+            if mode == 3 { request.metadata_mut().insert("x-reboot-transaction-ids", "malformed".parse().unwrap()); }
+            if mode == 4 { request.get_mut().amount += 1; }
+            let before = self.trace.lock().unwrap().clone();
+            let error = tokio::spawn(async move {
+                match mode {
+                    1 => receiver.factory_increment(request).await,
+                    2 => receiver.shared_read(request).await,
+                    _ => receiver.increment(request).await,
+                }
+            }).await.unwrap().unwrap_err();
+            if mode == 5 { assert_eq!(error.message(), "child probe reached"); }
+            else if mode >= 6 {
+                assert_eq!(error.code(), tonic::Code::PermissionDenied);
+                assert_eq!(self.auth_probe.verifier_calls.load(Ordering::SeqCst), 1);
+                assert_eq!(self.auth_probe.authorizer_calls.load(Ordering::SeqCst), usize::from(mode == 7));
+                if mode == 6 { assert!(error.message().contains("no authorizer configured")); }
+                else { assert_eq!(error.message(), "ticket policy denial"); }
+                assert!(!self.trace.lock().unwrap()[before.len()..].iter().any(|entry| entry.contains("handler")), "denied B must not enter handler");
+            }
+            else {
+                if mode == 3 { assert_eq!(error.code(), tonic::Code::InvalidArgument); }
+                else { assert_eq!(error.code(), tonic::Code::FailedPrecondition); }
+                assert_eq!(*self.trace.lock().unwrap(), before, "rejection mode {mode} must precede participant/storage/handler");
+            }
+            assert_eq!(self.allocations.load(Ordering::SeqCst), 1);
+            let before = self.trace.lock().unwrap().clone();
+            let receiver = self.receiver.clone();
+            let request = make_request(replay);
+            let error = tokio::spawn(async move { receiver.increment(request).await }).await.unwrap().unwrap_err();
+            assert_eq!(error.message(), "local ticket already consumed");
+            assert_eq!(*self.trace.lock().unwrap(), before, "replay must fail before participant/storage/handler");
+            if mode >= 6 {
+                assert_eq!(self.auth_probe.verifier_calls.load(Ordering::SeqCst), 1, "burned replay must not reverify");
+                assert_eq!(self.auth_probe.authorizer_calls.load(Ordering::SeqCst), usize::from(mode == 7), "burned replay must not reauthorize");
+            }
+            assert_eq!(self.allocations.load(Ordering::SeqCst), 1);
+            drop(scope); // Private receiver proof deliberately ends in parent abort, not terminal settlement.
+        }
+    }
+    // Real configured Tonic sidecar supplies distinct A/B actor targets.
+    let (endpoint, _database, database_server) = start_database().await;
+    let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let allocations = Arc::new(AtomicUsize::new(0));
+    let sidecar = Arc::new(reboot::durable_participant::TonicParticipantSidecar::connect(&endpoint).await.unwrap());
+    let make = |state_ref: &str| {
+        let sidecar = sidecar.clone();
+        let participant = reboot::durable_participant::DurableActorParticipant::new(sidecar, "tests.reboot.protoc.TransactionCounter", state_ref);
+        let coordinator = reboot::durable_coordinator::DurableRootCoordinator::new(
+            Arc::new(TicketCoordinatorSidecar { trace: trace.clone(), endpoint: tonic::transport::Endpoint::from_shared(endpoint.clone()).unwrap().uri().to_string() }),
+            Arc::new(reboot::durable_coordinator::SingleParticipantResolver::new(participant.actor_target(), reboot::durable_participant::DurableActorParticipantHost::new(participant.clone())).unwrap()),
+        ).with_identity(participant.actor_target());
+        transaction_generated::TransactionCounterWritesMethodsTransactionAdapter::new(
+            DatabaseActorStore::connect_lazy(&endpoint).unwrap(), participant, coordinator, Starts(allocations.clone()),
+            TransactionCounter { trace: trace.clone(), fail: false, downstream: None, final_state_override: None },
+        ).with_explicit_abort_owner(reboot::explicit_abort::ExplicitAbortOwner::new(2).unwrap()).with_authorization(AuthorizationPolicy::permissive_for_development()).with_sequential_root_star()
+    };
+    let mut application = reboot::application_host::ApplicationHost::new("ticket-receiver-fixture");
+    let (a, _) = application.register_local_transaction_service(make("transaction-counter")).unwrap();
+    let owner = reboot::live_participant::LiveParticipantOwner::new(2, ParticipantTarget { state_type: "tests.reboot.protoc.TransactionCounter".into(), state_ref: "transaction-counter".into() }, Arc::new(Watch)).unwrap();
+    let auth_probe = Arc::new(AuthProbe {
+        verifier_calls: Arc::new(AtomicUsize::new(0)), authorizer_calls: Arc::new(AtomicUsize::new(0)),
+        handler_calls: Arc::new(AtomicUsize::new(0)),
+        decision: AuthorizationDecision::PermissionDenied { message: "ticket policy denial".into() },
+        contexts: Arc::new(std::sync::Mutex::new(Vec::new())), snapshots: Arc::new(std::sync::Mutex::new(Vec::new())),
+    });
+    let b = make("remote-transaction-counter").with_live_participant_owner(owner);
+    let b = if mode == 6 { b.with_authorization(AuthorizationPolicy::new(Some(auth_probe.clone()), None)) }
+        else if mode == 7 { b.with_authorization(AuthorizationPolicy::new(Some(auth_probe.clone()), Some(auth_probe.clone()))) }
+        else { b };
+    let (b, _) = application.register_local_transaction_service(b).unwrap();
+    let target = b.local_configuration().unwrap().target;
+    let registration = a.explicit_abort_recovery_registration().unwrap();
+    let b_registration = b.live_participant_recovery_registration().unwrap();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap(); let address = listener.local_addr().unwrap(); drop(listener);
+    let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+    let served = a.clone();
+    let server = tokio::spawn(async move {
+        application.with_host_recovery(registration).with_host_recovery(b_registration)
+            .add_public_service(proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethodsServer::new(served))
+            .serve_with_shutdown(address, async { let _ = stopped.await; }).await
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        loop { if a.require_local_host_ready().is_ok() { break; } tokio::task::yield_now().await; }
+    }).await.unwrap();
+    // Establish both actors through the ordinary generated public writer, not private DB seeding.
+    let initialization_b = make("remote-transaction-counter");
+    for (adapter, target_ref) in [(&a, "transaction-counter"), (&initialization_b, "remote-transaction-counter")] {
+        let mut headers = reboot::RebootHeaders::new(target_ref);
+        headers.idempotency_key = Some(Uuid::new_v4());
+        let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 4 });
+        *request.metadata_mut() = headers.to_metadata().unwrap();
+        adapter.apply(request).await.unwrap();
+    }
+    let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 7310 });
+    let mut headers = reboot::RebootHeaders::new("transaction-counter");
+    headers.bearer_token = Some("test-only-parent-token".into()); headers.cookie = Some("parent-cookie".into());
+    *request.metadata_mut() = headers.to_metadata().unwrap();
+    let probe: Arc<dyn TicketReceiverProbe> = Arc::new(Probe { mode, auth_probe, receiver: Arc::new(b), unregistered: Arc::new(make("remote-transaction-counter")), target, allocations: allocations.clone(), trace: trace.clone() });
+    let error = tokio::time::timeout(std::time::Duration::from_secs(5), TICKET_RECEIVER_PROBE.scope(probe, a.increment(request))).await.unwrap().unwrap_err();
+    assert_eq!(error.message(), "parent probe complete");
+    assert_eq!(allocations.load(Ordering::SeqCst), 1);
+    stop.send(()).unwrap(); server.await.unwrap().unwrap(); database_server.abort(); let _ = database_server.await;
     }
 }
 

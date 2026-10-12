@@ -109,6 +109,21 @@ impl TransactionContext {
         Ok(ledger)
     }
 
+    /// Exact same-host destination snapshot, available only to an admitted handler.
+    /// A snapshot is not execution authority; issuance validates it again.
+    #[doc(hidden)]
+    pub fn lookup_registered_local_destination(
+        &self,
+        target: &crate::durable_coordinator::ParticipantTarget,
+        method: &str,
+    ) -> Result<RegisteredLocalDestination, Status> {
+        self.require_registered_outbound()?;
+        let permission = self.registered_outbound.as_ref().unwrap();
+        permission
+            .binding
+            .lookup_local_destination(&permission.configuration, target, method)
+    }
+
     /// Capability primitive only; callers cannot mint from metadata alone.
     /// The actual registered allocator runs once outside gate reservations.
     /// This is not local transport dispatch or a B authorization exemption.
@@ -192,9 +207,15 @@ impl TransactionContext {
     }
 }
 impl RegisteredLocalTicket {
+    /// Burn every clone when a receiver rejects before full validation.
+    #[doc(hidden)]
+    pub fn discard(&self) {
+        self.0.lock().expect("local ticket mutex poisoned").take();
+    }
+
     /// Consume before any validation; all clones share one consuming state.
-    /// Generated receiver must invoke before verifier/storage and replace its
-    /// ordinary allocator path. Not yet wired into that receiver.
+    /// Generated exclusive non-factory receivers invoke before verifier/storage
+    /// and replace their ordinary allocator path with the actual child.
     #[doc(hidden)]
     pub fn consume<Req: Message>(
         &self,
