@@ -225,6 +225,7 @@ dev run --default-config=hmr
 | `dev run --mcp-app-dist-path=<dir>` | Dist: serve the built MCP Apps from `<dir>` (e.g. `frontend/dist/mcp`) on disk under `/__/frontend/mcp/`, each `UI(path=...)` from `<dir>/<path>/index.html`; mutually exclusive with `--frontend-url` and `--mcp-app`. |
 | `dev run --web-app-dist-path=<dir>` | Serve the built web app from `<dir>` (e.g. `frontend/dist/web`) at `/`, with its `index.html` answering any path the app has no route or file for. Without it, `/` is Reboot's page. Python applications only: with `--nodejs` it is an error. |
 | `dev run --portless` | Serve under a named URL via [portless](https://github.com/vercel-labs/portless): the backend becomes `https://<app>.localhost`, on a free port unless `--port` is given, serving the web app at `/` and the MCP Apps from the frontend dev server, which runs under portless as `https://frontend.<app>.localhost` (its `npm run dev:portless`) and is trusted as a browser origin too. See [Named local URLs](#named-local-urls-with---portless). |
+| `dev run --tunnel-url=<url>` | The public URL this application is reachable at through a tunnel (e.g. `https://<name>.trycloudflare.com`). The setup wizard shows and verifies it; without it, the wizard asks ngrok and cloudflared, through their local APIs on their default ports, for a tunnel of their own. |
 | `dev run --default-config=<name>` | Sets the default configuration profile when `--config` is not specified. |
 | `dev run:hmr` / `dev run:dist` | Named configurations. Flags prefixed with `dev run:<name>` only apply when `--config=<name>` is used. |
 
@@ -331,6 +332,14 @@ routes to (the name is the `.rbtrc`'s `dev run --application-name`).
 The dashboard's configs are named like `rbt dev run`'s, so
 `rbt dashboard --config=hmr` goes with `rbt dev run --config=hmr`:
 the plain port, `http://127.0.0.1:9871`.
+
+A [Cloudflare quick tunnel](/call/from_mcp_client#cloudflared) in
+front of the backend reaches it by name too, with `--url` at the
+proxy and `<app>.localhost` as `--http-host-header` and
+`--origin-server-name`, so it needs no port and one tunnel serves
+every `rbt dev run` of a session. cloudflared passes the public
+hostname on as `X-Forwarded-Host`, which the OAuth and MCP endpoints
+use for the URLs they hand a client.
 
 ### Inspecting state
 

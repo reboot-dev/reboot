@@ -29,12 +29,14 @@ export const TunnelStep = ({
   onProviderChange,
 }: TunnelStepProps) => {
   // Collapse the two ngrok-specific substeps as soon as we have
-  // positive evidence a tunnel exists. A backend-detected ngrok URL
-  // is strong proof (the workflow read it from ngrok's local API);
-  // a user-supplied URL we only trust once the reachability probe
-  // confirms it works. The substeps stay visible as titled ✓ rows
-  // so the user can scan what happened.
+  // positive evidence a tunnel exists. A URL `rbt dev run` was
+  // given, or a backend-detected one, is strong proof (whoever
+  // started the tunnel said so, or the workflow read it from the
+  // provider's local API); a user-supplied URL we only trust once
+  // the reachability probe confirms it works. The substeps stay
+  // visible as titled ✓ rows so the user can scan what happened.
   const haveWorkingTunnel =
+    tunnel.urlSource === "configured" ||
     tunnel.urlSource === "detected" ||
     (tunnel.urlSource === "user" && tunnel.reachability === true);
 

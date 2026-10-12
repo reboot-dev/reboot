@@ -30,6 +30,8 @@ interface WizardProps {
   // Public URL the backend's `WatchTunnel` workflow last discovered
   // for ngrok, or absent when ngrok wasn't running / had no matching
   // tunnel for our port.
+  // Public URL `rbt dev run --tunnel-url` named, if it did.
+  tunnelUrl?: string;
   ngrokDetectedUrl?: string;
   // Public URL the backend's `WatchTunnel` workflow last discovered
   // for cloudflared, or absent when cloudflared wasn't running with
@@ -88,6 +90,7 @@ export const Wizard = ({
   title,
   description,
   titleReady,
+  tunnelUrl,
   ngrokDetectedUrl,
   cloudflaredDetectedUrl,
   connections,
@@ -111,6 +114,7 @@ export const Wizard = ({
   );
 
   const tunnel = useTunnel({
+    configuredUrl: tunnelUrl,
     ngrokDetectedUrl,
     cloudflaredDetectedUrl,
     selectedProviderName: tunnelProviderName,
