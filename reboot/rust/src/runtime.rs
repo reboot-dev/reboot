@@ -394,8 +394,27 @@ impl std::error::Error for NestedTransactionPathError {}
 /// The generated client supplies the declared state type and the caller-provided
 /// state reference unchanged. Implementations choose the transport endpoint;
 /// they must not rely on the SDK to derive an address or placement.
+/// Explicit transport selection, not execution authority.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum TransactionalRoute {
+    #[default]
+    Network,
+    RegisteredSameHost,
+}
+
 #[tonic::async_trait]
 pub trait TransactionalChannelResolver: Send + Sync + 'static {
+    /// Local selection obtains the service only from the admitted parent host.
+    /// Any local lookup/admission/transport failure stays a failure.
+    fn transactional_route(
+        &self,
+        _state_type: &str,
+        _state_ref: &str,
+        _method: &str,
+    ) -> Result<TransactionalRoute, Status> {
+        Ok(TransactionalRoute::Network)
+    }
+
     async fn resolve(
         &self,
         state_type: &str,
@@ -639,6 +658,39 @@ where
     let path = path
         .parse::<http::uri::PathAndQuery>()
         .map_err(|_| Status::invalid_argument("invalid canonical RPC path"))?;
+    context.validate_outbound_scope_admission(scope)?;
+    if resolver.transactional_route(&target.state_type, &target.state_ref, &method)?
+        == TransactionalRoute::RegisteredSameHost
+    {
+        let destination = context.lookup_registered_local_destination(&target, &method)?;
+        let ticket =
+            context.issue_registered_local_ticket(scope, &destination, &method, &message)?;
+        let headers = local_ticket::local_headers(context.headers(), &target.state_ref);
+        let mut request = tonic::Request::new(message);
+        *request.metadata_mut() = headers
+            .to_metadata()
+            .map_err(|error| Status::invalid_argument(error.to_string()))?;
+        request.extensions_mut().insert(ticket);
+        let service = destination.service().clone_service();
+        let (service, terminal_evidence) = terminal_capture::TerminalCaptureService::new(service);
+        let call: std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = Result<TransactionalCallResponse<Resp>, Status>>
+                    + Send
+                    + '_,
+            >,
+        > = Box::pin(consume_generated_transactional_unary(
+            service,
+            terminal_evidence,
+            request,
+            path,
+            context,
+            scope,
+            &target,
+            declared_errors,
+        ));
+        return call.await;
+    }
     let (channel, request) = scoped_generated_transactional_outbound_request(
         resolver,
         context,
@@ -664,7 +716,7 @@ where
 }
 
 // Transport-independent consumption is private: supplying a service is not
-// authorization. Network and future registered-local dispatch must both retain
+// authorization. Network and registered-local dispatch both retain
 // the same admission, original-terminal validation and runtime-owned settlement.
 #[allow(clippy::too_many_arguments)]
 async fn consume_generated_transactional_unary<S, Req, Resp>(
@@ -4922,6 +4974,8 @@ pub mod test_support {
         actors: HashMap<(String, String), Vec<u8>>,
         mutations: HashMap<(String, String, Vec<u8>), database::IdempotentMutation>,
         store_requests: Vec<database::StoreRequest>,
+        participant_prepares: Vec<database::TransactionParticipantPrepareRequest>,
+        participant_commits: Vec<database::TransactionParticipantCommitRequest>,
         create_requests: Vec<database::CreateActorRequest>,
         #[cfg(test)]
         load_calls: usize,
@@ -4976,6 +5030,24 @@ pub mod test_support {
             let (release_tx, release_rx) = tokio::sync::oneshot::channel();
             *self.task_recover_park.lock().unwrap() = Some((entered_tx, release_rx));
             (entered_rx, release_tx)
+        }
+        pub fn participant_prepare_requests(
+            &self,
+        ) -> Vec<database::TransactionParticipantPrepareRequest> {
+            self.state
+                .lock()
+                .expect("fake database mutex poisoned")
+                .participant_prepares
+                .clone()
+        }
+        pub fn participant_commit_requests(
+            &self,
+        ) -> Vec<database::TransactionParticipantCommitRequest> {
+            self.state
+                .lock()
+                .expect("fake database mutex poisoned")
+                .participant_commits
+                .clone()
         }
         pub fn store_requests(&self) -> Vec<database::StoreRequest> {
             self.state
@@ -5216,14 +5288,24 @@ pub mod test_support {
 
         async fn transaction_participant_prepare(
             &self,
-            _: Request<database::TransactionParticipantPrepareRequest>,
+            request: Request<database::TransactionParticipantPrepareRequest>,
         ) -> Result<Response<database::TransactionParticipantPrepareResponse>, Status> {
+            self.state
+                .lock()
+                .expect("fake database mutex poisoned")
+                .participant_prepares
+                .push(request.into_inner());
             Ok(Response::new(Default::default()))
         }
         async fn transaction_participant_commit(
             &self,
-            _: Request<database::TransactionParticipantCommitRequest>,
+            request: Request<database::TransactionParticipantCommitRequest>,
         ) -> Result<Response<database::TransactionParticipantCommitResponse>, Status> {
+            self.state
+                .lock()
+                .expect("fake database mutex poisoned")
+                .participant_commits
+                .push(request.into_inner());
             Ok(Response::new(Default::default()))
         }
         async fn transaction_participant_abort(

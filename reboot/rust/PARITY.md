@@ -12,6 +12,42 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Registered same-host generated transport and native settlement
+
+Explicit `TransactionalRoute::RegisteredSameHost` now dispatches through the
+admitted host's exact registered service, bound one-use child ticket and private
+terminal capture/consumption. The default route remains `Network`. Route failure
+never falls back to networking; ordinary receiver verification and authorization
+remain mandatory. Callback rejection or parent doom fails before allocation.
+
+The generated success fixture observes actual codec/trailer settlement and two
+Prepare payloads containing A/B state 5 plus two Commit requests. Its ACK-only
+Database is not durable readback evidence. The native registered A/B fixture uses
+the same actual participants for adapters, exact resolver and recovery, and
+initializes through generated public Apply methods without direct Database seeds.
+Both committed states are 5 and recovery worklists are empty before and after
+restarting the same RocksDB Database. With direct commit fanout parked after its
+persisted decision, actual B Watch terminalizes and releases the actor gate:
+registered B Apply(0) returns 5 before direct fanout resumes. Recovery restores
+both participants before coordinator recovery/readiness.
+
+Frozen twelve-gate audit `1791767571244830705` accepted all exits zero: SDK 590
+passing results (489 library and 45 generated), strict SDK/generated-consumer
+Clippy, native restart 4, ownership regressions, CLI unit, public User/workflows/
+checkpoint restart, greeting, native registered-local 2, and strict native-fixture
+Clippy. All 238 frozen inputs matched; recorded descendant PID/start identities
+were absent and the owner lock released before this ledger/fingerprint update.
+Applied source-only transport and native reviews found no introduced blockers;
+reviews are separate from execution acceptance.
+
+Scope is exclusive nonfactory single A-to-B, live decision Watch settlement and
+post-cleanup Database restart durability. Outstanding-work host-crash recovery,
+deeper/sibling/task composition, factory/shared eligibility and authorization
+exemptions are not certified. Fixture-only awaited child spawning does not prove
+normal-worker inline production stack depth or midtransport cancellation. Those
+remain the next combined acceptance batch; no retries/manual settlement or
+metadata-based internal authority have been added.
+
 ## Generated registered-local ticket receiver
 
 Exclusive non-factory generated transaction receivers now consume the opaque
@@ -46,10 +82,11 @@ the owner lock was released before this ledger/fingerprint update. Earlier audit
 idiom; emitted `inspect_err` repairs it without suppressing warnings. Only the
 replacement audit certifies the repaired checkpoint.
 
-Explicit registered same-host transport, private terminal settlement, narrowly
-capability-bound missing-authorizer handling and native A-to-B retained/task/
-restart acceptance remain unfinished. Configured denial stays authoritative;
-ordinary metadata/internal-call flags confer no authority.
+The later registered same-host checkpoint above certifies transport, private
+terminal settlement and bounded native A-to-B post-cleanup restart. Narrowly
+capability-bound missing-authorizer handling and retained/task acceptance remain
+unfinished. Configured denial stays authoritative; ordinary metadata/internal-call
+flags confer no authority.
 
 ## Registered-local directory and one-use child ticket primitive
 
@@ -3846,7 +3883,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: c6e3de9874393972da057a2fa93544157080346ca734fec1107055d7d1a738de -->
+<!-- parity-source-sha256: 6fb504a896dfa8315803b7cd5d70b10ceb63b88e515db51ab774bf6288bda318 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

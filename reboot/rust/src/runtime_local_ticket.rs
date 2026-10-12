@@ -1,4 +1,4 @@
-//! Local capability primitive; not yet connected to generated dispatch.
+//! One-use local capability for registered generated receiver and transport dispatch.
 use super::*;
 use crate::registered_local::{
     GeneratedLocalAdapterConfig, RegisteredAdapterBinding, RegisteredLocalDestination,
@@ -20,7 +20,7 @@ struct TicketState {
 
 // Explicit allowlist: credentials/assertions, caller ID, workflow/task,
 // idempotency and retry age are intentionally not forwarded. No internal flag.
-fn local_headers(parent: &RebootHeaders, target: &str) -> RebootHeaders {
+pub(super) fn local_headers(parent: &RebootHeaders, target: &str) -> RebootHeaders {
     RebootHeaders {
         state_ref: target.to_owned(),
         application_id: parent.application_id.clone(),

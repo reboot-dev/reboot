@@ -892,7 +892,7 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
         self.persist_commit(transaction_id, &start.coordinator_state_ref, &participants)
             .await?;
         #[cfg(feature = "test-support")]
-        test_support::pause_after_durable_decision()?;
+        test_support::pause_after_durable_decision().await?;
         local.commit().await?;
         self.cleanup(transaction_id, &start.coordinator_state_ref)
             .await
@@ -978,7 +978,7 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
         self.persist_commit(transaction_id, &start.coordinator_state_ref, &participants)
             .await?;
         #[cfg(feature = "test-support")]
-        test_support::pause_after_durable_decision()?;
+        test_support::pause_after_durable_decision().await?;
         self.terminal_all(transaction_id, &participants.should_commit, true)
             .await?;
         self.cleanup(transaction_id, &start.coordinator_state_ref)
@@ -1389,10 +1389,12 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
 #[cfg(feature = "test-support")]
 #[doc(hidden)]
 pub mod test_support {
-    use std::{fs, path::Path, thread, time::Duration};
+    use std::{fs, path::Path, time::Duration};
 
-    pub fn pause_after_durable_decision() -> Result<(), tonic::Status> {
-        pause("REBOOT_TEST_PAUSE_AFTER_COORDINATOR_PREPARE")
+    pub async fn pause_after_durable_decision() -> Result<(), tonic::Status> {
+        // The same host may serve the participant's decision Watch. Keep its
+        // listener/connection tasks schedulable while direct delivery is parked.
+        pause_async("REBOOT_TEST_PAUSE_AFTER_COORDINATOR_PREPARE").await
     }
 
     pub async fn pause_prepared_before_decision() -> Result<(), tonic::Status> {
@@ -1414,19 +1416,6 @@ pub mod test_support {
         })?;
         while Path::new(&marker).exists() {
             tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-        Ok(())
-    }
-
-    fn pause(variable: &str) -> Result<(), tonic::Status> {
-        let Ok(marker) = std::env::var(variable) else {
-            return Ok(());
-        };
-        fs::write(&marker, b"sealed\n").map_err(|error| {
-            tonic::Status::internal(format!("cannot create coordinator test barrier: {error}"))
-        })?;
-        while Path::new(&marker).exists() {
-            thread::sleep(Duration::from_millis(10));
         }
         Ok(())
     }

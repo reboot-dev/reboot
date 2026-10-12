@@ -1,3 +1,5 @@
+#[path = "fixtures/registered_same_host_acceptance.rs"]
+mod registered_same_host_acceptance;
 #[path = "fixtures/task_recovery_rejection.rs"]
 mod task_recovery_rejection;
 #[path = "fixtures/task_vertical_acceptance.rs"]

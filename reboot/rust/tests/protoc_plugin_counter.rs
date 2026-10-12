@@ -564,10 +564,19 @@ impl transaction_generated::TransactionCounterWritesMethodsTransactionHandler fo
         request: proto::TransactionIncrementRequest,
     ) -> Result<reboot::runtime::TransactionExecution<proto::TransactionCounterValue>, tonic::Status> {
         self.trace.lock().unwrap().push("handler");
-        if request.amount == 7310 {
+        if matches!(request.amount, 7310 | 7313) {
             let probe = TICKET_RECEIVER_PROBE.try_with(Arc::clone).unwrap();
             probe.run(context).await;
-            return Err(tonic::Status::invalid_argument("parent probe complete"));
+            if request.amount == 7310 { return Err(tonic::Status::invalid_argument("parent probe complete")); }
+            state.value += 1;
+            return Ok(reboot::runtime::TransactionExecution::new(proto::TransactionCounterValue { value: state.value }));
+        }
+        if request.amount == 7312 {
+            assert_eq!(context.transaction_ids(), &[Uuid::from_u128(201), Uuid::from_u128(202)]);
+            assert!(context.headers().bearer_token.is_none());
+            assert!(context.headers().cookie.is_none());
+            state.value += 1;
+            return Ok(reboot::runtime::TransactionExecution::new(proto::TransactionCounterValue { value: state.value }));
         }
         if request.amount == 7311 {
             assert_eq!(context.transaction_ids(), &[Uuid::from_u128(201), Uuid::from_u128(202)]);
@@ -1073,11 +1082,25 @@ tokio::task_local! { static TICKET_RECEIVER_PROBE: Arc<dyn TicketReceiverProbe>;
 
 #[tokio::test]
 async fn generated_ticket_receiver_uses_live_parent_child_once_and_burns_replay() {
-    for mode in 0..8 { run(mode).await; }
+    for mode in 0..13 { run(mode).await; }
     async fn run(mode: usize) {
     use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
     use reboot::registered_local::GeneratedLocalTransactionAdapter;
     use reboot::durable_coordinator::ParticipantTarget;
+    struct LocalOnly { context: reboot::runtime::TransactionContext, mode: usize }
+    #[tonic::async_trait]
+    impl reboot::runtime::TransactionalChannelResolver for LocalOnly {
+        fn transactional_route(&self, _: &str, _: &str, _: &str) -> Result<reboot::runtime::TransactionalRoute, tonic::Status> {
+            if self.mode == 11 {
+                self.context.doom(tonic::Status::cancelled("route callback closed parent"));
+            }
+            if self.mode == 12 { return Err(tonic::Status::unavailable("route selection rejected")); }
+            Ok(reboot::runtime::TransactionalRoute::RegisteredSameHost)
+        }
+        async fn resolve(&self, _: &str, _: &str) -> Result<tonic::transport::Channel, tonic::Status> {
+            panic!("explicit local route must never resolve a network channel")
+        }
+    }
     struct Starts(Arc<AtomicUsize>);
     impl reboot::runtime::RootTransactionStartFactory for Starts {
         fn next_root_transaction(&self) -> Result<reboot::runtime::RootTransactionStart, tonic::Status> {
@@ -1137,6 +1160,42 @@ impl reboot::durable_coordinator::CoordinatorSidecar for TicketCoordinatorSideca
     impl TicketReceiverProbe for Probe {
         async fn run(&self, context: &reboot::runtime::TransactionContext) {
             context.require_registered_outbound().unwrap();
+            if self.mode >= 8 {
+                let target_ref = if self.mode == 9 { "not-registered" } else { &self.target.state_ref };
+                let client = transaction_generated::TransactionCounterWritesMethodsClient::new(LocalOnly { context: context.clone(), mode: self.mode });
+                let target = transaction_generated::TransactionCounterWritesMethodsTarget::new(target_ref);
+                let context = context.clone();
+                // Awaited fixture task separates large debug generated adapter stacks.
+                // Production local service dispatch remains inline and cancellation-owned.
+                let mode = self.mode;
+                let before = self.trace.lock().unwrap().clone();
+                let result = tokio::spawn(async move { client.increment(&context,
+                    &target, proto::TransactionIncrementRequest { amount: if mode == 10 { 7312 } else { 7311 } },
+                ).await }).await.unwrap();
+                if mode == 10 {
+                    let response = result.unwrap();
+                    assert_eq!(response.response().get_ref().value, 5);
+                    assert_eq!(self.allocations.load(Ordering::SeqCst), 1);
+                    return;
+                }
+                let error = result.unwrap_err();
+                match error {
+                    transaction_generated::TransactionCounterWritesMethodsIncrementError::Grpc(status) => {
+                        match self.mode {
+                            8 => assert_eq!(status.message(), "child probe reached"),
+                            11 => { assert_eq!(status.code(), tonic::Code::Cancelled); assert_eq!(status.message(), "route callback closed parent"); }
+                            12 => { assert_eq!(status.code(), tonic::Code::Unavailable); assert_eq!(status.message(), "route selection rejected"); }
+                            _ => assert_eq!(status.code(), tonic::Code::FailedPrecondition),
+                        }
+                    }
+                    other => panic!("unexpected local outcome: {other:?}"),
+                }
+                assert_eq!(self.allocations.load(Ordering::SeqCst), usize::from(self.mode == 8));
+                if matches!(self.mode, 9 | 11 | 12) {
+                    assert_eq!(*self.trace.lock().unwrap(), before, "route rejection must precede B effects");
+                }
+                return;
+            }
             let method = "tests.reboot.protoc.TransactionCounterWritesMethods.Increment";
             let destination = context.lookup_registered_local_destination(&self.target, method).unwrap();
             let scope = context.begin_generated_outbound_for(&self.target.state_type, &self.target.state_ref, method).unwrap();
@@ -1197,16 +1256,20 @@ impl reboot::durable_coordinator::CoordinatorSidecar for TicketCoordinatorSideca
         }
     }
     // Real configured Tonic sidecar supplies distinct A/B actor targets.
-    let (endpoint, _database, database_server) = start_database().await;
+    let (endpoint, database, database_server) = start_database().await;
     let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
     let allocations = Arc::new(AtomicUsize::new(0));
     let sidecar = Arc::new(reboot::durable_participant::TonicParticipantSidecar::connect(&endpoint).await.unwrap());
+    let participants = ["transaction-counter", "remote-transaction-counter"].map(|state_ref|
+        reboot::durable_participant::DurableActorParticipant::new(sidecar.clone(), "tests.reboot.protoc.TransactionCounter", state_ref));
     let make = |state_ref: &str| {
-        let sidecar = sidecar.clone();
-        let participant = reboot::durable_participant::DurableActorParticipant::new(sidecar, "tests.reboot.protoc.TransactionCounter", state_ref);
+        let participant = participants.iter().find(|p| p.actor_target().state_ref == state_ref).unwrap().clone();
         let coordinator = reboot::durable_coordinator::DurableRootCoordinator::new(
             Arc::new(TicketCoordinatorSidecar { trace: trace.clone(), endpoint: tonic::transport::Endpoint::from_shared(endpoint.clone()).unwrap().uri().to_string() }),
-            Arc::new(reboot::durable_coordinator::SingleParticipantResolver::new(participant.actor_target(), reboot::durable_participant::DurableActorParticipantHost::new(participant.clone())).unwrap()),
+            Arc::new(reboot::durable_coordinator::ExactParticipantResolver::new(participants.iter().map(|p| (
+                p.actor_target(), Arc::new(reboot::durable_coordinator::InProcessParticipantEndpoint::new(
+                    reboot::durable_participant::DurableActorParticipantHost::new(p.clone())))
+            ))).unwrap()),
         ).with_identity(participant.actor_target());
         transaction_generated::TransactionCounterWritesMethodsTransactionAdapter::new(
             DatabaseActorStore::connect_lazy(&endpoint).unwrap(), participant, coordinator, Starts(allocations.clone()),
@@ -1250,14 +1313,35 @@ impl reboot::durable_coordinator::CoordinatorSidecar for TicketCoordinatorSideca
         *request.metadata_mut() = headers.to_metadata().unwrap();
         adapter.apply(request).await.unwrap();
     }
-    let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 7310 });
+    let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: if mode == 10 { 7313 } else { 7310 } });
     let mut headers = reboot::RebootHeaders::new("transaction-counter");
     headers.bearer_token = Some("test-only-parent-token".into()); headers.cookie = Some("parent-cookie".into());
     *request.metadata_mut() = headers.to_metadata().unwrap();
     let probe: Arc<dyn TicketReceiverProbe> = Arc::new(Probe { mode, auth_probe, receiver: Arc::new(b), unregistered: Arc::new(make("remote-transaction-counter")), target, allocations: allocations.clone(), trace: trace.clone() });
-    let error = tokio::time::timeout(std::time::Duration::from_secs(5), TICKET_RECEIVER_PROBE.scope(probe, a.increment(request))).await.unwrap().unwrap_err();
-    assert_eq!(error.message(), "parent probe complete");
-    assert_eq!(allocations.load(Ordering::SeqCst), 1);
+    let result = tokio::time::timeout(std::time::Duration::from_secs(5), TICKET_RECEIVER_PROBE.scope(probe, a.increment(request))).await.unwrap();
+    if mode == 10 {
+        assert_eq!(result.unwrap().get_ref().value, 5);
+        // Test Database transaction control is ACK-only; assert actual staged
+        // bytes, not fictitious committed readback. Native durability is separate.
+        let prepares = database.participant_prepare_requests();
+        assert_eq!(prepares.len(), 2);
+        let staged = prepares.iter().map(|request| (
+            request.state_ref.clone(), proto::TransactionCounter::decode(request.state.as_ref().unwrap().as_slice()).unwrap().value,
+        )).collect::<std::collections::BTreeMap<_, _>>();
+        let commits = database.participant_commit_requests();
+        assert_eq!(commits.len(), 2);
+        assert_eq!(commits.iter().map(|request| request.state_ref.clone()).collect::<std::collections::BTreeSet<_>>(),
+            std::collections::BTreeSet::from(["transaction-counter".to_owned(), "remote-transaction-counter".to_owned()]));
+        assert_eq!(staged, std::collections::BTreeMap::from([
+            ("transaction-counter".to_owned(), 5), ("remote-transaction-counter".to_owned(), 5),
+        ]));
+        assert!(trace.lock().unwrap().contains(&"coordinator DB decision"));
+        assert!(trace.lock().unwrap().contains(&"coordinator DB cleanup"));
+    } else {
+        let error = result.unwrap_err();
+        if mode < 8 { assert_eq!(error.message(), "parent probe complete"); }
+    }
+    assert_eq!(allocations.load(Ordering::SeqCst), usize::from(!matches!(mode, 9 | 11 | 12)));
     stop.send(()).unwrap(); server.await.unwrap().unwrap(); database_server.abort(); let _ = database_server.await;
     }
 }
