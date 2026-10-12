@@ -157,8 +157,9 @@ The list below is what's specific to the MCP UI layer:
 
 19. **`frontend/dist/mcp/<name>/index.html` is the right location** for
     the built MCP UI — that's where the MCP server's
-    `_resolve_dist_path` looks. The `vite.config.ts` shipped with
-    this skill produces it correctly out of the box: the
+    `_resolve_dist_path` looks. Reboot's Vite plugin (`reboot()` from
+    `@reboot-dev/reboot-react/vite`) produces it correctly out of the
+    box: the
     `RBT_BUILD_TARGET=mcp:<name>` build roots itself at `mcp/<name>/`,
     so its `index.html` lands at the nested path while
     `viteSingleFile` inlines the JS/CSS. If you see
