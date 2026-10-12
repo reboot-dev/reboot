@@ -87,6 +87,7 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
             || current.lock.is_shared()
             || current.disposition != PendingDisposition::Commit
             || current.prepared
+            || current.native_control_started
             || current.terminal_attempted
             || current.loaded_state.as_deref() != Some(&[])
             || current
@@ -164,7 +165,11 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
         &self,
         context: &crate::runtime::TransactionContext,
     ) -> Result<(), Status> {
-        let mut pending = self.participant.pending.lock().await;
+        let mut pending = self
+            .participant
+            .pending
+            .lock_root(self.transaction_id)
+            .await;
         let current = self.validate_early_map(&mut pending)?;
         if context.transaction_ids() != current.transaction_ids
             || context.transaction_coordinator_state_type() != current.coordinator_state_type
@@ -187,7 +192,11 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
         &self,
         request: crate::sorted_map_proto::InsertRequest,
     ) -> Result<crate::sorted_map_proto::InsertResponse, Status> {
-        let mut pending = self.participant.pending.lock().await;
+        let mut pending = self
+            .participant
+            .pending
+            .lock_root(self.transaction_id)
+            .await;
         let current = self.validate_early_map(&mut pending)?;
         self.early_map_store(
             current,
@@ -206,7 +215,11 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
         &self,
         request: crate::sorted_map_proto::RemoveRequest,
     ) -> Result<crate::sorted_map_proto::RemoveResponse, Status> {
-        let mut pending = self.participant.pending.lock().await;
+        let mut pending = self
+            .participant
+            .pending
+            .lock_root(self.transaction_id)
+            .await;
         let current = self.validate_early_map(&mut pending)?;
         self.early_map_store(
             current,
@@ -226,7 +239,11 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
         sorted_map_bounds(&start, &end, limit, reverse)?;
         let logical_start = start.clone();
         let logical_end = end.clone();
-        let mut pending = self.participant.pending.lock().await;
+        let mut pending = self
+            .participant
+            .pending
+            .lock_root(self.transaction_id)
+            .await;
         let current = self.validate_early_map(&mut pending)?;
         if !current.native_started {
             self.early_map_store(current, vec![]).await?;
@@ -314,9 +331,15 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
         // A leaked leading row can consume a native limit and fabricate page
         // exhaustion. Reject it instead of filtering it. End-bound leakage is
         // trailing in a strictly ordered scan, so no eligible row follows it.
-        if entries.iter().any(|entry| logical_start.as_ref().is_some_and(|start| {
-            if reverse { entry.key > *start } else { entry.key < *start }
-        })) {
+        if entries.iter().any(|entry| {
+            logical_start.as_ref().is_some_and(|start| {
+                if reverse {
+                    entry.key > *start
+                } else {
+                    entry.key < *start
+                }
+            })
+        }) {
             current.native_uncertain = true;
             return Err(Status::data_loss("native range leaked a leading row"));
         }

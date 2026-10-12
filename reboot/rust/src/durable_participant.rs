@@ -1,12 +1,12 @@
 //! Durable, actor-local participant runtime for Reboot's native sidecar protocol.
 //!
-//! This module owns exactly one actor's exclusive transaction. It loads that
-//! actor and holds its lock from `start` through a sidecar-acknowledged
-//! `Commit` or `Abort`. A caller which explicitly opts in may preserve a
-//! nested transaction-ID path in the sidecar record, but this module neither
-//! executes nested RPCs nor coordinates multiple participants. It deliberately
-//! does not implement shared, read-only, or cross-actor transactions. Factory
-//! transactions are limited to one exclusive root actor.
+//! Clones share one actor gate and a bounded registry of root-local ownership
+//! slots. Existing fresh shared local roots may overlap; exclusive participants
+//! and promoted roots still require the gate's exclusive lease. Each slot keeps
+//! independent loaded state/effects and handler incarnation fencing through
+//! acknowledged terminal control. Nested paths are preserved only through the
+//! existing explicit caller contract; this registry grants no additional tree,
+//! shared writer, factory, or coordinator authority.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -340,6 +340,7 @@ pub enum ParticipantStartMode {
 /// identity that upgraded from shared to exclusive ownership.
 #[derive(Debug)]
 pub struct SharedPromotion {
+    local_owner: Option<Uuid>,
     root_id: Uuid,
     state_type: String,
     state_ref: String,
@@ -436,6 +437,9 @@ struct ReusableCalls {
 }
 
 struct Pending {
+    // Only the existing response-only fresh local shared handler owns this seal.
+    // Registered exclusive execution keeps its separate guard lifecycle.
+    fresh_shared_local: bool,
     reusable: Option<ReusableCalls>,
     execution_active: bool,
     terminal_attempted: bool,
@@ -452,6 +456,11 @@ struct Pending {
     // Set BEFORE an early Store is sent. Cancellation/error retains ownership.
     native_started: bool,
     native_uncertain: bool,
+    // Set before ANY native Prepare/terminal delivery, including deferred
+    // effects. An error or dropped RPC future must never turn Drop into lease
+    // release permission. Unlike native_started this does not omit Prepare
+    // metadata/effects, and it preserves existing safe terminal retry policy.
+    native_control_started: bool,
     factory: bool,
     disposition: PendingDisposition,
     // Kept until a terminal sidecar response is acknowledged.
@@ -459,6 +468,32 @@ struct Pending {
 }
 
 impl Pending {
+    fn has_native_ownership(&self) -> bool {
+        self.prepared
+            || self.native_started
+            || self.native_uncertain
+            || self.native_control_started
+            || self.terminal_attempted
+    }
+
+    // A compatibility shared root starts writable but has not yet classified
+    // effects. Only its pristine, undurable Abort may release locally without
+    // promotion. Classified read-only effects are also local-only by contract.
+    fn shared_release_is_safe(&self) -> bool {
+        !self.has_native_ownership()
+            && self.effects.task_upserts.is_empty()
+            && self.effects.idempotent_mutations.is_empty()
+            && if self.staged {
+                self.disposition == PendingDisposition::ReadOnly
+                    && !matches!(
+                        (&self.loaded_state, &self.effects.state),
+                        (Some(initial), Some(final_state)) if initial != final_state
+                    )
+            } else {
+                self.effects.state.is_none()
+            }
+    }
+
     fn matches_live_owner(&self, owner: Uuid) -> bool {
         self.reusable
             .as_ref()
@@ -472,6 +507,8 @@ impl Pending {
 /// durable Prepare removes only in-memory ownership; it never sends a terminal
 /// sidecar RPC. Once Prepare succeeds, normal ambiguous durable semantics win.
 pub struct StartedLocalTransaction<C: ParticipantSidecar> {
+    cleanup_producer: Option<crate::application_host::CleanupProducer>,
+    cleanup_slot: PendingSlot,
     participant: DurableActorParticipant<C>,
     transaction_id: Uuid,
     state: Option<Vec<u8>>,
@@ -564,11 +601,13 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
         self,
         promotion: SharedPromotion,
     ) -> Result<SharedLocalPromotion<C>, Status> {
-        if !promotion.matches(
-            self.transaction_id,
-            &self.participant.state_type,
-            &self.participant.state_ref,
-        ) {
+        if promotion.local_owner != Some(self.local_owner)
+            || !promotion.matches(
+                self.transaction_id,
+                &self.participant.state_type,
+                &self.participant.state_ref,
+            )
+        {
             return Err(Status::failed_precondition(
                 "shared promotion does not match the started local transaction",
             ));
@@ -600,7 +639,11 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
         context: &crate::runtime::TransactionContext,
         abandonment: bool,
     ) -> Result<Vec<crate::durable_coordinator::ReturnedParticipant>, Status> {
-        let pending = self.participant.pending.lock().await;
+        let pending = self
+            .participant
+            .pending
+            .lock_root(self.transaction_id)
+            .await;
         if !context.is_fresh_root()
             || !self.admitted_explicit_root_scope
             || self.participant.state_type != context.transaction_coordinator_state_type()
@@ -657,7 +700,11 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
         context: &crate::runtime::TransactionContext,
         execution: bool,
     ) -> Result<(), Status> {
-        let mut pending = self.participant.pending.lock().await;
+        let mut pending = self
+            .participant
+            .pending
+            .lock_root(self.transaction_id)
+            .await;
         if !self.armed
             || !context.is_fresh_root()
             || !self.admitted_explicit_root_scope
@@ -711,7 +758,11 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
 
     #[cfg(feature = "test-support")]
     pub(crate) async fn assert_staged_for_test(&self) -> Result<(), Status> {
-        let pending = self.participant.pending.lock().await;
+        let pending = self
+            .participant
+            .pending
+            .lock_root(self.transaction_id)
+            .await;
         if !pending.as_ref().is_some_and(|current| {
             current.root_id == self.transaction_id
                 && current.local_owner == Some(self.local_owner)
@@ -728,7 +779,11 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
         &mut self,
         context: &crate::runtime::TransactionContext,
     ) -> Result<LiveExecution<C>, Status> {
-        let mut pending = self.participant.pending.lock().await;
+        let mut pending = self
+            .participant
+            .pending
+            .lock_root(self.transaction_id)
+            .await;
         let current = pending
             .as_mut()
             .ok_or_else(|| Status::failed_precondition("live participant missing"))?;
@@ -740,6 +795,8 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
             || current.disposition == PendingDisposition::ReadOnly
             || current.root_id != self.transaction_id
             || current.prepared
+            || current.native_control_started
+            || current.native_uncertain
             || (current.execution_active
                 && !current
                     .reusable
@@ -785,7 +842,11 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
         &self,
         context: &crate::runtime::TransactionContext,
     ) -> Result<(), Status> {
-        let pending = self.participant.pending.lock().await;
+        let pending = self
+            .participant
+            .pending
+            .lock_root(self.transaction_id)
+            .await;
         if self.handed_off
             || context.mode() != TransactionMode::Exclusive
             || self.participant.state_ref != context.headers().state_ref
@@ -830,7 +891,11 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
     ) -> Result<(), Status> {
         self.participant
             .validate_task_owner(store, state_type, state_ref)?;
-        let pending = self.participant.pending.lock().await;
+        let pending = self
+            .participant
+            .pending
+            .lock_root(self.transaction_id)
+            .await;
         if self.handed_off
             || context.mode() != TransactionMode::Exclusive
             || context.headers().idempotency_key.is_some()
@@ -861,7 +926,11 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
         &self,
         context: &crate::runtime::TransactionContext,
     ) -> Result<(), Status> {
-        let mut pending = self.participant.pending.lock().await;
+        let mut pending = self
+            .participant
+            .pending
+            .lock_root(self.transaction_id)
+            .await;
         if self.handed_off
             || context.mode() != TransactionMode::Exclusive
             || !context.supports_rollback_leaf_path()
@@ -882,8 +951,7 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
                     && current.loaded_state.is_some()
                     && current.execution_active
                     && current.no_terminal_retry
-                    && !current.prepared
-                    && !current.terminal_attempted
+                    && !current.has_native_ownership()
                     && !current.staged
                     && current.disposition == PendingDisposition::Commit
                     && !current.lock.is_shared()
@@ -908,7 +976,11 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
         &self,
         tasks: &[database::Task],
     ) -> Result<Vec<database::Task>, Status> {
-        let pending = self.participant.pending.lock().await;
+        let pending = self
+            .participant
+            .pending
+            .lock_root(self.transaction_id)
+            .await;
         let current = pending
             .as_ref()
             .ok_or_else(|| Status::failed_precondition("participant missing"))?;
@@ -952,7 +1024,11 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
     }
 
     pub(crate) async fn end_execution(&self) -> Result<(), Status> {
-        let mut pending = self.participant.pending.lock().await;
+        let mut pending = self
+            .participant
+            .pending
+            .lock_root(self.transaction_id)
+            .await;
         let current = pending
             .as_mut()
             .ok_or_else(|| Status::failed_precondition("execution ownership missing"))?;
@@ -1027,7 +1103,7 @@ impl<C: ParticipantSidecar> LiveExecution<C> {
             );
         }
         {
-            let mut pending = participant.pending.lock().await;
+            let mut pending = participant.pending.lock_root(self.root).await;
             let Some(current) = pending.as_mut() else {
                 return Ok(());
             };
@@ -1062,7 +1138,7 @@ impl<C: ParticipantSidecar> LiveExecution<C> {
             tokio::pin!(notified);
             notified.as_mut().enable();
             {
-                let pending = participant.pending.lock().await;
+                let pending = participant.pending.lock_root(self.root).await;
                 let Some(current) = pending.as_ref().filter(|current| {
                     current.root_id == self.root && current.matches_live_owner(self.owner)
                 }) else {
@@ -1102,7 +1178,7 @@ impl<C: ParticipantSidecar> LiveExecution<C> {
                         // retain a permit across the mutex/check/rearm gap.
                         notified.set(participant.changed.notified());
                         notified.as_mut().enable();
-                        let pending = participant.pending.lock().await;
+                        let pending = participant.pending.lock_root(self.root).await;
                         let Some(current) = pending.as_ref().filter(|current| {
                             current.root_id == self.root && current.matches_live_owner(self.owner)
                         }) else { return Ok(()); };
@@ -1163,7 +1239,13 @@ impl<C: ParticipantSidecar> SharedLocalPromotion<C> {
         match self
             .started
             .participant
-            .prepare(self.started.transaction_id, true, false)
+            .prepare_checked(
+                self.started.transaction_id,
+                true,
+                false,
+                None,
+                Some(self.started.local_owner),
+            )
             .await?
         {
             PrepareOutcome::Prepared => Ok(false),
@@ -1177,8 +1259,17 @@ impl<C: ParticipantSidecar> SharedLocalPromotion<C> {
     pub async fn commit(self) -> Result<(), Status> {
         self.started
             .participant
-            .terminal(self.started.transaction_id, true)
+            .terminal_live(self.started.transaction_id, self.started.local_owner, true)
             .await
+            .and_then(|acknowledged| {
+                if acknowledged {
+                    Ok(())
+                } else {
+                    Err(Status::failed_precondition(
+                        "shared promotion incarnation differs",
+                    ))
+                }
+            })
     }
 
     /// Sends direct Abort and consumes this authority. As with Commit, an RPC
@@ -1186,48 +1277,66 @@ impl<C: ParticipantSidecar> SharedLocalPromotion<C> {
     pub async fn abort(self) -> Result<(), Status> {
         self.started
             .participant
-            .terminal(self.started.transaction_id, false)
+            .terminal_live(self.started.transaction_id, self.started.local_owner, false)
             .await
+            .and_then(|acknowledged| {
+                if acknowledged {
+                    Ok(())
+                } else {
+                    Err(Status::failed_precondition(
+                        "shared promotion incarnation differs",
+                    ))
+                }
+            })
     }
 }
 
 impl<C: ParticipantSidecar> Drop for StartedLocalTransaction<C> {
     fn drop(&mut self) {
-        if !self.armed {
-            let participant = self.participant.clone();
-            let root = self.transaction_id;
-            let owner = self.local_owner;
-            tokio::spawn(async move {
-                let mut pending = participant.pending.lock().await;
-                if let Some(current) = pending
-                    .as_mut()
-                    .filter(|p| p.root_id == root && p.local_owner == Some(owner))
-                    && current
-                        .reusable
-                        .as_ref()
-                        .is_some_and(|calls| calls.admitting)
-                {
-                    let calls = current.reusable.as_mut().unwrap();
-                    current.effects = calls.snapshot.clone();
-                    current.staged = calls.snapshot_staged;
-                    current.disposition = calls.snapshot_disposition;
-                    calls.admitting = false;
-                    calls.call_staged = false;
-                    current.transaction_ids.truncate(1);
-                    current.execution_active = false;
-                    participant.changed.notify_waiters();
-                }
-            });
+        // Exact slot allocation plus root/owner predicates; no native downgrade.
+        let slot = self.cleanup_slot.clone();
+        if self.armed
+            && let Ok(mut pending) = slot.clone().try_lock_owned()
+            && pending
+                .as_ref()
+                .is_none_or(|current| current.fresh_shared_local)
+        {
+            self.participant
+                .release_undurable(&mut pending, self.transaction_id, self.local_owner);
             return;
         }
         let participant = self.participant.clone();
-        let transaction_id = self.transaction_id;
-        let local_owner = self.local_owner;
-        tokio::spawn(async move {
-            participant
-                .drop_undurable(transaction_id, local_owner)
-                .await
-        });
+        let root = self.transaction_id;
+        let owner = self.local_owner;
+        let armed = self.armed;
+        let job = async move {
+            let mut pending = slot.lock_owned().await;
+            if armed {
+                participant.release_undurable(&mut pending, root, owner);
+            } else if let Some(current) = pending.as_mut().filter(|p| {
+                p.root_id == root && p.local_owner == Some(owner) && !p.has_native_ownership()
+            }) && current
+                .reusable
+                .as_ref()
+                .is_some_and(|calls| calls.admitting)
+            {
+                let calls = current.reusable.as_mut().unwrap();
+                current.effects = calls.snapshot.clone();
+                current.staged = calls.snapshot_staged;
+                current.disposition = calls.snapshot_disposition;
+                calls.admitting = false;
+                calls.call_staged = false;
+                current.transaction_ids.truncate(1);
+                current.execution_active = false;
+                participant.changed.notify_waiters();
+            }
+        };
+        if let Some(producer) = self.cleanup_producer.take() {
+            producer.submit(job);
+        } else {
+            // Never-hosted standalone scope retains legacy detached fallback.
+            tokio::spawn(job);
+        }
     }
 }
 
@@ -1241,8 +1350,113 @@ enum PrepareOutcome {
     DefinitiveAbort,
 }
 
-/// Actor-local durable transaction participant. Clones address the same actor
-/// and pending transaction.
+/// Maximum admitted or admission-waiting roots per actor. Capacity is reserved
+/// before actor admission/Load, so exhaustion never runs an application body.
+/// This does not grant any new shared writer or transaction-tree authority.
+pub const MAX_PENDING_ROOTS_PER_ACTOR: usize = 64;
+
+type PendingSlot = Arc<tokio::sync::Mutex<Option<Pending>>>;
+
+/// Root routing is separate from state serialization. The synchronous registry
+/// mutex is never retained across actor admission, promotion or sidecar IO.
+/// A slot's Arc identity is its allocation generation; `Pending::local_owner`
+/// is the admitted handler incarnation. Owned operations validate both root and
+/// incarnation under the slot mutex before changing effects or releasing a lease.
+#[derive(Default)]
+struct PendingRegistry {
+    slots: std::sync::Mutex<std::collections::HashMap<Uuid, PendingSlot>>,
+}
+
+impl PendingRegistry {
+    fn reserve(&self, root: Uuid) -> Result<PendingSlot, Status> {
+        let mut slots = self.slots.lock().expect("pending registry poisoned");
+        // Only an empty slot with no lookup/admission/guard outstanding can be
+        // removed. A cancelled old admission cannot remove a newer allocation.
+        slots.retain(|_, slot| {
+            Arc::strong_count(slot) != 1 || slot.try_lock().map_or(true, |state| state.is_some())
+        });
+        if let Some(slot) = slots.get(&root) {
+            return Ok(slot.clone());
+        }
+        if slots.len() >= MAX_PENDING_ROOTS_PER_ACTOR {
+            return Err(Status::resource_exhausted(
+                "actor pending root capacity exceeded",
+            ));
+        }
+        let slot = Arc::new(tokio::sync::Mutex::new(None));
+        slots.insert(root, slot.clone());
+        Ok(slot)
+    }
+
+    fn lookup(&self, root: Uuid) -> PendingSlot {
+        self.slots
+            .lock()
+            .expect("pending registry poisoned")
+            .get(&root)
+            .cloned()
+            // Unknown control RPCs do not allocate registry capacity. This
+            // detached empty slot cannot become an admitted owner later.
+            .unwrap_or_else(|| Arc::new(tokio::sync::Mutex::new(None)))
+    }
+
+    async fn lock_root(&self, root: Uuid) -> tokio::sync::OwnedMutexGuard<Option<Pending>> {
+        self.lookup(root).lock_owned().await
+    }
+
+    #[cfg(feature = "test-support")]
+    fn occupied(&self) -> bool {
+        self.slots
+            .lock()
+            .expect("pending registry poisoned")
+            .values()
+            .any(|slot| slot.try_lock().map_or(true, |state| state.is_some()))
+    }
+
+    fn snapshot(&self) -> Vec<(Uuid, PendingSlot)> {
+        self.slots
+            .lock()
+            .expect("pending registry poisoned")
+            .iter()
+            .map(|(root, slot)| (*root, slot.clone()))
+            .collect()
+    }
+
+    // Legacy singleton source tests deliberately inspect the one participant
+    // they installed. Do not allow those helpers to silently choose one of
+    // several roots: concurrent-root tests must use explicit root routing.
+    #[cfg(test)]
+    fn singleton_for_test(&self) -> PendingSlot {
+        let slots = self.slots.lock().expect("pending registry poisoned");
+        let mut active = slots
+            .values()
+            .filter(|slot| slot.try_lock().map_or(true, |state| state.is_some()));
+        let first = active.next().cloned();
+        assert!(active.next().is_none(), "test must select a pending root");
+        first.unwrap_or_else(|| Arc::new(tokio::sync::Mutex::new(None)))
+    }
+
+    #[cfg(test)]
+    async fn lock(&self) -> tokio::sync::OwnedMutexGuard<Option<Pending>> {
+        self.singleton_for_test().lock_owned().await
+    }
+
+    #[cfg(test)]
+    fn try_lock(
+        &self,
+    ) -> Result<tokio::sync::OwnedMutexGuard<Option<Pending>>, tokio::sync::TryLockError> {
+        self.singleton_for_test().try_lock_owned()
+    }
+}
+
+/// Actor-local durable participant. Clones share a bounded root registry and
+/// one ActorGate; only the gate, never registry occupancy, grants exclusivity.
+type ParticipantCleanupOwnership = Arc<
+    std::sync::Mutex<(
+        Option<crate::application_host::ParticipantCleanupBinding>,
+        bool,
+    )>,
+>;
+
 type AdmissionRoots = Arc<std::sync::Mutex<std::collections::HashMap<Uuid, (usize, bool)>>>;
 
 // Reservation precedes both the asynchronous pending mutex and the actor gate.
@@ -1262,19 +1476,93 @@ impl Drop for AdmissionReservation {
     }
 }
 
+// Stable binding identity shared even by clones made before adapter construction.
+// This actor-local synchronous authority orders binding against admission and
+// recovery. It is never held across an await or application/sidecar invocation.
+#[derive(Clone)]
+struct ParticipantActorGate {
+    binding: Arc<std::sync::Mutex<ParticipantActorGateBinding>>,
+}
+
+struct ParticipantActorGateBinding {
+    gate: ActorGate,
+    store_bound: bool,
+    started: bool,
+}
+
+impl ParticipantActorGate {
+    fn new() -> Self {
+        Self {
+            binding: Arc::new(std::sync::Mutex::new(ParticipantActorGateBinding {
+                gate: ActorGate::new(),
+                store_bound: false,
+                started: false,
+            })),
+        }
+    }
+
+    fn gate(&self) -> ActorGate {
+        self.binding
+            .lock()
+            .expect("participant gate binding poisoned")
+            .gate
+            .clone()
+    }
+
+    fn freeze(&self) -> ActorGate {
+        let mut binding = self
+            .binding
+            .lock()
+            .expect("participant gate binding poisoned");
+        binding.started = true;
+        binding.gate.clone()
+    }
+
+    async fn exclusive(&self) -> ExclusiveActorLease {
+        let gate = self.freeze();
+        gate.exclusive().await
+    }
+
+    async fn shared(&self) -> SharedActorLease {
+        let gate = self.freeze();
+        gate.shared().await
+    }
+
+    fn bind(&self, store: &crate::runtime::DatabaseActorStore, state_type: &str, state_ref: &str) {
+        let mut binding = self
+            .binding
+            .lock()
+            .expect("participant gate binding poisoned");
+        // Exact identity, not merely endpoint text, makes rebinding idempotent.
+        if store.owns_actor_gate(&binding.gate, state_type, state_ref) {
+            return;
+        }
+        if binding.started || binding.store_bound {
+            // Do not poison the binding mutex: callers catching this unsupported
+            // builder misuse must still retain the original owners and gate.
+            drop(binding);
+            panic!("cannot change participant actor gate after binding, admission or recovery");
+        }
+        binding.gate = store.actor_gate(state_type, state_ref);
+        binding.store_bound = true;
+    }
+}
+
 pub struct DurableActorParticipant<C: ParticipantSidecar> {
+    cleanup_binding: ParticipantCleanupOwnership,
     sidecar: Arc<C>,
     state_type: String,
     state_ref: String,
-    lock: ActorGate,
+    lock: ParticipantActorGate,
     admissions: AdmissionRoots,
-    pending: Arc<tokio::sync::Mutex<Option<Pending>>>,
+    pending: Arc<PendingRegistry>,
     changed: Arc<tokio::sync::Notify>,
 }
 
 impl<C: ParticipantSidecar> Clone for DurableActorParticipant<C> {
     fn clone(&self) -> Self {
         Self {
+            cleanup_binding: self.cleanup_binding.clone(),
             sidecar: Arc::clone(&self.sidecar),
             state_type: self.state_type.clone(),
             state_ref: self.state_ref.clone(),
@@ -1296,15 +1584,73 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         let state_ref = state_ref.into();
         Self {
             sidecar,
+            cleanup_binding: Arc::new(std::sync::Mutex::new((None, false))),
             // A participant may be hosted by a sidecar unrelated to any
             // DatabaseActorStore, so its default gate is actor-local. Mixed
             // generated adapters bind it to their exact store below.
-            lock: ActorGate::new(),
+            lock: ParticipantActorGate::new(),
             state_type,
             state_ref,
             admissions: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
-            pending: Arc::new(tokio::sync::Mutex::new(None)),
+            pending: Arc::new(PendingRegistry::default()),
             changed: Arc::new(tokio::sync::Notify::new()),
+        }
+    }
+
+    /// Bind this exact allocation before admission. Registered generated adapters,
+    /// legacy recovery and ordinary ApplicationHost ingress use this automatically.
+    /// Never adopts previously untracked producers or permits cross-host rebinding.
+    #[doc(hidden)]
+    pub fn bind_host_cleanup(
+        &self,
+        binding: &crate::application_host::ParticipantCleanupBinding,
+    ) -> Result<(), Status> {
+        let mut current = self
+            .cleanup_binding
+            .lock()
+            .expect("cleanup binding poisoned");
+        if let Some(existing) = current.0.as_ref() {
+            return if existing.same_owner(binding) {
+                Ok(())
+            } else {
+                Err(Status::failed_precondition(
+                    "participant already belongs to another host cleanup owner",
+                ))
+            };
+        }
+        if current.1
+            || !self.admissions.lock().unwrap().is_empty()
+            || self
+                .pending
+                .snapshot()
+                .iter()
+                .any(|(_, slot)| slot.try_lock().map_or(true, |p| p.is_some()))
+        {
+            return Err(Status::failed_precondition(
+                "cannot bind participant after standalone admission",
+            ));
+        }
+        current.0 = Some(binding.clone());
+        Ok(())
+    }
+
+    fn reserve_cleanup_producer(
+        &self,
+    ) -> Result<Option<crate::application_host::CleanupProducer>, Status> {
+        if let Some(binding) = crate::application_host::ParticipantCleanupBinding::current() {
+            self.bind_host_cleanup(&binding)?;
+        }
+        let mut current = self
+            .cleanup_binding
+            .lock()
+            .expect("cleanup binding poisoned");
+        if let Some(binding) = current.0.as_ref() {
+            binding.reserve().map(Some)
+        } else {
+            // Seal standalone ownership under the SAME binding mutex before any
+            // await/reservation. A racing host cannot adopt an untracked guard.
+            current.1 = true;
+            Ok(None)
         }
     }
 
@@ -1313,10 +1659,17 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         Arc::clone(&self.sidecar)
     }
 
-    /// Binds this not-yet-started participant to normal accesses through one
-    /// exact Database sidecar.
-    pub fn with_database_actor_gate(mut self, store: &crate::runtime::DatabaseActorStore) -> Self {
-        self.lock = store.actor_gate(&self.state_type, &self.state_ref);
+    /// Binds all aliases, including previously cloned hosts/resolvers, to normal
+    /// accesses through one exact Database sidecar. The binding identity is stable.
+    ///
+    /// # Panics
+    /// A different gate cannot replace an already bound gate or one whose
+    /// admission/recovery has started (even if that operation later fails or is
+    /// cancelled). Exact same-gate binding remains idempotent after execution.
+    /// This builder retains its `Self` API; unsupported rebinding fails
+    /// synchronously before changing any binding, slot, lease or native state.
+    pub fn with_database_actor_gate(self, store: &crate::runtime::DatabaseActorStore) -> Self {
+        self.lock.bind(store, &self.state_type, &self.state_ref);
         self
     }
 
@@ -1330,7 +1683,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         if self.state_type != state_type
             || self.state_ref != state_ref
             || self.sidecar.database_endpoint() != Some(store.database_endpoint())
-            || !store.owns_actor_gate(&self.lock, state_type, state_ref)
+            || !store.owns_actor_gate(&self.lock.gate(), state_type, state_ref)
         {
             return Err(Status::failed_precondition(
                 "task owner must share participant actor and Database endpoint",
@@ -1358,6 +1711,12 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
     }
 
     /// Starts with an explicit local lock contract.
+    ///
+    /// SharedUpgradeable compatibility roots may overlap, but must stage to
+    /// classify read-only effects or acquire a genuine exclusive actor lease
+    /// before writable Prepare. Unstaged shared Commit is rejected; pristine
+    /// undurable Abort releases only its local root and never controls native
+    /// actor state. Transaction mode/headers alone confer no native authority.
     pub async fn start_with_mode(
         &self,
         start: ActorTransactionStart,
@@ -1376,7 +1735,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         self.validate_start_with_mode(&start, mode)?;
         let _admission = self.reserve_admission(start.transaction_ids[0], false)?;
         {
-            let pending = self.pending.lock().await;
+            let pending = self.pending.lock_root(start.transaction_ids[0]).await;
             if pending
                 .as_ref()
                 .is_some_and(|p| p.root_id == start.transaction_ids[0] && p.reusable.is_some())
@@ -1395,6 +1754,13 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         root: Uuid,
         reusable: bool,
     ) -> Result<AdmissionReservation, Status> {
+        // Same authority as bind: freeze before publishing any reservation or
+        // awaiting a root slot. No binding mutex guard escapes this sync method.
+        let mut binding = self
+            .lock
+            .binding
+            .lock()
+            .expect("participant gate binding poisoned");
         let mut roots = self.admissions.lock().unwrap();
         if roots
             .get(&root)
@@ -1404,6 +1770,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 "same-root reusable admission already in progress",
             ));
         }
+        binding.started = true;
         let entry = roots.entry(root).or_insert((0, reusable));
         entry.0 += 1;
         Ok(AdmissionReservation {
@@ -1420,11 +1787,11 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         reusable: bool,
         preallow_load: bool,
     ) -> Result<Option<Vec<u8>>, Status> {
+        // Reserve a bounded root slot before any gate/Load await. Keep its Arc
+        // alive through publication so cancellation/pruning cannot detach it.
+        let slot = self.pending.reserve(start.transaction_ids[0])?;
         #[cfg(feature = "test-support")]
-        if self
-            .pending
-            .try_lock()
-            .map_or(true, |pending| pending.is_some())
+        if self.pending.occupied()
             && let Some(marker) = std::env::var_os("REBOOT_TEST_COMPETING_ADMISSION")
         {
             std::fs::write(
@@ -1439,7 +1806,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 PendingLock::Shared(self.lock.shared().await)
             }
         };
-        let mut pending = self.pending.lock().await;
+        let mut pending = slot.lock_owned().await;
         if pending.is_some() {
             return Err(Status::failed_precondition(
                 "actor already has a pending transaction",
@@ -1497,6 +1864,8 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             ));
         }
         *pending = Some(Pending {
+            fresh_shared_local: mode == ParticipantStartMode::SharedUpgradeable
+                && local_owner.is_some(),
             reusable: reusable.then(|| ReusableCalls {
                 root_owner: local_owner.expect("reusable admission owns an incarnation"),
                 watch_claimed: false,
@@ -1507,7 +1876,8 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 call_staged: false,
                 completed: std::collections::BTreeMap::new(),
             }),
-            execution_active: reusable,
+            execution_active: reusable
+                || (mode == ParticipantStartMode::SharedUpgradeable && local_owner.is_some()),
             terminal_attempted: false,
             no_terminal_retry: false,
             local_owner,
@@ -1521,6 +1891,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             prepared: false,
             native_started: false,
             native_uncertain: false,
+            native_control_started: false,
             factory: start.factory,
             disposition: if start.read_only {
                 PendingDisposition::ReadOnly
@@ -1544,7 +1915,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 "relinquishment requires non-root nested UUID",
             ));
         }
-        let mut pending = self.pending.lock().await;
+        let mut pending = self.pending.lock_root(root).await;
         let current = pending
             .as_mut()
             .filter(|p| p.root_id == root)
@@ -1564,6 +1935,9 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         }
         if current.prepared
             || current.terminal_attempted
+            || current.native_control_started
+            || current.native_started
+            || current.native_uncertain
             || current.transaction_ids != [root, nested]
             || owner.is_some_and(|token| current.local_owner != Some(token))
             || (owner.is_none() && current.execution_active)
@@ -1641,6 +2015,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         if !reuse || start.transaction_ids.len() == 1 {
             return self.start_local_boundary(start, mode, preallow_load).await;
         }
+        let cleanup_producer = self.reserve_cleanup_producer()?;
         self.validate_start_with_mode(&start, mode)?;
         if mode != ParticipantStartMode::Exclusive
             || start.mode != TransactionMode::Exclusive
@@ -1660,7 +2035,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         let owner = Uuid::new_v4();
         let _admission = self.reserve_admission(root, true)?;
         {
-            let mut pending = self.pending.lock().await;
+            let mut pending = self.pending.lock_root(root).await;
             if let Some(current) = pending.as_mut().filter(|p| p.root_id == root) {
                 let calls = current.reusable.as_mut().ok_or_else(|| {
                     Status::failed_precondition("retained participant policy differs")
@@ -1668,6 +2043,9 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 if current.execution_active
                     || current.prepared
                     || current.terminal_attempted
+                    || current.native_control_started
+                    || current.native_started
+                    || current.native_uncertain
                     || current.coordinator_state_type != start.coordinator_state_type
                     || current.coordinator_state_ref != start.coordinator_state_ref
                     || current.transaction_ids.len() != 1
@@ -1694,6 +2072,8 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                     .clone()
                     .or_else(|| current.loaded_state.clone());
                 return Ok(StartedLocalTransaction {
+                    cleanup_producer,
+                    cleanup_slot: self.pending.lookup(root),
                     participant: self.clone(),
                     transaction_id: root,
                     state,
@@ -1709,6 +2089,8 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             .start_owned_reserved(start, mode, Some(owner), true, preallow_load)
             .await?;
         Ok(StartedLocalTransaction {
+            cleanup_producer,
+            cleanup_slot: self.pending.lookup(root),
             participant: self.clone(),
             transaction_id: root,
             state,
@@ -1773,11 +2155,14 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             && start.transaction_ids.len() == 1
             && start.coordinator_state_type == self.state_type
             && start.coordinator_state_ref == self.state_ref;
+        let cleanup_producer = self.reserve_cleanup_producer()?;
         let local_owner = Uuid::new_v4();
         let state = self
             .start_owned(start, mode, Some(local_owner), preallow_load)
             .await?;
         Ok(StartedLocalTransaction {
+            cleanup_producer,
+            cleanup_slot: self.pending.lookup(transaction_id),
             participant: self.clone(),
             transaction_id,
             state,
@@ -1823,16 +2208,23 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             let _drop = StagingDrop(path);
             std::future::pending::<()>().await;
         }
-        let mut pending = self.pending.lock().await;
+        let mut pending = self.pending.lock_root(transaction_id).await;
         let current = pending
             .as_mut()
             .ok_or_else(|| Status::failed_precondition("actor has no pending transaction"))?;
-        if current.root_id != transaction_id {
+        if current.root_id != transaction_id
+            || owner.is_some_and(|owner| current.local_owner != Some(owner))
+            || (current.fresh_shared_local && owner != current.local_owner)
+        {
             return Err(Status::failed_precondition(
-                "pending transaction ID differs",
+                "pending transaction ID or local incarnation differs",
             ));
         }
-        if current.terminal_attempted || current.prepared || current.native_uncertain {
+        if current.native_control_started
+            || current.terminal_attempted
+            || current.prepared
+            || current.native_uncertain
+        {
             return Err(Status::failed_precondition(
                 "staging after native uncertainty or Prepare is forbidden",
             ));
@@ -1951,6 +2343,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 current.lock = PendingLock::Exclusive(exclusive);
                 current.disposition = PendingDisposition::Commit;
                 Some(SharedPromotion {
+                    local_owner: current.local_owner,
                     root_id: current.root_id,
                     state_type: self.state_type.clone(),
                     state_ref: self.state_ref.clone(),
@@ -1969,6 +2362,12 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                     .transpose()?;
                 current.effects = effects;
                 current.staged = true;
+                if current.fresh_shared_local {
+                    // The generated response-only handler has returned. End its
+                    // execution seal atomically with staging/classification.
+                    current.execution_active = false;
+                    self.changed.notify_waiters();
+                }
             }
             #[cfg(feature = "test-support")]
             if !current.effects.task_upserts.is_empty()
@@ -2080,6 +2479,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         Ok(())
     }
 
+    #[cfg(test)]
     async fn prepare(
         &self,
         transaction_id: Uuid,
@@ -2097,13 +2497,27 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         read_only: bool,
         deadline: Option<tokio::time::Instant>,
     ) -> Result<PrepareOutcome, Status> {
+        self.prepare_checked(transaction_id, read_only_aware, read_only, deadline, None)
+            .await
+    }
+
+    async fn prepare_checked(
+        &self,
+        transaction_id: Uuid,
+        read_only_aware: bool,
+        read_only: bool,
+        deadline: Option<tokio::time::Instant>,
+        owner: Option<Uuid>,
+    ) -> Result<PrepareOutcome, Status> {
         let mut pending = loop {
             let notified = self.changed.notified();
             tokio::pin!(notified);
             notified.as_mut().enable();
-            let pending = self.pending.lock().await;
+            let pending = self.pending.lock_root(transaction_id).await;
             if !pending.as_ref().is_some_and(|current| {
-                current.root_id == transaction_id && current.execution_active
+                current.root_id == transaction_id
+                    && current.execution_active
+                    && owner.is_none_or(|owner| current.local_owner == Some(owner))
             }) {
                 break pending;
             }
@@ -2115,6 +2529,15 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         if deadline.is_some_and(|deadline| tokio::time::Instant::now() >= deadline) {
             return Err(Status::deadline_exceeded(
                 "participant Prepare expired before admission",
+            ));
+        }
+        if owner.is_some_and(|owner| {
+            !pending.as_ref().is_some_and(|current| {
+                current.root_id == transaction_id && current.local_owner == Some(owner)
+            })
+        }) {
+            return Err(Status::failed_precondition(
+                "Prepare local incarnation differs",
             ));
         }
         let Some(current) = pending.as_mut() else {
@@ -2139,6 +2562,13 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             ));
         }
         if current.disposition == PendingDisposition::ReadOnly {
+            if current.has_native_ownership()
+                || (current.lock.is_shared() && !current.shared_release_is_safe())
+            {
+                return Err(Status::failed_precondition(
+                    "read-only Prepare cannot discard native or unclassified ownership",
+                ));
+            }
             if !(read_only_aware && read_only) {
                 return Err(Status::failed_precondition(
                     "read-only participant requires a read-only-aware prepare",
@@ -2159,6 +2589,14 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             // lease; read-only participants need no coordinator decision.
             self.changed.notify_waiters();
             return Ok(PrepareOutcome::Prepared);
+        }
+        // Native Prepare owns the actor, not a registry slot. Shared metadata
+        // and a root ID are not exclusive authority; staging must first obtain
+        // the actual exclusive ActorGate lease (or classify local read-only).
+        if current.lock.is_shared() {
+            return Err(Status::failed_precondition(
+                "writable Prepare requires an exclusive actor lease; stage shared effects first",
+            ));
         }
         // `Database.Recover` restores a durable prepared RocksDB transaction.
         // A recovering coordinator replays Prepare, which must acknowledge that
@@ -2181,6 +2619,11 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;
             }
         }
+        // Seal native ownership before constructing/polling the sidecar future.
+        // Cancellation and ACK loss retain this exclusive lease even without
+        // eager Store. Same-owner retries/terminal ACK or recovery resolve it;
+        // speculative Drop and reclassification can never release it.
+        current.native_control_started = true;
         self.sidecar
             .prepare(database::TransactionParticipantPrepareRequest {
                 state_type: self.state_type.clone(),
@@ -2232,6 +2675,9 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 "participant recovery requires at least one shard ID",
             ));
         }
+        // Freeze before constructing/polling recovery IO, not just after its
+        // response. Recovery reservation and adapter binding cannot race.
+        let recovery_gate = self.lock.freeze();
         let responses = self
             .sidecar
             .recover(database::RecoverRequest {
@@ -2288,16 +2734,18 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             return Ok(());
         };
 
-        // Acquire before publishing ownership, so no terminal request can be
-        // served without this actor's exclusive lock.
-        let lock = self.lock.exclusive().await;
-        let mut pending = self.pending.lock().await;
+        // Recovery still owns only one durable exclusive actor transaction.
+        // Reserve capacity before actor admission, without a global mutex await.
+        let slot = self.pending.reserve(root_id)?;
+        let lock = recovery_gate.exclusive().await;
+        let mut pending = slot.lock_owned().await;
         if pending.is_some() {
             return Err(Status::failed_precondition(
                 "actor already has a pending transaction",
             ));
         }
         *pending = Some(Pending {
+            fresh_shared_local: false,
             reusable: None,
             execution_active: false,
             terminal_attempted: false,
@@ -2322,6 +2770,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             prepared: transaction.prepared,
             native_started: true,
             native_uncertain: false,
+            native_control_started: false,
             factory: false,
             disposition: PendingDisposition::Commit,
             lock: PendingLock::Exclusive(lock),
@@ -2353,13 +2802,22 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         &self,
         watch: &W,
     ) -> Result<(), Status> {
-        let pending = self.pending.lock().await;
-        let Some(current) = pending.as_ref() else {
+        let mut recovered = None;
+        for (root, slot) in self.pending.snapshot() {
+            let pending = slot.lock_owned().await;
+            if let Some(current) = pending
+                .as_ref()
+                .filter(|current| current.local_owner.is_none() && current.native_started)
+                && recovered.replace((root, current.prepared)).is_some()
+            {
+                return Err(Status::failed_precondition(
+                    "multiple recovered durable owners for one actor",
+                ));
+            }
+        }
+        let Some((root_id, prepared)) = recovered else {
             return Ok(());
         };
-        let root_id = current.root_id;
-        let prepared = current.prepared;
-        drop(pending);
 
         if !prepared {
             return self.terminal(root_id, false).await;
@@ -2403,13 +2861,16 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         }
     }
 
-    async fn drop_undurable(&self, transaction_id: Uuid, local_owner: Uuid) {
-        let mut pending = self.pending.lock().await;
+    fn release_undurable(
+        &self,
+        pending: &mut Option<Pending>,
+        transaction_id: Uuid,
+        local_owner: Uuid,
+    ) {
         if pending.as_ref().is_some_and(|current| {
             current.root_id == transaction_id
                 && current.local_owner == Some(local_owner)
-                && !current.prepared
-                && !current.native_started
+                && !current.has_native_ownership()
         }) {
             *pending = None;
             self.changed.notify_waiters();
@@ -2446,7 +2907,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             let notified = self.changed.notified();
             tokio::pin!(notified);
             notified.as_mut().enable();
-            let pending = self.pending.lock().await;
+            let pending = self.pending.lock_root(transaction_id).await;
             if !pending.as_ref().is_some_and(|current| {
                 current.root_id == transaction_id
                     && current.execution_active
@@ -2512,7 +2973,29 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 "live Commit requires exact prepared ownership",
             ));
         }
+        if current.lock.is_shared() {
+            // Neither Commit nor Abort carries a root to the native Database.
+            // Never deliver actor-wide terminal control from a shared lease.
+            // An unstaged compatibility Abort may only discard its exact
+            // pristine local slot; pre-stage Commit must fail without release.
+            if !current.shared_release_is_safe()
+                || (commit
+                    && (!current.staged || current.disposition != PendingDisposition::ReadOnly))
+            {
+                return Err(Status::failed_precondition(
+                    "shared terminal control requires classified undurable read-only effects or exclusive ownership",
+                ));
+            }
+            *pending = None;
+            self.changed.notify_waiters();
+            return Ok(true);
+        }
         if current.disposition == PendingDisposition::ReadOnly {
+            if current.has_native_ownership() {
+                return Err(Status::failed_precondition(
+                    "read-only terminal cannot discard native ownership",
+                ));
+            }
             *pending = None;
             self.changed.notify_waiters();
             return Ok(true);
@@ -2544,6 +3027,9 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 }
             }
         }
+        // This branch can only own an actual exclusive lease. Keep it across
+        // actor-only I/O and every ambiguous response, even pre-Prepare Abort.
+        current.native_control_started = true;
         current.terminal_attempted = current.no_terminal_retry || current.native_started;
         // Wake a parked live Watch even when the terminal ACK is lost. Its
         // ownership check waits on this mutex until the attempt has resolved;
@@ -2555,7 +3041,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 Some(endpoint) => {
                     crate::runtime::same_actor_gate(endpoint, &self.state_type, &self.state_ref)
                 }
-                None => self.lock.clone(),
+                None => self.lock.gate(),
             };
             let commit_attempt = commit_gate.commit_attempt();
             self.sidecar
@@ -5688,6 +6174,11 @@ mod tests {
             participant.abort(root).await.unwrap();
         }
     }
+
+    include!("shared_root_slot_tests.rs");
+    include!("actor_gate_binding_tests.rs");
+    include!("actor_gate_binding_recovery_tests.rs");
+    include!("host_participant_cleanup_tests.rs");
 
     #[derive(Clone, Debug, PartialEq)]
     enum Call {

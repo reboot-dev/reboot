@@ -624,6 +624,14 @@ where
         _supervisor: &mut JoinSet<Result<(), tonic::Status>>,
         cancel: RecoveryCancellation,
     ) -> Result<(), tonic::Status> {
+        // Validate/bind the complete participant graph BEFORE any Recover IO:
+        // restored durable Pending cannot safely be adopted after publication.
+        if let Some(binding) = ParticipantCleanupBinding::current() {
+            self.participant.bind_host_cleanup(&binding)?;
+            for (participant, _) in &self.additional_participants {
+                participant.bind_host_cleanup(&binding)?;
+            }
+        }
         self.participant
             .recover_ownership(self.metadata.participant.clone())
             .await?;
@@ -699,6 +707,7 @@ where
 
 #[derive(Clone, Debug)]
 pub struct RecoveryIngressLayer {
+    participant_cleanup: ParticipantCleanupBinding,
     context: TrustedApplicationContext,
     readiness: RecoveryReadiness,
     placement_gate: LegacyPlacementGate,
@@ -708,9 +717,11 @@ impl RecoveryIngressLayer {
         application_id: String,
         readiness: RecoveryReadiness,
         placement_gate: LegacyPlacementGate,
+        participant_cleanup: ParticipantCleanupBinding,
     ) -> Self {
         Self {
             context: TrustedApplicationContext { application_id },
+            participant_cleanup,
             readiness,
             placement_gate,
         }
@@ -721,6 +732,7 @@ impl<S> Layer<S> for RecoveryIngressLayer {
     fn layer(&self, inner: S) -> Self::Service {
         RecoveryIngressService {
             inner,
+            participant_cleanup: self.participant_cleanup.clone(),
             context: self.context.clone(),
             readiness: self.readiness.clone(),
             placement_gate: self.placement_gate.clone(),
@@ -729,6 +741,7 @@ impl<S> Layer<S> for RecoveryIngressLayer {
 }
 #[derive(Clone, Debug)]
 pub struct RecoveryIngressService<S> {
+    participant_cleanup: ParticipantCleanupBinding,
     inner: S,
     context: TrustedApplicationContext,
     readiness: RecoveryReadiness,
@@ -761,6 +774,8 @@ where
             });
         }
         let future = self.inner.call(request);
+        let binding = self.participant_cleanup.clone();
+        let future = async move { binding.scope(future).await };
         let mut readiness = self.readiness.state.clone();
         Box::pin(async move {
             let failed = async {
@@ -844,6 +859,7 @@ pub enum ApplicationHostError {
         source: tonic::Status,
     },
     RecoveryTask(tonic::Status),
+    ParticipantCleanup(tonic::Status),
     ServingInitialize(tonic::Status),
     Reflection(tonic_reflection::server::Error),
     Bind(std::io::Error),
@@ -864,6 +880,9 @@ impl fmt::Display for ApplicationHostError {
             ),
             Self::ServingInitialize(source) => {
                 write!(formatter, "serving initializer failed: {source}")
+            }
+            Self::ParticipantCleanup(source) => {
+                write!(formatter, "host participant cleanup incomplete: {source}")
             }
             Self::RecoveryTask(source) => {
                 write!(formatter, "application recovery task failed: {source}")
@@ -892,7 +911,9 @@ impl Error for ApplicationHostError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Lifecycle { source, .. } => Some(source),
-            Self::RecoveryTask(source) | Self::ServingInitialize(source) => Some(source),
+            Self::RecoveryTask(source)
+            | Self::ServingInitialize(source)
+            | Self::ParticipantCleanup(source) => Some(source),
             Self::Reflection(source) => Some(source),
             Self::Bind(source) => Some(source),
             Self::HttpTransport(source) => Some(source),
@@ -984,12 +1005,15 @@ where
     }
 }
 
+include!("application_host_cleanup.rs");
+include!("application_host_cleanup_tests.rs");
 include!("serving_initialize.rs");
 include!("serving_initialize_tests.rs");
 
 /// First-stage generic host. It owns one immutable application ID and has no
 /// service routes until [`Self::add_service`] is called.
 pub struct ApplicationHost {
+    participant_cleanup: ParticipantCleanupBinding,
     application_id: String,
     router: Router<RecoveryIngressStack>,
     lifecycle: Vec<Arc<dyn ApplicationLifecycle>>,
@@ -1004,6 +1028,16 @@ pub struct ApplicationHost {
 }
 
 impl ApplicationHost {
+    /// Bind custom recovery/initializer participants before work starts. Ordinary
+    /// generated registration and Tonic ingress bind automatically. Never adopts
+    /// already-started standalone guards; binding follows all participant clones.
+    pub fn bind_participant_cleanup<P: ParticipantSidecar>(
+        &self,
+        participant: &DurableActorParticipant<P>,
+    ) -> Result<(), tonic::Status> {
+        participant.bind_host_cleanup(&self.participant_cleanup)
+    }
+
     /// Register immutable generated adapter composition without granting policy,
     /// readiness, mounting or outbound authority. Mount the returned adapter's
     /// generated service (or exact-target facade) separately on this same host.
@@ -1014,6 +1048,7 @@ impl ApplicationHost {
         &mut self,
         adapter: A,
     ) -> Result<A, tonic::Status> {
+        adapter.bind_participant_cleanup(&self.participant_cleanup)?;
         self.local_registry.register(adapter)
     }
 
@@ -1035,6 +1070,7 @@ impl ApplicationHost {
         A: crate::registered_local_service::GeneratedLocalTransactionService,
         <A::Service as Service<http::Request<BoxBody>>>::Future: Send + 'static,
     {
+        adapter.bind_participant_cleanup(&self.participant_cleanup)?;
         self.local_registry.register_service(adapter)
     }
     #[doc(hidden)]
@@ -1055,6 +1091,7 @@ impl ApplicationHost {
             !application_id.is_empty(),
             "application ID must not be empty"
         );
+        let participant_cleanup = ParticipantCleanupBinding::new();
         let (readiness, state) = tokio::sync::watch::channel(RecoveryState::Ready);
         let placement_gate = LegacyPlacementGate::new();
         let (initialize_state, initialize_receiver) =
@@ -1075,9 +1112,11 @@ impl ApplicationHost {
                     application_id.clone(),
                     RecoveryReadiness { state },
                     placement_gate.clone(),
+                    participant_cleanup.clone(),
                 ))
                 .add_service(health_service),
             application_id,
+            participant_cleanup,
             lifecycle: Vec::new(),
             initializer: None,
             initialize_state,
@@ -1167,6 +1206,7 @@ impl ApplicationHost {
         public_services.insert(S::NAME.to_owned());
         RunningApplicationHost {
             application_id: self.application_id,
+            participant_cleanup: self.participant_cleanup,
             lifecycle: self.lifecycle,
             initializer: self.initializer,
             initialize_state: self.initialize_state,
@@ -1215,6 +1255,7 @@ impl ApplicationHost {
         }
         RunningApplicationHost {
             application_id: self.application_id,
+            participant_cleanup: self.participant_cleanup,
             lifecycle: self.lifecycle,
             initializer: self.initializer,
             initialize_state: self.initialize_state,
@@ -1232,6 +1273,7 @@ impl ApplicationHost {
 
 /// A generic host with at least one registered generated Tonic service.
 pub struct RunningApplicationHost {
+    participant_cleanup: ParticipantCleanupBinding,
     application_id: String,
     lifecycle: Vec<Arc<dyn ApplicationLifecycle>>,
     initializer: Option<ServingInitializer>,
@@ -1247,6 +1289,16 @@ pub struct RunningApplicationHost {
 }
 
 impl RunningApplicationHost {
+    /// Bind custom recovery/initializer participants before work starts. Ordinary
+    /// generated registration and Tonic ingress bind automatically. Never adopts
+    /// already-started standalone guards; binding follows all participant clones.
+    pub fn bind_participant_cleanup<P: ParticipantSidecar>(
+        &self,
+        participant: &DurableActorParticipant<P>,
+    ) -> Result<(), tonic::Status> {
+        participant.bind_host_cleanup(&self.participant_cleanup)
+    }
+
     /// Register immutable generated adapter composition without granting policy,
     /// readiness, mounting or outbound authority. Mount the returned adapter's
     /// generated service (or exact-target facade) separately on this same host.
@@ -1257,6 +1309,7 @@ impl RunningApplicationHost {
         &mut self,
         adapter: A,
     ) -> Result<A, tonic::Status> {
+        adapter.bind_participant_cleanup(&self.participant_cleanup)?;
         self.local_registry.register(adapter)
     }
 
@@ -1278,6 +1331,7 @@ impl RunningApplicationHost {
         A: crate::registered_local_service::GeneratedLocalTransactionService,
         <A::Service as Service<http::Request<BoxBody>>>::Future: Send + 'static,
     {
+        adapter.bind_participant_cleanup(&self.participant_cleanup)?;
         self.local_registry.register_service(adapter)
     }
     #[doc(hidden)]
@@ -1358,6 +1412,7 @@ impl RunningApplicationHost {
         self.public_services.insert(S::NAME.to_owned());
         Self {
             application_id: self.application_id,
+            participant_cleanup: self.participant_cleanup,
             lifecycle: self.lifecycle,
             initializer: self.initializer,
             initialize_state: self.initialize_state,
@@ -1403,6 +1458,7 @@ impl RunningApplicationHost {
         }
         Self {
             application_id: self.application_id,
+            participant_cleanup: self.participant_cleanup,
             lifecycle: self.lifecycle,
             initializer: self.initializer,
             initialize_state: self.initialize_state,
@@ -1426,6 +1482,14 @@ impl RunningApplicationHost {
 
     /// Starts the lifecycle and registered services, then coordinates graceful
     /// Tonic shutdown with lifecycle cleanup.
+    ///
+    /// Host-bound participant cleanup is drained on orderly shutdown and
+    /// ordinary Result exits, including late handler Drop after serving joins.
+    /// Cleanup/serving child panics and cleanup timeouts are failures, not
+    /// successful shutdown. Arbitrary registration/lifecycle hook unwinds or
+    /// external cancellation of this host future do not guarantee async joins.
+    /// Unbound/custom detached graphs, synchronous Service::call, arbitrary
+    /// spawned work and later response-body polling are outside ingress scope.
     pub async fn serve_with_shutdown<F>(
         self,
         address: SocketAddr,
@@ -1457,8 +1521,28 @@ impl RunningApplicationHost {
         F: Future<Output = ()> + Send + 'static,
         B: Future<Output = std::io::Result<tokio::net::TcpListener>> + Send,
     {
+        let binding = self.participant_cleanup.clone();
+        let mut cleanup = binding.start();
+        let result = self
+            .serve_with_bind_inner(bind, shutdown, &mut cleanup)
+            .await;
+        let drained = cleanup.finish().await;
+        result.and(drained)
+    }
+
+    async fn serve_with_bind_inner<F, B>(
+        self,
+        bind: B,
+        shutdown: F,
+        cleanup: &mut CleanupDriver,
+    ) -> Result<(), ApplicationHostError>
+    where
+        F: Future<Output = ()> + Send + 'static,
+        B: Future<Output = std::io::Result<tokio::net::TcpListener>> + Send,
+    {
         let RunningApplicationHost {
             application_id,
+            participant_cleanup,
             lifecycle,
             initializer,
             initialize_state,
@@ -1493,7 +1577,15 @@ impl RunningApplicationHost {
             )
         };
         tokio::pin!(shutdown);
-        if !Self::start_lifecycle(&lifecycle, &mut shutdown, &readiness, &local_registry).await? {
+        if !Self::start_lifecycle(
+            &lifecycle,
+            &mut shutdown,
+            &readiness,
+            &local_registry,
+            cleanup,
+        )
+        .await?
+        {
             return Ok(());
         }
         // Bind before recovery so peers can reach the fixed Participant and
@@ -1505,7 +1597,7 @@ impl RunningApplicationHost {
                 local_registry.revoke();
                 readiness.send_replace(RecoveryState::Failed);
                 // Cleanup must not mask the primary bind failure.
-                let _ = Self::shutdown_lifecycle(&lifecycle).await;
+                let _ = Self::shutdown_with_participant_cleanup(cleanup, &lifecycle).await;
                 return Err(ApplicationHostError::Bind(source));
             }
         };
@@ -1548,7 +1640,7 @@ impl RunningApplicationHost {
                 _ = &mut shutdown => StartupEvent::Shutdown,
                 result = Self::next_recovery_child(&mut supervisor), if supervisor.iter().any(|group| !group.is_empty()) =>
                     StartupEvent::ChildFailure(Self::recovery_child_failure(result)),
-                result = registration.start(&mut starting_children, cancel.clone()) => StartupEvent::Registration(result),
+                result = participant_cleanup.scope(registration.start(&mut starting_children, cancel.clone())) => StartupEvent::Registration(result),
             };
             // Keep each registration's children owned separately: start needs
             // mutable access to its own set while previous sets are supervised.
@@ -1563,7 +1655,7 @@ impl RunningApplicationHost {
                     cancel.cancel();
                     Self::join_cancelled_recovery(&mut supervisor).await;
                     let _ = serving.await;
-                    let _ = Self::shutdown_lifecycle(&lifecycle).await;
+                    let _ = Self::shutdown_with_participant_cleanup(cleanup, &lifecycle).await;
                     return Err(ApplicationHostError::RecoveryTask(source));
                 }
             };
@@ -1572,8 +1664,8 @@ impl RunningApplicationHost {
                 readiness.send_replace(RecoveryState::Failed);
                 cancel.cancel();
                 Self::join_cancelled_recovery(&mut supervisor).await;
-                let serving = serving.await.expect("application serving task panicked");
-                let cleanup = Self::shutdown_lifecycle(&lifecycle).await;
+                let serving = Self::joined_serving(serving.await);
+                let cleanup = Self::shutdown_with_participant_cleanup(cleanup, &lifecycle).await;
                 return Self::shutdown_result(&cancel, serving).and(cleanup);
             };
             if let Err(source) = started {
@@ -1582,7 +1674,7 @@ impl RunningApplicationHost {
                 cancel.cancel();
                 Self::join_cancelled_recovery(&mut supervisor).await;
                 let _ = serving.await;
-                let _ = Self::shutdown_lifecycle(&lifecycle).await;
+                let _ = Self::shutdown_with_participant_cleanup(cleanup, &lifecycle).await;
                 return Err(ApplicationHostError::Lifecycle {
                     phase: ApplicationLifecyclePhase::Recover,
                     component,
@@ -1646,7 +1738,7 @@ impl RunningApplicationHost {
                         cancel: cancel.clone(),
                         live,
                     };
-                    await_serving_initializer(&initializer.callback, context).await
+                    participant_cleanup.scope(await_serving_initializer(&initializer.callback, context)).await
                 } => InitializeEvent::Result(result),
             };
             if !matches!(&event, InitializeEvent::Result(Ok(()))) {
@@ -1665,13 +1757,11 @@ impl RunningApplicationHost {
                 } else {
                     Some(serving.await)
                 };
-                let cleanup = Self::shutdown_lifecycle(&lifecycle).await;
+                let cleanup = Self::shutdown_with_participant_cleanup(cleanup, &lifecycle).await;
                 return match event {
                     InitializeEvent::Shutdown => Self::shutdown_result(
                         &cancel,
-                        served
-                            .expect("serving joined")
-                            .expect("application serving task panicked"),
+                        Self::joined_serving(served.expect("serving joined")),
                     )
                     .and(cleanup),
                     InitializeEvent::Result(Err(source)) => {
@@ -1680,11 +1770,9 @@ impl RunningApplicationHost {
                     InitializeEvent::Recovery(source) => {
                         Err(ApplicationHostError::RecoveryTask(source))
                     }
-                    InitializeEvent::Serving(result) => Self::shutdown_result(
-                        &cancel,
-                        result.expect("application serving task panicked"),
-                    )
-                    .and(cleanup),
+                    InitializeEvent::Serving(result) => {
+                        Self::shutdown_result(&cancel, Self::joined_serving(result)).and(cleanup)
+                    }
                     InitializeEvent::Result(Ok(())) => unreachable!(),
                 };
             }
@@ -1704,7 +1792,7 @@ impl RunningApplicationHost {
                 cancel.cancel();
                 Self::join_cancelled_recovery(&mut supervisor).await;
                 let _ = serving.await;
-                let _ = Self::shutdown_lifecycle(&lifecycle).await;
+                let _ = Self::shutdown_with_participant_cleanup(cleanup, &lifecycle).await;
                 return Err(ApplicationHostError::RecoveryTask(source));
             }
             result = &mut serving => {
@@ -1712,24 +1800,45 @@ impl RunningApplicationHost {
                 readiness.send_replace(RecoveryState::Failed);
                 cancel.cancel();
                 Self::join_cancelled_recovery(&mut supervisor).await;
-                let result = result.expect("application serving task panicked");
-                let cleanup = Self::shutdown_lifecycle(&lifecycle).await;
+                let result = Self::joined_serving(result);
+                let cleanup = Self::shutdown_with_participant_cleanup(cleanup, &lifecycle).await;
                 return Self::shutdown_result(&cancel, result).and(cleanup);
             }
         }
         local_registry.revoke();
         readiness.send_replace(RecoveryState::Failed);
         Self::join_cancelled_recovery(&mut supervisor).await;
-        let serving = serving.await.expect("application serving task panicked");
-        let cleanup = Self::shutdown_lifecycle(&lifecycle).await;
+        let serving = Self::joined_serving(serving.await);
+        let cleanup = Self::shutdown_with_participant_cleanup(cleanup, &lifecycle).await;
         Self::shutdown_result(&cancel, serving).and(cleanup)
+    }
+
+    fn joined_serving(
+        result: Result<Result<(), tonic::transport::Error>, tokio::task::JoinError>,
+    ) -> Result<(), ApplicationHostError> {
+        result
+            .map_err(|error| {
+                ApplicationHostError::RecoveryTask(tonic::Status::internal(format!(
+                    "application serving task failed to join: {error}"
+                )))
+            })?
+            .map_err(ApplicationHostError::Transport)
+    }
+
+    async fn shutdown_with_participant_cleanup(
+        cleanup: &mut CleanupDriver,
+        lifecycle: &[Arc<dyn ApplicationLifecycle>],
+    ) -> Result<(), ApplicationHostError> {
+        let drained = cleanup.finish().await;
+        let hooks = Self::shutdown_lifecycle(lifecycle).await;
+        drained.and(hooks)
     }
 
     // Check after work destruction on every otherwise successful host exit,
     // including interrupted startup and an early router exit.
     fn shutdown_result(
         cancel: &RecoveryCancellation,
-        serving: Result<(), tonic::transport::Error>,
+        serving: Result<(), ApplicationHostError>,
     ) -> Result<(), ApplicationHostError> {
         if cancel
             .failure_latched
@@ -1739,7 +1848,7 @@ impl RunningApplicationHost {
                 tonic::Status::unavailable("durable task outcome uncertain during shutdown"),
             ));
         }
-        serving.map_err(ApplicationHostError::Transport)
+        serving
     }
 
     fn recovery_child_failure(
@@ -1803,6 +1912,7 @@ impl RunningApplicationHost {
         shutdown: &mut Pin<&mut F>,
         readiness: &tokio::sync::watch::Sender<RecoveryState>,
         local_registry: &crate::registered_local::HostLocalRegistry,
+        cleanup: &mut CleanupDriver,
     ) -> Result<bool, ApplicationHostError>
     where
         F: Future<Output = ()> + Send,
@@ -1839,14 +1949,19 @@ impl RunningApplicationHost {
                     None => {
                         local_registry.revoke();
                         readiness.send_replace(RecoveryState::Failed);
-                        Self::shutdown_initialized(lifecycle, initialized).await?;
+                        Self::shutdown_with_participant_cleanup(cleanup, &lifecycle[..initialized])
+                            .await?;
                         return Ok(false);
                     }
                     Some(Err(source)) => {
                         local_registry.revoke();
                         readiness.send_replace(RecoveryState::Failed);
                         // Drain every initialized component, retaining the primary error.
-                        let _ = Self::shutdown_initialized(lifecycle, initialized).await;
+                        let _ = Self::shutdown_with_participant_cleanup(
+                            cleanup,
+                            &lifecycle[..initialized],
+                        )
+                        .await;
                         return Err(ApplicationHostError::Lifecycle {
                             phase,
                             component,
@@ -1871,7 +1986,7 @@ impl RunningApplicationHost {
         if stopped {
             local_registry.revoke();
             readiness.send_replace(RecoveryState::Failed);
-            Self::shutdown_initialized(lifecycle, initialized).await?;
+            Self::shutdown_with_participant_cleanup(cleanup, &lifecycle[..initialized]).await?;
             return Ok(false);
         }
         Ok(true)
@@ -2265,3 +2380,6 @@ mod health_watch_tests {
         assert!(tokio::net::TcpStream::connect(address).await.is_err());
     }
 }
+
+#[cfg(test)]
+mod legacy_cleanup_order_tests;

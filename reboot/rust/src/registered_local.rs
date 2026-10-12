@@ -59,6 +59,12 @@ impl GeneratedLocalAdapterConfig {
 #[doc(hidden)]
 pub trait GeneratedLocalTransactionAdapter: Sized {
     fn local_configuration(&self) -> Result<GeneratedLocalAdapterConfig, tonic::Status>;
+    fn bind_participant_cleanup(
+        &self,
+        _binding: &crate::application_host::ParticipantCleanupBinding,
+    ) -> Result<(), tonic::Status> {
+        Ok(())
+    }
     fn with_local_registration(
         self,
         binding: RegisteredAdapterBinding,

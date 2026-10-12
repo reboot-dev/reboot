@@ -12,10 +12,76 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
-## Current native inventory and acceptance-barrier repair (2026-10-12)
+## Shared roots, stable actor gate and host-owned cleanup (2026-10-12)
 
-**Fresh full native inventory: 152 tests passed, zero failed and zero left ignored
-in the selected executions.** The five discovered suites contain generated canonical
+The bounded per-root participant registry, clone-shared actor-gate binding and
+host-owned local cleanup are integrated and behaviorally verified. Compatibility
+native-control ownership and Legacy recovery-prebinding defects are repaired;
+independent applied-source review found no blocker in its bounded scope. This is
+not production readiness, broad shared-writer support or full SDK parity.
+
+Fresh SDK library acceptance is **578 passed / 0 failed / 1 ignored**; filtered
+binding (10) and Legacy recovery (3) selections overlap that library run, rather
+than adding distinct coverage. The generated downstream fixture passed **51**
+cases, with one separate outer generator harness. Default-feature-disabled check
+and strict all-feature/all-target SDK, generated native-consumer, examples and
+actual generated SortedMap-consumer Clippy passed.
+
+**28 selected canonical C++ Database tests passed:** compatibility/ACK-loss B1 (4),
+registered writer safety (20), SortedMap (3), and durable effects restart (1).
+Two native inventory gates are discovery, not behavioral passes. The older full
+152-native inventory below certifies its older source, not this production batch.
+
+Current public CLI/canonical Database/RocksDB regressions passed all five Legacy
+crash windows, Legacy happy/restart, Hello Constructors and Hello Tasks. All 13
+pinned upstream example files were authenticated against upstream/local hashes;
+upstream HEAD still matched `5c332a2910122d6035799bfaf2a314bf1de830b8`.
+Unchanged shared `Bank.Transfer` still rejects for the exact declared-error schema
+diagnostic: this remains an unsupported capability, not public Bank acceptance.
+
+Each participant registry admits at most **64 roots**, including admission/gate
+waiters. Clones share real gate authority, frozen before admission and recovery;
+writable Prepare and actor-only native terminal controls require actual exclusive
+ownership. ACK loss, cancellation, rollback, guard Drop and reuse retain possible
+native ownership rather than manufacturing terminal success.
+
+Host cleanup has **256 aggregate tickets per host** across producers, queued jobs,
+running children and completed-unreaped children. Captured-slot/root/incarnation
+fences preserve prepared, early-native and uncertain ownership. Orderly shutdown
+and ordinary Result exits join serving/recovery before draining cleanup; detected
+child panic or cleanup timeout is failure. Arbitrary lifecycle/registration-hook
+unwind, external host-future cancellation, unbound/custom detached graphs,
+synchronous Service::call, arbitrary spawned work and later body polling are not
+joined-cleanup guarantees. External guard/context-cache aliases keep producer
+tickets even after acknowledged completion and must be relinquished before
+successful host drain; automatic cleanup-ticket revocation is not implemented.
+The cap was source-reviewed, not experimentally saturated in every category.
+
+Legacy startup prebinds the complete primary/additional participant graph before
+any Recover construction. Held authoritative Watch/Commit ACK regressions tie
+readiness to actual convergence; these mock lifecycle cases are not independent
+native durability evidence.
+
+The SortedMap native regression initially failed shutdown because its fixture
+retained a revoked external context/cache guard through host join. It now drops
+that fixture-owned alias after the unchanged stale-authority rejection, before
+unchanged native-state inspection. All three affected native cases and strict
+actual map-consumer lint were rerun. No production bytes changed in that final
+fixture repair; earlier accepted SDK/public/registered evidence retains its exact
+snapshot with this single-file compatibility difference explicitly recorded.
+
+Evidence: [shared-root checkpoint](tests/evidence/shared-root-checkpoint-20261012.json).
+It records 20 named gates (including two discovery gates), immutable source/binary
+and log identities, applied reviews, and **701 accepted-stage process identities**
+independently absent, including matching zombies. Earlier failed attempts remain
+failures. GitHub fork approval and current merge-result validation remain separate;
+PR #216 stays draft.
+
+## Historical native inventory and acceptance-barrier repair (2026-10-12)
+
+**Full native inventory at the earlier proof checkpoint: 152 tests passed, zero failed
+and zero left ignored in its selected executions.** This is historical evidence,
+not fresh certification of the later production changes above. The five discovered suites contain generated canonical
 Database/process cases (130), workflow restart/control cases (5), reactive/User
 cases (4), SortedMap cases (3), and isolated Native2pc cases (8). The library unit
 effects-restart test and separately owned initializer admission test add one each.
@@ -58,9 +124,8 @@ marker-publication liveness risk fails closed. Historical 131-case/queued-invent
 wording below describes earlier checkpoints. GitHub fork approval and merge-result
 validation remain separate; this is not full SDK parity or production readiness.
 
-The per-root shared-slot implementation is still isolated and unpublished. Its
-compatibility native-control ownership defect blocks integration pending repair,
-new review and parent execution. Shared/public Bank remains unsupported.
+The bounded shared-slot/gate/cleanup batch is now integrated and verified as
+recorded above. Broad shared transactions and public Bank remain unsupported.
 
 ## Legacy gRPC and serving initializer checkpoint (2026-10-12)
 
@@ -4352,7 +4417,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 286616ad5b1caafa0124fb0602ab1d4c1c75a9227a6d279c7dbe16a7c368c8e6 -->
+<!-- parity-source-sha256: e6d89403898f25660b649fc37cbef115b0fc03d67aedc5efa1a7b5cb4433b336 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

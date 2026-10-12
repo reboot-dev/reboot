@@ -182,6 +182,11 @@ fn counter_cargo_build_helper_executes_durable_adapters_in_a_downstream_fixture(
     )
     .unwrap();
     std::fs::write(
+        fixture.join("src/shared_root_slots.rs"),
+        include_str!("fixtures/shared_root_slots.rs"),
+    )
+    .unwrap();
+    std::fs::write(
         fixture.join("src/lib.rs"),
         r#"pub mod proto {
     tonic::include_proto!("tests.reboot.protoc");
@@ -258,6 +263,8 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use uuid::Uuid;
+
+mod shared_root_slots { include!("shared_root_slots.rs"); }
 
 struct Counter;
 
@@ -568,6 +575,7 @@ struct TransactionCounter {
     fail: bool,
     downstream: Option<transaction_generated::TransactionCounterWritesMethodsClient<FixedChannelResolver>>,
     final_state_override: Option<i64>,
+    fresh_shared_probe: Option<Arc<shared_root_slots::SharedRootProbe>>,
 }
 
 #[tonic::async_trait]
@@ -736,6 +744,14 @@ impl transaction_generated::TransactionCounterWritesMethodsTransactionHandler fo
         request: proto::TransactionIncrementRequest,
     ) -> Result<proto::TransactionCounterValue, tonic::Status> {
         self.trace.lock().unwrap().push("fresh shared handler");
+        #[cfg(test)]
+        if let Some(probe) = shared_root_slots::PROBE.try_with(Arc::clone).ok()
+            .or_else(|| self.fresh_shared_probe.clone())
+        {
+            probe.park(request.amount).await;
+            // The concurrency probe deliberately leaves Prost state unchanged.
+            return Ok(proto::TransactionCounterValue { value: state.value });
+        }
         if self.fail || request.amount < 0 {
             return Err(tonic::Status::invalid_argument("fresh shared handler rejected request"));
         }
@@ -1037,7 +1053,7 @@ fn transaction_adapter_with_store_and_idempotent_recovery(
         participant,
         coordinator,
         TransactionStartFactory,
-        TransactionCounter { trace, fail, downstream: None, final_state_override: None },
+        TransactionCounter { fresh_shared_probe: None, trace, fail, downstream: None, final_state_override: None },
     ).with_authorization(reboot::auth::AuthorizationPolicy::permissive_for_development())
 }
 
@@ -1069,7 +1085,7 @@ fn transaction_adapter_with_downstream(
     transaction_generated::TransactionCounterWritesMethodsTransactionAdapter::new(
         DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(), participant, coordinator,
         TransactionStartFactory,
-        TransactionCounter { trace, fail: false, downstream: Some(transaction_generated::TransactionCounterWritesMethodsClient::new(FixedChannelResolver(channel))), final_state_override: None },
+        TransactionCounter { fresh_shared_probe: None, trace, fail: false, downstream: Some(transaction_generated::TransactionCounterWritesMethodsClient::new(FixedChannelResolver(channel))), final_state_override: None },
     ).with_authorization(reboot::auth::AuthorizationPolicy::permissive_for_development())
 }
 
@@ -1112,7 +1128,7 @@ fn factory_transaction_adapter(
         participant,
         coordinator,
         TransactionStartFactory,
-        TransactionCounter { trace, fail, downstream: None, final_state_override },
+        TransactionCounter { fresh_shared_probe: None, trace, fail, downstream: None, final_state_override },
     ).with_authorization(reboot::auth::AuthorizationPolicy::permissive_for_development())
 }
 
@@ -1459,7 +1475,7 @@ impl reboot::durable_coordinator::CoordinatorSidecar for TicketCoordinatorSideca
         ).with_identity(participant.actor_target());
         transaction_generated::TransactionCounterWritesMethodsTransactionAdapter::new(
             DatabaseActorStore::connect_lazy(&endpoint).unwrap(), participant, coordinator, Starts(allocations.clone()),
-            TransactionCounter { trace: trace.clone(), fail: false, downstream: None, final_state_override: None },
+            TransactionCounter { fresh_shared_probe: None, trace: trace.clone(), fail: false, downstream: None, final_state_override: None },
         ).with_explicit_abort_owner(reboot::explicit_abort::ExplicitAbortOwner::new(2).unwrap()).with_authorization(AuthorizationPolicy::permissive_for_development()).with_sequential_root_star()
     };
     let mut application = reboot::application_host::ApplicationHost::new("ticket-receiver-fixture");
@@ -1573,7 +1589,7 @@ async fn generated_local_registration_retains_exact_binding_and_invalidates_buil
         );
         transaction_generated::TransactionCounterWritesMethodsTransactionAdapter::new(
             store, participant, coordinator, RegistrationStarts(allocations.clone()),
-            TransactionCounter { trace: trace.clone(), fail: false, downstream: None, final_state_override: None },
+            TransactionCounter { fresh_shared_probe: None, trace: trace.clone(), fail: false, downstream: None, final_state_override: None },
         ).with_sequential_reusable_participants()
     };
     let mut host = reboot::application_host::ApplicationHost::new("generated-registration");
@@ -1827,7 +1843,7 @@ async fn generated_registered_root_authorized_entry_rejection_awaits_abort_ack()
     ).unwrap())).with_identity(ParticipantTarget { state_type: "tests.reboot.protoc.TransactionCounter".into(), state_ref: "transaction-counter".into() });
     let owner = reboot::explicit_abort::ExplicitAbortOwner::new(2).unwrap();
     let probe = Arc::new(AuthProbe { verifier_calls: Arc::new(AtomicUsize::new(0)), authorizer_calls: Arc::new(AtomicUsize::new(0)), handler_calls: Arc::new(AtomicUsize::new(0)), decision: AuthorizationDecision::Allow, contexts: Arc::new(std::sync::Mutex::new(Vec::new())), snapshots: Arc::new(std::sync::Mutex::new(Vec::new())) });
-    let adapter = transaction_generated::TransactionCounterWritesMethodsTransactionAdapter::new(DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(), participant.clone(), coordinator.clone(), Starts(AtomicUsize::new(102)), TransactionCounter { trace: trace.clone(), fail: false, downstream: None, final_state_override: None })
+    let adapter = transaction_generated::TransactionCounterWritesMethodsTransactionAdapter::new(DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(), participant.clone(), coordinator.clone(), Starts(AtomicUsize::new(102)), TransactionCounter { fresh_shared_probe: None, trace: trace.clone(), fail: false, downstream: None, final_state_override: None })
         .with_explicit_abort_owner(owner.clone()).with_authorization(AuthorizationPolicy::new(Some(probe.clone()), Some(probe.clone())));
     let plain = adapter.clone();
     let adapter = adapter.with_sequential_root_star();
@@ -1879,7 +1895,11 @@ async fn generated_registered_root_authorized_entry_rejection_awaits_abort_ack()
         mode: reboot::runtime::TransactionMode::Exclusive, read_only: false, factory: false,
         state_type: "tests.reboot.protoc.TransactionCounter".into(), state_ref: "transaction-counter".into(),
     };
-    assert!(tokio::time::timeout(std::time::Duration::from_millis(30), participant.start_local(actor_request, reboot::durable_participant::ParticipantStartMode::Exclusive)).await.is_err());
+    match tokio::time::timeout(std::time::Duration::from_millis(30), participant.start_local(actor_request, reboot::durable_participant::ParticipantStartMode::Exclusive)).await {
+        Err(_) => {},
+        Ok(Err(error)) => panic!("competing exclusive admission rejected before held Abort ACK: {error}"),
+        Ok(Ok(guard)) => panic!("competing exclusive admission acquired before held Abort ACK: {:?}", guard.state()),
+    }
     assert!(tokio::time::timeout(std::time::Duration::from_millis(30), &mut rpc).await.is_err(), "RPC must wait for participant Abort ACK");
     sidecar.abort_release.notify_one();
     let error = tokio::time::timeout(std::time::Duration::from_secs(2), rpc).await.unwrap().unwrap_err();
@@ -1892,6 +1912,26 @@ async fn generated_registered_root_authorized_entry_rejection_awaits_abort_ack()
     // Registration alone cannot make plain exclusive execution eligible.
     // This separate host intentionally remains Starting and serves no RPCs.
     let mut unstarted_host = reboot::application_host::ApplicationHost::new("registered-plain-exclusive");
+    let cross_host = match unstarted_host.register_transaction_adapter(plain.clone()) {
+        Err(error) => error,
+        Ok(_) => panic!("one participant allocation cannot bind cleanup to two hosts"),
+    };
+    assert_eq!(cross_host.code(), tonic::Code::FailedPrecondition);
+    // The independent plain-exclusive Starting-host contract needs a fresh
+    // participant domain, not a second host adopting the first host's guards.
+    let fresh_participant = reboot::durable_participant::DurableActorParticipant::new(sidecar.clone(), "tests.reboot.protoc.TransactionCounter", "transaction-counter");
+    let fresh_coordinator = reboot::durable_coordinator::DurableRootCoordinator::new(
+        Arc::new(AuthorizationCleanupCoordinatorSidecar { trace: trace.clone(), decisions: std::sync::Mutex::new(Vec::new()) }),
+        Arc::new(reboot::durable_coordinator::SingleParticipantResolver::new(
+            ParticipantTarget { state_type: "tests.reboot.protoc.TransactionCounter".into(), state_ref: "transaction-counter".into() },
+            reboot::durable_participant::DurableActorParticipantHost::new(fresh_participant.clone()),
+        ).unwrap()),
+    );
+    let plain = transaction_generated::TransactionCounterWritesMethodsTransactionAdapter::new(
+        DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(), fresh_participant, fresh_coordinator,
+        Starts(AtomicUsize::new(1000)),
+        TransactionCounter { fresh_shared_probe: None, trace: trace.clone(), fail: false, downstream: None, final_state_override: None },
+    ).with_explicit_abort_owner(owner.clone()).with_authorization(AuthorizationPolicy::permissive_for_development());
     let plain = unstarted_host.register_transaction_adapter(plain).unwrap();
     let result = TransactionCounterWritesMethods::increment(&plain, request(7302)).await.unwrap();
     assert_eq!(result.into_inner().value, 7306);
@@ -2323,7 +2363,7 @@ async fn generated_admission_observer_preserves_raw_and_declared_status_and_doom
 #[tokio::test]
 async fn generated_typed_transaction_hook_classifies_legacy_declared_and_rejects_malformed() {
     use transaction_generated::TransactionCounterWritesMethodsTransactionHandler;
-    let handler = TransactionCounter { trace: Arc::new(std::sync::Mutex::new(Vec::new())), fail: false, downstream: None, final_state_override: None };
+    let handler = TransactionCounter { fresh_shared_probe: None, trace: Arc::new(std::sync::Mutex::new(Vec::new())), fail: false, downstream: None, final_state_override: None };
     let mut headers = reboot::RebootHeaders::new("transaction-counter");
     headers.transaction_ids = Some(vec![Uuid::new_v4()]);
     headers.transaction_coordinator_state_type = Some("tests.reboot.protoc.TransactionCounter".into());
@@ -2591,7 +2631,7 @@ async fn generated_retained_sibling_authorization_preserves_n1_for_n3_and_one_wa
         let watch=Arc::new(Watch { count:AtomicUsize::new(0), release:tokio::sync::Notify::new() });
         let owner=reboot::live_participant::LiveParticipantOwner::new(2,ParticipantTarget { state_type:"tests.reboot.protoc.Root".into(),state_ref:"root-counter".into() },watch.clone()).unwrap();
         let policy=Arc::new(Policy { park, states:std::sync::Mutex::new(Vec::new()) });
-        let adapter=transaction_generated::TransactionCounterWritesMethodsTransactionAdapter::new(DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(),participant,coordinator,Starts(AtomicUsize::new(202)),TransactionCounter { trace:trace.clone(),fail:false,downstream:None,final_state_override:None }).with_sequential_reusable_participants().with_live_participant_owner(owner).with_authorization(AuthorizationPolicy::new(None,Some(policy.clone())));
+        let adapter=transaction_generated::TransactionCounterWritesMethodsTransactionAdapter::new(DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(),participant,coordinator,Starts(AtomicUsize::new(202)),TransactionCounter { fresh_shared_probe: None, trace:trace.clone(),fail:false,downstream:None,final_state_override:None }).with_sequential_reusable_participants().with_live_participant_owner(owner).with_authorization(AuthorizationPolicy::new(None,Some(policy.clone())));
         let socket=std::net::TcpListener::bind("127.0.0.1:0").unwrap();let address=socket.local_addr().unwrap();drop(socket);
         let (stop, stopped)=tokio::sync::oneshot::channel::<()>();
         let mut application = reboot::application_host::ApplicationHost::new("retained-preguard");
@@ -2673,7 +2713,7 @@ async fn generated_authorized_entry_rejection_transfers_watch_and_preserves_reta
         let watch=Arc::new(Watch { count:AtomicUsize::new(0), release:tokio::sync::Notify::new() });
         let owner=reboot::live_participant::LiveParticipantOwner::new(2,ParticipantTarget { state_type:"tests.reboot.protoc.Root".into(),state_ref:"root-counter".into() },watch.clone()).unwrap();
         let policy=Arc::new(Policy { park, states:std::sync::Mutex::new(Vec::new()) });
-        let adapter=transaction_generated::TransactionCounterWritesMethodsTransactionAdapter::new(DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(),participant,coordinator,Starts(AtomicUsize::new(202)),TransactionCounter { trace:trace.clone(),fail:false,downstream:None,final_state_override:None }).with_sequential_reusable_participants().with_live_participant_owner(owner).with_authorization(AuthorizationPolicy::new(None,Some(policy.clone())));
+        let adapter=transaction_generated::TransactionCounterWritesMethodsTransactionAdapter::new(DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(),participant,coordinator,Starts(AtomicUsize::new(202)),TransactionCounter { fresh_shared_probe: None, trace:trace.clone(),fail:false,downstream:None,final_state_override:None }).with_sequential_reusable_participants().with_live_participant_owner(owner).with_authorization(AuthorizationPolicy::new(None,Some(policy.clone())));
         let socket=std::net::TcpListener::bind("127.0.0.1:0").unwrap();let address=socket.local_addr().unwrap();drop(socket);
         let (stop, stopped)=tokio::sync::oneshot::channel::<()>();
         let registration=adapter.live_participant_recovery_registration().unwrap();let served=adapter.clone();

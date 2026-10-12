@@ -248,7 +248,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             map: sorted_map.clone(),
             retained: retained.clone(),
         },
-    ).with_authorization(reboot::auth::AuthorizationPolicy::permissive_for_development())
+    )
+    .with_authorization(reboot::auth::AuthorizationPolicy::permissive_for_development())
     .with_explicit_abort_owner(reboot::explicit_abort::ExplicitAbortOwner::new(8)?);
     let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
     let address = listener.local_addr()?;
@@ -305,6 +306,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         sorted_map.in_transaction(&stale).await.is_err(),
         "completed root context must not retain builtin authority"
     );
+    // This externally retained context still owns the cached map guard's
+    // cleanup producer even though root authority has been revoked. Release
+    // that fixture-owned reference before asking the host to join cleanup.
+    // All stale-authority assertions remain above; native state is read below.
+    drop(stale);
     let mut native = db::database_client::DatabaseClient::connect(database).await?;
     let rows = native
         .colocated_range(db::ColocatedRangeRequest {
