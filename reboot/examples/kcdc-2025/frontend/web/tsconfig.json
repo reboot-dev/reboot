@@ -1,8 +1,10 @@
 {
   "compilerOptions": {
+    "tsBuildInfoFile": "../node_modules/.tmp/tsconfig.web.tsbuildinfo",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@api/*": ["../api/*"]
     },
     "target": "ES2020",
     "useDefineForClassFields": true,
@@ -24,6 +26,5 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"],
-  "references": [{ "path": "./tsconfig.node.json" }]
+  "include": ["src"]
 }
