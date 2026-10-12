@@ -83,3 +83,24 @@ to use HTTPS when using a custom certificate.
 
 This setup ensures secure local development with custom certificates and enables
 compatibility with `rbt dev run`.
+
+## Serve `rbt dev run` through Portless
+
+[`Portless`](https://github.com/vercel-labs/portless) can give a local Reboot
+application a stable HTTPS hostname without configuring Reboot's TLS flags:
+
+```console
+$ rbt dev run --portless=my-app
+...
+Portless HTTPS URL: https://my-app.localhost
+```
+
+This starts or reuses Portless's local HTTPS proxy, registers Reboot's local
+Envoy port under the supplied name, and prints the public URL. Portless
+terminates TLS; leave `--tls-certificate`, `--tls-key`, and
+`--tls-root-certificate` unset. The exact Portless hostname is automatically
+included in the development OAuth/CORS allow-list, including when Portless is
+configured to use a custom TLD or proxy port.
+
+`--portless` deliberately takes over that Portless name on each run. Use a
+project-specific name rather than a generic one shared by concurrent apps.

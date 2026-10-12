@@ -11,7 +11,7 @@ from tests.reboot.cli.mock_exit import (
     MockExitException,
     mock_raise_instead_of_exit,
 )
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, call, patch
 
 
 @patch('argparse.ArgumentParser.exit', mock_raise_instead_of_exit)
@@ -117,6 +117,56 @@ class RbtDevTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertListEqual(
             args.env,
             [['E1', 'V1'], ['E2', 'V2'], ['E3', 'V3']],
+        )
+
+    async def test_portless_name(self) -> None:
+        parser: ArgumentParser = cli.create_parser(
+            argv=[
+                'rbt',
+                'dev',
+                'run',
+                '--working-directory=.',
+                '--portless=ping',
+                '--python',
+                '--application=some.py',
+            ]
+        )
+
+        args, _ = parser.parse_args()
+
+        self.assertEqual(args.portless, 'ping')
+
+    async def test_portless_origin_is_an_https_origin(self) -> None:
+        """CORS receives an origin, never a URL containing a path."""
+        self.assertEqual(
+            dev._portless_https_origin('https://ping.localhost/'),
+            'https://ping.localhost',
+        )
+        with self.assertRaises(ValueError):
+            dev._portless_https_origin('https://ping.localhost/not-an-origin')
+
+    async def test_configure_portless_registers_the_local_envoy_port(self) -> None:
+        """The Portless route and propagated CORS value use its real origin."""
+        subprocesses = Mock()
+        with patch(
+            'reboot.cli.commands.dev._run_portless',
+            new_callable=AsyncMock,
+            side_effect=['proxy started', 'alias registered', 'https://ping.test:8443'],
+        ) as run_portless:
+            origin = await dev._configure_portless(
+                name='ping',
+                app_port=9991,
+                subprocesses=subprocesses,
+            )
+
+        self.assertEqual(origin, 'https://ping.test:8443')
+        self.assertEqual(
+            run_portless.await_args_list,
+            [
+                call(subprocesses, 'proxy', 'start', '--https'),
+                call(subprocesses, 'alias', 'ping', '9991', '--force'),
+                call(subprocesses, 'get', 'ping', '--no-worktree'),
+            ],
         )
 
     async def test_open_dashboard_requires_a_reachable_dashboard(self) -> None:

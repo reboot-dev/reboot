@@ -17,7 +17,7 @@ from reboot.aio.tests import OAuthProviderForTest, Reboot
 from reboot.aio.types import ServiceName, StateTypeName
 from reboot.ping.ping import CounterServicer, UserServicer
 from reboot.ping.ping_api_rbt import User
-from reboot.settings import ENVVAR_RBT_DEV
+from reboot.settings import ENVVAR_RBT_DEV, ENVVAR_RBT_DEV_PORTLESS_ORIGIN
 from reboot.std.collections.v1.sorted_map import SortedMap, sorted_map_library
 from tests.reboot.greeter_servicers import MyClockServicer, MyGreeterServicer
 from typing import Optional
@@ -247,6 +247,22 @@ class TestCase(unittest.IsolatedAsyncioTestCase):
                     oauth=OAuth(provider=OAuthProviderForTest(Development())),
                 )
                 Application(servicers=[_StubUserA])
+
+    async def test_oauth_includes_portless_origin_in_dev_cors_allow_list(self) -> None:
+        """`rbt dev run --portless` passes its exact HTTPS origin to OAuth."""
+        portless_origin = 'https://ping.localhost'
+        with mock.patch.dict(
+            os.environ,
+            {
+                ENVVAR_RBT_DEV: 'true',
+                ENVVAR_RBT_DEV_PORTLESS_ORIGIN: portless_origin,
+            },
+        ):
+            application = Application(
+                servicers=[_StubUserA],
+                oauth=OAuth(provider=OAuthProviderForTest(Development())),
+            )
+        self.assertEqual(application._allowed_origins, [portless_origin])
 
     async def test_oauth_composes_with_token_verifier(self) -> None:
         """

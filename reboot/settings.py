@@ -137,6 +137,11 @@ ENVVAR_RBT_STATE_DIRECTORY = 'RBT_STATE_DIRECTORY'
 ENVVAR_RBT_NODEJS = 'RBT_NODEJS'
 ENVVAR_RBT_SERVERS = 'RBT_SERVERS'
 
+# The public HTTPS origin assigned by Portless when `rbt dev run` is invoked
+# with `--portless`.  It is consumed only in development to extend the OAuth
+# CORS allow-list with this exact, local origin.
+ENVVAR_RBT_DEV_PORTLESS_ORIGIN = 'RBT_DEV_PORTLESS_ORIGIN'
+
 # URL of the frontend dev server (web + MCP) for HMR support.
 # Format: "http://host:port" (e.g., "http://localhost:4444").
 # When set, Envoy routes "/__/frontend/**" to this server.
