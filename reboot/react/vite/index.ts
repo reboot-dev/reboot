@@ -24,7 +24,8 @@
 //
 //   * `vite` (serve): a single dev server that delivers HMR for every
 //     MCP UI AND the web app, all under `base: "/__/frontend/"`. Envoy
-//     proxies that prefix to this dev server (`--mcp-app-url`).
+//     proxies that prefix to this dev server (`--mcp-app-url`, which
+//     names its port: Vite's default unless the config sets one).
 //   * `RBT_BUILD_TARGET=mcp:<name> vite build`: builds one MCP UI into
 //     a single, self-contained `dist/mcp/<name>/index.html` (assets
 //     inlined via `vite-plugin-singlefile`). The framework serves it
@@ -36,7 +37,7 @@
 //     `<webPath>/.env.production`.
 //
 // The plugin sets what the layout requires (`root`, `base`, the
-// output directories, the dev server's port and host) and raises an
+// output directories, the dev server's host) and raises an
 // error when the Vite config already sets one of those, rather than
 // silently winning or losing the merge.
 import fs from "fs";
@@ -346,16 +347,6 @@ export function reboot(options: RebootOptions = {}): Plugin[] {
         );
         claim(
           config,
-          "server.port",
-          "to `RBT_VITE_PORT` or 4444, the port `.rbtrc`'s `--mcp-app-url` names; set `RBT_VITE_PORT` to change it"
-        );
-        claim(
-          config,
-          "server.strictPort",
-          "since `--mcp-app-url` names the port"
-        );
-        claim(
-          config,
           "server.host",
           "to every interface, since requests come through Envoy (and tunnels)"
         );
@@ -366,8 +357,6 @@ export function reboot(options: RebootOptions = {}): Plugin[] {
         );
         result.base = BASE;
         result.server = {
-          port: parseInt(process.env.RBT_VITE_PORT || "4444", 10),
-          strictPort: true,
           host: true,
           allowedHosts: true,
         };

@@ -29,12 +29,17 @@ A plugin the project had added to its copy (Tailwind, say) goes in
 `plugins` beside `react()`. Any other Vite option the copy had been
 changed to set goes in the literal as usual, except the ones the
 plugin owns — `root`, `base`, `envDir`, `publicDir`, `build.outDir`,
-`build.emptyOutDir`, `server.port`, `server.strictPort`,
-`server.host`, `server.allowedHosts` and the `@api` alias — which the
+`build.emptyOutDir`, `server.host`, `server.allowedHosts` and the
+`@api` alias — which the
 plugin raises an error about if the config sets them: the backend's
 `--mcp-app-url`, `--mcp-app-dist-path` and `--web-app-dist-path` depend on
-their values. A different dev-server port is `RBT_VITE_PORT` in the
-environment, as before. `vite`, `@vitejs/plugin-react` and `vite-plugin-singlefile`
+their values. The copy fixed the dev server's port at 4444; the
+plugin leaves the port to Vite, so it is Vite's default, 5173, unless
+the config sets `server.port`. Change `--mcp-app-url` (and
+`VITE_WEB_APP_URL`, if set) in `.rbtrc` and
+`.env.development` from `http://localhost:4444` to
+`http://localhost:5173`, or keep 4444 by adding
+`server: { port: 4444 }` to the config. `vite`, `@vitejs/plugin-react` and `vite-plugin-singlefile`
 stay in `devDependencies`; the plugin imports the last two from the
 project, as optional peer dependencies.
 

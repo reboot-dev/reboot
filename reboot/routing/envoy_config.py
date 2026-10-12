@@ -96,7 +96,7 @@ class FrontendConfig:
 def _get_frontend_config() -> FrontendConfig | None:
     """Get frontend host configuration from environment.
 
-    Parses `RBT_MCP_APP_URL` env var (e.g., "http://localhost:4444")
+    Parses `RBT_MCP_APP_URL` env var (e.g., "http://localhost:5173")
     to extract port for Envoy routing to web dev server.
 
     Returns None if not configured or not in dev mode.

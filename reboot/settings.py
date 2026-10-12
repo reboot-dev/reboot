@@ -138,7 +138,7 @@ ENVVAR_RBT_NODEJS = 'RBT_NODEJS'
 ENVVAR_RBT_SERVERS = 'RBT_SERVERS'
 
 # URL of the dev server (e.g., Vite) that serves the MCP UIs, for
-# HMR. Format: "http://host:port" (e.g., "http://localhost:4444").
+# HMR. Format: "http://host:port" (e.g., "http://localhost:5173").
 # When set, Envoy routes "/__/frontend/**" to this server.
 ENVVAR_RBT_MCP_APP_URL = 'RBT_MCP_APP_URL'
 # The prefix of each MCP `UI(path=...)` that names the frontend

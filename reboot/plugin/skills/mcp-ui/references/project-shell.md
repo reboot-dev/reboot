@@ -64,7 +64,7 @@ dev run --default-config=hmr
 # Envoy routes "/__/frontend/**" to Vite for HMR support.
 dev run --mcp-app-path-prefix=frontend
 
-dev run:hmr --mcp-app-url=http://localhost:4444
+dev run:hmr --mcp-app-url=http://localhost:5173
 
 # Dist mode: serve the built MCP UIs from "frontend/dist/" (no Vite HMR).
 # Usage: uv run rbt dev run --config=dist

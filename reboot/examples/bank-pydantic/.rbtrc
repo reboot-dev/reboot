@@ -30,7 +30,7 @@ dev run --default-config=hmr
 # Run Vite in a separate terminal: `cd frontend && npm run dev`
 dev run --mcp-app-path-prefix=frontend
 
-dev run:hmr --mcp-app-url=http://localhost:4444
+dev run:hmr --mcp-app-url=http://localhost:5173
 
 # Dist mode: serve pre-built artifacts from "frontend/dist/" (no Vite
 # HMR). Usage: `rbt dev run --config=dist`

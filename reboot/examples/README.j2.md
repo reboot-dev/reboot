@@ -118,7 +118,7 @@ npm run dev
 ```
 
 That starts a single Vite dev server that serves both the web app and
-the MCP UIs. Visit [http://localhost:4444](http://localhost:4444) — it
+the MCP UIs. Visit [http://localhost:5173](http://localhost:5173) — it
 redirects to the web app.
 
 {% if web_sign_in_notes %}

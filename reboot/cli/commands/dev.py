@@ -217,7 +217,7 @@ def _register_dev_run(parser: ArgumentParser):
         type=str,
         help=(
             'URL of the dev server (e.g., Vite at '
-            'http://localhost:4444) that serves the MCP UIs. '
+            'http://localhost:5173) that serves the MCP UIs. '
             'Envoy proxies `/__/frontend/**` to it, which is '
             'how an MCP host loads each UI from this '
             'application with Hot Module Replacement. Requires '
