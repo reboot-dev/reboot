@@ -77,8 +77,8 @@ are the MCP Apps; `webAppPath`, the web app's directory, if there is one;
 the frontend doesn't have — an MCP-only frontend passes
 `reboot({ mcpAppPath: "mcp", apiPath: "api" })`. With those it drives
 three jobs: the `serve` dev server (HMR for every MCP App and the web
-app under `/__/frontend/`, on port `RBT_VITE_PORT` or 4444, listening
-on every interface), and two builds selected by `RBT_BUILD_TARGET`
+app under `/__/frontend/`, on Vite's default port unless the config
+sets `server.port`, listening on every interface), and two builds selected by `RBT_BUILD_TARGET`
 (set per UI by `build.mjs`) — `mcp:<name>` builds one MCP App, rooted
 at `mcp/<name>/` so its `index.html` lands at the **nested**
 `dist/mcp/<name>/index.html` the MCP server resolves, with the JS/CSS
@@ -91,8 +91,8 @@ any project — another plugin
 (`plugins: [react(), tailwindcss(), reboot({...})]`),
 `build.sourcemap`, and so on. The values the plugin sets — `root`,
 `base`, `envDir`, `publicDir`, `build.outDir`, `build.emptyOutDir`,
-the `server` port and `allowedHosts`, the `@api` alias — are the contract with
-the backend's `--frontend-host` and `--frontend-dist-path`; if the
+`allowedHosts`, the `@api` alias — are the contract with the backend's
+`--frontend-host` and `--frontend-dist-path`; if the
 config sets one of them too, `reboot()` raises an error naming it,
 rather than one value silently winning. Relative paths elsewhere in
 the config resolve against each build's root (`mcp/<name>/` or

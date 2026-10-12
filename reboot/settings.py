@@ -138,7 +138,7 @@ ENVVAR_RBT_NODEJS = 'RBT_NODEJS'
 ENVVAR_RBT_SERVERS = 'RBT_SERVERS'
 
 # URL of the frontend dev server (web + MCP) for HMR support.
-# Format: "http://host:port" (e.g., "http://localhost:4444").
+# Format: "http://host:port" (e.g., "http://localhost:5173").
 # When set, Envoy routes "/__/frontend/**" to this server.
 ENVVAR_RBT_FRONTEND_HOST = 'RBT_FRONTEND_HOST'
 ENVVAR_RBT_FRONTEND_ROOT_PATH = 'RBT_FRONTEND_ROOT_PATH'

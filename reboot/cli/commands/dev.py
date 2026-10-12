@@ -214,7 +214,7 @@ def _register_dev_run(parser: ArgumentParser):
         type=str,
         help=(
             'URL of the frontend dev server '
-            '(e.g., http://localhost:4444). When set, '
+            '(e.g., http://localhost:5173). When set, '
             'Envoy routes `/__/frontend/**` paths to this '
             'host for Hot Module Replacement. Requires '
             '`--frontend-root-path`; mutually exclusive '

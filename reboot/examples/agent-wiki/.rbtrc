@@ -28,7 +28,7 @@ dev run --default-config=hmr
 # Envoy routes "/__/frontend/**" to Vite for HMR support.
 dev run --frontend-root-path=frontend
 
-dev run:hmr --frontend-host=http://localhost:4444
+dev run:hmr --frontend-host=http://localhost:5173
 
 # Dist mode: serve pre-built artifacts from "frontend/dist/" (no Vite HMR).
 # Usage: uv run rbt dev run --config=dist
