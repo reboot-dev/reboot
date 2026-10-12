@@ -24,8 +24,11 @@
   },
   "scripts": {
     "lint": "cd web && eslint ./src",
-    "start": "cd web && vite --port 3000 --host",
-    "build": "npm run lint && cd web && tsc --noEmit && vite build",
+    "start": "vite",
+    "build": "npm run lint && (cd web && tsc --noEmit) && reboot-vite-build",
     "test": "cd web && vitest src"
+  },
+  "devDependencies": {
+    "vite-plugin-singlefile": "^2.0.3"
   }
 }

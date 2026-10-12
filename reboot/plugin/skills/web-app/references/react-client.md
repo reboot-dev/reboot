@@ -9,9 +9,11 @@ tags: web-app, react, vite, hooks, errors, RebootClientProvider
 
 Everything the standalone browser frontend needs. This is the
 web-app equivalent of the `mcp-ui` skill's scaffolding references —
-**do not read those**: their `vite.config.ts` (Reboot's Vite plugin)
-and `reboot-vite-build` serve MCP UIs through Envoy and build one-file
-`mcp/<name>/index.html` bundles, which a web app has no use for.
+**do not read those**. The `frontend/` shell is the same one (the
+stock Vite file plus Reboot's `reboot()` plugin, and
+`reboot-vite-build`), and this file has the web app's version of it;
+the rest of those references is about `mcp/<name>/` entries and
+one-file MCP UI bundles, which a web app has no use for.
 
 ## The `frontend/` Shell
 
@@ -27,12 +29,12 @@ frontend/
 ├── tsconfig.json
 ├── tsconfig.app.json    # `include: ["web/src"]`, the `@api/*` path
 ├── tsconfig.node.json
-├── vite.config.ts       # Below
+├── vite.config.ts       # The stock Vite file plus `reboot()`, below
 ├── api/                 # `rbt generate --react=frontend/api`
 └── web/
     ├── .env.development # `VITE_REBOOT_URL`, below
     ├── .env.production  # Written at deploy time (the `deploy` skill)
-    ├── index.html       # `<div id="root">` + `<script type="module" src="/src/main.tsx">`
+    ├── index.html       # `<div id="root">` + `<script type="module" src="./src/main.tsx">`
     ├── public/          # Static files, copied into the build as they are
     └── src/
         ├── main.tsx     # The provider, below
@@ -56,7 +58,7 @@ same version as the backend's `reboot` dependency, and `zod`:
     "dev": "npm run dev:portless",
     "dev:portless": "portless vite.<app> vite",
     "dev:hmr": "vite",
-    "build": "tsc -b && vite build"
+    "build": "tsc -b && reboot-vite-build"
   },
   "dependencies": {
     "@reboot-dev/reboot-api": "<same version as `reboot` in pyproject.toml>",
@@ -67,62 +69,60 @@ same version as the backend's `reboot` dependency, and `zod`:
   },
   "devDependencies": {
     "<as the scaffold wrote them>": "",
-    "portless": "^0.15.7"
+    "portless": "^0.15.7",
+    "vite-plugin-singlefile": "^2.0.3"
   }
 }
 ```
 
-`vite.config.ts` is the stock config rooted at `web/`, with a few
-additions, each load-bearing:
+`vite.config.ts` is the stock Vite file with Reboot's plugin added,
+the same config the `mcp-ui` skill uses, so adding MCP UIs later is
+one more option in it rather than a different file:
 
 ```ts
 import react from "@vitejs/plugin-react";
-import path from "path";
 import { defineConfig } from "vite";
+import { reboot } from "@reboot-dev/reboot-react/vite";
 
 export default defineConfig({
-  plugins: [react()],
-  // The SPA's sources, `index.html`, `public/` and `.env*` live
-  // under `web/`.
-  root: "web",
-  build: {
-    // Beside `web/`, where the backend or a static host serves it
-    // at `/`; the default `base: "/"` stays.
-    outDir: "../dist/web",
-    emptyOutDir: true,
-  },
-  resolve: {
-    // The generated client, imported as `@api/<pkg>/v1/<name>_rbt_react`.
-    alias: { "@api": path.resolve(__dirname, "api") },
-    // Two copies of `react` or `zod` — one from the app, one pulled
-    // through the Reboot packages — break hooks and schema identity
-    // checks at runtime.
-    dedupe: ["react", "react-dom", "zod"],
-  },
-  server: {
-    // Listen on every interface. Vite's default is `localhost`,
-    // which on modern Node resolves to IPv6 `[::1]` only; a
-    // forwarded port (Codespaces, VS Code remote, a dev VM, a
-    // tunnel) connects over IPv4 `127.0.0.1` and gets connection
-    // refused, so the page is unreachable from the browser even
-    // though the dev server is healthy and logs no error.
-    host: true,
-    // Settable per machine, for one where 5173 is taken.
-    port: parseInt(process.env.PORT || "5173", 10),
-  },
+  plugins: [react(), reboot({ webPath: "web", apiPath: "api" })],
 });
 ```
 
-Leaving `server.host` out is the single most common reason a
-freshly built app "starts fine" and then won't open: `npm run dev`
-prints a URL, the process is up, and the browser cannot reach it.
+`reboot()` ships with `@reboot-dev/reboot-react`. `webPath` is the
+SPA's directory: the dev server serves it at `/` (and at any path a
+browser navigates to, so the app's own URL routing survives a
+reload), serves its `public/` there too, and listens on every
+interface unless the config or the command line says where
+(`portless <app> vite` passes `--host 127.0.0.1`) — Vite's default
+is `localhost`, which on modern Node resolves to IPv6 `[::1]` only,
+so a forwarded port (Codespaces, VS Code remote, a dev VM, a tunnel)
+would get connection refused and the page would be unreachable
+though the server is healthy. The
+build writes it to `frontend/dist/web/` at `base: "/"`. `apiPath` is
+the generated client, for the `@api` alias. The plugin also dedupes
+`react`, `react-dom` and `zod` — two copies, one from the app and
+one pulled through the Reboot packages, break hooks and schema
+identity checks at runtime — and reads `.env*` from `web/`. The dev
+server's port is Vite's own: 5173 unless the config sets
+`server.port`.
 
-The config imports `path` and reads `process.env`, so `tsc -b` needs
-Node's types:
-`@types/node` and `"types": ["node"]` in `tsconfig.node.json`'s
-`compilerOptions`, both of which the scaffold writes. In
-`tsconfig.app.json`, point `include` at `web/src` instead of the
-scaffold's `src`, and add the alias's `paths`:
+Anything else — another plugin, `build.sourcemap` — goes in the
+literal as in any Vite project. The values the plugin sets (`root`,
+`base`, `envDir`, `publicDir`, `build.outDir`, `server.allowedHosts`,
+the `@api` alias) are the contract with the backend; if the config
+sets one too, the plugin raises an error naming it.
+
+`web/index.html` refers to its entry relatively, `./src/main.tsx`
+rather than `/src/main.tsx`, so the dev server can serve it at `/`.
+`npm run build` is `tsc -b && reboot-vite-build`: the command comes
+with the package and builds every UI the plugin declares, which is
+why `vite-plugin-singlefile` sits in `devDependencies` beside `vite`
+and `@vitejs/plugin-react` (the plugin imports them from the
+project).
+
+In `tsconfig.app.json`, point `include` at `web/src` instead of
+the scaffold's `src`, and add the alias's `paths`:
 
 ```json
 {

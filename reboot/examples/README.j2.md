@@ -166,7 +166,7 @@ npm run dev:web
 {% if not has_mcp %}
 
 If using VSCode, the page will load automatically.
-If not using VSCode, visit [http://127.0.0.1:3000](http://127.0.0.1:3000).
+If not using VSCode, visit [{{ web_app_url }}]({{ web_app_url }}).
 {% endif %}
 {% endif %}
 {% if has_tests %}

@@ -50,3 +50,6 @@ serve run --application-name=boutique
 # Run the application!
 dev run --application=backend/src/main.py
 serve run --application=backend/src/main.py
+
+# Serve the web app at `/` from Vite, on its default port.
+dev run --web-app-url=http://localhost:5173
