@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev:web": "cd frontend/web && vite --port 3000",
+    "dev:web": "cd frontend/web && vite",
     "build:web": "cd frontend/web && tsc --p ./tsconfig.build.json && vite build",
     "dev:backend": "rbt dev run"
   },
