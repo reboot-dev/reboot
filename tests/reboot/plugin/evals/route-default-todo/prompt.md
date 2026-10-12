@@ -1,5 +1,5 @@
 ---
-description: "No front door named: ask which kind of app before committing."
+description: "No front door named: build the web app first, no question, backend ready for an MCP UI."
 runs: 3
 max_turns: 20
 timeout_seconds: 420

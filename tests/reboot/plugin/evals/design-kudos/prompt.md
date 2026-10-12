@@ -1,5 +1,5 @@
 ---
-description: "A team kudos board: a history that grows sits where it can grow."
+description: "A team kudos board: history sits where it can grow, and the design is ready for both front doors."
 runs: 3
 max_turns: 40
 timeout_seconds: 900
