@@ -568,7 +568,9 @@ Servicer-side code doesn't change between providers. (In unit tests,
 omit `oauth=` entirely — the test harness supplies a test OAuth
 provider.)
 
-> **Choose your production provider deliberately.** See
+> **Choose your production provider deliberately, at deploy.** The
+> design and every build before deploy keep `prod=None`; the
+> [`deploy` skill](../deploy/SKILL.md) sets the provider. See
 > [`references/auth-oauth-providers.md`](references/auth-oauth-providers.md).
 > Each provider issues user IDs in its own namespace, so switching
 > providers after launch strands every user-keyed piece of state.
