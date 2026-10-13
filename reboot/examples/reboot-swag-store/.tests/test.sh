@@ -53,7 +53,7 @@ if [ -n "$EXPECTED_RBT_DEV_OUTPUT_FILE" ]; then
 
   # No portless proxy here: run on plain ports.
   rbt $RBT_FLAGS dev run \
-    --config=hmr \
+    --config=ports \
     --terminate-after-health-check \
     > "$actual_output_file"
 

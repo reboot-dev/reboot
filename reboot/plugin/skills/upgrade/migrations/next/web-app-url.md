@@ -15,8 +15,8 @@ For an app with a `frontend/web/` SPA on the `mcp-ui` skill's
    `references/react-scaffolding.md`. The old one redirected `/` to
    `/__/frontend/web/`; the new one serves the SPA at `/` (and at any
    path a browser navigates to), which is what the backend proxies.
-2. In `.rbtrc`, beside `dev run:hmr --mcp-app-url=http://localhost:5173`,
-   add `dev run:hmr --web-app-url=http://localhost:5173`.
+2. In `.rbtrc`, beside `dev run:ports --mcp-app-url=http://localhost:5173`,
+   add `dev run:ports --web-app-url=http://localhost:5173`.
 3. Change any link to the dev server, such as in a README or a
    `VITE_WEB_APP_URL`-based pop-out, to the backend's own URL
    (`http://localhost:9991/`): that is where the web app is now. The

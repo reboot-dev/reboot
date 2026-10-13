@@ -77,15 +77,14 @@ logger = logging.getLogger(__name__)
 _MAX_UI_CACHE_ENTRIES = 16
 
 # Per-process random token used as the cache-bust signature in
-# HMR mode (`--config=hmr` / `--config=default`, i.e. when
-# ENVVAR_RBT_MCP_APP_URL is set). `dev_inline_html`
-# bootstraps content live from the Vite dev server, so there
-# is nothing on disk to hash; a per-process UUID gives host-
-# side caches a fresh URI on every server restart, which
-# matches the "restart to refresh" dev loop. Vite content
-# changes within a session flow over the HMR WebSocket and
-# never touch the MCP layer, so a stable URI within a session
-# is correct. Computed once at module import.
+# HMR mode (`--mcp-app-url`, i.e. when ENVVAR_RBT_MCP_APP_URL is
+# set). `dev_inline_html` bootstraps content live from the Vite dev
+# server, so there is nothing on disk to hash; a per-process UUID
+# gives host-side caches a fresh URI on every server restart, which
+# matches the "restart to refresh" dev loop. Vite content changes
+# within a session flow over the HMR WebSocket and never touch the
+# MCP layer, so a stable URI within a session is correct. Computed
+# once at module import.
 _STARTUP_CACHE_BUST_TOKEN = uuid.uuid4().hex[:12]
 
 # Per-request resource metadata, set by `ui_html()` and read

@@ -109,7 +109,7 @@ serves the app under a name, `https://{{ application_name }}.localhost`, through
 [portless](https://github.com/vercel-labs/portless): install it once
 with `npm install -g portless` and start its proxy with
 `portless proxy start`. To use plain ports instead, run
-`rbt dev run --config=hmr`.{% endif %}
+`rbt dev run --config=ports`.{% endif %}
 
 
 {% if has_frontend %}
@@ -130,8 +130,8 @@ which is how the two trust each other): `npm run dev` is
 `portless vite.{{ application_name }} vite`, portless being a dev dependency,
 mirroring the `.rbtrc`. Visit
 [https://{{ application_name }}.localhost](https://{{ application_name }}.localhost) for the web app.
-Without portless (`rbt dev run --config=hmr`), run
-`npm run dev:hmr` instead and visit
+Without portless (`rbt dev run --config=ports`), run
+`npm run dev:ports` instead and visit
 [http://localhost:5173](http://localhost:5173).
 
 {% if web_sign_in_notes %}

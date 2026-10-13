@@ -25,7 +25,7 @@ In `.rbtrc`, rename each old flag to its new name:
 
 ```
 dev run --mcp-app-path-prefix=frontend
-dev run:hmr --mcp-app-url=http://localhost:5173
+dev run:ports --mcp-app-url=http://localhost:5173
 dev run:dist --mcp-app-dist-path=frontend/dist
 serve run --mcp-app-path-prefix=frontend --mcp-app-dist-path=frontend/dist
 ```

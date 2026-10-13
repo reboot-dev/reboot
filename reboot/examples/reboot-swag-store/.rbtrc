@@ -46,9 +46,9 @@ dev run:portless --mcp-app-url=https://vite.reboot-swag-store.localhost
 # finds it. `rbt dashboard --no-portless` for a plain port.
 dashboard --portless
 
-# Plain ports instead: `rbt dev run --config=hmr`, with Vite run as
-# `cd frontend && npm run dev:hmr`.
-dev run:hmr --mcp-app-url=http://localhost:5173
+# Plain ports instead: `rbt dev run --config=ports`, with Vite run as
+# `cd frontend && npm run dev:ports`.
+dev run:ports --mcp-app-url=http://localhost:5173
 
 # Dist mode: serve pre-built artifacts from "frontend/dist/" (no Vite HMR).
 

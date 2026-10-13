@@ -43,10 +43,10 @@ dev run:portless --web-app-url=https://vite.bank.localhost
 # finds it. `rbt dashboard --no-portless` for a plain port.
 dashboard --portless
 
-# Plain ports instead: `rbt dev run --config=hmr`, with Vite run as
-# `cd frontend && npm run dev:hmr`.
-dev run:hmr --mcp-app-url=http://localhost:5173
-dev run:hmr --web-app-url=http://localhost:5173
+# Plain ports instead: `rbt dev run --config=ports`, with Vite run as
+# `cd frontend && npm run dev:ports`.
+dev run:ports --mcp-app-url=http://localhost:5173
+dev run:ports --web-app-url=http://localhost:5173
 
 # Dist mode: serve the built MCP UIs from "frontend/dist/" and the
 # built web app at `/` (no Vite HMR). Usage: `rbt dev run --config=dist`

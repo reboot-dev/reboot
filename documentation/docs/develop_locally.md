@@ -212,16 +212,16 @@ generate --react=frontend/api
 # the web app it serves at `/`.
 dev run --mcp-app-path-prefix=frontend
 
-dev run:hmr --mcp-app-url=http://localhost:5173
-dev run:hmr --web-app-url=http://localhost:5173
+dev run:ports --mcp-app-url=http://localhost:5173
+dev run:ports --web-app-url=http://localhost:5173
 
-# Default to HMR mode when --config is not specified.
-dev run --default-config=hmr
+# Default to plain ports when --config is not specified.
+dev run --default-config=ports
 ```
 
 | Flag | Description |
 | --- | --- |
-| `dev run --mcp-app-path-prefix=<dir>` | The prefix of each `UI(path=...)` that names the frontend directory (e.g. `frontend`). Set once on the base `dev run` line so the `:hmr` and `:dist` configs inherit it. |
+| `dev run --mcp-app-path-prefix=<dir>` | The prefix of each `UI(path=...)` that names the frontend directory (e.g. `frontend`). Set once on the base `dev run` line so the `:ports` and `:dist` configs inherit it. |
 | `dev run --mcp-app-url=<url>` | HMR: the Vite dev server URL (e.g. `http://localhost:5173`) that serves the MCP UIs; Envoy proxies `/__/frontend/**` to it. |
 | `dev run --mcp-app-dist-path=<dir>` | Dist: serve the built MCP UIs from `<dir>` (e.g. `frontend/dist`) on disk; mutually exclusive with `--mcp-app-url`. |
 | `dev run --web-app-dist-path=<dir>` | Serve the built web app from `<dir>` (e.g. `frontend/dist/web`) at `/`, with its `index.html` answering any path the app has no route or file for. Without it or `--web-app-url`, `/` is Reboot's page. Python applications only: with `--nodejs` it is an error. |
@@ -229,7 +229,7 @@ dev run --default-config=hmr
 | `dev run --portless` | Serve under a named URL via [portless](https://github.com/vercel-labs/portless): the backend becomes `https://<app>.localhost`, on a free port unless `--port` is given, serving the web app at `/` and the MCP UIs from the frontend dev server, which runs under portless as `https://vite.<app>.localhost` (its `npm run dev:portless`) and is trusted as a browser origin too. See [Named local URLs](#named-local-urls-with---portless). |
 | `dev run --tunnel-url=<url>` | The public URL this application is reachable at through a tunnel (e.g. `https://<name>.trycloudflare.com`). The setup wizard shows and verifies it; without it, the wizard asks ngrok and cloudflared, through their local APIs on their default ports, for a tunnel of their own. |
 | `dev run --default-config=<name>` | Sets the default configuration profile when `--config` is not specified. |
-| `dev run:hmr` / `dev run:dist` | Named configurations. Flags prefixed with `dev run:<name>` only apply when `--config=<name>` is used. |
+| `dev run:ports` / `dev run:dist` | Named configurations. Flags prefixed with `dev run:<name>` only apply when `--config=<name>` is used. |
 
 <!-- ## Boilerplate code
 
@@ -300,7 +300,7 @@ The frontend's `package.json` carries that as scripts mirroring the
 ```json
 "dev": "npm run dev:portless",
 "dev:portless": "portless vite.bank vite",
-"dev:hmr": "vite"
+"dev:ports": "vite"
 ```
 
 ```console

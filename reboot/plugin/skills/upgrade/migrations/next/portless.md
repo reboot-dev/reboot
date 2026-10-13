@@ -22,19 +22,22 @@ Where `sudo` wants a password they fail, and the setup is the
 developer's to do, interactively: tell them, and let them say when
 it is done (or that they would rather stay on plain ports, in which
 case make the changes below anyway and leave them running with
-`--config=hmr` and `rbt dashboard --no-portless`).
+`--config=ports` and `rbt dashboard --no-portless`).
 
-1. **`.rbtrc`:** make portless the default config and add the
-   `:portless` config beside the existing `:hmr` one. Where the
-   `.rbtrc` has
+1. **`.rbtrc`:** rename the `hmr` config to `ports`, the opposite of
+   `portless`, which is what it is now that both serve the MCP UIs
+   from the Vite dev server: every `dev run:hmr` line becomes
+   `dev run:ports`, and `--default-config=hmr` becomes
+   `--default-config=ports`. Then make portless the default config and
+   add the `:portless` config beside it. Where the `.rbtrc` has
 
    ```
-   dev run --default-config=hmr
-   dev run:hmr --mcp-app-url=http://localhost:5173
+   dev run --default-config=ports
+   dev run:ports --mcp-app-url=http://localhost:5173
    ```
 
    change the default and add the named-URL config, keeping every
-   `:hmr` line as it is (each `dev run:hmr --web-app-url=` line gets a
+   `:ports` line as it is (each `dev run:ports --web-app-url=` line gets a
    `dev run:portless --web-app-url=https://vite.<app>.localhost` beside
    it, and likewise `--mcp-app-url`):
 
@@ -51,16 +54,17 @@ case make the changes below anyway and leave them running with
    A `.rbtrc` with no `--default-config` (a web-only app that passed
    `--web-app-url=http://localhost:5173` unconditionally) gets the
    same block, with its unconditional `--web-app-url` and
-   `--mcp-app-url` lines moved under `dev run:hmr`.
+   `--mcp-app-url` lines moved under `dev run:ports`.
 
-2. **`frontend/package.json`:** mirror those configs as scripts, and
-   add `portless` as a dev dependency so `npm install` brings it:
+2. **`frontend/package.json`:** mirror those configs as scripts (a
+   `dev:hmr` script is renamed `dev:ports` with its config), and add
+   `portless` as a dev dependency so `npm install` brings it:
 
    ```json
    "scripts": {
      "dev": "npm run dev:portless",
      "dev:portless": "portless vite.<app> vite",
-     "dev:hmr": "vite"
+     "dev:ports": "vite"
    },
    "devDependencies": {
      "portless": "^0.15.7"
@@ -87,4 +91,4 @@ case make the changes below anyway and leave them running with
    `portless <app> npm run dev`, or to visit `http://localhost:9991`
    or `http://127.0.0.1:9871/`, say `npm run dev`,
    `https://<app>.localhost` and `https://dashboard.<app>.localhost/`
-   instead, with the plain-port form as the `--config=hmr` alternative.
+   instead, with the plain-port form as the `--config=ports` alternative.

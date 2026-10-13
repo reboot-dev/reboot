@@ -188,7 +188,7 @@ cd frontend && npm run dev
 server always has an up-to-date `frontend/api/`. The frontend's
 `package.json` mirrors the `.rbtrc` configs below: `npm run dev` is
 the default, `dev:portless` (`portless vite.<app> vite`, with `portless` as
-a dev dependency), and `dev:hmr` is plain `vite`; see
+a dev dependency), and `dev:ports` is plain `vite`; see
 [Named local URLs](/develop_locally#named-local-urls-with---portless).
 
 If the application also has `UI` methods, Reboot must serve those
@@ -196,7 +196,7 @@ MCP UIs from its own origin; point it at your frontend directory in
 `.rbtrc`:
 
 ```
-# The frontend directory, shared by the `:hmr` and `:dist` configs below.
+# The frontend directory, shared by the `:ports` and `:dist` configs below.
 dev run --mcp-app-path-prefix=frontend
 
 # Named URLs via portless: Vite, run as the frontend's `npm run dev:portless`
@@ -209,9 +209,9 @@ dev run:portless --web-app-url=https://vite.<app>.localhost
 # The developer dashboard too: https://dashboard.<app>.localhost.
 dashboard --portless
 
-# Plain ports: `rbt dev run --config=hmr`, Vite from `npm run dev:hmr`.
-dev run:hmr --mcp-app-url=http://localhost:5173
-dev run:hmr --web-app-url=http://localhost:5173
+# Plain ports: `rbt dev run --config=ports`, Vite from `npm run dev:ports`.
+dev run:ports --mcp-app-url=http://localhost:5173
+dev run:ports --web-app-url=http://localhost:5173
 
 # Dist: serve the built MCP UIs instead. `rbt dev run --config=dist`.
 dev run:dist --mcp-app-dist-path=frontend/dist

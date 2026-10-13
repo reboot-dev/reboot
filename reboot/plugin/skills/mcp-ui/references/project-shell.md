@@ -25,7 +25,7 @@ MCP UI adds on top:
 ### `.rbtrc`
 
 Same shape as `python/references/lifecycle-rbtrc.md`. Chat
-apps add `--default-config=hmr` plus `:hmr` and `:dist` named
+apps add `--default-config=ports` plus `:ports` and `:dist` named
 configs that route Envoy to a Vite dev server (HMR) or a built
 `frontend/dist/` (production):
 
@@ -78,10 +78,10 @@ dev run:portless --mcp-app-url=https://vite.<project-name>.localhost
 # finds it.
 dashboard --portless
 
-# Plain ports instead: `rbt dev run --config=hmr`, with Vite run as
-# `cd frontend && npm run dev:hmr`.
-dev run:hmr --mcp-app-url=http://localhost:5173
-# dev run:hmr --web-app-url=http://localhost:5173
+# Plain ports instead: `rbt dev run --config=ports`, with Vite run as
+# `cd frontend && npm run dev:ports`.
+dev run:ports --mcp-app-url=http://localhost:5173
+# dev run:ports --web-app-url=http://localhost:5173
 
 # Dist mode: serve the built MCP UIs from "frontend/dist/" (no Vite HMR).
 # Usage: uv run rbt dev run --config=dist
@@ -97,7 +97,7 @@ dev expunge --application-name=<project-name>
 # Cloud, whose containers run `CMD ["rbt", "serve", "run"]` — see
 # `python/references/lifecycle-dockerfile.md`). Mirrors the `dev run`
 # block above, minus the dev-only knobs (`--watch`, `--env-file`,
-# the `:hmr`/`:dist` configs).
+# the `:ports`/`:dist` configs).
 serve run --python
 serve run --mcp-app-dist-path=frontend/dist --mcp-app-path-prefix=frontend
 # A dual-frontend app also serves its built web app at `/`:

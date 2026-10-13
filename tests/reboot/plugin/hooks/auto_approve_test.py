@@ -819,8 +819,8 @@ REBOOT_DEV_CASES: list[tuple[str, str, Where, Decision]] = [
         Decision.APPROVE,
     ),
     (
-        "dev: npm run dev:hmr",
-        "npm run dev:hmr",
+        "dev: npm run dev:ports",
+        "npm run dev:ports",
         Where.PROJECT,
         Decision.APPROVE,
     ),

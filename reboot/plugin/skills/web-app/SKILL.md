@@ -533,7 +533,7 @@ In development the backend serves the SPA at its own origin from
 the Vite dev server (`--web-app-url`): `https://<app>.localhost/` under
 portless (`cd frontend && npm run dev`, whose default is the
 `dev:portless` script, beside `rbt dev run --portless`), or
-`http://localhost:9991/` from `npm run dev:hmr`, same-origin either
+`http://localhost:9991/` from `npm run dev:ports`, same-origin either
 way. Opened at the dev server's own origin instead
 (`https://vite.<app>.localhost`, or `http://localhost:5173/`), the
 Reboot client finds the backend on its own; on a plain Vite port it

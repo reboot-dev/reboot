@@ -157,10 +157,10 @@ dev run:portless --web-app-url=https://vite.<app>.localhost
 # where `rbt dev run --open-dashboard` finds it.
 dashboard --portless
 
-# Plain ports, no portless: `rbt dev run --config=hmr`, Vite from
-# `npm run dev:hmr`.
-dev run:hmr --mcp-app-url=http://localhost:5173
-dev run:hmr --web-app-url=http://localhost:5173
+# Plain ports, no portless: `rbt dev run --config=ports`, Vite from
+# `npm run dev:ports`.
+dev run:ports --mcp-app-url=http://localhost:5173
+dev run:ports --web-app-url=http://localhost:5173
 
 # Dist mode (no Vite): the built MCP UIs, and the built web app at `/`.
 dev run:dist --mcp-app-dist-path=frontend/dist
@@ -168,7 +168,7 @@ dev run:dist --web-app-dist-path=frontend/dist/web
 ```
 
 Run with `rbt dev run` (uses `--default-config=portless`), or
-`rbt dev run --config=hmr` or `--config=dist` to switch. `--portless`
+`rbt dev run --config=ports` or `--config=dist` to switch. `--portless`
 requires `--application-name` (the name is the hostname), the
 `portless` CLI, and its proxy running (`portless proxy start`).
 `dashboard --portless` has `rbt dashboard` serve as
@@ -178,4 +178,4 @@ routes to, so the dashboards of several applications run at once;
 The frontend's `package.json` mirrors these configs as scripts:
 `dev` is the default, `dev:portless`, which runs
 `portless vite.<app> vite` with `portless` as a dev dependency, and
-`dev:hmr` is plain `vite`.
+`dev:ports` is plain `vite`.

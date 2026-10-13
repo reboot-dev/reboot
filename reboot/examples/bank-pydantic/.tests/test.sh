@@ -56,7 +56,7 @@ if [ -n "$EXPECTED_RBT_DEV_OUTPUT_FILE" ]; then
   actual_output_file=$(mktemp)
 
   # No portless proxy here: run on plain ports.
-  rbt $RBT_FLAGS dev run --config=hmr --terminate-after-health-check > "$actual_output_file"
+  rbt $RBT_FLAGS dev run --config=ports --terminate-after-health-check > "$actual_output_file"
 
   check_lines_in_file "${SANDBOX_ROOT}$EXPECTED_RBT_DEV_OUTPUT_FILE" "$actual_output_file"
 
