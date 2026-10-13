@@ -204,8 +204,10 @@ inspects the request type or method name (the framework dispatches by
 request type). For most apps, splitting state into multiple Servicers
 with different authorizers is simpler than building a per-method rule.
 
-A rule that matches on the method name reads `context.method`, whose form
-depends on where it is read:
+A common per-method rule is a role table: each method name maps to the
+roles allowed to call it, and a predicate looks up the method being
+called. It finds that name in `context.method`, whose form depends on
+where it is read:
 
 | Where                      | `context.method`                 | Example                         |
 | -------------------------- | -------------------------------- | ------------------------------- |
@@ -216,4 +218,12 @@ depends on where it is read:
 name, so a table keyed `check_in` matches neither form and denies every
 call. Key the table on the PascalCase name and compare the last segment,
 `context.method.rsplit(".", 1)[-1]`, so the same table works in both
-places.
+places:
+
+```python
+ROLES = {"CheckIn": {"front_desk", "manager"}, "MarkClean": {"housekeeping"}}
+
+
+def allowed_roles(context: ReaderContext) -> set[str]:
+    return ROLES.get(context.method.rsplit(".", 1)[-1], set())
+```
