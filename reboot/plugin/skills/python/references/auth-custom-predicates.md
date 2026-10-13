@@ -198,14 +198,27 @@ login" and "show 403".
 
 ## Per-Method Authorization
 
-`def authorizer(self)` returns a single rule for all methods. To gate
-methods individually, return a custom `Authorizer` subclass that
-inspects the request type or method name (the framework dispatches by
-request type). For most apps, splitting state into multiple Servicers
-with different authorizers is simpler than building a per-method rule.
+A rule returned from `def authorizer(self)` applies to every method. To
+give methods different rules, return the generated `<Type>.Authorizer`
+instead. It takes one rule per method, by its snake_case or PascalCase
+name, and `_default=` for every method not named:
 
-A common per-method rule is a role table: each method name maps to the
-roles allowed to call it, and a predicate looks up the method being
+```python
+class CheckServicer(Check.Servicer):
+
+    def authorizer(self):
+        return Check.Authorizer(
+            void=allow_if(all=[is_manager]),
+            _default=allow_if(all=[is_teammate]),
+        )
+```
+
+Without `_default=`, a method not named can only be called from inside
+the application (on a `User` type, also by that user), so a method
+left out is closed, not open.
+
+When which roles may call which method is itself data, such as a role
+table the app keeps, one predicate can look up the method being
 called. It finds that name in `context.method`, whose form depends on
 where it is read:
 
