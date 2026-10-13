@@ -9,7 +9,7 @@ const root = ReactDOM.createRoot(
 );
 
 root.render(
-  <RebootClientProvider url={import.meta.env.VITE_REBOOT_URL}>
+  <RebootClientProvider>
     <BrowserRouter basename="/">
       <App />
     </BrowserRouter>

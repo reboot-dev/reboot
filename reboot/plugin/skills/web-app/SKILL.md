@@ -44,8 +44,8 @@ backend behind a standalone React frontend served at a normal URL.
   session: load the [`run` skill](../run/SKILL.md), which detects
   the app type and starts the backend and frontend.
 - Putting a finished Web App in production — load the
-  [`deploy` skill](../deploy/SKILL.md): backend on Reboot Cloud,
-  frontend on a static host under the user's own custom domain.
+  [`deploy` skill](../deploy/SKILL.md): one container on Reboot
+  Cloud that runs the backend and serves the built web app from it.
 
 ## How a Web App Differs From an MCP App
 
