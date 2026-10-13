@@ -32,8 +32,10 @@ These idle helpers are read-only observations requiring quiesced producers,
 not authority reservations or ledger settlement. Mutex poisoning/stalls, timer-constructor/arbitrary panic and
 the actual five-second forced fallback are not certified by this checkpoint.
 
-Generated registered entrypoints recheck host readiness after authorization and
-before relinquishing pristine cleanup ownership. The exercised Allow-after-
+Eligible registered Exclusive/non-factory entrypoints recheck host readiness
+after authorization and before relinquishing first-touch pristine cleanup
+ownership. The separate shared-root flow does not have this new pre-transfer
+observation. The exercised Allow-after-
 revocation case rejects before native Abort/Prepare/Commit and permits an
 independent same-store Account write from 100 to 101. This check is not atomic
 across every subsequent await and does not generalize to every entry branch.
@@ -66,7 +68,8 @@ with its exact unsupported declared-error diagnostic.
 
 Evidence: [sealed ownership checkpoint](tests/evidence/sealed-ownership-checkpoint-20261013.json).
 Source, canonical Database and log hashes match across all three accepted stages;
-769 recorded PID/birth identities were independently absent, including zombies.
+The integration owner's checkpoint reconciliation records 769 PID/birth
+identities absent, including zombie identities.
 Independent applied-source review is bounded, not a universal safety proof.
 GitHub CI/fork approval and current merge-result validation remain separate;
 PR #216 stays draft.

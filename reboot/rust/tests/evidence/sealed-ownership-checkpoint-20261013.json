@@ -2100,7 +2100,7 @@
   "reviews": [
     {
       "path": "/tmp/reboot-rust-wakeup187-20261013/applied-checkpoint-review.md",
-      "sha256": "9946ad458f36e89a74aaebf8d0f9ea87175c4a808c6fe7ff07adf11993ca48bd"
+      "sha256": "5d0ab21554699794ee4356f5ea349f5c96e67ea5347f93762e7d598c07fc9f78"
     },
     {
       "path": "/tmp/reboot-rust-wakeup185-20261013/chain-stack-review.md",
@@ -2130,5 +2130,6 @@
       "sha256": "a33e47e3a24bcdd378c1cacd8237fcedf48ab425c90329eaafbfdc6c95b96460",
       "accepted": false
     }
-  ]
+  ],
+  "process_reconciliation_attribution": "Integration owner checked each recorded PID/start_ticks against live /proc, including zombie identities; source-only reviewer did not perform this process audit."
 }
