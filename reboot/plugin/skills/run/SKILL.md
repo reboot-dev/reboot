@@ -152,6 +152,14 @@ uv run rbt dev run --no-chaos
 `--no-chaos` disables the Chaos Monkey, a useful bug-finder that is
 confusing to a developer who cannot see the backend terminal.
 
+`Backwards incompatibility encountered` in the backend's log means the backend
+is waiting, not crashed: the API changed in a way the saved state
+can't take. Make the change additive
+(`python/references/api-schema-evolution.md`) and it reloads. When
+the development data is disposable, stop the backend and run
+`rbt dev expunge --application-name=<name> --yes` instead; a
+background shell can't press `x`.
+
 ### Frontend — both app types
 
 Run the Vite dev server from `frontend/`.
@@ -220,6 +228,16 @@ mcpjam-inspector --url http://localhost:9991/mcp --oauth
 ```
 
 Either way the inspector binds the fixed port 6274.
+
+## Stopping the App
+
+Stop `rbt dev run` with Ctrl-C, or `kill -INT <pid>` from another
+shell. At 1.6.0 any other signal leaves the application's processes
+and Envoy running and holding their ports
+([`KNOWN-ISSUES.md`](../../KNOWN-ISSUES.md)). Before starting the
+backend, check that its port is free (`lsof -i :9991`, or the port
+`.rbtrc` sets): a process there is a copy left running, by this
+session or an earlier one, so stop it instead of starting a second.
 
 ## Step 6 — Hand off
 
