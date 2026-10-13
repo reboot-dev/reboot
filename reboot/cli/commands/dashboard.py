@@ -295,7 +295,7 @@ async def _viewers(dashboard_url: str) -> list[str]:
     return list(response.subscriber_ids)
 
 
-async def _open_automatically(dashboard_url: str) -> bool:
+async def _should_open_automatically(dashboard_url: str) -> bool:
     """Whether the developer still wants a dashboard opened for them.
 
     The dashboard's notice writes this when they click "Don't reopen
@@ -324,34 +324,44 @@ def automatically_opened_url(dashboard_url: str) -> str:
     return f'{dashboard_url}{DASHBOARD_PATH}/?opened=automatically'
 
 
-async def _dashboard_reachable(port: int) -> bool:
-    """Whether something is accepting connections on the dashboard's
-    port."""
-    try:
-        _, writer = await asyncio.wait_for(
-            asyncio.open_connection('127.0.0.1', port),
-            timeout=2.0,
-        )
-    except (OSError, asyncio.TimeoutError):
-        return False
-    writer.close()
-    try:
-        await writer.wait_closed()
-    except OSError:
-        pass
-    return True
+# How long the dashboard application, which is still starting when
+# `rbt dashboard` first asks it whether to open a dashboard, gets to
+# answer, and how often it is asked again.
+_ANSWER_WITHIN_SECONDS = 10.0
+_ASK_EVERY_SECONDS = 0.5
+
+
+async def _should_open(dashboard_url: str) -> bool:
+    """Whether to open a dashboard: the developer has not said not to,
+    and nobody is looking at one.
+
+    Asks again until the application answers both questions. A call
+    made while the application cannot be reached retries by itself;
+    one it refuses because it has not initialized its states yet is
+    repeated here.
+    """
+    while True:
+        try:
+            if not await _should_open_automatically(dashboard_url):
+                return False
+            return len(await _viewers(dashboard_url)) == 0
+        except Exception:
+            await asyncio.sleep(_ASK_EVERY_SECONDS)
 
 
 async def _open_when_serving(*, port: int) -> None:
-    """Opens the dashboard once it is serving, unless somebody is
-    already looking at one: the page subscribes to `Presence` for as
-    long as it is open, so a tab left up -- from an earlier
-    `rbt dashboard`, or from this session's browser -- keeps a second
-    one from appearing, and a tab that was closed is replaced.
+    """Opens a dashboard once the dashboard application is serving,
+    unless the developer clicked "Don't reopen automatically" in the
+    notice an automatic open shows, which is remembered until they
+    say otherwise, or somebody is already looking at one: the page
+    subscribes to `Presence` for as long as it is open, so a tab left
+    up -- from an earlier `rbt dashboard`, or from this session's
+    browser -- keeps a second one from appearing, and a tab that was
+    closed is replaced.
 
-    Also stays shut when the developer clicked "Don't reopen
-    automatically" in the notice an automatic open shows, which is
-    remembered until they say otherwise.
+    The application gets `_ANSWER_WITHIN_SECONDS` to answer. If it
+    has not by then, a dashboard is opened anyway, since nothing said
+    not to.
 
     `Presence` learns that a viewer has gone from the cancellation of
     the page's `Connect` RPC, and nothing else. A proxy that holds its
@@ -364,25 +374,15 @@ async def _open_when_serving(*, port: int) -> None:
     page_url = f'{dashboard_url}/'
 
     try:
-        backoff = Backoff()
-        while not await _dashboard_reachable(port):
-            await backoff()
+        try:
+            should_open = await asyncio.wait_for(
+                _should_open(dashboard_url),
+                timeout=_ANSWER_WITHIN_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            should_open = True
 
-        # Asked of the application rather than the proxy, so this
-        # doubles as the readiness gate: reachable means Envoy
-        # answers, and the application behind it comes up moments
-        # later.
-        viewers: Optional[list[str]] = None
-        while viewers is None:
-            try:
-                viewers = await _viewers(dashboard_url)
-            except Exception:
-                await backoff()
-
-        if len(viewers) > 0:
-            return
-
-        if not await _open_automatically(dashboard_url):
+        if not should_open:
             return
 
         # `webbrowser` honors `$BROWSER`, which is what makes this

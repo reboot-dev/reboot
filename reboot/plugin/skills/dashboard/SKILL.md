@@ -131,3 +131,6 @@ gives the developer two tabs.
 Tell the user the dashboard is up and what it is for — e.g.
 "Developer dashboard (watch the API as I build it) at
 http://127.0.0.1:9871/" — and get on with the build.
+
+If the developer expected a window and none appeared, give them the
+URL; that always works.
