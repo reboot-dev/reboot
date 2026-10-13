@@ -582,10 +582,14 @@ fn annotations_for_generated_files(
                                 mode: TransactionMode::Exclusive,
                                 ..
                             })
+                            | DurableKind::Transaction(TransactionMetadata {
+                                mode: TransactionMode::Shared,
+                                factory: false,
+                            })
                     )
                 {
                     return Err(format!(
-                        "{file_name}: service `{service_name}` method `{method_name}` declares errors, but declared errors are supported only on unary reader/writer methods, workflows and exclusive transactions"
+                        "{file_name}: service `{service_name}` method `{method_name}` declares errors, but declared errors are supported only on unary reader/writer methods, workflows, exclusive transactions and non-factory shared declarations (execution requires registered existing-writer opt-in)"
                     ));
                 }
                 methods.insert(method_name.clone(), kind);
@@ -1286,6 +1290,26 @@ fn reject_generated_symbol_collisions(
                     symbols.push(format!("{service_name}ReactiveClient"));
                 }
             }
+            // Reserve exactly the enums emitted below, including declared shared
+            // root errors. This is a type-namespace check, not child authority.
+            for method in &service.method {
+                let method_name = required(&method.name, "method name")?;
+                let Some(kind) = annotation.methods.get(method_name) else {
+                    continue;
+                };
+                let emits_database_error =
+                    !declared_database_errors(annotation, kind, method_name).is_empty();
+                let emits_root_error = matches!(kind, DurableKind::Transaction(_))
+                    && !declared_root_errors(annotation, kind, method_name).is_empty();
+                let emits_workflow_error = matches!(kind, DurableKind::Workflow)
+                    && annotation
+                        .declared_errors
+                        .get(method_name)
+                        .is_some_and(|errors| !errors.is_empty());
+                if emits_database_error || emits_root_error || emits_workflow_error {
+                    symbols.push(declared_error_type(service_name, &snake_case(method_name)));
+                }
+            }
         }
         for symbol in symbols {
             if let Some(previous) = owners.insert(symbol.clone(), service_name) {
@@ -1668,7 +1692,7 @@ fn emit_durable(
         }
     }
     for (kind, method, _, _, method_identity) in &methods {
-        let declared_errors = declared_transactional_errors(annotation, kind, method_identity);
+        let declared_errors = declared_root_errors(annotation, kind, method_identity);
         if !declared_errors.is_empty() && matches!(kind, DurableKind::Transaction(_)) {
             emit_declared_error_enum(
                 output,
@@ -1763,6 +1787,30 @@ fn declared_transactional_errors<'a>(
         .and_then(|method| annotation.declared_errors.get(method))
         .map(Vec::as_slice)
         .unwrap_or(&[])
+}
+
+/// Shared declaration support does not enlarge the outbound transactional client
+/// schema or inbound rollback authority. Only the registered root hook uses it.
+fn declared_root_errors<'a>(
+    annotation: &'a DurableService,
+    kind: &DurableKind,
+    method_identity: &str,
+) -> &'a [String] {
+    if matches!(
+        kind,
+        DurableKind::Transaction(TransactionMetadata {
+            mode: TransactionMode::Shared,
+            factory: false,
+        })
+    ) {
+        return method_identity
+            .rsplit('.')
+            .next()
+            .and_then(|method| annotation.declared_errors.get(method))
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+    }
+    declared_transactional_errors(annotation, kind, method_identity)
 }
 
 include!("reactive_codegen.rs");
@@ -2002,6 +2050,18 @@ fn emit_exclusive_transaction_method(output: &mut String, flow: TransactionFlow<
     output.push_str("    }\n");
 }
 fn emit_shared_transaction_method(output: &mut String, flow: TransactionFlow<'_>) {
+    // Fail before admission/Load on unsupported shared error execution. Parsing
+    // a declaration is not authorization to promote, enter children or use tasks.
+    if flow.declared_error {
+        output.push_str(&format!(
+            "    async fn {}(&self, request: tonic::Request<proto::{}>) -> Result<tonic::Response<proto::{}>, tonic::Status> {{\n        let headers = {}::RebootHeaders::from_request(&request).map_err(|error| {{ if let Some(ticket) = request.extensions().get::<{runtime}::runtime::RegisteredLocalTicket>() {{ ticket.discard(); }} tonic::Status::invalid_argument(error.to_string()) }})?;\n        if let Some(ticket) = request.extensions().get::<{}::runtime::RegisteredLocalTicket>() {{ ticket.discard(); return Err(tonic::Status::failed_precondition(\"local tickets exclude shared execution\")); }}\n        if headers.transaction_ids.is_some() || !self.shared_existing_writers {{ return Err(tonic::Status::failed_precondition(\"shared declared errors require registered existing-writer root opt-in; inbound and ordinary shared execution remain unsupported\")); }}\n",
+            flow.method, flow.request, flow.response, flow.runtime_module, flow.runtime_module,
+            runtime = flow.runtime_module,
+        ));
+        emit_shared_existing_writer_root_flow(output, flow);
+        output.push_str("    }\n");
+        return;
+    }
     output.push_str(&format!(
         "    async fn {}(&self, request: tonic::Request<proto::{}>) -> Result<tonic::Response<proto::{}>, tonic::Status> {{\n        let headers = {}::RebootHeaders::from_request(&request).map_err(|error| {{ if let Some(ticket) = request.extensions().get::<{runtime}::runtime::RegisteredLocalTicket>() {{ ticket.discard(); }} tonic::Status::invalid_argument(error.to_string()) }})?;\n        if let Some(ticket) = request.extensions().get::<{runtime}::runtime::RegisteredLocalTicket>() {{ ticket.discard(); return Err(tonic::Status::failed_precondition(\"local tickets exclude shared execution\")); }}\n        let inbound = headers.transaction_ids.is_some();\n        if inbound {{\n            // Shared inbound execution remains read-only; it never promotes.\n", flow.method, flow.request, flow.response, flow.runtime_module, runtime = flow.runtime_module
     ));
@@ -2037,9 +2097,18 @@ fn emit_shared_existing_writer_root_flow(output: &mut String, flow: TransactionF
         state,
         declaration,
         runtime_module,
+        declared_error,
         ..
     } = flow;
     let prefix = "                ";
+    let (handler_hook, error_mapping) = if declared_error {
+        (
+            format!("{method}_typed_shared_existing_writers"),
+            ".map_err(|error| error.into_status())",
+        )
+    } else {
+        (format!("{method}_shared_existing_writers"), "")
+    };
     output.push_str(&format!(r#"{prefix}if headers.idempotency_key.is_some() || self.tasks.is_some() || self.supervised_tree || self.sequential_root_star || self.sequential_reusable {{ return Err(tonic::Status::failed_precondition("shared existing writer roots exclude idempotency, tasks and other execution modes")); }}
 {prefix}let binding = self.local_registration.as_ref().ok_or_else(|| tonic::Status::failed_precondition("shared existing writer roots require registered host"))?;
 {prefix}let configuration = <Self as {runtime_module}::registered_local::GeneratedLocalTransactionAdapter>::local_configuration(self)?;
@@ -2059,7 +2128,7 @@ fn emit_shared_existing_writer_root_flow(output: &mut String, flow: TransactionF
 {prefix}let local = local.with_shared_existing_writers(&mut context).await?;
 {prefix}let state = match loaded.as_deref() {{ Some(bytes) => match <proto::{state} as prost::Message>::decode(bytes) {{ Ok(state) => state, Err(error) => {{ local.abort_explicit().await?; return Err(tonic::Status::failed_precondition(format!("stored actor state is not a valid {state}: {{error}}"))); }} }}, None => {{ local.abort_explicit().await?; return Err(tonic::Status::failed_precondition("non-factory transaction requires an existing actor state")); }} }};
 {prefix}let initial_state = <proto::{state} as prost::Message>::encode_to_vec(&state);
-{prefix}let handler_result = match {runtime_module}::runtime::boxed_generated_future(|| local.run_registered_authorized_handler(&self.authorization, Some(authorized_entry), &context, ("{method_identity}", &handler_request_bytes), Some((binding.clone(), configuration)), |handler_context| {{ let state = &state; async move {{ self.handler.{method}_shared_existing_writers(&handler_context, state, request.into_inner()).await }} }})).await {{ Ok(result) => result, Err(error) => {{ local.abort_explicit().await?; return Err(error); }} }};
+{prefix}let handler_result = match {runtime_module}::runtime::boxed_generated_future(|| local.run_registered_authorized_handler(&self.authorization, Some(authorized_entry), &context, ("{method_identity}", &handler_request_bytes), Some((binding.clone(), configuration)), |handler_context| {{ let state = &state; async move {{ self.handler.{handler_hook}(&handler_context, state, request.into_inner()).await{error_mapping} }} }})).await {{ Ok(result) => result, Err(error) => {{ local.abort_explicit().await?; return Err(error); }} }};
 {prefix}let response = match handler_result {{ Ok(response) => response, Err(error) => {{ local.abort_explicit().await?; return Err(error); }} }};
 {prefix}if let Some(error) = context.doomed_status() {{ local.abort_explicit().await?; return Err(error); }}
 {prefix}if initial_state != <proto::{state} as prost::Message>::encode_to_vec(&state) {{ local.abort_explicit().await?; return Err(tonic::Status::failed_precondition("shared existing writer root state must remain unchanged")); }}
@@ -2807,7 +2876,7 @@ fn emit_transactions(
             return Err(format!("{service_name}: {label} `{hook}` collides"));
         }
     }
-    for (kind, method, _, _, _) in methods {
+    for (kind, method, _, _, identity) in methods {
         if matches!(kind, DurableKind::Transaction(metadata) if metadata.mode == TransactionMode::Shared)
         {
             let hook = format!("{method}_shared_existing_writers");
@@ -2815,6 +2884,14 @@ fn emit_transactions(
                 return Err(format!(
                     "{service_name}: shared existing writer hook `{hook}` collides"
                 ));
+            }
+            if !declared_root_errors(annotation, kind, identity).is_empty() {
+                let typed_hook = format!("{method}_typed_shared_existing_writers");
+                if !handler_methods.insert(typed_hook.clone()) {
+                    return Err(format!(
+                        "{service_name}: typed shared existing writer hook `{typed_hook}` collides"
+                    ));
+                }
             }
         }
     }
@@ -2885,6 +2962,11 @@ fn emit_transactions(
             output.push_str(&format!("    /// Typed transaction result; the default preserves the legacy Status handler.\n    async fn {method}_typed_transaction_result(&self, context: &{runtime_module}::runtime::TransactionContext, state: &mut proto::{state}, request: proto::{request}) -> Result<{runtime_module}::runtime::TransactionExecution<proto::{response}>, {typed}> {{ self.{method}(context, state, request).await.map_err(|status| {{ if matches!({runtime_module}::declared_error_details(&status), Ok(Some(ref rich)) if rich.details.len() == 1) {{ {typed}::from_status(status) }} else {{ {typed}::Grpc(status) }} }}) }}\n"));
         }
         if matches!(metadata.mode, TransactionMode::Shared) {
+            let root_errors = declared_root_errors(annotation, kind, method_identity);
+            if !root_errors.is_empty() {
+                let typed = declared_error_type(service_name, method);
+                output.push_str(&format!("    /// Typed registered shared-root error. The adapter awaits consuming Abort ACK before replying; uncertain Abort overrides this error.\n    async fn {method}_typed_shared_existing_writers(&self, context: &{runtime_module}::runtime::TransactionContext, state: &proto::{state}, request: proto::{request}) -> Result<proto::{response}, {typed}> {{ self.{method}_shared_existing_writers(context, state, request).await.map_err(|status| {{ if matches!({runtime_module}::declared_error_details(&status), Ok(Some(ref rich)) if rich.details.len() == 1) {{ {typed}::from_status(status) }} else {{ {typed}::Grpc(status) }} }}) }}\n"));
+            }
             output.push_str(&format!("    /// Fresh shared-root local execution only; this context has no transaction capabilities.\n    async fn {method}_fresh_shared(&self, context: &{runtime_module}::runtime::SharedLocalTransactionContext, state: &mut proto::{state}, request: proto::{request}) -> Result<proto::{response}, tonic::Status>;\n"));
             output.push_str(&format!("    /// Explicit host-registered root only. Immutable local state; admitted context owns existing writer calls.\n    async fn {method}_shared_existing_writers(&self, _context: &{runtime_module}::runtime::TransactionContext, _state: &proto::{state}, _request: proto::{request}) -> Result<proto::{response}, tonic::Status> {{ Err(tonic::Status::unimplemented(\"shared existing writer hook not implemented\")) }}\n"));
         }
@@ -3070,8 +3152,7 @@ fn emit_transactions(
                 TransactionMode::Shared => "Shared",
             },
             factory: metadata.factory,
-            declared_error: !declared_transactional_errors(annotation, kind, method_identity)
-                .is_empty(),
+            declared_error: !declared_root_errors(annotation, kind, method_identity).is_empty(),
             writer: false,
             inbound: TransactionInbound::Dynamic,
             shared_root_ownership_seam: false,
@@ -3467,7 +3548,8 @@ mod tests {
     use prost_types::{FileDescriptorProto, MethodDescriptorProto, ServiceDescriptorProto};
     #[test]
     fn registered_inline_transaction_branches_construct_behind_heap_thunk() {
-        for (writer, declared_error) in [(false, false), (false, true), (true, false), (true, true)] {
+        for (writer, declared_error) in [(false, false), (false, true), (true, false), (true, true)]
+        {
             let mut output = String::new();
             emit_exclusive_transaction_method(
                 &mut output,
@@ -5967,26 +6049,27 @@ mod tests {
             .error
             .is_none()
         );
-        for (mode, factory) in [
-            (
-                reboot_transaction_method_options::Mode::Shared(Empty {}),
-                false,
-            ),
-            (
-                reboot_transaction_method_options::Mode::Shared(Empty {}),
+        let shared_declared = generate_from_wire(&raw_request(
+            Some(reboot_transaction_method_options::Mode::Shared(Empty {})),
+            false,
+            vec![".tests.reboot.protoc.CounterError".to_owned()],
+        ));
+        assert!(shared_declared.error.is_none(), "{shared_declared:?}");
+        let shared_content = shared_declared.file[0].content.as_deref().unwrap();
+        assert!(shared_content.contains("increment_typed_shared_existing_writers"));
+        assert!(
+            shared_content
+                .contains("shared declared errors require registered existing-writer root opt-in")
+        );
+        assert!(
+            generate_from_wire(&raw_request(
+                Some(reboot_transaction_method_options::Mode::Shared(Empty {})),
                 true,
-            ),
-        ] {
-            assert!(
-                generate_from_wire(&raw_request(
-                    Some(mode),
-                    factory,
-                    vec![".tests.reboot.protoc.CounterError".to_owned()],
-                ))
-                .error
-                .is_some()
-            );
-        }
+                vec![".tests.reboot.protoc.CounterError".to_owned()],
+            ))
+            .error
+            .is_some()
+        );
     }
 
     #[test]
@@ -6132,6 +6215,165 @@ mod tests {
     }
 
     #[test]
+    fn bank_shared_declared_error_root_emits_only_owned_abort_and_completion() {
+        // Pin the original annotation, not a rewritten exclusive Bank schema.
+        let original = include_str!("../tests/fixtures/reboot_examples/api/bank/v1/bank.proto");
+        assert!(original.contains("transaction: { shared: {} }"));
+        assert!(original.contains("errors: [ \"OverdraftError\" ]"));
+        let mut option = RebootMethodOptions {
+            kind: Some(reboot_method_options::Kind::Transaction(
+                RebootTransactionMethodOptions {
+                    constructor: None,
+                    mode: Some(reboot_transaction_method_options::Mode::Shared(Empty {})),
+                },
+            )),
+        }
+        .encode_to_vec();
+        option.extend(
+            RebootMethodErrorOptions {
+                errors: vec!["OverdraftError".to_owned()],
+            }
+            .encode_to_vec(),
+        );
+        let bank = RawFile {
+            name: Some("bank/v1/bank.proto".to_owned()),
+            package: Some("bank.v1".to_owned()),
+            messages: vec![RawMessage {
+                name: Some("Bank".to_owned()),
+                options: Some(
+                    ExtensionOptions {
+                        reboot: Some(
+                            RebootStateOptions {
+                                implements: vec![],
+                                auto_construct: 0,
+                                trusted_effects: false,
+                            }
+                            .encode_to_vec(),
+                        ),
+                    }
+                    .encode_to_vec(),
+                ),
+            }],
+            services: vec![RawService {
+                name: Some("BankMethods".to_owned()),
+                options: None,
+                methods: vec![RawMethod {
+                    name: Some("Transfer".to_owned()),
+                    options: Some(
+                        ExtensionOptions {
+                            reboot: Some(option),
+                        }
+                        .encode_to_vec(),
+                    ),
+                }],
+            }],
+        };
+        let errors = RawFile {
+            name: Some("bank/v1/errors.proto".to_owned()),
+            package: Some("bank.v1".to_owned()),
+            messages: vec![RawMessage {
+                name: Some("OverdraftError".to_owned()),
+                options: None,
+            }],
+            services: vec![],
+        };
+        let mut descriptor = FileDescriptorProto::decode(bank.encode_to_vec().as_slice()).unwrap();
+        descriptor
+            .dependency
+            .push("bank/v1/errors.proto".to_owned());
+        let error_descriptor =
+            FileDescriptorProto::decode(errors.encode_to_vec().as_slice()).unwrap();
+        let parsed = annotations_for_generated_files(
+            vec![bank, errors],
+            &HashSet::from(["bank/v1/bank.proto".to_owned()]),
+            &[descriptor, error_descriptor],
+        )
+        .unwrap();
+        let service = &parsed["bank/v1/bank.proto"]["BankMethods"];
+        let kind = &service.methods["Transfer"];
+        assert_eq!(
+            declared_root_errors(service, kind, "bank.v1.BankMethods.Transfer"),
+            &["OverdraftError"]
+        );
+        assert!(
+            declared_transactional_errors(service, kind, "bank.v1.BankMethods.Transfer").is_empty()
+        );
+        let mut emitted = String::new();
+        emit_shared_transaction_method(
+            &mut emitted,
+            TransactionFlow {
+                method: "transfer",
+                request: "TransferRequest",
+                response: "TransferResponse",
+                method_identity: "bank.v1.BankMethods.Transfer",
+                state: "Bank",
+                declaration: "BankDurableState",
+                runtime_module: "reboot_rust_schema",
+                mode: "Shared",
+                factory: false,
+                declared_error: true,
+                writer: false,
+                inbound: TransactionInbound::Dynamic,
+                shared_root_ownership_seam: false,
+                authorize_after_load: false,
+            },
+        );
+        // Malformed headers must burn the ticket even when a caller retains a clone.
+        let parse_failure = emitted
+            .split("let headers =")
+            .nth(1)
+            .unwrap()
+            .split("})?;")
+            .next()
+            .unwrap();
+        assert!(parse_failure.contains("ticket.discard();"));
+        assert!(
+            parse_failure.find("ticket.discard();").unwrap()
+                < parse_failure.find("invalid_argument").unwrap()
+        );
+        assert!(emitted.contains("ticket.discard(); return Err(tonic::Status::failed_precondition(\"local tickets exclude shared execution\"))"));
+        let refusal = emitted
+            .find("headers.transaction_ids.is_some() || !self.shared_existing_writers")
+            .unwrap();
+        for boundary in [
+            "start_root_transaction(",
+            "start_local_preallow(",
+            "run_registered_authorized_handler(",
+        ] {
+            assert!(refusal < emitted.find(boundary).unwrap());
+        }
+        assert!(emitted.contains("transfer_typed_shared_existing_writers(&handler_context, state, request.into_inner()).await.map_err(|error| error.into_status())"));
+        assert!(
+            emitted.contains("Err(error) => { local.abort_explicit().await?; return Err(error); }")
+        );
+        assert!(emitted.contains("context.doomed_status()"));
+        assert!(emitted.contains("local.complete_shared_existing_writers("));
+        for excluded in [
+            "_fresh_shared(",
+            "rollback_declared_leaf(",
+            "SharedLocalTransactionContext",
+            "complete_root(",
+        ] {
+            assert!(
+                !emitted.contains(excluded),
+                "unexpected authority: {excluded}"
+            );
+        }
+        let mut typed = String::new();
+        emit_declared_error_enum(
+            &mut typed,
+            "BankMethods",
+            "transfer",
+            "bank.v1",
+            &["OverdraftError".to_owned()],
+            "reboot_rust_schema",
+            true,
+        );
+        assert!(typed.contains("OverdraftError(proto::OverdraftError)"));
+        assert!(typed.contains("\"type.googleapis.com/bank.v1.OverdraftError\", &error"));
+    }
+
+    #[test]
     fn shared_and_factory_root_registration_none_is_typed_for_configured_runtime() {
         for (mode, factory) in [
             (TransactionMode::Shared, false),
@@ -6169,7 +6411,10 @@ mod tests {
                     "let registered_root = None::<{runtime}::explicit_abort::RegisteredRoot<C, R>>;"
                 )));
                 assert!(!content.contains("let registered_root = None;"));
-                assert!(content.contains("boxed_generated_future(|| registration.admitted(local)).await?"));
+                assert!(
+                    content
+                        .contains("boxed_generated_future(|| registration.admitted(local)).await?")
+                );
             }
         }
     }
@@ -6401,7 +6646,7 @@ mod tests {
             output.push(length as u8);
             output.extend_from_slice(value);
         }
-        let wire = |shared: bool, writer: &str| {
+        let wire = |shared: bool, declared_shared: bool, writer: &str| {
             let mut service = RawService {
                 name: Some("CounterWritesMethods".into()),
                 methods: vec![],
@@ -6419,7 +6664,7 @@ mod tests {
                             reboot_transaction_method_options::Mode::Exclusive(Empty {})
                         }),
                     }),
-                    if shared {
+                    if shared && !declared_shared {
                         vec![]
                     } else {
                         vec![".tests.reboot.protoc.CounterError".into()]
@@ -6464,28 +6709,43 @@ mod tests {
             append(&mut request, 0x7a, &file);
             request
         };
-        for shared in [false, true] {
-            let response = generate_from_wire(&wire(shared, "FooOther"));
+        for (shared, declared_shared) in [(false, false), (true, false), (true, true)] {
+            let response = generate_from_wire(&wire(shared, declared_shared, "FooOther"));
             assert!(
                 response.error.is_none(),
                 "valid neighboring RPCs: {response:?}"
             );
         }
-        for (shared, writer, hook) in [
-            (false, "FooTyped", "foo_typed_transaction_result"),
+        for (shared, declared_shared, writer, hook) in [
+            (false, false, "FooTyped", "foo_typed_transaction_result"),
             (
+                false,
                 false,
                 "FooTypedTransactionResult",
                 "foo_typed_transaction_result",
             ),
-            (true, "FooFreshShared", "foo_fresh_shared"),
+            (true, false, "FooFreshShared", "foo_fresh_shared"),
             (
+                true,
+                false,
+                "FooSharedExistingWriters",
+                "foo_shared_existing_writers",
+            ),
+            (
+                true,
+                true,
+                "FooTypedSharedExistingWriters",
+                "foo_typed_shared_existing_writers",
+            ),
+            (true, true, "FooFreshShared", "foo_fresh_shared"),
+            (
+                true,
                 true,
                 "FooSharedExistingWriters",
                 "foo_shared_existing_writers",
             ),
         ] {
-            let response = generate_from_wire(&wire(shared, writer));
+            let response = generate_from_wire(&wire(shared, declared_shared, writer));
             let error = response
                 .error
                 .expect("generated trait hooks must have one namespace");
@@ -6739,6 +6999,116 @@ mod tests {
         assert!(content.contains("proto::GetWidgetResponse"));
         assert!(!content.contains("proto::get_widget_request"));
         assert!(!content.contains("proto::get_widget_response"));
+    }
+
+    #[test]
+    fn declared_error_enums_share_the_generated_type_namespace() {
+        fn append(output: &mut Vec<u8>, field: u8, value: &[u8]) {
+            output.push(field);
+            let mut length = value.len();
+            while length >= 0x80 {
+                output.push((length as u8 & 0x7f) | 0x80);
+                length >>= 7;
+            }
+            output.push(length as u8);
+            output.extend_from_slice(value);
+        }
+        // Exercise parsed protobuf descriptors and real annotation extensions,
+        // rather than directly passing a fabricated DurableService map.
+        let wire = |kind: u8, second_method: &str, second_declares: bool| {
+            let mut value = request();
+            value.file_to_generate = vec!["tests/reboot/protoc/counter.proto".into()];
+            let mut file = value.proto_file.remove(0);
+            file.name = Some("tests/reboot/protoc/counter.proto".into());
+            file.service.clear();
+            file.message_type.push(prost_types::DescriptorProto {
+                name: Some("CounterError".into()),
+                ..Default::default()
+            });
+            let mut file = file.encode_to_vec();
+            for (service_name, method_name, declares) in [
+                ("AMethods", "BMethodsTransfer", true),
+                ("AMethodsBMethods", second_method, second_declares),
+            ] {
+                let method_kind = match kind {
+                    0 | 1 => {
+                        reboot_method_options::Kind::Transaction(RebootTransactionMethodOptions {
+                            constructor: None,
+                            mode: Some(if kind == 0 {
+                                reboot_transaction_method_options::Mode::Shared(Empty {})
+                            } else {
+                                reboot_transaction_method_options::Mode::Exclusive(Empty {})
+                            }),
+                        })
+                    }
+                    2 => reboot_method_options::Kind::Writer(RebootWriterMethodOptions {
+                        constructor: None,
+                    }),
+                    _ => reboot_method_options::Kind::Reader(RebootReaderMethodOptions::default()),
+                };
+                let mut option = RebootMethodOptions {
+                    kind: Some(method_kind),
+                }
+                .encode_to_vec();
+                option.extend(
+                    RebootMethodErrorOptions {
+                        errors: if declares {
+                            vec![".tests.reboot.protoc.CounterError".into()]
+                        } else {
+                            vec![]
+                        },
+                    }
+                    .encode_to_vec(),
+                );
+                let options = ExtensionOptions {
+                    reboot: Some(option),
+                }
+                .encode_to_vec();
+                let mut method = MethodDescriptorProto {
+                    name: Some(method_name.into()),
+                    input_type: Some(".tests.reboot.protoc.IncrementRequest".into()),
+                    output_type: Some(".tests.reboot.protoc.CounterValue".into()),
+                    ..Default::default()
+                }
+                .encode_to_vec();
+                append(&mut method, 0x22, &options);
+                let mut service = RawService {
+                    name: Some(service_name.into()),
+                    methods: vec![],
+                    options: None,
+                }
+                .encode_to_vec();
+                append(&mut service, 0x12, &method);
+                append(&mut file, 0x32, &service);
+            }
+            let mut value = value.encode_to_vec();
+            append(&mut value, 0x7a, &file);
+            value
+        };
+        for kind in 0..4 {
+            let response = generate_from_wire(&wire(kind, "Transfer", true));
+            let error = response.error.expect("duplicate enum must fail generation");
+            assert!(error.contains("AMethodsBMethodsTransferError"), "{error}");
+            assert!(
+                error.contains("services `AMethods` and `AMethodsBMethods`"),
+                "{error}"
+            );
+            assert!(response.file.is_empty(), "no partial generated output");
+            for (method, declares) in [("TransferOther", true), ("Transfer", false)] {
+                let response = generate_from_wire(&wire(kind, method, declares));
+                assert!(
+                    response.error.is_none(),
+                    "neighbor/undeclared: {response:?}"
+                );
+                let content = response.file[0].content.as_ref().unwrap();
+                assert_eq!(
+                    content
+                        .matches("pub enum AMethodsBMethodsTransferError {")
+                        .count(),
+                    1
+                );
+            }
+        }
     }
 
     #[test]

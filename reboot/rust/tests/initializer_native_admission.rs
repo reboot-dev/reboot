@@ -3,7 +3,6 @@
 //! This proves admission/Wait only, not the sample's external-effects acceptance.
 use prost::Message;
 use reboot_rust_schema::{
-    state_ref::StateRef,
     application_host::{ApplicationHost, ServingInitializeState},
     database_proto as db,
     legacy_placement::{LegacyApplicationId, PlanOnlyLegacyPlacement},
@@ -11,6 +10,7 @@ use reboot_rust_schema::{
         OneShotTasks, ReaderTaskBinding, TaskMethodDeclaration, WorkflowContext, WorkflowReceipt,
     },
     runtime::{DatabaseActorStore, DurableStateDeclaration, StateAdmission},
+    state_ref::StateRef,
 };
 use std::sync::{
     Arc,

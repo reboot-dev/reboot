@@ -12,7 +12,77 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
-## Sealed shared-writer ownership and fail-closed retirement (2026-10-13)
+## Typed shared declared errors and genuine-ticket refusal (2026-10-13)
+
+Non-factory shared transaction declarations now generate typed business errors,
+including the unchanged original Bank/Account schemas. Execution remains restricted
+to host-registered, explicitly opted-in shared roots over existing ordinary writers.
+Default, inbound and ticket-bearing shared entry cannot gain authority from schema
+acceptance. Typed error payloads return only after consuming root Abort succeeds;
+unknown Abort acknowledgements dominate the business result and retain ownership.
+Generated typed-hook and declared-error enum namespace collisions are rejected.
+
+The checked-in [typed Bank prerequisite fixture](tests/fixtures/typed_shared_bank/README.md)
+includes the original Bank adapter unconditionally. Its original-schema tests execute
+actual default/malformed-header refusals before root start, sidecar calls or handler
+entry, and decode the exact original `bank.v1.OverdraftError`. This replaces the
+historical compile-rejection control; it is not admitted original Bank execution.
+
+The separate synthetic SharedRoot/Account canonical Database companion proves
+commit persistence at 60/40 across restart, typed deficit 10 without terminal
+mutation, root-declared error 17 after one or both real Account mutations followed
+by acknowledged restoration/restart, and exact Alice Abort-response discard with
+independent same-store ActorGate exclusion. Native observations are per-actor,
+serial-case/pre-release evidence; sidecar return is not remote-trailer delivery.
+Six additional fresh-host cases exercise malformed and valid wrong-target tickets
+on the actual shared-declared receiver, then exact original/clone replay failure
+on the legitimate Account.Withdraw destination. Each uses genuine authorized root
+issuance, not shared-target outbound permission or manufactured ticket authority.
+Only the issuing root enters the handler/Load; rejected calls produce no child
+handler invocation or recorded successful native participant terminal response.
+This instrumentation is not an exhaustive trace of failed attempts or Prepare.
+Unsettled issuance retains the
+exact `late enlistment retained; explicit cleanup is incomplete` caller/host
+failure rather than manufacturing healthy cleanup.
+
+Fixture runtimes are dedicated synchronous owners destroyed before final Native
+Drop. Three causal wrapper tests exercise proof panic, first join timeout and
+second cancellation-join timeout using real held task/callback destruction and an
+explicit owner surrogate. They are not production ApplicationHost failure-path or
+Native kill/wait proofs. Runtime destruction may wait indefinitely for non-yielding
+work; no leaking timeout/background shutdown is used. Watch counters report actual
+entry/drop/proceeding; unknown callbacks dropped before release are not a Notify
+wakeup experiment. The production host cancellation join implementation is unchanged.
+
+**Full original Bank remains unsupported:** Bank singleton initialization,
+transactional Account creation inside SignUp and atomic WelcomeEmail scheduling
+inside Account.Open are not established by response-only test constructors,
+constructed task descriptions, codec tests or this synthetic companion. No Python
+seed/private snapshot is used as Rust acceptance. Factories, shared-child/outbound
+transaction authority, remote composition and broad task effects are not enabled.
+
+Fresh frozen acceptance: **19 named gates**, including two native inventories;
+SDK library **630 passed / 0 failed / 3 ignored**, generated downstream **51**
+plus its outer harness, original-schema fixture **5**, companion fixture **13**,
+default-feature check and strict SDK/shared-consumer/both new fixture lints.
+**53 selected canonical Database tests** comprise registered 20, shared-writer 24,
+retained-writer 2, synthetic typed-error native 1 and genuine-ticket native 6.
+The companion's three wrapper failure tests and three semantics tests are not
+additional canonical-native tests. Public Legacy happy/restart, all five strict
+Legacy crash windows, Constructors and Tasks passed on this final source snapshot.
+Thirteen pinned upstream/local example inputs were reauthenticated at the revision
+above. Earlier compile/lint failures remain failures; this does not fix the
+historical process-birth observation race or recertify the older full inventory.
+
+Evidence: [typed shared-error checkpoint](tests/evidence/typed-shared-errors-checkpoint-20261013.json).
+The parent reconciled **741 PID/birth identities absent**, including zombies;
+source, canonical Database and log hashes match. Independent applied-source
+approval is bounded, not a universal safety proof. CI/fork approval remains
+separate and PR #216 stays draft. Prior dated checkpoint sections below are
+historical evidence, including the former Bank compile refusal; they do not
+supersede this current capability boundary.
+
+## Historical sealed shared-writer ownership and fail-closed retirement (2026-10-13)
 
 The registered, opt-in shared-root/existing-exclusive-writer prerequisite is
 integrated with crate-sealed root policy, consuming guard ownership, retained
@@ -1840,7 +1910,7 @@ satisfy that gate. Later feature sections retain their individual recorded evide
 | Local app DX | Cargo scaffold, annotated-proto generation, typed client, durable dev host | Production packaging/bootstrap and general distributed application composition |
 | Schema/codegen | Explicit schema DSL, Prost/Tonic bindings and concrete typed adapters | Rust derive/reflection and complete schema/tooling contract |
 | State/client runtime | Durable constructors/readers/writers, idempotent response replay, metadata/auth | General distributed ownership/fencing and arbitrary external effects |
-| Transactions | Legacy durable coordinator/participant paths and bounded supervised chains/star | General nested snapshots, reentrancy, intersecting subtrees, migration |
+| Transactions | Legacy durable coordinator/participant paths, bounded supervised chains/star and opt-in registered shared-root typed errors over existing writers | General nested snapshots, transactional constructors/tasks, reentrancy, intersecting subtrees, migration |
 | Tasks | Durable scheduled tasks, typed results/Wait with opt-in result policy, recovery, local admin list/stream and scheduled-workflow cancellation | Transactional targets, running/ordinary/distributed cancellation, aggregation, broad retry and dispatcher fencing |
 | Workflows | Finite typed named steps, bounded nested indexed replay, saved reader observations and finite Continue/Break, typed declared business terminals; explicit local-body resumption | Python unbounded Task cursor/GC/Break, cross-actor composition, framework failure isolation |
 | Reactive readers | Typed bounded database/workflow/transaction-service ordinary reader subscriptions, plain-database/workflow-bearing/mixed-transaction external unary composition, allowlisted multi-actor routing, bounded one-hop composition, commit invalidation and explicit same-query reconnect | Transactional-context composition, remote/transitive invalidation, transparent reconnect/durable resume, streaming/transaction RPC subscriptions |
@@ -4479,7 +4549,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: f00ce553c074c36c6aaa8d1e2fd0fcd1a1048a2f535112277b1eb9fcd60c114e -->
+<!-- parity-source-sha256: 66f78160a32f8511f5f688a2da133dcf563553128cf07e87936deb06cf67e8ba -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

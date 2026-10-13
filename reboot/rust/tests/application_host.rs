@@ -576,8 +576,9 @@ async fn prebound_listener_precompleted_shutdown_releases_socket_without_startup
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     assert!(tokio::net::TcpListener::bind(address).await.is_err());
-    let host = ApplicationHost::new("prebound-shutdown")
-        .add_public_service(proto::echo_methods_server::EchoMethodsServer::new(IdentityEcho));
+    let host = ApplicationHost::new("prebound-shutdown").add_public_service(
+        proto::echo_methods_server::EchoMethodsServer::new(IdentityEcho),
+    );
     host.serve_with_listener_shutdown(listener, std::future::ready(()))
         .await
         .unwrap();
