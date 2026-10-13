@@ -15,6 +15,7 @@ The page's own subscription and its notice are exercised in
 directly, so these tests need no browser.
 """
 import asyncio
+import socket
 import unittest
 from rbt.dashboard.v1.dashboard_rbt import Preferences
 from rbt.std.presence.subscriber.v1.subscriber_rbt import Subscriber
@@ -160,6 +161,24 @@ class OpenDashboardTest(unittest.IsolatedAsyncioTestCase):
             await _open_when_serving(port=self.port)
 
         browser.assert_called_once_with(self.automatically_opened_url)
+
+    async def test_opens_when_the_application_never_answers(self) -> None:
+        # Nothing listens on this port, so neither question is ever
+        # answered. Once the application has had its time to answer, a
+        # dashboard is opened anyway: nothing said not to.
+        with socket.socket() as unused:
+            unused.bind(('127.0.0.1', 0))
+            port = unused.getsockname()[1]
+
+        with patch(
+            'reboot.cli.commands.dashboard._ANSWER_WITHIN_SECONDS', 1.0
+        ):
+            with patch('webbrowser.open', return_value=True) as browser:
+                await _open_when_serving(port=port)
+
+        browser.assert_called_once_with(
+            automatically_opened_url(f'http://127.0.0.1:{port}')
+        )
 
     async def test_says_where_the_dashboard_is_when_none_could_be_opened(
         self
