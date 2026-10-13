@@ -156,8 +156,10 @@ or built with `--web-app-dist-path`). So in
 development pass no `url` and keep `VITE_REBOOT_URL` out of
 `web/.env.development`, unless the backend is on a non-default port.
 
-A deploy on a CDN or static host is on a different origin from the
-backend, so it must say where the backend is, from an env file Vite
+In production the backend serves the built SPA from its image (the
+`deploy` skill), same-origin, so there is nothing to set. Only a SPA
+published to a static host of your own is on a different origin from
+the backend and must say where the backend is, from an env file Vite
 reads from its `root`:
 
 ```

@@ -232,17 +232,13 @@ in the output of `rbt cloud up`:
 ```
 
 {% if has_frontend %}
-Tell the front end to talk to it by updating the `VITE_REBOOT_URL` value in
-`frontend/web/.env`:
-
-```tsx
-VITE_REBOOT_URL=YOUR_URL
-```
-
-Then, in the `frontend/` directory, run `npm run build`.
-
-Once built, this front end can be deployed to any static hosting provider like
-S3, Vercel, Cloudflare or Firebase hosting.
+The web app is there too: the `Dockerfile` builds it into the image, and
+`serve run --web-app-dist-path=frontend/dist/web` in `.rbtrc` has the application
+serve it at `YOUR_URL/`, same-origin with the API, so nothing has to be
+configured on the frontend. (The built `frontend/dist/web/` is a plain SPA, so
+it can instead go to a static host of your own, but then the app and the API
+are different sites, and a signed-in session only persists in Chrome until
+Reboot Cloud's custom domains feature puts the API on your domain.)
 {% endif %}
 
 {% endif %}

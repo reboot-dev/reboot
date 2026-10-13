@@ -64,3 +64,6 @@ cloud logs --application-name=chat-room
 
 # Serve the web app at `/` from Vite, on its default port.
 dev run --web-app-url=http://localhost:5173
+
+# In production, serve the built web app at `/` from the image.
+serve run --web-app-dist-path=frontend/dist/web

@@ -14,15 +14,22 @@ RUN uv export --frozen --no-dev --no-emit-project \
     --format requirements-txt -o requirements.txt \
     && pip install -r requirements.txt
 
-# Next, copy the API definition and generate Reboot code. This step is also
-# separate so it is only repeated if the `api/` code changes.
+# Copy the API definition, `.rbtrc`, and the web frontend source. We
+# copy `frontend/` BEFORE running `rbt generate` so that the freshly
+# generated `frontend/api/` (React bindings) doesn't get overwritten by a
+# stale local copy.
 COPY api/ api/
 COPY .rbtrc .rbtrc
+COPY frontend/ frontend/
 
 # Run the Reboot code generators. We did copy all of `api/`, possibly
-# including generated code, but it's not certain that `rbt generate` was run in
-# that folder before this build was started.
+# including generated code, but it's not certain that `rbt generate` was
+# run in that folder before this build was started.
 RUN rbt generate
+
+# Build the web app into `frontend/dist/web/`, which the Reboot app
+# serves itself at `/`, so it is in the image.
+RUN cd frontend && npm ci && npm run build
 
 # Now copy the rest of the source code.
 COPY backend/src/ backend/src/
