@@ -181,7 +181,7 @@ class KeyManagerServicer(KeyManager.Servicer):
             # Park until we still hold a version older than the env's
             # active one. A bare `read()` IS allowed in an `until`
             # predicate; use the OWN-instance ref (`.ref()`, no id).
-            # Returning a (truthy) tuple ends the wait; `False` keeps it.
+            # Returning a tuple ends the wait; only `False` keeps it.
             async def stale() -> tuple[int, list[int]] | bool:
                 key_manager = await KeyManager.ref().read(context)
                 active_version = root_keys.active_version()
