@@ -7,23 +7,20 @@ tags: rbtrc, config, generate, dev, expunge, application-name
 
 ## Configure `.rbtrc` Correctly
 
-> **Critical:** line-based, **not YAML** — each line is `<subcommand> <flag>`. On `reboot>=1.0.4`, `dev run --application-name=<app>` is the canonical persistence flag. `--name=<app>` still works as a deprecated alias and prints a console warning recommending the rename — agents writing fresh `.rbtrc` should use `--application-name`.
+> **Critical:** on `reboot>=1.0.4`, `dev run --application-name=<app>` is the canonical persistence flag. `--name=<app>` still works as a deprecated alias and prints a console warning recommending the rename — agents writing fresh `.rbtrc` should use `--application-name`.
 
-`.rbtrc` is the per-project config for the `rbt` CLI. Its format is
-**line-based, not YAML**: each line is `<subcommand> <flag>` (or
-`<subcommand>:<config> <flag>` for named configs). Comments start with `#`.
+`.rbtrc` is the per-project config for the `rbt` CLI: each line is
+`<subcommand> <flag>` (or `<subcommand>:<config> <flag>` for named
+configs). Comments start with `#`.
 
-**Incorrect (YAML-style):**
+**Incorrect (older Reboot, which models remember best):**
 
-```yaml
-# DON'T — .rbtrc is not YAML.
-generate:
-  python: backend/api/
-  react: frontend/api
-dev:
-  run:
-    application: backend/src/main.py
-    python: true
+```sh
+# DON'T — APIs are pydantic files found by `generate`, not .proto
+# files compiled by `protoc`; `--name` is deprecated.
+protoc --include=api/
+protoc --python=backend/api
+dev run --name=chat-room
 ```
 
 **Correct (line-based, matches the [`reboot-bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic) example's `.rbtrc`):**
