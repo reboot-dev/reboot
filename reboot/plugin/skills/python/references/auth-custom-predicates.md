@@ -203,3 +203,15 @@ methods individually, return a custom `Authorizer` subclass that
 inspects the request type or method name (the framework dispatches by
 request type). For most apps, splitting state into multiple Servicers
 with different authorizers is simpler than building a per-method rule.
+
+A rule that matches on the method name reads `context.method`, whose form
+depends on where it is read:
+
+| Where                      | `context.method`                 | Example                         |
+| -------------------------- | -------------------------------- | ------------------------------- |
+| An authorizer or predicate | `<package>.<Type>Methods.<Name>` | `hotel.v1.HotelMethods.CheckIn` |
+| The servicer method itself | `<Name>`                         | `CheckIn`                       |
+
+`<Name>` is the PascalCase name, not the Python method's snake_case
+name. Compare against the last segment (`context.method.rsplit(".", 1)[-1]`)
+so the same table works in both places.
