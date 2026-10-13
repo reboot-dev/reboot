@@ -7,6 +7,10 @@ tags: auth, oauth, scopes, tokens, store_tokens, ciphertext, google, github, aut
 
 ## Capturing the Identity Provider's Tokens with `store_tokens=True`
 
+> **At 1.6.0:** `reboot.std.oauth` is not in the released wheel, so
+> the imports below fail. See
+> [`KNOWN-ISSUES.md`](../../../KNOWN-ISSUES.md#rebootstdoauth-cant-be-imported-so-store_tokenstrue-fails).
+
 Your app can act **as the user** at an external service — read their
 Google Calendar, open GitHub issues, post to their Slack. It always has
 two halves: **capture** the service's OAuth tokens once (stored encrypted
