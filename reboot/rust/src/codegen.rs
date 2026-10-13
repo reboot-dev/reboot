@@ -1469,6 +1469,9 @@ fn emit_durable(
         .iter()
         .filter(|(kind, _, _, _, _)| !matches!(kind, DurableKind::Transaction(_)))
         .collect();
+    // Declared errors do not promote writers: adapter selection uses the
+    // decoded method kind. emit_transactions may additionally expose ordinary
+    // writers to inbound transactions without changing this database contract.
     let has_transactions = methods
         .iter()
         .any(|(kind, _, _, _, _)| matches!(kind, DurableKind::Transaction(_)));
@@ -1541,6 +1544,8 @@ fn emit_durable(
                     ));
                 }
                 output.push_str(&format!("    /// Bounded immutable local inspection only: no IO or observable effects.\n    fn {precheck}(&self, _state: &proto::{state}, _request: &proto::{request}) -> Result<(), {runtime_module}::one_shot_tasks::LocalStateNotReady> {{ Ok(()) }}\n"));
+            }
+            if matches!(**kind, DurableKind::Writer(_)) {
                 let hook = format!("{method}_with_tasks");
                 if database_methods
                     .iter()
@@ -1598,8 +1603,10 @@ fn emit_durable(
                 .trim_start_matches('.');
             let (envelope, prefix) = match kind {
                 DurableKind::Writer(WriterMetadata { constructor: true }) => (
-                    "constructor_writer_async_for_method_authorized",
-                    format!("\"{method_identity}\", &self.authorization, "),
+                    "scheduling_constructor_async_for_method_authorized",
+                    format!(
+                        "(\"{method_identity}\", \"type.googleapis.com/{response_full}\"), &self.authorization, self.tasks.as_ref(), "
+                    ),
                 ),
                 DurableKind::Reader if requires_constructor => (
                     "reader_async_for_with_admission_authorized",
@@ -1642,10 +1649,7 @@ fn emit_durable(
             } else {
                 String::new()
             };
-            let (callback_args, callback_method) = if matches!(
-                **kind,
-                DurableKind::Writer(WriterMetadata { constructor: false })
-            ) {
+            let (callback_args, callback_method) = if matches!(**kind, DurableKind::Writer(_)) {
                 (
                     "state, request, state_ref",
                     format!("{method}_with_tasks(state, request, state_ref)"),
@@ -1663,7 +1667,19 @@ fn emit_durable(
             } else {
                 String::new()
             };
-            output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n{unary_composition}        let handler = self.handler.clone();\n        self.store.{envelope}::<{declaration}, _, _, _>(\n            {prefix}request, move |{callback_args}| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ {precheck}handler.{callback_method}.await{map_declared_error} }})\n            }},\n        ).await\n    }}\n"));
+            let constructor_compatibility = if matches!(
+                **kind,
+                DurableKind::Writer(WriterMetadata { constructor: true })
+            ) {
+                // Taskless constructors keep the accepted response-only envelope.
+                // Never invoke the scheduling hook without a lifecycle owner.
+                format!(
+                    "        let headers = {runtime_module}::RebootHeaders::from_request(&request).map_err(|error| {{ if let Some(ticket) = request.extensions().get::<{runtime_module}::runtime::RegisteredLocalTicket>() {{ ticket.discard(); }} tonic::Status::invalid_argument(error.to_string()) }})?;\n        if headers.transaction_ids.is_some() || request.extensions().get::<{runtime_module}::runtime::RegisteredLocalTicket>().is_some() {{ if let Some(ticket) = request.extensions().get::<{runtime_module}::runtime::RegisteredLocalTicket>() {{ ticket.discard(); }} return Err(tonic::Status::failed_precondition(\"constructor scheduling requires standalone external admission\")); }}\n        if self.tasks.is_none() {{ let handler = self.handler.clone(); return self.store.constructor_writer_async_for_method_authorized::<{declaration}, _, _, _>(\"{method_identity}\", &self.authorization, request, move |state, request| {{ let handler = handler.clone(); Box::pin(async move {{ handler.{method}(state, request).await{map_declared_error} }}) }}).await; }}\n"
+                )
+            } else {
+                String::new()
+            };
+            output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n{unary_composition}{constructor_compatibility}        let handler = self.handler.clone();\n        self.store.{envelope}::<{declaration}, _, _, _>(\n            {prefix}request, move |{callback_args}| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ {precheck}handler.{callback_method}.await{map_declared_error} }})\n            }},\n        ).await\n    }}\n"));
         }
         output.push_str("}\n\n");
         emit_local_readers(
@@ -1738,7 +1754,7 @@ fn emit_durable(
     }
     emit_transactions(
         output,
-        service_name,
+        service,
         &state,
         runtime_module,
         annotation,
@@ -2760,10 +2776,15 @@ fn emit_reader_tasks(
     let mut declarations = String::from("vec![");
     for method in &service.method {
         let name = method.name.as_deref().unwrap();
+        let constructor = matches!(
+            annotation.methods.get(name),
+            Some(DurableKind::Writer(WriterMetadata { constructor: true }))
+        );
         if !matches!(
             annotation.methods.get(name),
             Some(DurableKind::Reader | DurableKind::Writer(WriterMetadata { constructor: false }))
-        ) {
+        ) && !constructor
+        {
             continue;
         }
         let request = method
@@ -2789,7 +2810,12 @@ fn emit_reader_tasks(
             errors.push_str(&format!("{runtime_module}::one_shot_tasks::DeclaredTaskError::new::<proto::{error_type}>(\"type.googleapis.com/{package}.{error}\"),"));
         }
         errors.push(']');
-        declarations.push_str(&format!("{runtime_module}::one_shot_tasks::TaskMethodDeclaration::new::<{state}DurableState, proto::{request}, proto::{response}>(\"{package}.{service_name}.{name}\", \"type.googleapis.com/{response_full}\", {errors}),"));
+        let constructor_marker = if constructor {
+            ".constructor_scheduling()"
+        } else {
+            ""
+        };
+        declarations.push_str(&format!("{runtime_module}::one_shot_tasks::TaskMethodDeclaration::new::<{state}DurableState, proto::{request}, proto::{response}>(\"{package}.{service_name}.{name}\", \"type.googleapis.com/{response_full}\", {errors}){constructor_marker},"));
     }
     declarations.push(']');
     if !mixed {
@@ -2807,13 +2833,14 @@ fn emit_reader_tasks(
 
 fn emit_transactions(
     output: &mut String,
-    service_name: &str,
+    service: &ServiceDescriptorProto,
     state: &str,
     runtime_module: &str,
     annotation: &DurableService,
     methods: &[(&DurableKind, String, String, String, String)],
     database_methods: &[&(&DurableKind, String, String, String, String)],
 ) -> Result<(), String> {
+    let service_name = required(&service.name, "service name")?;
     let transactions: Vec<_> = methods
         .iter()
         .filter(|(kind, _, _, _, _)| matches!(kind, DurableKind::Transaction(_)))
@@ -2853,6 +2880,10 @@ fn emit_transactions(
             DurableKind::Reader => (
                 format!("{method}_with_reader_context"),
                 "composed reader hook",
+            ),
+            DurableKind::Writer(WriterMetadata { constructor: true }) => (
+                format!("{method}_with_tasks"),
+                "external constructor scheduling hook",
             ),
             DurableKind::Writer(WriterMetadata { constructor: false }) => (
                 format!("{method}_transaction_result"),
@@ -2907,6 +2938,13 @@ fn emit_transactions(
         } else {
             declared_error_type(service_name, method)
         };
+        if matches!(
+            **kind,
+            DurableKind::Writer(WriterMetadata { constructor: true })
+        ) {
+            // External only: no constructor child or task-target authority.
+            output.push_str(&format!("    /// External constructor effects require an exact running host-owned task owner.\n    async fn {method}_with_tasks(&self, state: &mut proto::{state}, request: proto::{request}, _state_ref: String) -> Result<{runtime_module}::runtime::WriterExecution<proto::{response}>, {error}> {{ self.{method}(state, request).await.map({runtime_module}::runtime::WriterExecution::new) }}\n"));
+        }
         output.push_str(&format!("    async fn {method}(&self, state: {}proto::{state}, request: proto::{request}) -> Result<proto::{response}, {error}>;\n", if matches!(**kind, DurableKind::Writer(_)) { "&mut " } else { "&" }));
         if matches!(
             **kind,
@@ -3054,10 +3092,19 @@ fn emit_transactions(
         // Database methods on a mixed service use the same external unary
         // authorization boundary as a database-only adapter. Transactions
         // below retain their distinct lifecycle and policy ordering.
+        let response_full = service
+            .method
+            .iter()
+            .find(|descriptor| descriptor.name.as_deref() == method_identity.rsplit('.').next())
+            .and_then(|descriptor| descriptor.output_type.as_deref())
+            .expect("validated output type")
+            .trim_start_matches('.');
         let (envelope, prefix) = match kind {
             DurableKind::Writer(WriterMetadata { constructor: true }) => (
-                "constructor_writer_async_for_method_authorized",
-                format!("\"{method_identity}\", &self.authorization, "),
+                "scheduling_constructor_async_for_method_authorized",
+                format!(
+                    "(\"{method_identity}\", \"type.googleapis.com/{response_full}\"), &self.authorization, self.tasks.as_ref(), "
+                ),
             ),
             DurableKind::Reader if requires_constructor => (
                 "reader_async_for_with_admission_authorized",
@@ -3132,7 +3179,30 @@ fn emit_transactions(
         } else {
             "mut "
         };
-        output.push_str(&format!("    async fn {method}(&self, {request_mutability}request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n{transactional_writer}{unary_composition}        let handler = self.handler.clone();\n        self.store.{envelope}::<{declaration}, _, _, _>(\n            {prefix}request, move |state, request| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ handler.{method}(state, request).await{error_map} }})\n            }},\n        ).await\n    }}\n"));
+        let (callback_args, callback_method) = if matches!(
+            **kind,
+            DurableKind::Writer(WriterMetadata { constructor: true })
+        ) {
+            (
+                "state, request, state_ref",
+                format!("{method}_with_tasks(state, request, state_ref)"),
+            )
+        } else {
+            ("state, request", format!("{method}(state, request)"))
+        };
+        let constructor_compatibility = if matches!(
+            **kind,
+            DurableKind::Writer(WriterMetadata { constructor: true })
+        ) {
+            // Taskless constructors keep the accepted response-only envelope.
+            // Never invoke the scheduling hook without a lifecycle owner.
+            format!(
+                "        let headers = {runtime_module}::RebootHeaders::from_request(&request).map_err(|error| {{ if let Some(ticket) = request.extensions().get::<{runtime_module}::runtime::RegisteredLocalTicket>() {{ ticket.discard(); }} tonic::Status::invalid_argument(error.to_string()) }})?;\n        if headers.transaction_ids.is_some() || request.extensions().get::<{runtime_module}::runtime::RegisteredLocalTicket>().is_some() {{ if let Some(ticket) = request.extensions().get::<{runtime_module}::runtime::RegisteredLocalTicket>() {{ ticket.discard(); }} return Err(tonic::Status::failed_precondition(\"constructor scheduling requires standalone external admission\")); }}\n        if self.tasks.is_none() {{ let handler = self.handler.clone(); return self.store.constructor_writer_async_for_method_authorized::<{declaration}, _, _, _>(\"{method_identity}\", &self.authorization, request, move |state, request| {{ let handler = handler.clone(); Box::pin(async move {{ handler.{method}(state, request).await{error_map} }}) }}).await; }}\n"
+            )
+        } else {
+            String::new()
+        };
+        output.push_str(&format!("    async fn {method}(&self, {request_mutability}request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n{transactional_writer}{unary_composition}{constructor_compatibility}        let handler = self.handler.clone();\n        self.store.{envelope}::<{declaration}, _, _, _>(\n            {prefix}request, move |{callback_args}| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ handler.{callback_method}.await{error_map} }})\n            }},\n        ).await\n    }}\n"));
     }
     for (kind, method, request, response, method_identity) in transactions {
         let metadata = match kind {
@@ -6612,7 +6682,7 @@ mod tests {
                 ..Default::default()
             },
         ]);
-        let content = generate_inner(value, annotations)
+        let content = generate_inner(value.clone(), annotations.clone())
             .unwrap()
             .remove(0)
             .content
@@ -6626,12 +6696,42 @@ mod tests {
         assert!(content.contains("&self.authorization, request"));
         assert!(content.contains("StateAdmission::RequireExisting"));
         assert!(
-            content
-                .contains("constructor_writer_async_for_method_authorized::<CounterDurableState")
+            content.contains(
+                "scheduling_constructor_async_for_method_authorized::<CounterDurableState"
+            )
         );
         assert!(content.contains("&self.authorization, request"));
         assert!(!content.contains("constructor_writer_async_for_method::<CounterDurableState"));
+        assert!(content.contains("if self.tasks.is_none()"));
+        assert!(
+            content
+                .contains("constructor_writer_async_for_method_authorized::<CounterDurableState")
+        );
+        assert!(content.contains("handler.construct(state, request).await"));
+        assert!(content.contains("ticket.discard()"));
         assert!(!content.contains("constructor writers are not supported"));
+        assert!(content.contains("async fn construct_with_tasks"));
+        assert!(content.contains("self.construct(state, request).await.map("));
+        assert!(content.contains("handler.construct_with_tasks(state, request, state_ref)"));
+        assert!(content.contains(".constructor_scheduling()"));
+        assert!(!content.contains("construct_local_precheck"));
+        let mut collision = value;
+        let mut other = collision.proto_file[0].service[0].method[0].clone();
+        other.name = Some("ConstructWithTasks".into());
+        collision.proto_file[0].service[0].method.push(other);
+        let mut annotations = annotations;
+        annotations
+            .get_mut("counter.proto")
+            .unwrap()
+            .get_mut("CounterWritesMethods")
+            .unwrap()
+            .methods
+            .insert("ConstructWithTasks".into(), DurableKind::Reader);
+        assert!(
+            generate_inner(collision, annotations)
+                .unwrap_err()
+                .contains("scheduling writer hook `construct_with_tasks` collides")
+        );
     }
 
     #[test]
@@ -6751,6 +6851,118 @@ mod tests {
                 .expect("generated trait hooks must have one namespace");
             assert!(
                 error.contains(hook) && error.contains("collides"),
+                "{error}"
+            );
+        }
+    }
+
+    // Synthetic descriptor tests below are not the pinned-original Account schema.
+    #[test]
+    fn declared_error_writer_keeps_database_handler_and_inbound_writer_hook() {
+        let value = request();
+        let annotations = HashMap::from([(
+            "counter.proto".to_owned(),
+            HashMap::from([(
+                "CounterWritesMethods".to_owned(),
+                DurableService {
+                    auto_construct: 0,
+                    state: "Counter".to_owned(),
+                    default_constructible: true,
+                    methods: HashMap::from([(
+                        "Increment".to_owned(),
+                        DurableKind::Writer(WriterMetadata { constructor: false }),
+                    )]),
+                    declared_errors: HashMap::from([(
+                        "Increment".to_owned(),
+                        vec!["CounterError".to_owned()],
+                    )]),
+                },
+            )]),
+        )]);
+        let content = generate_inner(value, annotations)
+            .unwrap()
+            .remove(0)
+            .content
+            .unwrap();
+        assert!(content.contains("pub trait CounterWritesMethodsDatabaseHandler"));
+        assert!(content.contains("async fn increment(&self, state: &mut proto::Counter, request: proto::IncrementRequest) -> Result<proto::CounterValue, CounterWritesMethodsIncrementError>"));
+        // emit_transactions intentionally also emits an inbound ordinary-writer
+        // adapter. This is NOT writer-with-errors promotion to a transaction.
+        assert!(content.contains("pub trait CounterWritesMethodsTransactionHandler"));
+        assert!(content.contains("async fn increment_transaction_result"));
+        assert!(!content.contains("async fn increment_typed_transaction_result"));
+        let inbound_handler = content
+            .split("pub trait CounterWritesMethodsTransactionHandler")
+            .nth(1)
+            .unwrap()
+            .split("\n}\n")
+            .next()
+            .unwrap();
+        assert!(!inbound_handler.contains("async fn increment(&self, context:"));
+    }
+
+    #[test]
+    fn synthetic_mixed_constructor_hook_checks_every_rpc_kind() {
+        let transaction = DurableKind::Transaction(TransactionMetadata {
+            mode: TransactionMode::Exclusive,
+            factory: false,
+        });
+        let constructor = DurableKind::Writer(WriterMetadata { constructor: true });
+        let ordinary_writer = DurableKind::Writer(WriterMetadata { constructor: false });
+        let mut value = request();
+        let original = value.proto_file[0].service[0].method[0].clone();
+        value.proto_file[0].service[0].method[0].name = Some("Open".into());
+        let mut tx = original.clone();
+        tx.name = Some("Transaction".into());
+        value.proto_file[0].service[0].method.push(tx);
+        // Constructor scheduling needs an actual nonconstructor task target.
+        let mut target = original.clone();
+        target.name = Some("WelcomeEmail".into());
+        value.proto_file[0].service[0].method.push(target);
+        let annotation = DurableService {
+            auto_construct: 0,
+            state: "Counter".into(),
+            default_constructible: false,
+            methods: HashMap::from([
+                ("Open".into(), constructor),
+                ("Transaction".into(), transaction),
+                ("WelcomeEmail".into(), ordinary_writer),
+            ]),
+            declared_errors: HashMap::new(),
+        };
+        let annotations = |annotation| {
+            HashMap::from([(
+                "counter.proto".into(),
+                HashMap::from([("CounterWritesMethods".into(), annotation)]),
+            )])
+        };
+        let content = generate_inner(value.clone(), annotations(annotation.clone()))
+            .unwrap()
+            .remove(0)
+            .content
+            .unwrap();
+        assert!(content.contains("pub trait CounterWritesMethodsTransactionHandler"));
+        assert!(!content.contains("pub trait CounterWritesMethodsDatabaseHandler"));
+        assert!(content.contains("async fn open_with_tasks"));
+        assert!(content.contains("handler.open_with_tasks(state, request, state_ref)"));
+        assert!(content.contains(".constructor_scheduling()"));
+        assert!(!content.contains("async fn open_transaction_result"));
+        assert!(!content.contains("pub fn open(state_ref:"));
+        for kind in [
+            DurableKind::Reader,
+            ordinary_writer,
+            constructor,
+            transaction,
+        ] {
+            let mut bad = value.clone();
+            let mut rpc = original.clone();
+            rpc.name = Some("OpenWithTasks".into());
+            bad.proto_file[0].service[0].method.push(rpc);
+            let mut bad_annotation = annotation.clone();
+            bad_annotation.methods.insert("OpenWithTasks".into(), kind);
+            let error = generate_inner(bad, annotations(bad_annotation)).unwrap_err();
+            assert!(
+                error.contains("open_with_tasks") && error.contains("collides"),
                 "{error}"
             );
         }

@@ -251,6 +251,7 @@ pub struct TaskMethodDeclaration {
     workflow: bool,
     workflow_writer_step: bool,
     workflow_reader_wait: bool,
+    constructor_scheduling: bool,
 }
 pub struct DeclaredTaskError {
     type_url: &'static str,
@@ -293,7 +294,13 @@ impl TaskMethodDeclaration {
             workflow: false,
             workflow_writer_step: false,
             workflow_reader_wait: false,
+            constructor_scheduling: false,
         }
+    }
+    /// External constructor scheduling authority only, never a task dispatch target.
+    pub fn constructor_scheduling(mut self) -> Self {
+        self.constructor_scheduling = true;
+        self
     }
     /// Immutable explicit workflow kind; never inferred from a reader binding.
     pub fn workflow(mut self) -> Self {
@@ -644,6 +651,7 @@ impl OneShotTasks {
             .ok_or_else(|| Status::failed_precondition("unregistered scheduling writer"))?;
         if !self.inner.binding.writer_capable()
             || declaration.workflow
+            || declaration.constructor_scheduling
             || declaration.response_type != response_type
             || declaration.declaration != std::any::TypeId::of::<D>()
             || declaration.request != std::any::TypeId::of::<Q>()
@@ -659,6 +667,38 @@ impl OneShotTasks {
         };
         if !self.inner.binding.is_writer(&probe) {
             return Err(Status::failed_precondition("not ordinary writer"));
+        }
+        Ok(())
+    }
+    pub(crate) fn validate_constructor_writer<
+        D: crate::runtime::DurableStateDeclaration + 'static,
+        Q: 'static,
+        R: 'static,
+    >(
+        &self,
+        method: &str,
+        response_type: &str,
+    ) -> Result<(), Status> {
+        let declaration = self
+            .inner
+            .declarations
+            .iter()
+            .find(|d| d.method == method)
+            .ok_or_else(|| Status::failed_precondition("unregistered scheduling constructor"))?;
+        if !self.inner.binding.writer_capable()
+            || !declaration.constructor_scheduling
+            || declaration.workflow
+            || declaration.workflow_writer_step
+            || declaration.workflow_reader_wait
+            || declaration.state_type != D::STATE_TYPE
+            || declaration.response_type != response_type
+            || declaration.declaration != std::any::TypeId::of::<D>()
+            || declaration.request != std::any::TypeId::of::<Q>()
+            || declaration.response != std::any::TypeId::of::<R>()
+        {
+            return Err(Status::failed_precondition(
+                "scheduling constructor descriptor mismatch",
+            ));
         }
         Ok(())
     }
@@ -717,6 +757,14 @@ impl OneShotTasks {
             }
             if !ids.insert(id.task_uuid.clone()) {
                 return Err(Status::invalid_argument("duplicate task UUID"));
+            }
+            if self
+                .declaration(task)
+                .is_some_and(|d| d.constructor_scheduling)
+            {
+                return Err(Status::failed_precondition(
+                    "constructor cannot be a task target",
+                ));
             }
             scheduled_at(task)?;
             if self
@@ -1445,13 +1493,146 @@ impl RunningTaskAdmission {
 }
 
 type OwnerKey = (String, String, String);
-fn owners() -> &'static Mutex<HashSet<OwnerKey>> {
-    static OWNERS: std::sync::OnceLock<Mutex<HashSet<OwnerKey>>> = std::sync::OnceLock::new();
-    OWNERS.get_or_init(|| Mutex::new(HashSet::new()))
+// One process budget covers both sealed in-flight IO and retained uncertainty.
+// Pending-task max_live is a different budget and cannot account for this state.
+const CONSTRUCTOR_UNCERTAINTY_LIMIT: usize = 64;
+fn constructor_budget() -> &'static Arc<tokio::sync::Semaphore> {
+    static BUDGET: std::sync::OnceLock<Arc<tokio::sync::Semaphore>> = std::sync::OnceLock::new();
+    BUDGET.get_or_init(|| Arc::new(tokio::sync::Semaphore::new(CONSTRUCTOR_UNCERTAINTY_LIMIT)))
+}
+struct ConstructorLifecycleState {
+    sealed: bool,
+    retained: Option<RetainedConstructorCreate>,
+}
+struct DispatchLifecycle {
+    generation: Arc<()>,
+    constructor: Mutex<ConstructorLifecycleState>,
+}
+// Registry ownership, not a detached Vec, anchors sealed host work after shutdown.
+fn owners() -> &'static Mutex<std::collections::HashMap<OwnerKey, Arc<DispatchLifecycle>>> {
+    static OWNERS: std::sync::OnceLock<
+        Mutex<std::collections::HashMap<OwnerKey, Arc<DispatchLifecycle>>>,
+    > = std::sync::OnceLock::new();
+    OWNERS.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+}
+/// Read-only resource accounting. There is deliberately no reset/release API.
+#[derive(Debug, Clone, Copy)]
+pub struct ConstructorUncertaintyStatus {
+    pub process_limit: usize,
+    pub process_reserved: usize,
+    pub actor_sealed: bool,
+    pub actor_retained: bool,
+}
+impl OneShotTasks {
+    pub fn constructor_uncertainty_status(&self) -> ConstructorUncertaintyStatus {
+        let key = (
+            self.inner.store.database_endpoint().to_owned(),
+            self.inner.state_type.clone(),
+            self.inner.state_ref.clone(),
+        );
+        let registry = owners().lock().expect("owner registry poisoned");
+        let (actor_sealed, actor_retained) = registry.get(&key).map_or((false, false), |entry| {
+            let state = entry
+                .constructor
+                .lock()
+                .expect("constructor lifecycle poisoned");
+            (state.sealed, state.retained.is_some())
+        });
+        ConstructorUncertaintyStatus {
+            process_limit: CONSTRUCTOR_UNCERTAINTY_LIMIT,
+            // An observational gauge; concurrent other actors may change it.
+            process_reserved: CONSTRUCTOR_UNCERTAINTY_LIMIT
+                - constructor_budget().available_permits(),
+            actor_sealed,
+            actor_retained,
+        }
+    }
+}
+struct RetainedConstructorCreate {
+    _lease: crate::runtime::ExclusiveActorLease,
+    _admission: RunningTaskAdmission,
+    _permit: tokio::sync::OwnedSemaphorePermit,
+}
+pub(crate) struct ConstructorReservation {
+    lifecycle: Arc<DispatchLifecycle>,
+    _permit: tokio::sync::OwnedSemaphorePermit,
+}
+impl ConstructorReservation {
+    pub(crate) fn retain(
+        self,
+        lease: crate::runtime::ExclusiveActorLease,
+        admission: RunningTaskAdmission,
+    ) {
+        let lifecycle = self.lifecycle.clone();
+        let mut state = lifecycle
+            .constructor
+            .lock()
+            .expect("constructor lifecycle poisoned");
+        assert!(state.sealed && state.retained.is_none());
+        // Registry is the sole lifetime anchor; no self-cycle or live reset.
+        // Native truth sufficient for live reconciliation is absent.
+        state.retained = Some(RetainedConstructorCreate {
+            _lease: lease,
+            _admission: admission,
+            _permit: self._permit,
+        });
+    }
+    pub(crate) fn lifecycle_acknowledged(&self) {
+        let mut state = self
+            .lifecycle
+            .constructor
+            .lock()
+            .expect("constructor lifecycle poisoned");
+        assert!(state.sealed && state.retained.is_none());
+        state.sealed = false;
+        // The capacity permit stays owned until the aggregate releases its
+        // actual actor lease; this method does not itself free capacity.
+    }
+}
+impl RunningTaskAdmission {
+    pub(crate) fn reserve_constructor(&self) -> Result<ConstructorReservation, Status> {
+        self.reserve_constructor_with_budget(constructor_budget())
+    }
+    fn reserve_constructor_with_budget(
+        &self,
+        budget: &Arc<tokio::sync::Semaphore>,
+    ) -> Result<ConstructorReservation, Status> {
+        let _running = self.lock()?;
+        let key = (
+            self.tasks.inner.store.database_endpoint().to_owned(),
+            self.tasks.inner.state_type.clone(),
+            self.tasks.inner.state_ref.clone(),
+        );
+        let registry = owners().lock().expect("owner registry poisoned");
+        let lifecycle = registry
+            .get(&key)
+            .filter(|entry| Arc::ptr_eq(&entry.generation, &self.generation))
+            .ok_or_else(|| {
+                Status::failed_precondition("constructor requires exact host registry owner")
+            })?
+            .clone();
+        let mut state = lifecycle
+            .constructor
+            .lock()
+            .expect("constructor lifecycle poisoned");
+        if state.sealed {
+            return Err(Status::unavailable("constructor outcome already sealed"));
+        }
+        let permit = budget.clone().try_acquire_owned().map_err(|_| {
+            Status::resource_exhausted("constructor uncertainty capacity exhausted")
+        })?;
+        state.sealed = true;
+        drop(state);
+        Ok(ConstructorReservation {
+            lifecycle,
+            _permit: permit,
+        })
+    }
 }
 struct DispatchOwner {
     tasks: OneShotTasks,
     key: OwnerKey,
+    lifecycle: Arc<DispatchLifecycle>,
 }
 impl DispatchOwner {
     fn claim(tasks: OneShotTasks) -> Result<Self, Status> {
@@ -1460,21 +1641,32 @@ impl DispatchOwner {
             tasks.inner.state_type.clone(),
             tasks.inner.state_ref.clone(),
         );
-        if !owners()
-            .lock()
-            .expect("owner registry poisoned")
-            .insert(key.clone())
+        let lifecycle = Arc::new(DispatchLifecycle {
+            generation: Arc::new(()),
+            constructor: Mutex::new(ConstructorLifecycleState {
+                sealed: false,
+                retained: None,
+            }),
+        });
         {
-            return Err(Status::already_exists(
-                "local actor task dispatcher already owned",
-            ));
+            let mut registry = owners().lock().expect("owner registry poisoned");
+            if registry.contains_key(&key) {
+                return Err(Status::already_exists(
+                    "local actor task dispatcher already owned",
+                ));
+            }
+            registry.insert(key.clone(), lifecycle.clone());
         }
         *tasks
             .inner
             .running_owner
             .lock()
-            .expect("task owner mutex poisoned") = Some(Arc::new(()));
-        Ok(Self { tasks, key })
+            .expect("task owner mutex poisoned") = Some(lifecycle.generation.clone());
+        Ok(Self {
+            tasks,
+            key,
+            lifecycle,
+        })
     }
     fn revoke(&self) {
         // Revoke publication immediately, but retain registry ownership until
@@ -1571,10 +1763,17 @@ impl Drop for DispatchOwner {
             .recovery_request
             .lock()
             .expect("task recovery mutex poisoned") = None;
-        owners()
+        let mut registry = owners().lock().expect("owner registry poisoned");
+        let state = self
+            .lifecycle
+            .constructor
             .lock()
-            .expect("owner registry poisoned")
-            .remove(&self.key);
+            .expect("constructor lifecycle poisoned");
+        // Shutdown revokes authority, not possible native ownership. A sealed
+        // entry keeps the exact same-process registration until process exit.
+        if !state.sealed {
+            registry.remove(&self.key);
+        }
     }
 }
 pub struct OneShotTaskRecovery {
@@ -2385,6 +2584,10 @@ fn scheduled_at(task: &db::Task) -> Result<Option<chrono::DateTime<chrono::Utc>>
 fn schedule_due(task: &db::Task) -> Result<bool, Status> {
     Ok(scheduled_at(task)?.is_none_or(|schedule| schedule <= chrono::Utc::now()))
 }
+
+#[cfg(test)]
+#[path = "constructor_scheduling_tests.rs"]
+mod constructor_scheduling_tests;
 
 #[cfg(test)]
 #[path = "ordinary_scheduling_tests.rs"]
@@ -3270,7 +3473,7 @@ mod tests {
             while owners()
                 .lock()
                 .expect("task owner registry poisoned")
-                .contains(&key)
+                .contains_key(&key)
             {
                 tokio::task::yield_now().await;
             }

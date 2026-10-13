@@ -1,5 +1,6 @@
 #include <openssl/sha.h>
 
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <filesystem>
@@ -8,6 +9,7 @@
 #include <random>
 #include <set>
 #include <thread>
+#include <vector>
 
 #include "gmock/gmock-matchers.h"
 #include "google/protobuf/any.pb.h"
@@ -4899,6 +4901,404 @@ TEST_F(ManyShardDatabaseTest, BasicRecoverWithManyShards) {
 }
 
 ////////////////////////////////////////////////////////////////////////
+
+// BEGIN constructor admission193 source fixture (mirrors sourcefixtures/*.inc).
+// Source-only fixture for tests/reboot/server/database_tests.cc, after
+// TwoShardDatabaseTest. Requires regenerated database bindings. Not executed.
+// These tests assume the bounded same-actor exclusive serving authority;
+// they do not establish exclusion against independently admitted Prepare/import.
+
+class ConstructorTasksAdmissionTest : public TwoShardDatabaseTest {
+ protected:
+  void deadline(grpc::ClientContext& context) {
+    context.set_deadline(std::chrono::system_clock::now()
+                         + std::chrono::seconds(10));
+  }
+
+  v1alpha1::CreateActorRequest request_for(const std::string& suffix) {
+    v1alpha1::CreateActorRequest request;
+    auto* actor = request.mutable_actor();
+    actor->set_state_type("ConstructorTasksAdmission");
+    actor->set_state_ref(make_state_ref(suffix));
+    actor->set_state("created");
+    auto* mutation = request.mutable_idempotent_mutation();
+    mutation->set_state_type(actor->state_type());
+    mutation->set_state_ref(actor->state_ref());
+    mutation->set_key(UUID::random().toBytes());
+    mutation->set_response("attempted-canonical-response");
+    mutation->set_request_fingerprint(std::string(32, 'a'));
+    auto* task = request.add_task_upserts();
+    task->mutable_task_id()->set_state_type(actor->state_type());
+    task->mutable_task_id()->set_state_ref(actor->state_ref());
+    task->mutable_task_id()->set_task_uuid(UUID::random().toBytes());
+    task->set_status(v1alpha1::Task::PENDING);
+    task->set_method("bank.v1.Account.WelcomeEmail");
+    task->set_request("");  // Empty protobuf request is valid opaque input.
+    task->set_iteration(3);
+    task->mutable_timestamp()->set_seconds(123);
+    task->mutable_timestamp()->set_nanos(456);
+    *mutation->add_task_ids() = task->task_id();
+    request.set_sync(true);
+    return request;
+  }
+
+  void create(const v1alpha1::CreateActorRequest& request,
+              grpc::StatusCode expected, bool legacy = false) {
+    grpc::ClientContext context;
+    deadline(context);
+    v1alpha1::CreateActorResponse response;
+    const auto status = legacy
+        ? stub->CreateActor(&context, request, &response)
+        : stub->CreateActorWithTasks(&context, request, &response);
+    ASSERT_EQ(status.error_code(), expected) << status.error_message();
+    if (status.ok()) ASSERT_TRUE(response.has_timestamp());
+  }
+
+  void seed(const v1alpha1::StoreRequest& request) {
+    grpc::ClientContext context;
+    deadline(context);
+    v1alpha1::StoreResponse response;
+    const auto status = stub->Store(&context, request, &response);
+    ASSERT_TRUE(status.ok()) << status.error_message();
+  }
+
+  // Read ALL attempted identities, not only the unmodified actor/checkpoint.
+  // Each exact TaskId Load consults both pending and completed storage. Seed
+  // equality covers method/request/response-or-error/iteration/status/timestamp.
+  // Seed checkpoint equality covers response/fingerprint/task_ids/key/identity.
+  void inspect(const v1alpha1::CreateActorRequest& original,
+               const v1alpha1::CreateActorRequest& attempted,
+               const v1alpha1::StoreRequest& saved = v1alpha1::StoreRequest()) {
+    std::vector<v1alpha1::Actor> actors;
+    std::vector<v1alpha1::TaskId> ids;
+    auto add_actor = [&](const std::string& type, const std::string& ref) {
+      for (const auto& actor : actors) {
+        if (actor.state_type() == type && actor.state_ref() == ref) return;
+      }
+      v1alpha1::Actor actor;
+      actor.set_state_type(type);
+      actor.set_state_ref(ref);
+      actors.push_back(actor);
+    };
+    auto add_id = [&](const v1alpha1::TaskId& id) {
+      add_actor(id.state_type(), id.state_ref());
+      for (const auto& existing : ids) {
+        if (existing.state_type() == id.state_type()
+            && existing.state_ref() == id.state_ref()
+            && existing.task_uuid() == id.task_uuid()) return;
+      }
+      ids.push_back(id);
+    };
+    for (const auto* request : {&original, &attempted}) {
+      if (request->has_actor()) {
+        add_actor(request->actor().state_type(), request->actor().state_ref());
+      }
+      if (request->has_idempotent_mutation()) {
+        add_actor(request->idempotent_mutation().state_type(),
+                  request->idempotent_mutation().state_ref());
+        for (const auto& id : request->idempotent_mutation().task_ids()) add_id(id);
+      }
+      for (const auto& task : request->task_upserts()) add_id(task.task_id());
+    }
+    for (const auto& actor : saved.actor_upserts()) {
+      add_actor(actor.state_type(), actor.state_ref());
+    }
+    for (const auto& task : saved.task_upserts()) add_id(task.task_id());
+    if (saved.has_idempotent_mutation()) {
+      add_actor(saved.idempotent_mutation().state_type(),
+                saved.idempotent_mutation().state_ref());
+      for (const auto& id : saved.idempotent_mutation().task_ids()) add_id(id);
+    }
+    for (const auto& actor : actors) {
+      SCOPED_TRACE(actor.ShortDebugString());
+      v1alpha1::LoadRequest read;
+      *read.add_actors() = actor;
+      grpc::ClientContext context;
+      deadline(context);
+      v1alpha1::LoadResponse loaded;
+      ASSERT_TRUE(stub->Load(&context, read, &loaded).ok());
+      const v1alpha1::Actor* expected = nullptr;
+      for (const auto& seeded : saved.actor_upserts()) {
+        if (seeded.state_type() == actor.state_type()
+            && seeded.state_ref() == actor.state_ref()) expected = &seeded;
+      }
+      ASSERT_EQ(loaded.actors_size(), expected == nullptr ? 0 : 1);
+      if (expected != nullptr) {
+        ASSERT_EQ(loaded.actors(0).SerializeAsString(), expected->SerializeAsString());
+      }
+
+      // Malformed key cannot be sent to exact-key recovery: that baseline RPC
+      // also calls the fatal helper. For malformed inputs, scan the whole actor
+      // instead, proving checkpoint absence without crashing the observer.
+      std::vector<std::string> keys;
+      for (const auto* request : {&original, &attempted}) {
+        if (request->has_idempotent_mutation()) {
+          const auto& key = request->idempotent_mutation().key();
+          if (key.size() == 16
+              && std::find(keys.begin(), keys.end(), key) == keys.end()) {
+            keys.push_back(key);
+          }
+        }
+      }
+      if (saved.has_idempotent_mutation()) {
+        const auto& key = saved.idempotent_mutation().key();
+        if (std::find(keys.begin(), keys.end(), key) == keys.end()) keys.push_back(key);
+      }
+      const bool malformed = attempted.has_idempotent_mutation()
+          && attempted.idempotent_mutation().key().size() != 16;
+      if (malformed) keys.push_back("");  // Unfiltered actor recovery sentinel.
+      for (const auto& key : keys) {
+        v1alpha1::RecoverIdempotentMutationsRequest recover;
+        recover.set_state_type(actor.state_type());
+        recover.set_state_ref(actor.state_ref());
+        if (!key.empty()) recover.set_idempotency_key(key);
+        grpc::ClientContext recover_context;
+        deadline(recover_context);
+        auto reader = stub->RecoverIdempotentMutations(&recover_context, recover);
+        v1alpha1::RecoverIdempotentMutationsResponse item;
+        std::vector<v1alpha1::IdempotentMutation> mutations;
+        while (reader->Read(&item)) {
+          for (const auto& mutation : item.idempotent_mutations()) {
+            mutations.push_back(mutation);
+          }
+        }
+        // Always drain to EOF before Finish, even on positive recovery.
+        ASSERT_TRUE(reader->Finish().ok());
+        const v1alpha1::IdempotentMutation* expected_mutation = nullptr;
+        if (saved.has_idempotent_mutation()) {
+          const auto& seeded = saved.idempotent_mutation();
+          if (seeded.state_type() == actor.state_type()
+              && seeded.state_ref() == actor.state_ref()
+              && (key.empty() || seeded.key() == key)) expected_mutation = &seeded;
+        }
+        ASSERT_EQ(mutations.size(), expected_mutation == nullptr ? 0u : 1u);
+        if (expected_mutation != nullptr) {
+          ASSERT_EQ(mutations[0].SerializeAsString(), expected_mutation->SerializeAsString());
+        }
+      }
+    }
+    for (const auto& id : ids) {
+      SCOPED_TRACE(id.ShortDebugString());
+      v1alpha1::LoadRequest read;
+      *read.add_task_ids() = id;
+      grpc::ClientContext context;
+      deadline(context);
+      v1alpha1::LoadResponse loaded;
+      ASSERT_TRUE(stub->Load(&context, read, &loaded).ok());
+      const v1alpha1::Task* expected = nullptr;
+      for (const auto& seeded : saved.task_upserts()) {
+        if (seeded.task_id().state_type() == id.state_type()
+            && seeded.task_id().state_ref() == id.state_ref()
+            && seeded.task_id().task_uuid() == id.task_uuid()) expected = &seeded;
+      }
+      ASSERT_EQ(loaded.tasks_size(), expected == nullptr ? 0 : 1);
+      if (expected != nullptr) {
+        ASSERT_EQ(loaded.tasks(0).SerializeAsString(), expected->SerializeAsString());
+      }
+    }
+  }
+};
+
+TEST_F(ConstructorTasksAdmissionTest, MalformedMutationKeysRefuseWithoutRecordsAndStayUsable) {
+  const std::vector<std::string> malformed = {
+      "", "x", std::string(15, 'x'), std::string(17, 'x'),
+      "00000000-0000-4000-8000-000000000000"};
+  for (size_t variant = 0; variant < malformed.size(); ++variant) {
+    for (bool legacy : {false, true}) {
+      SCOPED_TRACE(std::to_string(variant) + (legacy ? " legacy" : " tasks"));
+      auto original = request_for("malformed-" + std::to_string(variant)
+                                  + (legacy ? "-legacy" : "-tasks"));
+      if (legacy) {
+        original.clear_task_upserts();
+        original.mutable_idempotent_mutation()->clear_task_ids();
+      }
+      auto attempted = original;
+      attempted.mutable_idempotent_mutation()->set_key(malformed[variant]);
+      ASSERT_NO_FATAL_FAILURE(create(attempted, grpc::StatusCode::INVALID_ARGUMENT, legacy));
+      ASSERT_NO_FATAL_FAILURE(inspect(original, attempted));
+      // Genuine successful RPC on the SAME server after each malformed key,
+      // followed by complete readback; no restart could conceal a crash.
+      auto healthy = request_for("healthy-" + std::to_string(variant)
+                                 + (legacy ? "-legacy" : "-tasks"));
+      ASSERT_NO_FATAL_FAILURE(create(healthy, grpc::StatusCode::OK));
+      v1alpha1::StoreRequest expected;
+      *expected.add_actor_upserts() = healthy.actor();
+      *expected.add_task_upserts() = healthy.task_upserts(0);
+      *expected.mutable_idempotent_mutation() = healthy.idempotent_mutation();
+      ASSERT_NO_FATAL_FAILURE(inspect(healthy, healthy, expected));
+    }
+  }
+}
+
+TEST_F(ConstructorTasksAdmissionTest, InvalidAdmissionReadsAllOriginalAndForeignTargets) {
+  for (int variant = 0; variant < 26; ++variant) {
+    SCOPED_TRACE(variant);
+    const auto original = request_for("invalid-" + std::to_string(variant));
+    auto attempted = original;
+    auto* task = attempted.mutable_task_upserts(0);
+    auto* mutation = attempted.mutable_idempotent_mutation();
+    switch (variant) {
+      case 0: task->set_status(v1alpha1::Task::UNKNOWN); break;
+      case 1: task->set_status(v1alpha1::Task::COMPLETED); break;
+      case 2: task->mutable_task_id()->set_state_ref(make_state_ref("foreign-task-ref")); break;
+      case 3: task->mutable_task_id()->set_state_type("ForeignTaskType"); break;
+      case 4: task->mutable_task_id()->set_task_uuid("text-uuid"); break;
+      case 5: task->clear_method(); break;
+      case 6: task->mutable_response()->set_type_url("type.example/Reply"); break;
+      case 7: task->mutable_error()->set_type_url("type.example/Error"); break;
+      case 8: *attempted.add_task_upserts() = *task; break;
+      case 9: *mutation->add_task_ids() = task->task_id(); break;
+      case 10: mutation->clear_task_ids(); break;
+      case 11: attempted.clear_task_upserts(); break;
+      case 12: {
+        auto uuid = task->task_id().task_uuid();
+        uuid[6] = static_cast<char>(0x70);  // v7 allowed for mutation, NOT task.
+        task->mutable_task_id()->set_task_uuid(uuid);
+        *mutation->mutable_task_ids(0) = task->task_id();
+        break;
+      }
+      case 13: {
+        auto uuid = task->task_id().task_uuid();
+        uuid[8] = static_cast<char>(0xc0);
+        task->mutable_task_id()->set_task_uuid(uuid);
+        *mutation->mutable_task_ids(0) = task->task_id();
+        break;
+      }
+      case 14: attempted.mutable_actor()->clear_state(); break;
+      case 15: attempted.clear_actor(); break;
+      case 16: attempted.clear_idempotent_mutation(); break;
+      case 17: attempted.set_sync(false); break;
+      case 18: {
+        auto extra = task->task_id();
+        extra.set_task_uuid(UUID::random().toBytes());
+        *mutation->add_task_ids() = extra;
+        break;
+      }
+      case 19: mutation->mutable_task_ids(0)->set_state_ref(make_state_ref("foreign-checkpoint-ref")); break;
+      case 20: mutation->mutable_task_ids(0)->set_state_type("ForeignCheckpointType"); break;
+      case 21: mutation->set_state_ref(make_state_ref("foreign-mutation-ref")); break;
+      case 22: mutation->set_state_type("ForeignMutationType"); break;
+      case 23: {
+        auto extra = task->task_id();
+        extra.set_state_type("ForeignExtraCheckpointType");
+        extra.set_state_ref(make_state_ref("foreign-extra-checkpoint-ref"));
+        extra.set_task_uuid(UUID::random().toBytes());
+        *mutation->add_task_ids() = extra;
+        break;
+      }
+      case 24: attempted.mutable_actor()->clear_state_type(); break;
+      case 25: attempted.mutable_actor()->clear_state_ref(); break;
+    }
+    ASSERT_NO_FATAL_FAILURE(create(attempted, grpc::StatusCode::INVALID_ARGUMENT));
+    ASSERT_NO_FATAL_FAILURE(inspect(original, attempted));
+  }
+}
+
+TEST_F(ConstructorTasksAdmissionTest, EmptyStateAndReorderedMultitaskSetsPreserveV4V7MutationKeys) {
+  for (int variant = 0; variant < 3; ++variant) {
+    SCOPED_TRACE(variant);
+    auto request = request_for("positive-" + std::to_string(variant));
+    request.mutable_actor()->set_state("");  // Present, empty state is valid.
+    if (variant == 1) {
+      // Native v7 mutation-key interpretation only; task IDs stay UUID-v4.
+      request.mutable_idempotent_mutation()->set_key(make_uuidv7(now_ms() + 3600000));
+    }
+    if (variant == 2) {
+      request.clear_task_upserts();
+      request.mutable_idempotent_mutation()->clear_task_ids();
+    } else {
+      auto second = request.task_upserts(0);
+      second.mutable_task_id()->set_task_uuid(UUID::random().toBytes());
+      second.set_method("bank.v1.Account.SecondWelcome");
+      second.set_request("second-request");
+      second.set_iteration(11);
+      *request.add_task_upserts() = second;
+      *request.mutable_idempotent_mutation()->add_task_ids() = second.task_id();
+      request.mutable_idempotent_mutation()->mutable_task_ids()->SwapElements(0, 1);
+    }
+    ASSERT_NO_FATAL_FAILURE(create(request, grpc::StatusCode::OK, variant == 2));
+    v1alpha1::StoreRequest expected;
+    *expected.add_actor_upserts() = request.actor();
+    for (const auto& task : request.task_upserts()) *expected.add_task_upserts() = task;
+    *expected.mutable_idempotent_mutation() = request.idempotent_mutation();
+    ASSERT_NO_FATAL_FAILURE(inspect(request, request, expected));
+    ASSERT_NO_FATAL_FAILURE(create(request, grpc::StatusCode::FAILED_PRECONDITION, variant == 2));
+    ASSERT_NO_FATAL_FAILURE(inspect(request, request, expected));
+  }
+}
+
+TEST_F(ConstructorTasksAdmissionTest, LegacyCollisionsAndExistingActorPreserveEverySeedAndRefusePartialEffects) {
+  // 0: legacy route; 1: pending; 2: completed response; 3: checkpoint;
+  // 4: identical pending bytes; 5: existing actor; 6: completed error;
+  // 7: pending + completed + checkpoint together.
+  for (int variant = 0; variant < 8; ++variant) {
+    SCOPED_TRACE(variant);
+    auto request = request_for("collision-" + std::to_string(variant));
+    auto spare = request.task_upserts(0);
+    spare.mutable_task_id()->set_task_uuid(UUID::random().toBytes());
+    spare.set_request("new-spare-must-not-be-created");
+    *request.add_task_upserts() = spare;
+    *request.mutable_idempotent_mutation()->add_task_ids() = spare.task_id();
+    v1alpha1::StoreRequest saved;
+    saved.set_sync(true);
+    if (variant == 1 || variant == 2 || variant == 4 || variant == 6 || variant == 7) {
+      auto* task = saved.add_task_upserts();
+      *task = request.task_upserts(0);
+      if (variant != 4) {
+        task->set_method("bank.v1.Account.ImmutableOriginalMethod");
+        task->set_request("immutable-original-request");
+        task->set_iteration(41);
+        task->mutable_timestamp()->set_seconds(987);
+      }
+      if (variant == 2 || variant == 6) {
+        task->set_status(v1alpha1::Task::COMPLETED);
+        if (variant == 2) {
+          task->mutable_response()->set_type_url("type.example/OriginalReply");
+          task->mutable_response()->set_value("immutable-original-response");
+        } else {
+          task->mutable_error()->set_type_url("type.example/OriginalError");
+          task->mutable_error()->set_value("immutable-original-error");
+        }
+      }
+      if (variant == 7) {
+        auto completed = *task;
+        completed.mutable_task_id()->set_task_uuid(UUID::random().toBytes());
+        completed.set_status(v1alpha1::Task::COMPLETED);
+        completed.mutable_response()->set_type_url("type.example/OriginalReply");
+        completed.mutable_response()->set_value("immutable-mixed-response");
+        *saved.add_task_upserts() = completed;
+        auto attempted = completed;
+        attempted.set_status(v1alpha1::Task::PENDING);
+        attempted.clear_response();
+        attempted.set_request("attempted-mixed-request");
+        *request.add_task_upserts() = attempted;
+        *request.mutable_idempotent_mutation()->add_task_ids() = attempted.task_id();
+      }
+    }
+    if (variant == 3 || variant == 7) {
+      auto* mutation = saved.mutable_idempotent_mutation();
+      *mutation = request.idempotent_mutation();
+      mutation->set_response("saved-canonical-response-not-attempted");
+      mutation->set_request_fingerprint(std::string(32, 's'));
+      mutation->clear_task_ids();
+      auto original_id = request.task_upserts(0).task_id();
+      original_id.set_task_uuid(UUID::random().toBytes());
+      *mutation->add_task_ids() = original_id;  // Saved set differs; record absent.
+    }
+    if (variant == 5) {
+      *saved.add_actor_upserts() = request.actor();
+      saved.mutable_actor_upserts(0)->set_state("immutable-existing-actor");
+    }
+    if (variant != 0) ASSERT_NO_FATAL_FAILURE(seed(saved));
+    ASSERT_NO_FATAL_FAILURE(inspect(request, request, saved));  // Precondition readback.
+    ASSERT_NO_FATAL_FAILURE(create(request, variant == 0
+        ? grpc::StatusCode::INVALID_ARGUMENT : grpc::StatusCode::FAILED_PRECONDITION,
+        variant == 0));
+    ASSERT_NO_FATAL_FAILURE(inspect(request, request, saved));
+  }
+}
+
+// END constructor admission193 source fixture.
 
 }  // namespace
 }  // namespace rbt::server

@@ -10,7 +10,7 @@ pub async fn malformed_header_and_original_clone_replay(
     context: &TransactionContext,
     account_ref: &str,
     receiver: &(dyn b::account_methods_server::AccountMethods + Send + Sync),
-) -> Result<(), tonic::Status> {
+) -> Result<(), Box<tonic::Status>> {
     let method = "bank.v1.AccountMethods.Withdraw";
     let target = reboot::durable_coordinator::ParticipantTarget {
         state_type: "bank.v1.Account".into(),
@@ -51,9 +51,9 @@ pub async fn malformed_header_and_original_clone_replay(
         assert_eq!(error.message(), "local ticket already consumed");
     }
     drop(scope); // Unsettled probe must Abort under actual reserved owner; never commit.
-    Err(tonic::Status::aborted(
+    Err(Box::new(tonic::Status::aborted(
         "registered ticket malformed-header/replay probe completed; root must abort",
-    ))
+    )))
 }
 
 /// The ticket is issued ONLY for the genuine Account Withdraw destination.
@@ -67,7 +67,7 @@ pub async fn shared_receiver_burns_account_ticket<M, F, Fut>(
     shared_body: M,
     malformed: bool,
     shared_call: F,
-) -> Result<(), tonic::Status>
+) -> Result<(), Box<tonic::Status>>
 where
     F: FnOnce(tonic::Request<M>) -> Fut,
     Fut: std::future::Future<Output = Result<(), tonic::Status>>,
@@ -118,7 +118,7 @@ where
         assert_eq!(error.message(), "local ticket already consumed");
     }
     drop(scope); // Never settle a rejected probe as successful outbound execution.
-    Err(tonic::Status::aborted(
+    Err(Box::new(tonic::Status::aborted(
         "typed shared ticket burn/replay probe completed; root must abort",
-    ))
+    )))
 }

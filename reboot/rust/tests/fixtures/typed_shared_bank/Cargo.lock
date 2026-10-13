@@ -1338,6 +1338,7 @@ dependencies = [
  "reboot-rust-schema",
  "tempfile",
  "tokio",
+ "tokio-stream",
  "tonic",
  "uuid",
 ]

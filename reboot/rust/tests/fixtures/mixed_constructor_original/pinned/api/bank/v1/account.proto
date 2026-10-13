@@ -1,0 +1,87 @@
+syntax = "proto3";
+
+package bank.v1;
+
+import "rbt/v1alpha1/options.proto";
+import "rbt/v1alpha1/tasks.proto";
+
+import "bank/v1/errors.proto";
+
+////////////////////////////////////////////////////////////////////////
+// State machine definition.
+
+message Account {
+  option (rbt.v1alpha1.state) = {
+  };
+  string customer_name = 1;
+  uint64 balance = 2;
+}
+
+service AccountMethods {
+  rpc Open(OpenRequest) returns (OpenResponse) {
+    option (rbt.v1alpha1.method).writer = {
+      constructor: {},
+    };
+  }
+
+  rpc Balance(BalanceRequest) returns (BalanceResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc Deposit(DepositRequest) returns (DepositResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  rpc Withdraw(WithdrawRequest) returns (WithdrawResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+      errors: [ "OverdraftError" ],
+    };
+  }
+
+  // Sends a welcome email to the customer, scheduled as a task.
+  rpc WelcomeEmail(WelcomeEmailRequest) returns (WelcomeEmailResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+// Request and response types.
+
+message OpenRequest {
+  string customer_name = 1;
+}
+
+message OpenResponse {
+  rbt.v1alpha1.TaskId welcome_email_task_id = 1;
+}
+
+message BalanceRequest {}
+
+message BalanceResponse {
+  uint64 balance = 1;
+}
+
+message DepositRequest {
+  uint64 amount = 1;
+}
+
+message DepositResponse {
+  uint64 updated_balance = 1;
+}
+
+message WithdrawRequest {
+  uint64 amount = 1;
+}
+
+message WithdrawResponse {
+  uint64 updated_balance = 1;
+}
+
+message WelcomeEmailRequest {}
+
+message WelcomeEmailResponse {}

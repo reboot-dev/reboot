@@ -12,7 +12,61 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
-## Typed shared declared errors and genuine-ticket refusal (2026-10-13)
+## Atomic standalone constructor tasks (2026-10-13)
+
+Generated standalone `Account.Open` can now atomically persist the initial Account,
+pending WelcomeEmail task and first-response checkpoint through the distinct
+`CreateActorWithTasks` RPC. There is no legacy CreateActor/Store/Upsert fallback:
+old-sidecar refusal remains fail-closed. Response-only legacy constructors do not
+require a task owner. Taskful admission reserves an actual actor lease, original
+host generation, dispatch ownership and one of the process-global 64 permits before
+native IO; cancellation or uncertain acknowledgements retain that ownership.
+
+Four exact fresh-process proofs ran against the upgraded canonical C++ Database:
+- Original Open: canonical pending readback before forwarding the genuine native
+  ACK, stable pending/completed replay, one WelcomeEmail log, durable completion ACK
+  and public typed Wait.
+- Pending shutdown: actual joined host, no WelcomeEmail body, canonical Pending
+  task, and fsynced first-response token; exact Rust exit then graceful native exit.
+- Same-state restart: unchanged pending-directory identity and saved token, genuine
+  canonical recovery, no constructor invocation, one WelcomeEmail log, completion,
+  public typed Wait and stable completed replay.
+- Real ACK loss: after canonical ACK/persistence readback, actual TCP disconnection
+  causes public failure and automatic failed-host cancellation/join. The original
+  gate, sealed registry and one real global64 permit remain retained; a cold host
+  is refused with zero new observed Create/Recover/Load RPCs. Canonical actor/task/
+  checkpoint remain Pending, without CompleteTask or a WelcomeEmail body.
+
+All four Rust tests and four native processes exited zero. The isolated network
+namespace/container retired cleanly; the external custodian and lock also retired.
+The observed disconnect diagnosis was genuine `Unknown` transport failure, not a
+fabricated Unavailable response or a production retry-policy change. The token is
+hashed in the public receipt; its bytes and private operator inputs are not published.
+
+Supporting acceptance: full canonical Database target **76 passed / 0 failed**;
+current SDK library **645 passed / 0 failed / 6 ignored**, matched against its exact
+651-test inventory; default check and strict all-target SDK Clippy; x86 original
+fixture compilation, strict Clippy and **5 ordinary passed / 5 native ignored**;
+companion compilation/strict Clippy and **6 model tests** (its seven canonical-native
+cases are prior evidence, not a fresh run on the boxed-probe caller repair).
+Generated-binding-only large-error allowances preserve existing client/error API
+contracts; authored probe errors are boxed and explicitly unboxed at the companion
+boundary. There is no blanket consumer/command-line lint suppression or API rewrite.
+Nine untouched original Bank inputs were revalidated at the pinned reboot-examples
+revision `5c332a2910122d6035799bfaf2a314bf1de830b8`.
+
+**Limits:** this is bounded standalone constructor authority in a managed pristine
+single-shard topology, not a global fence against independent native Prepare/import
+writers. Retention remains process-exit-only fail-closed, not live adoption. Fixture
+process retirement does not prove universal production-host cleanup; proxy success
+trailers remain qualified. WelcomeEmail is a logged effect, not exactly-once delivery
+through an external email API. Full original Bank/default initialization, constructor
+children inside SignUp and recoverable dynamic writer-task ownership remain missing.
+CI/fork approval remains separate and PR #216 stays draft.
+
+Evidence: [atomic constructor checkpoint](tests/evidence/atomic-constructor-checkpoint-20261013.json).
+
+## Historical typed shared declared errors and genuine-ticket refusal (2026-10-13)
 
 Non-factory shared transaction declarations now generate typed business errors,
 including the unchanged original Bank/Account schemas. Execution remains restricted
@@ -55,9 +109,9 @@ entry/drop/proceeding; unknown callbacks dropped before release are not a Notify
 wakeup experiment. The production host cancellation join implementation is unchanged.
 
 **Full original Bank remains unsupported:** Bank singleton initialization,
-transactional Account creation inside SignUp and atomic WelcomeEmail scheduling
-inside Account.Open are not established by response-only test constructors,
-constructed task descriptions, codec tests or this synthetic companion. No Python
+transactional Account creation inside SignUp and dynamic task-owner recovery are
+not established by this synthetic companion. The standalone atomic Account.Open
+proof above does not establish nested SignUp ownership. No Python
 seed/private snapshot is used as Rust acceptance. Factories, shared-child/outbound
 transaction authority, remote composition and broad task effects are not enabled.
 
@@ -4549,7 +4603,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 66f78160a32f8511f5f688a2da133dcf563553128cf07e87936deb06cf67e8ba -->
+<!-- parity-source-sha256: 4b6258abcb1935efcd02c836a810a5781d33326d8efa47208722e2ecfbf221b1 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

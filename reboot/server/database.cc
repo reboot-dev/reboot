@@ -484,6 +484,11 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
       grpc::ServerContext* context,
       const CreateActorRequest* request,
       CreateActorResponse* response) override;
+
+  grpc::Status CreateActorWithTasks(
+      grpc::ServerContext* context,
+      const CreateActorRequest* request,
+      CreateActorResponse* response) override;
   grpc::Status Recover(
       grpc::ServerContext* context,
       const RecoverRequest* request,
@@ -2803,7 +2808,25 @@ grpc::Status DatabaseService::CreateActor(
     grpc::ServerContext* context,
     const CreateActorRequest* request,
     CreateActorResponse* response) {
-  REBOOT_DATABASE_LOG(1) << "CreateActor { " << request->ShortDebugString()
+  // New clients must never send tasks via this legacy RPC: older servers
+  // silently ignore field 4. Reject misuse before any persistent effects.
+  if (!request->task_upserts().empty()) {
+    return grpc::Status(grpc::INVALID_ARGUMENT,
+                        "Task-bearing creation requires CreateActorWithTasks");
+  }
+  return CreateActorWithTasks(context, request, response);
+}
+
+////////////////////////////////////////////////////////////////////////
+
+// Shared atomic implementation; legacy entry admits only empty tasks above.
+// The distinct wire RPC is the capability fence: old servers return
+// UNIMPLEMENTED before invoking any CreateActor implementation.
+grpc::Status DatabaseService::CreateActorWithTasks(
+    grpc::ServerContext* context,
+    const CreateActorRequest* request,
+    CreateActorResponse* response) {
+  REBOOT_DATABASE_LOG(1) << "CreateActorWithTasks { " << request->ShortDebugString()
                          << " }";
   *response->mutable_timestamp() = monotonic_clock_->Now();
 
@@ -2823,8 +2846,62 @@ grpc::Status DatabaseService::CreateActor(
                         "CreateActor actor and idempotent mutation must describe one non-workflow actor");
   }
 
-  // This lock lives in the sidecar, rather than the SDK, so the absent check
-  // and write are serialized for every client process using this database.
+  // MakeIdempotentMutationKey CHECKs the binary length, so reject malformed
+  // wire input before it or Apply can be called. Do not constrain version or
+  // variant: native mutation keys retain their existing v4/v7 semantics.
+  if (mutation.key().size() != 16) {
+    return grpc::Status(grpc::INVALID_ARGUMENT,
+                        "CreateActor mutation key must contain 16 binary bytes");
+  }
+
+  // Validate before Apply: Apply's task-status CHECK is not an input validator.
+  // Task UUIDs use the SDK's binary RFC 4122 UUID-v4 contract, not text UUIDs
+  // or the more permissive transaction UUID format.
+  auto valid_task_id = [&actor](const TaskId& id) {
+    const std::string& uuid = id.task_uuid();
+    return id.state_type() == actor.state_type()
+        && id.state_ref() == actor.state_ref()
+        && uuid.size() == 16
+        && (static_cast<unsigned char>(uuid[6]) & 0xf0) == 0x40
+        && (static_cast<unsigned char>(uuid[8]) & 0xc0) == 0x80;
+  };
+  // Because every ID has the same actor identity, binary UUID equality is
+  // exactly full TaskId equality here. Do not use protobuf serialization as
+  // identity: unknown fields and serialization order are not task identity.
+  std::unordered_set<std::string> task_ids;
+  for (const Task& task : request->task_upserts()) {
+    if (!task.has_task_id() || !valid_task_id(task.task_id())
+        || task.status() != Task::PENDING || task.method().empty()
+        || task.response_or_error_case() != Task::RESPONSE_OR_ERROR_NOT_SET) {
+      return grpc::Status(
+          grpc::INVALID_ARGUMENT,
+          "CreateActor tasks require same-actor UUID-v4 IDs, PENDING status, "
+          "a method and no response/error");
+    }
+    if (!task_ids.insert(task.task_id().task_uuid()).second) {
+      return grpc::Status(grpc::INVALID_ARGUMENT,
+                          "CreateActor has duplicate task IDs");
+    }
+  }
+  std::unordered_set<std::string> checkpoint_task_ids;
+  for (const TaskId& id : mutation.task_ids()) {
+    if (!valid_task_id(id)
+        || !checkpoint_task_ids.insert(id.task_uuid()).second) {
+      return grpc::Status(grpc::INVALID_ARGUMENT,
+                          "CreateActor checkpoint has invalid or duplicate task IDs");
+    }
+  }
+  if (checkpoint_task_ids != task_ids) {
+    return grpc::Status(grpc::INVALID_ARGUMENT,
+                        "CreateActor checkpoint task IDs must equal staged task IDs");
+  }
+
+  // This lock lives in the sidecar, rather than the SDK, so the absent checks
+  // and write are serialized with Store and CompleteTask for all clients.
+  // Legacy transaction commit/import retain their separate authority. Existing
+  // same-actor exclusive serving ownership must cover the complete uncertain
+  // lifetime, including independent Prepare/import admission. HasTransaction
+  // is a point check, not an admission fence; this is not arbitrary-writer CAS.
   std::lock_guard<std::mutex> lock(idempotency_collision_mutex_);
   if (HasTransaction(actor.state_ref())) {
     return grpc::Status(grpc::FAILED_PRECONDITION,
@@ -2847,16 +2924,52 @@ grpc::Status DatabaseService::CreateActor(
                         fmt::format("Failed to read actor: {}", get.ToString()));
   }
 
+  // Even orphan records forbid admission: never reopen a completed ID or
+  // overwrite a different immutable method/request/iteration under a pending
+  // ID. Identical existing bytes are also a collision, not native replay.
+  for (const Task& task : request->task_upserts()) {
+    for (Task::Status status : {Task::PENDING, Task::COMPLETED}) {
+      get = db_->Get(
+          rocksdb::ReadOptions(), *column_family,
+          rocksdb::Slice(MakeTaskKey(status, task.task_id())), &existing);
+      if (get.ok()) {
+        return grpc::Status(grpc::FAILED_PRECONDITION,
+                            "CreateActor task ID already exists");
+      }
+      if (!get.IsNotFound()) {
+        return grpc::Status(
+            grpc::UNKNOWN,
+            fmt::format("Failed to read constructor task: {}", get.ToString()));
+      }
+    }
+  }
+  expected<std::string> mutation_key = MakeIdempotentMutationKey(
+      mutation.state_ref(), mutation.key(), std::nullopt, std::nullopt);
+  if (!mutation_key.has_value()) {
+    return grpc::Status(grpc::UNKNOWN, mutation_key.error());
+  }
+  get = db_->Get(
+      rocksdb::ReadOptions(), *column_family, rocksdb::Slice(*mutation_key),
+      &existing);
+  if (get.ok()) {
+    return grpc::Status(grpc::FAILED_PRECONDITION,
+                        "CreateActor checkpoint already exists");
+  }
+  if (!get.IsNotFound()) {
+    return grpc::Status(
+        grpc::UNKNOWN,
+        fmt::format("Failed to read constructor checkpoint: {}", get.ToString()));
+  }
+
   google::protobuf::RepeatedPtrField<Actor> actors;
   *actors.Add() = actor;
-  google::protobuf::RepeatedPtrField<Task> tasks;
   google::protobuf::RepeatedPtrField<ColocatedUpsert> colocated;
   google::protobuf::RepeatedPtrField<std::string> state_types;
   google::protobuf::RepeatedPtrField<IdempotentMutation> mutations;
   *mutations.Add() = mutation;
   rocksdb::WriteBatch batch;
   expected<rocksdb::Status> apply =
-      Apply(batch, actors, tasks, colocated, state_types, mutations);
+      Apply(batch, actors, request->task_upserts(), colocated, state_types, mutations);
   if (!apply.has_value()) {
     return grpc::Status(grpc::UNKNOWN,
                         fmt::format("Failed to create actor: {}", apply.error()));

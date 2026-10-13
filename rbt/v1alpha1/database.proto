@@ -428,6 +428,17 @@ message CreateActorRequest {
   IdempotentMutation idempotent_mutation = 2;
   // Sync the RocksDB write before returning success.
   bool sync = 3;
+  // Atomically admitted constructor tasks. Each ID must belong to actor and
+  // contain a binary RFC 4122 UUID-v4. Tasks must be PENDING, name a method,
+  // and have no response/error. Empty request bytes are application-valid.
+  // IDs must be unique, absent in both pending and completed storage, and
+  // equal the unique idempotent_mutation.task_ids set (order-independent).
+  // Existing actor, task ID, or checkpoint key is FAILED_PRECONDITION;
+  // malformed tasks or mismatched sets are INVALID_ARGUMENT.
+  // Legacy Store remains unconditional; this is admission, not global CAS.
+  // Task-bearing requests MUST use CreateActorWithTasks, never this legacy
+  // route: old servers ignore field 4. Upgraded servers reject nonempty tasks.
+  repeated Task task_upserts = 4;
 }
 
 message CreateActorResponse {
@@ -729,6 +740,12 @@ service Database {
   // Creates a previously absent actor and its idempotent response atomically.
   // Returns FAILED_PRECONDITION when the actor already exists.
   rpc CreateActor(CreateActorRequest) returns (CreateActorResponse);
+
+  // Atomic absent-actor creation with pending tasks. Distinct method is a
+  // fail-closed capability fence: old sidecars return UNIMPLEMENTED without
+  // actor/checkpoint/task effects. Clients MUST NOT fall back to CreateActor
+  // or Store on any error, including UNIMPLEMENTED or an uncertain write.
+  rpc CreateActorWithTasks(CreateActorRequest) returns (CreateActorResponse);
 
   // Returns state needed to recover the server after a potential restart.
   rpc Recover(RecoverRequest) returns (stream RecoverResponse);

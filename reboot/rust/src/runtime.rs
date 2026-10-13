@@ -4170,6 +4170,7 @@ impl DatabaseActorStore {
             .map_err(database_status)?;
         database
             .create_actor(database::CreateActorRequest {
+                task_upserts: vec![],
                 actor: Some(database::Actor {
                     state_type: MAP.to_owned(),
                     state_ref: state_ref.to_owned(),
@@ -4597,6 +4598,7 @@ impl DatabaseActorStore {
             .commit_attempt();
         database
             .create_actor(database::CreateActorRequest {
+                task_upserts: vec![],
                 actor: Some(database::Actor {
                     state_type: Declaration::STATE_TYPE.to_owned(),
                     state_ref: state_ref.clone(),
@@ -4696,6 +4698,7 @@ impl DatabaseActorStore {
             .commit_attempt();
         database
             .create_actor(database::CreateActorRequest {
+                task_upserts: vec![],
                 actor: Some(database::Actor {
                     state_type: Declaration::STATE_TYPE.to_owned(),
                     state_ref: state_ref.clone(),
@@ -5233,6 +5236,11 @@ pub mod test_support {
         #[cfg(test)]
         actor_load_park: TaskRpcPark,
         #[cfg(test)]
+        create_park: TaskRpcPark,
+        #[cfg(test)]
+        create_ack_park: TaskRpcPark,
+        reject_task_create: Arc<std::sync::atomic::AtomicBool>,
+        #[cfg(test)]
         task_recover_park: TaskRpcPark,
         #[cfg(test)]
         checkpoint_recover_park: TaskRpcPark,
@@ -5418,6 +5426,134 @@ pub mod test_support {
                 .clone()
         }
 
+        async fn create_atomic(
+            &self,
+            request: database::CreateActorRequest,
+        ) -> Result<Response<database::CreateActorResponse>, Status> {
+            let actor = request
+                .actor
+                .clone()
+                .ok_or_else(|| Status::invalid_argument("missing actor"))?;
+            let actor_state = actor
+                .state
+                .clone()
+                .ok_or_else(|| Status::invalid_argument("actor has no state"))?;
+            let mutation = request
+                .idempotent_mutation
+                .clone()
+                .ok_or_else(|| Status::invalid_argument("missing idempotent mutation"))?;
+            if !request.sync
+                || mutation.state_type != actor.state_type
+                || mutation.state_ref != actor.state_ref
+            {
+                return Err(Status::invalid_argument(
+                    "CreateActor must synchronously contain matching state and mutation",
+                ));
+            }
+            #[cfg(test)]
+            {
+                let park = self.create_park.lock().unwrap().take();
+                if let Some((entered, release)) = park {
+                    let _ = entered.send(());
+                    let _ = release.await;
+                }
+            }
+            let result = {
+                let mut state = self.state.lock().expect("fake database mutex poisoned");
+                let actor_key = (actor.state_type.clone(), actor.state_ref.clone());
+                if state.actors.contains_key(&actor_key) {
+                    return Err(Status::failed_precondition("Actor already exists"));
+                }
+                let ids: Vec<_> = request
+                    .task_upserts
+                    .iter()
+                    .map(|task| {
+                        task.task_id
+                            .clone()
+                            .ok_or_else(|| Status::invalid_argument("missing task ID"))
+                    })
+                    .collect::<Result<_, _>>()?;
+                if mutation.task_ids != ids {
+                    return Err(Status::invalid_argument("checkpoint task IDs mismatch"));
+                }
+                let mut unique = std::collections::HashSet::new();
+                for task in &request.task_upserts {
+                    let id = task.task_id.as_ref().unwrap();
+                    if id.state_type != actor.state_type
+                        || id.state_ref != actor.state_ref
+                        || task.status != database::task::Status::Pending as i32
+                        || task.response_or_error.is_some()
+                        || !unique.insert(id.encode_to_vec())
+                    {
+                        return Err(Status::invalid_argument("invalid constructor task"));
+                    }
+                    if state.tasks.contains_key(&id.encode_to_vec()) {
+                        return Err(Status::failed_precondition("task ID collision"));
+                    }
+                }
+                if state.mutations.contains_key(&(
+                    mutation.state_type.clone(),
+                    mutation.state_ref.clone(),
+                    mutation.key.clone(),
+                )) {
+                    return Err(Status::failed_precondition("checkpoint collision"));
+                }
+                for task in &request.task_upserts {
+                    state
+                        .tasks
+                        .insert(task.task_id.as_ref().unwrap().encode_to_vec(), task.clone());
+                }
+                state.actors.insert(actor_key, actor_state);
+                state.mutations.insert(
+                    (
+                        mutation.state_type.clone(),
+                        mutation.state_ref.clone(),
+                        mutation.key.clone(),
+                    ),
+                    mutation,
+                );
+                state.create_requests.push(request);
+                Ok(Response::new(database::CreateActorResponse::default()))
+            };
+            #[cfg(test)]
+            {
+                let park = self.create_ack_park.lock().unwrap().take();
+                if let Some((entered, release)) = park {
+                    let _ = entered.send(());
+                    let _ = release.await;
+                }
+            }
+            result
+        }
+        #[cfg(test)]
+        pub(crate) fn park_create(
+            &self,
+        ) -> (
+            tokio::sync::oneshot::Receiver<()>,
+            tokio::sync::oneshot::Sender<()>,
+        ) {
+            let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+            let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+            *self.create_park.lock().unwrap() = Some((entered_tx, release_rx));
+            (entered_rx, release_tx)
+        }
+        #[cfg(test)]
+        pub(crate) fn park_create_ack(
+            &self,
+        ) -> (
+            tokio::sync::oneshot::Receiver<()>,
+            tokio::sync::oneshot::Sender<()>,
+        ) {
+            let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+            let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+            *self.create_ack_park.lock().unwrap() = Some((entered_tx, release_rx));
+            (entered_rx, release_tx)
+        }
+        #[cfg(test)]
+        pub(crate) fn reject_task_create(&self) {
+            self.reject_task_create
+                .store(true, std::sync::atomic::Ordering::Release);
+        }
         pub fn create_requests(&self) -> Vec<database::CreateActorRequest> {
             self.state
                 .lock()
@@ -5693,42 +5829,27 @@ pub mod test_support {
             request: Request<database::CreateActorRequest>,
         ) -> Result<Response<database::CreateActorResponse>, Status> {
             let request = request.into_inner();
-            let actor = request
-                .actor
-                .clone()
-                .ok_or_else(|| Status::invalid_argument("missing actor"))?;
-            let actor_state = actor
-                .state
-                .clone()
-                .ok_or_else(|| Status::invalid_argument("actor has no state"))?;
-            let mutation = request
-                .idempotent_mutation
-                .clone()
-                .ok_or_else(|| Status::invalid_argument("missing idempotent mutation"))?;
-            if !request.sync
-                || mutation.state_type != actor.state_type
-                || mutation.state_ref != actor.state_ref
-            {
+            if !request.task_upserts.is_empty() {
                 return Err(Status::invalid_argument(
-                    "CreateActor must synchronously contain matching state and mutation",
+                    "task-bearing CreateActor requires distinct RPC",
                 ));
             }
-            let mut state = self.state.lock().expect("fake database mutex poisoned");
-            let actor_key = (actor.state_type.clone(), actor.state_ref.clone());
-            if state.actors.contains_key(&actor_key) {
-                return Err(Status::failed_precondition("Actor already exists"));
+            self.create_atomic(request).await
+        }
+
+        async fn create_actor_with_tasks(
+            &self,
+            request: Request<database::CreateActorRequest>,
+        ) -> Result<Response<database::CreateActorResponse>, Status> {
+            if self
+                .reject_task_create
+                .load(std::sync::atomic::Ordering::Acquire)
+            {
+                return Err(Status::unimplemented(
+                    "old sidecar lacks CreateActorWithTasks",
+                ));
             }
-            state.actors.insert(actor_key, actor_state);
-            state.mutations.insert(
-                (
-                    mutation.state_type.clone(),
-                    mutation.state_ref.clone(),
-                    mutation.key.clone(),
-                ),
-                mutation,
-            );
-            state.create_requests.push(request);
-            Ok(Response::new(database::CreateActorResponse::default()))
+            self.create_atomic(request.into_inner()).await
         }
 
         async fn recover(

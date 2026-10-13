@@ -237,7 +237,7 @@ impl bank::SharedRootMethodsTransactionHandler for Bank {
         }
         result
             .map(|_| p::TransferResponse {})
-            .map_err(bank::SharedRootMethodsTransferError::Grpc)
+            .map_err(|status| bank::SharedRootMethodsTransferError::Grpc(*status))
     }
 }
 fn request<M>(reference: &str, message: M, writer: bool) -> tonic::Request<M> {
