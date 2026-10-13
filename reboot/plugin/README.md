@@ -12,7 +12,7 @@ agent. The same skills work in both **Claude Code** and **Codex**.
 | [`mcp-app`](skills/mcp-app/) | Build MCP Apps for ChatGPT, Claude, VSCode, Goose, and others — layers on top of `python`                                                 |
 | [`web-app`](skills/web-app/) | Build standalone Reboot Web Apps — a Reboot backend behind a browser-facing React frontend — layers on top of `python`                    |
 | [`run`](skills/run/)         | Run an existing Reboot app — detects MCP App vs. Web App and starts every process it needs                                                |
-| [`deploy`](skills/deploy/)   | Deploy a Reboot app to production — backend on Reboot Cloud, web frontend on a static host under the user's own custom domain             |
+| [`deploy`](skills/deploy/)   | Deploy a Reboot app to production — one container on Reboot Cloud that runs the backend and serves the built MCP Apps and web app         |
 | [`inspect`](skills/inspect/) | Inspect a running Reboot app's persisted state from the CLI with `rbt inspect` — list state types, list state IDs, dump one actor as JSON |
 | [`python`](skills/python/)   | Reboot Python framework reference: proto- or pydantic-defined APIs, Servicers, contexts, refs, scheduling, and testing                    |
 | [`upgrade`](skills/upgrade/) | Upgrade an existing Reboot app to this plugin's Reboot version — applies migration steps, bumps pins, regenerates                         |

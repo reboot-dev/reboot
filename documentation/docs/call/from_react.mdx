@@ -143,9 +143,11 @@ by default; for Vite, allow it with `server.fs.allow: [".."]` in
 ## Setup
 
 All calls to Reboot generated code must occur within a Reboot context. This
-context is provided by a `RebootClientProvider`. It takes a
-`url` prop that defines the endpoint the
-generated React code will use to connect to the Reboot backend.
+context is provided by a `RebootClientProvider`. It takes a `url` prop,
+the endpoint the generated React code connects to. Without one, the
+client uses the page's own origin, which is the backend whenever the
+backend serves the web app: in development behind `rbt dev run
+--web-app`, and in production from the container (`--web-app-dist-path`).
 
 <!-- MARKDOWN-AUTO-DOCS:START
 (CODE:src=../../../reboot/examples/counter/frontend/web-vite/src/main.tsx&&lines=8-10) -->
@@ -170,16 +172,23 @@ only around 200 of those per page (255 in Chrome). See
 for local certificates.
 :::
 
-In practice, it is best to use an environment variable for your API endpoint.
-
-For example:
+A web app served from another origin — its own dev server opened
+directly, or a CDN or static host in production — has to be told the
+backend's origin. Take it from an environment variable rather than
+writing it into the code, so that one build runs against any backend:
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/examples/chat-room/frontend/web/src/index.tsx&&lines=11-12) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/chat-room/frontend/web/src/index.tsx -->
+(CODE:src=../../../reboot/examples/bank-pydantic/frontend/web/src/main.tsx&&lines=13-19) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/bank-pydantic/frontend/web/src/main.tsx -->
 
 ```tsx
-(import.meta.env.VITE_REBOOT_URL as string) || "http://localhost:9991";
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <RebootClientProvider url={import.meta.env.VITE_REBOOT_URL}>
+      <Root />
+    </RebootClientProvider>
+  </StrictMode>
+);
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->

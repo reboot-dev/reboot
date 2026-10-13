@@ -159,8 +159,10 @@ SPA at the backend's URL (`https://<app>.localhost/` or
 `http://localhost:9991/`), never at Vite's own, where the origin
 would be Vite's and the client would call the wrong place.
 
-A deploy on a CDN or static host is on a different origin from the
-backend, so it must say where the backend is, from an env file Vite
+In production the backend serves the built SPA from its image (the
+`deploy` skill), same-origin, so there is nothing to set. Only a SPA
+published to a static host of your own is on a different origin from
+the backend and must say where the backend is, from an env file Vite
 reads from its `root`:
 
 ```
