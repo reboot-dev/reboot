@@ -213,5 +213,7 @@ depends on where it is read:
 | The servicer method itself | `<Name>`                         | `CheckIn`                       |
 
 `<Name>` is the PascalCase name, not the Python method's snake_case
-name. Compare against the last segment (`context.method.rsplit(".", 1)[-1]`)
-so the same table works in both places.
+name, so a table keyed `check_in` matches neither form and denies every
+call. Key the table on the PascalCase name and compare the last segment,
+`context.method.rsplit(".", 1)[-1]`, so the same table works in both
+places.
