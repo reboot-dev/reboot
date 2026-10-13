@@ -20,6 +20,7 @@ import {
   totalOrderCost,
   useCurrencyConvertProductItems,
 } from "./helpers";
+import { useRebootClient } from "@reboot-dev/reboot-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -45,6 +46,7 @@ export const Cart = ({ cartId, userCurrency }: CartProps) => {
   const { getQuote } = useShipping({ id: "shipping" });
   const { useOrders, placeOrder } = useCheckout({ id: "checkout" });
   const { useGetItems, emptyCart } = useCart({ id: cartId });
+  const { url } = useRebootClient();
 
   const { response: useOrdersResponse } = useOrders();
 
@@ -75,18 +77,20 @@ export const Cart = ({ cartId, userCurrency }: CartProps) => {
         if (quoteDetails.quote !== undefined) {
           setShippingQuote(quoteDetails.quote);
           if (quoteDetails.quote.cost !== undefined) {
-            convertedShippingCost(quoteDetails.quote.cost, userCurrency).then(
-              (cost: Money) => {
-                setShippingCost(cost);
-              }
-            );
+            convertedShippingCost(
+              url,
+              quoteDetails.quote.cost,
+              userCurrency
+            ).then((cost: Money) => {
+              setShippingCost(cost);
+            });
           }
         }
       }
     }
 
     runEffect();
-  }, [useGetItemsResponse, userCurrency]);
+  }, [url, useGetItemsResponse, userCurrency]);
 
   const convertedProductItems = useCurrencyConvertProductItems(
     productItems,

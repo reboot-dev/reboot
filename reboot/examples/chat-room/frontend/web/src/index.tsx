@@ -7,12 +7,9 @@ const root = ReactDOM.createRoot(
   document.getElementById("root") as HTMLElement
 );
 
-const url =
-  (import.meta.env.VITE_REBOOT_URL as string) || "http://localhost:9991";
-
 root.render(
   <React.StrictMode>
-    <RebootClientProvider url={url}>
+    <RebootClientProvider>
       <App />
     </RebootClientProvider>
   </React.StrictMode>
