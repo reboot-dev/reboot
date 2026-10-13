@@ -161,6 +161,9 @@ fn counter_cargo_build_helper_executes_durable_adapters_in_a_downstream_fixture(
     let injection = r#"
     let emitted_path = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("tests/reboot/protoc/transaction_counter.reboot.rs");
     let emitted = std::fs::read_to_string(&emitted_path).unwrap();
+    // A consumed local ticket carries receiver policy; builder flags alone are not authority.
+    assert!(emitted.contains("self.sequential_reusable || context.reusable_participants()"));
+    assert!(emitted.contains("declared && (self.supervised_tree || context.reusable_participants()) && context.supports_rollback_leaf_path()"));
     let anchor = "let handler_result = match reboot::runtime::boxed_generated_future(|| local.run_registered_authorized_handler(&self.authorization, authorized_entry, &context, (\"tests.reboot.protoc.TransactionCounterWritesMethods.Increment\"";
     // Standalone and mixed-service adapter implementations.
     assert_eq!(emitted.matches(anchor).count(), 2);
@@ -1229,6 +1232,25 @@ async fn generated_ticket_receiver_uses_live_parent_child_once_and_burns_replay(
     for mode in 0..16 { run(mode, false).await; }
     for mode in 0..9 { run(mode, true).await; }
     async fn run(mode: usize, writer: bool) {
+    // These are source-derived obligations, not results for unexecuted modes.
+    // The raw receiver modes deliberately never call the runtime terminal-ledger
+    // completion seam. Burning a ticket/replying/dropping its scope is not that proof.
+    let unresolved_b = match (writer, mode) {
+        // Actual admitted B handler error leaves an owner-backed Watch; the raw
+        // caller never enlists B into A's returned participant ledger.
+        (_, 5) => true,
+        // Generated dispatch reaches B but has no successful terminal membership:
+        // handler error, handler cancellation, or staged response before EOF.
+        (false, 8 | 13 | 15) => true,
+        // No admitted B handler: invalid receiver/kind/headers/body, policy
+        // denial, route rejection, cancelled readiness, or forged writer metadata.
+        (false, 0..=4 | 6 | 7 | 9 | 11 | 12 | 14) => false,
+        (true, 0..=4 | 6 | 7 | 8) => false,
+        // Successful generated terminal membership: known B Prepare/Commit/cleanup.
+        (false, 10) => false,
+        _ => panic!("unsupported ticket fixture mode={mode} writer={writer}"),
+    };
+    eprintln!("TICKET_RECEIVER_START mode={mode} writer={writer} unresolved_b={unresolved_b}");
     use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
     use reboot::registered_local::GeneratedLocalTransactionAdapter;
     use reboot::durable_coordinator::ParticipantTarget;
@@ -1459,6 +1481,10 @@ impl reboot::durable_coordinator::CoordinatorSidecar for TicketCoordinatorSideca
     }
     // Real configured Tonic sidecar supplies distinct A/B actor targets.
     let (endpoint, database, database_server) = start_database().await;
+    // Retain the exact store/owner, not a fresh actor or replacement owner in
+    // teardown. Normal store access and participant aliases share these gates.
+    let store = DatabaseActorStore::connect_lazy(&endpoint).unwrap();
+    let a_abort_owner = reboot::explicit_abort::ExplicitAbortOwner::new(2).unwrap();
     let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
     let allocations = Arc::new(AtomicUsize::new(0));
     let sidecar = Arc::new(reboot::durable_participant::TonicParticipantSidecar::connect(&endpoint).await.unwrap());
@@ -1474,9 +1500,9 @@ impl reboot::durable_coordinator::CoordinatorSidecar for TicketCoordinatorSideca
             ))).unwrap()),
         ).with_identity(participant.actor_target());
         transaction_generated::TransactionCounterWritesMethodsTransactionAdapter::new(
-            DatabaseActorStore::connect_lazy(&endpoint).unwrap(), participant, coordinator, Starts(allocations.clone()),
+            store.clone(), participant, coordinator, Starts(allocations.clone()),
             TransactionCounter { fresh_shared_probe: None, trace: trace.clone(), fail: false, downstream: None, final_state_override: None },
-        ).with_explicit_abort_owner(reboot::explicit_abort::ExplicitAbortOwner::new(2).unwrap()).with_authorization(AuthorizationPolicy::permissive_for_development()).with_sequential_root_star()
+        ).with_explicit_abort_owner(if state_ref == "transaction-counter" { a_abort_owner.clone() } else { reboot::explicit_abort::ExplicitAbortOwner::new(2).unwrap() }).with_authorization(AuthorizationPolicy::permissive_for_development()).with_sequential_root_star()
     };
     let mut application = reboot::application_host::ApplicationHost::new("ticket-receiver-fixture");
     let (a, _) = application.register_local_transaction_service(make("transaction-counter")).unwrap();
@@ -1487,7 +1513,7 @@ impl reboot::durable_coordinator::CoordinatorSidecar for TicketCoordinatorSideca
         decision: AuthorizationDecision::PermissionDenied { message: "ticket policy denial".into() },
         contexts: Arc::new(std::sync::Mutex::new(Vec::new())), snapshots: Arc::new(std::sync::Mutex::new(Vec::new())),
     });
-    let b = make("remote-transaction-counter").with_live_participant_owner(owner);
+    let b = make("remote-transaction-counter").with_live_participant_owner(owner.clone());
     let b = if mode == 6 { b.with_authorization(AuthorizationPolicy::new(Some(auth_probe.clone()), None)) }
         else if mode == 7 { b.with_authorization(AuthorizationPolicy::new(Some(auth_probe.clone()), Some(auth_probe.clone()))) }
         else { b };
@@ -1551,7 +1577,80 @@ impl reboot::durable_coordinator::CoordinatorSidecar for TicketCoordinatorSideca
         assert!(database.participant_commit_requests().is_empty());
         // Owned root abort may persist an abort decision; that is not Commit authority.
     }
-    stop.send(()).unwrap(); server.await.unwrap().unwrap(); database_server.abort(); let _ = database_server.await;
+    // These probes run AFTER the original replay/allocation/Prepare/Commit
+    // assertions, so they cannot hide a changed receiver-side execution count.
+    // They acquire the actual endpoint/type/ref gate; load alone is not admission.
+    let prepare_count = database.participant_prepare_requests().len();
+    let commit_count = database.participant_commit_requests().len();
+    let handler_count = trace.lock().unwrap().iter().filter(|entry| entry.contains("handler")).count();
+    let a_gate = store.actor_gate("tests.reboot.protoc.TransactionCounter", "transaction-counter");
+    let b_gate = store.actor_gate("tests.reboot.protoc.TransactionCounter", "remote-transaction-counter");
+    let a_lease = tokio::time::timeout(std::time::Duration::from_secs(2), a_gate.exclusive())
+        .await.expect("known A local completion must restore exact actor admission");
+    let a_state = tokio::time::timeout(std::time::Duration::from_secs(2),
+        store.load_for_declaration::<transaction_generated::TransactionCounterDurableState>("transaction-counter"))
+        .await.expect("independent A load must progress while B is retained").unwrap().unwrap();
+    // ACK-only mock transaction controls do not publish prepared bytes. This
+    // is the existing committed initialization snapshot, not native settlement.
+    assert_eq!(a_state.value, 4);
+    drop(a_lease);
+    eprintln!("TICKET_RECEIVER_A_PROGRESS mode={mode} writer={writer} exact_gate=true value={}", a_state.value);
+    if unresolved_b {
+        // A timeout of the actual competing exclusive admission, not an arbitrary
+        // RPC error, proves the affected B is still excluded. Cancelling this
+        // waiter removes only its queue entry; it never terminalizes B's root.
+        assert!(tokio::time::timeout(std::time::Duration::from_millis(30), b_gate.exclusive()).await.is_err(),
+            "unknown B Watch must retain the affected actor before shutdown: mode={mode} writer={writer}");
+    } else {
+        let lease = tokio::time::timeout(std::time::Duration::from_secs(2), b_gate.exclusive())
+            .await.expect("pristine or known-completed B must restore exact actor admission");
+        drop(lease);
+    }
+    eprintln!("TICKET_RECEIVER_B_ADMISSION mode={mode} writer={writer} excluded={unresolved_b}");
+    // Observe the exact retained owners AFTER all request/handler futures have
+    // ended. This grants no authority and does not settle raw caller membership.
+    // A's known local cleanup must actually retire in every mode, including when
+    // unknown B remains excluded; its handler reply/gate alone is insufficient.
+    a_abort_owner.wait_for_idle_for_test(std::time::Duration::from_secs(2)).await
+        .expect("known A cleanup must retire all registered roots, work and Job permits");
+    if !unresolved_b {
+        // Mode10's real in-process terminal callback clears the exact participant
+        // under its pending mutex and notifies its parked LiveExecution Watch.
+        // Watch then returns from the owner-disappearance check, WITHOUT another
+        // terminal RPC. ACK-only fixture responses remain distinct from native ACK.
+        owner.wait_for_idle_for_test(std::time::Duration::from_secs(2)).await
+            .expect("healthy B must retire actual Watch work and all configured permits");
+    }
+    // Unknown B is deliberately NOT awaited as healthy, released, or supplied a
+    // fabricated Watch response. Exact RecoveryTask/exclusion assertions remain.
+    stop.send(()).unwrap();
+    let shutdown_result = tokio::time::timeout(std::time::Duration::from_secs(3), server)
+        .await.expect("ticket host shutdown must finish within its bound").unwrap();
+    eprintln!("TICKET_RECEIVER_SHUTDOWN mode={mode} writer={writer} result={shutdown_result:?}");
+    if unresolved_b {
+        match shutdown_result {
+            Err(reboot::application_host::ApplicationHostError::RecoveryTask(status)) => {
+                assert_eq!(status.code(), tonic::Code::Unavailable);
+                assert_eq!(status.message(), "durable task outcome uncertain during shutdown");
+            }
+            other => panic!("unresolved B requires exact host RecoveryTask: mode={mode} writer={writer} result={other:?}"),
+        }
+        assert!(tokio::time::timeout(std::time::Duration::from_millis(30), b_gate.exclusive()).await.is_err(),
+            "host cancellation must NOT release unknown B ownership: mode={mode} writer={writer}");
+        let lease = tokio::time::timeout(std::time::Duration::from_secs(2), a_gate.exclusive())
+            .await.expect("B uncertainty must not prevent independent A gate progress after shutdown");
+        drop(lease);
+    } else {
+        // Healthy cases still require actual hostOk; no Err whitelist.
+        shutdown_result.unwrap();
+    }
+    assert_eq!(database.participant_prepare_requests().len(), prepare_count,
+        "teardown admission probes must not manufacture Prepare evidence");
+    assert_eq!(database.participant_commit_requests().len(), commit_count,
+        "teardown admission probes must not manufacture Commit evidence");
+    assert_eq!(trace.lock().unwrap().iter().filter(|entry| entry.contains("handler")).count(), handler_count,
+        "teardown admission probes must not enter another handler");
+    database_server.abort(); let _ = database_server.await;
     }
 }
 
@@ -4545,4 +4644,22 @@ mod tests {
         .status()
         .unwrap();
     assert!(status.success());
+}
+
+#[test]
+fn shared_existing_writer_native_fixture_retains_original_account_schema_and_generated_services() {
+    let source = include_str!("fixtures/shared_existing_writer_acceptance.rs");
+    let build = include_str!("fixtures/shared_existing_writer/build.rs");
+    let schema = include_str!("fixtures/shared_existing_writer/shared/probe/shared_root.proto");
+    assert!(build.contains("bank/v1/account.proto"));
+    assert!(build.contains("bank/v1/errors.proto"));
+    assert!(!build.contains("bank/v1/bank.proto"));
+    assert!(!schema.contains("errors:"));
+    assert!(schema.contains("transaction = { shared: {} }"));
+    assert!(source.contains("root::SharedRootMethodsTransactionAdapter::new"));
+    assert!(source.contains("account::AccountMethodsTransactionAdapter::new"));
+    assert!(source.contains("with_shared_existing_writers()"));
+    assert!(source.contains("OverdraftError"));
+    assert!(source.contains("native.restart()"));
+    assert!(source.contains("shared_existing_writer_missing_second_target_abort_restart"));
 }

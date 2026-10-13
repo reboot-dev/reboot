@@ -324,6 +324,12 @@ impl RecoveryCancellation {
             failure.send_replace(RecoveryState::Failed);
         }
     }
+    // Factual sticky failure observation only; grants no readiness/admission.
+    #[cfg(feature = "test-support")]
+    pub(crate) fn failure_latched_for_test(&self) -> bool {
+        self.failure_latched
+            .load(std::sync::atomic::Ordering::Acquire)
+    }
     #[allow(clippy::result_large_err)]
     pub(crate) fn check_reader_admission(&self) -> Result<(), tonic::Status> {
         if self.is_cancelled() {

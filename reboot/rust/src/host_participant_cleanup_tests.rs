@@ -329,6 +329,13 @@ mod host_participant_cleanup {
             .relinquish(root, nested, false, Some(first.local_owner))
             .await
             .unwrap();
+        let prior_owner = actor
+            .pending
+            .lock_root(root)
+            .await
+            .as_ref()
+            .unwrap()
+            .local_owner;
         drop(first); // queued stale-owner command must not modify the next call.
         let second = actor
             .start_local_reusable(
@@ -353,7 +360,8 @@ mod host_participant_cleanup {
         serving.await.unwrap().unwrap();
         let pending = slot.lock_owned().await;
         let current = pending.as_ref().unwrap();
-        assert_eq!(current.local_owner, owner);
+        assert_eq!(current.local_owner, prior_owner);
+        assert_ne!(current.local_owner, owner);
         assert_eq!(current.effects.state, Some(vec![1]));
         assert_eq!(current.transaction_ids, vec![root]);
         assert!(!current.execution_active);

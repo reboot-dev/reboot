@@ -1930,7 +1930,7 @@ fn emit_transactional_client(
         } else {
             format!(".map_err({error}::from_status)")
         };
-        output.push_str(&format!("    pub async fn {method}(&self, context: &{runtime_module}::runtime::TransactionContext, target: &{target}, request: proto::{request}) -> Result<{runtime_module}::runtime::TransactionalCallResponse<proto::{response}>, {error}> {{ let outbound_scope = context.begin_generated_outbound_for(<{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, target.state_ref(), \"{method_identity}\").inspect_err(|status| {{ context.doom(status.clone()); }}){admission_mapping}?; {runtime_module}::runtime::generated_transactional_unary(self.resolver.as_ref(), context, outbound_scope, request, &[{schema}]).await{mapping} }}\n"));
+        output.push_str(&format!("    pub async fn {method}(&self, context: &{runtime_module}::runtime::TransactionContext, target: &{target}, request: proto::{request}) -> Result<{runtime_module}::runtime::TransactionalCallResponse<proto::{response}>, {error}> {{ let outbound_scope = context.begin_generated_outbound_for(<{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, target.state_ref(), \"{method_identity}\").inspect_err(|status| {{ context.doom(status.clone()); }}){admission_mapping}?; let declared_errors = &[{schema}]; {runtime_module}::runtime::boxed_generated_future(|| {runtime_module}::runtime::generated_transactional_unary(self.resolver.as_ref(), context, outbound_scope, request, declared_errors)).await{mapping} }}\n"));
     }
     output.push_str("}\n\n");
     Ok(())
@@ -1966,7 +1966,11 @@ fn emit_exclusive_transaction_method(output: &mut String, flow: TransactionFlow<
         );
     } else {
         output.push_str(&format!("        let local_child = if let Some(ticket) = request.extensions_mut().remove::<{runtime}::runtime::RegisteredLocalTicket>() {{ let binding = self.local_registration.as_ref().ok_or_else(|| {{ ticket.discard(); tonic::Status::failed_precondition(\"local ticket requires registered receiver\") }})?; let configuration = {runtime}::registered_local::GeneratedLocalTransactionAdapter::local_configuration(self).inspect_err(|_| {{ ticket.discard(); }})?; Some(ticket.consume(binding, &configuration, \"{method}\", &headers, request.get_ref())?) }} else {{ None }};\n", runtime=flow.runtime_module, method=flow.method_identity));
-        output.push_str("        if inbound {\n            Box::pin(async move {\n");
+        // The branch future contains the complete admitted transaction flow.
+        // Construct it outside this poll frame: registered A -> B -> C calls
+        // poll inline, so direct Box::pin would repeat its construction scratch
+        // at every depth even though the retained future itself is heap-owned.
+        output.push_str(&format!("        if inbound {{\n            {}::runtime::boxed_generated_future(|| async move {{\n", flow.runtime_module));
         output.push_str(&format!(
             "            let (authorization_context, authorization_auth) = self.authorization.verify(headers.clone(), <{} as {}::runtime::DurableStateDeclaration>::STATE_TYPE, \"{}\").await?;\n",
             flow.declaration, flow.runtime_module, flow.method_identity
@@ -1979,9 +1983,9 @@ fn emit_exclusive_transaction_method(output: &mut String, flow: TransactionFlow<
                 ..flow
             },
         );
-        output.push_str(
-            "            }).await\n        } else {\n            Box::pin(async move {\n",
-        );
+        output.push_str(&format!(
+            "            }}).await\n        }} else {{\n            {}::runtime::boxed_generated_future(|| async move {{\n", flow.runtime_module
+        ));
         output.push_str(&format!(
             "            let (authorization_context, authorization_auth) = self.authorization.verify(headers.clone(), <{} as {}::runtime::DurableStateDeclaration>::STATE_TYPE, \"{}\").await?;\n",
             flow.declaration, flow.runtime_module, flow.method_identity
@@ -2001,6 +2005,7 @@ fn emit_shared_transaction_method(output: &mut String, flow: TransactionFlow<'_>
     output.push_str(&format!(
         "    async fn {}(&self, request: tonic::Request<proto::{}>) -> Result<tonic::Response<proto::{}>, tonic::Status> {{\n        let headers = {}::RebootHeaders::from_request(&request).map_err(|error| {{ if let Some(ticket) = request.extensions().get::<{runtime}::runtime::RegisteredLocalTicket>() {{ ticket.discard(); }} tonic::Status::invalid_argument(error.to_string()) }})?;\n        if let Some(ticket) = request.extensions().get::<{runtime}::runtime::RegisteredLocalTicket>() {{ ticket.discard(); return Err(tonic::Status::failed_precondition(\"local tickets exclude shared execution\")); }}\n        let inbound = headers.transaction_ids.is_some();\n        if inbound {{\n            // Shared inbound execution remains read-only; it never promotes.\n", flow.method, flow.request, flow.response, flow.runtime_module, runtime = flow.runtime_module
     ));
+    output.push_str("            if self.shared_existing_writers { return Err(tonic::Status::failed_precondition(\"shared existing writer roots exclude inbound execution\")); }\n");
     output.push_str("            if self.supervised_tree { return Err(tonic::Status::failed_precondition(\"tree excludes shared execution\")); }\n");
     output.push_str(&format!(
             "            let (authorization_context, authorization_auth) = self.authorization.verify(headers.clone(), <{} as {}::runtime::DurableStateDeclaration>::STATE_TYPE, \"{}\").await?;\n",
@@ -2015,9 +2020,52 @@ fn emit_shared_transaction_method(output: &mut String, flow: TransactionFlow<'_>
             ..flow
         },
     );
-    output.push_str("        } else {\n            if self.supervised_tree { return Err(tonic::Status::failed_precondition(\"tree excludes shared execution\")); }\n");
+    output.push_str("        } else {\n            if self.shared_existing_writers {\n");
+    emit_shared_existing_writer_root_flow(output, flow);
+    output.push_str("            }\n            if self.supervised_tree { return Err(tonic::Status::failed_precondition(\"tree excludes shared execution\")); }\n");
     emit_fresh_shared_local_flow(output, flow);
     output.push_str("        }\n    }\n");
+}
+
+/// Opt-in registered root flow. The consuming SDK guard, not returned metadata,
+/// supplies authority and membership to the shared coordinator completion.
+fn emit_shared_existing_writer_root_flow(output: &mut String, flow: TransactionFlow<'_>) {
+    let TransactionFlow {
+        method,
+        request,
+        method_identity,
+        state,
+        declaration,
+        runtime_module,
+        ..
+    } = flow;
+    let prefix = "                ";
+    output.push_str(&format!(r#"{prefix}if headers.idempotency_key.is_some() || self.tasks.is_some() || self.supervised_tree || self.sequential_root_star || self.sequential_reusable {{ return Err(tonic::Status::failed_precondition("shared existing writer roots exclude idempotency, tasks and other execution modes")); }}
+{prefix}let binding = self.local_registration.as_ref().ok_or_else(|| tonic::Status::failed_precondition("shared existing writer roots require registered host"))?;
+{prefix}let configuration = <Self as {runtime_module}::registered_local::GeneratedLocalTransactionAdapter>::local_configuration(self)?;
+{prefix}binding.require_host_ready(&configuration)?;
+{prefix}if configuration.target.state_ref != headers.state_ref || !configuration.methods.contains("{method_identity}") {{ return Err(tonic::Status::failed_precondition("shared existing writer root registered target or method differs")); }}
+{prefix}let abort_owner = self.explicit_abort.as_ref().ok_or_else(|| tonic::Status::failed_precondition("shared existing writer roots require explicit Abort owner"))?;
+{prefix}self.authorization.require_authorizer()?;
+{prefix}let (authorization_context, authorization_auth) = self.authorization.verify(headers.clone(), <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, "{method_identity}").await?;
+{prefix}let mut context = {runtime_module}::runtime::start_root_transaction(headers, <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, {runtime_module}::runtime::TransactionMode::Shared, self.root_start.as_ref())?.transaction().clone();
+{prefix}context.enable_read_only_aware();
+{prefix}let registration = {runtime_module}::explicit_abort::RegisteredRoot::admit_shared_existing_writers(&self.participant, context.clone(), self.coordinator.clone(), abort_owner)?;
+{prefix}let local = self.participant.start_local_preallow({runtime_module}::durable_participant::ActorTransactionStart {{ transaction_ids: context.transaction_ids().to_vec(), transaction_path: {runtime_module}::durable_participant::TransactionPathContract::RootOnly, coordinator_state_type: context.transaction_coordinator_state_type().to_owned(), coordinator_state_ref: context.transaction_coordinator_state_ref().to_owned(), mode: {runtime_module}::runtime::TransactionMode::Shared, read_only: false, factory: false, state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone() }}, {runtime_module}::durable_participant::ParticipantStartMode::SharedUpgradeable).await?;
+{prefix}let loaded = local.state_bytes();
+{prefix}let handler_request_bytes = <proto::{request} as prost::Message>::encode_to_vec(request.get_ref());
+{prefix}let authorized_entry = self.authorization.authorize_handler_entry(&local.authorized_handler_admission(), &context, &authorization_context, authorization_auth.as_ref(), loaded.as_deref(), &handler_request_bytes).await?;
+{prefix}let local = registration.admitted(local).await?;
+{prefix}let local = local.with_shared_existing_writers(&mut context).await?;
+{prefix}let state = match loaded.as_deref() {{ Some(bytes) => match <proto::{state} as prost::Message>::decode(bytes) {{ Ok(state) => state, Err(error) => {{ local.abort_explicit().await?; return Err(tonic::Status::failed_precondition(format!("stored actor state is not a valid {state}: {{error}}"))); }} }}, None => {{ local.abort_explicit().await?; return Err(tonic::Status::failed_precondition("non-factory transaction requires an existing actor state")); }} }};
+{prefix}let initial_state = <proto::{state} as prost::Message>::encode_to_vec(&state);
+{prefix}let handler_result = match {runtime_module}::runtime::boxed_generated_future(|| local.run_registered_authorized_handler(&self.authorization, Some(authorized_entry), &context, ("{method_identity}", &handler_request_bytes), Some((binding.clone(), configuration)), |handler_context| {{ let state = &state; async move {{ self.handler.{method}_shared_existing_writers(&handler_context, state, request.into_inner()).await }} }})).await {{ Ok(result) => result, Err(error) => {{ local.abort_explicit().await?; return Err(error); }} }};
+{prefix}let response = match handler_result {{ Ok(response) => response, Err(error) => {{ local.abort_explicit().await?; return Err(error); }} }};
+{prefix}if let Some(error) = context.doomed_status() {{ local.abort_explicit().await?; return Err(error); }}
+{prefix}if initial_state != <proto::{state} as prost::Message>::encode_to_vec(&state) {{ local.abort_explicit().await?; return Err(tonic::Status::failed_precondition("shared existing writer root state must remain unchanged")); }}
+{prefix}local.complete_shared_existing_writers({runtime_module}::durable_coordinator::RootCoordinatorStart {{ transaction_ids: context.transaction_ids().to_vec(), coordinator_state_type: context.transaction_coordinator_state_type().to_owned(), coordinator_state_ref: context.transaction_coordinator_state_ref().to_owned(), participant: {runtime_module}::durable_coordinator::ParticipantTarget {{ state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone() }}, mode: {runtime_module}::runtime::TransactionMode::Shared, read_only: true, factory: false, placement_requested: false }}).await?;
+{prefix}return Ok(tonic::Response::new(response));
+"#));
 }
 
 /// Renders the bounded fresh-shared local vertical. It excludes inbound,
@@ -2132,7 +2180,7 @@ fn emit_transaction_flow(output: &mut String, flow: TransactionFlow<'_>) {
         format!("None::<{runtime_module}::explicit_abort::RegisteredRoot<C, R>>")
     };
     let registered_handler_eligible = if mode == "Exclusive" && !factory {
-        "self.sequential_reusable || self.sequential_root_star || self.supervised_tree"
+        "self.sequential_reusable || self.sequential_root_star || self.supervised_tree || context.reusable_participants()"
     } else {
         "false"
     };
@@ -2146,10 +2194,10 @@ fn emit_transaction_flow(output: &mut String, flow: TransactionFlow<'_>) {
     } else if read_only {
         "!self.supervised_tree && (self.live_participant.is_none() || context.transaction_ids().len() == 1)"
     } else {
-        "!self.supervised_tree && context.transaction_ids().len() != 1 && self.live_participant.is_none()"
+        "!context.reusable_participants() && !self.supervised_tree && context.transaction_ids().len() != 1 && self.live_participant.is_none()"
     };
     output.push_str(&format!("{prefix}self.authorization.require_authorizer()?;\n{prefix}{context}\n{prefix}{read_only_setup}\n{prefix}if self.supervised_tree {{ context.validate_tree_scope()?; }}\n{prefix}let automatic_idempotency = {automatic_idempotency} {{ Some(context.idempotency(\"{method_identity}\", request.get_ref())?) }} else {{ None }};\n"));
-    output.push_str(&format!("{prefix}let participant_metadata = {participant_metadata};\n{prefix}let registered_root = {root_registration};\n{prefix}let mut local = self.participant.start_local_reusable_preallow({runtime_module}::durable_participant::ActorTransactionStart {{ transaction_ids: context.transaction_ids().to_vec(), transaction_path: {transaction_path}, coordinator_state_type: context.transaction_coordinator_state_type().to_owned(), coordinator_state_ref: context.transaction_coordinator_state_ref().to_owned(), mode: {runtime_module}::runtime::TransactionMode::{mode}, read_only: {read_only}, factory: {factory}, state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone() }}, {runtime_module}::durable_participant::ParticipantStartMode::Exclusive, self.sequential_reusable).await?;\n{prefix}let loaded = local.state_bytes();\n{prefix}let handler_request_bytes = <proto::{request} as prost::Message>::encode_to_vec(request.get_ref());\n{prefix}let authorized_entry = if {registered_handler_eligible} {{ Some(self.authorization.authorize_handler_entry(&local.authorized_handler_admission(), &context, &authorization_context, authorization_auth.as_ref(), loaded.as_deref(), &handler_request_bytes).await?) }} else {{ None }};\n{prefix}if {disarm_condition} {{ local.disarm_after_durable_prepare(); }}\n{prefix}let local = if let Some(registration) = registered_root {{ registration.admitted(local).await? }} else {{ {runtime_module}::runtime::boxed_generated_future(|| {runtime_module}::explicit_abort::RootHandlerGuard::before_handler(local, context.clone(), self.coordinator.clone(), self.explicit_abort.as_ref())).await? }};\n{prefix}let local = if self.sequential_reusable {{ {runtime_module}::runtime::boxed_generated_future(|| local.with_sequential_reusable_participants(&mut context, self.live_participant.as_ref())).await? }} else if self.sequential_root_star {{ {runtime_module}::runtime::boxed_generated_future(|| local.with_sequential_root_star(&mut context, self.live_participant.as_ref())).await? }} else if self.supervised_tree {{ {runtime_module}::runtime::boxed_generated_future(|| local.with_supervised_tree(&mut context, self.live_participant.as_ref())).await? }} else {{ {runtime_module}::runtime::boxed_generated_future(|| local.with_live_inbound(&mut context, self.live_participant.as_ref())).await? }};\n{prefix}let local = local.with_builtin_map_context(&mut context)?;\n"));
+    output.push_str(&format!("{prefix}let participant_metadata = {participant_metadata};\n{prefix}let registered_root = {root_registration};\n{prefix}let mut local = {runtime_module}::runtime::boxed_generated_future(|| self.participant.start_local_reusable_preallow({runtime_module}::durable_participant::ActorTransactionStart {{ transaction_ids: context.transaction_ids().to_vec(), transaction_path: {transaction_path}, coordinator_state_type: context.transaction_coordinator_state_type().to_owned(), coordinator_state_ref: context.transaction_coordinator_state_ref().to_owned(), mode: {runtime_module}::runtime::TransactionMode::{mode}, read_only: {read_only}, factory: {factory}, state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone() }}, {runtime_module}::durable_participant::ParticipantStartMode::Exclusive, self.sequential_reusable || context.reusable_participants())).await?;\n{prefix}let loaded = local.state_bytes();\n{prefix}let handler_request_bytes = <proto::{request} as prost::Message>::encode_to_vec(request.get_ref());\n{prefix}let authorized_entry = if {registered_handler_eligible} {{ Some(self.authorization.authorize_handler_entry(&local.authorized_handler_admission(), &context, &authorization_context, authorization_auth.as_ref(), loaded.as_deref(), &handler_request_bytes).await?) }} else {{ None }};\n{prefix}// Policy may suspend across revocation. Reject while first-touch local Drop is still armed, before live execution/Watch ownership is installed. Retained reusable admission keeps its existing snapshot cleanup.\n{prefix}if authorized_entry.is_some() && let Some(binding) = &self.local_registration {{ let configuration = <Self as {runtime_module}::registered_local::GeneratedLocalTransactionAdapter>::local_configuration(self)?; binding.require_host_ready(&configuration)?; }}\n{prefix}if {disarm_condition} {{ local.disarm_after_durable_prepare(); }}\n{prefix}let local = if let Some(registration) = registered_root {{ {runtime_module}::runtime::boxed_generated_future(|| registration.admitted(local)).await? }} else {{ {runtime_module}::runtime::boxed_generated_future(|| {runtime_module}::explicit_abort::RootHandlerGuard::before_handler(local, context.clone(), self.coordinator.clone(), self.explicit_abort.as_ref())).await? }};\n{prefix}let local = if self.sequential_reusable || context.reusable_participants() {{ {runtime_module}::runtime::boxed_generated_future(|| local.with_sequential_reusable_participants(&mut context, self.live_participant.as_ref())).await? }} else if self.sequential_root_star {{ {runtime_module}::runtime::boxed_generated_future(|| local.with_sequential_root_star(&mut context, self.live_participant.as_ref())).await? }} else if self.supervised_tree {{ {runtime_module}::runtime::boxed_generated_future(|| local.with_supervised_tree(&mut context, self.live_participant.as_ref())).await? }} else {{ {runtime_module}::runtime::boxed_generated_future(|| local.with_live_inbound(&mut context, self.live_participant.as_ref())).await? }};\n{prefix}let local = local.with_builtin_map_context(&mut context)?;\n"));
     if authorize_after_load {
         output.push_str(&format!("{prefix}// Authorize the fresh participant-owned wire snapshot before receipt or state disclosure.\n{prefix}if {ordinary_authorization_guard}let Err(error) = self.authorization.authorize(&authorization_context, authorization_auth.as_ref(), loaded.as_deref(), &<proto::{request} as prost::Message>::encode_to_vec(request.get_ref())).await {{ {runtime_module}::runtime::boxed_generated_future(|| local.abort_local()).await?; return Err(error); }}\n"));
     }
@@ -2180,7 +2228,7 @@ fn emit_transaction_flow(output: &mut String, flow: TransactionFlow<'_>) {
     };
 
     let rollback_error = if declared_error {
-        "let (declared, error) = error; if declared && self.supervised_tree && context.supports_rollback_leaf_path() { return Err(local.rollback_declared_leaf(error).await?); }\n"
+        "let (declared, error) = error; if declared && (self.supervised_tree || context.reusable_participants()) && context.supports_rollback_leaf_path() { return Err(local.rollback_declared_leaf(error).await?); }\n"
     } else {
         ""
     };
@@ -2235,6 +2283,10 @@ fn emit_transaction_flow(output: &mut String, flow: TransactionFlow<'_>) {
     if shared_root_ownership_seam {
         output.push_str(&format!("{prefix}// Local-only shared-root ownership is intentionally not activated: the\n{prefix}// current coordinator accepts only the read-only shared classification.\n"));
     }
+    // The inbound flow retains this fallback in its async state machine too.
+    // Do not embed the consuming root/coordinator completion future by value:
+    // even a path that only returns participant metadata pays its frame size.
+    // Heap ownership preserves Drop/handoff and does not introduce a new task.
     let completion = completion
         .replace(
             "reboot_metadata",
@@ -2245,7 +2297,7 @@ fn emit_transaction_flow(output: &mut String, flow: TransactionFlow<'_>) {
         .replace(
             "coordinator_completion",
             &format!(
-                "local.complete_root({runtime_module}::durable_coordinator::RootCoordinatorStart {{ transaction_ids: context.transaction_ids().to_vec(), coordinator_state_type: context.transaction_coordinator_state_type().to_owned(), coordinator_state_ref: context.transaction_coordinator_state_ref().to_owned(), participant: {runtime_module}::durable_coordinator::ParticipantTarget {{ state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone() }}, mode: {runtime_module}::runtime::TransactionMode::{mode}, read_only: {read_only}, factory: {factory}, placement_requested: false }}, returned_participants).await?;"
+                "{runtime_module}::runtime::boxed_generated_future(|| local.complete_root({runtime_module}::durable_coordinator::RootCoordinatorStart {{ transaction_ids: context.transaction_ids().to_vec(), coordinator_state_type: context.transaction_coordinator_state_type().to_owned(), coordinator_state_ref: context.transaction_coordinator_state_ref().to_owned(), participant: {runtime_module}::durable_coordinator::ParticipantTarget {{ state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone() }}, mode: {runtime_module}::runtime::TransactionMode::{mode}, read_only: {read_only}, factory: {factory}, placement_requested: false }}, returned_participants)).await?;"
             ),
         );
     output.push_str(&format!("{prefix}let mut response = tonic::Response::new(execution.response);\n{prefix}// Consuming guard seals and hands off before any potentially durable RPC.\n{prefix}let mut uncertainty = {uncertainty};\n{prefix}{completion}\n{prefix}if let Some(owner) = &mut uncertainty {{ owner.completed(); }}\n{prefix}// Inbound success only stages effects; canonical host scans own remote delivery after terminal ACK.\n{prefix}{dispatch_tasks}\n{prefix}Ok(response)\n"));
@@ -2755,6 +2807,17 @@ fn emit_transactions(
             return Err(format!("{service_name}: {label} `{hook}` collides"));
         }
     }
+    for (kind, method, _, _, _) in methods {
+        if matches!(kind, DurableKind::Transaction(metadata) if metadata.mode == TransactionMode::Shared)
+        {
+            let hook = format!("{method}_shared_existing_writers");
+            if !handler_methods.insert(hook.clone()) {
+                return Err(format!(
+                    "{service_name}: shared existing writer hook `{hook}` collides"
+                ));
+            }
+        }
+    }
     let handler = format!("{service_name}TransactionHandler");
     let adapter = format!("{service_name}TransactionAdapter");
     let declaration = format!("{state}DurableState");
@@ -2823,6 +2886,7 @@ fn emit_transactions(
         }
         if matches!(metadata.mode, TransactionMode::Shared) {
             output.push_str(&format!("    /// Fresh shared-root local execution only; this context has no transaction capabilities.\n    async fn {method}_fresh_shared(&self, context: &{runtime_module}::runtime::SharedLocalTransactionContext, state: &mut proto::{state}, request: proto::{request}) -> Result<proto::{response}, tonic::Status>;\n"));
+            output.push_str(&format!("    /// Explicit host-registered root only. Immutable local state; admitted context owns existing writer calls.\n    async fn {method}_shared_existing_writers(&self, _context: &{runtime_module}::runtime::TransactionContext, _state: &proto::{state}, _request: proto::{request}) -> Result<proto::{response}, tonic::Status> {{ Err(tonic::Status::unimplemented(\"shared existing writer hook not implemented\")) }}\n"));
         }
     }
     output.push_str("}\n\n");
@@ -2844,7 +2908,7 @@ fn emit_transactions(
                 "let participant = participant.with_database_actor_gate(&store); ".to_owned(),
             )
         };
-    output.push_str(&format!("/// Executable Tonic adapter for one fresh, same-actor exclusive root transaction or one validated inbound nested transaction.\n///\n/// The host must inject the participant sidecar, coordinator sidecar, resolver,\n/// and transaction-start factory. Inbound calls receive a host-supplied child ID,\n/// stage only their local participant, and return it through the successful trailer seam; they never drive the root coordinator. This adapter does not choose routing, placement, a clock, or a transaction UUID.\npub struct {adapter}<H, P, C, R, F> where P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{ {store_field}local_registration: Option<{runtime_module}::registered_local::RegisteredAdapterBinding>, local_incarnation: std::sync::Arc<()>, supervised_tree: bool, sequential_root_star: bool, sequential_reusable: bool, live_participant: Option<{runtime_module}::live_participant::LiveParticipantOwner>, explicit_abort: Option<{runtime_module}::explicit_abort::ExplicitAbortOwner>, tasks: Option<{runtime_module}::one_shot_tasks::OneShotTasks>, handler: std::sync::Arc<H>, authorization: {runtime_module}::auth::AuthorizationPolicy, reader_registry: Option<{runtime_module}::reactive::LocalReaderRegistry>, legacy_reader_roots: Vec<String>, reader_binding_id: std::sync::Arc<()>, participant: {runtime_module}::durable_participant::DurableActorParticipant<P>, coordinator: {runtime_module}::durable_coordinator::DurableRootCoordinator<C, R>, root_start: std::sync::Arc<F> }}\nimpl<H, P, C, R, F> Clone for {adapter}<H, P, C, R, F> where P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{ fn clone(&self) -> Self {{ Self {{ {store_clone}local_registration: self.local_registration.clone(), local_incarnation: self.local_incarnation.clone(), supervised_tree: self.supervised_tree, sequential_root_star: self.sequential_root_star, sequential_reusable: self.sequential_reusable, live_participant: self.live_participant.clone(), explicit_abort: self.explicit_abort.clone(), tasks: self.tasks.clone(), handler: self.handler.clone(), authorization: self.authorization.clone(), reader_registry: self.reader_registry.clone(), legacy_reader_roots: self.legacy_reader_roots.clone(), reader_binding_id: self.reader_binding_id.clone(), participant: self.participant.clone(), coordinator: self.coordinator.clone(), root_start: self.root_start.clone() }} }} }}\nimpl<H, P, C, R, F> {adapter}<H, P, C, R, F> where P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{ pub fn new({store_argument}participant: {runtime_module}::durable_participant::DurableActorParticipant<P>, coordinator: {runtime_module}::durable_coordinator::DurableRootCoordinator<C, R>, root_start: F, handler: H) -> Self {{ {participant_bind}let coordinator = coordinator.with_identity(participant.actor_target()); Self {{ {store_init}local_registration: None, local_incarnation: std::sync::Arc::new(()), supervised_tree: false, sequential_root_star: false, sequential_reusable: false, live_participant: None, explicit_abort: None, tasks: None, handler: std::sync::Arc::new(handler), authorization: {runtime_module}::auth::AuthorizationPolicy::default().for_declaration::<{declaration}>(), reader_registry: None, legacy_reader_roots: Vec::new(), reader_binding_id: std::sync::Arc::new(()), participant, coordinator, root_start: std::sync::Arc::new(root_start) }} }} /// Opt in to supervised bounded descendant trees; actual active ownership is checked at execution.\n    pub fn with_supervised_transaction_tree(mut self) -> Self {{ self.local_registration = None; self.local_incarnation = std::sync::Arc::new(()); self.supervised_tree = true; self }}\n    /// Host-selected sequential distinct root-star; actual guards install authority.\n    pub fn with_sequential_root_star(mut self) -> Self {{ self.local_registration = None; self.local_incarnation = std::sync::Arc::new(()); self.supervised_tree = true; self.sequential_root_star = true; self.sequential_reusable = false; self }} pub fn with_sequential_reusable_participants(mut self) -> Self {{ self.local_registration = None; self.local_incarnation = std::sync::Arc::new(()); self.supervised_tree = true; self.sequential_root_star = false; self.sequential_reusable = true; self }} pub fn with_live_participant_owner(mut self, owner: {runtime_module}::live_participant::LiveParticipantOwner) -> Self {{ self.local_registration = None; self.local_incarnation = std::sync::Arc::new(()); self.live_participant = Some(owner); self }} pub fn live_participant_recovery_registration(&self) -> Result<{runtime_module}::live_participant::LiveParticipantRecovery, Box<tonic::Status>> {{ self.live_participant.as_ref().map(|owner| owner.recovery_registration()).ok_or_else(|| Box::new(tonic::Status::failed_precondition(\"no live participant owner attached\"))) }} pub fn with_explicit_abort_owner(mut self, owner: {runtime_module}::explicit_abort::ExplicitAbortOwner) -> Self {{ self.local_registration = None; self.local_incarnation = std::sync::Arc::new(()); self.explicit_abort = Some(owner); self }} pub fn explicit_abort_recovery_registration(&self) -> Result<{runtime_module}::explicit_abort::ExplicitAbortRecovery, Box<tonic::Status>> {{ self.explicit_abort.as_ref().map(|owner| owner.recovery_registration()).ok_or_else(|| Box::new(tonic::Status::failed_precondition(\"no explicit Abort owner attached\"))) }} pub fn with_authorization(mut self, authorization: {runtime_module}::auth::AuthorizationPolicy) -> Self {{ self.local_registration = None; self.local_incarnation = std::sync::Arc::new(()); self.authorization = authorization.for_declaration::<{declaration}>(); self.reader_registry = None; self.legacy_reader_roots.clear(); self.reader_binding_id = std::sync::Arc::new(()); self }}\n    /// Exposes the existing injected local participant as the legacy control service.\n    pub fn legacy_participant_control_service(&self) -> {runtime_module}::database_proto::participant_server::ParticipantServer<{runtime_module}::durable_participant::DurableActorParticipantHost<P>> {{ {runtime_module}::database_proto::participant_server::ParticipantServer::new({runtime_module}::durable_participant::DurableActorParticipantHost::new(self.participant.clone())) }}\n    /// Exposes a durable legacy Coordinator.Watch service for the exact supplied coordinator identity.\n    pub fn legacy_coordinator_control_service(&self, coordinator_state_type: impl Into<String>, coordinator_state_ref: impl Into<String>) -> Result<{runtime_module}::database_proto::coordinator_server::CoordinatorServer<{runtime_module}::legacy_coordinator::DurableCoordinatorWatchHost<C>>, Box<tonic::Status>> {{ Ok({runtime_module}::database_proto::coordinator_server::CoordinatorServer::new({runtime_module}::legacy_coordinator::DurableCoordinatorWatchHost::new(self.coordinator.sidecar(), coordinator_state_type, coordinator_state_ref)?)) }}\n    /// Registers recovery using only this adapter's injected participant and coordinator.\n    pub fn legacy_recovery_registration<W: {runtime_module}::legacy_coordinator::CoordinatorWatchEndpoint>(&self, metadata: {runtime_module}::application_host::LegacyRecoveryMetadata, watch: std::sync::Arc<W>) -> Result<{runtime_module}::application_host::LegacyDurableRecovery<P, C, R, W>, Box<tonic::Status>> {{ {runtime_module}::application_host::LegacyDurableRecovery::new(self.participant.clone(), self.coordinator.clone(), metadata, watch).map_err(Box::new) }}\n}}\n\n"));
+    output.push_str(&format!("/// Executable Tonic adapter for one fresh, same-actor exclusive root transaction or one validated inbound nested transaction.\n///\n/// The host must inject the participant sidecar, coordinator sidecar, resolver,\n/// and transaction-start factory. Inbound calls receive a host-supplied child ID,\n/// stage only their local participant, and return it through the successful trailer seam; they never drive the root coordinator. This adapter does not choose routing, placement, a clock, or a transaction UUID.\npub struct {adapter}<H, P, C, R, F> where P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{ {store_field}local_registration: Option<{runtime_module}::registered_local::RegisteredAdapterBinding>, local_incarnation: std::sync::Arc<()>, supervised_tree: bool, sequential_root_star: bool, sequential_reusable: bool, shared_existing_writers: bool, live_participant: Option<{runtime_module}::live_participant::LiveParticipantOwner>, explicit_abort: Option<{runtime_module}::explicit_abort::ExplicitAbortOwner>, tasks: Option<{runtime_module}::one_shot_tasks::OneShotTasks>, handler: std::sync::Arc<H>, authorization: {runtime_module}::auth::AuthorizationPolicy, reader_registry: Option<{runtime_module}::reactive::LocalReaderRegistry>, legacy_reader_roots: Vec<String>, reader_binding_id: std::sync::Arc<()>, participant: {runtime_module}::durable_participant::DurableActorParticipant<P>, coordinator: {runtime_module}::durable_coordinator::DurableRootCoordinator<C, R>, root_start: std::sync::Arc<F> }}\nimpl<H, P, C, R, F> Clone for {adapter}<H, P, C, R, F> where P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{ fn clone(&self) -> Self {{ Self {{ {store_clone}local_registration: self.local_registration.clone(), local_incarnation: self.local_incarnation.clone(), supervised_tree: self.supervised_tree, sequential_root_star: self.sequential_root_star, sequential_reusable: self.sequential_reusable, shared_existing_writers: self.shared_existing_writers, live_participant: self.live_participant.clone(), explicit_abort: self.explicit_abort.clone(), tasks: self.tasks.clone(), handler: self.handler.clone(), authorization: self.authorization.clone(), reader_registry: self.reader_registry.clone(), legacy_reader_roots: self.legacy_reader_roots.clone(), reader_binding_id: self.reader_binding_id.clone(), participant: self.participant.clone(), coordinator: self.coordinator.clone(), root_start: self.root_start.clone() }} }} }}\nimpl<H, P, C, R, F> {adapter}<H, P, C, R, F> where P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{ pub fn new({store_argument}participant: {runtime_module}::durable_participant::DurableActorParticipant<P>, coordinator: {runtime_module}::durable_coordinator::DurableRootCoordinator<C, R>, root_start: F, handler: H) -> Self {{ {participant_bind}let coordinator = coordinator.with_identity(participant.actor_target()); Self {{ {store_init}local_registration: None, local_incarnation: std::sync::Arc::new(()), supervised_tree: false, sequential_root_star: false, sequential_reusable: false, shared_existing_writers: false, live_participant: None, explicit_abort: None, tasks: None, handler: std::sync::Arc::new(handler), authorization: {runtime_module}::auth::AuthorizationPolicy::default().for_declaration::<{declaration}>(), reader_registry: None, legacy_reader_roots: Vec::new(), reader_binding_id: std::sync::Arc::new(()), participant, coordinator, root_start: std::sync::Arc::new(root_start) }} }} /// Opt in to supervised bounded descendant trees; actual active ownership is checked at execution.\n    pub fn with_supervised_transaction_tree(mut self) -> Self {{ self.local_registration = None; self.local_incarnation = std::sync::Arc::new(()); self.supervised_tree = true; self }}\n    /// Explicit registered shared root owning sequential existing ordinary writers. Configure before host registration.\n    pub fn with_shared_existing_writers(mut self) -> Self {{ self.local_registration = None; self.local_incarnation = std::sync::Arc::new(()); self.shared_existing_writers = true; self }}\n    /// Host-selected sequential distinct root-star; actual guards install authority.\n    pub fn with_sequential_root_star(mut self) -> Self {{ self.local_registration = None; self.local_incarnation = std::sync::Arc::new(()); self.supervised_tree = true; self.sequential_root_star = true; self.sequential_reusable = false; self }} pub fn with_sequential_reusable_participants(mut self) -> Self {{ self.local_registration = None; self.local_incarnation = std::sync::Arc::new(()); self.supervised_tree = true; self.sequential_root_star = false; self.sequential_reusable = true; self }} pub fn with_live_participant_owner(mut self, owner: {runtime_module}::live_participant::LiveParticipantOwner) -> Self {{ self.local_registration = None; self.local_incarnation = std::sync::Arc::new(()); self.live_participant = Some(owner); self }} pub fn live_participant_recovery_registration(&self) -> Result<{runtime_module}::live_participant::LiveParticipantRecovery, Box<tonic::Status>> {{ self.live_participant.as_ref().map(|owner| owner.recovery_registration()).ok_or_else(|| Box::new(tonic::Status::failed_precondition(\"no live participant owner attached\"))) }} pub fn with_explicit_abort_owner(mut self, owner: {runtime_module}::explicit_abort::ExplicitAbortOwner) -> Self {{ self.local_registration = None; self.local_incarnation = std::sync::Arc::new(()); self.explicit_abort = Some(owner); self }} pub fn explicit_abort_recovery_registration(&self) -> Result<{runtime_module}::explicit_abort::ExplicitAbortRecovery, Box<tonic::Status>> {{ self.explicit_abort.as_ref().map(|owner| owner.recovery_registration()).ok_or_else(|| Box::new(tonic::Status::failed_precondition(\"no explicit Abort owner attached\"))) }} pub fn with_authorization(mut self, authorization: {runtime_module}::auth::AuthorizationPolicy) -> Self {{ self.local_registration = None; self.local_incarnation = std::sync::Arc::new(()); self.authorization = authorization.for_declaration::<{declaration}>(); self.reader_registry = None; self.legacy_reader_roots.clear(); self.reader_binding_id = std::sync::Arc::new(()); self }}\n    /// Exposes the existing injected local participant as the legacy control service.\n    pub fn legacy_participant_control_service(&self) -> {runtime_module}::database_proto::participant_server::ParticipantServer<{runtime_module}::durable_participant::DurableActorParticipantHost<P>> {{ {runtime_module}::database_proto::participant_server::ParticipantServer::new({runtime_module}::durable_participant::DurableActorParticipantHost::new(self.participant.clone())) }}\n    /// Exposes a durable legacy Coordinator.Watch service for the exact supplied coordinator identity.\n    pub fn legacy_coordinator_control_service(&self, coordinator_state_type: impl Into<String>, coordinator_state_ref: impl Into<String>) -> Result<{runtime_module}::database_proto::coordinator_server::CoordinatorServer<{runtime_module}::legacy_coordinator::DurableCoordinatorWatchHost<C>>, Box<tonic::Status>> {{ Ok({runtime_module}::database_proto::coordinator_server::CoordinatorServer::new({runtime_module}::legacy_coordinator::DurableCoordinatorWatchHost::new(self.coordinator.sidecar(), coordinator_state_type, coordinator_state_ref)?)) }}\n    /// Registers recovery using only this adapter's injected participant and coordinator.\n    pub fn legacy_recovery_registration<W: {runtime_module}::legacy_coordinator::CoordinatorWatchEndpoint>(&self, metadata: {runtime_module}::application_host::LegacyRecoveryMetadata, watch: std::sync::Arc<W>) -> Result<{runtime_module}::application_host::LegacyDurableRecovery<P, C, R, W>, Box<tonic::Status>> {{ {runtime_module}::application_host::LegacyDurableRecovery::new(self.participant.clone(), self.coordinator.clone(), metadata, watch).map_err(Box::new) }}\n}}\n\n"));
     let local_store_check = if database_methods.is_empty() {
         ""
     } else {
@@ -2873,7 +2937,19 @@ fn emit_transactions(
         )
         .collect::<Vec<_>>()
         .join(", ");
-    output.push_str(&format!("impl<H, P, C, R, F> {runtime_module}::registered_local::GeneratedLocalTransactionAdapter for {adapter}<H, P, C, R, F> where P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{ fn bind_participant_cleanup(&self, binding: &{runtime_module}::application_host::ParticipantCleanupBinding) -> Result<(), tonic::Status> {{ self.participant.bind_host_cleanup(binding) }} fn local_configuration(&self) -> Result<{runtime_module}::registered_local::GeneratedLocalAdapterConfig, tonic::Status> {{ let target = self.participant.actor_target(); if target.state_type != <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE {{ return Err(tonic::Status::failed_precondition(\"participant state type differs from generated declaration\")); }} let sidecar = self.participant.sidecar(); let endpoint = sidecar.database_endpoint().ok_or_else(|| tonic::Status::failed_precondition(\"local registration requires an exact Database endpoint\"))?; {local_store_check} Ok({runtime_module}::registered_local::GeneratedLocalAdapterConfig {{ target, database_endpoint: endpoint.to_owned(), policy: self.authorization.clone(), methods: std::collections::BTreeSet::from([{eligible_local_methods}]), incarnation: self.local_incarnation.clone() }}) }} fn with_local_registration(mut self, binding: {runtime_module}::registered_local::RegisteredAdapterBinding) -> Result<Self, tonic::Status> {{ if self.local_registration.is_some() {{ return Err(tonic::Status::failed_precondition(\"adapter already has local registration\")); }} self.local_registration = Some(binding); Ok(self) }} }}\n"));
+    let shared_root_methods = transactions
+        .iter()
+        .filter_map(|(kind, _, _, _, identity)| match kind {
+            DurableKind::Transaction(metadata)
+                if metadata.mode == TransactionMode::Shared && !metadata.factory =>
+            {
+                Some(format!("{identity:?}.to_owned()"))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    output.push_str(&format!("impl<H, P, C, R, F> {runtime_module}::registered_local::GeneratedLocalTransactionAdapter for {adapter}<H, P, C, R, F> where P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{ fn bind_participant_cleanup(&self, binding: &{runtime_module}::application_host::ParticipantCleanupBinding) -> Result<(), tonic::Status> {{ self.participant.bind_host_cleanup(binding) }} fn local_configuration(&self) -> Result<{runtime_module}::registered_local::GeneratedLocalAdapterConfig, tonic::Status> {{ let target = self.participant.actor_target(); if target.state_type != <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE {{ return Err(tonic::Status::failed_precondition(\"participant state type differs from generated declaration\")); }} let sidecar = self.participant.sidecar(); let endpoint = sidecar.database_endpoint().ok_or_else(|| tonic::Status::failed_precondition(\"local registration requires an exact Database endpoint\"))?; {local_store_check} Ok({runtime_module}::registered_local::GeneratedLocalAdapterConfig {{ target, database_endpoint: endpoint.to_owned(), policy: self.authorization.clone(), methods: std::collections::BTreeSet::from([{eligible_local_methods}]).into_iter().chain(if self.shared_existing_writers {{ vec![{shared_root_methods}] }} else {{ Vec::new() }}).collect(), incarnation: self.local_incarnation.clone() }}) }} fn with_local_registration(mut self, binding: {runtime_module}::registered_local::RegisteredAdapterBinding) -> Result<Self, tonic::Status> {{ if self.local_registration.is_some() {{ return Err(tonic::Status::failed_precondition(\"adapter already has local registration\")); }} self.local_registration = Some(binding); Ok(self) }} }}\n"));
     output.push_str(&format!("impl<H, P, C, R, F> {runtime_module}::registered_local_service::GeneratedLocalTransactionService for {adapter}<H, P, C, R, F> where H: {handler}, P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{ type Service = proto::{server}::{service_name}Server<Self>; fn local_service(&self) -> Self::Service {{ proto::{server}::{service_name}Server::new(self.clone()) }} fn local_inbound_factory(&self) -> std::sync::Arc<dyn {runtime_module}::runtime::InboundTransactionStartFactory> {{ self.root_start.clone() }} }}\n"));
     output.push_str(&format!("impl<H, P, C, R, F> {adapter}<H, P, C, R, F> where P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{ pub fn validate_local_registration(&self) -> Result<(), Box<tonic::Status>> {{ let binding = self.local_registration.as_ref().ok_or_else(|| tonic::Status::failed_precondition(\"adapter has no local registration\"))?; let configuration = <Self as {runtime_module}::registered_local::GeneratedLocalTransactionAdapter>::local_configuration(self)?; binding.validate_configuration(&configuration).map_err(Box::new) }} #[doc(hidden)] pub fn require_local_host_ready(&self) -> Result<(), Box<tonic::Status>> {{ let binding = self.local_registration.as_ref().ok_or_else(|| tonic::Status::failed_precondition(\"adapter has no local registration\"))?; let configuration = <Self as {runtime_module}::registered_local::GeneratedLocalTransactionAdapter>::local_configuration(self)?; binding.require_host_ready(&configuration).map_err(Box::new) }} }}\n"));
 
@@ -3390,6 +3466,57 @@ mod tests {
     use super::*;
     use prost_types::{FileDescriptorProto, MethodDescriptorProto, ServiceDescriptorProto};
     #[test]
+    fn registered_inline_transaction_branches_construct_behind_heap_thunk() {
+        for (writer, declared_error) in [(false, false), (false, true), (true, false), (true, true)] {
+            let mut output = String::new();
+            emit_exclusive_transaction_method(
+                &mut output,
+                TransactionFlow {
+                    method: "apply",
+                    request: "Request",
+                    response: "Response",
+                    method_identity: "example.ActorMethods.Apply",
+                    state: "Actor",
+                    declaration: "Declaration",
+                    runtime_module: "sdk",
+                    mode: "Exclusive",
+                    factory: false,
+                    declared_error,
+                    writer,
+                    inbound: TransactionInbound::Dynamic,
+                    shared_root_ownership_seam: false,
+                    authorize_after_load: true,
+                },
+            );
+            // Both inbound and fresh-root paths must construct before polling,
+            // without storing the whole branch future in the method poll frame.
+            assert_eq!(
+                output
+                    .matches("sdk::runtime::boxed_generated_future(|| async move {")
+                    .count(),
+                2
+            );
+            assert!(!output.contains("Box::pin(async move {"));
+            assert!(!output.contains("tokio::spawn"));
+            assert!(
+                output.find("ticket.consume").unwrap()
+                    < output
+                        .find("boxed_generated_future(|| async move {")
+                        .unwrap()
+            );
+            assert!(output.contains("local.run_registered_authorized_handler"));
+            assert!(output.contains(
+                "boxed_generated_future(|| self.participant.start_local_reusable_preallow("
+            ));
+            assert!(
+                output.contains("boxed_generated_future(|| registration.admitted(local)).await?")
+            );
+            assert!(output.contains("boxed_generated_future(|| local.complete_root("));
+            assert!(output.contains("context.validate_tree_scope()?"));
+        }
+    }
+
+    #[test]
     fn local_ticket_receiver_consumes_before_verifier_and_uses_actual_child() {
         let flow = TransactionFlow {
             method: "apply",
@@ -3454,6 +3581,61 @@ mod tests {
                 < shared.find("if inbound").unwrap()
         );
         assert!(!shared.contains("local_child"));
+    }
+
+    #[test]
+    fn registered_authorization_rechecks_host_before_live_ownership_transfer() {
+        for inbound in [
+            TransactionInbound::KnownLocalInbound,
+            TransactionInbound::Dynamic,
+        ] {
+            let mut output = String::new();
+            emit_transaction_flow(
+                &mut output,
+                TransactionFlow {
+                    method: "withdraw",
+                    request: "WithdrawRequest",
+                    response: "WithdrawResponse",
+                    method_identity: "bank.v1.AccountMethods.Withdraw",
+                    state: "Account",
+                    declaration: "AccountDurableState",
+                    runtime_module: "reboot",
+                    mode: "Exclusive",
+                    factory: false,
+                    declared_error: false,
+                    writer: true,
+                    inbound,
+                    shared_root_ownership_seam: false,
+                    authorize_after_load: true,
+                },
+            );
+            let authorization = output
+                .find("self.authorization.authorize_handler_entry")
+                .unwrap();
+            let recheck = output
+                .find("if authorized_entry.is_some() && let Some(binding)")
+                .unwrap();
+            let ready = output[recheck..]
+                .find("binding.require_host_ready(&configuration)?;")
+                .unwrap()
+                + recheck;
+            assert!(authorization < recheck);
+            assert!(ready < output.find("local.disarm_after_durable_prepare()").unwrap());
+            assert!(ready < output.find("RootHandlerGuard::before_handler").unwrap());
+            assert!(
+                ready
+                    < output
+                        .find("local.with_sequential_reusable_participants")
+                        .unwrap()
+            );
+            assert!(ready < output.find("local.with_live_inbound").unwrap());
+            // Rejection uses the captured StartedLocalTransaction Drop; it must
+            // neither issue Abort nor mint a live Watch reservation to clean up.
+            let admission_rejection =
+                &output[recheck..output.find("if !context.reusable_participants()").unwrap()];
+            assert!(!admission_rejection.contains("abort_local"));
+            assert!(!admission_rejection.contains("handoff_to_durable_recovery"));
+        }
     }
 
     #[test]
@@ -5840,7 +6022,8 @@ mod tests {
         assert!(content.contains("runtime::generated_transactional_unary"));
         assert!(content.contains("let outbound_scope = context.begin_generated_outbound_for("));
         assert!(!content.contains("outbound_scope.completed()"));
-        assert!(content.contains("runtime::generated_transactional_unary(self.resolver.as_ref(), context, outbound_scope, request, &[]).await"));
+        assert!(content.contains("let declared_errors = &[];"));
+        assert!(content.contains("runtime::boxed_generated_future(|| reboot_rust_schema::runtime::generated_transactional_unary(self.resolver.as_ref(), context, outbound_scope, request, declared_errors)).await"));
         assert!(content.contains(
             "target.state_ref(), \"tests.reboot.protoc.CounterWritesMethods.Increment\""
         ));
@@ -5934,6 +6117,17 @@ mod tests {
         assert!(content.contains("into_shared_local_promotion(promotion)"));
         assert!(content.contains("complete_shared_local_promotion(start"));
         assert!(content.contains("async fn increment_fresh_shared("));
+        assert!(content.contains("pub fn with_shared_existing_writers(mut self)"));
+        assert!(content.contains("shared_existing_writers: false"));
+        assert!(content.contains("async fn increment_shared_existing_writers("));
+        assert!(content.contains("_state: &proto::Counter"));
+        assert!(content.contains("RegisteredRoot::admit_shared_existing_writers("));
+        assert!(content.contains("local.with_shared_existing_writers(&mut context).await?"));
+        assert!(content.contains("local.complete_shared_existing_writers("));
+        assert!(content.contains("shared existing writer roots require registered host"));
+        assert!(content.contains("shared existing writer roots exclude inbound execution"));
+        assert!(content.contains("shared existing writer root state must remain unchanged"));
+
         assert!(!content.contains("TransactionContext, state: &mut proto::Counter, request: proto::CounterRequest) -> Result<proto::CounterValue"));
     }
 
@@ -5975,7 +6169,7 @@ mod tests {
                     "let registered_root = None::<{runtime}::explicit_abort::RegisteredRoot<C, R>>;"
                 )));
                 assert!(!content.contains("let registered_root = None;"));
-                assert!(content.contains("registration.admitted(local).await?"));
+                assert!(content.contains("boxed_generated_future(|| registration.admitted(local)).await?"));
             }
         }
     }
@@ -6054,7 +6248,7 @@ mod tests {
         ));
         assert_eq!(content.matches("recover_idempotent_mutations(").count(), 1);
         let admission = content
-            .find("let mut local = self.participant.start_local_reusable_preallow(")
+            .find("let mut local = reboot_rust_schema::runtime::boxed_generated_future(|| self.participant.start_local_reusable_preallow(")
             .unwrap();
         let authorization = content
             .find("self.authorization.authorize(&authorization_context")
@@ -6285,6 +6479,11 @@ mod tests {
                 "foo_typed_transaction_result",
             ),
             (true, "FooFreshShared", "foo_fresh_shared"),
+            (
+                true,
+                "FooSharedExistingWriters",
+                "foo_shared_existing_writers",
+            ),
         ] {
             let response = generate_from_wire(&wire(shared, writer));
             let error = response

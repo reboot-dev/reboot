@@ -15,31 +15,148 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, oneshot};
 use tokio::task::JoinSet;
 use tonic::Status;
 type Work = Pin<Box<dyn Future<Output = Result<(), Status>> + Send>>;
+#[cfg(test)]
+type AdmissionProbe = (
+    std::sync::mpsc::Sender<()>,
+    Arc<Mutex<std::sync::mpsc::Receiver<()>>>,
+);
+// The queue owns the latch, not an async stack local: this Drop runs before
+// captured work/registration and capacity, even if the worker is never polled.
 struct Job {
-    work: Work,
-    reply: oneshot::Sender<Result<(), Status>>,
-    _permit: OwnedSemaphorePermit,
+    cancel: RecoveryCancellation,
+    accounted: bool,
+    work: Option<Work>,
+    reply: Option<oneshot::Sender<Result<(), Status>>>,
+    _permit: Option<OwnedSemaphorePermit>,
+    // Shared work can return captured capacity inside its final poll. Track the
+    // actual Job aggregate until ALL fields have dropped, not the reply/result.
+    #[cfg(feature = "test-support")]
+    _retirement: JobRetirement,
+}
+#[cfg(feature = "test-support")]
+struct JobRetirement(Arc<Mutex<State>>);
+#[cfg(feature = "test-support")]
+impl Drop for JobRetirement {
+    fn drop(&mut self) {
+        self.0.lock().unwrap().owned_jobs -= 1;
+    }
+}
+impl Job {
+    fn new(
+        owner: &ExplicitAbortOwner,
+        work: Work,
+        reply: oneshot::Sender<Result<(), Status>>,
+        permit: Option<OwnedSemaphorePermit>,
+    ) -> Self {
+        // Admission has already established the actual host cancellation owner.
+        let cancel = owner.state.lock().unwrap().host_cancel.clone().unwrap();
+        #[cfg(feature = "test-support")]
+        let retirement = {
+            owner.state.lock().unwrap().owned_jobs += 1;
+            JobRetirement(owner.state.clone())
+        };
+        Self {
+            cancel,
+            accounted: false,
+            work: Some(work),
+            reply: Some(reply),
+            _permit: permit,
+            #[cfg(feature = "test-support")]
+            _retirement: retirement,
+        }
+    }
+    fn fail_before_drop(&mut self) {
+        if !self.accounted {
+            self.cancel.fail();
+            self.accounted = true;
+        }
+    }
+}
+impl Drop for Job {
+    fn drop(&mut self) {
+        self.fail_before_drop();
+    }
+}
+// Aggregate ownership makes Drop run BEFORE the running future (and its root
+// token) or capacity permit can be destroyed, including Tokio abort/unwind.
+// A stack-local latch beside `work` would depend on async generator drop order.
+struct RunningAbort {
+    // Destroy the captured work/root token before returning ordinary capacity.
+    // Drop still latches through job before either field is destroyed.
+    work: Pin<Box<tokio::time::Timeout<Work>>>,
+    job: Job,
+}
+impl RunningAbort {
+    fn new(mut job: Job, timeout: std::time::Duration) -> Self {
+        let work = Box::pin(tokio::time::timeout(timeout, job.work.take().unwrap()));
+        Self { job, work }
+    }
+}
+impl Drop for RunningAbort {
+    fn drop(&mut self) {
+        // The moved Job keeps its latch armed throughout transfer. Latch here
+        // before either aggregate field drops; Job then skips a duplicate fail.
+        self.job.fail_before_drop();
+    }
 }
 struct State {
     active: bool,
+    host_cancel: Option<RecoveryCancellation>,
     receiver: Option<mpsc::Receiver<Job>>,
     registered_roots: std::collections::HashSet<uuid::Uuid>,
+    retained_shared_permits: Vec<OwnedSemaphorePermit>,
+    // Actual queued/running Job lifetime, not transaction/terminal membership.
+    #[cfg(feature = "test-support")]
+    owned_jobs: usize,
 }
 #[derive(Clone)]
 pub struct ExplicitAbortOwner {
     sender: mpsc::Sender<Job>,
     state: Arc<Mutex<State>>,
     capacity: Arc<Semaphore>,
+    limit: usize,
     timeout: std::time::Duration,
     failure: tokio::sync::watch::Sender<Option<Status>>,
+    #[cfg(test)]
+    admission_arrived: Arc<Mutex<Option<AdmissionProbe>>>,
 }
 pub struct ExplicitAbortRecovery {
     owner: ExplicitAbortOwner,
 }
-struct Active(Arc<Mutex<State>>);
+// Captured before future construction, including queued/unpolled work. A
+// failed/dropped shared obligation remains capacity-counted until host restart.
+struct SharedAbortPermit {
+    owner: ExplicitAbortOwner,
+    permit: Option<OwnedSemaphorePermit>,
+    completed: bool,
+}
+impl Drop for SharedAbortPermit {
+    fn drop(&mut self) {
+        if !self.completed
+            && let Some(permit) = self.permit.take()
+        {
+            self.owner
+                .state
+                .lock()
+                .unwrap()
+                .retained_shared_permits
+                .push(permit);
+        }
+    }
+}
+
+struct Active(Arc<Mutex<State>>, Arc<Semaphore>, usize);
 impl Drop for Active {
     fn drop(&mut self) {
-        self.0.lock().unwrap().active = false;
+        let mut state = self.0.lock().unwrap();
+        state.active = false;
+        if (!state.registered_roots.is_empty()
+            || !state.retained_shared_permits.is_empty()
+            || self.1.available_permits() != self.2)
+            && let Some(cancel) = &state.host_cancel
+        {
+            cancel.fail();
+        }
     }
 }
 impl ExplicitAbortOwner {
@@ -54,12 +171,19 @@ impl ExplicitAbortOwner {
             sender,
             state: Arc::new(Mutex::new(State {
                 active: false,
+                host_cancel: None,
                 receiver: Some(receiver),
                 registered_roots: Default::default(),
+                retained_shared_permits: Vec::new(),
+                #[cfg(feature = "test-support")]
+                owned_jobs: 0,
             })),
             capacity: Arc::new(Semaphore::new(capacity)),
+            limit: capacity,
             timeout: std::time::Duration::from_secs(30),
             failure: tokio::sync::watch::channel(None).0,
+            #[cfg(test)]
+            admission_arrived: Arc::new(Mutex::new(None)),
         })
     }
     pub fn with_timeout(mut self, timeout: std::time::Duration) -> Result<Self, Status> {
@@ -90,6 +214,99 @@ impl ExplicitAbortOwner {
         Ok(())
     }
 
+    // The shutdown seal (Active::drop) uses this exact mutex. Check admission
+    // BEFORE taking capacity, and register the root in the same critical section.
+    // Only plain semaphore permits are created here: no participant callbacks,
+    // token/guard destruction, native I/O, or awaits may run under this lock.
+    fn reserve_admission(
+        &self,
+        root: Option<uuid::Uuid>,
+        inactive: &'static str,
+        full: &'static str,
+    ) -> Result<OwnedSemaphorePermit, Status> {
+        #[cfg(test)]
+        {
+            let probe = self.admission_arrived.lock().unwrap().clone();
+            if let Some((arrived, resume)) = probe {
+                arrived.send(()).unwrap();
+                resume
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(std::time::Duration::from_secs(2))
+                    .unwrap();
+            }
+        }
+        let mut state = self.state.lock().unwrap();
+        if !state.active || self.failure.borrow().is_some() {
+            return Err(Status::failed_precondition(inactive));
+        }
+        if root.is_some_and(|root| state.registered_roots.contains(&root)) {
+            return Err(Status::failed_precondition(
+                "root execution already registered",
+            ));
+        }
+        let permit = self
+            .capacity
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| Status::resource_exhausted(full))?;
+        if let Some(root) = root {
+            state.registered_roots.insert(root);
+        }
+        Ok(permit)
+    }
+
+    /// Bounded factual observation of this exact owner's retired obligations.
+    /// This is NOT an admission/authority reservation or a ledger settlement:
+    /// callers must quiesce their producers, and later admission can invalidate
+    /// the observation. Replies/actor availability are not retirement evidence.
+    /// Checks actual state after captured work and capacity permits have dropped;
+    /// never consumes capacity, clears failures, or releases unknown ownership.
+    #[cfg(feature = "test-support")]
+    pub async fn wait_for_idle_for_test(&self, bound: std::time::Duration) -> Result<(), Status> {
+        if bound.is_zero() || bound > std::time::Duration::from_secs(300) {
+            return Err(Status::invalid_argument(
+                "owner idle bound must be nonzero and <=300 seconds",
+            ));
+        }
+        let deadline = tokio::time::Instant::now() + bound;
+        loop {
+            {
+                // Same mutex as admission/sealing and retained obligation Drop.
+                let state = self.state.lock().unwrap();
+                if let Some(error) = self.failure.borrow().clone() {
+                    return Err(error);
+                }
+                // Job destruction may latch only the actual host, not the
+                // owner's watch Sender. Full restored capacity cannot hide it.
+                if state
+                    .host_cancel
+                    .as_ref()
+                    .is_some_and(|cancel| cancel.failure_latched_for_test())
+                {
+                    return Err(Status::unavailable(
+                        "explicit Abort owner has sticky host failure",
+                    ));
+                }
+                if state.registered_roots.is_empty()
+                    && state.retained_shared_permits.is_empty()
+                    && state.owned_jobs == 0
+                    && self.capacity.available_permits() == self.limit
+                {
+                    return Ok(());
+                }
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return Err(Status::deadline_exceeded(
+                    "explicit Abort owner did not retire within bound",
+                ));
+            }
+            // Poll the real predicates, not a decorative completion signal.
+            // Yield lets the owned worker perform work/token/permit destruction.
+            tokio::task::yield_now().await;
+        }
+    }
+
     pub fn recovery_registration(&self) -> ExplicitAbortRecovery {
         ExplicitAbortRecovery {
             owner: self.clone(),
@@ -103,24 +320,23 @@ impl ExplicitAbortOwner {
         context: TransactionContext,
         coordinator: DurableRootCoordinator<C, R>,
     ) -> Result<(), Status> {
-        let permit = match self.capacity.clone().try_acquire_owned() {
+        let permit = match self.reserve_admission(
+            None,
+            "explicit Abort owner is not registered and active; ownership retained",
+            "explicit Abort owner is full; ownership retained",
+        ) {
             Ok(permit) => permit,
-            Err(_) => {
+            Err(error) => {
+                // Never invoke local cleanup while holding the shutdown mutex.
                 local.handoff_to_durable_recovery();
-                self.failure.send_replace(Some(Status::resource_exhausted(
-                    "explicit Abort admission failed; ownership retained",
-                )));
-                return Err(Status::resource_exhausted(
-                    "explicit Abort owner is full; ownership retained",
-                ));
+                if error.code() == tonic::Code::ResourceExhausted {
+                    self.failure.send_replace(Some(Status::resource_exhausted(
+                        "explicit Abort admission failed; ownership retained",
+                    )));
+                }
+                return Err(error);
             }
         };
-        if !self.state.lock().unwrap().active {
-            local.handoff_to_durable_recovery();
-            return Err(Status::failed_precondition(
-                "explicit Abort owner is not registered and active; ownership retained",
-            ));
-        }
         let work = match coordinator.own_explicit_abort(local, context).await {
             Ok(work) => work,
             Err(error) => {
@@ -129,23 +345,20 @@ impl ExplicitAbortOwner {
             }
         };
         let (reply, observer) = oneshot::channel();
-        {
+        let job = Job::new(self, work, reply, Some(permit));
+        let send_result = {
             let state = self.state.lock().unwrap();
             if !state.active {
+                drop(state);
                 return Err(Status::unavailable(
                     "explicit Abort host stopped; ownership retained",
                 ));
             }
-            self.sender
-                .try_send(Job {
-                    work,
-                    reply,
-                    _permit: permit,
-                })
-                .map_err(|_| {
-                    Status::unavailable("explicit Abort host stopped; ownership retained")
-                })?;
-        }
+            self.sender.try_send(job)
+        };
+        // A rejected Job may contain a root token whose Drop takes state.
+        send_result
+            .map_err(|_| Status::unavailable("explicit Abort host stopped; ownership retained"))?;
         #[cfg(feature = "test-support")]
         let _observer_drop = ObserverDrop::new();
         observer.await.map_err(|_| {
@@ -157,6 +370,8 @@ impl ExplicitAbortOwner {
 /// Dropping an unfinished Load never fabricates local participant authority.
 pub struct RegisteredRoot<C: CoordinatorSidecar, R: ParticipantResolver> {
     context: TransactionContext,
+    original_context: TransactionContext,
+    admitted: bool,
     coordinator: DurableRootCoordinator<C, R>,
     reservation: Option<(ExplicitAbortOwner, OwnedSemaphorePermit)>,
     token: Option<RootRegistrationToken>,
@@ -164,9 +379,20 @@ pub struct RegisteredRoot<C: CoordinatorSidecar, R: ParticipantResolver> {
 struct RootRegistrationToken {
     owner: ExplicitAbortOwner,
     root: uuid::Uuid,
+    shared: bool,
+    finished: bool,
 }
 impl Drop for RootRegistrationToken {
     fn drop(&mut self) {
+        if self.shared && !self.finished {
+            if let Some(cancel) = &self.owner.state.lock().unwrap().host_cancel {
+                cancel.fail();
+            }
+            self.owner.failure.send_replace(Some(Status::unavailable(
+                "shared root registration retained without acknowledged completion",
+            )));
+            return;
+        }
         self.owner
             .state
             .lock()
@@ -183,6 +409,8 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> RegisteredRoot<C, R> {
         owner: Option<&ExplicitAbortOwner>,
     ) -> Result<Self, Status> {
         let mut registered = Self {
+            original_context: context.clone(),
+            admitted: false,
             context,
             coordinator,
             reservation: None,
@@ -196,23 +424,12 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> RegisteredRoot<C, R> {
             registered
                 .coordinator
                 .validate_root_registration(participant, &registered.context)?;
-            let permit = owner
-                .capacity
-                .clone()
-                .try_acquire_owned()
-                .map_err(|_| Status::resource_exhausted("registered root owner is full"))?;
-            let mut state = owner.state.lock().unwrap();
-            if !state.active || owner.failure.borrow().is_some() {
-                return Err(Status::failed_precondition(
-                    "registered root owner is not active",
-                ));
-            }
             let root = registered.context.transaction_root_id();
-            if !state.registered_roots.insert(root) {
-                return Err(Status::failed_precondition(
-                    "root execution already registered",
-                ));
-            }
+            let permit = owner.reserve_admission(
+                Some(root),
+                "registered root owner is not active",
+                "registered root owner is full",
+            )?;
             #[cfg(feature = "test-support")]
             if let Some(path) = std::env::var_os("REBOOT_TEST_REGISTERED_LOAD_PENDING") {
                 std::fs::write(
@@ -224,10 +441,62 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> RegisteredRoot<C, R> {
             registered.token = Some(RootRegistrationToken {
                 owner: owner.clone(),
                 root,
+                shared: false,
+                finished: false,
             });
             registered.reservation = Some((owner.clone(), permit));
         }
         Ok(registered)
+    }
+
+    /// Opt-in registration BEFORE Load. A shared execution is not an exclusive
+    /// tree, and only the registered guard may later install outbound authority.
+    pub fn admit_shared_existing_writers<P: ParticipantSidecar>(
+        participant: &crate::durable_participant::DurableActorParticipant<P>,
+        mut context: TransactionContext,
+        coordinator: DurableRootCoordinator<C, R>,
+        owner: &ExplicitAbortOwner,
+    ) -> Result<Self, Status> {
+        if !context.is_fresh_root()
+            || context.mode() != crate::runtime::TransactionMode::Shared
+            || context.headers().idempotency_key.is_some()
+            || context.headers().task_schedule.is_some()
+        {
+            return Err(Status::failed_precondition(
+                "shared existing writers require a fresh non-idempotent shared root",
+            ));
+        }
+        coordinator.validate_root_registration(participant, &context)?;
+        let root = context.transaction_root_id();
+        let permit = owner.reserve_admission(
+            Some(root),
+            "registered shared root owner is not active",
+            "registered shared root owner is full",
+        )?;
+        let original_context = context.clone();
+        let mut token = RootRegistrationToken {
+            owner: owner.clone(),
+            root,
+            shared: true,
+            finished: false,
+        };
+        if let Err(error) = context.bind_shared_writer_root(Arc::new(
+            crate::shared_existing_writer_root::SharedWriterRootPolicy::registered(
+                root,
+                owner.clone(),
+            ),
+        )) {
+            token.finished = true;
+            return Err(error);
+        }
+        Ok(Self {
+            context,
+            original_context,
+            admitted: false,
+            coordinator,
+            reservation: Some((owner.clone(), permit)),
+            token: Some(token),
+        })
     }
 
     pub async fn admitted<P: ParticipantSidecar>(
@@ -235,9 +504,15 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> RegisteredRoot<C, R> {
         mut local: StartedLocalTransaction<P>,
     ) -> Result<RootHandlerGuard<P, C, R>, Status> {
         if let Some((owner, _)) = &self.reservation {
-            self.coordinator
-                .validate_explicit_abort(&local, &self.context)?;
+            if self.context.shared_existing_writer_root() {
+                self.coordinator
+                    .validate_shared_writer_local(&local, &self.context)?;
+            } else {
+                self.coordinator
+                    .validate_explicit_abort(&local, &self.context)?;
+            }
             local.reserve_registered_execution(&self.context).await?;
+            self.admitted = true;
             if !owner.state.lock().unwrap().active || owner.failure.borrow().is_some() {
                 local.handoff_to_durable_recovery();
                 return Err(Status::unavailable(
@@ -247,7 +522,7 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> RegisteredRoot<C, R> {
         }
         Ok(RootHandlerGuard {
             local: Some(local),
-            admission_context: self.context.clone(),
+            admission_context: self.original_context.clone(),
             pre_handler_cleanup: std::sync::atomic::AtomicBool::new(true),
             context: self.context.clone(),
             coordinator: self.coordinator.clone(),
@@ -256,7 +531,20 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> RegisteredRoot<C, R> {
             inbound: None,
             task_dispatcher: std::sync::Mutex::new(None),
             builtin_map_active: None,
+            shared_handler_registration: Mutex::new(None),
         })
+    }
+}
+
+impl<C: CoordinatorSidecar, R: ParticipantResolver> Drop for RegisteredRoot<C, R> {
+    fn drop(&mut self) {
+        // No admitted capability has been transferred to a guard. Dropped Load
+        // uses the participant's own captured cleanup slot, not root fanout.
+        if !self.admitted
+            && let Some(token) = &mut self.token
+        {
+            token.finished = true;
+        }
     }
 }
 
@@ -275,6 +563,12 @@ pub struct RootHandlerGuard<P: ParticipantSidecar, C: CoordinatorSidecar, R: Par
     registration: Option<RootRegistrationToken>,
     task_dispatcher: std::sync::Mutex<Option<crate::one_shot_tasks::OneShotTasks>>,
     builtin_map_active: Option<Arc<std::sync::atomic::AtomicBool>>,
+    shared_handler_registration: Mutex<
+        Option<(
+            crate::registered_local::RegisteredAdapterBinding,
+            crate::registered_local::GeneratedLocalAdapterConfig,
+        )>,
+    >,
     inbound: Option<(
         crate::live_participant::Reservation,
         crate::durable_participant::LiveExecution<P>,
@@ -294,21 +588,18 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
             && let Some(owner) = owner
         {
             // Rejection here is pre-effect and leaves ordinary local Drop armed.
-            let permit =
-                owner.capacity.clone().try_acquire_owned().map_err(|_| {
-                    Status::resource_exhausted("handler cancellation owner is full")
-                })?;
-            if !owner.state.lock().unwrap().active || owner.failure.borrow().is_some() {
-                return Err(Status::failed_precondition(
-                    "handler cancellation owner is not active",
-                ));
-            }
+            let permit = owner.reserve_admission(
+                None,
+                "handler cancellation owner is not active",
+                "handler cancellation owner is full",
+            )?;
             coordinator.validate_explicit_abort(&local, &context)?;
             local.reserve_handler_cancellation(&context).await?;
             // Incarnation validation awaited the participant mutex. Host authority
             // must still be live before granting permission for handler effects.
             let state = owner.state.lock().unwrap();
             if !state.active || owner.failure.borrow().is_some() {
+                drop(state);
                 local.handoff_to_durable_recovery();
                 return Err(Status::unavailable(
                     "handler cancellation owner stopped during admission; ownership retained",
@@ -329,6 +620,7 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
             inbound: None,
             task_dispatcher: std::sync::Mutex::new(None),
             builtin_map_active: None,
+            shared_handler_registration: Mutex::new(None),
         })
     }
     /// Consume a previously executed policy decision against this actual admitted
@@ -377,6 +669,12 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
         F: std::future::Future<Output = T>,
     {
         let (method, request) = call;
+        if self.context.shared_existing_writer_root() && (entry.is_none() || registration.is_none())
+        {
+            return Err(Status::failed_precondition(
+                "shared writer root requires registered authorized handler configuration",
+            ));
+        }
         if entry.is_some() || registration.is_some() {
             let validation = async {
                 let entry = entry.ok_or_else(|| {
@@ -455,6 +753,10 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
                     configuration: configuration.clone(),
                 },
             )?;
+            if self.context.shared_existing_writer_root() {
+                *self.shared_handler_registration.lock().unwrap() =
+                    Some((binding.clone(), configuration.clone()));
+            }
             drop(reservation);
         }
         // No suspension between disarming pre-effect rollback and invoking the
@@ -523,6 +825,7 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
         context: &mut TransactionContext,
     ) -> Result<Self, Status> {
         if context.is_fresh_root()
+            && !context.shared_existing_writer_member()
             && !context.supervised_tree_execution()
             && let Some(token) = self.registration.as_ref()
             && self.reservation.is_some()
@@ -682,6 +985,96 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
         context.install_reusable_policy()?;
         guard.context = context.clone();
         Ok(guard)
+    }
+
+    /// Consumes the actual admitted read-only root; no metadata opt-in.
+    #[doc(hidden)]
+    pub async fn with_shared_existing_writers(
+        mut self,
+        context: &mut TransactionContext,
+    ) -> Result<Self, Status> {
+        if !context.same_ownership_context(&self.admission_context)
+            || !self.context.shared_existing_writer_root()
+            || self.inbound.is_some()
+            || self.registration.is_none()
+            || self.reservation.is_none()
+        {
+            return Err(Status::failed_precondition(
+                "shared writer policy requires the exact registered root guard",
+            ));
+        }
+        self.validate_authorized_handler_owner()?;
+        let local = self.local.as_ref().unwrap();
+        self.coordinator
+            .validate_shared_writer_local(local, &self.context)?;
+        if local.state().is_none() {
+            return Err(Status::failed_precondition(
+                "shared writer root requires an existing actor",
+            ));
+        }
+        *context = self.context.clone();
+        context.install_shared_writer_execution(crate::durable_coordinator::ParticipantTarget {
+            state_type: local.actor_state_type().to_owned(),
+            state_ref: local.actor_state_ref().to_owned(),
+        })?;
+        self.context = context.clone();
+        Ok(self)
+    }
+
+    fn validate_shared_handler_registration(&self) -> Result<(), Status> {
+        let registration = self.shared_handler_registration.lock().unwrap();
+        let (binding, config) = registration.as_ref().ok_or_else(|| {
+            Status::failed_precondition(
+                "shared completion requires actual registered authorized handler execution",
+            )
+        })?;
+        binding.require_host_ready(config)
+    }
+
+    /// The only shared-with-writers completion path. No caller membership list.
+    pub async fn complete_shared_existing_writers(
+        mut self,
+        start: crate::durable_coordinator::RootCoordinatorStart,
+    ) -> Result<(), Status> {
+        if let Some(status) = self.context.doomed_status() {
+            return Err(status);
+        }
+        self.validate_shared_handler_registration()?;
+        self.validate_authorized_handler_owner()?;
+        let local = self
+            .local
+            .as_ref()
+            .ok_or_else(|| Status::failed_precondition("root guard consumed"))?;
+        self.coordinator
+            .validate_shared_writer_start(&start, local, &self.context)?;
+        // Empty effects classify unchanged Bank read-only, never promote it.
+        local
+            .stage(crate::durable_participant::PendingActorEffects::default())
+            .await?;
+        local
+            .validate_authorized_handler_execution(&self.context)
+            .await?;
+        self.validate_authorized_handler_owner()?;
+        let receipt = crate::shared_existing_writer_root::SettledSharedWriterRoot::from_guard(
+            start,
+            self.context.clone(),
+        )?;
+        local.end_execution().await?;
+        self.validate_authorized_handler_owner()?;
+        self.validate_shared_handler_registration()?;
+        // No await between revocation and durable-unknown, BEFORE construction
+        // of any coordinator future which may start durable I/O.
+        self.handoff_to_durable_recovery();
+        let committed = self
+            .coordinator
+            .complete_shared_writer_outcome(receipt, self.local.as_ref().unwrap())
+            .await?;
+        self.completed()?;
+        if committed {
+            Ok(())
+        } else {
+            Err(Status::aborted("participant rejected Prepare"))
+        }
     }
 
     /// Seal descendants and encode the local plus transitive participant union.
@@ -865,6 +1258,11 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
         &self,
         tasks: &crate::one_shot_tasks::OneShotTasks,
     ) -> Result<(), Status> {
+        if self.context.shared_existing_writer_member() {
+            return Err(Status::failed_precondition(
+                "shared existing writer execution excludes tasks",
+            ));
+        }
         if !self.context.tree_owned() {
             return Err(Status::failed_precondition("tree task authority missing"));
         }
@@ -956,6 +1354,9 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
             return Err(error);
         }
         self.reservation.take();
+        if let Some(token) = &mut self.registration {
+            token.finished = true;
+        }
         Ok(())
     }
     /// Consuming completion owns the only public handoff path. Membership is
@@ -1053,6 +1454,34 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
             .local
             .as_ref()
             .ok_or_else(|| Status::failed_precondition("execution closed"))?;
+        if self.context.shared_existing_writer_member()
+            && (!effects.task_upserts.is_empty() || !effects.idempotent_mutations.is_empty())
+        {
+            let error = Status::failed_precondition(
+                "shared existing writers exclude tasks and idempotency",
+            );
+            self.context.doom(error.clone());
+            return Err(error);
+        }
+        if self.context.shared_existing_writer_root() {
+            if effects
+                .state
+                .as_deref()
+                .is_some_and(|state| Some(state) != local.state())
+                || !effects.task_upserts.is_empty()
+                || !effects.idempotent_mutations.is_empty()
+            {
+                let error = Status::failed_precondition(
+                    "shared writer root must remain unchanged without tasks or idempotency",
+                );
+                self.context.doom(error.clone());
+                return Err(error);
+            }
+            // Do not pass an unchanged explicit state as a writer effect.
+            return local
+                .stage(crate::durable_participant::PendingActorEffects::default())
+                .await;
+        }
         if self.context.reusable_participants() {
             // Fresh registered roots have no inbound Watch. Retained leaves
             // must still prove their reserved live execution on every stage.
@@ -1066,7 +1495,7 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
                     "reusable execution requires live guard",
                 ));
             }
-            self.context.validate_open_task_branch()?;
+            self.context.validate_open_shared_writer_branch()?;
             if !effects.task_upserts.is_empty() {
                 let tasks = self
                     .task_dispatcher
@@ -1187,6 +1616,19 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
     }
 
     #[cfg(test)]
+    pub(crate) fn test_shared_local(&self) -> &StartedLocalTransaction<P> {
+        self.local.as_ref().unwrap()
+    }
+    #[cfg(test)]
+    pub(crate) fn test_shared_coordinator(&self) -> &DurableRootCoordinator<C, R> {
+        &self.coordinator
+    }
+    #[cfg(test)]
+    pub(crate) fn test_shared_registration(&self) -> Result<(), Status> {
+        self.validate_shared_handler_registration()
+    }
+
+    #[cfg(test)]
     pub(crate) fn test_handoff(&mut self) {
         self.handoff_to_durable_recovery();
     }
@@ -1277,6 +1719,14 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver> Drop
                 owner.failure.send_replace(Some(Status::unavailable(
                     "root cancelled or failed after durable handoff; ownership retained",
                 )));
+                if self.context.shared_existing_writer_root() {
+                    owner
+                        .state
+                        .lock()
+                        .unwrap()
+                        .retained_shared_permits
+                        .push(permit);
+                }
                 return;
             }
             let local = self.local.take().unwrap();
@@ -1316,9 +1766,23 @@ impl ExplicitAbortOwner {
             self.failure.send_replace(Some(error.clone()));
             return Err(error);
         }
-        // Own the disarmed capability even before the worker's first poll.
+        let shared = context.shared_existing_writer_root();
+        let (job_permit, shared_permit) = if shared {
+            (
+                None,
+                Some(SharedAbortPermit {
+                    owner: self.clone(),
+                    permit: Some(permit),
+                    completed: false,
+                }),
+            )
+        } else {
+            (Some(permit), None)
+        };
+        // Own the disarmed capability and capacity even before the first poll.
         let work = Box::pin(async move {
-            let _registration = registration;
+            let mut shared_permit = shared_permit;
+            let mut registration = registration;
             if registered {
                 context.wait_branch_quiescent().await;
                 local.end_execution().await?;
@@ -1330,14 +1794,19 @@ impl ExplicitAbortOwner {
             } else {
                 coordinator.own_explicit_abort(local, context).await?
             };
-            work.await
+            let result = work.await;
+            if result.is_ok() {
+                if let Some(token) = &mut registration {
+                    token.finished = true;
+                }
+                if let Some(permit) = &mut shared_permit {
+                    permit.completed = true;
+                }
+            }
+            result
         });
         let (reply, observer) = oneshot::channel();
-        let job = Job {
-            work,
-            reply,
-            _permit: permit,
-        };
+        let job = Job::new(self, work, reply, job_permit);
         let state = self.state.lock().unwrap();
         let result = if state.active && self.failure.borrow().is_none() {
             self.sender.try_send(job)
@@ -1370,9 +1839,14 @@ impl HostRecovery for ExplicitAbortRecovery {
                 Status::failed_precondition("explicit Abort owner already registered")
             })?;
             state.active = true;
+            state.host_cancel = Some(cancel.clone());
             receiver
         };
-        let active = Active(self.owner.state.clone());
+        let active = Active(
+            self.owner.state.clone(),
+            self.owner.capacity.clone(),
+            self.owner.limit,
+        );
         let timeout = self.owner.timeout;
         let mut failure = self.owner.failure.subscribe();
         supervisor.spawn(async move {
@@ -1380,8 +1854,30 @@ impl HostRecovery for ExplicitAbortRecovery {
             loop {
                 if let Some(error) = failure.borrow().clone() { return Err(error); }
                 let job = tokio::select! { biased; _ = cancel.cancelled() => return Ok(()), changed = failure.changed() => { let _ = changed; return Err(failure.borrow().clone().unwrap_or_else(|| Status::unavailable("explicit Abort owner failed"))); }, job = receiver.recv() => match job { Some(job) => job, None => return Ok(()) } };
-                let result = tokio::select! { biased; _ = cancel.cancelled() => return Ok(()), changed = failure.changed() => { let _ = changed; return Err(failure.borrow().clone().unwrap_or_else(|| Status::unavailable("explicit Abort owner failed"))); }, result = tokio::time::timeout(timeout, job.work) => result.unwrap_or_else(|_| Err(Status::deadline_exceeded("explicit Abort timed out; ownership retained"))) };
-                let _ = job.reply.send(result.clone());
+                // Keep the owned work OUTSIDE select: select destroys losing
+                // branch futures before executing the winning branch body.
+                // Latch uncertainty while the running job still owns its token
+                // and permit, even for non-shared registered abandonment.
+                let mut running = RunningAbort::new(job, timeout);
+                let result = tokio::select! { biased;
+                    _ = cancel.cancelled() => {
+                        cancel.fail();
+                        return Ok(());
+                    },
+                    changed = failure.changed() => {
+                        let _ = changed;
+                        cancel.fail();
+                        return Err(failure.borrow().clone().unwrap_or_else(|| Status::unavailable("explicit Abort owner failed")));
+                    },
+                    result = &mut running.work => result.unwrap_or_else(|_| Err(Status::deadline_exceeded("explicit Abort timed out; ownership retained"))),
+                };
+                if result.is_err() {
+                    cancel.fail();
+                }
+                let _ = running.job.reply.take().unwrap().send(result.clone());
+                // Known success needs no latch. Known failure was latched above;
+                // observer loss is not cancellation of acknowledged owned work.
+                running.job.accounted = true;
                 result?;
             }
         });
@@ -1428,11 +1924,7 @@ mod tests {
         let (reply, observer) = oneshot::channel();
         owner
             .sender
-            .try_send(Job {
-                work,
-                reply,
-                _permit: permit,
-            })
+            .try_send(Job::new(owner, work, reply, Some(permit)))
             .ok()
             .unwrap();
         observer
@@ -1532,3 +2024,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "host_explicit_abort_shutdown_tests.rs"]
+mod host_explicit_abort_shutdown_tests;

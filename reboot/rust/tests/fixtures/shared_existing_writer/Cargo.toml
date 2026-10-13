@@ -1,0 +1,15 @@
+[package]
+name = "shared-existing-writer-acceptance"
+version = "0.0.0"
+edition = "2024"
+[workspace]
+[build-dependencies]
+reboot = { package = "reboot-rust-schema", path = "../../..", features = ["build"] }
+[dependencies]
+reboot = { package = "reboot-rust-schema", path = "../../..", features = ["test-support"] }
+prost = "0.13"
+prost-types = "0.13"
+tonic = "0.12"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync"] }
+uuid = { version = "1", features = ["v4"] }
+tempfile = "3"

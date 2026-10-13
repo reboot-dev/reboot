@@ -12,7 +12,66 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
-## Shared roots, stable actor gate and host-owned cleanup (2026-10-12)
+## Sealed shared-writer ownership and fail-closed retirement (2026-10-13)
+
+The registered, opt-in shared-root/existing-exclusive-writer prerequisite is
+integrated with crate-sealed root policy, consuming guard ownership, retained
+lease rollback/reupgrade and immutable-decision/acknowledgement accounting.
+Caller metadata, an arbitrary participant list or a mode string does not confer
+writer authority. This is a bounded registered-local prerequisite, **not public
+shared `Bank.Transfer` acceptance**, arbitrary shared/factory/nested composition,
+remote execution, full SDK parity or production readiness.
+
+Explicit Abort admission and sealing are atomic on their supported paths. Queued
+and running ordinary work latch shutdown uncertainty before captured work/root
+ownership is destroyed; running Work is destroyed before Job returns capacity.
+Known-result accounting preserves healthy completion and observer-loss behavior.
+Actual Job lifetime is separately observed in test-support so reply delivery or
+early shared-capacity return cannot masquerade as physical owner retirement.
+These idle helpers are read-only observations requiring quiesced producers,
+not authority reservations or ledger settlement. Mutex poisoning/stalls, timer-constructor/arbitrary panic and
+the actual five-second forced fallback are not certified by this checkpoint.
+
+Generated registered entrypoints recheck host readiness after authorization and
+before relinquishing pristine cleanup ownership. The exercised Allow-after-
+revocation case rejects before native Abort/Prepare/Commit and permits an
+independent same-store Account write from 100 to 101. This check is not atomic
+across every subsequent await and does not generalize to every entry branch.
+Unresolved raw-root membership can honestly fail host shutdown even when a
+pristine Account is reusable; uncertain affected ownership remains excluded.
+
+Owned inline heap-construction boundaries close the four generated A→B→C chain
+stack-overflow regressions in the real native suite. No stack limit was increased
+and no child future was detached/spawned. This establishes regression success,
+not a measured frame-size reduction or a universal recursion-depth guarantee.
+
+Fresh source-bound acceptance comprises **23 named gates**, including three
+inventory/discovery gates: SDK library **628 passed / 0 failed / 3 ignored**;
+generated downstream **51 passed** plus its separate outer harness; default-
+feature-disabled check; strict SDK, native-consumer, map-consumer and examples
+Clippy; and **54 selected canonical Database tests** (registered 20, shared-writer
+24, retained-writer 2, effects restart 1, SortedMap 3 and compatibility/ACK-loss B1
+4). These selected counts do not recertify the older full 152-test inventory.
+
+Current public Legacy happy/restart, Hello Constructors and Hello Tasks passed.
+The unchanged strict Legacy crash suite passed all five windows in a fresh run,
+with all 13 sessions reconciled. An earlier run failed because a Database birth
+receipt was unobserved; that failure remains a failure. The successful rerun is
+bounded execution evidence, **not a fix or reliability guarantee for process-birth
+observation**. Experimental traced receipt backends and rejecting containment
+stubs remain outside the implementation and this checkpoint. All 13 pinned
+upstream/local example inputs were revalidated at
+`5c332a2910122d6035799bfaf2a314bf1de830b8`; shared `Bank.Transfer` still rejects
+with its exact unsupported declared-error diagnostic.
+
+Evidence: [sealed ownership checkpoint](tests/evidence/sealed-ownership-checkpoint-20261013.json).
+Source, canonical Database and log hashes match across all three accepted stages;
+769 recorded PID/birth identities were independently absent, including zombies.
+Independent applied-source review is bounded, not a universal safety proof.
+GitHub CI/fork approval and current merge-result validation remain separate;
+PR #216 stays draft.
+
+## Historical shared roots, stable actor gate and host-owned cleanup (2026-10-12)
 
 The bounded per-root participant registry, clone-shared actor-gate binding and
 host-owned local cleanup are integrated and behaviorally verified. Compatibility
@@ -4417,7 +4476,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: e6d89403898f25660b649fc37cbef115b0fc03d67aedc5efa1a7b5cb4433b336 -->
+<!-- parity-source-sha256: f00ce553c074c36c6aaa8d1e2fd0fcd1a1048a2f535112277b1eb9fcd60c114e -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

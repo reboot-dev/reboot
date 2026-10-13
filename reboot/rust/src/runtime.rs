@@ -181,6 +181,7 @@ pub struct TransactionContext {
     admitted_actor: Option<crate::durable_coordinator::ParticipantTarget>,
     sequential_root_star: bool,
     sequential_reusable: bool,
+    shared_writer_root: Option<Arc<crate::shared_existing_writer_root::SharedWriterRootPolicy>>,
     builtin_map_admission: Option<BuiltinMapAdmission>,
     handler_lifetime: Option<tokio::sync::watch::Receiver<bool>>,
     handler_ancestors: Arc<[tokio::sync::watch::Receiver<bool>]>,
@@ -617,13 +618,17 @@ where
     Resp: Message + Default + Send + 'static,
 {
     let call = async {
-        let result = Box::pin(generated_transactional_unary_inner(
-            resolver,
-            context,
-            &mut scope,
-            message,
-            declared_errors,
-        ))
+        // Same-host services poll their generated handler inline. Keep inner
+        // transport-future construction scratch out of this enclosing poll frame.
+        let result = boxed_generated_future(|| {
+            generated_transactional_unary_inner(
+                resolver,
+                context,
+                &mut scope,
+                message,
+                declared_errors,
+            )
+        })
         .await;
         // Recoverable errors return the actual Status after private settlement.
         // Every other failed outcome dooms even a handler which catches it.
@@ -689,16 +694,18 @@ where
                     + Send
                     + '_,
             >,
-        > = Box::pin(consume_generated_transactional_unary(
-            service,
-            terminal_evidence,
-            request,
-            path,
-            context,
-            scope,
-            &target,
-            declared_errors,
-        ));
+        > = boxed_generated_future(|| {
+            consume_generated_transactional_unary(
+                service,
+                terminal_evidence,
+                request,
+                path,
+                context,
+                scope,
+                &target,
+                declared_errors,
+            )
+        });
         return call.await;
     }
     let (channel, request) = scoped_generated_transactional_outbound_request(
@@ -927,6 +934,11 @@ async fn transactional_outbound_request_inner<R: TransactionalChannelResolver, M
         ));
     }
     context.require_outbound_allowed()?;
+    if context.shared_existing_writer_root() {
+        return Err(Status::failed_precondition(
+            "shared writer root requires exact registered local dispatch",
+        ));
+    }
     let mut headers = context.headers().clone();
     headers.state_ref = state_ref.to_owned();
     let metadata = headers
@@ -993,6 +1005,7 @@ impl TransactionContext {
             admitted_actor: None,
             sequential_root_star: false,
             sequential_reusable: false,
+            shared_writer_root: None,
             builtin_map_admission: None,
         })
     }
@@ -1117,6 +1130,11 @@ impl TransactionContext {
             && self.admitted_actor == other.admitted_actor
             && self.sequential_root_star == other.sequential_root_star
             && self.sequential_reusable == other.sequential_reusable
+            && match (&self.shared_writer_root, &other.shared_writer_root) {
+                (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+                (None, None) => true,
+                _ => false,
+            }
             && self.supervised_inbound_headers == other.supervised_inbound_headers
             && self.supervised_tree == other.supervised_tree
             && self.live_leaf == other.live_leaf
@@ -1151,6 +1169,74 @@ impl TransactionContext {
 
     pub(crate) fn tree_owned(&self) -> bool {
         self.supervised_tree
+            || (self.shared_existing_writer_root() && self.admitted_actor.is_some())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_shared_confirmed_membership(
+        &self,
+        returned: Vec<crate::durable_coordinator::ReturnedParticipant>,
+    ) {
+        assert!(self.shared_existing_writer_root());
+        let mut ledger = self.returned_participants.as_ref().unwrap().lock().unwrap();
+        assert!(!ledger.sealed && ledger.active == 0);
+        for p in returned {
+            ledger
+                .participants
+                .entry(p.target)
+                .and_modify(|r| *r &= p.read_only)
+                .or_insert(p.read_only);
+        }
+    }
+
+    pub(crate) fn shared_existing_writer_member(&self) -> bool {
+        self.shared_writer_root.is_some()
+    }
+
+    pub(crate) fn shared_existing_writer_root(&self) -> bool {
+        self.mode == TransactionMode::Shared
+            && self.transaction_ids().len() == 1
+            && self.shared_writer_root.is_some()
+    }
+
+    pub(crate) fn bind_shared_writer_root(
+        &mut self,
+        policy: Arc<crate::shared_existing_writer_root::SharedWriterRootPolicy>,
+    ) -> Result<(), Status> {
+        if !self.is_fresh_root()
+            || self.mode != TransactionMode::Shared
+            || self.headers.idempotency_key.is_some()
+            || self.shared_writer_root.is_some()
+        {
+            return Err(Status::failed_precondition(
+                "shared writer root requires fresh non-idempotent shared execution",
+            ));
+        }
+        self.shared_writer_root = Some(policy);
+        Ok(())
+    }
+
+    pub(crate) fn install_shared_writer_execution(
+        &mut self,
+        actor: crate::durable_coordinator::ParticipantTarget,
+    ) -> Result<(), Status> {
+        if !self.shared_existing_writer_root()
+            || actor.state_ref != self.headers.state_ref
+            || actor.state_type != self.transaction_coordinator_state_type()
+        {
+            return Err(Status::failed_precondition(
+                "shared writer execution identity differs",
+            ));
+        }
+        self.shared_writer_root
+            .as_ref()
+            .unwrap()
+            .validate(self.transaction_root_id())?;
+        self.admitted_actor = Some(actor);
+        self.sequential_root_star = true;
+        self.sequential_reusable = true;
+        self.enable_read_only_aware();
+        Ok(())
     }
 
     // This is revocation only, never same-host registration or policy authority.
@@ -1307,8 +1393,39 @@ impl TransactionContext {
         Ok(())
     }
 
+    pub(crate) fn validate_open_shared_writer_branch(&self) -> Result<(), Status> {
+        self.validate_handler_lifetime()?;
+        if !self.shared_existing_writer_member() {
+            return self.validate_open_task_branch();
+        }
+        if let Some(error) = self.doomed_status() {
+            return Err(error);
+        }
+        let ledger = self
+            .returned_participants
+            .as_ref()
+            .ok_or_else(|| Status::failed_precondition("shared writer branch missing"))?
+            .lock()
+            .unwrap();
+        if ledger.sealed
+            || ledger.active != 0
+            || ledger.membership_uncertain
+            || ledger.late_enlistment
+        {
+            return Err(Status::failed_precondition(
+                "shared writer branch not quiescent and certain",
+            ));
+        }
+        Ok(())
+    }
+
     pub(crate) fn validate_open_task_branch(&self) -> Result<(), Status> {
         self.validate_handler_lifetime()?;
+        if self.shared_existing_writer_member() {
+            return Err(Status::failed_precondition(
+                "shared existing writer execution excludes tasks",
+            ));
+        }
         self.validate_tree_scope()?;
         if let Some(error) = self.doomed_status() {
             return Err(error);
@@ -1380,6 +1497,18 @@ impl TransactionContext {
     }
     fn require_outbound_allowed(&self) -> Result<(), Status> {
         self.validate_handler_lifetime()?;
+        if self.shared_existing_writer_root() {
+            self.shared_writer_root
+                .as_ref()
+                .unwrap()
+                .validate(self.transaction_root_id())?;
+            if self.admitted_actor.is_none() {
+                return Err(Status::failed_precondition(
+                    "shared writer root not admitted",
+                ));
+            }
+            self.require_registered_outbound()?;
+        }
         if self.live_leaf {
             let status = Status::failed_precondition("live inbound leaf cannot call descendants");
             self.doom(status.clone());
@@ -1626,9 +1755,9 @@ impl TransactionContext {
         state_type: &str,
         state_ref: &str,
     ) -> Result<(), Status> {
-        if !self.supervised_tree
+        if !self.tree_owned()
             || !(self.is_fresh_root() || self.supervised_inbound_at_depth(2))
-            || self.mode != TransactionMode::Exclusive
+            || (self.mode != TransactionMode::Exclusive && !self.shared_existing_writer_root())
             || self.headers.idempotency_key.is_some()
             || !self.headers.coordinator_read_only_aware
             || self.doomed_status().is_some()
@@ -1742,7 +1871,8 @@ impl TransactionContext {
         let mut state = collection
             .lock()
             .expect("returned participant mutex poisoned");
-        if state.sealed || state.active != 0 || state.membership_uncertain {
+        if state.sealed || state.active != 0 || state.membership_uncertain || state.late_enlistment
+        {
             return Err(Status::failed_precondition(
                 "unsupported explicit-abort uncertainty: collection sealed or generated outbound calls still active; ownership retained",
             ));
@@ -1796,7 +1926,8 @@ impl TransactionContext {
         let mut state = collection
             .lock()
             .expect("returned participant mutex poisoned");
-        if !state.sealed || state.active != 0 || state.late_enlistment {
+        if !state.sealed || state.active != 0 || state.late_enlistment || state.membership_uncertain
+        {
             return Err(Status::failed_precondition(
                 "late enlistment retained; explicit cleanup is incomplete",
             ));
@@ -1814,6 +1945,15 @@ impl TransactionContext {
         &self,
         returned: &crate::successful_trailers::ReturnedParticipants,
     ) {
+        if self.shared_existing_writer_member() {
+            self.doom(Status::failed_precondition(
+                "shared writer membership requires actual consumed host ticket terminal",
+            ));
+            if let Some(ledger) = &self.returned_participants {
+                ledger.lock().unwrap().membership_uncertain = true;
+            }
+            return;
+        }
         if self.live_leaf {
             self.doom(Status::failed_precondition(
                 "live inbound leaf cannot enlist descendants",
@@ -2043,7 +2183,7 @@ impl TransactionContext {
     pub fn take_returned_participants(
         &self,
     ) -> Vec<crate::durable_coordinator::ReturnedParticipant> {
-        if self.supervised_tree {
+        if self.tree_owned() || self.shared_existing_writer_member() {
             return self.returned_participants_snapshot();
         }
         self.returned_participants
@@ -2150,6 +2290,9 @@ impl TransactionContext {
             sequential_root_star: self.sequential_root_star,
             sequential_reusable: self.sequential_reusable,
             builtin_map_admission: None,
+            // Preserve sealed membership restrictions on this shared ledger.
+            // The longer path is not root authority, and outbound is cleared.
+            shared_writer_root: self.shared_writer_root.clone(),
         })
     }
 }

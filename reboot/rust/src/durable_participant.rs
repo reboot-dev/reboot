@@ -432,6 +432,10 @@ struct ReusableCalls {
     snapshot: PendingActorEffects,
     snapshot_staged: bool,
     snapshot_disposition: PendingDisposition,
+    // Admission cancellation restores both the observation lease and the prior
+    // call incarnation, without changing the stable root Watch owner.
+    snapshot_shared: bool,
+    snapshot_owner: Option<Uuid>,
     call_staged: bool,
     completed: std::collections::BTreeMap<Uuid, bool>,
 }
@@ -645,7 +649,7 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
             .lock_root(self.transaction_id)
             .await;
         if !context.is_fresh_root()
-            || !self.admitted_explicit_root_scope
+            || !(self.admitted_explicit_root_scope || context.shared_existing_writer_root())
             || self.participant.state_type != context.transaction_coordinator_state_type()
             || self.participant.state_ref != context.transaction_coordinator_state_ref()
             || !(self.armed || self.cancellation_authority)
@@ -655,6 +659,10 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
                     && current.local_owner == Some(self.local_owner)
                     && current.transaction_ids.len() == 1
                     && !current.prepared
+                    && (!context.shared_existing_writer_root()
+                        || (current.fresh_shared_local
+                            && current.lock.is_shared()
+                            && !current.has_native_ownership()))
                     && current.coordinator_state_type
                         == context.transaction_coordinator_state_type()
                     && current.coordinator_state_ref == context.transaction_coordinator_state_ref()
@@ -688,6 +696,23 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
         self.reserve_cancellation(context, false).await
     }
 
+    /// Exact local-only read-only Prepare for the consuming owned-root path.
+    /// Never resolve/reacquire this actor and never turn read-only metadata into
+    /// writable native Prepare authority.
+    pub(crate) async fn prepare_owned_read_only(&self) -> Result<bool, Status> {
+        self.participant
+            .prepare_checked_slot(
+                self.transaction_id,
+                true,
+                true,
+                None,
+                Some(self.local_owner),
+                Some(self.cleanup_slot.clone()),
+            )
+            .await
+            .map(|outcome| matches!(outcome, PrepareOutcome::DefinitiveAbort))
+    }
+
     pub(crate) async fn reserve_registered_execution(
         &mut self,
         context: &crate::runtime::TransactionContext,
@@ -707,7 +732,8 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
             .await;
         if !self.armed
             || !context.is_fresh_root()
-            || !self.admitted_explicit_root_scope
+            || !(self.admitted_explicit_root_scope
+                || (execution && context.shared_existing_writer_root()))
             || self.participant.state_type != context.transaction_coordinator_state_type()
             || self.participant.state_ref != context.transaction_coordinator_state_ref()
             || self.participant.state_ref != context.headers().state_ref
@@ -717,6 +743,10 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
                     && current.local_owner == Some(self.local_owner)
                     && current.transaction_ids.len() == 1
                     && !current.prepared
+                    && (!context.shared_existing_writer_root()
+                        || (current.fresh_shared_local
+                            && current.lock.is_shared()
+                            && !current.has_native_ownership()))
                     && current.coordinator_state_type
                         == context.transaction_coordinator_state_type()
                     && current.coordinator_state_ref == context.transaction_coordinator_state_ref()
@@ -847,8 +877,29 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
             .pending
             .lock_root(self.transaction_id)
             .await;
+        // The private policy is validated through its existing execution installer,
+        // on a clone only: metadata cannot mint it, and an inactive/unregistered
+        // owner cannot keep using a previously installed policy. Do not widen the
+        // ordinary Exclusive admission to generic Shared execution.
+        let shared_root = context.shared_existing_writer_root()
+            && context.is_fresh_root()
+            && context.tree_owned()
+            && context.headers().idempotency_key.is_none()
+            && context.headers().task_schedule.is_none()
+            && context.headers().coordinator_read_only_aware
+            && self.participant.state_type == context.transaction_coordinator_state_type()
+            && self.participant.state_ref == context.transaction_coordinator_state_ref()
+            && self.cancellation_authority
+            && Arc::ptr_eq(
+                &self.cleanup_slot,
+                &self.participant.pending.lookup(self.transaction_id),
+            )
+            && context
+                .clone()
+                .install_shared_writer_execution(self.participant.actor_target())
+                .is_ok();
         if self.handed_off
-            || context.mode() != TransactionMode::Exclusive
+            || !(context.mode() == TransactionMode::Exclusive || shared_root)
             || self.participant.state_ref != context.headers().state_ref
             || !pending.as_ref().is_some_and(|current| {
                 current.root_id == self.transaction_id
@@ -859,7 +910,26 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
                         == context.transaction_coordinator_state_type()
                     && current.coordinator_state_ref == context.transaction_coordinator_state_ref()
                     && current.execution_active
-                    && current.disposition == PendingDisposition::Commit
+                    && if shared_root {
+                        current.transaction_ids == [self.transaction_id]
+                            && current.fresh_shared_local
+                            && current.reusable.is_none()
+                            && current.lock.is_shared()
+                            && current.no_terminal_retry
+                            && !current.factory
+                            && !current.has_native_ownership()
+                            && current.loaded_state.is_some()
+                            && current.loaded_state == self.state
+                            && current.shared_release_is_safe()
+                            && current.disposition
+                                == if current.staged {
+                                    PendingDisposition::ReadOnly
+                                } else {
+                                    PendingDisposition::Commit
+                                }
+                    } else {
+                        current.disposition == PendingDisposition::Commit
+                    }
                     && !current.prepared
                     && !current.terminal_attempted
                     && !current
@@ -1291,6 +1361,40 @@ impl<C: ParticipantSidecar> SharedLocalPromotion<C> {
     }
 }
 
+// Used by both failed promotion and cancellation. The captured slot is already
+// locked; stale call/root incarnations and native ownership can never restore.
+fn restore_reusable_admission(pending: &mut Option<Pending>, root: Uuid, owner: Uuid) -> bool {
+    if !pending.as_ref().is_some_and(|current| {
+        current.root_id == root
+            && current.local_owner == Some(owner)
+            && !current.has_native_ownership()
+            && current
+                .reusable
+                .as_ref()
+                .is_some_and(|calls| calls.admitting)
+    }) {
+        return false;
+    }
+    let mut current = pending.take().unwrap();
+    let calls = current.reusable.as_mut().unwrap();
+    current.effects = calls.snapshot.clone();
+    current.staged = calls.snapshot_staged;
+    current.disposition = calls.snapshot_disposition;
+    current.local_owner = calls.snapshot_owner;
+    if calls.snapshot_shared {
+        current.lock = match current.lock {
+            PendingLock::Exclusive(lease) => PendingLock::Shared(lease.downgrade()),
+            shared @ PendingLock::Shared(_) => shared,
+        };
+    }
+    calls.admitting = false;
+    calls.call_staged = false;
+    current.transaction_ids.truncate(1);
+    current.execution_active = false;
+    *pending = Some(current);
+    true
+}
+
 impl<C: ParticipantSidecar> Drop for StartedLocalTransaction<C> {
     fn drop(&mut self) {
         // Exact slot allocation plus root/owner predicates; no native downgrade.
@@ -1313,21 +1417,7 @@ impl<C: ParticipantSidecar> Drop for StartedLocalTransaction<C> {
             let mut pending = slot.lock_owned().await;
             if armed {
                 participant.release_undurable(&mut pending, root, owner);
-            } else if let Some(current) = pending.as_mut().filter(|p| {
-                p.root_id == root && p.local_owner == Some(owner) && !p.has_native_ownership()
-            }) && current
-                .reusable
-                .as_ref()
-                .is_some_and(|calls| calls.admitting)
-            {
-                let calls = current.reusable.as_mut().unwrap();
-                current.effects = calls.snapshot.clone();
-                current.staged = calls.snapshot_staged;
-                current.disposition = calls.snapshot_disposition;
-                calls.admitting = false;
-                calls.call_staged = false;
-                current.transaction_ids.truncate(1);
-                current.execution_active = false;
+            } else if restore_reusable_admission(&mut pending, root, owner) {
                 participant.changed.notify_waiters();
             }
         };
@@ -1873,6 +1963,8 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 snapshot: PendingActorEffects::default(),
                 snapshot_staged: false,
                 snapshot_disposition: PendingDisposition::Commit,
+                snapshot_shared: false,
+                snapshot_owner: local_owner,
                 call_staged: false,
                 completed: std::collections::BTreeMap::new(),
             }),
@@ -2051,13 +2143,26 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                     || current.transaction_ids.len() != 1
                     || calls.completed.contains_key(&nested)
                     || calls.completed.len() >= 1024
-                    || current.lock.is_shared()
-                    || current.disposition != PendingDisposition::Commit
+                    || calls.admitting
+                    || calls.root_owner.is_nil()
+                    || current.factory
+                    || current.fresh_shared_local
+                    || if current.lock.is_shared() {
+                        current.disposition != PendingDisposition::ReadOnly
+                            || current.staged
+                            || !current.shared_release_is_safe()
+                    } else {
+                        current.disposition != PendingDisposition::Commit
+                    }
                 {
                     return Err(Status::failed_precondition(
                         "retained participant not available for fresh sibling",
                     ));
                 }
+                let was_shared = current.lock.is_shared();
+                let calls = current.reusable.as_mut().unwrap();
+                calls.snapshot_shared = was_shared;
+                calls.snapshot_owner = current.local_owner;
                 calls.snapshot = current.effects.clone();
                 calls.snapshot_staged = current.staged;
                 calls.snapshot_disposition = current.disposition;
@@ -2071,7 +2176,9 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                     .state
                     .clone()
                     .or_else(|| current.loaded_state.clone());
-                return Ok(StartedLocalTransaction {
+                // Install exact-slot cancellation ownership BEFORE polling the
+                // retained lease's promotion. No Load or second gate admission.
+                let local = StartedLocalTransaction {
                     cleanup_producer,
                     cleanup_slot: self.pending.lookup(root),
                     participant: self.clone(),
@@ -2082,7 +2189,24 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                     armed: false,
                     cancellation_authority: false,
                     handed_off: false,
-                });
+                };
+                if was_shared {
+                    let result = current.lock.shared_mut().unwrap().upgrade().await;
+                    match result {
+                        Ok(exclusive) => {
+                            current.lock = PendingLock::Exclusive(exclusive);
+                            current.disposition = PendingDisposition::Commit;
+                        }
+                        Err(error) => {
+                            restore_reusable_admission(&mut pending, root, owner);
+                            self.changed.notify_waiters();
+                            return Err(Status::aborted(format!(
+                                "retained participant promotion failed: {error:?}"
+                            )));
+                        }
+                    }
+                }
+                return Ok(local);
             }
         }
         let state = self
@@ -2362,7 +2486,9 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                     .transpose()?;
                 current.effects = effects;
                 current.staged = true;
-                if current.fresh_shared_local {
+                if current.fresh_shared_local && !current.no_terminal_retry {
+                    // Registered roots retain execution through classification
+                    // until their consuming guard explicitly ends it.
                     // The generated response-only handler has returned. End its
                     // execution seal atomically with staging/classification.
                     current.execution_active = false;
@@ -2509,11 +2635,34 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         deadline: Option<tokio::time::Instant>,
         owner: Option<Uuid>,
     ) -> Result<PrepareOutcome, Status> {
+        self.prepare_checked_slot(
+            transaction_id,
+            read_only_aware,
+            read_only,
+            deadline,
+            owner,
+            None,
+        )
+        .await
+    }
+
+    async fn prepare_checked_slot(
+        &self,
+        transaction_id: Uuid,
+        read_only_aware: bool,
+        read_only: bool,
+        deadline: Option<tokio::time::Instant>,
+        owner: Option<Uuid>,
+        owned_read_only_slot: Option<PendingSlot>,
+    ) -> Result<PrepareOutcome, Status> {
+        let slot = owned_read_only_slot
+            .clone()
+            .unwrap_or_else(|| self.pending.lookup(transaction_id));
         let mut pending = loop {
             let notified = self.changed.notified();
             tokio::pin!(notified);
             notified.as_mut().enable();
-            let pending = self.pending.lock_root(transaction_id).await;
+            let pending = slot.clone().lock_owned().await;
             if !pending.as_ref().is_some_and(|current| {
                 current.root_id == transaction_id
                     && current.execution_active
@@ -2538,6 +2687,25 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         }) {
             return Err(Status::failed_precondition(
                 "Prepare local incarnation differs",
+            ));
+        }
+        if owned_read_only_slot.is_some()
+            && (!Arc::ptr_eq(&slot, &self.pending.lookup(transaction_id))
+                || !pending.as_ref().is_some_and(|current| {
+                    current.root_id == transaction_id
+                        && current.local_owner == owner
+                        && owner.is_some()
+                        && current.transaction_ids == [transaction_id]
+                        && current.reusable.is_none()
+                        && current.fresh_shared_local
+                        && current.disposition == PendingDisposition::ReadOnly
+                        && current.staged
+                        && !current.has_native_ownership()
+                        && current.shared_release_is_safe()
+                }))
+        {
+            return Err(Status::failed_precondition(
+                "owned read-only Prepare requires exact classified undurable root slot/incarnation",
             ));
         }
         let Some(current) = pending.as_mut() else {
@@ -6175,6 +6343,7 @@ mod tests {
         }
     }
 
+    include!("shared_existing_writer_ownership_tests.rs");
     include!("shared_root_slot_tests.rs");
     include!("actor_gate_binding_tests.rs");
     include!("actor_gate_binding_recovery_tests.rs");

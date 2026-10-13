@@ -187,6 +187,13 @@ impl TransactionContext {
             .with_nested_transaction_id(id)
             .map_err(|e| Status::failed_precondition(e.to_string()))?;
         child.handler_ancestors = ancestors.into();
+        // Authority is inherited only inside the exact one-use host ticket.
+        // It does not change the ordinary writer child lock contract.
+        if self.shared_existing_writer_root() {
+            child.shared_writer_root = self.shared_writer_root.clone();
+            child.enable_supervised_tree()?;
+            child.install_reusable_policy()?;
+        }
         // Factory is user code: revalidate after it, before the short mint region.
         let request = request.encode_to_vec();
         self.require_registered_outbound()?;

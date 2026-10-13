@@ -4133,3 +4133,5 @@ mod tests {
 
 /// Canonical same-host SortedMap construction and admitted root sessions.
 pub mod sorted_map;
+
+mod shared_existing_writer_root;

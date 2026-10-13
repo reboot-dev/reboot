@@ -647,6 +647,56 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
         Ok(())
     }
 
+    pub(crate) fn validate_shared_writer_local<P: ParticipantSidecar>(
+        &self,
+        local: &crate::durable_participant::StartedLocalTransaction<P>,
+        context: &crate::runtime::TransactionContext,
+    ) -> Result<(), Status> {
+        let identity = self.require_identity()?;
+        if !context.shared_existing_writer_root()
+            || context.headers().idempotency_key.is_some()
+            || context.headers().task_schedule.is_some()
+            || identity.state_type != context.transaction_coordinator_state_type()
+            || identity.state_ref != context.transaction_coordinator_state_ref()
+            || identity.state_type != local.actor_state_type()
+            || identity.state_ref != local.actor_state_ref()
+            || identity.state_ref != context.headers().state_ref
+            || self.sidecar.database_endpoint().is_none()
+            || self.sidecar.database_endpoint() != local.database_endpoint()
+            || local.was_handed_off()
+        {
+            return Err(Status::failed_precondition(
+                "shared writer root does not own exact local Database authority",
+            ));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn validate_shared_writer_start<P: ParticipantSidecar>(
+        &self,
+        start: &RootCoordinatorStart,
+        local: &crate::durable_participant::StartedLocalTransaction<P>,
+        context: &crate::runtime::TransactionContext,
+    ) -> Result<(), Status> {
+        self.validate_shared_writer_local(local, context)?;
+        Self::validate_start(start)?;
+        if start.mode != TransactionMode::Shared
+            || !start.read_only
+            || start.factory
+            || start.placement_requested
+            || start.transaction_ids != context.transaction_ids()
+            || start.coordinator_state_type != context.transaction_coordinator_state_type()
+            || start.coordinator_state_ref != context.transaction_coordinator_state_ref()
+            || start.participant.state_type != local.actor_state_type()
+            || start.participant.state_ref != local.actor_state_ref()
+        {
+            return Err(Status::failed_precondition(
+                "shared writer completion differs from registered root",
+            ));
+        }
+        Ok(())
+    }
+
     pub(crate) fn validate_explicit_abort<P: ParticipantSidecar>(
         &self,
         local: &crate::durable_participant::StartedLocalTransaction<P>,
@@ -709,7 +759,12 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
         std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), Status>> + Send>>,
         Status,
     > {
-        if let Err(error) = self.validate_explicit_abort(&local, &context) {
+        let validation = if context.shared_existing_writer_root() {
+            self.validate_shared_writer_local(&local, &context)
+        } else {
+            self.validate_explicit_abort(&local, &context)
+        };
+        if let Err(error) = validation {
             local.handoff_to_durable_recovery();
             return Err(error);
         }
@@ -741,6 +796,11 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
             if &participant.target != identity {
                 targets.insert(participant.target);
             }
+        }
+        if context.shared_existing_writer_root() {
+            // Begin revoked undurable authority under the exact local mutex.
+            // Mark durable-unknown synchronously before constructing DecisionPut.
+            local.handoff_to_durable_recovery();
         }
         Ok(Box::pin(async move {
             #[cfg(feature = "test-support")]
@@ -778,7 +838,7 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
             local.acknowledge_explicit_root_abort().await?;
             // Unknown membership stays sticky. This ACK covers only known fanout
             // and the exact local token; unknown participants own their Watch.
-            if !abandonment {
+            if !abandonment || context.shared_existing_writer_root() {
                 context.finish_explicit_abort()?;
             }
             Ok(())
@@ -840,6 +900,106 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
         Self::validate_start(&start)?;
         let participants = Self::participant_set(&start, returned)?;
         self.complete_participants(start, participants).await
+    }
+
+    /// Owner-only shared completion. Receipt was minted by the registered guard,
+    /// not by public metadata or a participant Vec. The held root is never
+    /// resolved through a gate it already owns.
+    pub(crate) async fn complete_shared_writer_outcome<P: ParticipantSidecar>(
+        &self,
+        receipt: crate::shared_existing_writer_root::SettledSharedWriterRoot,
+        local: &crate::durable_participant::StartedLocalTransaction<P>,
+    ) -> Result<bool, Status> {
+        let start = receipt.start;
+        // Admission/DB/incarnation validation already preceded synchronous
+        // handoff. Recheck immutable identity, never require undurable authority.
+        if !local.was_handed_off()
+            || !receipt.context.shared_existing_writer_root()
+            || start.participant.state_type != local.actor_state_type()
+            || start.participant.state_ref != local.actor_state_ref()
+            || self.sidecar.database_endpoint().is_none()
+            || self.sidecar.database_endpoint() != local.database_endpoint()
+        {
+            return Err(Status::failed_precondition(
+                "settled shared root capability differs",
+            ));
+        }
+        Self::validate_start(&start)?;
+        let root = start.transaction_ids[0];
+        let participants = Self::owned_shared_participant_set(&start, receipt.returned)?;
+        self.sidecar
+            .coordinator_prepare(database::TransactionCoordinatorPrepareRequest {
+                transaction_id: root.as_bytes().to_vec(),
+                transaction_coordinator: Some(Self::record(
+                    &start.coordinator_state_ref,
+                    &participants,
+                    true,
+                )),
+            })
+            .await?;
+        // Both futures settle, even if either rejects definitively. Any ambiguous
+        // result dominates rejection and leaves full Preparing membership intact.
+        let (local_prepare, descendant_prepare) = tokio::join!(
+            local.prepare_owned_read_only(),
+            self.prepare_participants(
+                root,
+                participants
+                    .prepare()
+                    .filter(|(target, _)| *target != &start.participant)
+            ),
+        );
+        let local_rejected = local_prepare?;
+        let descendant_rejected = descendant_prepare?;
+        if local_rejected || descendant_rejected {
+            self.persist_abort(root, &start.coordinator_state_ref)
+                .await?;
+            self.terminal_all(root, &participants.should_commit, false)
+                .await?;
+            if local_rejected {
+                local.acknowledge_explicit_root_abort().await?;
+            }
+            self.cleanup(root, &start.coordinator_state_ref).await?;
+            return Ok(false);
+        }
+        self.sidecar
+            .coordinator_prepared(database::TransactionCoordinatorPreparedRequest {
+                transaction_id: root.as_bytes().to_vec(),
+                transaction_coordinator: Some(Self::record(
+                    &start.coordinator_state_ref,
+                    &participants,
+                    false,
+                )),
+                ..Default::default()
+            })
+            .await?;
+        self.persist_commit(root, &start.coordinator_state_ref, &participants)
+            .await?;
+        self.terminal_all(root, &participants.should_commit, true)
+            .await?;
+        self.cleanup(root, &start.coordinator_state_ref).await?;
+        Ok(true)
+    }
+
+    fn owned_shared_participant_set(
+        start: &RootCoordinatorStart,
+        returned: Vec<ReturnedParticipant>,
+    ) -> Result<ParticipantSet, Status> {
+        let mut participants = ParticipantSet::default();
+        participants.add(start.participant.clone(), true);
+        for participant in returned {
+            if participant.target == start.participant {
+                return Err(Status::failed_precondition(
+                    "shared root cannot be its own writer descendant",
+                ));
+            }
+            if participant.target.state_type.is_empty() || participant.target.state_ref.is_empty() {
+                return Err(Status::invalid_argument(
+                    "participant identity must be specified",
+                ));
+            }
+            participants.add(participant.target, participant.read_only);
+        }
+        Ok(participants)
     }
 
     /// Completes the one writer created by a local shared-to-exclusive promotion.
@@ -1432,6 +1592,8 @@ pub(crate) mod tests {
     use std::time::Duration;
 
     use tokio::sync::Barrier;
+
+    include!("shared_existing_writer_root_tests.rs");
 
     use crate::durable_participant::{
         ActorTransactionStart, DurableActorParticipant, ParticipantStartMode, PendingActorEffects,
