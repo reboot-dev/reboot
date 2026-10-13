@@ -9,7 +9,9 @@ the features page, which shows one feature file's scenarios.
 """
 import asyncio
 import copy
+import os
 import socket
+import tempfile
 import time
 import unittest
 from google.protobuf.json_format import ParseDict
@@ -22,6 +24,7 @@ from reboot.aio.tests import Reboot
 from reboot.dashboard.backend.constants import (
     DASHBOARD_ID,
     DASHBOARD_PATH,
+    ENVVAR_RBT_API_DIRECTORY,
     PREFERENCES_ID,
     PRESENCE_ID,
 )
@@ -31,6 +34,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions
 from selenium.webdriver.support.wait import WebDriverWait
 from testing.web import webtest
+from unittest.mock import patch
 
 
 def _new_driver():
@@ -302,6 +306,16 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
 
         self.url = f'http://127.0.0.1:{port}'
 
+        # `WatchApi`, which `initialize` spawns, reads this variable,
+        # though these tests put no API files in the directory: they
+        # write the page's state straight into the application.
+        self._api_directory = tempfile.TemporaryDirectory()
+        self._environment = patch.dict(
+            os.environ,
+            {ENVVAR_RBT_API_DIRECTORY: self._api_directory.name},
+        )
+        self._environment.start()
+
         self.rbt = Reboot()
         await self.rbt.start()
         await self.rbt.up(
@@ -312,6 +326,8 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self) -> None:
         await self.rbt.stop()
+        self._environment.stop()
+        self._api_directory.cleanup()
 
     async def _wait_for_viewers(self, satisfied, driver=None) -> None:
         """`List` aborts with `StateNotConstructed` until somebody has
