@@ -7,7 +7,7 @@ tags: gotchas, traps, errors, mcp, ui, factory, workflow, ref, schedule, optiona
 
 ## MCP UI–Specific Gotchas
 
-For the rest of the trip-list — `.rbtrc` line-based, no `__init__.py`
+For the rest of the trip-list — pydantic APIs, not `.proto`; no `__init__.py`
 in `api/`, pydantic Field zero-default rule, `self.ref().state_id`
 not `self.state_id`, kwargs not Request wrappers, generated import
 paths, `Service.create(context, id)` semantics, register-all-Servicers

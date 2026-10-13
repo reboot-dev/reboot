@@ -10,16 +10,11 @@ tags: patterns, gotchas, anti-patterns, mistakes
 The shortlist of things that bite. None of these are speculative — they
 all show up in real Reboot Python code review.
 
-### 1. `.rbtrc` Is Line-Based, Not YAML
+### 1. APIs Are Pydantic, Not `.proto`
 
-Don't write nested YAML in `.rbtrc`; one flag per line:
-
-```sh
-generate api/
-generate --python=backend/api/
-dev run --python
-dev run --application=backend/src/main.py
-```
+Older Reboot used `.proto` files and `rbt protoc`, which models
+default to. The API is a pydantic file under `api/`
+(`api-pydantic.md`), found by `generate api/` in `.rbtrc`.
 
 ### 2. `.rbtrc` Uses `--application-name` (Not `--name`) on `reboot>=1.0.4`
 
