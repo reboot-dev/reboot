@@ -17,7 +17,10 @@ Three rules make a seed fast and restartable:
 - **One function, with the size as parameters.** `initialize` passes
   the production size; tests pass a small one.
 - **One transaction per batch.** It creates the batch's actors and adds
-  them to the shared index with one bulk `insert(entries=...)`.
+  them to the shared index with one bulk `insert(entries=...)`. It
+  calls only constructors and that insert: put each record's starting
+  state (a member's plan, a room's status) in its create request,
+  instead of calling the record's methods one after another.
 - **One batch at a time**, each call with an **alias built from the
   batch's contents**, so a seed that restarts skips the batches that
   already landed.
@@ -136,6 +139,13 @@ seed can't act as a user, though: `initialize` has no user identity.
   creates. A lock wait gives up after 30 s and the transaction retries
   (`LOCK_ACQUIRE_DEADLINE_DEFAULT`), so an oversized seed loops on lock
   waits instead of failing.
+- **Methods called per record inside the seed transaction.** A batch
+  that joins each member, then sells a plan, then checks them in makes
+  three calls per record while holding the parent's lock. Under
+  `rbt dev run`, effect validation runs the transaction a second
+  time; at 1.6.0 that second run was observed to wait on the first
+  one's lock until Reboot aborted it as `PRESUMED_DEADLOCK` and the
+  app stopped serving.
 - **A large `list[...]` inline on an actor the seed keeps writing.**
   Every write re-serializes the whole list. Collections that grow go in
   an `OrderedMap` ([`state-collections.md`](state-collections.md)).
