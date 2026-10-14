@@ -2061,7 +2061,42 @@ header h1 {
   display: inline-block;
 }
 
-/* The video of the scenario's last run, a small link beside its
+/* A `<button>` in place of a link. `all: unset` must come before
+   `.scenario-video` and `.step-screenshot`, which style it. */
+.recording-button {
+  all: unset;
+  cursor: pointer;
+}
+
+/* A click on the backdrop, not on the video, closes it; see
+   `RecordingLightbox`. */
+.recording-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: hsl(var(--background) / 0.92);
+  cursor: zoom-out;
+}
+
+.recording-lightbox img,
+.recording-lightbox video {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+  background: hsl(var(--background));
+}
+
+.recording-lightbox video {
+  cursor: auto;
+}
+
+/* The video of the scenario's last run, a small button beside its
    name. */
 .scenario-video {
   display: inline-flex;
