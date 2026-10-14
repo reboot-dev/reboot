@@ -995,14 +995,28 @@ class Context(ABC, IdempotencyManager):
         """
         return self._headers.internal_call
 
+    @staticmethod
+    def is_app_internal(
+        headers: Headers,
+        application_id: ApplicationId,
+    ) -> bool:
+        """Returns true if a call with `headers` is internal to the
+        application `application_id`, i.e., was made from within it.
+
+        This is the one place that decides what makes a call
+        application-internal; `app_internal` and the generated code use
+        it rather than restating the check.
+        """
+        if headers.caller_id is None:
+            return False
+        return headers.caller_id.application_id == application_id
+
     @property
     def app_internal(self) -> bool:
         """Returns true if this context is for an application internal call,
         otherwise false.
         """
-        if self._headers.caller_id is None:
-            return False
-        return self._headers.caller_id.application_id == self.application_id
+        return Context.is_app_internal(self._headers, self.application_id)
 
     @property
     def transaction_ids(self) -> Optional[list[uuid.UUID]]:

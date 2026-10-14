@@ -76,6 +76,7 @@ py_library(
     deps = [
         ":types_py",
         "//reboot:naming_py",
+        "//reboot/aio/auth:__init___py",
     ],
 )
 

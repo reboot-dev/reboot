@@ -322,6 +322,12 @@ So, wherever you are, the signed-in person's ID is at hand:
 | Any other servicer method, or an authorizer | `context.auth.user_id` (`context.auth` is `None` when nobody is signed in) |
 | A React component | `user.state_id`, from `useUser()` |
 
+That holds however deep the call goes. When a method calls another
+servicer on the signed-in person's behalf, constructing a new instance
+included, the callee's `context.auth` is that same person, so a nested
+method can record who acted. The call is still application-internal,
+so a rule like `is_app_internal` keeps letting it through.
+
 ## `User` as the entry point
 
 Because `User` is the one type whose instance the framework can always

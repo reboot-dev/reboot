@@ -1,10 +1,13 @@
+import base64
 from dataclasses import dataclass
+from reboot.aio.auth import Auth
 from reboot.aio.types import ApplicationId, SpaceId
 from reboot.naming import ensure_valid_application_id, ensure_valid_space_id
 from typing import Optional
 
 SPACE_ID_KEY = "space_id"
 APPLICATION_ID_KEY = "application_id"
+AUTH_KEY = "auth"
 
 
 @dataclass
@@ -16,21 +19,32 @@ class CallerID:
     application_id: ApplicationId
     space_id: Optional[SpaceId] = None
 
+    # The `Auth` of the caller on whose behalf the application is
+    # calling, i.e., the `context.auth` of the calling method. A callee
+    # only honors it when `application_id` is its own, i.e., on an
+    # app-internal call, which is what makes it trustworthy.
+    auth: Optional[Auth] = None
+
     def __str__(self) -> str:
         """
         The string representation of this CallerID.
 
         Caller ID strings have the form:
-          "[space_id={space_id},]application_id={application_id}"
+          "[space_id={space_id},]application_id={application_id}[,auth={auth}]"
 
-        This format allows for future expansion by adding more key/value
+        where `auth` is a base64 encoded `rbt.v1alpha1.Auth`. This
+        format allows for future expansion by adding more key/value
         pairs.
         """
         return (
             (
                 f"{SPACE_ID_KEY}={self.space_id},"
                 if self.space_id is not None else ""
-            ) + f"{APPLICATION_ID_KEY}={self.application_id}"
+            ) + f"{APPLICATION_ID_KEY}={self.application_id}" + (
+                f",{AUTH_KEY}="
+                f"{base64.b64encode(self.auth.to_proto_bytes()).decode()}"
+                if self.auth is not None else ""
+            )
         )
 
     @classmethod
@@ -55,6 +69,7 @@ class CallerID:
 
         space_id_str = values.get(SPACE_ID_KEY)
         application_id_str = values.get(APPLICATION_ID_KEY)
+        auth_str = values.get(AUTH_KEY)
         if application_id_str is None:
             raise ValueError("Missing application ID in caller ID")
 
@@ -62,4 +77,7 @@ class CallerID:
             space_id=ensure_valid_space_id(space_id_str)
             if space_id_str is not None else None,
             application_id=ensure_valid_application_id(application_id_str),
+            auth=Auth.from_proto_bytes(
+                base64.b64decode(auth_str, validate=True)
+            ) if auth_str is not None else None,
         )
