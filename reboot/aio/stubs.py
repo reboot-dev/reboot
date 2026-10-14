@@ -393,7 +393,14 @@ class Stub:
         coordinator_read_only_aware: bool = False
 
         if context is not None:
-            caller_id = CallerID(application_id=context.application_id)
+            caller_id = CallerID(
+                application_id=context.application_id,
+                # Carry who this call is made on behalf of. If a
+                # bearer token is set, `Headers` drops the `Auth`
+                # again (but not the caller ID: the call stays
+                # app-internal).
+                auth=context.auth,
+            )
 
             # For the time being, all traffic is intra-application. The
             # target application is therefore the same as the calling

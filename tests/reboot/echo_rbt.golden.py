@@ -10768,10 +10768,12 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         headers: IMPORT_reboot_aio_headers.Headers,
         method: str,
     ) -> IMPORT_typing.Optional[IMPORT_reboot_aio_auth.Auth]:
-        """Verify the bearer token and if a token verifier is present.
+        """Verify the bearer token if a token verifier is present.
 
-        Returns the (optional) `reboot.aio.auth.Auth` object
-        produced by the token verifier if the token can be verified.
+        Returns the `reboot.aio.auth.Auth` produced by the token
+        verifier if the token can be verified, else the `Auth` that an
+        app-internal caller passed on in its caller ID, if any, else
+        `None`.
         """
         if self._token_verifier is not None:
             if headers.bearer_token == __internal_magic_token__:
@@ -10795,7 +10797,21 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         result,
                         message=result.message or None,
                     )
-                return result
+                if result is not None:
+                    return result
+
+        # Otherwise, on an app-internal call, use the `Auth` the caller
+        # carried on behalf of whoever called it, if it carried one at
+        # all (see `CallerID.auth`).
+        caller_id = headers.caller_id
+        if (
+            headers.bearer_token is None and caller_id is not None and
+            caller_id.auth is not None and
+            IMPORT_reboot_aio_contexts.Context.is_app_internal(
+                headers, self.application_id
+            )
+        ):
+            return caller_id.auth
 
         return None
 
@@ -10821,6 +10837,15 @@ class _EchoStub(IMPORT_reboot_aio_stubs.Stub):
         # have security implications - we cannot simply trust any service we are calling with
         # the user's credentials. Instead, the developer can rely on the default app-internal
         # auth, or override that and set an explicit bearer token.
+        #
+        # What we do pass on, in our caller ID, is the caller's `context.auth`, i.e., who the
+        # call is made on behalf of. That is safe because an `Auth` is not a credential, it
+        # only says who the caller is, and the callee only honors it on an app-internal call,
+        # i.e., when it arrives with our own (trusted) caller ID, so it can't be used anywhere
+        # else. If there is no `context.auth` then nothing is passed on. Setting an explicit
+        # bearer token overrides it: the callee then verifies that token instead and gets no
+        # `context.auth` from us. The caller ID itself is still sent, so the call is still
+        # app-internal.
         #
         # In the case of `ExternalContext`, however, its `bearer_token` was set specifically
         # by the developer for the purpose of making these calls.
@@ -20905,6 +20930,7 @@ class Echo:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.Context):
                     __caller_id__ = IMPORT_reboot_aio_caller_id.CallerID(
                         application_id=__context__.application_id,
+                        auth=__context__.auth,
                     )
                     if __this__._application_id is None:
                         # Given our context type (inside a Reboot application) we can default to
@@ -21104,6 +21130,7 @@ class Echo:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.Context):
                     __caller_id__ = IMPORT_reboot_aio_caller_id.CallerID(
                         application_id=__context__.application_id,
+                        auth=__context__.auth,
                     )
                     if __this__._application_id is None:
                         # Given our context type (inside a Reboot application) we can default to

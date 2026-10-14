@@ -4,7 +4,7 @@ import grpc
 import json
 import opentelemetry.propagate
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from reboot.aio.call import validate_ascii
 from reboot.aio.caller_id import CallerID
 from reboot.aio.internals.contextvars import get_application_id
@@ -171,9 +171,10 @@ class Headers:
     cookie: Optional[str] = None
 
     # Contains a "caller ID" that encodes the identity of the calling
-    # application. Note this identifies the _application_ that called,
-    # but it doesn't identify the user on whose behalf the call was
-    # made - that information would be in the bearer token.
+    # application and, for a call from within a Reboot method, the
+    # `Auth` on whose behalf it is made (see `CallerID.auth`).
+    # Otherwise the user on whose behalf the call was made is
+    # identified by the bearer token.
     caller_id: Optional[CallerID] = None
 
     # OpenTelemetry W3C Trace Context headers for manual span context
@@ -491,9 +492,14 @@ class Headers:
             return headers
 
         def maybe_add_caller_id_header() -> GrpcMetadata | tuple[()]:
-            if self.caller_id is not None:
-                return ((CALLER_ID_HEADER, str(self.caller_id)),)
-            return ()
+            if self.caller_id is None:
+                return ()
+            caller_id = self.caller_id
+            if self.bearer_token is not None and caller_id.auth is not None:
+                # A bearer token is what gets verified for this call;
+                # never pass an `Auth` along with it.
+                caller_id = replace(caller_id, auth=None)
+            return ((CALLER_ID_HEADER, str(caller_id)),)
 
         def maybe_add_internal_call_header() -> GrpcMetadata | tuple[()]:
             if self.internal_call:

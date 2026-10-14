@@ -615,9 +615,15 @@ py_test(
     srcs = [":auth_tests.py"],
     main = "auth_tests.py",
     deps = [
+        requirement("grpcio"),
         ":bank_py",
         ":test_token_verifier_py",
+        "//reboot/aio:caller_id_py",
+        "//reboot/aio:headers_py",
         "//reboot/aio:tests_py",
+        "//reboot/aio:types_py",
+        "//reboot/aio/auth:__init___py",
+        "//reboot/aio/auth:authorizers_py",
     ],
 )
 
