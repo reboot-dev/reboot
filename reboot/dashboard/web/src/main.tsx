@@ -784,6 +784,80 @@ const Recording: FC<{
   return url === undefined ? null : <>{children(url)}</>;
 };
 
+// A recording over the whole page.
+const RecordingLightbox: FC<{
+  url: string;
+  video: boolean;
+  title: string;
+  onClose: () => void;
+}> = ({ url, video, title, onClose }) => {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+  return (
+    <div
+      className="recording-lightbox"
+      role="dialog"
+      aria-label={title}
+      onClick={onClose}
+    >
+      {video ? (
+        <video
+          src={url}
+          controls
+          autoPlay
+          onClick={(event) => event.stopPropagation()}
+        />
+      ) : (
+        <img src={url} alt={title} />
+      )}
+    </div>
+  );
+};
+
+// A thumbnail or link that opens the recording over the page rather
+// than in a new tab, which an MCP host's frame cannot open.
+const RecordingButton: FC<{
+  className: string;
+  url: string;
+  video?: boolean;
+  title: string;
+  children: ReactNode;
+}> = ({ className, url, video = false, title, children }) => {
+  const [shown, setShown] = useState(false);
+  const close = useCallback(() => setShown(false), []);
+  return (
+    <>
+      <button
+        type="button"
+        className={`recording-button ${className}`}
+        title={title}
+        // A click here opens the recording, not what it is in.
+        onClick={(event) => {
+          event.stopPropagation();
+          setShown(true);
+        }}
+      >
+        {children}
+      </button>
+      {shown && (
+        <RecordingLightbox
+          url={url}
+          video={video}
+          title={title}
+          onClose={close}
+        />
+      )}
+    </>
+  );
+};
+
 // Session storage: the page has sent this tab to sign in once.
 const SIGN_IN_ATTEMPT_KEY = "dashboard.signIn.attempted";
 
@@ -2428,15 +2502,13 @@ const StepRow: FC<{
         {step.screenshot !== undefined && (
           <Recording path={step.screenshot}>
             {(url) => (
-              <a
+              <RecordingButton
                 className="step-screenshot"
-                href={url}
-                target="_blank"
-                rel="noreferrer"
+                url={url}
                 title="The browser after this step, in the scenario's last run"
               >
                 <img src={url} alt="" />
-              </a>
+              </RecordingButton>
             )}
           </Recording>
         )}
@@ -2696,14 +2768,11 @@ const ScenarioRow: FC<{
         {videos.map((video) => (
           <Recording path={video.path} key={video.user}>
             {(url) => (
-              <a
+              <RecordingButton
                 className="scenario-video"
-                href={url}
-                target="_blank"
-                rel="noreferrer"
+                url={url}
+                video
                 title={`"${video.user}"'s browser in the scenario's last run`}
-                // A click here opens the video, not the scenario.
-                onClick={(event) => event.stopPropagation()}
               >
                 <svg
                   viewBox="0 0 10 10"
@@ -2714,7 +2783,7 @@ const ScenarioRow: FC<{
                   <path d="M1.5 1 L9 5 L1.5 9 Z" fill="currentColor" />
                 </svg>
                 {videos.length > 1 ? `video · ${video.user}` : "video"}
-              </a>
+              </RecordingButton>
             )}
           </Recording>
         ))}
