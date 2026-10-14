@@ -385,6 +385,13 @@ with "unknown actor type."
 - `references/auth-allow-if.md` and `references/auth-built-in-predicates.md`
   — composition patterns
 - `references/auth-custom-predicates.md` — for app-specific rules
+- `references/auth-context-propagation.md` — **always read when a
+  method calls another servicer or records who acted**: a nested call
+  carries the caller's `context.auth` and stays app-internal (so
+  writers can audit who did what and owner rules still match), what
+  is not carried (the bearer token, scheduled calls), and why a
+  reader's body must not read `context.auth` (the answer must be the
+  same for every admitted caller, or the reader cannot be cached).
 - `references/auth-external-api-calls.md` — **acting as the user at an
   external service**: capture a provider's OAuth tokens (your own
   authorize/callback HTTP endpoints → `OAuthTokenManager.store`), read
@@ -521,6 +528,8 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/auth-allow-if.md`
 - `references/auth-built-in-predicates.md`
 - `references/auth-custom-predicates.md`
+- `references/auth-context-propagation.md` — `context.auth` follows a
+  call through the application; audit in writers, never in readers
 - `references/auth-external-api-calls.md`
 
 **RPC** (`rpc-`):

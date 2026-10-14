@@ -75,6 +75,15 @@ async def balance(account_id: str):
     return Balance(account_id=account_id, balance=balance.amount)
 ```
 
+## A Reader's Answer Does Not Depend on the Caller
+
+Do not read `context.auth` in a reader body. A reader's response is a
+function of the actor's state and the request, the same for every
+caller the authorizer admits; Reboot will cache reader results on
+that basis, and a reader that reads `context.auth` cannot be cached.
+"Who may read this" belongs in the authorizer; "who did this" is
+recorded by a writer. See `auth-context-propagation.md`.
+
 ## See Also
 
 - `rpc-refs.md` — getting an actor ref and the actor's ID. The
@@ -83,3 +92,5 @@ async def balance(account_id: str):
 - `rpc-calls.md` — kwargs convention for calling other actors.
 - `servicer-authorizer.md` — every Servicer needs `def authorizer(self)`
   returning a constructed rule.
+- `auth-context-propagation.md` — `context.auth` follows a call to
+  another servicer; use it in writers and authorizers, not readers.
