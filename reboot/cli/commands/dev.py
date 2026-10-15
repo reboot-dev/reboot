@@ -81,6 +81,7 @@ from reboot.settings import (
     ENVVAR_RBT_NODEJS,
     ENVVAR_RBT_SERVERS,
     ENVVAR_RBT_STATE_DIRECTORY,
+    ENVVAR_RBT_WEB_APP,
     ENVVAR_RBT_WEB_APP_DIST_PATH,
     ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
     ENVVAR_REBOOT_EXPECTED_VERSION,
@@ -242,6 +243,20 @@ def _register_dev_run(parser: ArgumentParser):
             'the two are mutually exclusive. An application '
             'with `UI(...)` methods needs one of the two, and '
             'one without refuses both.'
+        ),
+    )
+    parser.subcommand('dev run').add_argument(
+        '--web-app',
+        type=bool,
+        default=False,
+        help=(
+            'serve the application\'s web app from the frontend\'s '
+            'dev server, `--frontend-url`, which it requires: Envoy '
+            'sends `/`, and every path the application doesn\'t '
+            'answer, to that dev server, which serves the web app '
+            'at its `/`. Its build is served with '
+            '`--web-app-dist-path` instead, so the two are mutually '
+            'exclusive. Python applications only.'
         ),
     )
 
@@ -943,6 +958,12 @@ def _check_common_args(args):
             "`--web-app-dist-path` is not supported with `--nodejs`: a "
             "Node.js application's own web framework serves `/`."
         )
+    if args.nodejs and args.web_app:
+        terminal.fail(
+            "`--web-app` is not supported with `--nodejs`: a Node.js "
+            "application's own web framework serves `/`, and Reboot "
+            "can't tell which paths are its to route around."
+        )
 
 
 async def _check_file_first_line_equals(file_path, expected_first_line):
@@ -1438,8 +1459,10 @@ async def __dev_run(
     # The MCP Apps are served one of two mutually-exclusive ways: from
     # the frontend's dev server (`--frontend-url`, which `--mcp-app`
     # says to serve them from) or from their builds on disk
-    # (`--mcp-app-dist-path`). A dev server nothing is served from is
-    # a slip, so `--frontend-url` alone is refused.
+    # (`--mcp-app-dist-path`); the web app likewise, from the dev
+    # server (`--web-app`) or its build (`--web-app-dist-path`). A dev
+    # server nothing is served from is a slip, so `--frontend-url`
+    # alone is refused.
     if args.frontend_url and args.mcp_app_dist_path:
         terminal.fail(
             "`--frontend-url` and `--mcp-app-dist-path` are mutually "
@@ -1451,11 +1474,18 @@ async def __dev_run(
             "exclusive: the first serves the MCP Apps from the "
             "frontend's dev server, the second from their builds."
         )
-    if args.frontend_url and not args.mcp_app:
+    if args.web_app and args.web_app_dist_path:
+        terminal.fail(
+            "`--web-app` and `--web-app-dist-path` are mutually "
+            "exclusive: the first serves the web app from the "
+            "frontend's dev server, the second from its build."
+        )
+    if args.frontend_url and not (args.mcp_app or args.web_app):
         terminal.fail(
             "`--frontend-url` names the frontend's dev server but "
             "nothing to serve from it; add `--mcp-app` to serve the "
-            "application's MCP Apps from it."
+            "application's MCP Apps from it, `--web-app` to serve its "
+            "web app, or both."
         )
     if args.mcp_app and not args.frontend_url:
         terminal.fail(
@@ -1463,9 +1493,18 @@ async def __dev_run(
             "server, which `--frontend-url` names; pass it too (or "
             "`--mcp-app-dist-path` to serve their builds instead)."
         )
+    if args.web_app and not args.frontend_url:
+        terminal.fail(
+            "`--web-app` serves the web app from the frontend's dev "
+            "server, which `--frontend-url` names; pass it too (or "
+            "`--web-app-dist-path` to serve its build instead)."
+        )
     if args.frontend_url:
         env[ENVVAR_RBT_FRONTEND_URL] = args.frontend_url
-        env[ENVVAR_RBT_MCP_APP] = 'true'
+        if args.mcp_app:
+            env[ENVVAR_RBT_MCP_APP] = 'true'
+        if args.web_app:
+            env[ENVVAR_RBT_WEB_APP] = 'true'
     elif args.mcp_app_dist_path:
         env[ENVVAR_RBT_MCP_APP_DIST_PATH] = args.mcp_app_dist_path
 

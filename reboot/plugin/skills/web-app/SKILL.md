@@ -533,7 +533,10 @@ default, and the SPA calls the backend at `VITE_REBOOT_URL`. Built,
 it lands in `frontend/dist/web/` with `base: "/"`, which a static
 host can serve at `/`, or the backend can with
 `--web-app-dist-path=frontend/dist/web` on `rbt serve run` (and on a
-`dev run:dist` config); see `python/references/lifecycle-rbtrc.md`.
+`dev run:dist` config); in development `dev run:hmr --web-app` beside
+`--frontend-url` has Envoy send `/` to the Vite dev server instead,
+so the SPA is on the backend's origin with HMR; see
+`python/references/lifecycle-rbtrc.md`.
 An app that later adds an MCP frontend keeps this tree, adds
 `frontend/mcp/<name>/` beside `web/`, and swaps in the `mcp-app`
 skill's `vite.config.ts` and `npm run build`, which build both and

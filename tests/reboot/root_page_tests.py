@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from reboot.aio.applications import Application
 from reboot.aio.tests import Reboot
-from reboot.settings import ENVVAR_RBT_WEB_APP_DIST_PATH
+from reboot.settings import ENVVAR_RBT_WEB_APP, ENVVAR_RBT_WEB_APP_DIST_PATH
 from tests.reboot.greeter_servicers import MyGreeterServicer
 
 
@@ -121,6 +121,24 @@ class RootPageTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(Exception) as raised:
             await self.rbt.up(application, local_envoy=True)
         self.assertIn('mounts `/` itself', str(raised.exception))
+
+    async def test_web_app_switch_and_application_root_mount_conflict(
+        self
+    ) -> None:
+        # `--web-app` has Envoy give `/` to the frontend's dev server;
+        # an application that mounts `/` itself is refused just the
+        # same.
+        os.environ[ENVVAR_RBT_WEB_APP] = "true"
+        self.addCleanup(os.environ.pop, ENVVAR_RBT_WEB_APP, None)
+
+        async def app(scope, receive, send) -> None:
+            pass
+
+        application = Application(servicers=[MyGreeterServicer])
+        application.http.mount('/', app=app)
+        with self.assertRaises(Exception) as raised:
+            await self.rbt.up(application, local_envoy=True)
+        self.assertIn('`--web-app` was set', str(raised.exception))
 
 
 if __name__ == '__main__':

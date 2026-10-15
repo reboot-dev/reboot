@@ -1,5 +1,6 @@
 """The routes Envoy gets for the paths the web framework answers."""
 
+import os
 import unittest
 from envoy.config.listener.v3 import listener_pb2
 from envoy.config.route.v3 import route_components_pb2
@@ -13,6 +14,11 @@ from reboot.aio.http import PythonWebFramework
 from reboot.aio.types import ApplicationId, ServerId
 from reboot.routing import envoy_config
 from reboot.routing.envoy_config import ServerAddress, ServerInfo
+from reboot.settings import (
+    ENVVAR_RBT_DEV,
+    ENVVAR_RBT_FRONTEND_URL,
+    ENVVAR_RBT_WEB_APP,
+)
 
 
 def _public_routes(listeners: list[listener_pb2.Listener]):

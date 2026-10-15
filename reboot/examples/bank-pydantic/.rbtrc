@@ -31,6 +31,7 @@ dev run --default-config=hmr
 
 dev run:hmr --frontend-url=http://localhost:5173
 dev run:hmr --mcp-app
+dev run:hmr --web-app
 
 # Dist mode: serve the built MCP Apps from "frontend/dist/mcp/" and the
 # built web app at `/` (no Vite HMR). Usage: `rbt dev run --config=dist`

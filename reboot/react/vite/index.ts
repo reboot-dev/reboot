@@ -230,28 +230,63 @@ function serveMcpAppsAtMcp(mcpAppPath: string): Plugin {
   };
 }
 
-// The web app is the dev server's home: the bare `/`, `/__/frontend`,
-// and `/__/frontend/` otherwise 404 (there's no index there), so
-// silently redirect them to `/__/frontend/<webAppPath>/`. Also print the
-// friendlier `http://<host>/` at startup instead of the
-// `/__/frontend/` base URL Vite would otherwise show (which is a dead
-// link).
+// The web app is the dev server's home. Its `index.html` is served at
+// `/`, and at any other path outside `/__/frontend/` a browser
+// navigates to (so the app's own routing works on a reload or a
+// shared link); Vite transforms it as it would at
+// `/__/frontend/<webAppPath>/`, so its module URLs still carry the
+// base. This is what `rbt dev run --web-app` relies on: Envoy sends
+// `/`, and every path the application doesn't answer, here. The bare
+// `/__/frontend` and `/__/frontend/`, which otherwise 404 (there's no
+// index there), redirect to `/`, the home. Also print
+// the friendlier `http://<host>/` at startup instead of the
+// `/__/frontend/` base URL Vite would otherwise show.
 function serveWebAppAtRoot(webAppPath: string): Plugin {
   const target = `${BASE}${segment(webAppPath)}/`;
-  const homes = new Set(["/", "/__/frontend", "/__/frontend/"]);
+  const homes = new Set(["/__/frontend", "/__/frontend/"]);
   return {
     name: "reboot:serve-web-app-at-root",
     apply: "serve",
     configureServer(server) {
-      server.middlewares.use((req, res, next) => {
+      const indexHtml = path.resolve(
+        server.config.root,
+        webAppPath,
+        "index.html"
+      );
+      server.middlewares.use(async (req, res, next) => {
         const url = req.url ?? "";
         const queryAt = url.indexOf("?");
         const pathname = queryAt === -1 ? url : url.slice(0, queryAt);
         if (homes.has(pathname)) {
           const query = queryAt === -1 ? "" : url.slice(queryAt);
           res.statusCode = 302;
-          res.setHeader("Location", target + query);
+          res.setHeader("Location", "/" + query);
           res.end();
+          return;
+        }
+        const navigation =
+          req.method === "GET" &&
+          (req.headers.accept ?? "").includes("text/html");
+        if (pathname === "/" || (navigation && !pathname.startsWith(BASE))) {
+          try {
+            // Vite leaves the page's own relative URLs (`./src/main.tsx`)
+            // alone, and served at `/` they would resolve outside the
+            // base, so point them at the web app's directory under it.
+            const html = (
+              await server.transformIndexHtml(
+                `${target}index.html`,
+                fs.readFileSync(indexHtml, "utf-8"),
+                req.originalUrl
+              )
+            )
+              .replaceAll('"./', `"${target}`)
+              .replaceAll("'./", `'${target}`);
+            res.statusCode = 200;
+            res.setHeader("Content-Type", "text/html");
+            res.end(html);
+          } catch (error) {
+            next(error);
+          }
           return;
         }
         next();

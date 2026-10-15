@@ -58,6 +58,7 @@ from reboot.settings import (
     ENVVAR_RBT_NAME,
     ENVVAR_RBT_SERVERS,
     ENVVAR_RBT_STATE_DIRECTORY,
+    ENVVAR_RBT_WEB_APP,
     ENVVAR_RBT_WEB_APP_DIST_PATH,
     ENVVAR_REBOOT_CLOUD_DATABASE_ADDRESS,
     ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
@@ -971,22 +972,30 @@ class Application:
         Only noted here; the web framework mounts it when it starts,
         after every route, since a mount at `/` claims every path
         nothing else does (see `WebApp`).
+
+        With `--web-app` it is Envoy, not the web framework, that
+        gives `/` to the web app (the frontend's dev server serves
+        it); what is checked here is the same either way.
         """
         web_app_dist_path = os.environ.get(ENVVAR_RBT_WEB_APP_DIST_PATH)
-        if not web_app_dist_path:
+        web_app = os.environ.get(ENVVAR_RBT_WEB_APP) == "true"
+        if not web_app_dist_path and not web_app:
             return
         # An application that mounts or routes `/` itself has said
         # what `/` is; serving the web app there too would silently
         # lose to it.
         if any(mount.path.rstrip("/") == "" for mount in self.http._mounts
               ) or any(route.path == "/" for route in self.http._api_routes):
+            flag = "`--web-app`" if web_app else "`--web-app-dist-path`"
             raise InputError(
                 reason=(
-                    "`--web-app-dist-path` was set, but this application "
-                    "mounts `/` itself (via `application.http`), so both "
-                    "say what `/` is. Pass one or the other."
+                    f"{flag} was set, but this application mounts `/` "
+                    "itself (via `application.http`), so both say what "
+                    "`/` is. Pass one or the other."
                 )
             )
+        if not web_app_dist_path:
+            return
         directory = Path(web_app_dist_path)
         if not directory.is_absolute():
             directory = self._frontend_project_root() / directory

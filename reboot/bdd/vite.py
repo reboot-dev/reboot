@@ -99,8 +99,9 @@ class ViteFrontend(Frontend):
         assert self._server is not None and self._output is not None, (
             'not serving; `serve()` first'
         )
-        # The app is at the root, in a dual-surface layout by way of
-        # the dev server's redirect to `/__/frontend/web/`.
+        # The app is at the root; in a dual-surface layout the dev
+        # server serves it there itself (see `serveWebAppAtRoot` in
+        # Reboot's Vite plugin).
         url = f'{self.origin}/'
         deadline = time.monotonic() + SERVING_DEADLINE_SECONDS
         last: Optional[str] = None

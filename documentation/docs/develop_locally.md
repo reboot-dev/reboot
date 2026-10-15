@@ -211,6 +211,7 @@ generate --react=frontend/api
 # Proxy the frontend through Vite for hot module replacement.
 dev run:hmr --frontend-url=http://localhost:5173
 dev run:hmr --mcp-app
+dev run:hmr --web-app
 
 # Default to HMR mode when --config is not specified.
 dev run --default-config=hmr
@@ -220,6 +221,7 @@ dev run --default-config=hmr
 | --- | --- |
 | `dev run --frontend-url=<url>` | The frontend's dev server (e.g. Vite at `http://localhost:5173`): Envoy proxies `/__/frontend/**` to it, with Hot Module Replacement. Says only where the frontend is; alone it is an error. |
 | `dev run --mcp-app` | Serve the application's MCP Apps (its `UI(...)` methods) from `--frontend-url`, which it requires. An application with `UI(...)` methods needs this or `--mcp-app-dist-path`; one without refuses both. |
+| `dev run --web-app` | Serve the application's web app from `--frontend-url`, which it requires: Envoy sends `/`, and every path the application doesn't answer, to the dev server, which serves the web app at its `/`. Mutually exclusive with `--web-app-dist-path`. Python applications only. |
 | `dev run --mcp-app-dist-path=<dir>` | Dist: serve the built MCP Apps from `<dir>` (e.g. `frontend/dist/mcp`) on disk under `/__/frontend/mcp/`, each `UI(path=...)` from `<dir>/<path>/index.html`; mutually exclusive with `--frontend-url` and `--mcp-app`. |
 | `dev run --web-app-dist-path=<dir>` | Serve the built web app from `<dir>` (e.g. `frontend/dist/web`) at `/`, with its `index.html` answering any path the app has no route or file for. Without it, `/` is Reboot's page. Python applications only: with `--nodejs` it is an error. |
 | `dev run --default-config=<name>` | Sets the default configuration profile when `--config` is not specified. |
