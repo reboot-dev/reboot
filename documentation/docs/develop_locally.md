@@ -209,12 +209,12 @@ When your application has a React frontend — a
 generate --react=frontend/api
 
 # Proxy the frontend through Vite for hot module replacement.
-dev run:hmr --frontend-url=http://localhost:5173
-dev run:hmr --mcp-app
-dev run:hmr --web-app
+dev run:ports --frontend-url=http://localhost:5173
+dev run:ports --mcp-app
+dev run:ports --web-app
 
-# Default to HMR mode when --config is not specified.
-dev run --default-config=hmr
+# Use the `ports` config when --config is not specified.
+dev run --default-config=ports
 ```
 
 | Flag | Description |
@@ -227,7 +227,7 @@ dev run --default-config=hmr
 | `dev run --portless` | Serve under a named URL via [portless](https://github.com/vercel-labs/portless): the backend becomes `https://<app>.localhost`, on a free port unless `--port` is given, serving the web app at `/` and the MCP Apps from the frontend dev server, which runs under portless as `https://frontend.<app>.localhost` (its `npm run dev:portless`) and is trusted as a browser origin too. See [Named local URLs](#named-local-urls-with---portless). |
 | `dev run --tunnel-url=<url>` | The public URL this application is reachable at through a tunnel (e.g. `https://<name>.trycloudflare.com`). The setup wizard shows and verifies it; without it, the wizard asks ngrok and cloudflared, through their local APIs on their default ports, for a tunnel of their own. |
 | `dev run --default-config=<name>` | Sets the default configuration profile when `--config` is not specified. |
-| `dev run:hmr` / `dev run:dist` | Named configurations. Flags prefixed with `dev run:<name>` only apply when `--config=<name>` is used. |
+| `dev run:ports` / `dev run:dist` | Named configurations. Flags prefixed with `dev run:<name>` only apply when `--config=<name>` is used. |
 
 <!-- ## Boilerplate code
 
@@ -298,7 +298,7 @@ The frontend's `package.json` carries that as scripts mirroring the
 ```json
 "dev": "npm run dev:portless",
 "dev:portless": "portless frontend.bank vite",
-"dev:hmr": "vite"
+"dev:ports": "vite"
 ```
 
 ```console
@@ -323,14 +323,14 @@ dev run:portless --mcp-app
 dev run:portless --web-app
 dashboard --default-config=portless
 dashboard:portless --portless
-dashboard:hmr --no-portless
+dashboard:ports --no-portless
 ```
 
 `rbt dashboard --portless` serves the developer dashboard the same
 way, as `https://dashboard.<app>.localhost` on a free port the proxy
 routes to (the name is the `.rbtrc`'s `dev run --application-name`).
 The dashboard's configs are named like `rbt dev run`'s, so
-`rbt dashboard --config=hmr` goes with `rbt dev run --config=hmr`:
+`rbt dashboard --config=ports` goes with `rbt dev run --config=ports`:
 the plain port, `http://127.0.0.1:9871`.
 
 A [Cloudflare quick tunnel](/call/from_mcp_client#cloudflared) in

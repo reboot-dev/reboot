@@ -45,7 +45,7 @@ strongest first.
   of them.
 - There is a `frontend/mcp/<name>/index.html`.
 - `.rbtrc` has a `dev run:portless --frontend-url=...` line (or a
-  `dev run:hmr --frontend-url=...` one, for an app kept on plain
+  `dev run:ports --frontend-url=...` one, for an app kept on plain
   ports) with `--mcp-app`: Envoy proxying the MCP Apps from the dev
   server.
 
@@ -121,7 +121,7 @@ by these skills defaults to it: its `.rbtrc` has
 
 **Ask the user whether they want portless before starting anything**
 (recommend it). If they decline, start the processes on plain ports
-as the sections below describe, passing `--config=hmr` to
+as the sections below describe, passing `--config=ports` to
 `rbt dev run` when the `.rbtrc` defaults to portless, and reading
 `http://localhost:9991` wherever this skill says
 `https://<app>.localhost`.
@@ -221,14 +221,14 @@ confusing to a developer who cannot see the backend terminal. With
 portless, the `.rbtrc`'s default config passes `--portless` (add it
 yourself for an `.rbtrc` that has no such config), and the backend
 logs its named URLs once it is serving; without, pass
-`--config=hmr` if the `.rbtrc` defaults to portless.
+`--config=ports` if the `.rbtrc` defaults to portless.
 
 ### Frontend — both app types
 
 Run the Vite dev server from `frontend/`. Its `package.json`
 mirrors the `.rbtrc`: `npm run dev` is the default, `dev:portless`,
 which runs `portless frontend.<app> vite` (portless is a dev dependency, so
-`npm install` brought it), and `dev:hmr` is plain `vite` on Vite's
+`npm install` brought it), and `dev:ports` is plain `vite` on Vite's
 port. Under portless, when the user chose it:
 
 ```sh
@@ -238,7 +238,7 @@ cd frontend && npm run dev:portless
 or on a plain port otherwise:
 
 ```sh
-cd frontend && npm run dev:hmr
+cd frontend && npm run dev:ports
 ```
 
 ### Setup wizard — MCP Apps only

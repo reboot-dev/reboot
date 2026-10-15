@@ -34,10 +34,10 @@ dev run:portless --portless
 dev run:portless --frontend-url=https://frontend.agent-wiki.localhost
 dev run:portless --mcp-app
 
-# Plain ports instead: `rbt dev run --config=hmr`, with Vite run as
-# `cd frontend && npm run dev:hmr`.
-dev run:hmr --frontend-url=http://localhost:5173
-dev run:hmr --mcp-app
+# Plain ports instead: `rbt dev run --config=ports`, with Vite run as
+# `cd frontend && npm run dev:ports`.
+dev run:ports --frontend-url=http://localhost:5173
+dev run:ports --mcp-app
 
 # Dist mode: serve the built MCP Apps from "frontend/dist/mcp/" (no Vite HMR).
 # Usage: uv run rbt dev run --config=dist
@@ -46,10 +46,10 @@ dev run:dist --mcp-app-dist-path=frontend/dist/mcp
 
 # The developer dashboard (`rbt dashboard`) too: it is
 # https://dashboard.agent-wiki.localhost by default, or on the plain port
-# http://127.0.0.1:9871 with `rbt dashboard --config=hmr`.
+# http://127.0.0.1:9871 with `rbt dashboard --config=ports`.
 dashboard --default-config=portless
 dashboard:portless --portless
-dashboard:hmr --no-portless
+dashboard:ports --no-portless
 
 # When expunging, expunge that state we've saved.
 dev expunge --application-name=agent-wiki
