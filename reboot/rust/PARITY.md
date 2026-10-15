@@ -97,6 +97,18 @@ exit zero preceded fresh container terminal inspection, and the original lock
 was free. Hot reload, new-consumer compilation and restart durability remain
 separate. This is not latest-upstream/full-native/overall SDK qualification.
 
+## Current SDK x86 library baseline before Bank work (2026-10-15)
+
+The [fresh library baseline receipt](tests/evidence/current-sdk-x86-library-baseline-20261015.json)
+records actual locked/offline `cargo test --lib --features test-support` on the
+qualified x86 remote toolchain: **672 passed, 0 failed, 7 ignored**. This is the
+same current SDK source map used by the preceding Legacy qualification, before
+new Bank source patches. Parent rehashed all **3264** source members and the
+full test log, verified genuine Cargo join and empty adopted/cleanup obligations,
+then fresh exact-CID terminal exit zero/PID zero and original lock release.
+This baseline is not acceptance of default Bank creation, taskful nested
+constructors, shared Transfer or a freshly built upstream native Database.
+
 ## Actual current-SDK remaining Legacy crash windows (2026-10-15)
 
 The [remaining-case receipt](tests/evidence/legacy-current-sdk-remaining-crashes-20261015.json)
