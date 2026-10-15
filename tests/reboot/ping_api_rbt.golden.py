@@ -784,6 +784,9 @@ class PingServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         )
 
         self._servicer = servicer
+        # An instance of the servicer's derived class for each state it
+        # has served; see `PingServicer._instance()`.
+        self._instances: dict[str, PingServicer] = {}
         self._state_manager = state_manager
         self.tasks_dispatcher = IMPORT_reboot_aio_internals_tasks_dispatcher.TasksDispatcher(
             application_id=application_id,
@@ -3506,6 +3509,9 @@ class PongServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         )
 
         self._servicer = servicer
+        # An instance of the servicer's derived class for each state it
+        # has served; see `PongServicer._instance()`.
+        self._instances: dict[str, PongServicer] = {}
         self._state_manager = state_manager
         self.tasks_dispatcher = IMPORT_reboot_aio_internals_tasks_dispatcher.TasksDispatcher(
             application_id=application_id,
@@ -5101,6 +5107,9 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         )
 
         self._servicer = servicer
+        # An instance of the servicer's derived class for each state it
+        # has served; see `UserServicer._instance()`.
+        self._instances: dict[str, UserServicer] = {}
         self._state_manager = state_manager
         self.tasks_dispatcher = IMPORT_reboot_aio_internals_tasks_dispatcher.TasksDispatcher(
             application_id=application_id,
@@ -8679,6 +8688,9 @@ class CounterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
         )
 
         self._servicer = servicer
+        # An instance of the servicer's derived class for each state it
+        # has served; see `CounterServicer._instance()`.
+        self._instances: dict[str, CounterServicer] = {}
         self._state_manager = state_manager
         self.tasks_dispatcher = IMPORT_reboot_aio_internals_tasks_dispatcher.TasksDispatcher(
             application_id=application_id,
@@ -16107,16 +16119,19 @@ class PingServicer(PingBaseServicer):
         default=None,
     )
 
-    # An instance of the derived class for each state.
-    _instances: dict[str, PingServicer] = {}
-
     def _instance(self, state_id: str):
-        instances = PingServicer._instances
+        # An instance of the derived class for each state. The
+        # middleware keeps them, so that they live as long as the server
+        # it serves and not as long as the process: another server in
+        # the same process (a later `Reboot` in a test, say) may serve
+        # the same state id with another servicer class.
+        assert self._middleware is not None
+        instances = self._middleware._instances
         instance = instances.get(state_id)
         if instance is None:
             instance = self.__class__()
             instance._middleware = self._middleware
-        instances[state_id] = instance
+            instances[state_id] = instance
         return instance
 
     @property
@@ -17097,16 +17112,19 @@ class PongServicer(PongBaseServicer):
         default=None,
     )
 
-    # An instance of the derived class for each state.
-    _instances: dict[str, PongServicer] = {}
-
     def _instance(self, state_id: str):
-        instances = PongServicer._instances
+        # An instance of the derived class for each state. The
+        # middleware keeps them, so that they live as long as the server
+        # it serves and not as long as the process: another server in
+        # the same process (a later `Reboot` in a test, say) may serve
+        # the same state id with another servicer class.
+        assert self._middleware is not None
+        instances = self._middleware._instances
         instance = instances.get(state_id)
         if instance is None:
             instance = self.__class__()
             instance._middleware = self._middleware
-        instances[state_id] = instance
+            instances[state_id] = instance
         return instance
 
     @property
@@ -18318,16 +18336,19 @@ class UserServicer(UserBaseServicer):
         default=None,
     )
 
-    # An instance of the derived class for each state.
-    _instances: dict[str, UserServicer] = {}
-
     def _instance(self, state_id: str):
-        instances = UserServicer._instances
+        # An instance of the derived class for each state. The
+        # middleware keeps them, so that they live as long as the server
+        # it serves and not as long as the process: another server in
+        # the same process (a later `Reboot` in a test, say) may serve
+        # the same state id with another servicer class.
+        assert self._middleware is not None
+        instances = self._middleware._instances
         instance = instances.get(state_id)
         if instance is None:
             instance = self.__class__()
             instance._middleware = self._middleware
-        instances[state_id] = instance
+            instances[state_id] = instance
         return instance
 
     @property
@@ -19745,16 +19766,19 @@ class CounterServicer(CounterBaseServicer):
         default=None,
     )
 
-    # An instance of the derived class for each state.
-    _instances: dict[str, CounterServicer] = {}
-
     def _instance(self, state_id: str):
-        instances = CounterServicer._instances
+        # An instance of the derived class for each state. The
+        # middleware keeps them, so that they live as long as the server
+        # it serves and not as long as the process: another server in
+        # the same process (a later `Reboot` in a test, say) may serve
+        # the same state id with another servicer class.
+        assert self._middleware is not None
+        instances = self._middleware._instances
         instance = instances.get(state_id)
         if instance is None:
             instance = self.__class__()
             instance._middleware = self._middleware
-        instances[state_id] = instance
+            instances[state_id] = instance
         return instance
 
     @property

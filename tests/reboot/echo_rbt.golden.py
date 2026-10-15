@@ -878,6 +878,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         )
 
         self._servicer = servicer
+        # An instance of the servicer's derived class for each state it
+        # has served; see `EchoServicer._instance()`.
+        self._instances: dict[str, EchoServicer] = {}
         self._state_manager = state_manager
         self.tasks_dispatcher = IMPORT_reboot_aio_internals_tasks_dispatcher.TasksDispatcher(
             application_id=application_id,
@@ -15623,16 +15626,19 @@ class EchoServicer(EchoBaseServicer):
         default=None,
     )
 
-    # An instance of the derived class for each state.
-    _instances: dict[str, EchoServicer] = {}
-
     def _instance(self, state_id: str):
-        instances = EchoServicer._instances
+        # An instance of the derived class for each state. The
+        # middleware keeps them, so that they live as long as the server
+        # it serves and not as long as the process: another server in
+        # the same process (a later `Reboot` in a test, say) may serve
+        # the same state id with another servicer class.
+        assert self._middleware is not None
+        instances = self._middleware._instances
         instance = instances.get(state_id)
         if instance is None:
             instance = self.__class__()
             instance._middleware = self._middleware
-        instances[state_id] = instance
+            instances[state_id] = instance
         return instance
 
     @property
