@@ -26,6 +26,7 @@ pub mod build;
 pub mod codegen;
 pub mod durable_coordinator;
 pub mod durable_participant;
+pub mod coordinated_local_recovery;
 pub mod explicit_abort;
 pub mod http_host;
 #[cfg(feature = "jwt-auth")]

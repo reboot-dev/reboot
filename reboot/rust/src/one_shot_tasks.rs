@@ -21,6 +21,9 @@ include!("task_listing.rs");
 include!("task_cancellation.rs");
 include!("initializer_admission.rs");
 include!("initializer_admission_tests.rs");
+#[cfg(test)]
+#[path = "participant_bound_task_binding_tests.rs"]
+mod participant_bound_task_binding_tests;
 const MAX_TASKS: usize = 1024;
 use tokio::{sync::mpsc, task::JoinSet};
 use tonic::Status;
@@ -83,6 +86,61 @@ pub trait ReaderTaskBinding: Send + Sync + 'static {
         _admitted: AdmittedWriterTask<'_>,
     ) -> Result<WriterTaskReceipt, Status> {
         Err(Status::failed_precondition("reader-only task owner"))
+    }
+}
+
+/// Concrete carrier of the participant used by a generated transaction adapter.
+/// The participant value is retained, not an independently supplied identity label.
+/// Custom bindings remain trusted application callbacks: this carrier does not
+/// prove the semantics of arbitrary callback code.
+///
+/// Private fields prevent manufacturing a carrier from an allocation label:
+/// ```compile_fail
+/// use reboot_rust_schema::one_shot_tasks::ParticipantBoundTaskBinding;
+/// let forged = ParticipantBoundTaskBinding {
+///     participant: std::sync::Arc::new(()), binding: (),
+/// };
+/// ```
+pub struct ParticipantBoundTaskBinding<P: crate::durable_participant::ParticipantSidecar, B: ReaderTaskBinding> {
+    participant: crate::durable_participant::DurableActorParticipant<P>,
+    binding: B,
+}
+impl<P: crate::durable_participant::ParticipantSidecar, B: ReaderTaskBinding>
+    ParticipantBoundTaskBinding<P, B>
+{
+    pub fn new(participant: crate::durable_participant::DurableActorParticipant<P>, binding: B) -> Self {
+        Self { participant, binding }
+    }
+}
+#[tonic::async_trait]
+impl<P: crate::durable_participant::ParticipantSidecar, B: ReaderTaskBinding> ReaderTaskBinding
+    for ParticipantBoundTaskBinding<P, B>
+{
+    fn validate(&self, task: &db::Task) -> Result<(), Status> { self.binding.validate(task) }
+    async fn execute(&self, task: &db::Task) -> Result<prost_types::Any, Status> {
+        self.binding.execute(task).await
+    }
+    async fn execute_terminal(&self, task: &db::Task) -> Result<db::task::ResponseOrError, Status> {
+        self.binding.execute_terminal(task).await
+    }
+    fn validate_error(&self, task: &db::Task, error: &prost_types::Any) -> Result<(), Status> {
+        self.binding.validate_error(task, error)
+    }
+    fn validate_terminal(&self, task: &db::Task, terminal: &db::task::ResponseOrError) -> Result<(), Status> {
+        self.binding.validate_terminal(task, terminal)
+    }
+    fn validate_response(&self, task: &db::Task, response: &prost_types::Any) -> Result<(), Status> {
+        self.binding.validate_response(task, response)
+    }
+    fn writer_method(&self, task: &db::Task) -> Option<&'static str> { self.binding.writer_method(task) }
+    fn writer_response_type(&self, task: &db::Task) -> Option<&'static str> { self.binding.writer_response_type(task) }
+    fn writer_capable(&self) -> bool { self.binding.writer_capable() }
+    async fn execute_workflow(&self, context: WorkflowContext<'_>) -> Result<WorkflowReceipt, Status> {
+        self.binding.execute_workflow(context).await
+    }
+    fn is_writer(&self, task: &db::Task) -> bool { self.binding.is_writer(task) }
+    async fn execute_writer(&self, admitted: AdmittedWriterTask<'_>) -> Result<WriterTaskReceipt, Status> {
+        self.binding.execute_writer(admitted).await
     }
 }
 
@@ -363,6 +421,8 @@ struct Inner {
     state_type: String,
     state_ref: String,
     binding: Arc<dyn ReaderTaskBinding>,
+    // Actual participant clone extracted from the concrete carrier before erasure.
+    participant_owner: Option<Box<dyn std::any::Any + Send + Sync>>,
     declarations: Vec<TaskMethodDeclaration>,
     sender: mpsc::Sender<()>,
     receiver: Mutex<Option<mpsc::Receiver<()>>>,
@@ -381,6 +441,41 @@ struct Inner {
     completed_operations: std::sync::atomic::AtomicUsize,
 }
 impl OneShotTasks {
+    /// Construct an owner from a concrete participant-bearing binding.
+    /// Validation precedes callback erasure and uses the original store and target.
+    pub fn new_with_participant_declarations<P, B>(
+        store: DatabaseActorStore,
+        state_type: String,
+        state_ref: String,
+        binding: ParticipantBoundTaskBinding<P, B>,
+        declarations: Vec<TaskMethodDeclaration>,
+    ) -> Result<Self, Status>
+    where
+        P: crate::durable_participant::ParticipantSidecar,
+        B: ReaderTaskBinding,
+    {
+        binding.participant.validate_task_owner(&store, &state_type, &state_ref)?;
+        let participant = binding.participant.clone();
+        let mut tasks = Self::new_with_declarations(store, state_type, state_ref, binding, declarations)?;
+        Arc::get_mut(&mut tasks.inner).expect("new task owner is unique")
+            .participant_owner = Some(Box::new(participant));
+        Ok(tasks)
+    }
+
+    pub(crate) fn validate_participant_owner<P: crate::durable_participant::ParticipantSidecar>(
+        &self,
+        participant: &crate::durable_participant::DurableActorParticipant<P>,
+    ) -> Result<(), Status> {
+        let retained = self.inner.participant_owner.as_ref()
+            .and_then(|owner| owner.downcast_ref::<crate::durable_participant::DurableActorParticipant<P>>())
+            .ok_or_else(|| Status::failed_precondition("task owner has no matching participant carrier"))?;
+        // SOURCE631 supplies this same-P allocation comparison; labels/gates alone are insufficient.
+        if !retained.same_owner_allocation(participant) {
+            return Err(Status::failed_precondition("task owner belongs to another participant allocation"));
+        }
+        retained.validate_task_owner(&self.inner.store, &self.inner.state_type, &self.inner.state_ref)
+    }
+
     /// Set the host-owned pending/delivery budget before recovery starts.
     /// Defaults to the durable admission bound (1024). Parked bodies consume
     /// this budget, so scheduling rejects excess Pending rather than accepting
@@ -456,6 +551,7 @@ impl OneShotTasks {
                 state_type,
                 state_ref,
                 binding: Arc::new(binding),
+                participant_owner: None,
                 declarations,
                 sender,
                 receiver: Mutex::new(Some(receiver)),
@@ -2293,6 +2389,29 @@ impl HostRecovery for MultiOwnerTaskRecovery {
         supervisor: &mut JoinSet<Result<(), Status>>,
         cancel: RecoveryCancellation,
     ) -> Result<(), Status> {
+        let prepared = self.prepare_shared_startup(cancel)?;
+        let initial = tokio::select! {
+            biased;
+            _ = prepared.cancel.cancelled() => return Err(Status::cancelled("shared task recovery cancelled")),
+            result = prepared.scope.pending() => result?,
+        };
+        prepared.activate(supervisor, initial)
+    }
+}
+
+/// Exact original dispatch claims, held before canonical graph IO. This is not
+/// a readiness receipt. Host graph custody must retain it across cancellation.
+pub(crate) struct PreparedSharedTaskStartup {
+    scope: Arc<SharedTaskScope>,
+    claims: std::collections::BTreeMap<(String, String), Arc<DispatchOwner>>,
+    cancel: RecoveryCancellation,
+    activated: std::sync::atomic::AtomicBool,
+}
+impl MultiOwnerTaskRecovery {
+    pub(crate) fn prepare_shared_startup(
+        &self,
+        cancel: RecoveryCancellation,
+    ) -> Result<PreparedSharedTaskStartup, Status> {
         let scope = self.scope.clone();
         let mut claims = std::collections::BTreeMap::new();
         // Claim EVERY original generation before the first Recover/Load await.
@@ -2337,11 +2456,158 @@ impl HostRecovery for MultiOwnerTaskRecovery {
                 ));
             }
         }
-        let initial = tokio::select! {
-            biased;
-            _ = cancel.cancelled() => return Err(Status::cancelled("shared task recovery cancelled")),
-            result = scope.pending() => result?,
-        };
+        Ok(PreparedSharedTaskStartup {
+            scope,
+            claims,
+            cancel,
+            activated: false.into(),
+        })
+    }
+}
+impl PreparedSharedTaskStartup {
+    fn validate_claims(&self) -> Result<(), Status> {
+        if self.cancel.is_cancelled() {
+            return Err(Status::cancelled("prepared shared recovery cancelled"));
+        }
+        for claim in self.claims.values() {
+            let generation = claim
+                .tasks
+                .inner
+                .running_owner
+                .lock()
+                .expect("task owner poisoned");
+            let host = claim
+                .tasks
+                .inner
+                .recovery_owner
+                .lock()
+                .expect("task recovery owner poisoned");
+            if !generation
+                .as_ref()
+                .is_some_and(|current| Arc::ptr_eq(current, &claim.lifecycle.generation))
+                || !host
+                    .as_ref()
+                    .is_some_and(|host| host.same_recovery_owner(&self.cancel))
+            {
+                return Err(Status::failed_precondition(
+                    "prepared startup generation/host revoked",
+                ));
+            }
+        }
+        Ok(())
+    }
+    /// Scope equality is protobuf equality; actor allocation agreement uses the
+    /// participant's existing pointer-based original-gate validator, not refs.
+    pub(crate) fn validate_graph_owner<P: crate::durable_participant::ParticipantSidecar>(
+        &self,
+        participant: &crate::durable_participant::DurableActorParticipant<P>,
+        store: &DatabaseActorStore,
+        request: &db::RecoverRequest,
+    ) -> Result<(), Status> {
+        if &self.scope.request != request {
+            return Err(Status::failed_precondition(
+                "graph/task recovery scope mismatch",
+            ));
+        }
+        let target = participant.actor_target();
+        let owner = self
+            .scope
+            .tasks
+            .get(&(target.state_type.clone(), target.state_ref.clone()))
+            .ok_or_else(|| {
+                Status::failed_precondition("graph participant lacks original task owner")
+            })?;
+        participant.validate_task_owner(
+            &owner.inner.store,
+            &target.state_type,
+            &target.state_ref,
+        )?;
+        participant.validate_task_owner(store, &target.state_type, &target.state_ref)?;
+        owner.validate_participant_owner(participant)
+    }
+    pub(crate) fn owner_count(&self) -> usize {
+        self.scope.tasks.len()
+    }
+
+    /// Consume the caller's one successful-EOF snapshot synchronously. No scan,
+    /// Load, activation, adoption or provisional -> committed queue conversion.
+    pub(crate) fn validate_snapshot(
+        &self,
+        pages: &[db::RecoverResponse],
+    ) -> Result<CommittedTaskPartitions, Status> {
+        self.validate_claims()?;
+        let mut scan =
+            CommittedTaskScan::new(self.scope.tasks.values().cloned(), &self.scope.request)?;
+        for page in pages {
+            scan.push(page.clone())?;
+        }
+        let committed = scan.finish(Ok(()))?;
+        committed.validate_delivery_budgets()?;
+        for page in pages {
+            for tx in &page.participant_transactions {
+                let key = (tx.state_type.clone(), tx.state_ref.clone());
+                let Some(owner) = self.scope.tasks.get(&key) else {
+                    continue;
+                };
+                // No checkpoint effect validator exists in this baseline. Refuse
+                // rather than dropping or treating unknown effects as committed.
+                if !tx.uncommitted_idempotent_mutations.is_empty() {
+                    return Err(Status::failed_precondition(
+                        "shared graph checkpoint validation unavailable",
+                    ));
+                }
+                owner.validate(&tx.uncommitted_tasks)?;
+                if tx.uncommitted_tasks.iter().any(|task| {
+                    owner.declaration(task).is_none() || owner.cursor_declaration(task).is_some()
+                }) {
+                    return Err(Status::failed_precondition(
+                        "provisional task lacks generated declaration",
+                    ));
+                }
+            }
+        }
+        if committed.pending.iter().any(|task| {
+            let id = task.task_id.as_ref().expect("validated ID");
+            let owner = &self.scope.tasks[&(id.state_type.clone(), id.state_ref.clone())];
+            owner.declaration(task).is_none() || owner.cursor_declaration(task).is_some()
+        }) {
+            return Err(Status::failed_precondition(
+                "shared graph requires declared non-cursor tasks",
+            ));
+        }
+        Ok(committed)
+    }
+
+    pub(crate) fn activate(
+        &self,
+        supervisor: &mut JoinSet<Result<(), Status>>,
+        initial: CommittedTaskPartitions,
+    ) -> Result<(), Status> {
+        self.validate_claims()?;
+        initial.validate_delivery_budgets()?;
+        if initial.owners.len() != self.scope.tasks.len()
+            || initial.owners.iter().any(|(key, owner)| {
+                self.scope
+                    .tasks
+                    .get(key)
+                    .is_none_or(|original| !Arc::ptr_eq(&owner.inner, &original.inner))
+            })
+        {
+            return Err(Status::failed_precondition(
+                "prepared startup owner allocation mismatch",
+            ));
+        }
+        if self
+            .activated
+            .swap(true, std::sync::atomic::Ordering::AcqRel)
+        {
+            return Err(Status::failed_precondition(
+                "shared startup already consumed",
+            ));
+        }
+        let scope = self.scope.clone();
+        let claims = self.claims.clone();
+        let cancel = self.cancel.clone();
         let pending = initial.pending.clone();
         let partitions = initial.into_partitions()?;
         // No fallible setup may follow activation. Keep receivers in the owned
@@ -4397,3 +4663,7 @@ mod live_task_wait_tests;
 #[cfg(test)]
 #[path = "live_task_wait_revocation_tests.rs"]
 mod live_task_wait_revocation_tests;
+
+#[cfg(test)]
+#[path = "prepared_shared_task_startup_tests.rs"]
+mod prepared_shared_task_startup_tests;

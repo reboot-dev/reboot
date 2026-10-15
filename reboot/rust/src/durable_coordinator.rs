@@ -16,7 +16,10 @@ use uuid::Uuid;
 
 use crate::{
     database_proto as database,
-    durable_participant::{DurableActorParticipantHost, ParticipantSidecar, SharedLocalPromotion},
+    durable_participant::{
+        DurableActorParticipant, DurableActorParticipantHost, ParticipantSidecar,
+        SharedLocalPromotion,
+    },
     runtime::TransactionMode,
 };
 
@@ -381,6 +384,14 @@ impl<C: ParticipantSidecar> InProcessParticipantEndpoint<C> {
     pub fn new(host: DurableActorParticipantHost<C>) -> Self {
         Self { host }
     }
+
+    pub(crate) fn owns_participant(
+        &self,
+        target: &ParticipantTarget,
+        participant: &DurableActorParticipant<C>,
+    ) -> bool {
+        self.host.owns_participant(target, participant)
+    }
 }
 
 impl<C: ParticipantSidecar> ParticipantEndpoint for InProcessParticipantEndpoint<C> {
@@ -518,6 +529,28 @@ impl<E: ParticipantEndpoint> ExactParticipantResolver<E> {
     }
 }
 
+// Allocation evidence exists only for the concrete local endpoint whose actual
+// stored host can be inspected. Arbitrary resolvers/endpoints gain no attestation.
+impl<C: ParticipantSidecar> ExactParticipantResolver<InProcessParticipantEndpoint<C>> {
+    pub(crate) fn validate_original_participants(
+        &self,
+        participants: &std::collections::BTreeMap<ParticipantTarget, DurableActorParticipant<C>>,
+    ) -> Result<(), Status> {
+        if self.endpoints.len() != participants.len()
+            || participants.iter().any(|(target, participant)| {
+                self.endpoints
+                    .get(target)
+                    .is_none_or(|endpoint| !endpoint.owns_participant(target, participant))
+            })
+        {
+            return Err(Status::failed_precondition(
+                "local routes must contain exactly the original participant allocations",
+            ));
+        }
+        Ok(())
+    }
+}
+
 impl<E: ParticipantEndpoint> ParticipantResolver for ExactParticipantResolver<E> {
     type Endpoint = E;
 
@@ -573,6 +606,17 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
         self.identity.as_ref().ok_or_else(|| {
             Status::failed_precondition("explicit root abort requires coordinator identity")
         })
+    }
+
+    /// Closed local graph recovery may not relabel an original coordinator.
+    pub(crate) fn validate_local_recovery_identity(
+        &self,
+        target: &ParticipantTarget,
+    ) -> Result<(), Status> {
+        if self.require_identity()? != target {
+            return Err(Status::failed_precondition("coordinator recovery identity mismatch"));
+        }
+        Ok(())
     }
 
     /// Returns the injected sidecar so generated Tonic adapters can clone their
@@ -1630,6 +1674,7 @@ pub mod test_support {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    include!("coordinator_original_allocation_tests.rs");
     include!("coordinator_recovery_snapshot_tests.rs");
     use super::*;
     use std::collections::VecDeque;

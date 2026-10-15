@@ -1742,6 +1742,20 @@ impl<C: ParticipantSidecar> Clone for DurableActorParticipant<C> {
 }
 
 impl<C: ParticipantSidecar> DurableActorParticipant<C> {
+    /// Identity of the original shared state, not the address of a value clone.
+    /// Gate equality alone is insufficient: independent registries may bind the
+    /// same actor/store gate. No locks or sidecar calls are needed for this check.
+    pub(crate) fn same_owner_allocation(&self, other: &Self) -> bool {
+        self.state_type == other.state_type
+            && self.state_ref == other.state_ref
+            && Arc::ptr_eq(&self.pending, &other.pending)
+            && Arc::ptr_eq(&self.admissions, &other.admissions)
+            && Arc::ptr_eq(&self.cleanup_binding, &other.cleanup_binding)
+            && Arc::ptr_eq(&self.sidecar, &other.sidecar)
+            && Arc::ptr_eq(&self.changed, &other.changed)
+            && Arc::ptr_eq(&self.lock.binding, &other.lock.binding)
+    }
+
     pub fn new(
         sidecar: Arc<C>,
         state_type: impl Into<String>,
@@ -3451,6 +3465,16 @@ impl<C: ParticipantSidecar> DurableActorParticipantHost<C> {
         Self { participant }
     }
 
+    pub(crate) fn owns_participant(
+        &self,
+        target: &crate::durable_coordinator::ParticipantTarget,
+        participant: &DurableActorParticipant<C>,
+    ) -> bool {
+        self.participant.state_type == target.state_type
+            && self.participant.state_ref == target.state_ref
+            && self.participant.same_owner_allocation(participant)
+    }
+
     fn transaction_id<T>(&self, request: &Request<T>) -> Result<Uuid, Status>
     where
         T: TransactionId,
@@ -3656,6 +3680,7 @@ impl<C: ParticipantSidecar> database::participant_server::Participant
 
 #[cfg(test)]
 mod tests {
+    include!("participant_original_allocation_tests.rs");
     include!("participant_recovery_snapshot_tests.rs");
     use super::*;
     use std::collections::VecDeque;

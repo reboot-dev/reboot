@@ -97,6 +97,62 @@ exit zero preceded fresh container terminal inspection, and the original lock
 was free. Hot reload, new-consumer compilation and restart durability remain
 separate. This is not latest-upstream/full-native/overall SDK qualification.
 
+## Concrete original-owner closed local recovery checkpoint (2026-10-16)
+
+The new [closed local phase](src/coordinated_local_recovery.rs) implements actual
+`HostRecovery` for an explicitly supplied set of original local owners. Concrete
+resolver membership and captured endpoints must match the participants' real
+shared sidecar, pending/admission registries, gate binding and cleanup state.
+Legitimate participant value clones remain valid; matching actor names and a
+shared gate alone are insufficient. Coordinators must retain the actual resolver
+Arc, endpoint and original bound identity; anonymous or relabeled targets reject.
+
+`ParticipantBoundTaskBinding` privately retains the actual participant before
+binding erasure. Both generated transaction task helpers wrap the adapter's
+original participant, forward the existing binding hooks, and validate the real
+store/gate/actor allocation. Ordinary unbound APIs stay compatible but cannot
+satisfy this graph phase. Application callbacks remain trusted code: allocation
+checks do not prove arbitrary callback semantics.
+
+Startup claims original task dispatch custody and host cancellation before
+canonical I/O, validates the complete EOF snapshot before any adoption, converges
+only the explicit owned graph, rescans committed tasks and activates the existing
+supervisor. Watch routing contains canonical root membership, not cached decisions,
+and calls the actual supplied coordinator's durable decision endpoint. The host
+itself marks Ready after all recovery registrations succeed; dispatch waits on
+that actual readiness. Successful transfer clears the phase's prepared claim
+retention while keeping supervisor custody. Failed/uncertain adoption keeps the
+original bundle. Unrelated shard records are not a blanket startup veto.
+
+The [actual aggregate receipt](tests/evidence/closed-local-host-library-20261016.json)
+records **736 SDK library tests passed, 0 failed, 7 ignored** and **9 original
+Bank/Account consumer tests passed**. SDK, original consumer and pinned
+`reboot-examples` Legacy strict Clippy passed; Legacy binaries and the native
+constructor fixture rebuilt. The [real-host controls](src/coordinated_local_host_tests.rs)
+run actual `ApplicationHost`, sidecars, original participant bindings, exact
+resolver and generated Tasks HTTP/2 service/client. A later gated recovery holds
+readiness and callback execution; release permits the typed result and canonical
+completion-model Load. A distinct participant sharing the same gate rejects.
+Healthy shutdown releases dispatch claims even while the phase Arc is retained;
+one-shot receivers remain consumed, not reusable.
+
+These controls have an **empty transaction graph** and an explicitly modeled
+Pending-to-CompleteTask backend. They are not native transaction replay or durable
+CAS proof. The [fresh native receipt](tests/evidence/closed-local-host-native-controls-20261016.json)
+separately records **15 existing constructor/default-root controls passed**, with
+**30 joined SDK/Database children**, clean custody and exact container retirement.
+All **311** tested SDK inputs match this checkpoint before ledger bookkeeping;
+the cached non-SDK snapshot and native Database are not latest-upstream builds.
+Prior compiler/lint failures remain failed history, not converted successes.
+
+**Still open:** dynamic original-owner provisioning, complete placement/catalog
+integration, native closed-host task/graph recovery, provisional task/checkpoint
+and cursor validation, taskful original Bank SignUp/WelcomeEmail, shared Transfer,
+and overall parity. The caller supplies a complete trusted recovery shard/tag
+scope and every owned target; identity discovery is not allocation authority.
+Provisional/taskful/shared guards remain closed. Full hosted CI is not inferred
+from these local gates.
+
 ## Late-owner task results and committed Bank index checkpoint (2026-10-15)
 
 `LiveTaskWaitCatalog` now mounts one generated Tasks service and admits late
@@ -5247,7 +5303,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: b83645e37921170520171eb7a9b156f97eb555dc4619c4a6f0457aa2c6db17d4 -->
+<!-- parity-source-sha256: 9502463e840562796464b4f7af63b6dd4db83ae11f81d42f922e362b53c0d3bb -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,
