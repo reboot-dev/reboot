@@ -25,7 +25,7 @@ MCP App adds on top:
 ### `.rbtrc`
 
 Same shape as `python/references/lifecycle-rbtrc.md`. Chat
-apps add `--default-config=hmr` plus `:hmr` and `:dist` named
+apps add `--default-config=ports` plus `:ports` and `:dist` named
 configs that route Envoy to a Vite dev server (HMR) or serve the
 built MCP Apps from `frontend/dist/mcp/` (production):
 
@@ -73,11 +73,11 @@ dev run:portless --mcp-app
 # A dual-frontend app also serves its web app from the dev server, at `/`:
 # dev run:portless --web-app
 
-# Plain ports instead: `rbt dev run --config=hmr`, with Vite run as
-# `cd frontend && npm run dev:hmr`.
-dev run:hmr --frontend-url=http://localhost:5173
-dev run:hmr --mcp-app
-# dev run:hmr --web-app
+# Plain ports instead: `rbt dev run --config=ports`, with Vite run as
+# `cd frontend && npm run dev:ports`.
+dev run:ports --frontend-url=http://localhost:5173
+dev run:ports --mcp-app
+# dev run:ports --web-app
 
 # Dist mode: serve the built MCP Apps from "frontend/dist/mcp/" (no Vite HMR).
 # Usage: uv run rbt dev run --config=dist
@@ -88,10 +88,10 @@ dev run:dist --mcp-app-dist-path=frontend/dist/mcp
 
 # The developer dashboard (`rbt dashboard`) too: it is
 # https://dashboard.<project-name>.localhost by default, or on the plain
-# port http://127.0.0.1:9871 with `rbt dashboard --config=hmr`.
+# port http://127.0.0.1:9871 with `rbt dashboard --config=ports`.
 dashboard --default-config=portless
 dashboard:portless --portless
-dashboard:hmr --no-portless
+dashboard:ports --no-portless
 
 # When expunging, expunge that state we've saved.
 dev expunge --application-name=<project-name>
@@ -100,7 +100,7 @@ dev expunge --application-name=<project-name>
 # Cloud, whose containers run `CMD ["rbt", "serve", "run"]` — see
 # `python/references/lifecycle-dockerfile.md`). Mirrors the `dev run`
 # block above, minus the dev-only knobs (`--watch`, `--env-file`,
-# the `:hmr`/`:dist` configs).
+# the `:ports`/`:dist` configs).
 serve run --python
 serve run --mcp-app-dist-path=frontend/dist/mcp
 # A dual-frontend app also serves its built web app at `/`:

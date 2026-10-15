@@ -51,7 +51,7 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
                     'generate --react=frontend/api\n'
                     '\n'
                     'dev run --application=backend/src/main.py\n'
-                    'dev run:hmr --frontend-url=http://localhost:5173'
+                    'dev run:ports --frontend-url=http://localhost:5173'
                 ),
             )
 
@@ -92,7 +92,7 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
                     'dev run --application=backend/src/main.py\n'
                     'dashboard --default-config=portless\n'
                     'dashboard:portless --portless\n'
-                    'dashboard:hmr --no-portless'
+                    'dashboard:ports --no-portless'
                 ),
             )
 
@@ -102,8 +102,8 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
             )
 
     async def test_the_configs_are_named_like_dev_runs(self) -> None:
-        """`rbt dashboard --config=hmr` goes with `rbt dev run
-        --config=hmr`: the default config is portless, and the
+        """`rbt dashboard --config=ports` goes with `rbt dev run
+        --config=ports`: the default config is portless, and the
         config named for plain ports turns it off."""
         rbtrc = (
             'generate api/\n'
@@ -111,7 +111,7 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
             'dev run --application=backend/src/main.py\n'
             'dashboard --default-config=portless\n'
             'dashboard:portless --portless\n'
-            'dashboard:hmr --no-portless'
+            'dashboard:ports --no-portless'
         )
         with tempfile.TemporaryDirectory() as state_directory:
             args, _ = self._parse(state_directory, rbtrc=rbtrc)
@@ -124,7 +124,7 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
             )
             self.assertTrue(args.portless)
 
-            args, _ = self._parse(state_directory, rbtrc=rbtrc, config='hmr')
+            args, _ = self._parse(state_directory, rbtrc=rbtrc, config='ports')
             self.assertFalse(args.portless)
 
     async def test_no_application_name_without_one(self) -> None:

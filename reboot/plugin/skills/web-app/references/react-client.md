@@ -57,7 +57,7 @@ same version as the backend's `reboot` dependency, and `zod`:
   "scripts": {
     "dev": "npm run dev:portless",
     "dev:portless": "portless frontend.<app> vite",
-    "dev:hmr": "vite",
+    "dev:ports": "vite",
     "build": "tsc -b && vite build"
   },
   "dependencies": {
@@ -141,7 +141,7 @@ the default, `dev:portless`, which runs `portless frontend.<app> vite`
 (`<app>` is the `.rbtrc`'s `--application-name`; `portless` is a dev
 dependency and appends Vite's `--port` itself) and serves the SPA at
 `https://frontend.<app>.localhost`, which the backend serves it from at
-`https://<app>.localhost/`, and `dev:hmr` is plain `vite` at
+`https://<app>.localhost/`, and `dev:ports` is plain `vite` at
 `http://localhost:5173/`, served at `http://localhost:9991/` the
 same way; `npm run build` writes
 `frontend/dist/web/`, a plain SPA build that any host serves at

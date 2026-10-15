@@ -54,7 +54,7 @@ if [ -n "$EXPECTED_RBT_DEV_OUTPUT_FILE" ]; then
   # No portless proxy here: run on plain ports.
   ANTHROPIC_API_KEY="dummy-for-health-check" \
     rbt $RBT_FLAGS dev run \
-      --config=hmr \
+      --config=ports \
       --terminate-after-health-check \
       > "$actual_output_file"
 

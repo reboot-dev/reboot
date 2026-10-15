@@ -67,7 +67,7 @@ which gives them names instead of ports: `npm run dev` is
 `rbt dev run` needs the `portless` CLI too: install it once with
 `npm install -g portless` and start its proxy with
 `portless proxy start`. (For plain ports instead, run
-`uv run rbt dev run --config=hmr` and `cd frontend && npm run dev:hmr`,
+`uv run rbt dev run --config=ports` and `cd frontend && npm run dev:ports`,
 and read `http://localhost:9991` below.)
 
 Then open <https://chick-potle.localhost> and follow the setup wizard to
