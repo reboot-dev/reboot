@@ -69,6 +69,34 @@ is not latest-upstream build qualification, full CLI parity, init/generate,
 hot reload, restart durability or overall SDK parity. Earlier failures were
 preserved and never converted to success.
 
+## Actual normal init, Rust adapter generation and health termination (2026-10-15)
+
+The [batched CLI receipt](tests/evidence/cli-init-generate-terminate-20261015.json)
+records three further real normal-main gates on the same qualified frozen
+merged snapshot:
+
+- `rbt init --backend=rust --frontend=none` created a fresh greeting project,
+  Cargo manifest, `.rbtrc` and schema. Parent inventoried **nine** actual
+  scaffold/adapter files. Historical fixtures were not changed.
+- The real Rust protoc plugin was built from that frozen SDK using
+  `cargo build --locked --offline` (**14.24 seconds**). Normal
+  `rbt generate --rust=generated-adapters --rust-module=crate::proto api`
+  emitted the actual `rust_greetings.v1.HelloWorldMethods` adapter; the
+  plugin and generated output hashes are recorded. This is standalone adapter
+  emission, not a claim that the newly initialized consumer compiled.
+- Normal `rbt dev run --rust --terminate-after-health-check` reached canonical
+  Serving and exited **zero** without an external terminating signal. Its
+  Database/app leaders and groups were gone, the listener was closed, and
+  the unrelated sentinel survived. This termination gate used the original
+  qualified hello-tasks consumer, **not** the newly initialized project.
+
+Parent readback verified all **3255** source members, helper pins, all **2665**
+Python overlay files, row-log hashes and scaffold/adapter artifacts. All owned
+children joined without adopted descendants or cleanup failure; exact attach
+exit zero preceded fresh container terminal inspection, and the original lock
+was free. Hot reload, new-consumer compilation and restart durability remain
+separate. This is not latest-upstream/full-native/overall SDK qualification.
+
 ## Cursor/results actual native driver milestone (2026-10-15)
 
 The [actual native driver receipt](tests/evidence/cursor-native-driver-20261015.json)
