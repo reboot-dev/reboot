@@ -186,8 +186,16 @@ async def wait_for_health(host, database, client: Path, env: dict[str, str]) -> 
 
 
 def cancel_on_terminal_signal(operation):
+    """Own SIGTERM/SIGINT unless the caller explicitly owns cancellation.
+
+    Caller-owned mode must be used inside the caller's signal cancellation
+    scope. It leaves all handlers untouched and propagates CancelledError so
+    owned_process cleanup runs before the caller handles signal termination.
+    """
     @wraps(operation)
     async def run(*args, **kwargs):
+        if kwargs.get('terminal_signals_owned_by_caller', False) is True:
+            return await operation(*args, **kwargs)
         loop = asyncio.get_running_loop()
         task = asyncio.current_task()
         assert task is not None  # This wrapper always runs inside an asyncio task.
@@ -220,6 +228,7 @@ async def run_rust_dev(*, manifest: Path, database_binary: Path, state: Path,
                        env: dict[str, str] | None = None,
                        terminate_after_health_check: bool = False,
                        allow_insecure_database: bool = False,
+                       terminal_signals_owned_by_caller: bool = False,
                        report: Callable[[str], None] = print) -> int:
     manifest = manifest.resolve()
     database_binary = database_binary.resolve()

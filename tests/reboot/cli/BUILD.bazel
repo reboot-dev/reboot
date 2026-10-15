@@ -175,6 +175,13 @@ py_test(
 )
 
 py_test(
+    name = "rust_signal_ownership_tests_py",
+    srcs = ["test_rust_signal_ownership.py"],
+    main = "test_rust_signal_ownership.py",
+    data = ["//reboot/cli/commands:rust_signal_ownership_sources"],
+)
+
+py_test(
     name = "rust_app_dx_tests_py",
     srcs = ["rust_app_dx_test.py"],
     main = "rust_app_dx_test.py",

@@ -12,6 +12,25 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## CLI signal-owner compatibility source checkpoint (2026-10-15)
+
+The Rust dev helper now has an explicit caller-owned cancellation mode. Normal
+CLI dispatch selects it only when the public
+`signals.cancel_on_signal_and_raise_system_exit` capability is callable; legacy
+main retains the helper's existing SIGTERM/SIGINT handling. Caller-owned mode
+does not inspect or replace handlers and propagates cancellation after owned
+process cleanup. API presence is not itself proof that an outer cancellation
+scope is active.
+
+The [focused regressions](../../tests/reboot/cli/test_rust_signal_ownership.py)
+passed **five** tests, including actual test-owned child cancellation/join,
+untouched caller handlers, legacy handler restoration and unrelated cancellation.
+Adjacent launch-receipt regressions passed **14** tests. Independent source and
+BUILD/runfiles reviews passed; a minimal symlink-runfiles simulation also ran
+the five tests successfully. **No actual Bazel execution or merged-main signal
+acceptance is inferred from these source/unit checks.** The separate real CLI
+runtime gate remains distinct.
+
 ## Cursor/results actual native driver milestone (2026-10-15)
 
 The [actual native driver receipt](tests/evidence/cursor-native-driver-20261015.json)
@@ -4759,7 +4778,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 43523d887bcbe1e3c617bb00e28c8b46690079fbbe9e7a0f6abcfca3ca372f9d -->
+<!-- parity-source-sha256: a4b0ef644d9af01c57583beff058dc7a2533a43a29577856998e8b0eb84c7498 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

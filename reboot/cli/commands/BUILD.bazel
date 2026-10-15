@@ -23,6 +23,12 @@ py_library(
     ],
 )
 
+filegroup(
+    name = "rust_signal_ownership_sources",
+    srcs = ["dev.py", "rust_dev.py"],
+    visibility = ["//tests/reboot/cli:__pkg__"],
+)
+
 py_library(
     name = "rust_dev_py",
     srcs = ["rust_dev.py"],
@@ -45,6 +51,7 @@ py_library(
         "//rbt/std/presence/v1:presence_py_reboot",
         "//reboot/aio:aborted_py",
         "//reboot/aio:external_py",
+        "//reboot/aio:signals_py",
         "//reboot/cli/common:dev_extra_py",
         "//reboot/cli/common:directories_py",
         "//reboot/cli/common:frontend_py",

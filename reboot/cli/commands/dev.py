@@ -1183,6 +1183,7 @@ async def dev_run(
     """Implementation of the 'dev run' subcommand."""
 
     if getattr(args, 'rust', False):
+        from reboot.aio import signals
         from reboot.cli.commands.rust_dev import RustDevError, run_rust_dev, validate_rust_args
         try:
             validate_rust_args(args)
@@ -1204,6 +1205,10 @@ async def dev_run(
                     watch=args.watch, env=environment,
                     allow_insecure_database=args.rust_allow_insecure_database,
                     terminate_after_health_check=args.terminate_after_health_check is True,
+                    # New CLI main owns cancellation for all terminating signals;
+                    # older main leaves SIGTERM/SIGINT ownership to this helper.
+                    terminal_signals_owned_by_caller=callable(getattr(
+                        signals, 'cancel_on_signal_and_raise_system_exit', None)),
                     report=terminal.info,
                 )
         except (RustDevError, OSError) as error:

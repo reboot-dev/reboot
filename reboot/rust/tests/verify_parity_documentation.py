@@ -44,6 +44,7 @@ def source_manifest():
             'tests/reboot/cli/rust_examples_legacy_crash_e2e.py',
             'tests/reboot/cli/rust_examples_legacy_crash_test.py',
             'tests/reboot/cli/rust_launch_receipt_test.py',
+            'tests/reboot/cli/test_rust_signal_ownership.py',
             'reboot/rust/tests/fixtures/reboot_examples/upstream.json',
             'tests/reboot/cli/rust_examples_budget_test.py',
             'tests/reboot/cli/rust_user_checkpoint_fixture.py',
@@ -107,6 +108,7 @@ class CheckerTests(unittest.TestCase):
             'tests/reboot/cli/rust_examples_legacy_crash_e2e.py',
             'tests/reboot/cli/rust_examples_legacy_crash_test.py',
             'tests/reboot/cli/rust_launch_receipt_test.py',
+            'tests/reboot/cli/test_rust_signal_ownership.py',
             'reboot/rust/tests/fixtures/reboot_examples/upstream.json',
         ):
             with self.subTest(name=name):
