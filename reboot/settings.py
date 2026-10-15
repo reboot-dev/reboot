@@ -137,12 +137,18 @@ ENVVAR_RBT_STATE_DIRECTORY = 'RBT_STATE_DIRECTORY'
 ENVVAR_RBT_NODEJS = 'RBT_NODEJS'
 ENVVAR_RBT_SERVERS = 'RBT_SERVERS'
 
-# URL of the frontend dev server (web + MCP) for HMR support.
-# Format: "http://host:port" (e.g., "http://localhost:5173").
-# When set, Envoy routes "/__/frontend/**" to this server.
-ENVVAR_RBT_FRONTEND_HOST = 'RBT_FRONTEND_HOST'
+# URL of the frontend's dev server (e.g., Vite at
+# "http://localhost:5173"), which Envoy proxies "/__/frontend/**" to
+# (`rbt dev run --frontend-url`).
+ENVVAR_RBT_FRONTEND_URL = 'RBT_FRONTEND_URL'
+# "true" when the application's MCP Apps are served from that dev
+# server (`rbt dev run --mcp-app`); their builds are served from
+# `RBT_MCP_APP_DIST_PATH` instead.
+ENVVAR_RBT_MCP_APP = 'RBT_MCP_APP'
 ENVVAR_RBT_FRONTEND_ROOT_PATH = 'RBT_FRONTEND_ROOT_PATH'
-ENVVAR_RBT_FRONTEND_DIST_PATH = 'RBT_FRONTEND_DIST_PATH'
+# Project-relative directory holding the built MCP Apps, e.g.
+# "frontend/dist", served under "/__/frontend/".
+ENVVAR_RBT_MCP_APP_DIST_PATH = 'RBT_MCP_APP_DIST_PATH'
 
 # Environment variable indicating that `rbt` is being invoked from
 # Node.js.

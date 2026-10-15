@@ -64,12 +64,13 @@ dev run --default-config=hmr
 # Envoy routes "/__/frontend/**" to Vite for HMR support.
 dev run --frontend-root-path=frontend
 
-dev run:hmr --frontend-host=http://localhost:5173
+dev run:hmr --frontend-url=http://localhost:5173
+dev run:hmr --mcp-app
 
 # Dist mode: serve pre-built artifacts from "frontend/dist/" (no Vite HMR).
 # Usage: uv run rbt dev run --config=dist
 # Requires: cd frontend && npm run build
-dev run:dist --frontend-dist-path=frontend/dist
+dev run:dist --mcp-app-dist-path=frontend/dist
 
 # When expunging, expunge that state we've saved.
 dev expunge --application-name=<project-name>
@@ -80,7 +81,7 @@ dev expunge --application-name=<project-name>
 # block above, minus the dev-only knobs (`--watch`, `--env-file`,
 # the `:hmr`/`:dist` configs).
 serve run --python
-serve run --frontend-dist-path=frontend/dist --frontend-root-path=frontend
+serve run --mcp-app-dist-path=frontend/dist --frontend-root-path=frontend
 serve run --application=backend/src/main.py
 serve run --application-name=<project-name>
 serve run --tls=external

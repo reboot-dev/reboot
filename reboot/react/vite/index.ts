@@ -24,7 +24,7 @@
 //
 //   * `vite` (serve): a single dev server that delivers HMR for every
 //     MCP App AND the web app, all under `base: "/__/frontend/"`. Envoy
-//     proxies that prefix to this dev server (`--frontend-host`).
+//     proxies that prefix to this dev server (`--frontend-url`).
 //   * `RBT_BUILD_TARGET=mcp:<name> vite build`: builds one MCP App into
 //     a single, self-contained `dist/mcp/<name>/index.html` (assets
 //     inlined via `vite-plugin-singlefile`). The framework serves it
@@ -52,7 +52,7 @@ import {
 } from "vite";
 import { viteSingleFile } from "vite-plugin-singlefile";
 
-// The URL prefix Envoy proxies to the dev server (`--frontend-host`),
+// The URL prefix Envoy proxies to the dev server (`--frontend-url`),
 // which is also what the backend serves built MCP Apps under.
 const BASE = "/__/frontend/";
 
@@ -348,7 +348,7 @@ export function reboot(options: RebootOptions = {}): Plugin[] {
         claim(
           config,
           "base",
-          "to `/__/frontend/`, the prefix Envoy proxies to this dev server (`--frontend-host`)"
+          "to `/__/frontend/`, the prefix Envoy proxies to this dev server (`--frontend-url`)"
         );
         claim(
           config,
@@ -422,7 +422,7 @@ export function reboot(options: RebootOptions = {}): Plugin[] {
       claim(
         config,
         "build.outDir",
-        "to `dist/mcp/<name>`, where `--frontend-dist-path` looks for each built MCP App"
+        "to `dist/mcp/<name>`, where `--mcp-app-dist-path` looks for each built MCP App"
       );
       claim(
         config,

@@ -211,7 +211,8 @@ generate --react=frontend/api
 # Proxy the frontend through Vite for hot module replacement.
 dev run --frontend-root-path=frontend
 
-dev run:hmr --frontend-host=http://localhost:5173
+dev run:hmr --frontend-url=http://localhost:5173
+dev run:hmr --mcp-app
 
 # Default to HMR mode when --config is not specified.
 dev run --default-config=hmr
@@ -220,8 +221,9 @@ dev run --default-config=hmr
 | Flag | Description |
 | --- | --- |
 | `dev run --frontend-root-path=<dir>` | Names the frontend root (e.g. `frontend`). Set once on the base `dev run` line so the `:hmr` and `:dist` configs inherit it. |
-| `dev run --frontend-host=<url>` | HMR: point at the Vite dev server URL (e.g. `http://localhost:5173`); Envoy proxies `/__/frontend/**` to it. |
-| `dev run --frontend-dist-path=<dir>` | Dist: serve pre-built frontend assets from `<dir>` (e.g. `frontend/dist`) on disk; mutually exclusive with `--frontend-host`. |
+| `dev run --frontend-url=<url>` | The frontend's dev server (e.g. Vite at `http://localhost:5173`): Envoy proxies `/__/frontend/**` to it, with Hot Module Replacement. Says only where the frontend is; alone it is an error. |
+| `dev run --mcp-app` | Serve the application's MCP Apps (its `UI(...)` methods) from `--frontend-url`, which it requires. An application with `UI(...)` methods needs this or `--mcp-app-dist-path`; one without refuses both. |
+| `dev run --mcp-app-dist-path=<dir>` | Dist: serve the built MCP Apps from `<dir>` (e.g. `frontend/dist`) on disk; mutually exclusive with `--frontend-url` and `--mcp-app`. |
 | `dev run --default-config=<name>` | Sets the default configuration profile when `--config` is not specified. |
 | `dev run:hmr` / `dev run:dist` | Named configurations. Flags prefixed with `dev run:<name>` only apply when `--config=<name>` is used. |
 

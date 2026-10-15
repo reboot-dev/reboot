@@ -61,9 +61,9 @@ from reboot.mcp.iframe import (
     host_supports_iframe,
 )
 from reboot.settings import (
-    ENVVAR_RBT_FRONTEND_DIST_PATH,
-    ENVVAR_RBT_FRONTEND_HOST,
     ENVVAR_RBT_FRONTEND_ROOT_PATH,
+    ENVVAR_RBT_FRONTEND_URL,
+    ENVVAR_RBT_MCP_APP_DIST_PATH,
 )
 from typing import Any, Optional, Union
 from urllib.parse import urlparse
@@ -76,7 +76,7 @@ _MAX_UI_CACHE_ENTRIES = 16
 
 # Per-process random token used as the cache-bust signature in
 # HMR mode (`--config=hmr` / `--config=default`, i.e. when
-# ENVVAR_RBT_FRONTEND_HOST is set). `dev_inline_html`
+# ENVVAR_RBT_FRONTEND_URL is set). `dev_inline_html`
 # bootstraps content live from the Vite dev server, so there
 # is nothing on disk to hash; a per-process UUID gives host-
 # side caches a fresh URI on every server restart, which
@@ -165,7 +165,7 @@ def _frontend_root_path() -> str:
     prefix to strip off a project-relative `UI(path=...)` to get the
     UI's address within the frontend. Always named explicitly via
     `--frontend-root-path`, which is required alongside both
-    `--frontend-host` (dev/HMR) and `--frontend-dist-path` (dist).
+    `--frontend-url` (dev/HMR) and `--mcp-app-dist-path` (dist).
     Empty when unset. Surrounding slashes are stripped, so a flag
     value like `frontend/` still matches project-relative
     `UI(path=...)` values.
@@ -211,22 +211,22 @@ def _resolve_dist_path(
 ) -> Optional[Path]:
     """Resolve the production-build `index.html` path for a UI.
 
-    The built assets live under `--frontend-dist-path` at the UI's
+    The built assets live under `--mcp-app-dist-path` at the UI's
     address within the frontend — i.e. `ui_path` with the explicit
     `--frontend-root-path` prefix stripped. For example, with
-    `--frontend-dist-path` "frontend/dist", `--frontend-root-path`
+    `--mcp-app-dist-path` "frontend/dist", `--frontend-root-path`
     "frontend", and `ui_path` "frontend/mcp/clicker", the build is at
     "frontend/dist/mcp/clicker/index.html". `artifact_path`, when
     given, overrides this with an explicit project-relative directory.
 
     Returns `None` when neither `artifact_path` nor
-    `--frontend-dist-path` names a directory to serve builds from: the
+    `--mcp-app-dist-path` names a directory to serve builds from: the
     only path that could be resolved then is the UI's unbuilt source
     `index.html` under the project root.
     """
     if artifact_path is not None:
         return project_root / artifact_path / "index.html"
-    dist = os.environ.get(ENVVAR_RBT_FRONTEND_DIST_PATH)
+    dist = os.environ.get(ENVVAR_RBT_MCP_APP_DIST_PATH)
     if not dist:
         return None
     return project_root / dist / _ui_address(ui_path) / "index.html"
@@ -252,7 +252,7 @@ def compute_ui_cache_bust(
 
     We are in one of the following three modes:
 
-    1. **HMR mode** (`ENVVAR_RBT_FRONTEND_HOST` set). `ui_html`
+    1. **HMR mode** (`ENVVAR_RBT_FRONTEND_URL` set). `ui_html`
        serves Vite's live HTML — via `dev_iframe_html` or
        `dev_inline_html`, depending on the host — so there's
        nothing on disk to hash. Returns `_STARTUP_CACHE_BUST_TOKEN`,
@@ -278,7 +278,7 @@ def compute_ui_cache_bust(
     Hash is not cryptographic — just enough entropy (12 hex =
     48 bits) to distinguish builds.
     """
-    if os.environ.get(ENVVAR_RBT_FRONTEND_HOST):
+    if os.environ.get(ENVVAR_RBT_FRONTEND_URL):
         return _STARTUP_CACHE_BUST_TOKEN
 
     if isinstance(project_root, str):
@@ -287,7 +287,7 @@ def compute_ui_cache_bust(
     if dist_path is None or not dist_path.exists():
         if dist_path is None:
             logger.warning(
-                "`--frontend-dist-path` is not set, so there is no "
+                "`--mcp-app-dist-path` is not set, so there is no "
                 f"directory to serve the '{ui_name}' UI's build "
                 "from; we'll serve a 'build not found' placeholder."
             )
@@ -373,6 +373,12 @@ def compute_ui_cache_busts(
 # tool name is safe even in the rare case of multiple FastMCP
 # instances in one process.
 _ui_tool_cache_bust_info: dict[str, dict[str, Any]] = {}
+
+
+def has_registered_ui_tools() -> bool:
+    """Whether any servicer registered a UI tool, i.e. whether the
+    application declares `UI(...)` methods at all."""
+    return bool(_ui_tool_cache_bust_info)
 
 
 def register_ui_tool_for_cache_bust(
@@ -520,7 +526,7 @@ def dev_inline_html(
     ui_path: str,
     reboot_url: str,
     ui_name: str,
-    frontend_host: str,
+    frontend_url: str,
     project_root: Path,
 ) -> str:
     """
@@ -581,7 +587,7 @@ def dev_inline_html(
     # This fetch goes straight to the Vite dev server, bypassing Envoy —
     # there's no point routing the server-side request through our own
     # proxy.
-    fetch_url = f"{frontend_host.rstrip('/')}{ui_url_path}/index.html"
+    fetch_url = f"{frontend_url.rstrip('/')}{ui_url_path}/index.html"
     request = urllib.request.Request(fetch_url)
     with urllib.request.urlopen(request) as response:
         html = response.read().decode("utf-8")
@@ -620,7 +626,7 @@ def ui_html(
 ) -> str:
     """Get HTML for a UI.
 
-    In dev mode (`--frontend-host`), serves Vite's live HTML
+    In dev mode (`--frontend-url`), serves Vite's live HTML
     for HMR: inline with rewritten URLs for Claude.ai (see
     `dev_inline_html`) or wrapped in a nested relay iframe for
     every other client (see `dev_iframe_html`). In production,
@@ -644,7 +650,7 @@ def ui_html(
             looking for `.rbtrc`.
         artifact_path: Override for the build artifact path,
             relative to project root. Defaults to
-            `<--frontend-dist-path>/<ui-address>` (e.g. dist
+            `<--mcp-app-dist-path>/<ui-address>` (e.g. dist
             path "web/dist" and "web/ui/clicker" ->
             "web/dist/ui/clicker"); see `_resolve_dist_path`.
         cache_bust: Content-hash token from the incoming URI's
@@ -709,7 +715,7 @@ def ui_html(
     )
 
     # Resolve the project root up front: production serving joins it
-    # with `--frontend-dist-path` to locate the built `index.html`, and
+    # with `--mcp-app-dist-path` to locate the built `index.html`, and
     # the dev-inline path reads from it too. `_find_project_root` walks
     # up from the caller's file, so it must be called directly from
     # `ui_html`.
@@ -718,8 +724,8 @@ def ui_html(
     elif isinstance(project_root, str):
         project_root = Path(project_root)
 
-    frontend_host = os.environ.get(ENVVAR_RBT_FRONTEND_HOST)
-    if frontend_host:
+    frontend_url = os.environ.get(ENVVAR_RBT_FRONTEND_URL)
+    if frontend_url:
         # Dev mode: deliver hot module reloading. Two strategies, picked
         # by whether the host can render iframes:
         #
@@ -742,7 +748,7 @@ def ui_html(
             ui_path,
             reboot_url,
             ui_name,
-            frontend_host,
+            frontend_url,
             project_root,
         )
 

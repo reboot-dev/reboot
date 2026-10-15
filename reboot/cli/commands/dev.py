@@ -71,9 +71,10 @@ from reboot.settings import (
     ENVVAR_LOCAL_ENVOY_USE_TLS,
     ENVVAR_RBT_DEV,
     ENVVAR_RBT_EFFECT_VALIDATION,
-    ENVVAR_RBT_FRONTEND_DIST_PATH,
-    ENVVAR_RBT_FRONTEND_HOST,
     ENVVAR_RBT_FRONTEND_ROOT_PATH,
+    ENVVAR_RBT_FRONTEND_URL,
+    ENVVAR_RBT_MCP_APP,
+    ENVVAR_RBT_MCP_APP_DIST_PATH,
     ENVVAR_RBT_NAME,
     ENVVAR_RBT_NODEJS,
     ENVVAR_RBT_SERVERS,
@@ -210,15 +211,35 @@ def _register_dev_run(parser: ArgumentParser):
     )
 
     parser.subcommand('dev run').add_argument(
-        '--frontend-host',
+        '--frontend-url',
         type=str,
         help=(
-            'URL of the frontend dev server '
-            '(e.g., http://localhost:5173). When set, '
-            'Envoy routes `/__/frontend/**` paths to this '
-            'host for Hot Module Replacement. Requires '
-            '`--frontend-root-path`; mutually exclusive '
-            'with `--frontend-dist-path`.'
+            'URL of the frontend\'s dev server (e.g., Vite at '
+            'http://localhost:5173): Envoy proxies '
+            '`/__/frontend/**` to it, with Hot Module '
+            'Replacement. It only says where the frontend is; '
+            '`--mcp-app` says to serve the application\'s MCP '
+            'Apps from it, and without that it is an error. '
+            'Requires `--frontend-root-path`; mutually '
+            'exclusive with `--mcp-app-dist-path`.'
+        ),
+    )
+    parser.subcommand('dev run').add_renamed_flag(
+        '--frontend-host',
+        '--frontend-url',
+    )
+    parser.subcommand('dev run').add_argument(
+        '--mcp-app',
+        type=bool,
+        default=False,
+        help=(
+            'serve the application\'s MCP Apps (its `UI(...)` '
+            'methods) from the frontend\'s dev server, '
+            '`--frontend-url`, which it requires. Their builds '
+            'are served with `--mcp-app-dist-path` instead, so '
+            'the two are mutually exclusive. An application '
+            'with `UI(...)` methods needs one of the two, and '
+            'one without refuses both.'
         ),
     )
 
@@ -1403,31 +1424,53 @@ async def __dev_run(
             dot_rbt_dev_directory(args, parser) / args.application_name
         )
 
-    # The frontend is served one of two mutually-exclusive ways: a live
-    # dev server (`--frontend-host`, for HMR) or built assets on disk
-    # (`--frontend-dist-path`). `--frontend-root-path` names the frontend
-    # root and is required alongside whichever of the two is chosen.
-    if args.frontend_host and args.frontend_dist_path:
+    # The MCP Apps are served one of two mutually-exclusive ways: from
+    # the frontend's dev server (`--frontend-url`, which `--mcp-app`
+    # says to serve them from) or from their builds on disk
+    # (`--mcp-app-dist-path`). A dev server nothing is served from is
+    # a slip, so `--frontend-url` alone is refused. `--frontend-root-path`
+    # names the frontend root and is required alongside whichever of
+    # the two is chosen.
+    if args.frontend_url and args.mcp_app_dist_path:
         terminal.fail(
-            "`--frontend-host` and `--frontend-dist-path` are mutually "
+            "`--frontend-url` and `--mcp-app-dist-path` are mutually "
             "exclusive; pass one or the other."
         )
-    if args.frontend_host:
+    if args.mcp_app and args.mcp_app_dist_path:
+        terminal.fail(
+            "`--mcp-app` and `--mcp-app-dist-path` are mutually "
+            "exclusive: the first serves the MCP Apps from the "
+            "frontend's dev server, the second from their builds."
+        )
+    if args.frontend_url and not args.mcp_app:
+        terminal.fail(
+            "`--frontend-url` names the frontend's dev server but "
+            "nothing to serve from it; add `--mcp-app` to serve the "
+            "application's MCP Apps from it."
+        )
+    if args.mcp_app and not args.frontend_url:
+        terminal.fail(
+            "`--mcp-app` serves the MCP Apps from the frontend's dev "
+            "server, which `--frontend-url` names; pass it too (or "
+            "`--mcp-app-dist-path` to serve their builds instead)."
+        )
+    if args.frontend_url:
         if not args.frontend_root_path:
-            terminal.fail("`--frontend-host` requires `--frontend-root-path`.")
-        env[ENVVAR_RBT_FRONTEND_HOST] = args.frontend_host
+            terminal.fail("`--frontend-url` requires `--frontend-root-path`.")
+        env[ENVVAR_RBT_FRONTEND_URL] = args.frontend_url
+        env[ENVVAR_RBT_MCP_APP] = 'true'
         env[ENVVAR_RBT_FRONTEND_ROOT_PATH] = args.frontend_root_path
-    elif args.frontend_dist_path:
+    elif args.mcp_app_dist_path:
         if not args.frontend_root_path:
             terminal.fail(
-                "`--frontend-dist-path` requires `--frontend-root-path`."
+                "`--mcp-app-dist-path` requires `--frontend-root-path`."
             )
-        env[ENVVAR_RBT_FRONTEND_DIST_PATH] = args.frontend_dist_path
+        env[ENVVAR_RBT_MCP_APP_DIST_PATH] = args.mcp_app_dist_path
         env[ENVVAR_RBT_FRONTEND_ROOT_PATH] = args.frontend_root_path
     elif args.frontend_root_path:
         terminal.fail(
             "`--frontend-root-path` is only valid alongside "
-            "`--frontend-host` or `--frontend-dist-path`."
+            "`--frontend-url` or `--mcp-app-dist-path`."
         )
 
     health_check_task: Optional[asyncio.Task] = None

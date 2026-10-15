@@ -37,7 +37,7 @@ from reboot.controller.server_managers import (
 )
 from reboot.controller.settings import ENVVAR_REBOOT_MODE, REBOOT_MODE_CONFIG
 from reboot.mcp.factories import create_mcp_factory
-from reboot.mcp.ui import find_project_root_from
+from reboot.mcp.ui import find_project_root_from, has_registered_ui_tools
 from reboot.nodejs.python import should_print_stacktrace
 from reboot.run_environments import (
     InvalidRunEnvironment,
@@ -45,14 +45,16 @@ from reboot.run_environments import (
     application_name,
     detect_run_environment,
     running_rbt_dev,
+    running_rbt_serve,
     within_nodejs_server,
     within_python_server,
 )
 from reboot.server.service_descriptor_validator import ProtoValidationError
 from reboot.settings import (
     DEFAULT_SECURE_PORT,
-    ENVVAR_RBT_FRONTEND_DIST_PATH,
-    ENVVAR_RBT_FRONTEND_HOST,
+    ENVVAR_RBT_FRONTEND_URL,
+    ENVVAR_RBT_MCP_APP,
+    ENVVAR_RBT_MCP_APP_DIST_PATH,
     ENVVAR_RBT_NAME,
     ENVVAR_RBT_SERVERS,
     ENVVAR_RBT_STATE_DIRECTORY,
@@ -887,6 +889,35 @@ class Application:
         for servicer_cls in servicers:
             servicer_cls._add_mcp(server, auto_construct_state_type_full_names)
 
+        # What the application declares and what `rbt` was told to
+        # serve must agree: `--mcp-app` or `--mcp-app-dist-path` for
+        # an application with `UI(...)` methods, neither for one
+        # without. Only under `rbt`, which is what sets those; a test
+        # harness runs the servicers with neither and serves no UI.
+        if running_rbt_dev() or running_rbt_serve():
+            mcp_app = (
+                os.environ.get(ENVVAR_RBT_MCP_APP) == "true" or
+                bool(os.environ.get(ENVVAR_RBT_MCP_APP_DIST_PATH))
+            )
+            if mcp_app and not has_registered_ui_tools():
+                raise InputError(
+                    reason=(
+                        "`--mcp-app` or `--mcp-app-dist-path` was passed, "
+                        "but the application declares no `UI(...)` "
+                        "method to serve."
+                    )
+                )
+            if has_registered_ui_tools() and not mcp_app:
+                raise InputError(
+                    reason=(
+                        "The application declares `UI(...)` methods, but "
+                        "`rbt` was not told how to serve them: pass "
+                        "`--mcp-app` with `--frontend-url` (the "
+                        "frontend's dev server) or `--mcp-app-dist-path` "
+                        "(their builds)."
+                    )
+                )
+
         # The OAuth server (if any) was mounted earlier by
         # `_mount_oauth`; reach into it for the MCP-SDK token
         # verifier so expired tokens produce a clean 401 with
@@ -911,7 +942,7 @@ class Application:
         )
 
         # In dist mode (a built frontend, no Vite dev server) serve the
-        # `--frontend-dist-path` directory over `/__/frontend/` from this
+        # `--mcp-app-dist-path` directory over `/__/frontend/` from this
         # same HTTP server, alongside `/mcp`. Envoy has no frontend route
         # in this mode, so a browser's `/__/frontend/...` request falls
         # through to the app's HTTP cluster and lands here. Starlette
@@ -919,16 +950,16 @@ class Application:
         # resolves `/__/frontend/web/index.html` to
         # `dist_dir/web/index.html`. The mount must be present in every
         # serving server subprocess, so it is established here at serve
-        # time. In HMR mode `ENVVAR_RBT_FRONTEND_HOST` points at the
+        # time. In HMR mode `ENVVAR_RBT_FRONTEND_URL` points at the
         # Vite dev server and Envoy routes `/__/frontend/` there
         # instead, so skip the mount.
-        frontend_dist_path = os.environ.get(ENVVAR_RBT_FRONTEND_DIST_PATH)
-        if frontend_dist_path and not os.environ.get(ENVVAR_RBT_FRONTEND_HOST):
+        mcp_app_dist_path = os.environ.get(ENVVAR_RBT_MCP_APP_DIST_PATH)
+        if mcp_app_dist_path and not os.environ.get(ENVVAR_RBT_FRONTEND_URL):
             project_root = self._frontend_project_root()
             self.http.mount(
                 "/__/frontend",
                 app=StaticFiles(
-                    directory=str(project_root / frontend_dist_path),
+                    directory=str(project_root / mcp_app_dist_path),
                     # `html=True` so directory URLs like
                     # `/__/frontend/web/` (the web app's pop-out target)
                     # serve `index.html`. `check_dir=False` so a
@@ -949,7 +980,7 @@ class Application:
 
     def _frontend_project_root(self) -> Path:
         """The project root (the directory containing `.rbtrc`) that
-        `--frontend-dist-path` is relative to.
+        `--mcp-app-dist-path` is relative to.
 
         `self.servicers` mixes the user's servicers with
         framework-provided ones (libraries, `memoize`,
@@ -967,7 +998,7 @@ class Application:
                 continue
         raise InputError(
             reason=(
-                "`--frontend-dist-path` was set, but no project root (a "
+                "`--mcp-app-dist-path` was set, but no project root (a "
                 "directory containing `.rbtrc`) was found above any of "
                 "this application's servicers, so the built frontend "
                 "can't be located. Make sure your deployment includes "
