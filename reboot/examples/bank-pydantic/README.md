@@ -85,7 +85,7 @@ serves the app under a name, `https://bank.localhost`, through
 [portless](https://github.com/vercel-labs/portless): install it once
 with `npm install -g portless` and start its proxy with
 `portless proxy start`. To use plain ports instead, run
-`rbt dev run --config=hmr`.
+`rbt dev run --config=ports`.
 
 ### Front end
 
@@ -103,8 +103,8 @@ which is how the two trust each other): `npm run dev` is
 `portless frontend.bank vite`, portless being a dev dependency,
 mirroring the `.rbtrc`. Visit
 [https://bank.localhost](https://bank.localhost) for the web app.
-Without portless (`rbt dev run --config=hmr`), run
-`npm run dev:hmr` instead and visit
+Without portless (`rbt dev run --config=ports`), run
+`npm run dev:ports` instead and visit
 [http://localhost:9991](http://localhost:9991).
 
 The web app requires signing in. In development, click "Sign in" and

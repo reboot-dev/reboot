@@ -35,7 +35,7 @@ changes when it does.
   "scripts": {
     "dev": "npm run dev:portless",
     "dev:portless": "portless frontend.<project-name> vite",
-    "dev:hmr": "vite",
+    "dev:ports": "vite",
     "build": "tsc -b && node build.mjs"
   },
   "dependencies": {
@@ -63,7 +63,7 @@ changes when it does.
 The `dev` scripts mirror the `.rbtrc`'s configs: `npm run dev` is
 the default, `dev:portless`, which runs `portless frontend.<project-name> vite`
 (`portless` is a dev dependency and appends Vite's `--port` itself),
-and `dev:hmr` is plain `vite`. `<project-name>` is the `.rbtrc`'s
+and `dev:ports` is plain `vite`. `<project-name>` is the `.rbtrc`'s
 `--application-name`.
 
 Adding or removing a UI needs no script changes: `build()` loads

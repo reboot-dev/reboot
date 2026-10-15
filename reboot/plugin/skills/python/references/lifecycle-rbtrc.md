@@ -153,11 +153,11 @@ dev run:portless --mcp-app
 # A dual-frontend app also serves its web app from the dev server, at `/`:
 # dev run:portless --web-app
 
-# Plain ports, no portless: `rbt dev run --config=hmr`, Vite from
-# `npm run dev:hmr`.
-dev run:hmr --frontend-url=http://localhost:5173
-dev run:hmr --mcp-app
-# dev run:hmr --web-app
+# Plain ports, no portless: `rbt dev run --config=ports`, Vite from
+# `npm run dev:ports`.
+dev run:ports --frontend-url=http://localhost:5173
+dev run:ports --mcp-app
+# dev run:ports --web-app
 
 # Dist mode (no Vite): the built MCP Apps.
 dev run:dist --mcp-app-dist-path=frontend/dist/mcp
@@ -165,22 +165,22 @@ dev run:dist --mcp-app-dist-path=frontend/dist/mcp
 # dev run:dist --web-app-dist-path=frontend/dist/web
 
 # The developer dashboard (`rbt dashboard`) too: https://dashboard.<app>.localhost
-# by default, or the plain port with `rbt dashboard --config=hmr`.
+# by default, or the plain port with `rbt dashboard --config=ports`.
 dashboard --default-config=portless
 dashboard:portless --portless
-dashboard:hmr --no-portless
+dashboard:ports --no-portless
 ```
 
 Run with `rbt dev run` (uses `--default-config=portless`), or
-`rbt dev run --config=hmr` or `--config=dist` to switch. `--portless`
+`rbt dev run --config=ports` or `--config=dist` to switch. `--portless`
 requires `--application-name` (the name is the hostname), the
 `portless` CLI, and its proxy running (`portless proxy start`).
 `dashboard:portless --portless` has `rbt dashboard` serve as
 `https://dashboard.<app>.localhost`, on a free port the proxy
 routes to, so the dashboards of several applications run at once;
 its configs are named like `rbt dev run`'s, so
-`rbt dashboard --config=hmr` is the plain `http://127.0.0.1:9871/`.
+`rbt dashboard --config=ports` is the plain `http://127.0.0.1:9871/`.
 The frontend's `package.json` mirrors these configs as scripts:
 `dev` is the default, `dev:portless`, which runs
 `portless frontend.<app> vite` with `portless` as a dev dependency, and
-`dev:hmr` is plain `vite`.
+`dev:ports` is plain `vite`.

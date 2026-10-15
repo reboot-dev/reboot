@@ -84,7 +84,7 @@ exactly one of them — the step that needs it.
 `.rbtrc`, `.mypy.ini`, `main.py`):
 
 - [`references/project-shell.md`](references/project-shell.md) —
-  `.python-version`, `.rbtrc` deltas (HMR + dist configs),
+  `.python-version`, `.rbtrc` deltas (the `portless`, `ports` and `dist` configs),
   `pyproject.toml` extras, `main.py` shape, the `example_prompts.py`
   module wired into `Application(example_prompts=...)`,
   durable-state setup.

@@ -38,7 +38,7 @@ function appName(ui: UiEntryWithPackage): string {
  * Generate web/package.json. The `dev` scripts mirror the `.rbtrc`'s
  * configs: `dev` is the default, `dev:portless`, which runs
  * `portless frontend.<project-name> vite` (portless appends Vite's `--port`
- * itself), and `dev:hmr` is plain `vite`. `build` typechecks then
+ * itself), and `dev:ports` is plain `vite`. `build` typechecks then
  * runs `build.mjs`, which calls `build()` from
  * `@reboot-dev/reboot-react/vite` to build every UI the `reboot()`
  * plugin declares (each `mcp/<name>` plus the `web/` SPA).
@@ -47,7 +47,7 @@ export function packageJson(projectName: string): string {
   const scripts: Record<string, string> = {
     dev: "npm run dev:portless",
     "dev:portless": `portless frontend.${projectName} vite`,
-    "dev:hmr": "vite",
+    "dev:ports": "vite",
     build: "tsc -b && node build.mjs",
   };
 

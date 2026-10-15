@@ -76,7 +76,7 @@ logger = logging.getLogger(__name__)
 _MAX_UI_CACHE_ENTRIES = 16
 
 # Per-process random token used as the cache-bust signature in
-# HMR mode (`--config=hmr` / `--config=default`, i.e. when
+# HMR mode (`--frontend-url`, i.e. when
 # ENVVAR_RBT_FRONTEND_URL is set). `dev_inline_html`
 # bootstraps content live from the Vite dev server, so there
 # is nothing on disk to hash; a per-process UUID gives host-

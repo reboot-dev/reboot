@@ -92,7 +92,7 @@ write has it; see `../python/references/lifecycle-rbtrc.md`) it is
 `dev run --application-name`, through the portless proxy, which
 must be running: check on it, and start it, as the run skill's
 "Named URLs with portless" section says, before Step 4. Without
-that line, or with `--config=hmr`, it is `http://127.0.0.1:9871/`.
+that line, or with `--config=ports`, it is `http://127.0.0.1:9871/`.
 Either forwards to
 wherever its page is. Probe it:
 
@@ -129,7 +129,7 @@ code changes.
 If it fails to come up (for example the local Envoy check fails
 because neither Docker nor an `envoy` executable is available, or
 the user declined portless and the proxy is not running: then
-`uv run rbt dashboard --config=hmr`, on the plain port), warn
+`uv run rbt dashboard --config=ports`, on the plain port), warn
 the user in one sentence and continue the build without it.
 
 ## Step 5 — Hand over the URL

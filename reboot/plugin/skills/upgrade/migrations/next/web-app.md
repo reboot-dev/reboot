@@ -18,8 +18,8 @@ server's `/` (and at any path a browser navigates to outside
 
 For an app with a `frontend/web/` SPA:
 
-1. In `.rbtrc`, add `dev run:hmr --web-app` beside
-   `dev run:hmr --mcp-app` (or in place of it, for an app with no
+1. In `.rbtrc`, add `dev run:ports --web-app` beside
+   `dev run:ports --mcp-app` (or in place of it, for an app with no
    `UI(...)` methods).
 2. Open the app at the backend's URL, `http://localhost:9991/`, rather
    than the dev server's. A link or bookmark to

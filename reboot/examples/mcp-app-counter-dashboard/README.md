@@ -28,8 +28,8 @@ cd frontend && npm run dev
 uv run rbt dev run
 ```
 
-For plain ports instead, run `cd frontend && npm run dev:hmr` and
-`uv run rbt dev run --config=hmr`, and read `http://localhost:9991`
+For plain ports instead, run `cd frontend && npm run dev:ports` and
+`uv run rbt dev run --config=ports`, and read `http://localhost:9991`
 for the backend below.
 
 ## Testing with MCPJam Inspector

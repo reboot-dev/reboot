@@ -22,23 +22,23 @@ Where `sudo` wants a password they fail, and the setup is the
 developer's to do, interactively: tell them, and let them say when
 it is done (or that they would rather stay on plain ports, in which
 case make the changes below anyway and leave them running with
-`--config=hmr` for both `rbt dev run` and `rbt dashboard`).
+`--config=ports` for both `rbt dev run` and `rbt dashboard`).
 
 1. **`.rbtrc`:** make portless the default config and add the
-   `:portless` config beside the existing `:hmr` one. Where the
+   `:portless` config beside the existing `:ports` one. Where the
    `.rbtrc` has
 
    ```
-   dev run --default-config=hmr
-   dev run:hmr --frontend-url=http://localhost:5173
-   dev run:hmr --mcp-app
-   dev run:hmr --web-app
+   dev run --default-config=ports
+   dev run:ports --frontend-url=http://localhost:5173
+   dev run:ports --mcp-app
+   dev run:ports --web-app
    ```
 
    change the default and add the named-URL config, keeping every
-   `:hmr` line as it is: `--frontend-url` names the dev server by
+   `:ports` line as it is: `--frontend-url` names the dev server by
    its portless name, and the `--mcp-app` and `--web-app` lines the
-   `:hmr` config has are repeated:
+   `:ports` config has are repeated:
 
    ```
    dev run --default-config=portless
@@ -50,14 +50,14 @@ case make the changes below anyway and leave them running with
 
    dashboard --default-config=portless
    dashboard:portless --portless
-   dashboard:hmr --no-portless
+   dashboard:ports --no-portless
    ```
 
    A `.rbtrc` with no `--default-config` (a web-only app that passed
    `--frontend-url=http://localhost:5173` and `--web-app`
    unconditionally) gets the same block, with its unconditional
    `--frontend-url`, `--mcp-app` and `--web-app` lines moved under
-   `dev run:hmr`.
+   `dev run:ports`.
 
 2. **`frontend/package.json`:** mirror those configs as scripts, and
    add `portless` as a dev dependency so `npm install` brings it:
@@ -66,7 +66,7 @@ case make the changes below anyway and leave them running with
    "scripts": {
      "dev": "npm run dev:portless",
      "dev:portless": "portless frontend.<app> vite",
-     "dev:hmr": "vite"
+     "dev:ports": "vite"
    },
    "devDependencies": {
      "portless": "^0.15.7"
@@ -94,4 +94,4 @@ case make the changes below anyway and leave them running with
    `portless <app> npm run dev`, or to visit `http://localhost:9991`
    or `http://127.0.0.1:9871/`, say `npm run dev`,
    `https://<app>.localhost` and `https://dashboard.<app>.localhost/`
-   instead, with the plain-port form as the `--config=hmr` alternative.
+   instead, with the plain-port form as the `--config=ports` alternative.

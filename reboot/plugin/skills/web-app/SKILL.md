@@ -533,7 +533,7 @@ In development Envoy serves the SPA at the backend's origin from
 the Vite dev server (`--web-app`): `https://<app>.localhost/` under
 portless (`cd frontend && npm run dev`, whose default is the
 `dev:portless` script, beside `rbt dev run --portless`), or
-`http://localhost:9991/` from `npm run dev:hmr`, same-origin either
+`http://localhost:9991/` from `npm run dev:ports`, same-origin either
 way, so the Reboot client needs no URL. Open it there, not at the
 dev server's own origin (`https://frontend.<app>.localhost` or
 `http://localhost:5173/`), where the client would take Vite's origin
@@ -541,7 +541,7 @@ for the backend. Built,
 it lands in `frontend/dist/web/` with `base: "/"`, which a static
 host can serve at `/`, or the backend can with
 `--web-app-dist-path=frontend/dist/web` on `rbt serve run` (and on a
-`dev run:dist` config); in development `dev run:hmr --web-app` beside
+`dev run:dist` config); in development `dev run:ports --web-app` beside
 `--frontend-url` has Envoy send `/` to the Vite dev server instead,
 so the SPA is on the backend's origin with HMR; see
 `python/references/lifecycle-rbtrc.md`.
