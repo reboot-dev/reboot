@@ -1,3 +1,6 @@
+#[path = "workflow_identity665.rs"]
+mod workflow_identity665;
+
 #[derive(Clone, Copy)]
 pub(crate) enum WorkflowReaderCheckpoint {
     Decision(&'static str),
@@ -942,19 +945,19 @@ impl DatabaseActorStore {
                 {
                     let _owner = running.lock()?;
                 }
-                let loaded = self
-                    .database
-                    .clone()
-                    .load(database::LoadRequest {
-                        actors: vec![],
-                        task_ids: mutation.task_ids,
-                    })
-                    .await?
-                    .into_inner();
+                // Positive canonical identity reads include Completed tasks that
+                // Recover.pending_tasks cannot enumerate. The surrounding actor
+                // owner is rechecked after this await; this is not adoption or
+                // an absence certificate for a provisional identity.
+                let loaded = if mutation.task_ids.is_empty() {
+                    Vec::new()
+                } else {
+                    self.load_existing_workflow_tasks(&mutation.task_ids).await?
+                };
                 {
                     let _owner = running.lock()?;
                 }
-                for task in &loaded.tasks {
+                for task in &loaded {
                     if let Some((alias, version)) = owner.cursor_declaration(task) {
                         self.workflow_validate_cursor_binding(
                             task,
@@ -969,7 +972,7 @@ impl DatabaseActorStore {
                         let _owner = running.lock()?;
                     }
                 }
-                owner.validate_scheduling_replay(&checkpoint.tasks, &loaded.tasks)?;
+                owner.validate_scheduling_replay(&checkpoint.tasks, &loaded)?;
                 replay = Some(
                     R::decode(checkpoint.response.as_slice())
                         .map_err(|_| Status::data_loss("invalid scheduling result"))?,

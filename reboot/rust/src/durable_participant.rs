@@ -3110,11 +3110,19 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         self.recover(recovery).await
     }
 
-    /// Watches a transaction already installed by [`Self::recover_ownership`].
-    pub async fn watch_recovered<W: CoordinatorWatchEndpoint>(
-        &self,
-        watch: &W,
-    ) -> Result<(), Status> {
+    /// Settle only an original recovered-unprepared owner before coordinator
+    /// replay can issue Prepare. This is the same canonical Abort used by Watch,
+    /// not a vote manufactured from a status or a second recovery scan. The
+    /// terminal path retains the exclusive gate and slot through the native ACK;
+    /// ambiguity/cancellation never permits replay or speculative release.
+    pub(crate) async fn converge_recovered_unprepared(&self) -> Result<(), Status> {
+        if let Some((root, false)) = self.recovered_native_owner().await? {
+            self.terminal(root, false).await?;
+        }
+        Ok(())
+    }
+
+    async fn recovered_native_owner(&self) -> Result<Option<(Uuid, bool)>, Status> {
         let mut recovered = None;
         for (root, slot) in self.pending.snapshot() {
             let pending = slot.lock_owned().await;
@@ -3128,7 +3136,15 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 ));
             }
         }
-        let Some((root_id, prepared)) = recovered else {
+        Ok(recovered)
+    }
+
+    /// Watches a transaction already installed by [`Self::recover_ownership`].
+    pub async fn watch_recovered<W: CoordinatorWatchEndpoint>(
+        &self,
+        watch: &W,
+    ) -> Result<(), Status> {
+        let Some((root_id, prepared)) = self.recovered_native_owner().await? else {
             return Ok(());
         };
 
@@ -6528,6 +6544,7 @@ mod tests {
     #[derive(Default)]
     struct MockSidecar {
         park_abort: bool,
+        abort_park: Mutex<Option<(tokio::sync::oneshot::Sender<()>, tokio::sync::oneshot::Receiver<()>)>>,
         load_park: Mutex<
             Option<(
                 tokio::sync::oneshot::Sender<()>,
@@ -6610,6 +6627,7 @@ mod tests {
             request: database::TransactionParticipantAbortRequest,
         ) -> SidecarFuture<'_, database::TransactionParticipantAbortResponse> {
             self.calls.lock().unwrap().push(Call::Abort(request));
+            let park = self.abort_park.lock().unwrap().take();
             let result = self
                 .terminal_results
                 .lock()
@@ -6617,6 +6635,10 @@ mod tests {
                 .pop_front()
                 .unwrap_or(Ok(()));
             Box::pin(async move {
+                if let Some((entered, release)) = park {
+                    entered.send(()).unwrap();
+                    release.await.unwrap();
+                }
                 if self.park_abort {
                     std::future::pending::<()>().await;
                 }
@@ -7629,6 +7651,8 @@ mod tests {
         assert!(matches!(&calls[1], Call::Abort(request) if request.state_ref == "actor/1"));
         assert!(matches!(&calls[2], Call::Load(_)));
     }
+
+    include!("durable_participant_unprepared_recovery_tests.rs");
 
     fn recovered_sidecar(id: Uuid, prepared: bool) -> Arc<MockSidecar> {
         let sidecar = Arc::new(MockSidecar::default());

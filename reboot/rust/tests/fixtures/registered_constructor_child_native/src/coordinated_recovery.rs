@@ -461,6 +461,10 @@ async fn exercise_host(wrong_bound_participant: bool) {
         .unwrap()
         .into_inner();
         assert_eq!(loaded.tasks.len(), 1);
+        let checked = bounded(store.load_existing_workflow_tasks(std::slice::from_ref(&id)))
+            .await
+            .unwrap();
+        assert_eq!(checked, loaded.tasks);
         assert_eq!(loaded.tasks[0].status, db::task::Status::Completed as i32);
         assert_eq!(loaded.tasks[0].task_id.as_ref(), Some(&id));
         let Some(db::task::ResponseOrError::Response(persisted)) =
@@ -524,6 +528,10 @@ async fn exercise_host(wrong_bound_participant: bool) {
         .unwrap()
         .into_inner();
         assert_eq!(loaded.tasks.len(), 1);
+        let checked = bounded(store.load_existing_workflow_tasks(std::slice::from_ref(&id)))
+            .await
+            .unwrap();
+        assert_eq!(checked, loaded.tasks);
         assert_eq!(loaded.tasks[0].status, db::task::Status::Pending as i32);
         assert_eq!(loaded.tasks[0].task_id.as_ref(), Some(&id));
         assert!(loaded.tasks[0].response_or_error.is_none());

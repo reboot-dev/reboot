@@ -249,6 +249,18 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar> CoordinatedLocalRecovery<P, C
                 result = snapshot.adopt() => result?,
             }
         }
+        // An extant recovered-unprepared owner correctly rejects public Prepare;
+        // only canonical native Abort ACK makes its later absence a real vote.
+        // Settle ALL such original owners before polling ANY coordinator replay.
+        // Prepared owners must still Watch concurrently with replay (otherwise
+        // they could wait forever for the decision replay is responsible for).
+        for participant in self.participants.values() {
+            tokio::select! {
+                biased;
+                _ = cancel.cancelled() => return Err(Status::cancelled("local unprepared convergence cancelled")),
+                result = participant.converge_recovered_unprepared() => result?,
+            }
+        }
         let replay = async {
             for (owner, snapshot) in coordinators {
                 // Do not replay a whole stale preparing snapshot on Unavailable:

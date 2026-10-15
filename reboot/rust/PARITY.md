@@ -97,6 +97,76 @@ exit zero preceded fresh container terminal inspection, and the original lock
 was free. Hot reload, new-consumer compilation and restart durability remain
 separate. This is not latest-upstream/full-native/overall SDK qualification.
 
+## Canonical task identities, original-owner catalog and ordered recovery (2026-10-16)
+
+The [library acceptance](tests/evidence/identity-catalog-ordered-recovery-library-20261016.json)
+records **752 passed, 0 failed, 7 ignored SDK tests**, **9 passed original
+Bank/Account consumer tests**, strict SDK/consumer/Legacy Clippy, the pinned
+Legacy binary build and compilation of the current native fixture. All 13
+original example reference files were rehashed at unchanged revision
+`5c332a2910122d6035799bfaf2a314bf1de830b8`. Before ledger bookkeeping, all
+319 frozen SDK inputs matched the publication worktree. The complete acceptance
+projection contains 3292 inputs, including previously qualified cached non-SDK
+sources; this is not latest-upstream native-build qualification.
+
+[Canonical positive task reads](src/workflow_identity665.rs) use existing
+Database.Load to retrieve Pending **and Completed** identities, preserving
+requested order and full method/request/iteration/terminal bytes. They bound
+requests and reject malformed, duplicate, foreign or omitted results. An omission
+is uncertainty, **not proof of absence**: native Load also skips unknown state
+types. Actual scheduling-writer replay now consumes this path, retaining original
+owner checks around the await, cursor/generated terminal validation and valid
+zero-task receipts. Native reader controls compare the new API against actual
+canonical Pending and Completed bytes. Neither this API nor opaque mutation bytes
+supplies missing typed named-step alias/request/predecessor provenance.
+
+The [dynamic catalog foundation](src/dynamic_local_catalog.rs) retains actual
+original participant, participant-bound tasks, concrete endpoint and supplied
+custody objects through the host's existing late-registration machinery. Exact
+allocation checks reject same-label/shared-gate substitutes. Registration reserves
+custody/capacity before the trusted factory, binds original participant cleanup,
+and publishes the service/binding together; before-Ready lookup is composition,
+not permission for control calls or task execution. Failed publication retains
+uncertainty. The factory must return the actual preconfigured generated adapter
+with its original configuration allocation: callback internals and opaque custody
+objects are not independently attested. Current catalog tests use a trusted test
+adapter; full generated Account/catalog integration and dynamic canonical graph
+adoption remain separate gaps.
+
+[Closed local recovery](src/coordinated_local_recovery.rs) now awaits canonical
+Abort ACKs for **all original recovered-unprepared owners before any coordinator
+replay**. Previously a legal Prepare-before-Watch scheduling could encounter an
+extant unprepared owner and fail convergence with FailedPrecondition; that status
+is not an Abort vote. The new barrier uses the existing native terminal path,
+retaining the original slot/gate through ACK and retaining uncertainty on failure
+or cancellation. Public Prepare semantics are unchanged. Prepared-owner Watch
+still runs concurrently with replay, avoiding a wait-for-decision deadlock. Three
+executed deterministic model regressions cover old-order failure, withheld Abort
+ACK/Cleanup join and ambiguous ACK retention; they do not independently certify
+a multi-owner public Host Ready transition.
+
+The [fresh native acceptance](tests/evidence/identity-catalog-ordered-recovery-native-20261016.json)
+passed **all 19 distinct controls**: the previous 17 plus nonempty transaction
+graph Commit and Abort. Both new cases seed actual native transaction APIs,
+retain original participant/resolver/coordinator allocations, run the actual
+ApplicationHost recovery phase, fence Ready behind a later recovery gate, and
+verify canonical state, disappearance of live records, durable decision and real
+terminal/decision/cleanup RPCs. The Abort case uses a genuinely unprepared native
+transaction. Each case has one actor serving participant and coordinator roles;
+this is **same-process recovery of native pending state**, not DB restart/crash
+or independent Watch-path proof. New markers occur only after assertions and
+host/proxy joins. Parent verification checked all source/bundle/protobuf pins,
+**38 exact SDK/Database child joins**, healthy drained custody, actual runtime
+owner receipt, then genuine attach join followed by fresh exact-container
+terminal inspection and original lock release.
+
+**Still closed/open:** provisional task/checkpoint adoption, authoritative typed
+checkpoint provenance, dynamic graph/placement/control eligibility and task
+activation, taskful Bank SignUp/WelcomeEmail, shared Transfer, multi-owner native
+barrier/cancellation, DB restart/lost-ACK recovery, latest-upstream native build
+qualification and full parity. Earlier failed compiler/test/lint receipts remain
+history; only the repaired accepted source above is certified.
+
 ## Native closed-host Pending reader and provisional validation checkpoint (2026-10-16)
 
 The [actual aggregate](tests/evidence/provisional-native-host-library-20261016.json)
@@ -5351,7 +5421,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: c80042a56b9fb16f3bd13ebc6a5fbab22628e7356ae6475dad455011d87ebd56 -->
+<!-- parity-source-sha256: 7ad47af1d4790431f3e373fa5f60c6f3e2d4d97c36d7ad7405488fbd9e91ef9a -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

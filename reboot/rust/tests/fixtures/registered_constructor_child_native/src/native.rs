@@ -613,3 +613,6 @@ fn constructor_native_actual_prepare_ack_then_tcp_loss_retains_uncertainty_until
     // Native ownership remains unresolved and the authority must not be reused.
     println!("CONSTRUCTOR_TCP_LOSS_RUNTIME_DESTROYED_PROCESS_EXIT_REQUIRED; not restart reconciliation or normal shutdown");
 }
+
+#[path = "coordinated_transaction_recovery.rs"]
+mod coordinated_transaction_recovery;
