@@ -196,11 +196,12 @@ origin, and so `UI` methods work — point it at your frontend root in
 dev run --frontend-root-path=frontend
 
 # HMR: proxy `/__/frontend/**` to the Vite dev server.
-dev run:hmr --frontend-host=http://localhost:5173
+dev run:hmr --frontend-url=http://localhost:5173
+dev run:hmr --mcp-app
 dev run --default-config=hmr
 
 # Dist: serve pre-built assets instead. `rbt dev run --config=dist`.
-dev run:dist --frontend-dist-path=frontend/dist
+dev run:dist --mcp-app-dist-path=frontend/dist
 ```
 
 See [Develop locally](/develop_locally#frontend-flags) for what each

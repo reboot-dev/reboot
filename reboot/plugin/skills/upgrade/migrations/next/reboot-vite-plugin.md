@@ -31,12 +31,12 @@ changed to set goes in the literal as usual, except the ones the
 plugin owns — `root`, `base`, `envDir`, `publicDir`, `build.outDir`,
 `build.emptyOutDir`, `server.allowedHosts` and the `@api` alias —
 which the plugin raises an error about if the config sets them: the
-backend's `--frontend-host` and `--frontend-dist-path` depend on
+backend's `--frontend-url` and `--mcp-app-dist-path` depend on
 their values. The copy's `server.host: true` goes too: the plugin
 listens on every interface unless the config or the command line
 says where. The copy fixed the dev server's port at 4444; the plugin
 leaves the port to Vite, so it is Vite's default, 5173, unless the
-config sets `server.port`. Change `--frontend-host` (and
+config sets `server.port`. Change `--frontend-url` (and
 `VITE_WEB_APP_URL`, if set) in `.rbtrc` and `.env.development` from
 `http://localhost:4444` to `http://localhost:5173`, or keep 4444 by
 adding `server: { port: 4444 }` to the config. `vite`, `@vitejs/plugin-react` and `vite-plugin-singlefile`

@@ -43,7 +43,7 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
                     'generate --react=frontend/api\n'
                     '\n'
                     'dev run --application=backend/src/main.py\n'
-                    'dev run:hmr --frontend-host=http://localhost:5173'
+                    'dev run:hmr --frontend-url=http://localhost:5173'
                 ),
             )
 

@@ -107,7 +107,7 @@ any project — another plugin
 `build.sourcemap`, and so on. The values the plugin sets — `root`,
 `base`, `envDir`, `publicDir`, `build.outDir`, `build.emptyOutDir`,
 `allowedHosts`, the `@api` alias — are the contract with the backend's
-`--frontend-host` and `--frontend-dist-path`; if the
+`--frontend-url` and `--mcp-app-dist-path`; if the
 config sets one of them too, `reboot()` raises an error naming it,
 rather than one value silently winning. Relative paths elsewhere in
 the config resolve against each build's root (`mcp/<name>/` or
