@@ -27,7 +27,10 @@ from google.protobuf.duration_pb2 import Duration
 from google.protobuf.message import Message
 from google.protobuf.wrappers_pb2 import BoolValue, UInt32Value
 from pathlib import Path
-from reboot.aio.auth.allowed_origins import DEV_ORIGIN_REGEXES
+from reboot.aio.auth.allowed_origins import (
+    DEV_ORIGIN_REGEXES,
+    OAUTH_PATH_PREFIX,
+)
 from reboot.aio.headers import CALLER_ID_HEADER, SERVER_ID_HEADER
 from reboot.aio.types import ApplicationId, ServerId
 from reboot.helpers import get_path_prefixes_from_file_descriptor_set
@@ -245,36 +248,64 @@ def _cors_origin_matchers(
     return matchers
 
 
-def _cors_policy(
-    allowed_origins: Optional[list[str]],
-) -> route_components_pb2.CorsPolicy:
-    """The route's CORS policy. `None` means the application has no
-    credentialed browser traffic to protect (neither `oauth=` nor
-    `allowed_origins`), and any origin may call — MCP sandboxes, for
-    example, can show up with arbitrary origins. A list (possibly
-    empty) means credentialed cross-origin browser traffic is
-    restricted to the exact-match allow-list; `allow_credentials`
-    is paired with exact-match origins, never a wildcard.
+def _permissive_cors_policy() -> route_components_pb2.CorsPolicy:
+    """The virtual host's CORS policy, for every route without its
+    own: any origin may call, with no credentials.
+
+    Every path but the OAuth server's authenticates a cross-origin
+    request by the bearer it presents, never by the session cookie, so
+    an origin allow-list would protect nothing there, and it would shut
+    out a page an MCP host shows, whose sandbox origin (a per-conversation
+    `*.claudemcpcontent.com` host in Claude, `null` in MCPJam) the
+    application cannot know in advance. Without `allow_credentials`,
+    a browser withholds from the page the response to any request it
+    sent with `credentials: "include"`, so the echoed origin never
+    lets a page read a cookie-authenticated response. The paths that
+    honor the cookie cross-origin are under `OAUTH_PATH_PREFIX`, where
+    `_credentialed_cors_policy` applies.
     """
-    if allowed_origins is None:
-        return route_components_pb2.CorsPolicy(
-            allow_origin_string_match=[
-                string_pb2.StringMatcher(
-                    safe_regex=regex_pb2.RegexMatcher(
-                        # The correct incantation for Envoy is `".*"`,
-                        # not `"*"` (which only matches a literal
-                        # star).
-                        google_re2=regex_pb2.RegexMatcher.GoogleRE2(),
-                        regex=".*",
-                    ),
-                )
-            ],
-            allow_methods=_CORS_ALLOW_METHODS,
-            allow_headers=_CORS_ALLOW_HEADERS,
-            max_age=_CORS_MAX_AGE,
-            expose_headers=_CORS_EXPOSE_HEADERS,
-        )
     return route_components_pb2.CorsPolicy(
+        allow_origin_string_match=[
+            string_pb2.StringMatcher(
+                safe_regex=regex_pb2.RegexMatcher(
+                    # The correct incantation for Envoy is `".*"`,
+                    # not `"*"` (which only matches a literal
+                    # star). Envoy echoes the matched origin, so an
+                    # `Origin: null` request is answered with
+                    # `Access-Control-Allow-Origin: null`, which a
+                    # browser accepts for an opaque origin.
+                    google_re2=regex_pb2.RegexMatcher.GoogleRE2(),
+                    regex=".*",
+                ),
+            )
+        ],
+        allow_methods=_CORS_ALLOW_METHODS,
+        allow_headers=_CORS_ALLOW_HEADERS,
+        max_age=_CORS_MAX_AGE,
+        expose_headers=_CORS_EXPOSE_HEADERS,
+    )
+
+
+def _credentialed_cors_policy(
+    allowed_origins: list[str],
+) -> cors_pb2.CorsPolicy:
+    """The CORS policy of the OAuth server's routes
+    (`OAUTH_PATH_PREFIX`), the paths that honor the session cookie
+    cross-origin.
+    Envoy echoes an origin in the exact-match allow-list (plus, under
+    `rbt dev run`, the local-development origins) with
+    `Access-Control-Allow-Credentials: true`. Any other origin gets no
+    CORS headers from Envoy; its preflight reaches the OAuth server,
+    which answers it only for `/__/oauth/register` and
+    `/__/oauth/token`, the endpoints browser-based MCP clients call
+    from anywhere. `allow_credentials` goes with exact-match origins,
+    never a wildcard; see `_cors_origin_matchers`.
+
+    This is the `cors` filter's per-route `CorsPolicy`, set through a
+    route's `typed_per_filter_config`; it overrides the virtual host's
+    for that route.
+    """
+    return cors_pb2.CorsPolicy(
         allow_credentials=BoolValue(value=True),
         allow_origin_string_match=_cors_origin_matchers(allowed_origins),
         allow_methods=_CORS_ALLOW_METHODS,
@@ -385,11 +416,16 @@ def _http_filter_remove_json_trailers(
     )
 
 
+CORS_HTTP_FILTER_NAME = "envoy.filters.http.cors"
+
+
 def _http_filter_cors() -> http_connection_manager_pb2.HttpFilter:
-    # TODO(rjh): set the `cors` policy here, instead of in `VirtualHost`; the
-    #            latter is deprecated. Share code with `network_managers.py`.
+    # TODO(rjh): set the virtual host's `cors` policy through this
+    #            filter's per-route config, the way the OAuth route's
+    #            is (see `_oauth_route`); the `VirtualHost.cors` field
+    #            is deprecated. Share code with `network_managers.py`.
     return http_connection_manager_pb2.HttpFilter(
-        name="envoy.filters.http.cors",
+        name=CORS_HTTP_FILTER_NAME,
         typed_config=any_pack(cors_pb2.Cors()),
     )
 
@@ -474,12 +510,43 @@ def _for_server(
     return match
 
 
+def _oauth_route(
+    cluster_name: str,
+    server_header_matcher: route_components_pb2.HeaderMatcher,
+    allowed_origins: list[str],
+) -> route_components_pb2.Route:
+    """The route for the OAuth server's paths (`OAUTH_PATH_PREFIX`) to
+    the HTTP port: the same destination as the web framework's routes
+    and the catch-all after it, listed separately and first so it alone
+    carries the credentialed CORS policy; the web framework's paths
+    include the OAuth server's own.
+    """
+    return route_components_pb2.Route(
+        match=route_components_pb2.RouteMatch(
+            prefix=OAUTH_PATH_PREFIX,
+            headers=[server_header_matcher],
+        ),
+        route=route_components_pb2.RouteAction(
+            cluster=cluster_name,
+            max_stream_duration=route_components_pb2.RouteAction.
+            MaxStreamDuration(grpc_timeout_header_max=ZERO_SECONDS)
+        ),
+        typed_per_filter_config={
+            GRPC_JSON_TRANSCODER_HTTP_FILTER_NAME:
+                EMPTY_GRPC_JSON_TRANSCODER_CONFIG,
+            CORS_HTTP_FILTER_NAME:
+                any_pack(_credentialed_cors_policy(allowed_origins)),
+        },
+    )
+
+
 def _routes_for_server(
     application_id: ApplicationId,
     server: ServerInfo,
     kind: ClusterKind,
     file_descriptor_set: FileDescriptorSet,
     trust_caller_id: bool,
+    allowed_origins: Optional[list[str]],
     route_matches: list[route_components_pb2.RouteMatch],
     catch_all: bool = True,
 ) -> list[route_components_pb2.Route]:
@@ -572,7 +639,17 @@ def _routes_for_server(
                 },
             )
 
-        return [
+        # `allowed_origins` is a list, possibly empty, exactly when the
+        # application has `oauth=` and so an OAuth server to route to.
+        return (
+            [] if allowed_origins is None else [
+                _oauth_route(
+                    cluster_name=cluster_name,
+                    server_header_matcher=server_header_matcher,
+                    allowed_origins=allowed_origins,
+                )
+            ]
+        ) + [
             # The paths the web framework answers (the application's
             # routes and mounts, and Reboot's), each its own route,
             # ahead of the catch-all below: today both go to the same
@@ -900,7 +977,7 @@ def _filter_http_connection_manager(
                     #            instead we should set it directly on the
                     #            `envoy.filters.http.cors` filter in the filter
                     #            chain.
-                    cors=_cors_policy(allowed_origins),
+                    cors=_permissive_cors_policy(),
                     routes=(
                         # Frontend routes (if configured) must come
                         # first since they match specific prefixes.
@@ -917,6 +994,7 @@ def _filter_http_connection_manager(
                                 kind=kind,
                                 file_descriptor_set=file_descriptor_set,
                                 trust_caller_id=trust_caller_id,
+                                allowed_origins=allowed_origins,
                                 route_matches=route_matches,
                                 catch_all=not web_app,
                             )
