@@ -73,6 +73,23 @@ class CleanupBarrierTests(unittest.TestCase):
         del self.sdk.row['fd']
         self.rejects_without_database_request()
 
+    def test_default_wait_budget_still_fails_before_late_condition(self):
+        clock = [0]
+        def advance(_):
+            clock[0] += 1
+        with patch.object(self.helper.time, 'monotonic', side_effect=lambda: clock[0]), patch.object(self.helper.time, 'sleep', side_effect=advance):
+            with self.assertRaisesRegex(RuntimeError, 'bounded wait timed out'):
+                self.helper.until(lambda: clock[0] >= 20)
+        self.assertEqual(clock[0], 10)
+
+    def test_explicit_workload_budget_requires_actual_condition(self):
+        clock = [0]
+        def advance(_):
+            clock[0] += 1
+        with patch.object(self.helper.time, 'monotonic', side_effect=lambda: clock[0]), patch.object(self.helper.time, 'sleep', side_effect=advance):
+            self.helper.until(lambda: clock[0] >= 20, timeout=180)
+        self.assertEqual(clock[0], 20)
+
     def test_sticky_owner_failure(self):
         self.owner.failure = 'UNIT unknown acquisition'
         self.rejects_without_database_request()

@@ -15,19 +15,19 @@
     "claim": "local comparator schema only; not a corresponding cursor/results example; no independent revision verification in source-only task"
   },
   "repair": {
-    "status": "First real native attempt failed at missing mandatory writer metadata; fresh-per-dispatch key fix source-reviewed and rebuilt offline successfully. Native rerun is not yet accepted.",
+    "status": "Fresh-per-dispatch metadata fix rebuilt offline and real native rerun reached iteration99 after first restart, then timed out at generic10second milestone wait. Only that finite milestone wait changed to180seconds; native rerun remains unaccepted.",
     "supervision": "Reviewed replacement helper contract, not exact original prefix; obsolete executable test body removed",
     "baseline_supervision_sha256": "dc92efcf7ad8bc81c55362b108fa4b7b2c08f6ab6c50bc131d03eed36e177179",
-    "adapted_supervision_sha256": "8ec70ab65cd4d9cc1d49e259ac0cc5e8926b853655abf76af19929676a8fceb1"
+    "adapted_supervision_sha256": "b00fc43ce7b9117798b4e7d66c7deed10876452b4fa543dbf981dca73f14f608"
   },
   "current_source_sha256": {
-    "test_cleanup_barrier.py": "80f97eb74520e28980aa62253978ee0948f5270a3a6e5b17db927dcf619fdefe",
+    "test_cleanup_barrier.py": "f8edf20cbc73490334bb6636a82e348a394cf10861cb574c420e0f2b5f4ef853",
     "build.rs": "de3f5fdd677228c7822b32b38d346ffb371d7e35f2db8b5742049e91c50341d4",
-    "supervision_reference.py": "8ec70ab65cd4d9cc1d49e259ac0cc5e8926b853655abf76af19929676a8fceb1",
+    "supervision_reference.py": "b00fc43ce7b9117798b4e7d66c7deed10876452b4fa543dbf981dca73f14f608",
     "public_probe.py": "8ea0fe17acc401fe3d7356141a6658d78d25a93f0d411d8a7eae8e37ba612d5d",
-    "prove_cursor.py": "65e258d757c2ba7016778cf01e649a2e1a949916f450a275f2d423c57731b686",
+    "prove_cursor.py": "b3355f0fe548eb3bd7201c50bf1f88c6131f7a346b01eab33ee783187d77d1ec",
     ".rbtrc": "a163db87ffd23358d3f73889f14fe8dc7318e908e6d98611cf05fd53062b4ac7",
-    "HANDOFF.md": "f452483f341950ff039c31735492c59a0dec2b8fd601b68aa5b8268a14cdfc06",
+    "HANDOFF.md": "9540eaeaaecef91a8af7311e250d65900ef0f00fe38e2a2904c2c6a80083f5c3",
     "Cargo.toml": "919f54961d37a8b84e80dc9306a73855cbdd8dcea04aa798884d2185d0fb870b",
     "cursor/v1/cursor.proto": "2e6de5c84cd9f7ccc6f3324f0130ec2cfdd8d4f8d9d9be090fb605dc6b35ab1b",
     "src/inspect.rs": "f188958ac6146021818e38389b1bcad9dc4be1b0134281c6556bfc61c59529ab",
@@ -44,7 +44,7 @@
     ],
     "native_acceptance": false,
     "public_acceptance": false,
-    "cleanup_tests": "8 repository-local UNIT regression cases; 12 external helper/gate UNIT cases; no real process signals",
+    "cleanup_tests": "10 repository-local cleanup/wait UNIT regressions passed; external helper/gate units remain separate, no synthetic native acceptance.",
     "runtime_requirements": "Parent-owned generated executable, verified source freeze, reviewed exact custody adapter, original exclusive task owner, and approved actual native run.",
     "dispatch_metadata_fix": "Actual475 locked/offline rebuild passed, executable SHA256 183bcdc6a1aec0da98338bdcf7c70bf7f41ff322cd80ea6f4667defb5d9a6bd9; current native rerun pending adjudication."
   },

@@ -51,6 +51,14 @@ deduplicate; absence of transport keys is not claimed. The corrected app's
 [offline rebuild](tests/evidence/cursor-dispatch-metadata-build-20261015.json)
 passed; the real native rerun remains subject to independent adjudication.
 
+The next [native attempt](tests/evidence/cursor-workload-timeout-20261015.json)
+passed the first stored-result/restart setup and actually progressed through
+iteration 99, but the generic ten-second milestone wait expired. The harness
+now permits 180 seconds only for the parked-at-1025 objective. Existing exact
+predicates/state checks and all retirement safety rules are unchanged; normal
+readiness waits remain ten seconds. Two fake-clock regressions pass alongside
+the eight cleanup units. This wait-budget fix is not native acceptance.
+
 ## Cursor and typed-result library checkpoint (2026-10-15)
 
 The experimental library now supports explicitly registered canonical workflow
@@ -4703,7 +4711,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: aa79c053b936ab93d9dd71e6a38d1b2725c9add1429dcc25aa1b82be6e3657f0 -->
+<!-- parity-source-sha256: 900e730d4168ef98427b1ed26455a957bacb7178c15c9043395c46931fea840e -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

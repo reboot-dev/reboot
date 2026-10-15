@@ -23,7 +23,7 @@ def starthost(pause='',iteration=0,fail=False,expected_failure=False):
  p=spawn([BIN,'serve',database,'127.0.0.1:%d'%ap,shutdown],env)
  if not expected_failure:listener(p,ap)
  return p,shutdown
-def parked(name,i):until(lambda:'park:%s:%d'%(name,i) in events())
+def parked(name,i,timeout=10):until(lambda:'park:%s:%d'%(name,i) in events(),timeout=timeout)
 def snapshot(i):return json.loads(run('inspect',database,handle,i))
 def canonical_restart(i):
  global db,host,shutdown
@@ -44,7 +44,9 @@ try:
  before=snapshot(0);assert before['iteration']==0 and len(stored(before))==1
  assert stored(before)[0]['reply']=={'iteration':0,'ordinal':1,'proof':'committed:0:1'}
  disk=canonical_restart(0);assert disk==before
- host,shutdown=starthost('entry',1025);parked('entry',1025)
+ # Observed native480 advanced through iteration99 in the default ten seconds.
+ # Budget this finite1030 workload, not an unbounded retry or timeout success.
+ host,shutdown=starthost('entry',1025);parked('entry',1025,timeout=180)
  no_callback(0);assert 'iteration:0' in events() # replay current, NOT preceding iterations after cursor recovery.
  replayed_effect=snapshot(0)
  assert stored(replayed_effect)==stored(before) and not started(replayed_effect)

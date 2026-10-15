@@ -96,8 +96,8 @@ def expected_host_failure(p,diagnostic):
  entry['expected_exit']='started-failure'
  return {'exit':receipt.returncode,'diagnostic':diagnostic,'log':text,'joined_exact':True,'natural_exit':True}
 
-def until(f):
- deadline=time.monotonic()+10
+def until(f,timeout=10):
+ deadline=time.monotonic()+timeout
  while time.monotonic()<deadline:
   if f():return
   time.sleep(.02)

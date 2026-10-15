@@ -13,6 +13,15 @@ mask accidental redispatch: it would receive a fresh key and commit again.
 Stored replay must avoid constructing the callback entirely. The original
 keyless call failed on the first real native run; it was not accepted.
 
+## Finite workload wait
+
+The native rerun reached iteration 99 before the generic ten-second wait
+expired. Only the explicit parked-at-1025 milestone now allows 180 seconds;
+normal readiness/default waits remain ten seconds. The predicate, canonical
+state assertions, cleanup deadlines and failure classification are unchanged.
+Timeout is never acceptance. Two local fake-clock regressions cover the
+unchanged default failure and the explicit workload budget.
+
 ## Required parent integration
 
 The trusted parent supplies the real built `CURSOR_APP_BIN`, `REBOOT_NATIVE2PC_CXX_DATABASE`, a fresh exclusive `CURSOR_STAGE` and `CURSOR_EVIDENCE`, and `CURSOR_CUSTODY_MODULE`. Read `prove_cursor.py` for the complete environment/preflight contract. Reject optimized Python execution. Preserve the canonical source freeze and actual app/native executable hashes; independently read back the final evidence.
