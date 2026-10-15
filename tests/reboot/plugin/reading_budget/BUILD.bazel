@@ -1,0 +1,17 @@
+load("@rules_python//python:defs.bzl", "py_test")
+
+py_test(
+    name = "reading_budget_test",
+    size = "small",
+    srcs = [
+        "reading_budget.py",
+        "reading_budget_test.py",
+    ],
+    data = ["//reboot/plugin:skills"],
+    # Tests run from the main repository's runfiles root, where the
+    # skills sit at the same path as in the source tree.
+    env = {
+        "REBOOT_PLUGIN_SKILLS": "reboot/plugin/skills",
+    },
+    main = "reading_budget_test.py",
+)
