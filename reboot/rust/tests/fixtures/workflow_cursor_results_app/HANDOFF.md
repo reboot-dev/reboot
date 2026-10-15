@@ -1,8 +1,17 @@
 # Cursor/results fixture: acceptance boundary
 
-This is a **new-feature fixture, not reboot-examples parity evidence**. Its generated Rust consumer has compiled and passed strict all-target Clippy. The cleanup barriers have local unit coverage. The cursor native/public scenario has **not run**; neither compilation nor unit doubles establish native acceptance. The outer Rust test is intentionally ignored.
+This is a **new-feature fixture, not reboot-examples parity evidence**. The original generated consumer compiled and passed strict all-target Clippy; the subsequent transport-metadata fix has also built successfully offline (strict Clippy evidence describes the earlier source). Cleanup barriers have local unit coverage. The first actual native attempt failed at the first cross-actor writer; native/public qualification has **not passed**. The outer Rust test is intentionally ignored.
 
 The scenario targets more than 1024 cursor continuations, generated cross-actor calls, complete Stored-record/payload replay equality, saved Break replay, and Started-after-commit uncertainty. These are proof objectives, not reported runtime results.
+
+## Transport metadata versus replay deduplication
+
+Generated writers require `x-reboot-idempotency-key`. Each actual B dispatch
+therefore generates a fresh UUID inside the callback; it is never derived from
+the task/effect identity or reused on recovery. Destination deduplication cannot
+mask accidental redispatch: it would receive a fresh key and commit again.
+Stored replay must avoid constructing the callback entirely. The original
+keyless call failed on the first real native run; it was not accepted.
 
 ## Required parent integration
 

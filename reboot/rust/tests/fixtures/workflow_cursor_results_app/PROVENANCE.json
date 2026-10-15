@@ -15,7 +15,7 @@
     "claim": "local comparator schema only; not a corresponding cursor/results example; no independent revision verification in source-only task"
   },
   "repair": {
-    "status": "Generated consumer compiled and strict all-target Clippy passed; cleanup barriers unit-tested; native/public cursor execution remains UNEXECUTED.",
+    "status": "First real native attempt failed at missing mandatory writer metadata; fresh-per-dispatch key fix source-reviewed and rebuilt offline successfully. Native rerun is not yet accepted.",
     "supervision": "Reviewed replacement helper contract, not exact original prefix; obsolete executable test body removed",
     "baseline_supervision_sha256": "dc92efcf7ad8bc81c55362b108fa4b7b2c08f6ab6c50bc131d03eed36e177179",
     "adapted_supervision_sha256": "8ec70ab65cd4d9cc1d49e259ac0cc5e8926b853655abf76af19929676a8fceb1"
@@ -25,20 +25,19 @@
     "build.rs": "de3f5fdd677228c7822b32b38d346ffb371d7e35f2db8b5742049e91c50341d4",
     "supervision_reference.py": "8ec70ab65cd4d9cc1d49e259ac0cc5e8926b853655abf76af19929676a8fceb1",
     "public_probe.py": "8ea0fe17acc401fe3d7356141a6658d78d25a93f0d411d8a7eae8e37ba612d5d",
-    "prove_cursor.py": "8f44c708b777d1f557405e674882dea685e65cee1ae982bf87b1586f3fc379fc",
+    "prove_cursor.py": "65e258d757c2ba7016778cf01e649a2e1a949916f450a275f2d423c57731b686",
     ".rbtrc": "a163db87ffd23358d3f73889f14fe8dc7318e908e6d98611cf05fd53062b4ac7",
-    "HANDOFF.md": "75b42f6b86da9e18dd3b0b5ef21875a27dbb7a1ed06e61896a1e4e7f51d546a4",
+    "HANDOFF.md": "f452483f341950ff039c31735492c59a0dec2b8fd601b68aa5b8268a14cdfc06",
     "Cargo.toml": "919f54961d37a8b84e80dc9306a73855cbdd8dcea04aa798884d2185d0fb870b",
     "cursor/v1/cursor.proto": "2e6de5c84cd9f7ccc6f3324f0130ec2cfdd8d4f8d9d9be090fb605dc6b35ab1b",
     "src/inspect.rs": "f188958ac6146021818e38389b1bcad9dc4be1b0134281c6556bfc61c59529ab",
-    "src/main.rs": "b1cdfadb834ae7b60815831f70a2a9967ff358902569c5c9caac7e4792d147a4",
+    "src/main.rs": "870d4b72bef978d4e5d411b3a0e6904a2b0a610913f9662ef1707d235a51ced4",
     "src/placement.rs": "3b9c551f97c607466e55936b0b2f1fa2761c2e3c5d94202d346471a0003b0e6f"
   },
   "evidence_scope": {
     "consumer_rust_inputs_equal_final_clippy446": [
       "Cargo.toml",
       "build.rs",
-      "src/main.rs",
       "src/placement.rs",
       "src/inspect.rs",
       "cursor/v1/cursor.proto"
@@ -46,7 +45,8 @@
     "native_acceptance": false,
     "public_acceptance": false,
     "cleanup_tests": "8 repository-local UNIT regression cases; 12 external helper/gate UNIT cases; no real process signals",
-    "runtime_requirements": "Parent-owned generated executable, verified source freeze, reviewed exact custody adapter, original exclusive task owner, and approved actual native run."
+    "runtime_requirements": "Parent-owned generated executable, verified source freeze, reviewed exact custody adapter, original exclusive task owner, and approved actual native run.",
+    "dispatch_metadata_fix": "Actual475 locked/offline rebuild passed, executable SHA256 183bcdc6a1aec0da98338bdcf7c70bf7f41ff322cd80ea6f4667defb5d9a6bd9; current native rerun pending adjudication."
   },
   "outer_wrapper": {
     "path": "reboot/rust/tests/workflow_cursor_results_native.rs",

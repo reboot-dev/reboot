@@ -16,15 +16,16 @@ No overall percentage is asserted.
 
 The [fixture](tests/fixtures/workflow_cursor_results_app/HANDOFF.md) is now
 available for parent-owned native qualification. Its generated Rust consumer
-compiled and passed strict all-target Clippy; all six Rust/Cargo/proto inputs
-match that checked source. Eight repository-local cleanup unit regressions
+compiled and passed strict all-target Clippy. The later mandatory writer-metadata
+fix also passed an actual locked/offline rebuild; strict Clippy describes the
+earlier main.rs. Eight repository-local cleanup unit regressions
 exercise the actual helper, including unresolved short clients, unrepresented
 reservations and open/missing descriptor obligations. The standalone Rust
 wrapper compiles and remains intentionally ignored. These are **source,
 compile and unit results**, not native/public cursor acceptance.
 
-The actual >1024 continuation, cross-actor result replay, saved Break replay
-and Started-uncertainty objectives remain **UNEXECUTED**. The fixture refuses
+The >1024 continuation, cross-actor result replay, saved Break replay
+and Started-uncertainty objectives remain **unaccepted**. The fixture refuses
 to substitute subprocess polling for the required parent custody adapter.
 Unknown SDK custody blocks Database retirement; independent outer preflight,
 archival, real build provenance and approved native execution remain required.
@@ -39,6 +40,16 @@ fresh exact-container terminal inspection. The original task lock was released
 and the build custody record was clean. This is a real built artifact, **not a
 native cursor scenario**: no >1024 continuation or result-replay runtime claim
 is made. See the [generated app build receipt](tests/evidence/cursor-generated-app-build-20261015.json).
+
+The [first real native attempt](tests/evidence/cursor-native-first-failure-20261015.json)
+created actors and dispatched the workflow but failed because B.Effect requires
+`x-reboot-idempotency-key`. The fixture now creates a fresh UUID inside each
+actual callback dispatch. No stable task/effect key is reused: an erroneous
+callback replay must cause another destination commit rather than hide behind
+deduplication. Retransmission of one already constructed request can still
+deduplicate; absence of transport keys is not claimed. The corrected app's
+[offline rebuild](tests/evidence/cursor-dispatch-metadata-build-20261015.json)
+passed; the real native rerun remains subject to independent adjudication.
 
 ## Cursor and typed-result library checkpoint (2026-10-15)
 
@@ -4692,7 +4703,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: cfdd955ab297593752bd87947738d0c88d95c52cdebfa2ce8ca65fb1eb48b188 -->
+<!-- parity-source-sha256: aa79c053b936ab93d9dd71e6a38d1b2725c9add1429dcc25aa1b82be6e3657f0 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

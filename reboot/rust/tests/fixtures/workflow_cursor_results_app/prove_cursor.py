@@ -1,5 +1,5 @@
 """Parent-run native proof. Requires parent exact-child custody integration (not supplied).
-No synthetic Database/Store, no task injection, no destination dedupe key.
+No synthetic Database/Store or task injection; no stable destination dedupe key.
 Evidence is attempted only after valid setup/preflight reaches the body try/finally.
 Parent must retain a preflight receipt for earlier failures and evidence delivery
 failures (missing env/arguments, ports, optimization, exclusive target open/write);

@@ -227,9 +227,16 @@ impl generated::AMethodsDatabaseHandler for Source {
                                             .map_err(
                                                 |e| tonic::Status::unavailable(e.to_string()),
                                             )?;
-                                        // No idempotency key: no destination dedupe can hide redispatch.
+                                        // Writers require transport idempotency metadata. Use a
+                                        // fresh key per actual dispatch, never a stable effect/task
+                                        // key: accidental redispatch must commit again, not dedupe.
+                                        let dispatch_key = uuid::Uuid::new_v4().to_string();
                                         let reply = client
-                                            .effect(request(effect, "cursor.v1.B", None))
+                                            .effect(request(
+                                                effect,
+                                                "cursor.v1.B",
+                                                Some(&dispatch_key),
+                                            ))
                                             .await?
                                             .into_inner();
                                         // Real writer response means B adapter has committed; inspect B canonically too.
