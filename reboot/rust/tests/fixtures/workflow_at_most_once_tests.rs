@@ -19,6 +19,18 @@ impl ReaderTaskBinding for Binding {
     fn writer_capable(&self) -> bool {
         true
     }
+    fn validate_response(&self, task: &db::Task, response: &prost_types::Any) -> Result<(), Status> {
+        if task.method != "Initialize" {
+            return Err(Status::data_loss("unregistered effects task method"));
+        }
+        TaskMethodDeclaration::new::<D, crate::proto::Counter, crate::proto::Counter>(
+            "tests.Effects.Initialize",
+            "type.googleapis.com/tests.reboot.protoc.Counter",
+            vec![],
+        )
+        .workflow()
+        .validate_terminal(&db::task::ResponseOrError::Response(response.clone()))
+    }
     async fn execute(&self, _: &db::Task) -> Result<prost_types::Any, Status> {
         panic!("effects fixture does not dispatch readers")
     }
@@ -31,6 +43,9 @@ struct Fixture {
 }
 impl Fixture {
     async fn new(endpoint: &str, actor: &str, task: Option<db::Task>) -> Self {
+        Self::new_decl(endpoint, actor, task, false).await
+    }
+    async fn new_decl(endpoint: &str, actor: &str, task: Option<db::Task>, cursor: bool) -> Self {
         let store = DatabaseActorStore::connect(endpoint).await.unwrap();
         let tasks = OneShotTasks::new_with_declarations(
             store.clone(),
@@ -43,7 +58,8 @@ impl Fixture {
                     "type.googleapis.com/tests.reboot.protoc.Counter",
                     vec![],
                 )
-                .workflow(),
+                .workflow()
+                .with_test_cursor(cursor),
             ],
         )
         .unwrap();
@@ -86,7 +102,7 @@ impl Fixture {
     fn context<'a>(&'a self, attempt: &'a WorkflowAttempt) -> WorkflowContext<'a> {
         WorkflowContext {
             tasks: &self.tasks,
-            task: &self.task,
+            task: self.task.clone(),
             cancel: &self.cancel,
             generation: self
                 .tasks
@@ -285,7 +301,7 @@ async fn revoked_generation_and_canonical_request_change_reject_before_callback(
     wrong_actor.task_id.as_mut().unwrap().state_ref = "wrong-actor".into();
     let attempt = WorkflowAttempt::default();
     let mut context = f.context(&attempt);
-    context.task = &wrong_actor;
+    context.task = wrong_actor;
     assert!(
         context
             .at_most_once_unit("block", 1, || async { panic!("wrong actor") })
@@ -296,7 +312,7 @@ async fn revoked_generation_and_canonical_request_change_reject_before_callback(
     wrong_method.method = "NotRegistered".into();
     let attempt = WorkflowAttempt::default();
     let mut context = f.context(&attempt);
-    context.task = &wrong_method;
+    context.task = wrong_method;
     assert!(
         context
             .at_most_once_unit("block", 1, || async { panic!("wrong method") })
@@ -599,4 +615,17 @@ async fn simultaneous_same_alias_never_constructs_second_callback() {
     release_tx.send(()).unwrap();
     run.await.unwrap();
     server.abort();
+}
+
+trait TestCursorDeclaration {
+    fn with_test_cursor(self, enabled: bool) -> Self;
+}
+impl TestCursorDeclaration for TaskMethodDeclaration {
+    fn with_test_cursor(self, enabled: bool) -> Self {
+        if enabled {
+            self.workflow_cursor("main", 1)
+        } else {
+            self
+        }
+    }
 }

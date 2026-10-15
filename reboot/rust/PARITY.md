@@ -12,6 +12,33 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Cursor and typed-result library checkpoint (2026-10-15)
+
+The experimental library now supports explicitly registered canonical workflow
+cursors and typed at-most-once result envelopes with contract/provenance checks.
+Generated handlers select cursor registration once per registration through a
+`Self: Sized` hook; default finite workflows remain finite. Complete generated
+handler-name validation rejects RPC/hook collisions before emission.
+
+Library verification on the exact implementation source: **672 passed, 0 failed,
+7 ignored**, plus strict SDK/test Clippy with `-D warnings` (Rust 1.95; library
+execution used Rust 1.97.1). The causal Wait regressions exercise policy revocation,
+original-owner replacement and uncertainty during cursor-binding recovery, with
+valid terminal and corrupted-checkpoint controls. Malformed stored typed results
+taint the attempt before acknowledgement and cannot be swallowed to permit finish
+or local retry.
+
+**Acceptance boundary:** this is a library-only checkpoint. The new two-actor
+native/public proof is still under repair and is not included or accepted here.
+The seeded cursor unit case is not evidence of executing more than 1024 Continue
+steps. Persistence/restarts, real generated cross-actor typed replay and current
+upstream merged behavior remain separate gates. Started-without-Stored stays
+unresolved; no external exactly-once or general retryable-idempotency guarantee is
+claimed. Existing historical native/public receipts below do not certify this
+new cursor implementation. Full parity and CI approval remain outstanding.
+
+Evidence: [cursor library receipt](tests/evidence/cursor-library-20261015.json).
+
 ## Engine preflight and native constructor prerequisites (2026-10-15)
 
 Taskful constructors now require the read-only `Database.GetCapabilities` response
@@ -4636,7 +4663,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 4b6258abcb1935efcd02c836a810a5781d33326d8efa47208722e2ecfbf221b1 -->
+<!-- parity-source-sha256: 9dd007e3922ee724526f38b46f83b9a2ec6aa4e74e3eef17491178ce34b66d6a -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

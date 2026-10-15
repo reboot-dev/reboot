@@ -249,6 +249,7 @@ pub struct TaskMethodDeclaration {
     decode_response: fn(&[u8]) -> Result<(), Status>,
     errors: Vec<DeclaredTaskError>,
     workflow: bool,
+    cursor: Option<(&'static str, u32)>,
     workflow_writer_step: bool,
     workflow_reader_wait: bool,
     constructor_scheduling: bool,
@@ -271,6 +272,10 @@ impl DeclaredTaskError {
     }
 }
 impl TaskMethodDeclaration {
+    pub(crate) fn full_method(&self) -> &'static str {
+        self.method
+    }
+
     pub fn new<D, Q, R>(
         method: &'static str,
         response_type: &'static str,
@@ -292,6 +297,7 @@ impl TaskMethodDeclaration {
             decode_response: decode_declared_message::<R>,
             errors,
             workflow: false,
+            cursor: None,
             workflow_writer_step: false,
             workflow_reader_wait: false,
             constructor_scheduling: false,
@@ -307,6 +313,12 @@ impl TaskMethodDeclaration {
         self.workflow = true;
         self.workflow_writer_step = false;
         self.workflow_reader_wait = false;
+        self
+    }
+    /// Opt in to exactly one named/versioned canonical cursor loop.
+    pub fn workflow_cursor(mut self, alias: &'static str, version: u32) -> Self {
+        self = self.workflow();
+        self.cursor = Some((alias, version));
         self
     }
     /// Immutable named workflow writer-step contract, distinct from reader bindings.
@@ -411,6 +423,17 @@ impl OneShotTasks {
     ) -> Result<Self, Status> {
         let mut methods = HashSet::new();
         for declaration in &declarations {
+            if declaration.cursor.is_some_and(|(alias, version)| {
+                !declaration.workflow
+                    || alias.is_empty()
+                    || alias.len() > 256
+                    || alias.chars().any(char::is_control)
+                    || version == 0
+            }) {
+                return Err(Status::invalid_argument(
+                    "invalid workflow cursor declaration",
+                ));
+            }
             if declaration.state_type != state_type
                 || !methods.insert(declaration.method.rsplit('.').next())
             {
@@ -456,7 +479,7 @@ impl OneShotTasks {
     pub fn has_uncertain_operation(&self) -> bool {
         *self.inner.uncertain.borrow()
     }
-    fn declaration(&self, task: &db::Task) -> Option<&TaskMethodDeclaration> {
+    pub(crate) fn declaration(&self, task: &db::Task) -> Option<&TaskMethodDeclaration> {
         self.inner
             .declarations
             .iter()
@@ -579,8 +602,12 @@ impl OneShotTasks {
                 ));
             }
             let canonical = matches[0];
+            let mut expected_task = task.clone();
+            if self.cursor_declaration(task).is_some() {
+                expected_task.iteration = canonical.iteration;
+            }
             if canonical.status == db::task::Status::Completed as i32 {
-                validate_completed(task, canonical, None)?;
+                validate_completed(&expected_task, canonical, None)?;
                 self.validate_terminal(
                     canonical,
                     canonical
@@ -588,7 +615,7 @@ impl OneShotTasks {
                         .as_ref()
                         .expect("validated terminal"),
                 )?;
-            } else if canonical != task {
+            } else if canonical != &expected_task {
                 return Err(Status::failed_precondition(
                     "scheduling replay pending method/payload mismatch",
                 ));
@@ -725,7 +752,18 @@ impl OneShotTasks {
             .any(|task| self.inner.binding.is_writer(task) || self.is_workflow(task))
     }
     /// Validate the whole staged set before the participant stages any data.
+    pub(crate) fn cursor_declaration(&self, task: &db::Task) -> Option<(&'static str, u32)> {
+        self.declaration(task)
+            .filter(|d| d.workflow)
+            .and_then(|d| d.cursor)
+    }
+    fn validate_recovered(&self, tasks: &[db::Task]) -> Result<(), Status> {
+        self.validate_tasks(tasks, true)
+    }
     pub fn validate(&self, tasks: &[db::Task]) -> Result<(), Status> {
+        self.validate_tasks(tasks, false)
+    }
+    fn validate_tasks(&self, tasks: &[db::Task], recovered: bool) -> Result<(), Status> {
         if tasks.len() > MAX_TASKS {
             return Err(Status::resource_exhausted(
                 "one-shot task admission exceeds 1024",
@@ -749,7 +787,7 @@ impl OneShotTasks {
             }
             if task.status != db::task::Status::Pending as i32
                 || task.response_or_error.is_some()
-                || task.iteration != 0
+                || (task.iteration != 0 && !(recovered && self.cursor_declaration(task).is_some()))
             {
                 return Err(Status::invalid_argument(
                     "only pending one-shot tasks are supported",
@@ -1003,7 +1041,20 @@ impl OneShotTasks {
             }
             pending.extend(batch.pending_tasks);
         }
-        self.validate(&pending)?;
+        self.validate_recovered(&pending)?;
+        for task in &pending {
+            if let Some((alias, version)) = self.cursor_declaration(task) {
+                self.inner
+                    .store
+                    .workflow_validate_cursor_binding(
+                        task,
+                        alias,
+                        version,
+                        self.declaration(task).expect("cursor declaration").method,
+                    )
+                    .await?;
+            }
+        }
         Ok(pending)
     }
     pub(crate) fn local_execution_admission(&self) -> Result<RunningTaskAdmission, Status> {
@@ -2018,7 +2069,22 @@ impl ReaderTaskRecoveryRegistry {
             partitions.entry(key).or_default().push(task.clone());
         }
         for (key, batch) in partitions {
-            self.tasks[&key].validate(&batch)?;
+            let owner = &self.tasks[&key];
+            owner.validate_recovered(&batch)?;
+            for task in &batch {
+                if let Some((alias, version)) = owner.cursor_declaration(task) {
+                    owner
+                        .inner
+                        .store
+                        .workflow_validate_cursor_binding(
+                            task,
+                            alias,
+                            version,
+                            owner.declaration(task).expect("cursor declaration").method,
+                        )
+                        .await?;
+                }
+            }
         }
         Ok(pending)
     }
@@ -2453,6 +2519,31 @@ impl db::tasks_server::Tasks for ReaderTaskWaitService {
                     parked.armed = false;
                 }
             }
+            // Resolve the durable binding without holding the publication mutex.
+            // Defer its error until policy and owner revalidation below so a
+            // revocation during this IO cannot disclose checkpoint diagnostics.
+            let cursor_binding =
+                if loaded.tasks.len() == 1 && loaded.tasks[0].task_id.as_ref() == Some(&id) {
+                    let task = &loaded.tasks[0];
+                    if let Some((alias, version)) = tasks.cursor_declaration(task) {
+                        Some(
+                            tasks
+                                .inner
+                                .store
+                                .workflow_validate_cursor_binding(
+                                    task,
+                                    alias,
+                                    version,
+                                    tasks.declaration(task).expect("cursor declaration").method,
+                                )
+                                .await,
+                        )
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
             // Policy may be revoked during Load or its own await. Check again
             // before revealing existence or a terminal, then original ownership
             // and current placement. No actor lease is held across policy IO.
@@ -2493,15 +2584,20 @@ impl db::tasks_server::Tasks for ReaderTaskWaitService {
                         "task belongs to another generated method",
                     ));
                 }
-                if task.iteration != 0 {
+                if task.iteration != 0 && tasks.cursor_declaration(task).is_none() {
                     return Err(Status::failed_precondition(
                         "task iterations are unsupported",
                     ));
                 }
+                if let Some(binding) = cursor_binding {
+                    binding?;
+                }
                 scheduled_at(task)?;
                 tasks.inner.binding.validate(task)?;
                 match db::task::Status::try_from(task.status) {
-                    Ok(db::task::Status::Pending) => tasks.validate(std::slice::from_ref(task))?,
+                    Ok(db::task::Status::Pending) => {
+                        tasks.validate_recovered(std::slice::from_ref(task))?
+                    }
                     Ok(db::task::Status::Completed) => {
                         tasks.validate_terminal(
                             task,

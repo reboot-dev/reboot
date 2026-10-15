@@ -325,6 +325,129 @@ impl DatabaseActorStore {
         operation.acknowledged();
         Ok(())
     }
+    pub(crate) async fn workflow_at_most_once_result_load(
+        &self,
+        scope: &crate::one_shot_tasks::WorkflowContext<'_>,
+        key: Uuid,
+        contract: &crate::one_shot_tasks::AtMostOnceResultContract,
+    ) -> Result<Option<crate::one_shot_tasks::AtMostOnceResultCheckpoint>, Status> {
+        use crate::one_shot_tasks::{AT_MOST_ONCE_RESULT_TYPE, AtMostOnceResultCheckpoint};
+        let id = scope
+            .task()
+            .task_id
+            .as_ref()
+            .ok_or_else(|| Status::failed_precondition("missing workflow identity"))?;
+        let fingerprint = request_fingerprint("reboot.workflow.at-most-once.result.v1", contract);
+        let mut saved = None;
+        // Match existing workflow recovery: exact scoped replay first; reject
+        // legacy unscoped records before any first Start.
+        for scoped in [true, false] {
+            if !scoped && saved.is_some() {
+                break;
+            }
+            let mut stream = self
+                .database
+                .clone()
+                .recover_idempotent_mutations(database::RecoverIdempotentMutationsRequest {
+                    state_type: id.state_type.clone(),
+                    state_ref: id.state_ref.clone(),
+                    idempotency_key: Some(key.as_bytes().to_vec()),
+                    workflow_id: scoped.then(|| id.task_uuid.clone()),
+                    workflow_iteration: if scoped {
+                        scope.checkpoint_iteration()
+                    } else {
+                        None
+                    },
+                })
+                .await?
+                .into_inner();
+            scope.validate_scope().await?;
+            while let Some(batch) = stream.message().await? {
+                scope.validate_scope().await?;
+                for mutation in batch.idempotent_mutations {
+                    if !scoped || saved.is_some() {
+                        return Err(Status::failed_precondition(
+                            "duplicate/unscoped at-most-once checkpoint",
+                        ));
+                    }
+                    let any = decode_workflow_checkpoint_envelope(
+                        &mutation,
+                        id,
+                        key,
+                        &fingerprint,
+                        AT_MOST_ONCE_RESULT_TYPE,
+                        scope.checkpoint_iteration(),
+                    )?;
+                    if any.type_url != AT_MOST_ONCE_RESULT_TYPE {
+                        return Err(Status::data_loss("at-most-once checkpoint type collision"));
+                    }
+                    let checkpoint = AtMostOnceResultCheckpoint::decode(any.value.as_slice())
+                        .map_err(|_| Status::data_loss("malformed at-most-once checkpoint"))?;
+                    checkpoint.validate()?;
+                    if checkpoint
+                        .result
+                        .as_ref()
+                        .is_some_and(|r| r.type_url != contract.result_type)
+                    {
+                        return Err(Status::data_loss("typed result contract mismatch"));
+                    }
+                    saved = Some(checkpoint);
+                }
+            }
+        }
+        scope.validate_scope().await?;
+        Ok(saved)
+    }
+    pub(crate) async fn workflow_at_most_once_result_save(
+        &self,
+        scope: &crate::one_shot_tasks::WorkflowContext<'_>,
+        key: Uuid,
+        contract: &crate::one_shot_tasks::AtMostOnceResultContract,
+        checkpoint: crate::one_shot_tasks::AtMostOnceResultCheckpoint,
+    ) -> Result<(), Status> {
+        use crate::one_shot_tasks::AT_MOST_ONCE_RESULT_TYPE;
+        checkpoint.validate()?;
+        scope.validate_scope().await?;
+        let id = scope
+            .task()
+            .task_id
+            .as_ref()
+            .ok_or_else(|| Status::failed_precondition("missing workflow identity"))?;
+        let fingerprint = request_fingerprint("reboot.workflow.at-most-once.result.v1", contract);
+        // These guards must drop before the caller's actor lease on unknown ACK.
+        let mut operation = scope.durable();
+        let commit_attempt = self
+            .actor_gate(&id.state_type, &id.state_ref)
+            .commit_attempt();
+        self.database
+            .clone()
+            .store(database::StoreRequest {
+                actor_upserts: vec![],
+                task_upserts: vec![],
+                colocated_upserts: vec![],
+                transaction: None,
+                ensure_state_types_created: vec![],
+                sync: true,
+                idempotent_mutation: Some(database::IdempotentMutation {
+                    state_type: id.state_type.clone(),
+                    state_ref: id.state_ref.clone(),
+                    key: key.as_bytes().to_vec(),
+                    response: prost_types::Any {
+                        type_url: AT_MOST_ONCE_RESULT_TYPE.into(),
+                        value: checkpoint.encode_to_vec(),
+                    }
+                    .encode_to_vec(),
+                    workflow_id: Some(id.task_uuid.clone()),
+                    workflow_iteration: scope.checkpoint_iteration(),
+                    request_fingerprint: Some(fingerprint),
+                    task_ids: vec![],
+                }),
+            })
+            .await?;
+        commit_attempt.checkpoint_acknowledged();
+        operation.acknowledged();
+        Ok(())
+    }
     pub(crate) async fn workflow_writer_step<D, Q, R, F>(
         &self,
         scope: &crate::one_shot_tasks::WorkflowContext<'_>,
@@ -831,6 +954,21 @@ impl DatabaseActorStore {
                 {
                     let _owner = running.lock()?;
                 }
+                for task in &loaded.tasks {
+                    if let Some((alias, version)) = owner.cursor_declaration(task) {
+                        self.workflow_validate_cursor_binding(
+                            task,
+                            alias,
+                            version,
+                            owner
+                                .declaration(task)
+                                .expect("cursor declaration")
+                                .full_method(),
+                        )
+                        .await?;
+                        let _owner = running.lock()?;
+                    }
+                }
                 owner.validate_scheduling_replay(&checkpoint.tasks, &loaded.tasks)?;
                 replay = Some(
                     R::decode(checkpoint.response.as_slice())
@@ -909,5 +1047,104 @@ impl DatabaseActorStore {
         handoff.completed();
         owner.dispatch_committed(execution.task_upserts);
         Ok(Response::new(execution.response))
+    }
+}
+
+impl DatabaseActorStore {
+    // Recovery and Wait have no dispatcher-minted WorkflowContext. Validate the
+    // same immutable root binding directly, without acquiring dispatch authority.
+    pub(crate) async fn workflow_validate_cursor_binding(
+        &self,
+        task: &database::Task,
+        alias: &str,
+        version: u32,
+        method: &str,
+    ) -> Result<(), Status> {
+        use crate::one_shot_tasks::{
+            AT_MOST_ONCE_RESULT_TYPE, AtMostOnceResultCheckpoint, AtMostOnceResultContract,
+        };
+        let id = task
+            .task_id
+            .as_ref()
+            .ok_or_else(|| Status::data_loss("cursor missing task ID"))?;
+        if alias.is_empty()
+            || alias.len() > 256
+            || alias.chars().any(char::is_control)
+            || version == 0
+        {
+            return Err(Status::failed_precondition(
+                "invalid immutable cursor declaration",
+            ));
+        }
+        let seed = Uuid::from_slice(&id.task_uuid)
+            .map_err(|_| Status::data_loss("cursor invalid UUID"))?;
+        let key = Uuid::new_v5(&seed, b"reboot.workflow.cursor.binding.v1");
+        let contract = AtMostOnceResultContract {
+            method: method.into(),
+            request: task.request.clone(),
+            alias: alias.into(),
+            version,
+            bound: 0,
+            parent_bounds: String::new(),
+            result_type: "type.googleapis.com/reboot.rust.workflow.CursorBindingV1".into(),
+            call_contract: b"reboot.workflow.cursor.v1".to_vec(),
+        };
+        let fingerprint = request_fingerprint("reboot.workflow.at-most-once.result.v1", &contract);
+        let mut count = 0;
+        for scoped in [true, false] {
+            if !scoped && count != 0 {
+                break;
+            }
+            let mut stream = self
+                .database
+                .clone()
+                .recover_idempotent_mutations(database::RecoverIdempotentMutationsRequest {
+                    state_type: id.state_type.clone(),
+                    state_ref: id.state_ref.clone(),
+                    idempotency_key: Some(key.as_bytes().to_vec()),
+                    workflow_id: scoped.then(|| id.task_uuid.clone()),
+                    workflow_iteration: None,
+                })
+                .await?
+                .into_inner();
+            while let Some(batch) = stream.message().await? {
+                for mutation in batch.idempotent_mutations {
+                    if !scoped || count != 0 {
+                        return Err(Status::failed_precondition(
+                            "duplicate or legacy cursor binding",
+                        ));
+                    }
+                    let any = decode_workflow_checkpoint_envelope(
+                        &mutation,
+                        id,
+                        key,
+                        &fingerprint,
+                        AT_MOST_ONCE_RESULT_TYPE,
+                        None,
+                    )?;
+                    if any.type_url != AT_MOST_ONCE_RESULT_TYPE {
+                        return Err(Status::data_loss("cursor binding envelope type"));
+                    }
+                    let saved = AtMostOnceResultCheckpoint::decode(any.value.as_slice())
+                        .map_err(|_| Status::data_loss("malformed cursor binding"))?;
+                    saved.validate()?;
+                    if saved.phase != 2
+                        || saved.result.as_ref().is_none_or(|r| {
+                            r.type_url != contract.result_type
+                                || r.value != contract.encode_to_vec()
+                        })
+                    {
+                        return Err(Status::failed_precondition("cursor binding changed"));
+                    }
+                    count += 1;
+                }
+            }
+        }
+        if count == 0 && task.iteration != 0 {
+            return Err(Status::failed_precondition(
+                "nonzero cursor has no durable binding",
+            ));
+        }
+        Ok(())
     }
 }

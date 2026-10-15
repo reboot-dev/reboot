@@ -1,4 +1,8 @@
 #[cfg(test)]
+#[path = "../tests/fixtures/workflow_cursor_emission_tests.rs"]
+mod workflow_cursor_emission_tests;
+
+#[cfg(test)]
 mod workflow_emission_tests {
     use super::*;
     #[test]
@@ -457,6 +461,39 @@ fn emit_workflow_service(
     }) {
         return Err("declared errors on workflow-service constructors are unsupported".to_owned());
     }
+    // All emitted handler items share one Rust trait namespace, including
+    // default hooks. Traverse descriptor order (not annotation HashMap order)
+    // so the first conflicting owners and origins are deterministic.
+    let mut handler_items = std::collections::HashMap::new();
+    for method in &service.method {
+        let name = method.name.as_deref().unwrap();
+        let rust = snake_case(name);
+        let mut items = vec![(rust.clone(), "RPC")];
+        match annotation.methods.get(name).unwrap() {
+            DurableKind::Workflow => items.extend([
+                (format!("{rust}_attempt"), "finite attempt"),
+                (format!("workflow_cursor_{rust}"), "static cursor selector"),
+                (format!("{rust}_cursor_attempt"), "mutable cursor hook"),
+            ]),
+            DurableKind::Writer(WriterMetadata { constructor: false }) => {
+                items.push((format!("{rust}_scheduled"), "scheduled writer hook"));
+            }
+            DurableKind::Reader => {
+                items.push((format!("{rust}_with_reader_context"), "reader context hook"));
+            }
+            DurableKind::Writer(WriterMetadata { constructor: true }) => {}
+            DurableKind::Transaction(_) => unreachable!(),
+        }
+        for (symbol, origin) in items {
+            if let Some((previous, previous_origin)) =
+                handler_items.insert(symbol.clone(), (name, origin))
+            {
+                return Err(format!(
+                    "{service_name}: handler item `{symbol}` collision: {previous} ({previous_origin}) collides with {name} ({origin})"
+                ));
+            }
+        }
+    }
     for method in &service.method {
         let name = method.name.as_deref().unwrap();
         if let Some(errors) = annotation
@@ -522,6 +559,9 @@ fn emit_workflow_service(
             }
         }
     }
+    let mut cursor_captures = String::new();
+    let mut cursor_fields = String::new();
+    let mut cursor_initializers = String::new();
     let mut declarations = String::from("vec![");
     let mut validations = String::new();
     let mut responses = String::new();
@@ -569,7 +609,15 @@ fn emit_workflow_service(
                 let error_descriptors = errors.iter().map(|error| format!("{runtime_module}::one_shot_tasks::DeclaredTaskError::new::<proto::{}>(\"type.googleapis.com/{package}.{error}\")", error.to_upper_camel_case())).collect::<Vec<_>>().join(",");
                 output.push_str("    /// Explicit local retry receives at most three host-owned attempts.\n    /// Declared business errors are durable terminals; failed framework work never retries.\n");
                 output.push_str(&format!("    async fn {rust}(&self, context: &{runtime_module}::one_shot_tasks::WorkflowContext<'_>, request: proto::{request}) -> Result<proto::{response}, {handler_error}>;\n    async fn {rust}_attempt(&self,context:&{runtime_module}::one_shot_tasks::WorkflowContext<'_>,request:proto::{request})->Result<proto::{response},{runtime_module}::one_shot_tasks::WorkflowBodyError> {{self.{rust}(context,request).await.map_err({disposition})}}\n"));
-                declarations.push_str(&format!("{runtime_module}::one_shot_tasks::TaskMethodDeclaration::new::<{declaration},proto::{request},proto::{response}>(\"{identity}\",\"{response_type}\",vec![{error_descriptors}]).workflow(),"));
+                // Cursor selection belongs to the concrete handler type, not
+                // the empty WorkflowMethodOptions schema or mutable host state.
+                let cursor = format!("workflow_cursor_{rust}");
+                let cursor_hook = format!("{rust}_cursor_attempt");
+                cursor_captures.push_str(&format!("let {cursor}=H::{cursor}();"));
+                cursor_fields.push_str(&format!(",{cursor}:Option<(&'static str,u32)>"));
+                cursor_initializers.push_str(&format!(",{cursor}"));
+                output.push_str(&format!("    /// Explicit type-level opt-in to one top-level cursor loop (alias, version).\n    /// Return a fixed selection for this concrete handler type; captured once at registration.\n    /// None preserves finite/root workflow admission; initial iteration is always zero.\n    fn {cursor}() -> Option<(&'static str, u32)> where Self: Sized {{ None }}\n    /// Override for cursor workflows to call run_loop with mutable private context.\n    /// The ordinary workflow method remains required for source compatibility.\n    /// No fallback to the finite handler is allowed for a cursor declaration.\n    async fn {cursor_hook}(&self, _context: &mut {runtime_module}::one_shot_tasks::WorkflowContext<'_>, _request: proto::{request}) -> Result<proto::{response}, {runtime_module}::one_shot_tasks::WorkflowBodyError> {{ Err(tonic::Status::failed_precondition(\"cursor workflow handler is not implemented\").into()) }}\n"));
+                declarations.push_str(&format!("{{let declaration={runtime_module}::one_shot_tasks::TaskMethodDeclaration::new::<{declaration},proto::{request},proto::{response}>(\"{identity}\",\"{response_type}\",vec![{error_descriptors}]);match {cursor} {{Some((alias,version))=>declaration.workflow_cursor(alias,version),None=>declaration.workflow()}}}},"));
                 if !errors.is_empty() {
                     let validation =
                         task_error_validation(annotation, name, package, runtime_module, "");
@@ -578,7 +626,7 @@ fn emit_workflow_service(
                 }
                 validations.push_str(&format!("\"{name}\" => {{ let id = task.task_id.as_ref().ok_or_else(|| tonic::Status::invalid_argument(\"missing workflow ID\"))?; {runtime_module}::runtime::writer_task_key(id, \"{identity}\")?; <proto::{request} as prost::Message>::decode(task.request.as_slice()).map_err(|_| tonic::Status::invalid_argument(\"malformed workflow request\"))?; Ok(()) }},"));
                 responses.push_str(&format!("\"{name}\" if response.type_url == \"{response_type}\" => {{ <proto::{response} as prost::Message>::decode(response.value.as_slice()).map_err(|_| tonic::Status::data_loss(\"malformed workflow result\"))?; Ok(()) }},"));
-                executions.push_str(&format!("\"{name}\" => {{ let request = <proto::{request} as prost::Message>::decode(context.task().request.as_slice()).map_err(|_| tonic::Status::data_loss(\"malformed canonical workflow request\"))?; let response = match self.handler.{rust}_attempt(&context, request).await {{ Ok(response)=>response, Err(error)=>return context.body_failed(error).await }}; context.finish::<{declaration},proto::{request},proto::{response}>(\"{response_type}\",response).await }},"));
+                executions.push_str(&format!("\"{name}\" => {{ let request = <proto::{request} as prost::Message>::decode(context.task().request.as_slice()).map_err(|_| tonic::Status::data_loss(\"malformed canonical workflow request\"))?; let outcome = if self.{cursor}.is_some() {{ self.handler.{cursor_hook}(&mut context, request).await }} else {{ self.handler.{rust}_attempt(&context, request).await }}; let response = match outcome {{ Ok(response)=>response, Err(error)=>return context.body_failed(error).await }}; context.finish::<{declaration},proto::{request},proto::{response}>(\"{response_type}\",response).await }},"));
                 scheduling.push_str(&format!("pub fn {rust}(state_ref: &str, request: &proto::{request}, timestamp: Option<prost_types::Timestamp>) -> {runtime_module}::database_proto::Task {{ {runtime_module}::database_proto::Task {{ task_id: Some({runtime_module}::database_proto::TaskId {{ state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: state_ref.to_owned(), task_uuid: uuid::Uuid::new_v4().as_bytes().to_vec() }}), method: \"{name}\".to_owned(), request: <proto::{request} as prost::Message>::encode_to_vec(request), timestamp, iteration: 0, status: {runtime_module}::database_proto::task::Status::Pending as i32, response_or_error: None }} }}\n"));
                 initializer_methods.push_str(&format!("pub async fn {rust}_spawn(context: &{runtime_module}::application_host::ServingInitializeContext, request: &proto::{request}) -> Result<{runtime_module}::database_proto::TaskId, tonic::Status> {{ context.spawn_workflow::<{declaration},proto::{request},proto::{response}>(\"{identity}\",\"{response_type}\",request).await }}\n pub async fn {rust}_wait(context: &{runtime_module}::application_host::ServingInitializeContext, id: &{runtime_module}::database_proto::TaskId) -> Result<proto::{response},tonic::Status> {{ context.wait_workflow::<proto::{response}>(id,\"{identity}\",\"{response_type}\").await }}\n pub async fn {rust}(context: &{runtime_module}::application_host::ServingInitializeContext, request: &proto::{request}) -> Result<proto::{response},tonic::Status> {{ let id=Self::{rust}_spawn(context,request).await?; Self::{rust}_wait(context,&id).await }}\n"));
                 let conversion = if errors.is_empty() { "" } else { ".into()" };
@@ -676,15 +724,6 @@ fn emit_workflow_service(
                 output.push_str(&format!("async fn {rust}(&self,state:{reference} proto::{state},request:proto::{request})->Result<proto::{response},{handler_error}>;\n"));
                 let unary_composition = if matches!(kind, DurableKind::Reader) {
                     let hook = format!("{rust}_with_reader_context");
-                    if service
-                        .method
-                        .iter()
-                        .any(|other| snake_case(other.name.as_deref().unwrap()) == hook)
-                    {
-                        return Err(format!(
-                            "{service_name}: composed reader hook `{hook}` collides"
-                        ));
-                    }
                     output.push_str(&format!("async fn {hook}(&self,state:&proto::{state},request:proto::{request},_context:{runtime_module}::reactive::LocalReaderContext)->Result<proto::{response},{handler_error}> {{self.{rust}(state,request).await}}\n"));
                     format!(
                         "if let Some(registry)=&self.reader_registry {{ registry.validate_unary_metadata(&request)?; if !request.metadata().get(\"x-reboot-state-ref\").and_then(|value|value.to_str().ok()).is_some_and(|reference|self.legacy_reader_roots.iter().any(|root|root==reference)) && registry.contains_unary_root::<{declaration},_>(&request)? {{return registry.evaluate_unary::<proto::{request},proto::{response}>(request,\"{identity}\").await;}} }}"
@@ -703,7 +742,7 @@ fn emit_workflow_service(
     declarations.push(']');
     output.push_str(&format!("pub struct {tasks}Initialize; impl {tasks}Initialize {{ {initializer_methods} }}\npub struct {tasks}; impl {tasks} {{ {scheduling} }}\npub struct {tasks}Wait; impl {tasks}Wait {{ {waits} }}\npub struct {steps}; impl {steps} {{ {step_methods} }}\n"));
     output.push_str(&format!("pub struct {adapter}<H> {{ store: {runtime_module}::runtime::DatabaseActorStore, handler: std::sync::Arc<H>, authorization: {runtime_module}::auth::AuthorizationPolicy, tasks: Option<{runtime_module}::one_shot_tasks::OneShotTasks>, reader_registry: Option<{runtime_module}::reactive::LocalReaderRegistry>, legacy_reader_roots: Vec<String>, reader_binding_id: std::sync::Arc<()> }}\nimpl<H> Clone for {adapter}<H> {{ fn clone(&self) -> Self {{ Self {{ store: self.store.clone(), handler: self.handler.clone(), authorization: self.authorization.clone(), tasks: self.tasks.clone(), reader_registry: self.reader_registry.clone(), legacy_reader_roots: self.legacy_reader_roots.clone(), reader_binding_id: self.reader_binding_id.clone() }} }} }}\nimpl<H> {adapter}<H> {{ pub fn new(store: {runtime_module}::runtime::DatabaseActorStore, handler: H) -> Self {{ Self {{ store, handler: std::sync::Arc::new(handler), authorization: {runtime_module}::auth::AuthorizationPolicy::default().for_declaration::<{declaration}>(), tasks: None, reader_registry: None, legacy_reader_roots: Vec::new(), reader_binding_id: std::sync::Arc::new(()) }} }} /// Configure authorization before registering readers. Reconfiguration detaches a stale registry and rotates its binding identity.\npub fn with_authorization(mut self, authorization: {runtime_module}::auth::AuthorizationPolicy) -> Self {{ self.authorization = authorization.for_declaration::<{declaration}>(); self.reader_registry = None; self.legacy_reader_roots.clear(); self.reader_binding_id = std::sync::Arc::new(()); self }} /// Attach the completed registry used by this adapter's registered owners.\npub fn with_reader_registry(mut self, registry: {runtime_module}::reactive::LocalReaderRegistry) -> Result<Self, Box<tonic::Status>> where Self: {runtime_module}::reactive::ReaderBinding {{ registry.validate_unary_binding_methods::<{declaration}>(self.store.database_endpoint(), &self.reader_binding_id, <Self as {runtime_module}::reactive::ReaderBinding>::reader_method_names(&self))?; self.reader_registry = Some(registry); self.legacy_reader_roots.clear(); Ok(self) }} /// Explicit exact legacy roots only; never a fallback for registered evaluation errors.\npub fn with_legacy_unary_roots(mut self, roots: Vec<String>) -> Result<Self, Box<tonic::Status>> {{ self.reader_registry.as_ref().ok_or_else(|| tonic::Status::failed_precondition(\"legacy unary roots require attached registry\"))?.validate_legacy_unary_roots(&roots)?; self.legacy_reader_roots = roots; Ok(self) }} }}\n\n"));
-    output.push_str(&format!("impl<H:{handler}> {adapter}<H> {{ #[allow(clippy::result_large_err)] pub fn with_workflows(mut self,state_ref:&str)->Result<(Self,{runtime_module}::one_shot_tasks::OneShotTasks),tonic::Status> {{ let tasks={runtime_module}::one_shot_tasks::OneShotTasks::new_with_declarations(self.store.clone(),<{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(),state_ref.to_owned(),{binding}{{handler:self.handler.clone()}},{declarations})?;self.tasks=Some(tasks.clone());self.reader_registry=None;self.legacy_reader_roots.clear();self.reader_binding_id=std::sync::Arc::new(());Ok((self,tasks)) }} }}\n#[tonic::async_trait]\nimpl<H:{handler}> proto::{server}::{service_name} for {adapter}<H> {{ {rpc_methods} }}\n"));
+    output.push_str(&format!("impl<H:{handler}> {adapter}<H> {{ #[allow(clippy::result_large_err)] pub fn with_workflows(mut self,state_ref:&str)->Result<(Self,{runtime_module}::one_shot_tasks::OneShotTasks),tonic::Status> {{ {cursor_captures}let tasks={runtime_module}::one_shot_tasks::OneShotTasks::new_with_declarations(self.store.clone(),<{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(),state_ref.to_owned(),{binding}{{handler:self.handler.clone(){cursor_initializers}}},{declarations})?;self.tasks=Some(tasks.clone());self.reader_registry=None;self.legacy_reader_roots.clear();self.reader_binding_id=std::sync::Arc::new(());Ok((self,tasks)) }} }}\n#[tonic::async_trait]\nimpl<H:{handler}> proto::{server}::{service_name} for {adapter}<H> {{ {rpc_methods} }}\n"));
     let error_dispatch = if error_validations.is_empty() {
         "let _ = (task, error); Err(tonic::Status::data_loss(\"workflow method does not declare errors\"))".to_owned()
     } else {
@@ -711,7 +750,7 @@ fn emit_workflow_service(
             "let _ = error; match task.method.as_str(){{{error_validations}_=>Err(tonic::Status::data_loss(\"workflow method does not declare errors\"))}}"
         )
     };
-    output.push_str(&format!("struct {binding}<H>{{handler:std::sync::Arc<H>}}\n#[tonic::async_trait]\nimpl<H:{handler}> {runtime_module}::one_shot_tasks::ReaderTaskBinding for {binding}<H> {{fn validate(&self,task:&{runtime_module}::database_proto::Task)->Result<(),tonic::Status>{{match task.method.as_str(){{{validations}_=>Err(tonic::Status::invalid_argument(\"not a registered workflow target\"))}}}}\nasync fn execute(&self,_:&{runtime_module}::database_proto::Task)->Result<prost_types::Any,tonic::Status>{{Err(tonic::Status::failed_precondition(\"workflow requires private admission\"))}}\nfn validate_response(&self,task:&{runtime_module}::database_proto::Task,response:&prost_types::Any)->Result<(),tonic::Status>{{match task.method.as_str(){{{responses}_=>Err(tonic::Status::data_loss(\"wrong workflow method/result\"))}}}}\nfn validate_error(&self,task:&{runtime_module}::database_proto::Task,error:&prost_types::Any)->Result<(),tonic::Status>{{{error_dispatch}}}\nfn writer_capable(&self)->bool{{true}}\nfn is_writer(&self,task:&{runtime_module}::database_proto::Task)->bool{{matches!(task.method.as_str(),{writers})}}\nasync fn execute_workflow(&self,context:{runtime_module}::one_shot_tasks::WorkflowContext<'_>)->Result<{runtime_module}::one_shot_tasks::WorkflowReceipt,tonic::Status>{{match context.task().method.as_str(){{{executions}_=>Err(tonic::Status::failed_precondition(\"wrong workflow executor\"))}}}} }}\n"));
+    output.push_str(&format!("struct {binding}<H>{{handler:std::sync::Arc<H>{cursor_fields}}}\n#[tonic::async_trait]\nimpl<H:{handler}> {runtime_module}::one_shot_tasks::ReaderTaskBinding for {binding}<H> {{fn validate(&self,task:&{runtime_module}::database_proto::Task)->Result<(),tonic::Status>{{match task.method.as_str(){{{validations}_=>Err(tonic::Status::invalid_argument(\"not a registered workflow target\"))}}}}\nasync fn execute(&self,_:&{runtime_module}::database_proto::Task)->Result<prost_types::Any,tonic::Status>{{Err(tonic::Status::failed_precondition(\"workflow requires private admission\"))}}\nfn validate_response(&self,task:&{runtime_module}::database_proto::Task,response:&prost_types::Any)->Result<(),tonic::Status>{{match task.method.as_str(){{{responses}_=>Err(tonic::Status::data_loss(\"wrong workflow method/result\"))}}}}\nfn validate_error(&self,task:&{runtime_module}::database_proto::Task,error:&prost_types::Any)->Result<(),tonic::Status>{{{error_dispatch}}}\nfn writer_capable(&self)->bool{{true}}\nfn is_writer(&self,task:&{runtime_module}::database_proto::Task)->bool{{matches!(task.method.as_str(),{writers})}}\nasync fn execute_workflow(&self,mut context:{runtime_module}::one_shot_tasks::WorkflowContext<'_>)->Result<{runtime_module}::one_shot_tasks::WorkflowReceipt,tonic::Status>{{match context.task().method.as_str(){{{executions}_=>Err(tonic::Status::failed_precondition(\"wrong workflow executor\"))}}}} }}\n"));
     let methods = service
         .method
         .iter()

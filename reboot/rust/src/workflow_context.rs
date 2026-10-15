@@ -52,9 +52,9 @@ mod workflow_admission_tests {
     }
     #[tokio::test]
     async fn registered_scheduling_policy_observes_raw_state_and_cancel_releases_lease() {
+        use crate::ExternalContext;
         use crate::auth::*;
         use crate::runtime::test_support::start_database;
-        use crate::ExternalContext;
         use prost::Message;
         struct Policy {
             park: bool,
@@ -62,16 +62,29 @@ mod workflow_admission_tests {
             snapshots: std::sync::Mutex<Vec<Option<Vec<u8>>>>,
         }
         impl Authorizer for Policy {
-            fn authorize<'a>(&'a self, context: &'a AuthorizationContext, _: Option<&'a Auth>, state: Option<&'a [u8]>, request: &'a [u8]) -> AuthorizeFuture<'a> {
+            fn authorize<'a>(
+                &'a self,
+                context: &'a AuthorizationContext,
+                _: Option<&'a Auth>,
+                state: Option<&'a [u8]>,
+                request: &'a [u8],
+            ) -> AuthorizeFuture<'a> {
                 assert_eq!(request, crate::proto::Counter { value: 7 }.encode_to_vec());
                 assert_eq!(context.method, "tests.Service.Step");
                 assert_eq!(context.state_type, D::STATE_TYPE);
                 assert_eq!(context.headers.state_ref, "workflow-auth");
-                self.snapshots.lock().unwrap().push(state.map(ToOwned::to_owned));
+                self.snapshots
+                    .lock()
+                    .unwrap()
+                    .push(state.map(ToOwned::to_owned));
                 Box::pin(async move {
                     let call = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    if self.park && call == 0 { std::future::pending::<()>().await; }
-                    AuthorizationDecision::PermissionDenied { message: "workflow policy denied".into() }
+                    if self.park && call == 0 {
+                        std::future::pending::<()>().await;
+                    }
+                    AuthorizationDecision::PermissionDenied {
+                        message: "workflow policy denied".into(),
+                    }
                 })
             }
         }
@@ -81,21 +94,52 @@ mod workflow_admission_tests {
                 let store = DatabaseActorStore::connect(&endpoint).await.unwrap();
                 let actor = "workflow-auth";
                 let method = "tests.Service.Step";
-                if let Some(bytes) = &raw { database.seed_actor(D::STATE_TYPE, actor, bytes.clone()); }
-                let tasks = OneShotTasks::new_with_declarations(store.clone(), D::STATE_TYPE.into(), actor.into(), Binding(true), vec![TaskMethodDeclaration::new::<D, crate::proto::Counter, crate::proto::Counter>(method, "type.googleapis.com/Counter", vec![]).workflow_writer_step()]).unwrap();
+                if let Some(bytes) = &raw {
+                    database.seed_actor(D::STATE_TYPE, actor, bytes.clone());
+                }
+                let tasks = OneShotTasks::new_with_declarations(
+                    store.clone(),
+                    D::STATE_TYPE.into(),
+                    actor.into(),
+                    Binding(true),
+                    vec![TaskMethodDeclaration::new::<
+                        D,
+                        crate::proto::Counter,
+                        crate::proto::Counter,
+                    >(method, "type.googleapis.com/Counter", vec![])
+                    .workflow_writer_step()],
+                )
+                .unwrap();
                 let _owner = DispatchOwner::claim(tasks.clone()).unwrap();
                 *tasks.inner.recovery_request.lock().unwrap() = Some(db::RecoverRequest::default());
-                tasks.inner.active.store(true, std::sync::atomic::Ordering::Release);
-                let probe = Arc::new(Policy { park, calls: std::sync::atomic::AtomicUsize::new(0), snapshots: std::sync::Mutex::new(Vec::new()) });
+                tasks
+                    .inner
+                    .active
+                    .store(true, std::sync::atomic::Ordering::Release);
+                let probe = Arc::new(Policy {
+                    park,
+                    calls: std::sync::atomic::AtomicUsize::new(0),
+                    snapshots: std::sync::Mutex::new(Vec::new()),
+                });
                 let policy = AuthorizationPolicy::new(None, Some(probe.clone()));
                 // Rich failed Load must never enter policy or leak sidecar diagnostics.
                 for code in [tonic::Code::Internal, tonic::Code::Unavailable] {
-                    let mut fault = Status::with_details(code, "private-sidecar-path", vec![1, 2, 3].into());
-                    fault.metadata_mut().insert("x-private-sidecar", "secret".parse().unwrap());
+                    let mut fault =
+                        Status::with_details(code, "private-sidecar-path", vec![1, 2, 3].into());
+                    fault
+                        .metadata_mut()
+                        .insert("x-private-sidecar", "secret".parse().unwrap());
                     database.fail_actor_load(fault);
                     let before = database.admission_rpc_counts();
                     let error = store.workflow_scheduling_writer::<D, crate::proto::Counter, crate::proto::Counter, _>(method, &policy, Some(&tasks), ExternalContext::new(actor).writer_with_key(crate::proto::Counter { value: 7 }, uuid::Uuid::from_u128(9400)).unwrap(), |_, _, _| Box::pin(async { panic!("failed Load invoked handler") })).await.unwrap_err();
-                    assert_eq!(error.code(), if code == tonic::Code::Unavailable { code } else { tonic::Code::PermissionDenied });
+                    assert_eq!(
+                        error.code(),
+                        if code == tonic::Code::Unavailable {
+                            code
+                        } else {
+                            tonic::Code::PermissionDenied
+                        }
+                    );
                     assert_eq!(error.message(), "authorization state unavailable");
                     assert!(error.details().is_empty());
                     assert!(error.metadata().get("x-private-sidecar").is_none());
@@ -106,12 +150,27 @@ mod workflow_admission_tests {
                 }
                 struct Reject;
                 impl TokenVerifier for Reject {
-                    fn verify<'a>(&'a self, _: &'a AuthorizationContext, _: Option<&'a str>) -> VerifyFuture<'a> {
-                        Box::pin(async { TokenVerification::Unauthenticated { message: "workflow credential rejected".into() } })
+                    fn verify<'a>(
+                        &'a self,
+                        _: &'a AuthorizationContext,
+                        _: Option<&'a str>,
+                    ) -> VerifyFuture<'a> {
+                        Box::pin(async {
+                            TokenVerification::Unauthenticated {
+                                message: "workflow credential rejected".into(),
+                            }
+                        })
                     }
                 }
                 for configured in [false, true] {
-                    let rejected = AuthorizationPolicy::new(Some(Arc::new(Reject)), if configured { Some(probe.clone()) } else { None });
+                    let rejected = AuthorizationPolicy::new(
+                        Some(Arc::new(Reject)),
+                        if configured {
+                            Some(probe.clone())
+                        } else {
+                            None
+                        },
+                    );
                     let before = database.admission_rpc_counts();
                     let error = store.workflow_scheduling_writer::<D, crate::proto::Counter, crate::proto::Counter, _>(method, &rejected, Some(&tasks), ExternalContext::new(actor).writer_with_key(crate::proto::Counter { value: 7 }, uuid::Uuid::from_u128(9400)).unwrap(), |_, _, _| Box::pin(async { panic!("rejected verifier invoked handler") })).await.unwrap_err();
                     assert_eq!(error.code(), tonic::Code::Unauthenticated);
@@ -123,10 +182,21 @@ mod workflow_admission_tests {
                 let before = database.admission_rpc_counts();
                 for attempt in 0..2 {
                     let future = store.workflow_scheduling_writer::<D, crate::proto::Counter, crate::proto::Counter, _>(method, &policy, Some(&tasks), ExternalContext::new(actor).writer_with_key(crate::proto::Counter { value: 7 }, uuid::Uuid::from_u128(9400)).unwrap(), |_, _, _| Box::pin(async { panic!("pre-Allow failure invoked handler") }));
-                    let result = tokio::time::timeout(std::time::Duration::from_millis(100), future).await;
-                    if park && attempt == 0 { assert!(result.is_err()); }
-                    else { let error = result.expect("policy cancellation must release lease").unwrap_err(); assert_eq!(error.code(), tonic::Code::PermissionDenied); assert_eq!(error.message(), "workflow policy denied"); }
-                    assert_eq!(probe.calls.load(std::sync::atomic::Ordering::SeqCst), attempt + 1);
+                    let result =
+                        tokio::time::timeout(std::time::Duration::from_millis(100), future).await;
+                    if park && attempt == 0 {
+                        assert!(result.is_err());
+                    } else {
+                        let error = result
+                            .expect("policy cancellation must release lease")
+                            .unwrap_err();
+                        assert_eq!(error.code(), tonic::Code::PermissionDenied);
+                        assert_eq!(error.message(), "workflow policy denied");
+                    }
+                    assert_eq!(
+                        probe.calls.load(std::sync::atomic::Ordering::SeqCst),
+                        attempt + 1
+                    );
                     assert!(tasks.workflow_running_admission().is_ok());
                     assert!(!*tasks.inner.uncertain.borrow());
                 }
@@ -216,7 +286,7 @@ mod workflow_admission_tests {
         let cancel = RecoveryCancellation::new();
         let context = WorkflowContext {
             tasks: &tasks,
-            task: &task,
+            task: task.clone(),
             cancel: &cancel,
             generation: Arc::new(()),
             attempt: &attempt,
@@ -309,7 +379,7 @@ mod workflow_admission_tests {
         let cancel = RecoveryCancellation::new();
         let context = WorkflowContext {
             tasks: &tasks,
-            task: &task,
+            task: task.clone(),
             cancel: &cancel,
             generation: Arc::new(()),
             attempt: &attempt,
@@ -450,7 +520,7 @@ mod workflow_admission_tests {
             let cancel = RecoveryCancellation::new();
             let context = WorkflowContext {
                 tasks: &tasks,
-                task: &task,
+                task: task.clone(),
                 cancel: &cancel,
                 generation: Arc::new(()),
                 attempt: &attempt,
@@ -518,7 +588,7 @@ mod workflow_admission_tests {
         let attempt = WorkflowAttempt::default();
         let context = WorkflowContext {
             tasks: &tasks,
-            task: &task,
+            task: task.clone(),
             cancel: &cancel,
             generation: Arc::new(()),
             attempt: &attempt,
@@ -667,7 +737,7 @@ mod workflow_admission_tests {
             let attempt = WorkflowAttempt::default();
             let context = WorkflowContext {
                 tasks: &tasks,
-                task: &task,
+                task: task.clone(),
                 cancel: &cancel,
                 generation: Arc::new(()),
                 attempt: &attempt,
@@ -699,7 +769,7 @@ mod workflow_admission_tests {
             }
             let context = WorkflowContext {
                 tasks: &tasks,
-                task: &task,
+                task: task.clone(),
                 cancel: &cancel,
                 generation: Arc::new(()),
                 attempt: &attempt,
@@ -828,6 +898,9 @@ struct WorkflowAttempt {
     active: std::sync::atomic::AtomicUsize,
     admission: std::sync::Mutex<()>,
     serial_reader: std::sync::atomic::AtomicBool,
+    cursor_used: std::sync::atomic::AtomicBool,
+    cursor_advanced: std::sync::atomic::AtomicBool,
+    cursor_closed: std::sync::atomic::AtomicBool,
 }
 impl WorkflowAttempt {
     fn operation(&self) -> WorkflowAttemptOperation<'_> {
@@ -1025,7 +1098,7 @@ mod declared_reader_serial_tests {
 /// Private, dispatcher-minted workflow authority. Explicit named same-actor
 /// typed named writer steps and checkpointed immutable-reader waits. Explicit
 /// finite indexed replay scopes and named at-most-once unit external blocks;
-/// no unbounded Task cursor. Nested finite scopes do not create transactions.
+/// and a separately declared canonical cursor. Finite scopes are unchanged.
 /// Construction is private, even to generated application consumers:
 /// ```compile_fail
 /// use reboot_rust_schema::one_shot_tasks::WorkflowContext;
@@ -1034,7 +1107,7 @@ mod declared_reader_serial_tests {
 /// The workflow body does not own an actor lease; each writer step owns one.
 pub struct WorkflowContext<'a> {
     tasks: &'a OneShotTasks,
-    task: &'a db::Task,
+    task: db::Task,
     cancel: &'a RecoveryCancellation,
     generation: Arc<()>,
     attempt: &'a WorkflowAttempt,
@@ -1124,7 +1197,8 @@ impl<'a> WorkflowContext<'a> {
         let positions = parents
             .iter()
             .try_fold(count, |total, (_, _, bound)| total.checked_mul(*bound));
-        if parents.len() >= 8
+        if self.cursor_scope().is_some()
+            || parents.len() >= 8
             || positions.is_none_or(|total| total > 1024)
             || alias.is_empty()
             || alias.len() > 256
@@ -1139,7 +1213,7 @@ impl<'a> WorkflowContext<'a> {
         }
         let context = WorkflowContext {
             tasks: self.tasks,
-            task: self.task,
+            task: self.task.clone(),
             cancel: self.cancel,
             generation: self.generation.clone(),
             attempt: self.attempt,
@@ -1161,6 +1235,16 @@ impl<'a> WorkflowContext<'a> {
         alias: &str,
         condition: Option<&str>,
     ) -> uuid::Uuid {
+        if let Some((name, index, _)) = self.cursor_scope() {
+            let namespace = uuid::Uuid::new_v5(&seed, b"reboot.workflow.cursor.step.v1");
+            let identity = (
+                name.clone(),
+                *index,
+                alias.to_owned(),
+                condition.map(str::to_owned),
+            );
+            return uuid::Uuid::new_v5(&namespace, format!("{identity:?}").as_bytes());
+        }
         if self.iteration.is_none() && condition.is_none() {
             return uuid::Uuid::new_v5(&seed, alias.as_bytes());
         }
@@ -1187,6 +1271,13 @@ impl<'a> WorkflowContext<'a> {
         uuid::Uuid::new_v5(&namespace, &encoded)
     }
     pub(crate) fn checkpoint_decision_key(&self, seed: uuid::Uuid, alias: &str) -> uuid::Uuid {
+        if self.cursor_scope().is_some() {
+            return self.checkpoint_key(
+                uuid::Uuid::new_v5(&seed, b"reboot.workflow.cursor.decision.v1"),
+                alias,
+                None,
+            );
+        }
         let namespace = uuid::Uuid::new_v5(&seed, b"reboot.finite.decision.v1");
         let namespace = if self.parents.is_empty() {
             namespace
@@ -1244,6 +1335,13 @@ impl<'a> WorkflowContext<'a> {
                 name.len(),
                 alias.len()
             );
+        }
+        if let Some((name, index, _)) = self.cursor_scope() {
+            let version = self
+                .tasks
+                .cursor_declaration(&self.task)
+                .map_or(0, |(_, v)| v);
+            return format!("reboot.cursor.v1:{name:?}:{version}:{index}:{alias:?}");
         }
         match &self.iteration {
             None => alias.to_owned(),
@@ -1583,7 +1681,7 @@ impl<'a> WorkflowContext<'a> {
         P: Fn(&R) -> bool + Send + Sync + 'static,
     {
         let operation = self.attempt.operation();
-        if self.iteration.is_none() {
+        if self.iteration.is_none() || self.cursor_scope().is_some() {
             return Err(Status::failed_precondition(
                 "loop decision requires finite iteration scope",
             ));
@@ -1754,7 +1852,7 @@ impl<'a> WorkflowContext<'a> {
         Ok(())
     }
     pub fn task(&self) -> &db::Task {
-        self.task
+        &self.task
     }
     /// Generated body boundary: explicit local disposition is only a request,
     /// not retry authority. Recheck canonical scope and private operation evidence.
@@ -1778,8 +1876,8 @@ impl<'a> WorkflowContext<'a> {
     }
     pub(crate) async fn validate_scope(&self) -> Result<(), Status> {
         let operation = self.attempt.scope_operation();
-        if !self.tasks.is_workflow(self.task)
-            || self.task.iteration != 0
+        if !self.tasks.is_workflow(&self.task)
+            || (self.task.iteration != 0 && self.tasks.cursor_declaration(&self.task).is_none())
             || self.task.status != db::task::Status::Pending as i32
             || self.task.response_or_error.is_some()
         {
@@ -1814,7 +1912,7 @@ impl<'a> WorkflowContext<'a> {
             let _owner = admission.lock()?;
         }
         self.cancel.public_ready().await?;
-        if loaded.tasks.as_slice() != [self.task.clone()] || !schedule_due(self.task)? {
+        if loaded.tasks.as_slice() != [self.task.clone()] || !schedule_due(&self.task)? {
             return Err(Status::failed_precondition(
                 "workflow scope no longer canonical/due",
             ));
@@ -2116,14 +2214,21 @@ impl<'a> WorkflowContext<'a> {
     // Already acknowledged checkpoints remain durable; failed/dropped framework
     // work cannot be caught and disguised as a successful declared terminal.
     async fn finish_declared(self, error: prost_types::Any) -> Result<WorkflowReceipt, Status> {
-        if self.iteration.is_some() || !self.attempt.clean() {
+        if self.iteration.is_some()
+            || !self.attempt.clean()
+            || (self.tasks.cursor_declaration(&self.task).is_some()
+                && !self
+                    .attempt
+                    .cursor_closed
+                    .load(std::sync::atomic::Ordering::Acquire))
+        {
             return Err(Status::failed_precondition(
                 "declared workflow terminal requires clean outer scope",
             ));
         }
         let declaration = self
             .tasks
-            .declaration(self.task)
+            .declaration(&self.task)
             .ok_or_else(|| Status::failed_precondition("unregistered workflow"))?;
         if !declaration.workflow {
             return Err(Status::failed_precondition("not workflow authority"));
@@ -2132,7 +2237,7 @@ impl<'a> WorkflowContext<'a> {
         let terminal = db::task::ResponseOrError::Error(error);
         // Validate before the canonical Load; malformed/foreign errors disclose
         // no task bytes and never reach the durable completion path.
-        self.tasks.validate_terminal(self.task, &terminal)?;
+        self.tasks.validate_terminal(&self.task, &terminal)?;
         self.validate_scope().await?;
         operation.acknowledged();
         Ok(WorkflowReceipt {
@@ -2157,26 +2262,32 @@ impl<'a> WorkflowContext<'a> {
             ));
         }
         let operation = self.attempt.operation();
-        if self.iteration.is_some() {
+        if self.iteration.is_some()
+            || (self.tasks.cursor_declaration(&self.task).is_some()
+                && !self
+                    .attempt
+                    .cursor_closed
+                    .load(std::sync::atomic::Ordering::Acquire))
+        {
             return Err(Status::failed_precondition(
-                "finish requires outer workflow scope",
+                "finish requires outer workflow scope and a closed declared cursor",
             ));
         }
         let declaration = self
             .tasks
-            .declaration(self.task)
+            .declaration(&self.task)
             .ok_or_else(|| Status::failed_precondition("unregistered workflow"))?;
         if !declaration.workflow {
             return Err(Status::failed_precondition("not workflow authority"));
         }
         self.tasks
-            .validate_executor::<D, Q, R>(self.task, declaration.method, response_type)?;
+            .validate_executor::<D, Q, R>(&self.task, declaration.method, response_type)?;
         self.validate_scope().await?;
         let terminal = db::task::ResponseOrError::Response(prost_types::Any {
             type_url: response_type.to_owned(),
             value: response.encode_to_vec(),
         });
-        self.tasks.validate_terminal(self.task, &terminal)?;
+        self.tasks.validate_terminal(&self.task, &terminal)?;
         operation.acknowledged();
         Ok(WorkflowReceipt {
             task: self.task.clone(),
@@ -2275,7 +2386,7 @@ impl OneShotTasks {
         let attempt = WorkflowAttempt::default();
         let context = WorkflowContext {
             tasks: self,
-            task: &task,
+            task: task.clone(),
             cancel,
             generation: generation.clone(),
             attempt: &attempt,
@@ -2310,7 +2421,20 @@ impl OneShotTasks {
             if loaded.tasks.len() == 1
                 && loaded.tasks[0].status == db::task::Status::Completed as i32
             {
-                validate_completed(&task, &loaded.tasks[0], None)?;
+                let mut expected = task.clone();
+                if let Some((alias, version)) = self.cursor_declaration(&task) {
+                    self.inner
+                        .store
+                        .workflow_validate_cursor_binding(
+                            &loaded.tasks[0],
+                            alias,
+                            version,
+                            self.declaration(&task).expect("cursor declaration").method,
+                        )
+                        .await?;
+                    expected.iteration = loaded.tasks[0].iteration;
+                }
+                validate_completed(&expected, &loaded.tasks[0], None)?;
                 self.validate_terminal(
                     &loaded.tasks[0],
                     loaded.tasks[0]
@@ -2321,14 +2445,21 @@ impl OneShotTasks {
                 return Ok(None);
             }
             context.validate_scope().await?;
+            context.check_cursor_binding().await?;
             self.inner.listing.started(&task);
         }
         let receipt = self.inner.binding.execute_workflow(context).await?;
-        if receipt.task != task {
+        let mut expected = task.clone();
+        expected.iteration = receipt.task.iteration;
+        if receipt.task != expected
+            || (receipt.task.iteration != task.iteration
+                && self.cursor_declaration(&task).is_none())
+        {
             return Err(Status::failed_precondition(
                 "workflow receipt identity mismatch",
             ));
         }
+        task = receipt.task;
         let terminal = match receipt.outcome {
             WorkflowOutcome::PreStoreBodyFailure(error) => {
                 cancel.public_ready().await?;
@@ -2337,7 +2468,11 @@ impl OneShotTasks {
                     generation,
                 };
                 let _owner = admission.lock()?;
-                if !attempt.clean() {
+                if !attempt.clean()
+                    || attempt
+                        .cursor_advanced
+                        .load(std::sync::atomic::Ordering::Acquire)
+                {
                     return Err(error);
                 }
                 return Ok(Some(error));
@@ -2356,7 +2491,7 @@ impl OneShotTasks {
         let _lease = gate.exclusive().await;
         WorkflowContext {
             tasks: self,
-            task: &task,
+            task: task.clone(),
             cancel,
             generation: generation.clone(),
             attempt: &attempt,
@@ -2434,5 +2569,329 @@ impl OneShotTasks {
         }
         operation.acknowledged();
         Ok(None)
+    }
+}
+
+// Cancellation or a swallowed driver failure must poison finish/RetryLocal even
+// when no helper is outstanding. This guard is deliberately not active work:
+// body helpers still get their own exclusive serial admission.
+struct CursorDriverGuard<'a> {
+    attempt: &'a WorkflowAttempt,
+    acknowledged: bool,
+}
+impl Drop for CursorDriverGuard<'_> {
+    fn drop(&mut self) {
+        if !self.acknowledged {
+            self.attempt
+                .failed
+                .store(true, std::sync::atomic::Ordering::Release);
+        }
+    }
+}
+impl WorkflowContext<'_> {
+    fn cursor_scope(&self) -> Option<&(String, u64, u64)> {
+        self.iteration
+            .as_ref()
+            .filter(|(_, _, bound)| *bound == u64::MAX)
+    }
+    fn cursor_contract(&self, result_type: &str) -> Result<AtMostOnceResultContract, Status> {
+        let (alias, version) = self
+            .tasks
+            .cursor_declaration(&self.task)
+            .ok_or_else(|| Status::failed_precondition("workflow has no cursor declaration"))?;
+        if alias.is_empty()
+            || alias.len() > 256
+            || alias.chars().any(char::is_control)
+            || version == 0
+            || result_type.is_empty()
+            || result_type.len() > 512
+        {
+            return Err(Status::invalid_argument("invalid cursor declaration"));
+        }
+        Ok(AtMostOnceResultContract {
+            method: self
+                .tasks
+                .declaration(&self.task)
+                .ok_or_else(|| Status::failed_precondition("missing workflow declaration"))?
+                .method
+                .into(),
+            request: self.task.request.clone(),
+            alias: alias.into(),
+            version,
+            bound: 0,
+            parent_bounds: String::new(),
+            result_type: result_type.into(),
+            call_contract: b"reboot.workflow.cursor.v1".to_vec(),
+        })
+    }
+    fn cursor_key(&self, domain: &[u8]) -> Result<uuid::Uuid, Status> {
+        let id = self
+            .task
+            .task_id
+            .as_ref()
+            .ok_or_else(|| Status::failed_precondition("missing cursor task"))?;
+        let seed = uuid::Uuid::from_slice(&id.task_uuid)
+            .map_err(|_| Status::data_loss("invalid cursor UUID"))?;
+        Ok(uuid::Uuid::new_v5(&seed, domain))
+    }
+    // Check the immutable alias/version binding before delivering a recovered body.
+    async fn check_cursor_binding(&self) -> Result<(), Status> {
+        if self.tasks.cursor_declaration(&self.task).is_none() {
+            return Ok(());
+        }
+        let contract =
+            self.cursor_contract("type.googleapis.com/reboot.rust.workflow.CursorBindingV1")?;
+        let saved = self
+            .tasks
+            .inner
+            .store
+            .workflow_at_most_once_result_load(
+                self,
+                self.cursor_key(b"reboot.workflow.cursor.binding.v1")?,
+                &contract,
+            )
+            .await?;
+        match saved {
+            Some(value)
+                if value.phase == 2
+                    && value
+                        .result
+                        .as_ref()
+                        .is_some_and(|r| r.value == contract.encode_to_vec()) =>
+            {
+                Ok(())
+            }
+            None if self.task.iteration == 0 => Ok(()),
+            _ => Err(Status::failed_precondition(
+                "cursor binding missing or changed",
+            )),
+        }
+    }
+    /// One serial, declared open-ended loop. Continue advances only the canonical
+    /// Pending task, synchronously; Break is saved at the current cursor. Prior
+    /// checkpoint records are retained on disk (no physical GC is claimed).
+    pub async fn run_loop<R, F>(
+        &mut self,
+        alias: &str,
+        version: u32,
+        result_type: &'static str,
+        mut body: F,
+    ) -> Result<R, Status>
+    where
+        R: prost::Message + Default + Send + 'static,
+        F: for<'s> FnMut(
+                WorkflowContext<'s>,
+            ) -> std::pin::Pin<
+                Box<
+                    dyn std::future::Future<Output = Result<std::ops::ControlFlow<R>, Status>>
+                        + Send
+                        + 's,
+                >,
+            > + Send,
+    {
+        let guard = self.attempt.operation();
+        if self.iteration.is_some()
+            || !self.parents.is_empty()
+            || self.tasks.cursor_declaration(&self.task) != Some((alias, version))
+            || self
+                .attempt
+                .cursor_used
+                .swap(true, std::sync::atomic::Ordering::AcqRel)
+        {
+            return Err(Status::failed_precondition(
+                "one matching top-level cursor loop required",
+            ));
+        }
+        let binding =
+            self.cursor_contract("type.googleapis.com/reboot.rust.workflow.CursorBindingV1")?;
+        let mut decision_contract = self.cursor_contract(result_type)?;
+        // Bind the typed Break contract in the binding bytes as well, so changing
+        // it after Continue fails before constructing a new iteration body.
+        decision_contract.call_contract = result_type.as_bytes().to_vec();
+        let binding_key = self.cursor_key(b"reboot.workflow.cursor.binding.v1")?;
+        let id = self
+            .task
+            .task_id
+            .clone()
+            .ok_or_else(|| Status::failed_precondition("missing cursor task"))?;
+        let store = self.tasks.inner.store.clone();
+        let gate = store.actor_gate(&id.state_type, &id.state_ref);
+        let mut revisions = gate.committed_revisions();
+        {
+            let _lease = workflow_reader_lease(&gate, &mut revisions).await?;
+            self.validate_scope().await?;
+            let existing = store
+                .workflow_at_most_once_result_load(self, binding_key, &binding)
+                .await?;
+            match existing {
+                Some(saved)
+                    if saved.phase == 2
+                        && saved
+                            .result
+                            .as_ref()
+                            .is_some_and(|r| r.value == binding.encode_to_vec()) => {}
+                None if self.task.iteration == 0 => {
+                    store
+                        .workflow_at_most_once_result_save(
+                            self,
+                            binding_key,
+                            &binding,
+                            AtMostOnceResultCheckpoint::stored(
+                                &binding.result_type,
+                                binding.encode_to_vec(),
+                            ),
+                        )
+                        .await?;
+                }
+                _ => {
+                    return Err(Status::failed_precondition(
+                        "cursor binding missing or changed",
+                    ));
+                }
+            }
+            // A separate invariant typed-result binding shares the root lifetime.
+            let typed_key = self.cursor_key(b"reboot.workflow.cursor.result-contract.v1")?;
+            match store
+                .workflow_at_most_once_result_load(self, typed_key, &decision_contract)
+                .await?
+            {
+                Some(saved) if saved.phase == 1 => {}
+                None if self.task.iteration == 0 => {
+                    store
+                        .workflow_at_most_once_result_save(
+                            self,
+                            typed_key,
+                            &decision_contract,
+                            AtMostOnceResultCheckpoint::started(),
+                        )
+                        .await?
+                }
+                _ => return Err(Status::failed_precondition("cursor result binding missing")),
+            }
+        }
+        guard.acknowledged();
+        let mut driver = CursorDriverGuard {
+            attempt: self.attempt,
+            acknowledged: false,
+        };
+        loop {
+            if !self.attempt.clean() {
+                return Err(Status::failed_precondition("unclean cursor attempt"));
+            }
+            let scoped = WorkflowContext {
+                tasks: self.tasks,
+                task: self.task.clone(),
+                cancel: self.cancel,
+                generation: self.generation.clone(),
+                attempt: self.attempt,
+                iteration: Some((alias.into(), self.task.iteration, u64::MAX)),
+                parents: Vec::new(),
+            };
+            let key = scoped.checkpoint_key(
+                scoped.cursor_key(b"reboot.workflow.cursor.break.v1")?,
+                "break",
+                None,
+            );
+            let mut contract =
+                AtMostOnceResultContract::decode(decision_contract.encode_to_vec().as_slice())
+                    .map_err(|_| Status::internal("cursor contract encoding"))?;
+            contract.alias = scoped.checkpoint_alias("break");
+            {
+                let _lease = workflow_reader_lease(&gate, &mut revisions).await?;
+                scoped.validate_scope().await?;
+                if let Some(saved) = store
+                    .workflow_at_most_once_result_load(&scoped, key, &contract)
+                    .await?
+                {
+                    if saved.phase != 2 {
+                        return Err(Status::data_loss("invalid cursor Break"));
+                    }
+                    let result = saved
+                        .result
+                        .ok_or_else(|| Status::data_loss("missing cursor Break"))?;
+                    let value = R::decode(result.value.as_slice())
+                        .map_err(|_| Status::data_loss("malformed cursor Break"))?;
+                    self.attempt
+                        .cursor_closed
+                        .store(true, std::sync::atomic::Ordering::Release);
+                    driver.acknowledged = true;
+                    return Ok(value);
+                }
+            }
+            let decision = body(scoped).await?;
+            // Reserve serial admission after all body helpers have acknowledged.
+            let operation = self.attempt.serial_reader_operation()?;
+            let _lease = workflow_reader_lease(&gate, &mut revisions).await?;
+            self.validate_scope().await?;
+            match decision {
+                std::ops::ControlFlow::Break(value) => {
+                    if value.encoded_len() > 1048576 {
+                        return Err(Status::resource_exhausted("cursor Break exceeds 1MiB"));
+                    }
+                    let scoped = WorkflowContext {
+                        tasks: self.tasks,
+                        task: self.task.clone(),
+                        cancel: self.cancel,
+                        generation: self.generation.clone(),
+                        attempt: self.attempt,
+                        iteration: Some((alias.into(), self.task.iteration, u64::MAX)),
+                        parents: Vec::new(),
+                    };
+                    store
+                        .workflow_at_most_once_result_save(
+                            &scoped,
+                            key,
+                            &contract,
+                            AtMostOnceResultCheckpoint::stored(result_type, value.encode_to_vec()),
+                        )
+                        .await?;
+                    self.validate_scope().await?;
+                    #[cfg(feature = "test-support")]
+                    self.wait_test_pause("REBOOT_TEST_CURSOR_AFTER_BREAK_ACK")
+                        .await?;
+                    operation.acknowledged_serial()?;
+                    self.attempt
+                        .cursor_closed
+                        .store(true, std::sync::atomic::Ordering::Release);
+                    driver.acknowledged = true;
+                    return Ok(value);
+                }
+                std::ops::ControlFlow::Continue(()) => {
+                    let mut next = self.task.clone();
+                    next.iteration = next
+                        .iteration
+                        .checked_add(1)
+                        .ok_or_else(|| Status::out_of_range("workflow cursor overflow"))?;
+                    #[cfg(feature = "test-support")]
+                    self.wait_test_pause("REBOOT_TEST_CURSOR_BEFORE_STORE")
+                        .await?;
+                    let mut durable = self.durable();
+                    let commit = gate.commit_attempt();
+                    store
+                        .task_database()
+                        .store(db::StoreRequest {
+                            actor_upserts: vec![],
+                            task_upserts: vec![next.clone()],
+                            colocated_upserts: vec![],
+                            transaction: None,
+                            ensure_state_types_created: vec![],
+                            sync: true,
+                            idempotent_mutation: None,
+                        })
+                        .await?;
+                    commit.checkpoint_acknowledged();
+                    durable.acknowledged();
+                    drop(durable);
+                    self.task = next;
+                    self.attempt
+                        .cursor_advanced
+                        .store(true, std::sync::atomic::Ordering::Release);
+                    self.validate_scope().await?;
+                    #[cfg(feature = "test-support")]
+                    self.wait_test_pause("REBOOT_TEST_CURSOR_AFTER_ACK").await?;
+                    operation.acknowledged_serial()?;
+                }
+            }
+        }
     }
 }
