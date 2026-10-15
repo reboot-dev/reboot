@@ -16,6 +16,7 @@ use tonic::{Code, Request, Response, Status};
 use uuid::Uuid;
 mod proxy;
 mod tcp_cut;
+mod empty_root;
 const ACCOUNT: &str = "bank.v1.Account";
 const BANK: &str = "bank.v1.Bank";
 const OPEN: &str = "bank.v1.AccountMethods.Open";
@@ -24,12 +25,13 @@ async fn bounded<T>(f: impl std::future::Future<Output = T>) -> T {
     tokio::time::timeout(DEADLINE, f).await.expect("fixture operation exceeded deadline; not native acceptance")
 }
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum Case { Commit, DefaultCommit, Abort, Existing, ExistingEmpty, Taskful, WrongTicket, Refused, NoOptIn, HeldPrepare, LostPrepare }
+enum Case { Commit, DefaultCommit, Abort, Existing, ExistingEmpty, Taskful, WrongTicket, Refused, NoOptIn, HeldPrepare, LostPrepare, EmptyCommit, EmptyAbort, EmptyDenied, EmptyNoOwner }
 #[derive(Clone, Debug)]
 struct Event { method: &'static str, request: Vec<u8>, response: Option<Vec<u8>>, code: Option<Code> }
 struct Observations {
     events: Mutex<Vec<Event>>,
     hooks: AtomicUsize,
+    root_hooks: AtomicUsize,
     verifies: AtomicUsize,
     authorizations: Mutex<Vec<Option<Vec<u8>>>>,
     root_identity: Mutex<Option<Uuid>>,
@@ -48,7 +50,7 @@ struct Observations {
 }
 impl Observations {
     fn new(case: Case, child_ref: String) -> Self {
-        Self { events: Mutex::new(vec![]), hooks: AtomicUsize::new(0), verifies: AtomicUsize::new(0), authorizations: Mutex::new(vec![]), root_identity: Mutex::new(None), child_identity: Mutex::new(None), watch_requests: Mutex::new(vec![]), watch_calls: AtomicUsize::new(0), watch_results: Mutex::new(vec![]), task_intents: Mutex::new(vec![]), child_return: tokio::sync::Semaphore::new(0), parent_continue: tokio::sync::Semaphore::new(0), native_prepare_ack: tokio::sync::Semaphore::new(0), forward_prepare_ack: tokio::sync::Semaphore::new(0), case, child_ref, child_receiver: Mutex::new(None) }
+        Self { events: Mutex::new(vec![]), hooks: AtomicUsize::new(0), root_hooks: AtomicUsize::new(0), verifies: AtomicUsize::new(0), authorizations: Mutex::new(vec![]), root_identity: Mutex::new(None), child_identity: Mutex::new(None), watch_requests: Mutex::new(vec![]), watch_calls: AtomicUsize::new(0), watch_results: Mutex::new(vec![]), task_intents: Mutex::new(vec![]), child_return: tokio::sync::Semaphore::new(0), parent_continue: tokio::sync::Semaphore::new(0), native_prepare_ack: tokio::sync::Semaphore::new(0), forward_prepare_ack: tokio::sync::Semaphore::new(0), case, child_ref, child_receiver: Mutex::new(None) }
     }
     fn events(&self) -> Vec<Event> { self.events.lock().unwrap().clone() }
     fn record<Q: Message, S: Message>(&self, method: &'static str, request: &Q, result: &Result<Response<S>, Status>) {
@@ -144,10 +146,15 @@ struct ParentHandler { observations: Arc<Observations>, child_id: String }
 #[tonic::async_trait]
 impl bg::BankMethodsTransactionHandler for ParentHandler {
     async fn sign_up(&self, context: &TransactionContext, state: &mut b::Bank, request: b::SignUpRequest) -> Result<TransactionExecution<b::SignUpResponse>, Status> {
+        self.observations.root_hooks.fetch_add(1, Ordering::SeqCst);
         context.require_registered_outbound()?;
         assert_eq!(context.transaction_ids().len(), 1);
         *self.observations.root_identity.lock().unwrap() = Some(context.transaction_ids()[0]);
-        assert_eq!(state.account_ids, vec!["fixture-configured-existing-root".to_string()]);
+        if empty_root::is_empty(self.observations.case) {
+            assert_eq!(*state, b::Bank::default(), "genuine absent registered Bank starts at default");
+        } else {
+            assert_eq!(state.account_ids, vec!["fixture-configured-existing-root".to_string()]);
+        }
         if self.observations.case == Case::WrongTicket { return wrong_ticket(context, &self.observations).await.map_err(|status| *status); }
         let client = ag::AccountMethodsClient::new(LocalOnly(self.observations.child_ref.clone()));
         let target = ag::AccountMethodsTarget::new(&self.observations.child_ref);
@@ -157,7 +164,7 @@ impl bg::BankMethodsTransactionHandler for ParentHandler {
         assert_eq!(members.len(), 1); assert_eq!(members[0].target.state_type, ACCOUNT); assert_eq!(members[0].target.state_ref, self.observations.child_ref); assert!(!members[0].read_only, "default-byte constructor remains writable");
         self.observations.child_return.add_permits(1);
         self.observations.parent_continue.acquire().await.unwrap().forget();
-        if self.observations.case == Case::Abort { return Err(Status::aborted("fixture root abort after actual child return")); }
+        if matches!(self.observations.case, Case::Abort | Case::EmptyAbort) { return Err(Status::aborted("fixture root abort after actual child return")); }
         state.account_ids.push(self.child_id.clone());
         Ok(TransactionExecution::new(b::SignUpResponse { account_id: self.child_id.clone() }))
     }
@@ -327,7 +334,10 @@ impl Hosted {
         let explicit_abort_owner = reboot::explicit_abort::ExplicitAbortOwner::new(2).unwrap();
         let live_participant_owner = reboot::live_participant::LiveParticipantOwner::new(2, root.actor_target(), watch.clone()).unwrap();
         let parent_adapter = bg::BankMethodsTransactionAdapter::new(root.clone(), root_coordinator, Starts { timestamp }, ParentHandler { observations: observations.clone(), child_id: child_id.into() })
-            .with_authorization(reboot::auth::AuthorizationPolicy::permissive_for_development()).with_sequential_root_star().with_explicit_abort_owner(explicit_abort_owner.clone());
+            .with_authorization(if observations.case == Case::EmptyDenied {
+                reboot::auth::AuthorizationPolicy::new(None, Some(Arc::new(empty_root::DenyRoot)))
+            } else { reboot::auth::AuthorizationPolicy::permissive_for_development() }).with_sequential_root_star();
+        let parent_adapter = if observations.case == Case::EmptyNoOwner { parent_adapter } else { parent_adapter.with_explicit_abort_owner(explicit_abort_owner.clone()) };
         let policy = Arc::new(Policy(observations.clone()));
         let child_adapter = ag::AccountMethodsTransactionAdapter::new(store.clone(), child.clone(), child_coordinator, Starts { timestamp }, ChildHandler(observations.clone()))
             .with_authorization(reboot::auth::AuthorizationPolicy::new(Some(policy.clone()), Some(policy)))
@@ -343,7 +353,9 @@ impl Hosted {
             coordinator: CoordinatorRecovery { state_tags_by_state_type: [(BANK.into(), "Bank".into())].into(), shard_ids: vec!["s000000000".into()], coordinator_state_ref: root_ref.into() },
         }, watch).unwrap().with_participant(child, ParticipantRecovery { state_tags_by_state_type: [(ACCOUNT.into(), "Account".into())].into(), shard_ids: vec!["s000000000".into()] }).unwrap();
         let control = parent_adapter.legacy_coordinator_control_service(BANK, root_ref).unwrap();
-        let host = host.with_host_recovery(recovery).with_host_recovery(parent_adapter.explicit_abort_recovery_registration().unwrap()).with_host_recovery(child_adapter.live_participant_recovery_registration().unwrap())
+        let host = host.with_host_recovery(recovery);
+        let host = if observations.case == Case::EmptyNoOwner { host } else { host.with_host_recovery(parent_adapter.explicit_abort_recovery_registration().unwrap()) };
+        let host = host.with_host_recovery(child_adapter.live_participant_recovery_registration().unwrap())
             .add_legacy_control_service(control)
             .add_public_service(b::bank_methods_server::BankMethodsServer::new(parent_adapter.clone()))
             .add_public_service(b::account_methods_server::AccountMethodsServer::new(child_adapter));

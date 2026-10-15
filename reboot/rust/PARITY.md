@@ -97,6 +97,38 @@ exit zero preceded fresh container terminal inspection, and the original lock
 was free. Hot reload, new-consumer compilation and restart durability remain
 separate. This is not latest-upstream/full-native/overall SDK qualification.
 
+## Registered constructorless default-root source checkpoint (2026-10-15)
+
+Constructorless transaction roots can now construct default state only after
+fresh exclusive admission proves the active registered root owner, reservation
+and exact participant execution, plus a sealed Ready adapter binding matching
+the actor and Database endpoint. Wrapper names and mode flags alone are not
+authority. Authorization remains before the handler; inbound/shared, explicit
+constructor/factory and idempotent registration-skip paths do not gain this
+new default authority. Empty encoded defaults remain writable `Some(bytes)`
+Prepare state, staged with the response. Existing uncertain terminal ownership
+is retained; this checkpoint does not establish new native uncertainty proof.
+
+The [actual source/unit receipt](tests/evidence/registered-default-root-source-20261015.json)
+records **677 passed, 0 failed, 7 ignored** on the qualified x86 toolchain,
+including the new actual unregistered-admission negative regression and four
+preceding codegen/mock tests. Independent source review accepted the repaired
+registration boundary; the earlier broader candidate was not published.
+The generated constructor-child fixture also compiled successfully, including
+four new empty-Bank controls. Its inventory preserves all eleven old tests
+and adds Commit, Abort-after-child, policy denial and no-owner rejection,
+for **15** tests total. These new native controls have **not executed** yet.
+They use unchanged original example schemas but a fixed, taskless child Open;
+they are not the original WelcomeEmail-producing SignUp behavior.
+
+Parent independently rehashed **3266** frozen source members and both actual
+command logs, verified both Cargo children joined, no adopted descendants or
+cleanup failure, then exact attach join before fresh container terminal exit
+zero/PID zero and original lock release. Native/public empty-root acceptance,
+concurrent first calls, cancellation, actual ACK loss and restart remain open.
+Dynamic task-owner recovery is not implemented; taskful constructor children
+and unsupported shared Transfer remain refused. No full Bank or parity claim.
+
 ## Current SDK x86 library baseline before Bank work (2026-10-15)
 
 The [fresh library baseline receipt](tests/evidence/current-sdk-x86-library-baseline-20261015.json)
@@ -5006,7 +5038,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 488120f195ef69379f64fd40afd97f39308916a8f14e08c9c3d576dbb8efdcd8 -->
+<!-- parity-source-sha256: 070b95707867fd5b47500c053ec9e5858adda8881edfee3ee7ca940f464b128f -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

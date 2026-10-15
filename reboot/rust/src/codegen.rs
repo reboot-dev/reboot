@@ -2242,6 +2242,8 @@ struct TransactionFlow<'a> {
     runtime_module: &'a str,
     mode: &'a str,
     factory: bool,
+    // Schema-selected admission, separate from factory identity and task admission.
+    default_root: bool,
     declared_error: bool,
     writer: bool,
     inbound: TransactionInbound,
@@ -2262,6 +2264,7 @@ fn emit_transaction_flow(output: &mut String, flow: TransactionFlow<'_>) {
         runtime_module,
         mode,
         factory,
+        default_root,
         declared_error,
         writer,
         inbound,
@@ -2336,7 +2339,21 @@ fn emit_transaction_flow(output: &mut String, flow: TransactionFlow<'_>) {
         output.push_str(&format!("{prefix}// Authorize the fresh participant-owned wire snapshot before receipt or state disclosure.\n{prefix}if {ordinary_authorization_guard}let Err(error) = self.authorization.authorize(&authorization_context, authorization_auth.as_ref(), loaded.as_deref(), &<proto::{request} as prost::Message>::encode_to_vec(request.get_ref())).await {{ {runtime_module}::runtime::boxed_generated_future(|| local.abort_local_after_denial()).await?; return Err(error); }}\n"));
     }
     output.push_str(&format!("{prefix}// A duplicate may have waited for local actor admission while the original\n{prefix}// root transaction committed. Re-check durable replay before invoking the handler.\n{prefix}if let Some(idempotency) = &automatic_idempotency {{ let replay_after_admission = async {{ let recovered = self.participant.sidecar().recover_idempotent_mutations({runtime_module}::database_proto::RecoverIdempotentMutationsRequest {{ state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone(), idempotency_key: Some(idempotency.key().as_bytes().to_vec()), workflow_id: None, workflow_iteration: None }}).await?; for recovered in recovered {{ for mutation in recovered.idempotent_mutations {{ if let Some(response) = idempotency.replay::<proto::{response}>(&mutation)? {{ return Ok(Some(response)); }} }} }} Ok::<Option<proto::{response}>, tonic::Status>(None) }}.await; match replay_after_admission {{ Ok(Some(response)) => {{ {runtime_module}::runtime::boxed_generated_future(|| local.abort_local()).await?; return Ok(tonic::Response::new(response)); }}, Ok(None) => {{}}, Err(error) => {{ {runtime_module}::runtime::boxed_generated_future(|| local.abort_local()).await?; return Err(error); }} }} }}\n"));
-    output.push_str(&format!("{prefix}let mut state = match loaded.as_ref() {{ Some(bytes) => match <proto::{state} as prost::Message>::decode(bytes.as_slice()) {{ Ok(state) => state, Err(error) => {{ {runtime_module}::runtime::boxed_generated_future(|| local.abort_local()).await?; return Err(tonic::Status::failed_precondition(format!(\"stored actor state is not a valid {state}: {{error}}\"))); }} }}, None if {factory} => proto::{state}::default(), None => {{ {runtime_module}::runtime::boxed_generated_future(|| local.abort_local()).await?; return Err(tonic::Status::failed_precondition(\"non-factory transaction requires an existing actor state\")); }} }};\n"));
+    // Default construction is only a fresh exclusive root capability. Inbound
+    // existing-writer and shared paths retain their original absence refusal.
+    let default_creation = if default_root && mode == "Exclusive" && !factory
+        && matches!(inbound, TransactionInbound::Dynamic)
+    {
+        "!inbound && context.transaction_ids().len() == 1"
+    } else {
+        "false"
+    };
+    let default_value = if default_creation != "false" {
+        format!("{{ if !({factory}) {{ let admission = async {{ let configuration = <Self as {runtime_module}::registered_local::GeneratedLocalTransactionAdapter>::local_configuration(self)?; local.authorize_default_root(&context, self.local_registration.as_ref(), &configuration).await }}.await; if let Err(error) = admission {{ {runtime_module}::runtime::boxed_generated_future(|| local.abort_local_after_denial()).await?; return Err(error); }} }} proto::{state}::default() }}")
+    } else {
+        format!("proto::{state}::default()")
+    };
+    output.push_str(&format!("{prefix}let mut state = match loaded.as_ref() {{ Some(bytes) => match <proto::{state} as prost::Message>::decode(bytes.as_slice()) {{ Ok(state) => state, Err(error) => {{ {runtime_module}::runtime::boxed_generated_future(|| local.abort_local()).await?; return Err(tonic::Status::failed_precondition(format!(\"stored actor state is not a valid {state}: {{error}}\"))); }} }}, None if {factory} || ({default_creation}) => {default_value}, None => {{ {runtime_module}::runtime::boxed_generated_future(|| local.abort_local()).await?; return Err(tonic::Status::failed_precondition(\"non-factory transaction requires an existing actor state\")); }} }};\n"));
     let factory_existing_check = if factory {
         "if loaded.is_some() { local.abort_local().await?; return Err(tonic::Status::failed_precondition(\"factory transaction requires an absent actor state\")); }"
     } else {
@@ -3230,6 +3247,7 @@ fn emit_transactions(
                     runtime_module,
                     mode: "Exclusive",
                     factory: false,
+                    default_root: false,
                     declared_error: !declared_database_errors(annotation, kind, method_identity)
                         .is_empty(),
                     writer: true,
@@ -3294,6 +3312,7 @@ fn emit_transactions(
                 TransactionMode::Shared => "Shared",
             },
             factory: metadata.factory,
+            default_root: !requires_constructor && !annotation.methods.values().any(|kind| matches!(kind, DurableKind::Transaction(metadata) if metadata.factory)),
             declared_error: !declared_root_errors(annotation, kind, method_identity).is_empty(),
             writer: false,
             inbound: TransactionInbound::Dynamic,
@@ -3705,6 +3724,7 @@ mod tests {
                     runtime_module: "sdk",
                     mode: "Exclusive",
                     factory: false,
+                    default_root: false,
                     declared_error,
                     writer,
                     inbound: TransactionInbound::Dynamic,
@@ -3741,6 +3761,41 @@ mod tests {
     }
 
     #[test]
+    fn constructorless_default_creation_is_fresh_exclusive_root_only() {
+        let flow = TransactionFlow {
+            method: "sign_up", request: "SignUpRequest", response: "SignUpResponse",
+            method_identity: "bank.v1.BankMethods.SignUp", state: "Bank",
+            declaration: "BankDurableState", runtime_module: "reboot",
+            mode: "Exclusive", factory: false, default_root: true,
+            declared_error: false, writer: false, inbound: TransactionInbound::Dynamic,
+            shared_root_ownership_seam: false, authorize_after_load: true,
+        };
+        let mut output = String::new();
+        emit_exclusive_transaction_method(&mut output, flow);
+        let root_default = "None if false || (!inbound && context.transaction_ids().len() == 1) => {";
+        assert_eq!(output.matches(root_default).count(), 1);
+        // The separate inbound branch does not inherit default authority.
+        assert!(output.contains("None if false || (false) => proto::Bank::default()"));
+        let fresh = output.rfind("let registered_root =").unwrap();
+        let default = output.find(root_default).unwrap();
+        assert!(fresh + output[fresh..].find("authorize_handler_entry").unwrap() < default);
+        assert!(fresh + output[fresh..].find("self.authorization.authorize(").unwrap() < default);
+        let admission = output.find("local.authorize_default_root(").unwrap();
+        assert!(default < admission);
+        assert!(admission < output[admission..].find("proto::Bank::default()").unwrap() + admission);
+        assert!(output.contains("execution.final_state.clone().or_else(|| Some(<proto::Bank as prost::Message>::encode_to_vec(&state)))"));
+        assert!(output.contains("start_local_reusable_preallow"));
+        assert!(output.contains("local.complete_root("));
+        assert!(!output.contains("create_actor("));
+        let mut explicit = String::new();
+        emit_exclusive_transaction_method(&mut explicit, TransactionFlow { default_root: false, ..flow });
+        assert!(!explicit.contains(root_default));
+        let mut shared = String::new();
+        emit_shared_transaction_method(&mut shared, TransactionFlow { mode: "Shared", ..flow });
+        assert!(!shared.contains(root_default));
+    }
+
+    #[test]
     fn local_ticket_receiver_consumes_before_verifier_and_uses_actual_child() {
         let flow = TransactionFlow {
             method: "apply",
@@ -3752,6 +3807,7 @@ mod tests {
             runtime_module: "reboot",
             mode: "Exclusive",
             factory: false,
+            default_root: false,
             declared_error: false,
             writer: false,
             inbound: TransactionInbound::Dynamic,
@@ -3826,6 +3882,7 @@ mod tests {
                     runtime_module: "reboot",
                     mode: "Exclusive",
                     factory: false,
+                    default_root: false,
                     declared_error: false,
                     writer: true,
                     inbound,
@@ -6453,6 +6510,7 @@ mod tests {
                 runtime_module: "reboot_rust_schema",
                 mode: "Shared",
                 factory: false,
+                default_root: false,
                 declared_error: true,
                 writer: false,
                 inbound: TransactionInbound::Dynamic,
@@ -6670,7 +6728,7 @@ mod tests {
                 .contains("reboot_rust_schema::runtime::boxed_generated_future(|| local.abort_local()).await?; return Ok(tonic::Response::new(response))")
         );
         assert!(content.contains("root-local idempotency stages exactly one automatic mutation"));
-        assert!(content.contains("None if true => proto::Counter::default()"));
+        assert!(content.contains("None if true || (false) => proto::Counter::default()"));
         assert!(content.contains("<proto::Counter as prost::Message>::encode_to_vec(&state)"));
         assert!(!content.contains("factory transactions are not supported"));
     }

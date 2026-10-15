@@ -6445,6 +6445,7 @@ mod tests {
     include!("actor_gate_binding_recovery_tests.rs");
     include!("host_participant_cleanup_tests.rs");
     include!("constructor_child_tests.rs");
+    include!("default_root_tests.rs");
 
     #[derive(Clone, Debug, PartialEq)]
     enum Call {

@@ -1599,6 +1599,50 @@ pub(crate) mod tests {
         ActorTransactionStart, DurableActorParticipant, ParticipantStartMode, PendingActorEffects,
     };
 
+    #[tokio::test]
+    async fn absent_default_root_rejects_actual_unregistered_admission() {
+        use crate::explicit_abort::RegisteredRoot;
+        use crate::runtime::RootTransactionContext;
+        for (bound, idempotent) in [(false, false), (true, false), (true, true)] {
+            let sidecar = Arc::new(MockSidecar::default());
+            let endpoint = Arc::new(MockEndpoint::default());
+            let participant = DurableActorParticipant::new(
+                Arc::new(InProcessSidecar::default()), "example.Actor", "actor/1",
+            );
+            let id = Uuid::new_v4();
+            let mut headers = crate::RebootHeaders::new("actor/1");
+            if idempotent { headers.idempotency_key = Some(Uuid::new_v4()); }
+            let owner = crate::explicit_abort::ExplicitAbortOwner::new(1).unwrap();
+            let context = RootTransactionContext::start(
+                headers, "example.Actor",
+                TransactionMode::Exclusive, id, prost_types::Timestamp::default(),
+            ).unwrap().transaction().clone();
+            let registered = RegisteredRoot::before_load(
+                &participant, context.clone(), coordinator(sidecar, endpoint), idempotent.then_some(&owner),
+            ).unwrap();
+            let local = participant.start_local(ActorTransactionStart {
+                transaction_ids: vec![id],
+                transaction_path: crate::durable_participant::TransactionPathContract::RootOnly,
+                coordinator_state_type: "example.Actor".into(), coordinator_state_ref: "actor/1".into(),
+                mode: TransactionMode::Exclusive, read_only: false, factory: false,
+                state_type: "example.Actor".into(), state_ref: "actor/1".into(),
+            }, ParticipantStartMode::Exclusive).await.unwrap();
+            assert!(local.state_bytes().is_none());
+            let guard = registered.admitted(local).await.unwrap();
+            let configuration = crate::registered_local::GeneratedLocalAdapterConfig {
+                target: participant.actor_target(), database_endpoint: "mock://default-root".into(),
+                policy: crate::auth::AuthorizationPolicy::permissive_for_development(),
+                methods: ["example.ActorMethods.Write".into()].into(), incarnation: Arc::new(()),
+            };
+            let (_registry, binding) = crate::registered_local::ready_binding_for_guard_test(configuration.clone());
+            let error = guard.authorize_default_root(
+                &context, bound.then_some(&binding), &configuration,
+            ).await.unwrap_err();
+            assert_eq!(error.message(), if idempotent { "default state requires fresh exclusive registered root" } else { "authorized handler requires registered root" });
+            guard.abort_local_after_denial().await.unwrap();
+        }
+    }
+
     // Shared only by crate tests: actual registration/guard/owner lifecycle,
     // with in-process sidecar endpoints (not native persistence evidence).
     pub(crate) async fn registered_star_outbound_fixture() -> (

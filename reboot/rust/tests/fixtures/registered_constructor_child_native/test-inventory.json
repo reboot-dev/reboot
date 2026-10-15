@@ -1,6 +1,6 @@
 {
   "status": "source-only-uncompiled-unexecuted",
-  "count": 11,
+  "count": 15,
   "tests": [
     "native::constructor_native_commit_nested_return_retains_lease_then_canonical_visibility",
     "native::constructor_native_default_bytes_prepare_is_writable_and_commits_present_empty",
@@ -12,7 +12,11 @@
     "native::constructor_native_held_real_prepare_ack_retains_lease_until_root_outcome",
     "native::constructor_native_no_optin_and_forged_metadata_refuse_before_load",
     "native::constructor_native_existing_present_empty_actor_is_not_missing",
-    "native::constructor_native_actual_prepare_ack_then_tcp_loss_retains_uncertainty_until_process_exit"
+    "native::constructor_native_actual_prepare_ack_then_tcp_loss_retains_uncertainty_until_process_exit",
+    "native::empty_root::empty_bank_registered_signup_commit_creates_root_and_child",
+    "native::empty_root::empty_bank_abort_after_child_keeps_both_absent",
+    "native::empty_root::empty_bank_policy_denial_before_handler_keeps_both_absent",
+    "native::empty_root::empty_bank_no_owner_rejected_before_handler"
   ],
   "isolated_process_required": "native::constructor_native_actual_prepare_ack_then_tcp_loss_retains_uncertainty_until_process_exit"
 }

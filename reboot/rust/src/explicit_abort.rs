@@ -848,6 +848,37 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
         Ok(handler(handler_context).await)
     }
 
+    /// Generated constructorless-schema seam; registration names and mode flags
+    /// are not authority. Reuse the admitted execution and sealed host binding.
+    #[doc(hidden)]
+    pub async fn authorize_default_root(
+        &self,
+        context: &TransactionContext,
+        binding: Option<&crate::registered_local::RegisteredAdapterBinding>,
+        configuration: &crate::registered_local::GeneratedLocalAdapterConfig,
+    ) -> Result<(), Status> {
+        if !context.is_fresh_root()
+            || context.mode() != crate::runtime::TransactionMode::Exclusive
+            || context.headers().idempotency_key.is_some()
+            || !context.same_ownership_context(&self.context)
+        {
+            return Err(Status::failed_precondition("default state requires fresh exclusive registered root"));
+        }
+        self.validate_authorized_handler_owner()?;
+        let local = self.local.as_ref().ok_or_else(|| Status::failed_precondition("default root guard consumed"))?;
+        local.validate_authorized_handler_execution(context).await?;
+        self.validate_authorized_handler_owner()?;
+        let binding = binding.ok_or_else(|| Status::failed_precondition("default root requires bound adapter registration"))?;
+        binding.require_host_ready(configuration)?;
+        if configuration.target.state_type != local.actor_state_type()
+            || configuration.target.state_ref != local.actor_state_ref()
+            || local.database_endpoint() != Some(configuration.database_endpoint.as_str())
+        {
+            return Err(Status::failed_precondition("default root binding differs from admitted actor"));
+        }
+        Ok(())
+    }
+
     fn validate_authorized_handler_owner(&self) -> Result<(), Status> {
         if let Some((binding, configuration)) = &self.constructor_child {
             binding.require_host_ready(configuration)?;
@@ -1042,7 +1073,11 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
     ) -> Result<Self, Status> {
         let mut guard = self.with_supervised_tree(context, owner).await?;
         let local = guard.local.as_ref().unwrap();
-        if local.state().is_none() {
+        // A fresh root already owns registered execution and the exclusive
+        // participant lease. Generated schema admission decides whether its
+        // absent snapshot may default before entering the handler. Inbound
+        // existing-writer leaves never acquire construction authority here.
+        if local.state().is_none() && !context.is_fresh_root() {
             return Err(Status::failed_precondition(
                 "root-star requires existing actor",
             ));
