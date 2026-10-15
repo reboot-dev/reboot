@@ -1,6 +1,6 @@
 ---
 name: mcp-ui
-description: Build complete Reboot MCP UIs for ChatGPT, Claude, VSCode, Goose, and other MCP hosts. Layers on top of the python skill for backend mechanics; covers what's specific to MCP UIs — the User-type front door, MCP tool exposure, the UI() method type, and the full React/Vite scaffolding.
+description: Build complete Reboot MCP UIs for ChatGPT, Claude, VSCode, Goose, and other MCP hosts. Layers on top of the python skill for backend mechanics; covers what's specific to MCP UIs — the User-type front door, MCP tool exposure, the UI() method type, and the full React/Vite scaffolding. The backend stays ready for a web app.
 argument-hint: [<app-description>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 ---
@@ -286,6 +286,9 @@ wrong means regenerating everything across 12+ files.
    - Method map: which operations, which method type
      (Reader/Writer/Transaction/Workflow), which get `UI()`.
    - Tool surface: what the AI will see as callable tools.
+   - Ready for a web app: the same `User` and `oauth=...` serve a
+     browser SPA added later, and methods for people only stay in the
+     API with `mcp=None`, so its pages need no API change.
    - Example prompts: the ~3 named chat scenarios the root-page
      wizard will offer, each a sequence of messages exercising a
      main user story — and most of them ending on a turn that
@@ -772,7 +775,9 @@ a worked set are in
     MCPJam. Point the user at the dashboard's Features page to
     review the features.
 14. Run the app — load the [`run` skill](../run/SKILL.md) and
-    follow it. It is the single canonical "start the app"
+    follow it, and unless the user asked for only an MCP UI, end the
+    handoff with the one-line offer of a web app (`app` skill, "At
+    handoff"). It is the single canonical "start the app"
     procedure: it detects the app type, makes sure dependencies
     and secrets are in place, and starts the backend and
     frontend. **The handoff for an MCP UI is the setup wizard,
