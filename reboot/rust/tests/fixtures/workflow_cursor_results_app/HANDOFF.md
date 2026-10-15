@@ -1,8 +1,8 @@
 # Cursor/results fixture: acceptance boundary
 
-This is a **new-feature fixture, not reboot-examples parity evidence**. The original generated consumer compiled and passed strict all-target Clippy; the subsequent transport-metadata fix has also built successfully offline (strict Clippy evidence describes the earlier source). Cleanup barriers have local unit coverage. The first actual native attempt failed at the first cross-actor writer; native/public qualification has **not passed**. The outer Rust test is intentionally ignored.
+This is a **new-feature fixture, not reboot-examples parity evidence**. The original generated consumer compiled and passed strict all-target Clippy; the subsequent transport-metadata fix has also built successfully offline (strict Clippy evidence describes the earlier source). Cleanup barriers have local unit coverage. The first native attempt failed at missing writer metadata; the repaired native driver subsequently passed both scenario assertions with clean verified retirement. Independent post-run canonical qualification remains pending; public qualification is not claimed. The outer Rust test is intentionally ignored.
 
-The scenario targets more than 1024 cursor continuations, generated cross-actor calls, complete Stored-record/payload replay equality, saved Break replay, and Started-after-commit uncertainty. These are proof objectives, not reported runtime results.
+The scenario targets more than 1024 cursor continuations, generated cross-actor calls, complete Stored-record/payload replay equality, saved Break replay, and Started-after-commit uncertainty. The native-driver outcomes are recorded in PARITY.md and its receipt; the independent post-run canonical acceptance boundary remains separate.
 
 ## Transport metadata versus replay deduplication
 

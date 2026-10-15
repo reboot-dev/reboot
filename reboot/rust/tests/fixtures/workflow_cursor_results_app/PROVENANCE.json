@@ -15,7 +15,7 @@
     "claim": "local comparator schema only; not a corresponding cursor/results example; no independent revision verification in source-only task"
   },
   "repair": {
-    "status": "Fresh-per-dispatch metadata fix rebuilt offline and real native rerun reached iteration99 after first restart, then timed out at generic10second milestone wait. Only that finite milestone wait changed to180seconds; native rerun remains unaccepted.",
+    "status": "Actual repaired native484 driver passed both scenario groups: cursor1025, typed Stored/Break replay and Started-without-Stored fail-closed recovery. Parent rechecked634archives/source/output pins/exact retirement. Independent fresh post-run canonical check remains pending; no full native/public acceptance.",
     "supervision": "Reviewed replacement helper contract, not exact original prefix; obsolete executable test body removed",
     "baseline_supervision_sha256": "dc92efcf7ad8bc81c55362b108fa4b7b2c08f6ab6c50bc131d03eed36e177179",
     "adapted_supervision_sha256": "b00fc43ce7b9117798b4e7d66c7deed10876452b4fa543dbf981dca73f14f608"
@@ -27,7 +27,7 @@
     "public_probe.py": "8ea0fe17acc401fe3d7356141a6658d78d25a93f0d411d8a7eae8e37ba612d5d",
     "prove_cursor.py": "b3355f0fe548eb3bd7201c50bf1f88c6131f7a346b01eab33ee783187d77d1ec",
     ".rbtrc": "a163db87ffd23358d3f73889f14fe8dc7318e908e6d98611cf05fd53062b4ac7",
-    "HANDOFF.md": "9540eaeaaecef91a8af7311e250d65900ef0f00fe38e2a2904c2c6a80083f5c3",
+    "HANDOFF.md": "c895038e77f2bf32450fc768f66e89b67a05c192d512572d8f2fb5f0197953d4",
     "Cargo.toml": "919f54961d37a8b84e80dc9306a73855cbdd8dcea04aa798884d2185d0fb870b",
     "cursor/v1/cursor.proto": "2e6de5c84cd9f7ccc6f3324f0130ec2cfdd8d4f8d9d9be090fb605dc6b35ab1b",
     "src/inspect.rs": "f188958ac6146021818e38389b1bcad9dc4be1b0134281c6556bfc61c59529ab",
@@ -46,7 +46,9 @@
     "public_acceptance": false,
     "cleanup_tests": "10 repository-local cleanup/wait UNIT regressions passed; external helper/gate units remain separate, no synthetic native acceptance.",
     "runtime_requirements": "Parent-owned generated executable, verified source freeze, reviewed exact custody adapter, original exclusive task owner, and approved actual native run.",
-    "dispatch_metadata_fix": "Actual475 locked/offline rebuild passed, executable SHA256 183bcdc6a1aec0da98338bdcf7c70bf7f41ff322cd80ea6f4667defb5d9a6bd9; current native rerun pending adjudication."
+    "dispatch_metadata_fix": "Actual475 locked/offline rebuild passed, executable SHA256 183bcdc6a1aec0da98338bdcf7c70bf7f41ff322cd80ea6f4667defb5d9a6bd9; current native rerun pending adjudication.",
+    "native_driver_scenarios_verified": true,
+    "independent_postrun_canonical_check": "pending"
   },
   "outer_wrapper": {
     "path": "reboot/rust/tests/workflow_cursor_results_native.rs",

@@ -12,6 +12,24 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Cursor/results actual native driver milestone (2026-10-15)
+
+The [actual native driver receipt](tests/evidence/cursor-native-driver-20261015.json)
+records two passing scenario groups against the real generated Rust app and
+accepted C++ Database: canonical Pending cursor **1025**, terminal consumed/B
+commits **1030**, byte-rich Stored-result and saved Break replay equality,
+concurrent writes, and Started-without-Stored recovery after actual B commit
+**1031**. The latter naturally exits the recovery host with the required
+fail-closed diagnostic; no callback is retried.
+
+Parent verification independently rehashed all **634 archived files**, frozen
+source/helper/executable pins and exact child joins. Genuine attach completion
+preceded fresh exact-container terminal inspection: exited, PID zero, exit zero,
+no OOM/error. The original task lock was acquirable afterward. These are actual
+runtime results, not the seeded/private cursor tests. A separate fresh native
+Database/reader canonical check remains pending; full native/public qualification,
+current-upstream qualification and overall SDK parity are **not** asserted.
+
 ## Cursor/results fixture source checkpoint (2026-10-15)
 
 The [fixture](tests/fixtures/workflow_cursor_results_app/HANDOFF.md) is now
@@ -24,8 +42,9 @@ reservations and open/missing descriptor obligations. The standalone Rust
 wrapper compiles and remains intentionally ignored. These are **source,
 compile and unit results**, not native/public cursor acceptance.
 
-The >1024 continuation, cross-actor result replay, saved Break replay
-and Started-uncertainty objectives remain **unaccepted**. The fixture refuses
+The >1024 continuation, typed cross-actor result replay, saved Break replay
+and Started-uncertainty driver assertions have now passed on the real native
+runtime. Independent post-run canonical qualification remains pending. The fixture refuses
 to substitute subprocess polling for the required parent custody adapter.
 Unknown SDK custody blocks Database retirement; independent outer preflight,
 archival, real build provenance and approved native execution remain required.
