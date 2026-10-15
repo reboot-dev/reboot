@@ -61,7 +61,6 @@ from reboot.mcp.iframe import (
     host_supports_iframe,
 )
 from reboot.settings import (
-    ENVVAR_RBT_FRONTEND_ROOT_PATH,
     ENVVAR_RBT_FRONTEND_URL,
     ENVVAR_RBT_MCP_APP_DIST_PATH,
 )
@@ -154,35 +153,17 @@ def _find_project_root() -> Path:
 
 # The fixed URL prefix under which the frontend — its dev server or its
 # built assets — is served, hardcoded identically in the Envoy route,
-# that route's Lua tagging filter, the iframe loader, and the generated
-# Vite `base`. It's a stable mount point, independent of which directory
-# the frontend happens to live in on disk.
+# that route's Lua tagging filter, the iframe loader, and the Vite
+# plugin's `base`. It's a stable mount point, independent of which
+# directory the frontend happens to live in on disk.
 _FRONTEND_URL_PREFIX = "/__/frontend"
 
-
-def _frontend_root_path() -> str:
-    """The project-relative directory that is the frontend root: the
-    prefix to strip off a project-relative `UI(path=...)` to get the
-    UI's address within the frontend. Always named explicitly via
-    `--frontend-root-path`, which is required alongside both
-    `--frontend-url` (dev/HMR) and `--mcp-app-dist-path` (dist).
-    Empty when unset. Surrounding slashes are stripped, so a flag
-    value like `frontend/` still matches project-relative
-    `UI(path=...)` values.
-    """
-    return (os.environ.get(ENVVAR_RBT_FRONTEND_ROOT_PATH) or "").strip("/")
-
-
-def _ui_address(ui_path: str) -> str:
-    """A UI's address within the frontend: its project-relative
-    `UI(path=...)` with the frontend-root prefix stripped off the front.
-    This is the segment that follows the `/__/frontend/` URL prefix and
-    sits under the dist directory.
-    """
-    root = _frontend_root_path()
-    if root and (ui_path == root or ui_path.startswith(root + "/")):
-        return ui_path[len(root):].lstrip("/")
-    return ui_path
+# The fixed URL prefix under which the MCP Apps are served: each
+# `UI(path=...)` is a URL path under it, `/__/frontend/mcp/<path>/`,
+# whether the frontend's dev server (`--frontend-url`) or their builds
+# (`--mcp-app-dist-path`, mounted here by `applications.py`) answer it.
+# The Vite plugin maps it onto its `mcpAppPath` directory.
+_MCP_APP_URL_PREFIX = f"{_FRONTEND_URL_PREFIX}/mcp"
 
 
 def _resolve_dev_ui_paths(ui_path: str) -> tuple[str, str]:
@@ -192,51 +173,42 @@ def _resolve_dev_ui_paths(ui_path: str) -> tuple[str, str]:
 
     * `vite_base` is the fixed `/__/frontend` URL prefix the dev server
       prepends to its own asset URLs (`@vite/client`, dep chunks, ...);
-      Envoy routes that same prefix to the dev server and the generated
-      Vite `base` matches it.
+      Envoy routes that same prefix to the dev server and the Vite
+      plugin's `base` matches it.
     * `ui_url_path` is the path (rooted at the Reboot origin) at which
       the dev server serves this UI's `index.html` directory:
-      `<vite_base>/<ui-address>`.
+      `/__/frontend/mcp/<ui_path>`.
     """
     return (
         _FRONTEND_URL_PREFIX,
-        f"{_FRONTEND_URL_PREFIX}/{_ui_address(ui_path)}",
+        f"{_MCP_APP_URL_PREFIX}/{ui_path}",
     )
 
 
 def _resolve_dist_path(
     project_root: Path,
     ui_path: str,
-    artifact_path: str | None,
 ) -> Optional[Path]:
     """Resolve the production-build `index.html` path for a UI.
 
-    The built assets live under `--mcp-app-dist-path` at the UI's
-    address within the frontend — i.e. `ui_path` with the explicit
-    `--frontend-root-path` prefix stripped. For example, with
-    `--mcp-app-dist-path` "frontend/dist", `--frontend-root-path`
-    "frontend", and `ui_path` "frontend/mcp/clicker", the build is at
-    "frontend/dist/mcp/clicker/index.html". `artifact_path`, when
-    given, overrides this with an explicit project-relative directory.
+    The built MCP Apps live under `--mcp-app-dist-path`, one directory
+    per `UI(path=...)`: with `--mcp-app-dist-path` "frontend/dist/mcp"
+    and `ui_path` "clicker", the build is at
+    "frontend/dist/mcp/clicker/index.html".
 
-    Returns `None` when neither `artifact_path` nor
-    `--mcp-app-dist-path` names a directory to serve builds from: the
-    only path that could be resolved then is the UI's unbuilt source
-    `index.html` under the project root.
+    Returns `None` when `--mcp-app-dist-path` is not set: there is then
+    no directory to serve builds from.
     """
-    if artifact_path is not None:
-        return project_root / artifact_path / "index.html"
     dist = os.environ.get(ENVVAR_RBT_MCP_APP_DIST_PATH)
     if not dist:
         return None
-    return project_root / dist / _ui_address(ui_path) / "index.html"
+    return project_root / dist / ui_path / "index.html"
 
 
 def compute_ui_cache_bust(
     project_root: Path | str,
     ui_path: str,
     ui_name: str,
-    artifact_path: str | None = None,
 ) -> str:
     """Compute a cache-bust token for a UI resource URI.
 
@@ -283,7 +255,7 @@ def compute_ui_cache_bust(
 
     if isinstance(project_root, str):
         project_root = Path(project_root)
-    dist_path = _resolve_dist_path(project_root, ui_path, artifact_path)
+    dist_path = _resolve_dist_path(project_root, ui_path)
     if dist_path is None or not dist_path.exists():
         if dist_path is None:
             logger.warning(
@@ -292,13 +264,10 @@ def compute_ui_cache_bust(
                 "from; we'll serve a 'build not found' placeholder."
             )
         else:
-            root_path = (
-                os.environ.get(ENVVAR_RBT_FRONTEND_ROOT_PATH) or "frontend"
-            )
             logger.warning(
-                f"Web artifact '{dist_path}' for MCP app is missing; "
-                "we'll serve a 'build not found' placeholder. Run "
-                f"`cd {root_path} && npm run build` and restart."
+                f"The '{ui_name}' MCP App's build '{dist_path}' is "
+                "missing; we'll serve a 'build not found' placeholder. "
+                "Run `npm run build` in your frontend and restart."
             )
         # Hash the placeholder we will actually serve. Same call
         # `ui_html` makes in this branch, so the cache-bust
@@ -311,7 +280,6 @@ def compute_ui_cache_bust(
 def compute_ui_cache_busts(
     caller_file: str,
     ui_app_paths: dict[str, str],
-    ui_artifact_paths: dict[str, str],
 ) -> dict[str, str]:
     """Compute cache-bust tokens for a whole set of UIs.
 
@@ -342,7 +310,6 @@ def compute_ui_cache_busts(
                 project_root,
                 ui_path,
                 ui_name,
-                ui_artifact_paths.get(ui_name),
             )
         except Exception as error:
             # A single misbehaving UI must not prevent the
@@ -386,7 +353,6 @@ def register_ui_tool_for_cache_bust(
     caller_file: str,
     ui_path: str,
     ui_name: str,
-    artifact_path: str | None,
     uri_prefix: str,
 ) -> None:
     """Register the inputs needed to recompute `tool_name`'s
@@ -397,7 +363,6 @@ def register_ui_tool_for_cache_bust(
         "caller_file": caller_file,
         "ui_path": ui_path,
         "ui_name": ui_name,
-        "artifact_path": artifact_path,
         "uri_prefix": uri_prefix,
     }
 
@@ -453,7 +418,6 @@ def _inject_globals(
 
 def _build_not_found_html(title: str, ui_name: str) -> str:
     """Generate fallback HTML when a build artifact is not found."""
-    root_path = os.environ.get(ENVVAR_RBT_FRONTEND_ROOT_PATH) or "frontend"
     return f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -485,7 +449,7 @@ def _build_not_found_html(title: str, ui_name: str) -> str:
     <div class="container">
         <h1>{title}</h1>
         <p>The React app needs to be built first.</p>
-        <p>Run: <code>cd {root_path} && npm install && npm run build</code></p>
+        <p>Run <code>npm install && npm run build</code> in your frontend.</p>
     </div>
 </body>
 </html>'''
@@ -621,7 +585,6 @@ def ui_html(
     reboot_url: str,
     ui_name: str,
     project_root: Path | str | None = None,
-    artifact_path: str | None = None,
     cache_bust: str | None = None,
 ) -> str:
     """Get HTML for a UI.
@@ -639,8 +602,8 @@ def ui_html(
     globals.
 
     Args:
-        ui_path: Path to the UI relative to project root
-            (e.g., "web/ui/clicker").
+        ui_path: The UI's URL path under `/__/frontend/mcp/`
+            (`UI(path=...)`, e.g. "clicker").
         reboot_url: Reboot server URL (extracted from request
             headers).
         ui_name: Display name from the API definition
@@ -648,11 +611,6 @@ def ui_html(
         project_root: Project root directory. If not provided,
             auto-discovers by walking up from caller's file
             looking for `.rbtrc`.
-        artifact_path: Override for the build artifact path,
-            relative to project root. Defaults to
-            `<--mcp-app-dist-path>/<ui-address>` (e.g. dist
-            path "web/dist" and "web/ui/clicker" ->
-            "web/dist/ui/clicker"); see `_resolve_dist_path`.
         cache_bust: Content-hash token from the incoming URI's
             trailing segment (the value `list_tools` computed
             via `compute_ui_cache_bust`). Used as an extra
@@ -758,7 +716,7 @@ def ui_html(
 
     # If the dist isn't present we serve the "build not found"
     # placeholder inline regardless of host.
-    dist_path = _resolve_dist_path(project_root, ui_path, artifact_path)
+    dist_path = _resolve_dist_path(project_root, ui_path)
     if dist_path is None or not dist_path.exists():
         # No build found — show instructions.
         return _build_not_found_html(f"{ui_name.title()} UI", ui_name)

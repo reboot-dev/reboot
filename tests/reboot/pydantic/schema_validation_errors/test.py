@@ -1,7 +1,7 @@
 import pydantic
 import pydantic.errors
 import unittest
-from reboot.api import API, Field, Methods, Model, Type, UserPydanticError
+from reboot.api import API, UI, Field, Methods, Model, Type, UserPydanticError
 from typing import Dict, List, Literal, Optional, Union
 
 
@@ -407,3 +407,25 @@ class UserStateValidationErrorsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UIPathTest(unittest.TestCase):
+    """`UI(path=...)` is the UI's URL path under `/__/frontend/mcp/`,
+    not a directory in the project."""
+
+    def test_url_path(self):
+        for path in ["clicker", "shop/cart"]:
+            with self.subTest(path=path):
+                self.assertEqual(UI(request=None, path=path).path, path)
+
+    def test_project_relative_path_refused_naming_the_fix(self):
+        with self.assertRaises(pydantic.ValidationError) as error:
+            UI(request=None, path="frontend/mcp/clicker")
+        self.assertIn('path="clicker"', str(error.exception))
+        self.assertIn("/__/frontend/mcp/", str(error.exception))
+
+    def test_malformed_path_refused(self):
+        for path in ["", ".", "..", "/clicker", "clicker/", "a//b", "a/../b"]:
+            with self.subTest(path=path):
+                with self.assertRaises(pydantic.ValidationError):
+                    UI(request=None, path=path)

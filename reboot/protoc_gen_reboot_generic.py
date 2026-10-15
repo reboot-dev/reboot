@@ -257,7 +257,6 @@ class ProtoUI:
     description: Optional[str]
     path: str
     request_message: Optional[str]
-    artifact_path: Optional[str]
 
 
 @dataclass
@@ -743,8 +742,6 @@ class RebootProtocPlugin(ProtocPlugin):
                     path=ui.path,
                     request_message=ui.request_message
                     if ui.HasField('request_message') else None,
-                    artifact_path=ui.artifact_path
-                    if ui.HasField('artifact_path') else None,
                 )
             )
 

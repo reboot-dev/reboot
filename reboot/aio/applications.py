@@ -943,23 +943,25 @@ class Application:
             ),
         )
 
-        # In dist mode (built MCP Apps, no Vite dev server) serve the
-        # `--mcp-app-dist-path` directory over `/__/frontend/` from this
-        # same HTTP server, alongside `/mcp`. Envoy has no frontend route
-        # in this mode, so a browser's `/__/frontend/...` request falls
-        # through to the app's HTTP cluster and lands here. Starlette
-        # strips the mount prefix, so `StaticFiles(directory=dist_dir)`
-        # resolves `/__/frontend/mcp/<name>/index.html` to
-        # `dist_dir/mcp/<name>/index.html`. The mount must be present in
-        # every serving server subprocess, so it is established here at
-        # serve time. In HMR mode `ENVVAR_RBT_FRONTEND_URL` points at the
-        # Vite dev server and Envoy routes `/__/frontend/` there
-        # instead, so skip the mount.
+        # In dist mode (built MCP Apps, no frontend dev server) serve the
+        # `--mcp-app-dist-path` directory over `/__/frontend/mcp/` from
+        # this same HTTP server, alongside `/mcp`. Envoy has no frontend
+        # route in this mode, so a browser's `/__/frontend/...` request
+        # falls through to the app's HTTP cluster and lands here.
+        # Starlette strips the mount prefix, so
+        # `StaticFiles(directory=dist_dir)` resolves
+        # `/__/frontend/mcp/<path>/index.html` to
+        # `dist_dir/<path>/index.html`, each `UI(path=...)` being a
+        # directory of the dist. The mount must be present in every
+        # serving server subprocess, so it is established here at serve
+        # time. In HMR mode `ENVVAR_RBT_FRONTEND_URL` points at the Vite
+        # dev server and Envoy routes `/__/frontend/` there instead, so
+        # skip the mount.
         mcp_app_dist_path = os.environ.get(ENVVAR_RBT_MCP_APP_DIST_PATH)
         if mcp_app_dist_path and not os.environ.get(ENVVAR_RBT_FRONTEND_URL):
             project_root = self._frontend_project_root()
             self.http.mount(
-                "/__/frontend",
+                "/__/frontend/mcp",
                 app=StaticFiles(
                     directory=str(project_root / mcp_app_dist_path),
                     # `html=True` so a directory URL serves its

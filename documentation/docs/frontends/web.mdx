@@ -188,20 +188,17 @@ cd frontend && npm run dev
 server always has an up-to-date `frontend/api/`.
 
 If you want Reboot to serve the frontend too — so both are on one
-origin, and so `UI` methods work — point it at your frontend root in
+origin, and so `UI` methods work — tell it where the frontend is in
 `.rbtrc`:
 
 ```
-# The frontend root, shared by the `:hmr` and `:dist` configs below.
-dev run --frontend-root-path=frontend
-
 # HMR: proxy `/__/frontend/**` to the Vite dev server.
 dev run:hmr --frontend-url=http://localhost:5173
 dev run:hmr --mcp-app
 dev run --default-config=hmr
 
-# Dist: serve pre-built assets instead. `rbt dev run --config=dist`.
-dev run:dist --mcp-app-dist-path=frontend/dist
+# Dist: serve the built MCP Apps instead. `rbt dev run --config=dist`.
+dev run:dist --mcp-app-dist-path=frontend/dist/mcp
 ```
 
 See [Develop locally](/develop_locally#frontend-flags) for what each
@@ -219,7 +216,7 @@ any path the app has no route or file for, so the SPA's own routing
 works on reload:
 
 ```
-serve run --mcp-app-dist-path=frontend/dist
+serve run --mcp-app-dist-path=frontend/dist/mcp
 serve run --web-app-dist-path=frontend/dist/web
 ```
 

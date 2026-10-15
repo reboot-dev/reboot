@@ -89,14 +89,14 @@ api = API(
         methods=Methods(
             show_clicker=UI(
                 request=None,
-                path="frontend/mcp/clicker",
+                path="clicker",
                 title="Counter Clicker",
                 description="Interactive clicker UI "
                 "for the counter.",
             ),
             show_dashboard=UI(
                 request=DashboardConfig,
-                path="frontend/mcp/dashboard",
+                path="dashboard",
                 title="Counter Dashboard",
                 description="Dashboard UI. Use "
                 "`personalized_message` to impart wisdom "

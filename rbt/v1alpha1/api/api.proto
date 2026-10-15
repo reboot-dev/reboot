@@ -148,7 +148,7 @@ message Resource {
 message UI {
   string name = 1;
 
-  // The path the page is served at.
+  // The page's URL path under `/__/frontend/mcp/` (e.g. "clicker").
   string path = 2;
 
   // The page's props; absent for a page taking none.
@@ -158,6 +158,7 @@ message UI {
 
   optional string description = 5;
 
-  // Where the page's built artifact is; absent when unset.
-  optional string artifact_path = 6;
+  // Was `artifact_path`; the build is always at
+  // `<--mcp-app-dist-path>/<path>/index.html` now.
+  reserved 6;
 }

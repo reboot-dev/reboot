@@ -39,7 +39,6 @@ from reboot.run_environments import on_cloud
 from reboot.settings import (
     ENVVAR_LOCAL_ENVOY_USE_TLS,
     ENVVAR_RBT_EFFECT_VALIDATION,
-    ENVVAR_RBT_FRONTEND_ROOT_PATH,
     ENVVAR_RBT_MCP_APP_DIST_PATH,
     ENVVAR_RBT_NAME,
     ENVVAR_RBT_NODEJS,
@@ -270,17 +269,7 @@ async def serve_run(
             env[ENVVAR_RBT_STATE_DIRECTORY] = args.state_directory
 
         if args.mcp_app_dist_path is not None:
-            if args.frontend_root_path is None:
-                terminal.fail(
-                    "`--mcp-app-dist-path` requires `--frontend-root-path`."
-                )
             env[ENVVAR_RBT_MCP_APP_DIST_PATH] = args.mcp_app_dist_path
-            env[ENVVAR_RBT_FRONTEND_ROOT_PATH] = args.frontend_root_path
-        elif args.frontend_root_path is not None:
-            terminal.fail(
-                "`--frontend-root-path` is only valid alongside "
-                "`--mcp-app-dist-path`."
-            )
 
         if args.web_app_dist_path is not None:
             env[ENVVAR_RBT_WEB_APP_DIST_PATH] = args.web_app_dist_path

@@ -198,7 +198,7 @@ api = API(
         methods=Methods(
             show_wiki=UI(
                 request=None,
-                path="frontend/mcp/wiki_view",
+                path="wiki_view",
                 title="Wiki",
                 description="Open the Wiki viewer UI to "
                 "render the Wiki's markdown body.",
@@ -290,7 +290,7 @@ api = API(
         methods=Methods(
             show_page=UI(
                 request=None,
-                path="frontend/mcp/page_view",
+                path="page_view",
                 title="Page",
                 description="Open the Page viewer UI to "
                 "render the Page's markdown body.",
@@ -340,7 +340,7 @@ api = API(
         methods=Methods(
             show_transcript=UI(
                 request=None,
-                path="frontend/mcp/transcript_view",
+                path="transcript_view",
                 title="Transcript",
                 description="Open the Transcript viewer "
                 "UI to read the raw conversation "

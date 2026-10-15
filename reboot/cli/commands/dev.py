@@ -74,7 +74,6 @@ from reboot.settings import (
     ENVVAR_LOCAL_ENVOY_USE_TLS,
     ENVVAR_RBT_DEV,
     ENVVAR_RBT_EFFECT_VALIDATION,
-    ENVVAR_RBT_FRONTEND_ROOT_PATH,
     ENVVAR_RBT_FRONTEND_URL,
     ENVVAR_RBT_MCP_APP,
     ENVVAR_RBT_MCP_APP_DIST_PATH,
@@ -224,8 +223,7 @@ def _register_dev_run(parser: ArgumentParser):
             'Replacement. It only says where the frontend is; '
             '`--mcp-app` says to serve the application\'s MCP '
             'Apps from it, and without that it is an error. '
-            'Requires `--frontend-root-path`; mutually '
-            'exclusive with `--mcp-app-dist-path`.'
+            'Mutually exclusive with `--mcp-app-dist-path`.'
         ),
     )
     parser.subcommand('dev run').add_renamed_flag(
@@ -1441,9 +1439,7 @@ async def __dev_run(
     # the frontend's dev server (`--frontend-url`, which `--mcp-app`
     # says to serve them from) or from their builds on disk
     # (`--mcp-app-dist-path`). A dev server nothing is served from is
-    # a slip, so `--frontend-url` alone is refused. `--frontend-root-path`
-    # names the frontend root and is required alongside whichever of
-    # the two is chosen.
+    # a slip, so `--frontend-url` alone is refused.
     if args.frontend_url and args.mcp_app_dist_path:
         terminal.fail(
             "`--frontend-url` and `--mcp-app-dist-path` are mutually "
@@ -1468,23 +1464,10 @@ async def __dev_run(
             "`--mcp-app-dist-path` to serve their builds instead)."
         )
     if args.frontend_url:
-        if not args.frontend_root_path:
-            terminal.fail("`--frontend-url` requires `--frontend-root-path`.")
         env[ENVVAR_RBT_FRONTEND_URL] = args.frontend_url
         env[ENVVAR_RBT_MCP_APP] = 'true'
-        env[ENVVAR_RBT_FRONTEND_ROOT_PATH] = args.frontend_root_path
     elif args.mcp_app_dist_path:
-        if not args.frontend_root_path:
-            terminal.fail(
-                "`--mcp-app-dist-path` requires `--frontend-root-path`."
-            )
         env[ENVVAR_RBT_MCP_APP_DIST_PATH] = args.mcp_app_dist_path
-        env[ENVVAR_RBT_FRONTEND_ROOT_PATH] = args.frontend_root_path
-    elif args.frontend_root_path:
-        terminal.fail(
-            "`--frontend-root-path` is only valid alongside "
-            "`--frontend-url` or `--mcp-app-dist-path`."
-        )
 
     # The web app, when Reboot serves it, is its own thing: a built
     # web app at `/`, independent of how the MCP Apps are served.

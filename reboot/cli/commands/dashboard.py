@@ -36,7 +36,6 @@ from reboot.dashboard.backend.constants import (
 from reboot.settings import (
     ENVVAR_RBT_DEV,
     ENVVAR_RBT_EFFECT_VALIDATION,
-    ENVVAR_RBT_FRONTEND_ROOT_PATH,
     ENVVAR_RBT_FRONTEND_URL,
     ENVVAR_RBT_MCP_APP_DIST_PATH,
     ENVVAR_RBT_NAME,
@@ -167,7 +166,6 @@ def _dashboard_env(
         ENVVAR_RBT_NODEJS,
         ENVVAR_RBT_FRONTEND_URL,
         ENVVAR_RBT_MCP_APP_DIST_PATH,
-        ENVVAR_RBT_FRONTEND_ROOT_PATH,
         ENVVAR_RBT_WEB_APP_DIST_PATH,
     ):
         composed.pop(name, None)

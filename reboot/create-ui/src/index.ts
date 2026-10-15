@@ -45,21 +45,6 @@ function main() {
     }
   }
 
-  if (scaffolded.skipped.length > 0) {
-    const root = scaffolded.webRootDir;
-    console.log(
-      `\nWarning: ${scaffolded.skipped.length} UI(s) ` +
-        `skipped (path not under ${root}/):`
-    );
-    for (const ui of scaffolded.skipped) {
-      console.log(`  ${ui.path} (${ui.name})`);
-    }
-    console.log(
-      `  UIs must use path="${root}/mcp/<name>" ` +
-        `to share the vite dev server.`
-    );
-  }
-
   console.log(
     `\nNext steps:\n` +
       `  cd ${scaffolded.webRootDir} && npm install\n` +
