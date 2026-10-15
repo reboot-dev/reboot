@@ -10,6 +10,11 @@ allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 > **Version notices:** if `rbt` reports a version mismatch or that a
 > newer Reboot is available, the [upgrade skill](../upgrade/SKILL.md)
 > says how and when to react.
+>
+> **Errors:** holding an error string, grep a distinctive fragment of
+> it in `python/references/errors.md` first; never read the file
+> whole. Defects in released Reboot versions, with their workarounds,
+> are in [`KNOWN-ISSUES.md`](../../KNOWN-ISSUES.md).
 
 Build complete Reboot Web Apps from a user description: a Reboot
 backend behind a standalone React frontend served at a normal URL.
@@ -132,9 +137,10 @@ Recommended sequence:
    | `Ory(...)`      | `domain=`, `client_id=`, `client_secret=` |
 
    The registered providers (everything but `Development` and
-   `Anonymous`) also take `scopes=`, `claims=`, and
-   `store_tokens=`; register `/__/oauth/callback` as the redirect
-   URI with the provider.
+   `Anonymous`) also take `scopes=` and `store_tokens=`; register
+   `/__/oauth/callback` as the redirect URI with the provider.
+   Every provider but `Anonymous` takes `claims=`, `Development()`
+   included ([`auth-claims.md`](../python/references/auth-claims.md)).
 
    Add `claims=[...]` when you need identity fields such as the
    user's email, and `store_tokens=True` only when you will call

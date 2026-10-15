@@ -121,7 +121,7 @@ run it. Concretely:
   named for the situation, under the rule it illustrates, or at the
   feature's top level when it illustrates no rule.
 - **Let a factory make the id up**: `"alice" creates an `Account`via`open``and`the resulting state id is saved as "account
-  id"`, then `<account id>`. Give an id only when it means something
+id"`, then `<account id>`. Give an id only when it means something
   to the application (a user id, a singleton the code refers to).
 - **Move `@wip` down as scenarios land**: once a rule or scenario
   is written, put `@wip` on it and take it off the feature, so the
@@ -143,6 +143,9 @@ run it. Concretely:
   operation does and nothing more, leave it at the top level.
 - **Run the suite** (`uv run pytest`, or `-m wip` for
   what is in progress) and `uv run mypy backend/ tests/`; fix what fails.
+  While it runs, don't regenerate code, start another `rbt dev run` or
+  edit `api/`, `backend/` or `web/`: a suite run beside those changes
+  has failed with errors that look like Reboot's.
 - **Suggest reviewing in the dashboard** after each round: the
   feature's card, its rules, the methods it uses and the ones no
   feature uses, and the recordings.
