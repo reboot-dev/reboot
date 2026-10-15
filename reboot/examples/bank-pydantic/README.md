@@ -80,7 +80,12 @@ rbt dev run
 
 Running `rbt dev run` will watch for file modifications and restart the
 application if necessary. See the `.rbtrc` file for flags and
-arguments that get expanded when running `rbt dev run`.
+arguments that get expanded when running `rbt dev run`. By default it
+serves the app under a name, `https://bank.localhost`, through
+[portless](https://github.com/vercel-labs/portless): install it once
+with `npm install -g portless` and start its proxy with
+`portless proxy start`. To use plain ports instead, run
+`rbt dev run --config=hmr`.
 
 ### Front end
 
@@ -92,8 +97,15 @@ npm run dev
 ```
 
 That starts a single Vite dev server that serves both the web app and
-the MCP Apps. Visit [http://localhost:5173](http://localhost:5173) — it
-redirects to the web app.
+the MCP Apps, as `https://frontend.bank.localhost`, which the backend
+serves them from (the name matches the backend's `bank.localhost`,
+which is how the two trust each other): `npm run dev` is
+`portless frontend.bank vite`, portless being a dev dependency,
+mirroring the `.rbtrc`. Visit
+[https://bank.localhost](https://bank.localhost) for the web app.
+Without portless (`rbt dev run --config=hmr`), run
+`npm run dev:hmr` instead and visit
+[http://localhost:9991](http://localhost:9991).
 
 The web app requires signing in. In development, click "Sign in" and
 pick (or make up) a `Development` identity. Signing in auto-constructs
@@ -123,11 +135,13 @@ The application is also an MCP server: an MCP client can call
 its tools and render its UIs (the `frontend/mcp/` directories) right
 in the chat. The easiest way to get connected is the setup wizard
 that the backend serves at
-[http://localhost:9991](http://localhost:9991): it walks you through
-connecting the chat client of your choice (Claude, ChatGPT, ...) —
-including the public tunnel those clients need to reach your machine
-— and suggests example prompts to try. The MCP endpoint itself is
-[http://localhost:9991/mcp](http://localhost:9991/mcp).
+[https://bank.localhost](https://bank.localhost) (or
+[http://localhost:9991](http://localhost:9991) without portless): it
+walks you through connecting the chat client of your choice (Claude,
+ChatGPT, ...) — including the public tunnel those clients need to
+reach your machine — and suggests example prompts to try. The MCP
+endpoint itself is
+[https://bank.localhost/mcp](https://bank.localhost/mcp).
 
 ### Tests
 

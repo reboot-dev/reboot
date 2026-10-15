@@ -30,7 +30,7 @@ frontend/
 ├── vite.config.ts       # Below
 ├── api/                 # `rbt generate --react=frontend/api`
 └── web/
-    ├── .env.development # `VITE_REBOOT_URL`, below
+    ├── .env.development # No `VITE_REBOOT_URL` in development; below
     ├── .env.production  # Written at deploy time (the `deploy` skill)
     ├── index.html       # `<div id="root">` + `<script type="module" src="/src/main.tsx">`
     ├── public/          # Static files, copied into the build as they are
@@ -53,7 +53,9 @@ same version as the backend's `reboot` dependency, and `zod`:
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "npm run dev:portless",
+    "dev:portless": "portless frontend.<app> vite",
+    "dev:hmr": "vite",
     "build": "tsc -b && vite build"
   },
   "dependencies": {
@@ -64,7 +66,8 @@ same version as the backend's `reboot` dependency, and `zod`:
     "zod": "^4.0.0"
   },
   "devDependencies": {
-    "<as the scaffold wrote them>": ""
+    "<as the scaffold wrote them>": "",
+    "portless": "^0.15.7"
   }
 }
 ```
@@ -131,28 +134,40 @@ scaffold's `src`, and add the alias's `paths`:
 }
 ```
 
-`npm run dev` serves the SPA at its own origin,
-`http://localhost:5173/` by default; `npm run build` writes
+The `dev` scripts mirror the `.rbtrc`'s configs: `npm run dev` is
+the default, `dev:portless`, which runs `portless frontend.<app> vite`
+(`<app>` is the `.rbtrc`'s `--application-name`; `portless` is a dev
+dependency and appends Vite's `--port` itself) and serves the SPA at
+`https://frontend.<app>.localhost`, which the backend serves it from at
+`https://<app>.localhost/`, and `dev:hmr` is plain `vite` at
+`http://localhost:5173/`, served at `http://localhost:9991/` the
+same way; `npm run build` writes
 `frontend/dist/web/`, a plain SPA build that any host serves at
 `/`.
 
-## The Backend URL — Set It Explicitly in Dev
+## The Backend URL — The Page's Own in Dev, Set for a Deploy
 
-`<RebootClientProvider>` with no `url` falls back to detection:
-`window.REBOOT_URL`, then a `?rebootUrl=` query parameter, then
-`window.location.origin`. In development the SPA is served by Vite
-on `:5173` while the backend listens on `:9991`, so the fallback
-resolves to the **wrong** origin — and when even that is
-unavailable the client throws
-`Could not detect Reboot server URL. Ensure the page is served from the Reboot server.`
+`<RebootClientProvider>` with no `url` detects the backend:
+`window.REBOOT_URL`, then a `?rebootUrl=` query parameter, else
+`window.location.origin`. The origin is right whenever the backend
+serves the SPA: from its dev server with `--web-app` in development,
+or built with `--web-app-dist-path`. So in development pass no `url`
+and keep `VITE_REBOOT_URL` out of `web/.env.development`; open the
+SPA at the backend's URL (`https://<app>.localhost/` or
+`http://localhost:9991/`), never at Vite's own, where the origin
+would be Vite's and the client would call the wrong place.
 
-Pass it explicitly, from an env file, which Vite reads from its
-`root`:
+A deploy on a CDN or static host is on a different origin from the
+backend, so it must say where the backend is, from an env file Vite
+reads from its `root`:
 
 ```
-# frontend/web/.env.development
-VITE_REBOOT_URL=http://localhost:9991
+# frontend/web/.env.production
+VITE_REBOOT_URL=https://your-backend-host.example.com
 ```
+
+passed as `<RebootClientProvider url={import.meta.env.VITE_REBOOT_URL}>`,
+which is `undefined`, and so detection, when the file is absent.
 
 `import.meta.env` needs Vite's ambient types or `npm run build`
 fails with `Property 'env' does not exist on type 'ImportMeta'`.
