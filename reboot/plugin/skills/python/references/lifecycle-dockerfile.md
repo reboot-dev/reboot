@@ -56,7 +56,7 @@ Four blocks: install deps from the lockfile, copy schemas + config and
 run `rbt generate`, copy backend source, then run `rbt serve run` —
 which reads everything else it needs from `.rbtrc`.
 
-## Adding a Bundled Web Frontend (MCP UIs)
+## Adding a Bundled Web Frontend (MCP Apps)
 
 For an MCP or chat-style app where the Reboot backend is also the
 static web server for an embedded UI artifact, add two layers between
@@ -69,7 +69,7 @@ COPY frontend/ frontend/
 # Standard rbt codegen — generates `backend/api/` AND `frontend/api/`.
 RUN rbt generate
 
-# Build the React UIs into `frontend/dist/`. For MCP apps the Reboot app
+# Build the React UIs into `frontend/dist/`. For MCP Apps the Reboot app
 # itself is also the static web server, so it needs these static
 # assets.
 RUN cd frontend && npm ci && npm run build
@@ -167,7 +167,7 @@ frontend/
 README.md
 ```
 
-**Bundled-web (MCP UI)** — keep `frontend/` sources the in-image
+**Bundled-web (MCP App)** — keep `frontend/` sources the in-image
 `npm ci && npm run build` needs, drop everything else under `frontend/`:
 
 ```gitignore

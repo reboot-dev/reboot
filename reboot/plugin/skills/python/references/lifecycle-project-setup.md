@@ -27,7 +27,7 @@ my-app/
     api.py
 ```
 
-**Correct (canonical layout, the one the `web-app` and `mcp-ui` skills build on):**
+**Correct (canonical layout, the one the `web-app` and `mcp-app` skills build on):**
 
 ```
 my-app/
@@ -46,10 +46,10 @@ my-app/
   tests/                 # see `testing-project-setup.md`
     <capability>.feature
     <name>_test.py
-  frontend/              # see the `web-app` and `mcp-ui` skills
+  frontend/              # see the `web-app` and `mcp-app` skills
     api/                 # rbt generate --react output
     web/                 # the browser SPA, if the app has one
-    mcp/<ui-name>/       # the MCP UIs, if the app has any
+    mcp/<ui-name>/       # the MCP Apps, if the app has any
 ```
 
 ## `pyproject.toml`
