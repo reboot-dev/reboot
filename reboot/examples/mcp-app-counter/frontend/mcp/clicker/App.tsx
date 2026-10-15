@@ -56,8 +56,7 @@ const Clicker: FC<{ counter: UseCounterApi }> = ({ counter }) => {
     // it at the local Vite dev server, and `web/.env.production` must
     // name the real web-app host.
     const webAppUrl = import.meta.env.VITE_WEB_APP_URL;
-    const url =
-      webAppUrl + "/__/frontend/web/?counter=" + encodeURIComponent(counterId);
+    const url = webAppUrl + "/?counter=" + encodeURIComponent(counterId);
     // The sandboxed MCP App iframe blocks `window.open` unless the
     // host grants `allow-popups`, so ask the host to open the link
     // via the MCP Apps `ui/open-link` request. Fall back to

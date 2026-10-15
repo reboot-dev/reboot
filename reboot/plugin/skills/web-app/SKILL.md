@@ -531,10 +531,13 @@ In development the Vite dev server (`cd frontend && npm run dev`)
 serves the SPA at its own origin, `http://localhost:5173/` by
 default, and the SPA calls the backend at `VITE_REBOOT_URL`. Built,
 it lands in `frontend/dist/web/` with `base: "/"`, which a static
-host, or the backend, can serve at `/`. An app that later adds an
-MCP frontend keeps this tree, adds `frontend/mcp/<name>/` beside
-`web/`, and swaps in the `mcp-app` skill's `vite.config.ts` and
-`npm run build`, which serve both frontends through Envoy.
+host can serve at `/`, or the backend can with
+`--web-app-dist-path=frontend/dist/web` on `rbt serve run` (and on a
+`dev run:dist` config); see `python/references/lifecycle-rbtrc.md`.
+An app that later adds an MCP frontend keeps this tree, adds
+`frontend/mcp/<name>/` beside `web/`, and swaps in the `mcp-app`
+skill's `vite.config.ts` and `npm run build`, which build both and
+serve the MCP Apps through Envoy.
 
 ## Step-by-Step Build Flow
 
