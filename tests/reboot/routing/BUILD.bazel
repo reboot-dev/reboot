@@ -62,3 +62,18 @@ py_test(
         "//reboot/routing:envoy_config_py",
     ],
 )
+
+py_test(
+    name = "envoy_config_test_py",
+    timeout = "short",
+    srcs = ["envoy_config_test.py"],
+    main = "envoy_config_test.py",
+    deps = [
+        requirement("protobuf"),
+        "//envoy/config/route/v3:routev3_py_proto",
+        "//envoy/extensions/filters/http/cors/v3:corsv3_py_proto",
+        "//reboot/aio:types_py",
+        "//reboot/aio/auth:allowed_origins_py",
+        "//reboot/routing:envoy_config_py",
+    ],
+)

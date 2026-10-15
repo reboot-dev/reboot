@@ -25,7 +25,10 @@ from reboot.aio.auth import (
     WHOAMI_PATH,
     Auth,
 )
-from reboot.aio.auth.allowed_origins import is_allowed_origin
+from reboot.aio.auth.allowed_origins import (
+    OAUTH_PATH_PREFIX,
+    is_allowed_origin,
+)
 from reboot.aio.auth.oauth_providers import (
     ClaimsChanged,
     OAuthProvider,
@@ -99,6 +102,25 @@ _FINISH_PATH = "/__/oauth/finish"
 _REFRESH_PATH = "/__/oauth/refresh"
 _SIGNOUT_PATH = "/__/oauth/signout"
 _WHOAMI_PATH = WHOAMI_PATH
+
+# Envoy gives the credentialed, exact-match CORS policy to paths under
+# `OAUTH_PATH_PREFIX` and no others (`reboot/routing/envoy_config.py`),
+# so every endpoint that honors the session cookie on a cross-origin
+# request must live there.
+assert all(
+    path.startswith(OAUTH_PATH_PREFIX) for path in (
+        _AUTHORIZE_PATH,
+        _CONSENT_PATH,
+        _TOKEN_PATH,
+        _REGISTER_PATH,
+        _CALLBACK_PATH,
+        _START_PATH,
+        _FINISH_PATH,
+        _REFRESH_PATH,
+        _SIGNOUT_PATH,
+        _WHOAMI_PATH,
+    )
+)
 
 # `client_id` JWT type used for the internal "browser client" we
 # register on the fly in `/start`. Kept distinct from the MCP-client
@@ -447,12 +469,12 @@ class OAuthServer:
         http.post(_TOKEN_PATH, app_internal=True)(self.token)
         http.options(_TOKEN_PATH)(self.cors_preflight)
 
-        # Browser-flow endpoints. Envoy's CORS filter (configured in
-        # `reboot/routing/envoy_config.py`) echoes the request's
-        # `Origin` and sets `Access-Control-Allow-Credentials: true`
-        # for these paths, so a cross-origin SPA can complete the
-        # `credentials: "include"` flow without per-route headers
-        # here.
+        # Browser-flow endpoints. Envoy's CORS filter
+        # (`reboot/routing/envoy_config.py`) echoes an allow-listed
+        # `Origin` with `Access-Control-Allow-Credentials: true` on
+        # every path under `OAUTH_PATH_PREFIX`, so a cross-origin SPA
+        # completes the `credentials: "include"` flow without
+        # per-route headers here.
         http.get(_START_PATH)(self.start)
         http.get(_FINISH_PATH, app_internal=True)(self.finish)
         http.post(_REFRESH_PATH, app_internal=True)(self.refresh)
