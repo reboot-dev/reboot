@@ -11,14 +11,16 @@ import time
 import uuid
 from rust_process_ownership import RequestedShutdown, process_start
 import signal
+from rust_examples_runtime import select_runtime, record_runtime_launch
 
 ROOT = Path(__file__).resolve().parents[3]
 SOURCE = ROOT / 'reboot/rust/tests/fixtures/reboot_examples'
 SDK = ROOT / 'reboot/rust'
+RBT, ENV, runtime = select_runtime(os.environ)
 STAGE = Path(tempfile.mkdtemp(prefix='reboot-rust-upstream-constructors-'))
 print('STAGE', STAGE, flush=True)
 TARGET = Path(os.environ['CARGO_TARGET_DIR'])
-RBT = Path('/tmp/reboot-rust-app-dx-loop2-venv310/bin/rbt')
+
 APP = STAGE / 'examples/hello-constructors'
 shutil.copytree(SOURCE / 'api', STAGE / 'examples/api')
 shutil.copytree(SOURCE / 'hello-constructors', APP)
@@ -26,12 +28,14 @@ cargo = APP / 'backend/Cargo.toml'
 cargo.write_text(cargo.read_text().replace('"../../../../../"', json.dumps(str(SDK))))
 build = APP / 'backend/build.rs'
 build.write_text(build.read_text().replace('here.join("../../../../../../..")', 'std::path::PathBuf::from(' + json.dumps(str(ROOT)) + ')'))
-ENV = dict(os.environ, RBT_RUST_DATABASE_BINARY='/home/openclaw/worktrees/reboot-rust-rich-errors/bazel-bin/reboot/server/database', RBT_RUST_URL='http://127.0.0.1:13991')
+ENV['RBT_RUST_URL'] = 'http://127.0.0.1:13991'
 # Reboot UUIDv7 timestamp encodes expiry, not creation. One hour bounds this run;
 # all client invocations share the exact prefix across both starts.
 ENV['RBT_TEST_CONSTRUCTOR_KEY_BASE'] = str(uuid.UUID(int=(((time.time_ns() // 1_000_000) + 3_600_000) << 80) | (7 << 76) | (2 << 62)))
 evidence = {'passed': False, 'sessions': [], 'commands': [], 'source_hashes': {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in SOURCE.rglob('*') if p.is_file() and '.rbt' not in p.parts}}
 RESULT = STAGE / 'result.json'
+evidence['runtime'] = runtime
+RESULT.write_text(json.dumps(evidence, indent=2))
 timeout_seen = False
 
 def command(*args):
@@ -51,6 +55,7 @@ def command(*args):
 
 
 def start(name):
+    record_runtime_launch(RESULT, evidence, ENV, RBT, name)
     log_path = STAGE / (name + '.log')
     log = log_path.open('w')
     process = subprocess.Popen([str(RBT), 'dev', 'run', '--rust-allow-insecure-database', '--port=13991'], cwd=APP, env=ENV, stdout=log, stderr=subprocess.STDOUT)
