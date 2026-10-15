@@ -97,6 +97,54 @@ exit zero preceded fresh container terminal inspection, and the original lock
 was free. Hot reload, new-consumer compilation and restart durability remain
 separate. This is not latest-upstream/full-native/overall SDK qualification.
 
+## Native closed-host Pending reader and provisional validation checkpoint (2026-10-16)
+
+The [actual aggregate](tests/evidence/provisional-native-host-library-20261016.json)
+now passes **741 SDK library tests, 0 failed, 7 ignored**, **9 original Bank/Account
+consumer tests**, strict SDK/original consumer/pinned Legacy Clippy, Legacy binary
+build and the expanded native fixture compile. The five new pure provisional
+snapshot tests exercise original task validators, cross-page/visible committed
+Pending identity collisions, aggregate owned-count limits, canonical error
+precedence and checkpoint refusal without queue insertion or activation.
+
+These checks do not establish completed-task identity absence or typed checkpoint
+provenance. Recovery's opaque provisional mutation records lack the alias/method/
+request/declaration and predecessor evidence needed for typed replay. **All
+provisional checkpoint/idempotent mutations still reject, and the coordinated
+phase's blanket provisional task/mutation refusal is unchanged.** Owned-count
+limits are not a claim of globally bounded transport bytes.
+
+The [fresh canonical native run](tests/evidence/provisional-native-host-controls-20261016.json)
+passes **17 exact controls**: the unchanged 15 constructor/default-root controls
+plus [two real closed-host reader cases](tests/fixtures/registered_constructor_child_native/src/coordinated_recovery.rs).
+Both new cases use a pristine parent-owned canonical Database, actual original
+Account bytes and a Pending task, real sidecars/resolver/participant binding,
+actual `ApplicationHost` and generated Tasks HTTP/2 client/service. A later
+recovery causally withholds readiness and execution. Release permits one trusted
+handwritten Balance reader, one successful observed native CompleteTask, the typed
+result and exact canonical Completed Task.Load/payload; Account state stays
+unchanged. A distinct participant sharing the same gate rejects with the expected
+allocation error, leaves the task Pending and actor unchanged, and performs no
+CompleteTask. Holding the healthy phase across shutdown does not retain dispatch
+claims: a second real host reaches the separate consumed-receiver rejection.
+
+Actual application-Python protobuf serialization produced the two fresh per-case
+ServerInfo inputs. Independent review checked the new 17-case frozen inventory,
+unchanged older validators/cleanup, completion markers after assertions and proxy
+join, current compiled-fixture/aggregate/source correlation and all input pins.
+Independent runtime readback verified **34 joined SDK/Database children**, clean
+custody, SDK-before-Database retirement, exact attach/container exit zero, free
+original owner lock and all **313 SDK input hashes** before ledger bookkeeping.
+The failed earlier external-fixture privacy compilation remains failed history;
+repairs use public clients and real host cancellation, not widened private APIs.
+
+This is **EMPTY transaction-graph native reader completion**, with a pre-existing
+actor and handwritten binding, not generated-handler coverage, constructor CAS,
+crash/restart durability, transaction replay, taskful Bank SignUp/WelcomeEmail or
+shared Transfer. The native Database remains the qualified cached build, not
+latest upstream. Dynamic owner/catalog/placement integration, authoritative
+checkpoint replay and overall SDK parity remain open; guards stay closed.
+
 ## Concrete original-owner closed local recovery checkpoint (2026-10-16)
 
 The new [closed local phase](src/coordinated_local_recovery.rs) implements actual
@@ -5303,7 +5351,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 9502463e840562796464b4f7af63b6dd4db83ae11f81d42f922e362b53c0d3bb -->
+<!-- parity-source-sha256: c80042a56b9fb16f3bd13ebc6a5fbab22628e7356ae6475dad455011d87ebd56 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

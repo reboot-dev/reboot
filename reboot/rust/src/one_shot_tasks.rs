@@ -2543,29 +2543,7 @@ impl PreparedSharedTaskStartup {
         }
         let committed = scan.finish(Ok(()))?;
         committed.validate_delivery_budgets()?;
-        for page in pages {
-            for tx in &page.participant_transactions {
-                let key = (tx.state_type.clone(), tx.state_ref.clone());
-                let Some(owner) = self.scope.tasks.get(&key) else {
-                    continue;
-                };
-                // No checkpoint effect validator exists in this baseline. Refuse
-                // rather than dropping or treating unknown effects as committed.
-                if !tx.uncommitted_idempotent_mutations.is_empty() {
-                    return Err(Status::failed_precondition(
-                        "shared graph checkpoint validation unavailable",
-                    ));
-                }
-                owner.validate(&tx.uncommitted_tasks)?;
-                if tx.uncommitted_tasks.iter().any(|task| {
-                    owner.declaration(task).is_none() || owner.cursor_declaration(task).is_some()
-                }) {
-                    return Err(Status::failed_precondition(
-                        "provisional task lacks generated declaration",
-                    ));
-                }
-            }
-        }
+        self.validate_provisional_snapshot(pages, &committed)?;
         if committed.pending.iter().any(|task| {
             let id = task.task_id.as_ref().expect("validated ID");
             let owner = &self.scope.tasks[&(id.state_type.clone(), id.state_ref.clone())];
@@ -2576,6 +2554,62 @@ impl PreparedSharedTaskStartup {
             ));
         }
         Ok(committed)
+    }
+
+    /// Pure, bounded SAME-EOF validation; never queues provisional tasks.
+    fn validate_provisional_snapshot(
+        &self,
+        pages: &[db::RecoverResponse],
+        committed: &CommittedTaskPartitions,
+    ) -> Result<(), Status> {
+        let mut task_count = committed.pending.len();
+        let mut mutation_count = 0usize;
+        let mut transaction_count = 0usize;
+        let mut identities = HashSet::new();
+        for task in &committed.pending {
+            let id = task.task_id.as_ref().expect("canonical task validated first");
+            identities.insert((id.state_type.clone(), id.state_ref.clone(), id.task_uuid.clone()));
+        }
+        // Reuse original admission and generated binding validators, not relaxed
+        // recovery validation. Validate all tasks before interpreting checkpoints.
+        for tx in pages.iter().flat_map(|page| &page.participant_transactions) {
+            let key = (tx.state_type.clone(), tx.state_ref.clone());
+            let Some(owner) = self.scope.tasks.get(&key) else { continue; };
+            transaction_count = transaction_count.saturating_add(1);
+            task_count = task_count.saturating_add(tx.uncommitted_tasks.len());
+            mutation_count = mutation_count.saturating_add(tx.uncommitted_idempotent_mutations.len());
+            if transaction_count > MAX_TASKS || task_count > MAX_TASKS || mutation_count > MAX_TASKS {
+                return Err(Status::resource_exhausted("shared provisional snapshot exceeds 1024"));
+            }
+            owner.validate(&tx.uncommitted_tasks)?;
+            for task in &tx.uncommitted_tasks {
+                if owner.declaration(task).is_none() || owner.cursor_declaration(task).is_some() {
+                    return Err(Status::failed_precondition("provisional task lacks generated declaration"));
+                }
+                let id = task.task_id.as_ref().expect("original task validator checked ID");
+                if !identities.insert((id.state_type.clone(), id.state_ref.clone(), id.task_uuid.clone())) {
+                    return Err(Status::failed_precondition("ambiguous committed/provisional task identity"));
+                }
+            }
+        }
+        for tx in pages.iter().flat_map(|page| &page.participant_transactions) {
+            if !self.scope.tasks.contains_key(&(tx.state_type.clone(), tx.state_ref.clone())) {
+                continue;
+            }
+            if !tx.uncommitted_idempotent_mutations.is_empty() {
+                // HOLD: database.proto exposes opaque response/fingerprint,
+                // workflow UUID/iteration and scheduled task IDs, not the named
+                // alias/method/request/declaration or phase predecessor needed by
+                // the actual workflow_store typed replay validators. Pending
+                // tasks are not an index of completed workflow identities.
+                // Decoding a known Any cannot prove that missing provenance.
+                // Arbitrary non-workflow mutations must also remain closed.
+                return Err(Status::failed_precondition(
+                    "HOLD: provisional checkpoint lacks same-EOF typed replay provenance",
+                ));
+            }
+        }
+        Ok(())
     }
 
     pub(crate) fn activate(
@@ -4667,3 +4701,7 @@ mod live_task_wait_revocation_tests;
 #[cfg(test)]
 #[path = "prepared_shared_task_startup_tests.rs"]
 mod prepared_shared_task_startup_tests;
+
+#[cfg(test)]
+#[path = "provisional_snapshot652_tests.rs"]
+mod provisional_snapshot652_tests;

@@ -17,6 +17,8 @@ use uuid::Uuid;
 mod proxy;
 mod tcp_cut;
 mod empty_root;
+#[path = "coordinated_recovery.rs"]
+mod coordinated_recovery;
 const ACCOUNT: &str = "bank.v1.Account";
 const BANK: &str = "bank.v1.Bank";
 const OPEN: &str = "bank.v1.AccountMethods.Open";
