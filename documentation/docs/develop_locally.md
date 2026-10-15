@@ -208,7 +208,7 @@ When your application has a React frontend — a
 # Generate typed React hooks, shared by every frontend.
 generate --react=frontend/api
 
-# Proxy the MCP UIs through Vite for hot module replacement, and serve
+# Proxy the MCP Apps through Vite for hot module replacement, and serve
 # the web app it serves at `/`.
 dev run --mcp-app-path-prefix=frontend
 
@@ -222,11 +222,11 @@ dev run --default-config=ports
 | Flag | Description |
 | --- | --- |
 | `dev run --mcp-app-path-prefix=<dir>` | The prefix of each `UI(path=...)` that names the frontend directory (e.g. `frontend`). Set once on the base `dev run` line so the `:ports` and `:dist` configs inherit it. |
-| `dev run --mcp-app-url=<url>` | HMR: the Vite dev server URL (e.g. `http://localhost:5173`) that serves the MCP UIs; Envoy proxies `/__/frontend/**` to it. |
-| `dev run --mcp-app-dist-path=<dir>` | Dist: serve the built MCP UIs from `<dir>` (e.g. `frontend/dist`) on disk; mutually exclusive with `--mcp-app-url`. |
+| `dev run --mcp-app-url=<url>` | HMR: the Vite dev server URL (e.g. `http://localhost:5173`) that serves the MCP Apps; Envoy proxies `/__/frontend/**` to it. |
+| `dev run --mcp-app-dist-path=<dir>` | Dist: serve the built MCP Apps from `<dir>` (e.g. `frontend/dist`) on disk; mutually exclusive with `--mcp-app-url`. |
 | `dev run --web-app-dist-path=<dir>` | Serve the built web app from `<dir>` (e.g. `frontend/dist/web`) at `/`, with its `index.html` answering any path the app has no route or file for. Without it or `--web-app-url`, `/` is Reboot's page. Python applications only: with `--nodejs` it is an error. |
 | `dev run --web-app-url=<url>` | Serve the web app at `/` from its Vite dev server (e.g. `http://localhost:5173`), proxying to it, with Hot Module Replacement: the app has the same URL as the API, as it does in production. Mutually exclusive with `--web-app-dist-path`. Python applications only: with `--nodejs` it is an error. |
-| `dev run --portless` | Serve under a named URL via [portless](https://github.com/vercel-labs/portless): the backend becomes `https://<app>.localhost`, on a free port unless `--port` is given, serving the web app at `/` and the MCP UIs from the frontend dev server, which runs under portless as `https://vite.<app>.localhost` (its `npm run dev:portless`) and is trusted as a browser origin too. See [Named local URLs](#named-local-urls-with---portless). |
+| `dev run --portless` | Serve under a named URL via [portless](https://github.com/vercel-labs/portless): the backend becomes `https://<app>.localhost`, on a free port unless `--port` is given, serving the web app at `/` and the MCP Apps from the frontend dev server, which runs under portless as `https://vite.<app>.localhost` (its `npm run dev:portless`) and is trusted as a browser origin too. See [Named local URLs](#named-local-urls-with---portless). |
 | `dev run --tunnel-url=<url>` | The public URL this application is reachable at through a tunnel (e.g. `https://<name>.trycloudflare.com`). The setup wizard shows and verifies it; without it, the wizard asks ngrok and cloudflared, through their local APIs on their default ports, for a tunnel of their own. |
 | `dev run --default-config=<name>` | Sets the default configuration profile when `--config` is not specified. |
 | `dev run:ports` / `dev run:dist` | Named configurations. Flags prefixed with `dev run:<name>` only apply when `--config=<name>` is used. |
@@ -307,7 +307,7 @@ The frontend's `package.json` carries that as scripts mirroring the
 $ cd frontend && npm run dev
 ```
 
-The backend serves the web app at `/` and the MCP UIs from that dev
+The backend serves the web app at `/` and the MCP Apps from that dev
 server, so the whole app is at `https://<app>.localhost`, one origin,
 and no `VITE_REBOOT_URL` is needed. It also trusts exactly the dev
 server's origin for credentialed requests (a frontend registered

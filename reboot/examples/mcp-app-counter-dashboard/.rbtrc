@@ -1,0 +1,52 @@
+# Find API definitions in 'api/'.
+generate api/
+
+# Generate Python code.
+generate --python=backend/api/
+
+# Generate React hooks.
+generate --react=frontend/api
+
+# Watch for source changes.
+dev run --watch=backend/**/*.py
+dev run --watch=frontend/dist/**/*.html
+
+# Python application.
+dev run --python
+
+# Save state between restarts.
+dev run --application-name=mcp-app-counter-dashboard
+
+# Entrypoint.
+dev run --application=backend/src/main.py
+
+# Default to named URLs via portless (https://github.com/vercel-labs/portless)
+# when no --config is specified: the app is https://mcp-app-counter-dashboard.localhost, serving
+# the MCP Apps from Vite, which runs as `cd frontend && npm run dev`
+# (`portless vite.mcp-app-counter-dashboard vite`) at https://vite.mcp-app-counter-dashboard.localhost. Needs the
+# `portless` CLI and its proxy (`portless proxy start`).
+dev run --default-config=portless
+
+# Hot Module Replacement (HMR): the MCP Apps are proxied from the Vite dev
+# server through Envoy, in either config.
+dev run --mcp-app-path-prefix=frontend
+
+dev run:portless --portless
+dev run:portless --mcp-app-url=https://vite.mcp-app-counter-dashboard.localhost
+
+# The developer dashboard (`rbt dashboard`) too: it is
+# https://dashboard.mcp-app-counter-dashboard.localhost, where `rbt dev run --open-dashboard`
+# finds it. `rbt dashboard --no-portless` for a plain port.
+dashboard --portless
+
+# Plain ports instead: `rbt dev run --config=ports`, with Vite run as
+# `cd frontend && npm run dev:ports`.
+dev run:ports --mcp-app-url=http://localhost:5173
+
+# Dist mode: serve pre-built artifacts from "frontend/dist/" (no Vite HMR).
+# Usage: `uv run rbt dev run --config=dist`
+# Requires: `cd frontend && npm run build`
+dev run:dist --mcp-app-dist-path=frontend/dist
+
+# When expunging, expunge that state we've saved.
+dev expunge --application-name=mcp-app-counter-dashboard

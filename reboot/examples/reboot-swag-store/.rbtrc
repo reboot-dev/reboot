@@ -33,7 +33,7 @@ dev run --application=backend/src/main.py
 # `portless` CLI and its proxy (`portless proxy start`).
 dev run --default-config=portless
 
-# Hot Module Replacement (HMR): the MCP UIs are proxied from the Vite dev
+# Hot Module Replacement (HMR): the MCP Apps are proxied from the Vite dev
 # server through Envoy, in either config.
 dev run --mcp-app-path-prefix=frontend
 

@@ -154,7 +154,7 @@ case "$tool" in
         # `reboot:` selector; `deploy` and `inspect` are intentionally
         # excluded because they reach outside the local project.
         case "$(field skill)" in
-            reboot:app | reboot:feature | reboot:mcp-ui | reboot:web-app | \
+            reboot:app | reboot:feature | reboot:mcp-app | reboot:web-app | \
             reboot:python | reboot:run | reboot:upgrade)
                 emit_allow
                 ;;
@@ -377,7 +377,7 @@ case "$tool" in
                         approved=$((approved + 1))
                         ;;
                     'npx @mcpjam/inspector'* | 'mcpjam-inspector'*)
-                        # `run` skill — MCPJam inspector for MCP UIs,
+                        # `run` skill — MCPJam inspector for MCP Apps,
                         # whether invoked directly or via the plugin's
                         # `mcpjam-inspector` shim (the on-demand path
                         # when the user asks us to launch it). Its

@@ -397,6 +397,6 @@ cleared state as gone.
   collection items.
 - `stdlib-ordered-map.md` — concrete API for Shape C, library
   registration, pagination details.
-- `mcp-ui/references/api-state-shapes.md` (`mcp-ui` skill) — the
-  MCP-UI-specific corollary: `list[Item]` is for sub-records,
+- `mcp-app/references/api-state-shapes.md` (`mcp-app` skill) — the
+  MCP App-specific corollary: `list[Item]` is for sub-records,
   not for application-type instances.

@@ -58,7 +58,7 @@ Four blocks: install deps from the lockfile, copy schemas + config and
 run `rbt generate`, copy backend source, then run `rbt serve run` —
 which reads everything else it needs from `.rbtrc`.
 
-## Adding the Frontend (MCP UIs and the Web App)
+## Adding the Frontend (MCP Apps and the Web App)
 
 The backend serves the app's built frontend from the image: the MCP
 UIs under `/__/frontend/` and the web app at `/`. For any app with a
@@ -72,7 +72,7 @@ COPY frontend/ frontend/
 # Standard rbt codegen — generates `backend/api/` AND `frontend/api/`.
 RUN rbt generate
 
-# Build the frontend into `frontend/dist/`: the MCP UIs under
+# Build the frontend into `frontend/dist/`: the MCP Apps under
 # `frontend/dist/mcp/` and the web app under `frontend/dist/web/`. The
 # Reboot app serves them itself, so they are in the image.
 RUN cd frontend && npm ci && npm run build
@@ -114,7 +114,7 @@ production lines that need to be in `.rbtrc` for a Cloud deploy:
 # Tell `rbt serve` this is a Python application.
 serve run --python
 
-# If the app has MCP UIs (built to `frontend/dist/mcp/`), serve them
+# If the app has MCP Apps (built to `frontend/dist/mcp/`), serve them
 # at `/__/frontend/` from the built-in HTTP server.
 serve run --mcp-app-dist-path=frontend/dist --mcp-app-path-prefix=frontend
 

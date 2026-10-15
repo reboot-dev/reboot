@@ -1,7 +1,7 @@
 ## `vite.config.ts` is the stock Vite file plus `reboot()`
 
-Every frontend with MCP UIs carried a copy of the same 250-line
-`vite.config.ts` pasted from the `mcp-ui` skill. What it did now
+Every frontend with MCP Apps carried a copy of the same 250-line
+`vite.config.ts` pasted from the `mcp-app` skill. What it did now
 ships with `@reboot-dev/reboot-react` as a Vite plugin, `reboot()`
 from `@reboot-dev/reboot-react/vite`, so fixes to how UIs are served
 and built arrive with the package instead of needing every project's

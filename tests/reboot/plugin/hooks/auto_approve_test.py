@@ -157,10 +157,10 @@ CASES: list[tuple[str, str, dict, Decision]] = [
         Decision.APPROVE,
     ),
     (
-        "Skill: reboot:mcp-ui is approved",
+        "Skill: reboot:mcp-app is approved",
         "Skill",
         {
-            "skill": "reboot:mcp-ui"
+            "skill": "reboot:mcp-app"
         },
         Decision.APPROVE,
     ),
@@ -274,7 +274,7 @@ CASES: list[tuple[str, str, dict, Decision]] = [
         "Grep",
         {
             "pattern": "foo",
-            "path": f"{PLUGIN_ROOT}/skills/mcp-ui/references",
+            "path": f"{PLUGIN_ROOT}/skills/mcp-app/references",
         },
         Decision.APPROVE,
     ),
@@ -292,7 +292,7 @@ CASES: list[tuple[str, str, dict, Decision]] = [
         "Bash: ls -la with flags",
         "Bash",
         {
-            "command": f"ls -la {PLUGIN_ROOT}/skills/mcp-ui/references/"
+            "command": f"ls -la {PLUGIN_ROOT}/skills/mcp-app/references/"
         },
         Decision.APPROVE,
     ),
@@ -323,7 +323,7 @@ CASES: list[tuple[str, str, dict, Decision]] = [
         {
             "command":
                 f"ls {PLUGIN_ROOT}/skills/python/ && "
-                f"ls {PLUGIN_ROOT}/skills/mcp-ui/"
+                f"ls {PLUGIN_ROOT}/skills/mcp-app/"
         },
         Decision.APPROVE,
     ),
@@ -333,7 +333,7 @@ CASES: list[tuple[str, str, dict, Decision]] = [
         {
             "command":
                 f"ls {PLUGIN_ROOT}/skills/python/ ; "
-                f"ls {PLUGIN_ROOT}/skills/mcp-ui/"
+                f"ls {PLUGIN_ROOT}/skills/mcp-app/"
         },
         Decision.APPROVE,
     ),

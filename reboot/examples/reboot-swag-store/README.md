@@ -17,7 +17,7 @@ For the impatient:
 
 ## Overview
 
-The Reboot Store is an MCP UI that lets users browse
+The Reboot Store is an MCP App that lets users browse
 products, manage a shopping cart, and check out — all from inside an MCP
 client. It exposes three interactive UIs:
 

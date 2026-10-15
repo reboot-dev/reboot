@@ -25,7 +25,7 @@ generate --react=frontend/api
 ```
 
 Generating into `frontend/api/` — a sibling of the app itself — means
-every frontend of your application (web, mobile, MCP UIs) shares one
+every frontend of your application (web, mobile, MCP Apps) shares one
 client. Keep your bundler's root at `frontend/` so that directory is
 inside it; if your app root is `frontend/web/` instead, Vite needs
 `server.fs.allow: [".."]` to read a sibling.
@@ -192,7 +192,7 @@ a dev dependency), and `dev:ports` is plain `vite`; see
 [Named local URLs](/develop_locally#named-local-urls-with---portless).
 
 If the application also has `UI` methods, Reboot must serve those
-MCP UIs from its own origin; point it at your frontend directory in
+MCP Apps from its own origin; point it at your frontend directory in
 `.rbtrc`:
 
 ```
@@ -213,7 +213,7 @@ dashboard --portless
 dev run:ports --mcp-app-url=http://localhost:5173
 dev run:ports --web-app-url=http://localhost:5173
 
-# Dist: serve the built MCP UIs instead. `rbt dev run --config=dist`.
+# Dist: serve the built MCP Apps instead. `rbt dev run --config=dist`.
 dev run:dist --mcp-app-dist-path=frontend/dist
 ```
 

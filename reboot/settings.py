@@ -137,7 +137,7 @@ ENVVAR_RBT_STATE_DIRECTORY = 'RBT_STATE_DIRECTORY'
 ENVVAR_RBT_NODEJS = 'RBT_NODEJS'
 ENVVAR_RBT_SERVERS = 'RBT_SERVERS'
 
-# URL of the dev server (e.g., Vite) that serves the MCP UIs, for
+# URL of the dev server (e.g., Vite) that serves the MCP Apps, for
 # HMR. Format: "http://host:port" (e.g., "http://localhost:5173").
 # When set, Envoy routes "/__/frontend/**" to this server.
 ENVVAR_RBT_MCP_APP_URL = 'RBT_MCP_APP_URL'
@@ -145,7 +145,7 @@ ENVVAR_RBT_MCP_APP_URL = 'RBT_MCP_APP_URL'
 # directory, e.g. "frontend"; stripped to find the UI under
 # "/__/frontend/" and under the dist directory.
 ENVVAR_RBT_MCP_APP_PATH_PREFIX = 'RBT_MCP_APP_PATH_PREFIX'
-# Project-relative directory holding the built MCP UIs, e.g.
+# Project-relative directory holding the built MCP Apps, e.g.
 # "frontend/dist", served under "/__/frontend/".
 ENVVAR_RBT_MCP_APP_DIST_PATH = 'RBT_MCP_APP_DIST_PATH'
 # Project-relative directory holding the built web app, e.g.

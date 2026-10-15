@@ -37,7 +37,7 @@ def vite_name(name: str) -> str:
     the application, not for people: `rbt dev run --portless`
     registers the application itself as `<name>`, and
     `https://<name>.localhost` serves the API, the web app and the
-    MCP UIs, the latter two proxied from the dev server."""
+    MCP Apps, the latter two proxied from the dev server."""
     return f'vite.{name}'
 
 

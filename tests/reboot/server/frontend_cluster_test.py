@@ -1,4 +1,4 @@
-"""How Envoy reaches the MCP UIs' dev server (`--mcp-app-url`): on a
+"""How Envoy reaches the MCP Apps' dev server (`--mcp-app-url`): on a
 plain `http://localhost:<port>` as before, and over TLS by name for a
 dev server behind the portless proxy, `https://<name>.localhost`."""
 import os

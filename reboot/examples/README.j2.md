@@ -12,7 +12,7 @@ For the impatient:
 The [Reboot '.proto' definitions](https://docs.reboot.dev/learn_more/define/overview#code-generation)
 can be found in the `api/` directory, grouped into
 subdirectories by proto package, while backend specific code can be
-found in {{ backend_locations }}{% if has_frontend %} and front end specific code in `frontend/web/`{% endif %}{% if has_mcp %} and MCP UIs in `frontend/mcp/`{% endif %}{% if has_mobile %} and a React Native (Expo) mobile front end in `frontend/mobile/`{% endif %}
+found in {{ backend_locations }}{% if has_frontend %} and front end specific code in `frontend/web/`{% endif %}{% if has_mcp %} and MCP Apps in `frontend/mcp/`{% endif %}{% if has_mobile %} and a React Native (Expo) mobile front end in `frontend/mobile/`{% endif %}
 {% if has_non_react_frontend %} and non-React front end in `frontend/reboot-non-react-web/`{% endif %}.
 
 _For more information on all of the Reboot examples, please [see the docs](https://docs.reboot.dev/full_stack_apps/examples)._
@@ -124,7 +124,7 @@ npm run dev
 ```
 
 That starts a single Vite dev server that serves both the web app and
-the MCP UIs, as `https://vite.{{ application_name }}.localhost`, which the backend
+the MCP Apps, as `https://vite.{{ application_name }}.localhost`, which the backend
 serves them from (the name matches the backend's `{{ application_name }}.localhost`,
 which is how the two trust each other): `npm run dev` is
 `portless vite.{{ application_name }} vite`, portless being a dev dependency,

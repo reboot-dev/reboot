@@ -239,7 +239,7 @@ A state type takes one too, via `Type(description=...)`; see
 
 All four factories require an explicit `mcp=` keyword. Use
 `mcp=None` when the method should not be exposed as an MCP tool;
-use `mcp=Tool(...)` in MCP-Apps projects. See `api-pydantic.md` for
+use `mcp=Tool(...)` in MCP Apps projects. See `api-pydantic.md` for
 the full rule.
 
 ## See Also

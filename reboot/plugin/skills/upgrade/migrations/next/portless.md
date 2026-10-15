@@ -4,7 +4,7 @@ A Reboot application now runs under
 [portless](https://github.com/vercel-labs/portless) by default:
 `rbt dev run` serves the app as `https://<app>.localhost`, the Vite
 dev server runs at `https://vite.<app>.localhost`, which the app
-serves the web app and the MCP UIs from, and `rbt dashboard` serves
+serves the web app and the MCP Apps from, and `rbt dashboard` serves
 as `https://dashboard.<app>.localhost`, each on a free port the proxy
 routes to, so several applications run at once. The web app is on the
 backend's own origin, so no `VITE_REBOOT_URL` is needed in
@@ -25,7 +25,7 @@ case make the changes below anyway and leave them running with
 `--config=ports` and `rbt dashboard --no-portless`).
 
 1. **`.rbtrc`:** rename the `hmr` config to `ports`, the opposite of
-   `portless`, which is what it is now that both serve the MCP UIs
+   `portless`, which is what it is now that both serve the MCP Apps
    from the Vite dev server: every `dev run:hmr` line becomes
    `dev run:ports`, and `--default-config=hmr` becomes
    `--default-config=ports`. Then make portless the default config and

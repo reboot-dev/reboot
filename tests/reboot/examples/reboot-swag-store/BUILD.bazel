@@ -68,7 +68,7 @@ frontend_env = {
     "REBOOT_WHL_FILE": "$(location //reboot:reboot.dev)",
 }
 
-# Type-checks the frontend (the `store` MCP UI) against the locally
+# Type-checks the frontend (the `store` MCP App) against the locally
 # built Reboot client. See `frontend/.tests/type_check.sh`.
 sh_test_in_working_directory(
     name = "frontend_type_check_test",

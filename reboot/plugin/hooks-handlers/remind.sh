@@ -120,7 +120,7 @@ awk 'NR > 1 { printf "\\n" } { printf "%s", $0 }' <<'EOF'
 - Do not guess Reboot platform behavior (idempotency, scheduling,
 authorizers, state construction, contexts, generated APIs). Before
 coding around any Reboot behavior, read the relevant reference in the
-Reboot plugin's skills (`python`, `feature`, `mcp-ui`, `web-app`,
+Reboot plugin's skills (`python`, `feature`, `mcp-app`, `web-app`,
 `run`, `upgrade`) and state what it says.
 - An application's behavior is specified and tested as `.feature`
 files (the `feature` skill): agree on a feature in English before

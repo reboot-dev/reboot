@@ -1,5 +1,5 @@
 // frontend/web/src/main.tsx
-import { useUser } from "@api/mcp_ui_counter/v1/counter_rbt_react";
+import { useUser } from "@api/mcp_app_counter/v1/counter_rbt_react";
 import {
   RebootClientProvider,
   useSignIn,

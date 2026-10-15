@@ -225,7 +225,7 @@ def _register_dev_run(parser: ArgumentParser):
         type=str,
         help=(
             'URL of the dev server (e.g., Vite at '
-            'http://localhost:5173) that serves the MCP UIs. '
+            'http://localhost:5173) that serves the MCP Apps. '
             'Envoy proxies `/__/frontend/**` to it, which is '
             'how an MCP host loads each UI from this '
             'application with Hot Module Replacement. Requires '
@@ -1693,7 +1693,7 @@ async def __dev_run(
             dot_rbt_dev_directory(args, parser) / args.application_name
         )
 
-    # The MCP UIs are served one of two mutually-exclusive ways: a live
+    # The MCP Apps are served one of two mutually-exclusive ways: a live
     # dev server (`--mcp-app-url`, for HMR) or built assets on disk
     # (`--mcp-app-dist-path`). `--mcp-app-path-prefix` names the
     # frontend directory and is required alongside whichever of the
@@ -1722,7 +1722,7 @@ async def __dev_run(
             "`--mcp-app-url` or `--mcp-app-dist-path`."
         )
 
-    # The web app is its own thing, independent of how the MCP UIs
+    # The web app is its own thing, independent of how the MCP Apps
     # are served: Reboot serves it at `/` either way, built from a
     # directory or live from its dev server.
     if args.web_app_dist_path and args.web_app_url:
@@ -1748,7 +1748,7 @@ async def __dev_run(
             terminal.fail(
                 "`--web-app-url` and `--mcp-app-dist-path` are mutually "
                 "exclusive: `/__/frontend/**` is proxied to the dev "
-                "server, where the built MCP UIs are not."
+                "server, where the built MCP Apps are not."
             )
         env[ENVVAR_RBT_WEB_APP_URL] = args.web_app_url
     if args.tunnel_url:

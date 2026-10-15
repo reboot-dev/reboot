@@ -121,7 +121,7 @@ serve run --application=backend/src/main.py
 serve run --application-name=<app>
 serve run --tls=external
 # The built frontend, which the backend serves from the image: the
-# MCP UIs (an MCP UI app) and the web app at `/` (a web app).
+# MCP Apps (an MCP App app) and the web app at `/` (a web app).
 serve run --mcp-app-dist-path=frontend/dist
 serve run --mcp-app-path-prefix=frontend
 serve run --web-app-dist-path=frontend/dist/web
@@ -149,7 +149,7 @@ the command line:
 # The app is https://<app>.localhost; Vite, run as the frontend's
 # `npm run dev:portless` (`portless vite.<app> vite`), is
 # https://vite.<app>.localhost, which the app serves the web app and
-# the MCP UIs from.
+# the MCP Apps from.
 dev run --default-config=portless
 dev run --mcp-app-path-prefix=frontend
 
@@ -167,7 +167,7 @@ dashboard --portless
 dev run:ports --mcp-app-url=http://localhost:5173
 dev run:ports --web-app-url=http://localhost:5173
 
-# Dist mode (no Vite): the built MCP UIs, and the built web app at `/`.
+# Dist mode (no Vite): the built MCP Apps, and the built web app at `/`.
 dev run:dist --mcp-app-dist-path=frontend/dist
 dev run:dist --web-app-dist-path=frontend/dist/web
 ```

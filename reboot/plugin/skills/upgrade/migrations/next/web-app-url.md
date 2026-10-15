@@ -7,11 +7,11 @@ has the same URL as the API in development as it does in production
 (`--web-app-dist-path`): one origin, no `VITE_REBOOT_URL`, and sign-in
 stays first-party. It is mutually exclusive with `--web-app-dist-path`.
 
-For an app with a `frontend/web/` SPA on the `mcp-ui` skill's
-`vite.config.ts` (one dev server for the MCP UIs and the SPA):
+For an app with a `frontend/web/` SPA on the `mcp-app` skill's
+`vite.config.ts` (one dev server for the MCP Apps and the SPA):
 
 1. Replace the `serveWebAppAtRoot` plugin in `frontend/vite.config.ts`
-   with the current one from the `mcp-ui` skill's
+   with the current one from the `mcp-app` skill's
    `references/react-scaffolding.md`. The old one redirected `/` to
    `/__/frontend/web/`; the new one serves the SPA at `/` (and at any
    path a browser navigates to), which is what the backend proxies.

@@ -204,7 +204,7 @@ def _dashboard_env(
     # Every other application-flavored variable is overwritten below;
     # these five have no dashboard value to overwrite them with, so a
     # developer's shell export would leak through and make the
-    # dashboard a Node.js application, or serve their MCP UIs or
+    # dashboard a Node.js application, or serve their MCP Apps or
     # web app.
     for name in (
         ENVVAR_RBT_NODEJS,

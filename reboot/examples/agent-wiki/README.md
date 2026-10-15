@@ -1,6 +1,6 @@
 # Agent Wiki
 
-An MCP UI built with Reboot that provides a shared
+An MCP App built with Reboot that provides a shared
 knowledge base humans and AIs can both read from and write to.
 Users hand in raw conversation `Transcript`s; a background
 "librarian" agent progressively distills those transcripts into
@@ -115,7 +115,7 @@ uv run rbt dev run
 
 # Terminal 2: start the Vite dev server for Hot Module Replacement,
 # as https://vite.agent-wiki.localhost, which the backend serves the
-# MCP UIs from.
+# MCP Apps from.
 cd frontend && npm run dev
 ```
 

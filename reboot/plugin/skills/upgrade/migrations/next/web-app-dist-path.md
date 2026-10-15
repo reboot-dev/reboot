@@ -26,7 +26,7 @@ For an app with a `frontend/web/` SPA:
    `rbt serve run` without the flag.
 
 3. The built web app is no longer served under `/__/frontend/web/`.
-   Change any link that pointed there, such as an MCP UI's pop-out
+   Change any link that pointed there, such as an MCP App's pop-out
    button (`<web app URL>/__/frontend/web/?...`), to the web app's
    root (`<web app URL>/?...`). A `_redirects` rule mapping
    `/__/frontend/web/*` on a static host is no longer needed.

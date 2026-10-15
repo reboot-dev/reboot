@@ -2,7 +2,7 @@ from reboot.cli.common.rc import SubcommandParser
 
 
 def add_common_frontend_args(subcommand: SubcommandParser) -> None:
-    """Add the MCP UI serving flags shared by `dev run` and
+    """Add the MCP App serving flags shared by `dev run` and
     `serve run`: `--mcp-app-path-prefix` and `--mcp-app-dist-path`.
     """
     subcommand.add_argument(
@@ -28,7 +28,7 @@ def add_common_frontend_args(subcommand: SubcommandParser) -> None:
         type=str,
         help=(
             'project-relative directory holding the built '
-            'MCP UIs (e.g., `frontend/dist`), served from '
+            'MCP Apps (e.g., `frontend/dist`), served from '
             'disk under `/__/frontend/`. Requires '
             '`--mcp-app-path-prefix`.'
         ),
