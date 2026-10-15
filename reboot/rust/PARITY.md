@@ -34,9 +34,14 @@ not overlapping counts to add together.
 
 Limits remain: constructor prerequisites are not public/shared Bank.Transfer;
 ACK-loss and LostPrepare retain uncertainty until process exit, not normal live
-reconciliation. Public Constructor restart/replay passed separately, while the
-current public Tasks strict-Clippy/scenario rerun is still pending. This checkpoint
-is not full parity, production readiness, or current-upstream merge-result proof.
+reconciliation. Public Constructor and Tasks regressions now also pass on the
+updated generated-module lint freeze, through actual `rbt` startup, canonical
+Database persistence/restarts, replay and typed task Wait. Tasks retains strict
+all-target Clippy; only generated Tonic modules allow the intentional large
+`tonic::Status` return contract. Handwritten modules retain strict linting.
+This is not full parity, production readiness, or current-upstream merge-result proof.
+
+Fresh public evidence: [Constructor/Tasks regression receipt](tests/evidence/public-constructor-tasks-20261015.json).
 
 Evidence: [native constructor/preflight receipt](tests/evidence/constructor-preflight-native-20261015.json).
 

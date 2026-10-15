@@ -1,6 +1,10 @@
+// Generated Tonic signatures intentionally retain tonic::Status.
+#[allow(clippy::result_large_err)]
 pub mod proto {
     tonic::include_proto!("hello_constructors.v1");
 }
+// Generated transport APIs intentionally retain tonic::Status; keep handwritten code linted.
+#[allow(clippy::result_large_err)]
 pub mod generated {
     include!(concat!(
         env!("OUT_DIR"),
