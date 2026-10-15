@@ -1,0 +1,260 @@
+---
+title: Pick a Method Factory — `Reader`, `Writer`, `Transaction`, or `Workflow`
+impact: CRITICAL
+impactDescription: The factory drives the context type, isolation, and access semantics
+tags: method, reader, writer, transaction, workflow, factory, constructor
+---
+
+## Pick a Method Factory — `Reader`, `Writer`, `Transaction`, or `Workflow`
+
+> **Critical:** the factory you choose for a method fixes the
+> Servicer method's context type: `Reader(...)` → `ReaderContext`;
+> `Writer(...)` → `WriterContext`; `Transaction(...)` →
+> `TransactionContext`; `Workflow(...)` → `WorkflowContext` (and the
+> implementation must be a `@classmethod`, with no `self.state`).
+> Wrong context type = runtime error.
+
+Every method in a `Methods(...)` block uses one of four factories from
+`reboot.api`. The factory chooses the context type passed to the
+Servicer method and the isolation level applied:
+
+- **`Reader(...)`** — read-only access to `self.state`. Multiple readers
+  may run concurrently. Servicer signature: `context: ReaderContext`.
+- **`Writer(...)`** — mutates `self.state` for one actor. Serialized with
+  other writes/transactions on that actor. Signature: `context: WriterContext`.
+- **`Transaction(...)`** — atomic across multiple actors and external
+  effects. Signature: `context: TransactionContext`. Must say how it
+  holds the lock on its own state with `mode=Exclusive()` (writes its
+  own state, or in doubt) or `mode=Shared()` (mostly reads its own
+  state while writing others); see `api-pydantic.md`.
+- **`Workflow(...)`** — durable, long-running, restartable. Implemented as
+  a `@classmethod` (no `self.state`). Signature: `context: WorkflowContext`.
+  See `servicer-workflow.md` — the single, comprehensive workflow
+  reference — to pick the right primitive for each call (Reboot
+  scopes vs. `at_least_once` vs. `at_most_once`), plus
+  `context.loop`, state mutation via
+  `ref().<scope>.write(context, fn)`, and the rest.
+
+**Incorrect (missing factory):**
+
+```python
+# DON'T — every entry must be a Reader/Writer/Transaction/Workflow.
+AccountMethods = Methods(
+    balance=BalanceResponse,   # WRONG — not a factory call
+)
+```
+
+**Correct (matches the [`reboot-bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic) example):**
+
+```python
+from reboot.api import (
+    API, Exclusive, Field, Methods, Model, Reader, Shared, Transaction, Type,
+    Writer,
+)
+
+AccountMethods = Methods(
+    balance=Reader(
+        request=None, response=BalanceResponse,
+        description="The funds currently available to withdraw.",
+        mcp=None,
+    ),
+    deposit=Writer(
+        request=DepositRequest, response=None,
+        description="Add funds. Any amount is accepted.",
+        mcp=None,
+    ),
+)
+
+BankMethods = Methods(
+    transfer=Transaction(
+        # The bank only coordinates the two accounts and never writes
+        # its own state, so transfers proceed through it concurrently.
+        mode=Shared(),
+        request=TransferRequest, response=TransferResponse,
+        description="Move funds between two accounts, both sides "
+        "landing together or neither.",
+        mcp=None,
+    ),
+)
+```
+
+## The Servicer Signature Each Declaration Obliges
+
+`rbt generate` turns every `Methods(...)` entry into one method
+declaration on `<Type>.Servicer`, and the servicer you write must
+match it. The whole contract is these six lines — there is nothing
+further to learn by opening the generated `*_rbt.py`, which is tens
+of thousands of lines:
+
+```python
+class AnyNameServicer(<Type>.Servicer):    # subclass this alias
+
+    # `@classmethod`, for a `Workflow(...)` method only.
+    async def <entry_name>(                # snake_case, as declared
+        self,                              # `cls` for a `Workflow`
+        context: <Kind>Context,            # per the factory, above
+        request: <Type>.<Entry>Request,   # omitted if `request=None`
+    ) -> <Type>.<Entry>Response:          # `None` if `response=None`
+```
+
+`<Entry>` is the PascalCase form of the entry name: `add_task`
+declared on `Type("TaskList", ...)` gives `TaskList.AddTaskRequest` /
+`TaskList.AddTaskResponse`, while the method you write stays
+snake_case. So
+
+```python
+add_task=Transaction(
+    mode=Exclusive(),
+    request=AddTaskRequest, response=AddTaskResponse,
+    description="Append one task, returning the id it was given.",
+    mcp=None,
+),
+lists=Reader(
+    request=None, response=ListsResponse,
+    description="Every list this user owns.",
+    mcp=None,
+),
+ensure=Transaction(
+    mode=Exclusive(),
+    request=None, response=None,
+    description="Create the user's default list if they have none.",
+    mcp=None,
+),
+```
+
+obliges exactly:
+
+```python
+async def add_task(
+    self,
+    context: TransactionContext,
+    request: TaskList.AddTaskRequest,
+) -> TaskList.AddTaskResponse: ...
+
+async def lists(self, context: ReaderContext) -> User.ListsResponse: ...
+
+async def ensure(self, context: TransactionContext) -> None: ...
+```
+
+**Two shapes in the generated file look like contradictions of this.
+Both are real, and neither is what you write:**
+
+- A **PascalCase twin** of every method (`AddTask` next to
+  `add_task`) that delegates to the snake_case one. It keeps
+  servicers written before the snake_case rename working. Implement
+  the snake_case method.
+- A **`state:` parameter**, in signatures like
+  `(self, context, state, request)`. Those belong to
+  `<Type>.singleton.Servicer`, a variant the framework uses for its
+  own singletons. Applications subclass `<Type>.Servicer` and reach
+  state through `self.state`.
+
+## `factory=True` Marks the Creation Method
+
+A `Writer` or `Transaction` with `factory=True` is the explicit
+creation path for the actor. The Servicer can branch on
+`context.constructor` to set initial state:
+
+```python
+open=Writer(
+    request=OpenRequest,
+    response=None,
+    factory=True,
+    description="Bring the account into existence with a zero balance.",
+    mcp=None,
+),
+```
+
+`Reader` and `Workflow` reject `factory=True` at codegen time — see
+`api-pydantic.md` ("`factory=True` Only Works on `Writer` and
+`Transaction`"). To kick off a workflow on actor creation, make the
+factory a `Writer(factory=True)` / `Transaction(factory=True)` and
+schedule the workflow from its body.
+
+A `Type` without an explicit factory method is created implicitly on
+first write (see `lifecycle-initialize-hook.md`).
+
+## Pick the Right Factory
+
+- Reading `self.state` only? → `Reader`
+- Mutating `self.state` for **one** actor, no calls to other actors? → `Writer`
+- Mutating across multiple actors in a single one-shot transaction? → `Transaction`
+- Long-running, durable, restartable work (control loops, agents,
+  multi-step orchestration), or external calls? → `Workflow`
+
+Wrong-factory symptoms include "context type mismatch" runtime errors and
+deadlocks when a `Writer` tries to call into another actor.
+
+## `errors=[...]` Declares Typed Errors
+
+Error `Model`s declared elsewhere in the API file can be attached to a
+method, making them part of the typed contract:
+
+```python
+class OverdraftError(Model):
+    amount: float = Field(tag=1, default=0.0)
+
+withdraw=Writer(
+    request=WithdrawRequest,
+    response=None,
+    errors=[OverdraftError],
+    description="Take funds out, or raise `OverdraftError` if the "
+    "balance would go negative.",
+    mcp=None,
+),
+```
+
+See `api-errors.md` for raising and catching them.
+
+## `description=` Says What the Method Does
+
+All four method kinds take an optional `description=`:
+
+```python
+balance=Reader(
+    request=None,
+    response=BalanceResponse,
+    description="The funds currently available to withdraw.",
+    mcp=None,
+),
+withdraw=Writer(
+    request=WithdrawRequest,
+    response=None,
+    errors=[OverdraftError],
+    description="Take funds out, or raise `OverdraftError` if the "
+    "balance would go negative.",
+    mcp=Tool(),
+),
+```
+
+The dev dashboard shows it, and `mcp=Tool()` methods use it as the
+tool's description. Write what a caller cannot derive from the
+signature: the precondition, the side effect, the unit, which error it
+raises and when.
+
+A state type takes one too, via `Type(description=...)`; see
+`api-pydantic.md`.
+
+## Every Factory Takes `mcp=`
+
+All four factories require an explicit `mcp=` keyword. Use
+`mcp=None` when the method should not be exposed as an MCP tool;
+use `mcp=Tool(...)` in MCP-Apps projects. See `api-pydantic.md` for
+the full rule.
+
+## See Also
+
+After choosing factories, load the references that make those choices
+work end-to-end:
+
+- **Pydantic field rules**: `api-pydantic.md`. The zero-default rule
+  bites at import time.
+- **Implementation per factory** — read the matching servicer file:
+  - `Reader(...)` → `servicer-reader.md`
+  - `Writer(...)` → `servicer-writer.md`
+  - `Transaction(...)` → `servicer-transaction.md`
+  - `Workflow(...)` → `servicer-workflow.md` (the single,
+    comprehensive workflow reference — durable primitives and all)
+  - `factory=True` → `servicer-constructor.md`
+- **Calling these methods**: `rpc-calls.md` (kwargs convention) and
+  `rpc-refs.md` (`self.ref().state_id`, never `self.state_id`).

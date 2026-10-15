@@ -1,0 +1,4 @@
+interface:
+  display_name: "Reboot Web App"
+  short_description: "Build a standalone Reboot web app with a React frontend"
+  default_prompt: "Use Reboot Web App to build a standalone web app from a description."

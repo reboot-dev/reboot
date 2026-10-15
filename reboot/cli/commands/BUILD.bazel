@@ -116,6 +116,16 @@ py_library(
 )
 
 py_library(
+    name = "skills_py",
+    srcs = ["skills.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//reboot/cli/common:rc_py",
+    ],
+)
+
+py_library(
     name = "serve_py",
     srcs = ["serve.py"],
     srcs_version = "PY3",

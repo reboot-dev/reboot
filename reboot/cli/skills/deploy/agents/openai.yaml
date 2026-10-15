@@ -1,0 +1,4 @@
+interface:
+  display_name: "Deploy Reboot App"
+  short_description: "Deploy a Reboot app — backend on Reboot Cloud, frontend on a custom domain"
+  default_prompt: "Use Deploy Reboot App to put my Reboot app in production on my own domain."
