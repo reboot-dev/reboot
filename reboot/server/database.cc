@@ -485,6 +485,21 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
       const CreateActorRequest* request,
       CreateActorResponse* response) override;
 
+  grpc::Status GetCapabilities(
+      grpc::ServerContext*,
+      const rbt::v1alpha1::DatabaseCapabilitiesRequest*,
+      rbt::v1alpha1::DatabaseCapabilitiesResponse* response) override {
+    // This service unconditionally compiles the atomic CreateActorWithTasks
+    // implementation below. No SDK, environment, or native-2PC flag can enable
+    // this advertisement independently of that implementation. Read-only: no
+    // database access, clock advancement, actor creation or task dispatch.
+    response->set_atomic_constructor_tasks_protocol(
+        "reboot.atomic-constructor-tasks.v1");
+    response->set_atomic_constructor_tasks_version(1);
+    response->set_atomic_constructor_tasks_enabled(true);
+    return grpc::Status::OK;
+  }
+
   grpc::Status CreateActorWithTasks(
       grpc::ServerContext* context,
       const CreateActorRequest* request,

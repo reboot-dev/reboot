@@ -4887,6 +4887,44 @@ class ManyShardDatabaseTest : public DatabaseTest {
   }
 };
 
+TEST_F(TwoShardDatabaseTest, AtomicConstructorCapabilitiesAreReadOnly) {
+  // Seed a real native actor control; Recover does not enumerate all actors.
+  const std::string state_type = "CapabilitiesReadOnlyControl";
+  const std::string state_ref = make_state_ref("capabilities-control");
+  v1alpha1::Actor actor;
+  actor.set_state_type(state_type);
+  actor.set_state_ref(state_ref);
+  actor.set_state("durable-control");
+  store({actor}, {});
+  ASSERT_EQ(load(state_type, state_ref),
+            std::optional<std::string>("durable-control"));
+
+  auto before = recover_all_shards();
+  ASSERT_TRUE(before.has_timestamp());
+  for (int i = 0; i < 70; ++i) {
+    grpc::ClientContext context;
+    context.set_deadline(std::chrono::system_clock::now()
+                         + std::chrono::seconds(10));
+    v1alpha1::DatabaseCapabilitiesRequest request;
+    v1alpha1::DatabaseCapabilitiesResponse response;
+    const auto status = stub->GetCapabilities(&context, request, &response);
+    ASSERT_TRUE(status.ok()) << status.error_message();
+    EXPECT_EQ(response.atomic_constructor_tasks_protocol(),
+              "reboot.atomic-constructor-tasks.v1");
+    EXPECT_EQ(response.atomic_constructor_tasks_version(), 1);
+    EXPECT_TRUE(response.atomic_constructor_tasks_enabled());
+  }
+  auto after = recover_all_shards();
+  ASSERT_TRUE(after.has_timestamp());
+  // Recover samples a fresh monotonic timestamp, not durable state. Preserve
+  // every other field and the real stream Finish/status checks in call_recover.
+  before.clear_timestamp();
+  after.clear_timestamp();
+  EXPECT_TRUE(google::protobuf::util::MessageDifferencer::Equals(before, after));
+  EXPECT_EQ(load(state_type, state_ref),
+            std::optional<std::string>("durable-control"));
+}
+
 TEST_F(ManyShardDatabaseTest, BasicRecoverWithManyShards) {
   // Test that we can start a sidecar with 2^14 shards and do basic recovery.
   // This verifies that the system can handle large shard counts.
@@ -5195,6 +5233,17 @@ TEST_F(ConstructorTasksAdmissionTest, InvalidAdmissionReadsAllOriginalAndForeign
 }
 
 TEST_F(ConstructorTasksAdmissionTest, EmptyStateAndReorderedMultitaskSetsPreserveV4V7MutationKeys) {
+  grpc::ClientContext capabilities_context;
+  deadline(capabilities_context);
+  v1alpha1::DatabaseCapabilitiesResponse capabilities;
+  ASSERT_TRUE(stub->GetCapabilities(
+      &capabilities_context, v1alpha1::DatabaseCapabilitiesRequest(),
+      &capabilities).ok());
+  ASSERT_TRUE(capabilities.atomic_constructor_tasks_enabled());
+  ASSERT_EQ(capabilities.atomic_constructor_tasks_protocol(),
+            "reboot.atomic-constructor-tasks.v1");
+  ASSERT_EQ(capabilities.atomic_constructor_tasks_version(), 1);
+
   for (int variant = 0; variant < 3; ++variant) {
     SCOPED_TRACE(variant);
     auto request = request_for("positive-" + std::to_string(variant));

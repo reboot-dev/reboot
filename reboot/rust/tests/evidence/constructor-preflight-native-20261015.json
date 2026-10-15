@@ -1,0 +1,171 @@
+{
+  "scope": "bounded current-source native constructor and taskful-engine-preflight acceptance; not full parity or public Tasks acceptance",
+  "source_manifest_sha256": "316bde56d0db02272c746fbf9e28f7c7133f66b0b0980144dcc2bbc10f9ae006",
+  "current_database_sha256": "e39cf47afbd72cd8bd27fb2b4e3f3c28feb6ce65ad71c3d8c8f02c764bdbface",
+  "old_database_sha256": "6661ead0e6857639f618da22b1ede64e775663d0af6e45689453abcfd9109463",
+  "worker_sha256": "6b21e091b98a3ec1e9857ae4528ed9de5bcd602e05e194dafc5b55a5b4f32e0a",
+  "phases": [
+    {
+      "name": "old-negative",
+      "test": "native::original_account_open_old_sidecar_preflight_cleanly_shutdown",
+      "sdk_exit": 0,
+      "sdk_joined": true,
+      "log_sha256": "f03024ba7a3881ac812571d47e1a4db105a2ac99e560a55986642d30af69683c",
+      "uncertainty_until_process_exit": false
+    },
+    {
+      "name": "positive-completed",
+      "test": "native_positive::original_account_open_native_ack_pending_completed_public_wait",
+      "sdk_exit": 0,
+      "sdk_joined": true,
+      "log_sha256": "c835cdbcb726c57b4f02ed30106ad3c129f73b241870f2ea496d1bcecd7142af",
+      "uncertainty_until_process_exit": false
+    },
+    {
+      "name": "pending",
+      "test": "native_positive::original_account_open_pending_at_shutdown_for_restart",
+      "sdk_exit": 0,
+      "sdk_joined": true,
+      "log_sha256": "1665779bc9e446dfcae722d650e65cf837e69fa941f89611fc3a8348fbdbdb99",
+      "uncertainty_until_process_exit": false
+    },
+    {
+      "name": "restart-recovered",
+      "test": "native_positive::original_account_saved_token_restart_recovery_public_wait",
+      "sdk_exit": 0,
+      "sdk_joined": true,
+      "log_sha256": "ace9d1fc3b30f9b4a3d65a70ce434e32a41a4b1b0efdba62a528307310d22d5e",
+      "uncertainty_until_process_exit": false
+    },
+    {
+      "name": "ack-loss",
+      "test": "native_positive::native_positive_ack_loss::original_account_native_ack_transport_loss_retains_uncertainty_failed_host_cold_refusal",
+      "sdk_exit": 0,
+      "sdk_joined": true,
+      "log_sha256": "2486964151862aa33ae9b0b028e38204abb38413684ca83dccc447369480946f",
+      "uncertainty_until_process_exit": true
+    },
+    {
+      "name": "constructor-00-Commit",
+      "test": "native::constructor_native_commit_nested_return_retains_lease_then_canonical_visibility",
+      "sdk_exit": 0,
+      "sdk_joined": true,
+      "log_sha256": "2cf2d00793ac3fa27ee628992e9b94d5f036dca90649219d88c41143693ce548",
+      "uncertainty_until_process_exit": false
+    },
+    {
+      "name": "constructor-01-DefaultCommit",
+      "test": "native::constructor_native_default_bytes_prepare_is_writable_and_commits_present_empty",
+      "sdk_exit": 0,
+      "sdk_joined": true,
+      "log_sha256": "374bebe5f0ab7c75c73449245c38761693ea0bed8dbce98be0931bcc41ddce99",
+      "uncertainty_until_process_exit": false
+    },
+    {
+      "name": "constructor-02-Abort",
+      "test": "native::constructor_native_root_abort_after_child_return_leaves_child_invisible",
+      "sdk_exit": 0,
+      "sdk_joined": true,
+      "log_sha256": "799644db8fc5b2dc4e18522e9716d22c5ba5f3b5859a02f59a58ce15c8af2e4e",
+      "uncertainty_until_process_exit": false
+    },
+    {
+      "name": "constructor-03-Existing",
+      "test": "native::constructor_native_existing_actor_rejected_before_child_hook",
+      "sdk_exit": 0,
+      "sdk_joined": true,
+      "log_sha256": "88752241f9b9740c463a700f2a7bb2892e9622ed572ee4eca0df5ff0fdf9b857",
+      "uncertainty_until_process_exit": false
+    },
+    {
+      "name": "constructor-04-Taskful",
+      "test": "native::constructor_native_taskful_effect_refused_without_task_success",
+      "sdk_exit": 0,
+      "sdk_joined": true,
+      "log_sha256": "f552746fbee4020c567d5ea78b9df1146cfd38f72e5d875de1ecc64947499cfc",
+      "uncertainty_until_process_exit": false
+    },
+    {
+      "name": "constructor-05-WrongTicket",
+      "test": "native::constructor_native_incorrect_ticket_request_burns_alias_before_load",
+      "sdk_exit": 0,
+      "sdk_joined": true,
+      "log_sha256": "add9a20a5548a62cf3df1523983aebbd659a96268194477b07bd58f713017cb2",
+      "uncertainty_until_process_exit": false
+    },
+    {
+      "name": "constructor-06-Refused",
+      "test": "native::constructor_native_authorization_refusal_observes_actual_absence_no_hook",
+      "sdk_exit": 0,
+      "sdk_joined": true,
+      "log_sha256": "5836ccfdbbeb9e3099e2199f6ff6495aaca77a1420d946dc5855987b172e7f84",
+      "uncertainty_until_process_exit": false
+    },
+    {
+      "name": "constructor-07-HeldPrepare",
+      "test": "native::constructor_native_held_real_prepare_ack_retains_lease_until_root_outcome",
+      "sdk_exit": 0,
+      "sdk_joined": true,
+      "log_sha256": "7c393a1d491dd77bd30763216589cfffac118faced0ee5967b6e7f2983616a43",
+      "uncertainty_until_process_exit": false
+    },
+    {
+      "name": "constructor-08-NoOptIn",
+      "test": "native::constructor_native_no_optin_and_forged_metadata_refuse_before_load",
+      "sdk_exit": 0,
+      "sdk_joined": true,
+      "log_sha256": "373affe9a6e867ce8cb4c775d641c30d9943ee34fc89b20370b455d871549f1d",
+      "uncertainty_until_process_exit": false
+    },
+    {
+      "name": "constructor-09-ExistingEmpty",
+      "test": "native::constructor_native_existing_present_empty_actor_is_not_missing",
+      "sdk_exit": 0,
+      "sdk_joined": true,
+      "log_sha256": "5c65d8625f1732660f12023b45cb38114c7fa337324b680ba2cffa4525c702be",
+      "uncertainty_until_process_exit": false
+    },
+    {
+      "name": "constructor-10-LostPrepare",
+      "test": "native::constructor_native_actual_prepare_ack_then_tcp_loss_retains_uncertainty_until_process_exit",
+      "sdk_exit": 0,
+      "sdk_joined": true,
+      "log_sha256": "93f03683f17117dc907471c33efbb56a743370dffe0315381f1a5cfa7c6f4da2",
+      "uncertainty_until_process_exit": true
+    }
+  ],
+  "phase_count": 16,
+  "remaining_tests": [],
+  "attach_kernel_wait": {
+    "pid": 1461235,
+    "birth": "90055001",
+    "si_code": 1,
+    "si_status": 0,
+    "exit": 0,
+    "joined": true
+  },
+  "terminal": {
+    "Status": "exited",
+    "Running": false,
+    "Paused": false,
+    "Restarting": false,
+    "OOMKilled": false,
+    "Dead": false,
+    "Pid": 0,
+    "ExitCode": 0,
+    "Error": "",
+    "StartedAt": "2026-10-15T16:07:05.180835486Z",
+    "FinishedAt": "2026-10-15T16:09:43.336587104Z"
+  },
+  "direct_count": 34,
+  "all_direct_joined": true,
+  "cleanup_failure": null,
+  "adopted_count": 0,
+  "receipt_sha256": "730b3e99ab6225bad5250a537cc19a6e165ed847994a207c94cf8f7eb195be76",
+  "limits": [
+    "Constructor tests are opt-in taskless native prerequisites, not original public/shared Bank.Transfer acceptance.",
+    "ACK-loss and LostPrepare retain uncertainty until process exit; not restart reconciliation or normal live cleanup.",
+    "Public Constructor scenario passed separately; public Tasks is awaiting generated-module strict-Clippy verification.",
+    "Not current-upstream merge-result acceptance, macOS/ARM certification, or production readiness."
+  ]
+}

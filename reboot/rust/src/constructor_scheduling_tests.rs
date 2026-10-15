@@ -1,6 +1,8 @@
 //! Unexecuted source candidate: transport model, NOT native RocksDB acceptance.
 #[path = "constructor_lifecycle_tests.rs"]
 mod lifecycle;
+#[path = "constructor_capability_tests.rs"]
+mod capability;
 use super::*;
 use crate::proto::Counter;
 use crate::runtime::{DurableStateDeclaration, StateAdmission, WriterExecution};
@@ -220,7 +222,7 @@ async fn constructor_owner_capacity_collision_and_dispatch_target_exclusion() {
     assert!(f.database.store_requests().is_empty());
 }
 #[tokio::test]
-async fn unknown_distinct_rpc_never_falls_back_and_retains_actual_gate() {
+async fn engine_changed_after_successful_preflight_never_falls_back_and_retains_actual_gate() {
     let f = Fixture::new().await;
     f.database.reject_task_create();
     assert_eq!(

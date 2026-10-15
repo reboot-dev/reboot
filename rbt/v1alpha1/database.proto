@@ -707,7 +707,20 @@ message ExportResponse {
 // `ApplicationDeployment`s to use the same database, we will need to add
 // disambiguation for `ApplicationDeployment`-level information (such as encoded
 // `FileDescriptorSet`s).
+// Read-only negotiation. Empty/default responses do not establish support.
+message DatabaseCapabilitiesRequest {}
+
+message DatabaseCapabilitiesResponse {
+  string atomic_constructor_tasks_protocol = 1;
+  uint32 atomic_constructor_tasks_version = 2;
+  bool atomic_constructor_tasks_enabled = 3;
+}
+
 service Database {
+  // Must describe this Database's compiled implementation, not host/SDK flags.
+  rpc GetCapabilities(DatabaseCapabilitiesRequest)
+      returns (DatabaseCapabilitiesResponse);
+
   // Returns one page of interleaved state machines from the datastore.
   rpc ColocatedRange(ColocatedRangeRequest) returns (ColocatedRangeResponse);
 

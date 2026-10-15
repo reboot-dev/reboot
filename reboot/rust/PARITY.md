@@ -12,6 +12,34 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Engine preflight and native constructor prerequisites (2026-10-15)
+
+Taskful constructors now require the read-only `Database.GetCapabilities` response
+on their actual native channel before reserving an actor lease, sealing admission,
+or consuming a process-global permit. Exact protocol/version/enabled checks reject
+old or incompatible engines cleanly; generation is revalidated after the await.
+Taskless/replay paths are unchanged. Once the actual atomic write starts, uncertain
+outcomes still retain ownership; there is no legacy mutation fallback.
+
+Current-source native acceptance executed **16 isolated behavioral phases**:
+old-engine refusal before mutations/reservation, healthy Account completion,
+pending shutdown and same-state/token restart recovery, real ACK loss, and all
+11 registered-constructor prerequisites (including actual Prepare ACK/TCP loss).
+All exact SDK processes and native authorities joined; the container exited zero,
+with independently verified terminal state and matching closed-log hashes.
+The current C++ capability/admission selection also passed **5 tests** separately.
+SDK capability tests, generated consumers and strict SDK/generated lint passed
+on the implementation freeze before these native runs; these are distinct gates,
+not overlapping counts to add together.
+
+Limits remain: constructor prerequisites are not public/shared Bank.Transfer;
+ACK-loss and LostPrepare retain uncertainty until process exit, not normal live
+reconciliation. Public Constructor restart/replay passed separately, while the
+current public Tasks strict-Clippy/scenario rerun is still pending. This checkpoint
+is not full parity, production readiness, or current-upstream merge-result proof.
+
+Evidence: [native constructor/preflight receipt](tests/evidence/constructor-preflight-native-20261015.json).
+
 ## Atomic standalone constructor tasks (2026-10-13)
 
 Generated standalone `Account.Open` can now atomically persist the initial Account,

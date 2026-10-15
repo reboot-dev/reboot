@@ -1,6 +1,6 @@
 //! SOURCE-ONLY old canonical C++ sidecar fence, not upgraded atomicity/Bank acceptance.
 //! Parent owns the canonical Database child AND this exact isolated test process.
-//! No subprocesses, private owner fabrication, actor seeds, or normal-shutdown claim.
+//! No subprocesses, private owner fabrication or actor seeds; preflight permits normal shutdown.
 use crate::{account_generated as g, bank::v1 as b, semantics};
 use prost::Message;
 use reboot::{
@@ -31,21 +31,6 @@ struct Observations {
     welcomes: AtomicUsize,
 }
 struct OriginalOpen(Arc<Observations>);
-// Test-only wire inspection of workflow_store.rs::WorkflowSchedulingCheckpoint.
-// Match its actual private protobuf tags; do not expose or invoke private SDK APIs.
-// This decodes the attempted payload, not an acknowledged/persisted checkpoint.
-#[derive(prost::Message)]
-struct CapturedSchedulingCheckpoint {
-    #[prost(bytes = "vec", tag = "1")]
-    response: Vec<u8>,
-    #[prost(message, repeated, tag = "2")]
-    tasks: Vec<db::Task>,
-    #[prost(string, tag = "3")]
-    response_type: String,
-    #[prost(uint32, tag = "4")]
-    version: u32,
-}
-
 #[tonic::async_trait]
 impl g::AccountMethodsDatabaseHandler for OriginalOpen {
     async fn open(
@@ -185,18 +170,16 @@ async fn absent(
 
 #[test]
 #[ignore = "parent-owned isolated process and pristine canonical old CXX Database required"]
-fn original_account_open_old_sidecar_unimplemented_retains_until_process_exit() {
-    // This process intentionally retains ONE exact sealed registry slot/lease.
-    // Run ONLY this test in a fresh process; don't call it from an all-tests native run.
+fn original_account_open_old_sidecar_preflight_cleanly_shutdown() {
+    // Isolate the process-global reservation baseline against a pristine old Database.
+    // Preflight rejects before mutating native calls or reserving uncertainty capacity.
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .unwrap();
     runtime.block_on(old_sidecar_negative());
-    drop(runtime); // joins runtime work; does NOT reconcile retained native ownership.
-    println!(
-        "OLD_SDK_RUNTIME_DESTROYED; sealed lease+registry remain until PROCESS EXIT; NOT NORMAL SHUTDOWN"
-    );
+    drop(runtime); // host/proxy shutdown already joined; now destroy the runtime.
+    println!("OLD_SDK_RUNTIME_DESTROYED; preflight rejected before mutation; NORMAL SHUTDOWN");
 }
 async fn old_sidecar_negative() {
     let canonical = std::env::var("REBOOT_OLD_SDK_DATABASE_ENDPOINT")
@@ -244,8 +227,10 @@ async fn old_sidecar_negative() {
         .add_service(b::account_methods_server::AccountMethodsServer::new(
             adapter,
         ));
-    let server =
-        tokio::spawn(host.serve_with_listener_shutdown(listener, std::future::pending::<()>()));
+    let (host_stop, host_stopped) = tokio::sync::oneshot::channel::<()>();
+    let server = tokio::spawn(host.serve_with_listener_shutdown(listener, async {
+        let _ = host_stopped.await;
+    }));
     let mut client = bounded(b::account_methods_client::AccountMethodsClient::connect(
         endpoint,
     ))
@@ -287,8 +272,8 @@ async fn old_sidecar_negative() {
     let error = bounded(client.open(request)).await.unwrap_err();
     assert_eq!(
         error.code(),
-        tonic::Code::Unimplemented,
-        "must preserve actual old CXX UNIMPLEMENTED"
+        tonic::Code::FailedPrecondition,
+        "old Database must fail read-only preflight before reservation"
     );
     let effects = observations.effects.lock().unwrap().clone();
     assert_eq!(effects.len(), 1);
@@ -307,157 +292,46 @@ async fn old_sidecar_negative() {
     assert_eq!(task.method, "WelcomeEmail");
     assert_eq!(task.status, db::task::Status::Pending as i32);
     assert!(task.response_or_error.is_none());
-    let creates = observations.creates.lock().unwrap().clone();
-    assert_eq!(
-        creates.len(),
-        1,
-        "one actual SDK CreateActorWithTasks payload"
-    );
-    assert_eq!(creates[0].task_upserts, vec![task.clone()]);
-    assert!(creates[0].sync);
-    let mutation = creates[0].idempotent_mutation.as_ref().unwrap();
-    assert_eq!(mutation.key, key.as_bytes().to_vec());
-    assert_eq!(mutation.task_ids, vec![id.clone()]);
-    assert!(mutation.request_fingerprint.is_some());
-    assert_eq!(mutation.state_type, TYPE);
-    assert_eq!(mutation.state_ref, reference);
-    assert!(mutation.workflow_id.is_none());
-    assert!(mutation.workflow_iteration.is_none());
-    let checkpoint = CapturedSchedulingCheckpoint::decode(mutation.response.as_slice()).unwrap();
-    assert_eq!(checkpoint.version, 1);
-    assert_eq!(
-        checkpoint.response_type,
-        "type.googleapis.com/bank.v1.OpenResponse"
-    );
-    assert_eq!(checkpoint.tasks, vec![task.clone()]);
-    let checkpoint_response = b::OpenResponse::decode(checkpoint.response.as_slice()).unwrap();
-    assert_eq!(&checkpoint_response, returned_response);
-    assert_eq!(
-        checkpoint_response
-            .welcome_email_task_id
-            .as_ref()
-            .unwrap()
-            .encode_to_vec(),
-        id.encode_to_vec()
-    );
-    let actor = creates[0].actor.as_ref().unwrap();
-    assert_eq!(actor.state_type, TYPE);
-    assert_eq!(actor.state_ref, reference);
-    let state = b::Account::decode(actor.state.as_ref().unwrap().as_slice()).unwrap();
-    assert_eq!(state.customer_name, "Original old SDK customer");
-    assert_eq!(state.balance, 0);
+    assert!(observations.creates.lock().unwrap().is_empty());
     let native_errors = observations.native_errors.lock().unwrap().clone();
     assert_eq!(native_errors.len(), 1);
     assert_eq!(native_errors[0].code(), tonic::Code::Unimplemented);
-    // database_status preserves code/details, but deliberately wraps the native
-    // Status Display in its public message. Do not invent a rich-status codec or
-    // assume the old server supplies nonempty details or a particular message.
-    // tonic 0.12 Status Display includes metadata, which can change at the
-    // transparent proxy transport hop. Assert the contract-supported display
-    // prefix (code/message/details), not fabricated metadata/frame equality.
-    let expected_message_prefix = format!(
-        "Reboot database sidecar request failed: status: {:?}, message: {:?}, details: {:?}, metadata: ",
-        native_errors[0].code(),
-        native_errors[0].message(),
-        native_errors[0].details()
-    );
-    assert!(
-        error.message().starts_with(&expected_message_prefix),
-        "public status did not preserve SDK native diagnostic mapping: {error:?}"
-    );
-    assert_eq!(error.details(), native_errors[0].details());
-    // The host must fail through real supervision, with no supplied shutdown.
-    let joined = bounded(server).await.unwrap();
-    assert!(
-        matches!(&joined, Err(reboot::application_host::ApplicationHostError::RecoveryTask(status)) if status.code() == tonic::Code::Unavailable),
-        "host must fail, not stop normally: {joined:?}"
-    );
-    let retained = tasks.constructor_uncertainty_status();
-    assert!(retained.actor_sealed && retained.actor_retained);
-    assert_eq!(retained.process_reserved, before.process_reserved + 1);
+    assert!(error.message().contains("GetCapabilities"));
+    let status = tasks.constructor_uncertainty_status();
+    assert!(!status.actor_sealed && !status.actor_retained);
+    assert_eq!(status.process_reserved, before.process_reserved);
     let gate = store.actor_gate(TYPE, &reference);
-    assert!(
-        tokio::time::timeout(Duration::from_millis(100), gate.shared())
-            .await
-            .is_err(),
-        "original exclusive lease was released by failed host"
-    );
-    // Real replacement recovery claim fails BEFORE any native scan/load.
-    let (replacement, replacement_tasks) =
-        g::AccountMethodsDatabaseAdapter::new(store.clone(), OriginalOpen(observations.clone()))
-            .with_authorization(reboot::auth::AuthorizationPolicy::permissive_for_development())
-            .with_one_shot_writer_tasks(&reference)
-            .unwrap();
-    let replacement_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let replacement_host = ApplicationHost::new("old-sdk-forbidden-live-reuse")
-        .with_host_recovery(replacement_tasks.recovery(recovery_request()))
-        .add_service(b::account_methods_server::AccountMethodsServer::new(
-            replacement,
-        ));
-    // The original host is already joined. No public client or other proxy
-    // producer runs during this genuine cold/new-host claim attempt.
-    let calls_before_reuse = observations.calls.lock().unwrap().clone();
-    let reuse = bounded(
-        replacement_host
-            .serve_with_listener_shutdown(replacement_listener, std::future::pending::<()>()),
-    )
-    .await;
-    let calls_after_reuse = observations.calls.lock().unwrap().clone();
-    for rpc in ["Recover", "Load"] {
-        assert_eq!(
-            calls_after_reuse
-                .iter()
-                .filter(|call| **call == rpc)
-                .count(),
-            calls_before_reuse
-                .iter()
-                .filter(|call| **call == rpc)
-                .count(),
-            "replacement reached {rpc} before rejecting its registry claim"
-        );
-    }
-    assert_eq!(
-        calls_after_reuse, calls_before_reuse,
-        "replacement must reject its registry claim before ANY proxy RPC"
-    );
-    assert!(reuse.is_err(), "sealed registry must prohibit live reuse");
-    let diagnostic = format!("{reuse:?}");
-    assert!(
-        diagnostic.contains("local actor task dispatcher already owned"),
-        "replacement did not fail at exact registry claim: {diagnostic}"
-    );
+    let lease = bounded(gate.shared()).await;
+    drop(lease);
     absent(&mut canonical_client, &reference, Some(id.clone())).await;
     assert_eq!(observations.welcomes.load(Ordering::SeqCst), 0);
     let calls = observations.calls.lock().unwrap().clone();
-    assert_eq!(
-        calls
-            .iter()
-            .filter(|call| **call == "CreateActorWithTasks")
-            .count(),
-        1
-    );
-    assert!(!calls.contains(&"CreateActor"), "forbidden legacy fallback");
-    assert!(!calls.contains(&"Store"), "forbidden Store fallback");
-    drop(tasks);
-    let still_retained = replacement_tasks.constructor_uncertainty_status();
-    assert!(still_retained.actor_sealed && still_retained.actor_retained);
-    assert!(
-        tokio::time::timeout(Duration::from_millis(100), gate.shared())
-            .await
-            .is_err()
-    );
+    assert!(calls.contains(&"GetCapabilities"));
+    for forbidden in ["CreateActorWithTasks", "CreateActor", "Store"] {
+        assert!(!calls.contains(&forbidden), "preflight reached {forbidden}");
+    }
+    // Incompatibility is safe, not an uncertain write: normal shutdown works.
+    host_stop.send(()).unwrap();
+    bounded(server).await.unwrap().unwrap();
     proxy_stop.send(()).unwrap();
     bounded(proxy_server).await.unwrap().unwrap();
-    println!(
-        "OLD_SDK_NEGATIVE native_code={:?} native_message={:?} task_uuid={} creates_with_tasks=1 legacy_create=0 store=0 actor_absent=true task_absent=true checkpoint_absent=true welcome=0 failed_host=true original_lease_retained=true registry_retained=true live_reuse_rejected=true PROCESS_EXIT_REQUIRED",
-        native_errors[0].code(),
-        native_errors[0].message(),
-        uuid::Uuid::from_slice(&id.task_uuid).unwrap()
-    );
+    println!("OLD_SDK_NEGATIVE preflight=FailedPrecondition native=Unimplemented creates_with_tasks=0 legacy_create=0 store=0 actor_absent=true task_absent=true checkpoint_absent=true welcome=0 reservation_unchanged=true normal_shutdown=true");
 }
 
 #[tonic::async_trait]
 impl db::database_server::Database for ObservedDatabase {
+    async fn get_capabilities(
+        &self,
+        request: tonic::Request<db::DatabaseCapabilitiesRequest>,
+    ) -> Result<tonic::Response<db::DatabaseCapabilitiesResponse>, tonic::Status> {
+        self.observations.calls.lock().unwrap().push("GetCapabilities");
+        let result = self.client.clone().get_capabilities(request).await;
+        if let Err(status) = &result {
+            self.observations.native_errors.lock().unwrap().push(status.clone());
+        }
+        result
+    }
+
     async fn colocated_range(
         &self,
         request: tonic::Request<db::ColocatedRangeRequest>,

@@ -5228,6 +5228,8 @@ pub mod test_support {
     /// Minimal durable fake exposed through the generated Database Tonic server.
     /// It implements only the storage semantics this runtime needs, while every
     /// unused generated RPC remains deliberately well-formed and inert.
+    type CapabilityReply = Arc<Mutex<Option<Result<database::DatabaseCapabilitiesResponse, Status>>>>;
+
     #[derive(Clone, Default)]
     pub struct FakeDatabase {
         state: Arc<Mutex<FakeDatabaseState>>,
@@ -5240,6 +5242,11 @@ pub mod test_support {
         #[cfg(test)]
         create_ack_park: TaskRpcPark,
         reject_task_create: Arc<std::sync::atomic::AtomicBool>,
+        capability_reply: CapabilityReply,
+        create_rpc_calls: Arc<std::sync::atomic::AtomicUsize>,
+        store_rpc_calls: Arc<std::sync::atomic::AtomicUsize>,
+        #[cfg(test)]
+        capability_park: TaskRpcPark,
         #[cfg(test)]
         task_recover_park: TaskRpcPark,
         #[cfg(test)]
@@ -5554,6 +5561,28 @@ pub mod test_support {
             self.reject_task_create
                 .store(true, std::sync::atomic::Ordering::Release);
         }
+        #[cfg(test)]
+        pub(crate) fn set_capabilities(
+            &self,
+            reply: Result<database::DatabaseCapabilitiesResponse, Status>,
+        ) {
+            *self.capability_reply.lock().unwrap() = Some(reply);
+        }
+        #[cfg(test)]
+        pub(crate) fn park_capabilities(&self) -> (
+            tokio::sync::oneshot::Receiver<()>,
+            tokio::sync::oneshot::Sender<()>,
+        ) {
+            let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+            let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+            *self.capability_park.lock().unwrap() = Some((entered_tx, release_rx));
+            (entered_rx, release_tx)
+        }
+        #[cfg(test)]
+        pub(crate) fn constructor_write_calls(&self) -> (usize, usize) {
+            (self.create_rpc_calls.load(std::sync::atomic::Ordering::Acquire),
+             self.store_rpc_calls.load(std::sync::atomic::Ordering::Acquire))
+        }
         pub fn create_requests(&self) -> Vec<database::CreateActorRequest> {
             self.state
                 .lock()
@@ -5565,6 +5594,29 @@ pub mod test_support {
 
     #[tonic::async_trait]
     impl database::database_server::Database for FakeDatabase {
+        async fn get_capabilities(
+            &self,
+            _: Request<database::DatabaseCapabilitiesRequest>,
+        ) -> Result<Response<database::DatabaseCapabilitiesResponse>, Status> {
+            #[cfg(test)]
+            {
+                let park = self.capability_park.lock().unwrap().take();
+                if let Some((entered, release)) = park {
+                    let _ = entered.send(());
+                    let _ = release.await;
+                }
+            }
+            // This fake implements atomic task-bearing creates. Old-engine
+            // fixtures explicitly override this response with UNIMPLEMENTED.
+            self.capability_reply.lock().unwrap().clone().unwrap_or_else(|| {
+                Ok(database::DatabaseCapabilitiesResponse {
+                    atomic_constructor_tasks_protocol: "reboot.atomic-constructor-tasks.v1".into(),
+                    atomic_constructor_tasks_version: 1,
+                    atomic_constructor_tasks_enabled: true,
+                })
+            }).map(Response::new)
+        }
+
         type PreloadStream = DatabaseStream<database::PreloadResponse>;
         type RecoverStream = DatabaseStream<database::RecoverResponse>;
         type RecoverIdempotentMutationsStream =
@@ -5713,6 +5765,7 @@ pub mod test_support {
             &self,
             request: Request<database::StoreRequest>,
         ) -> Result<Response<database::StoreResponse>, Status> {
+            self.store_rpc_calls.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
             #[cfg(test)]
             {
                 let park = self.store_park.lock().unwrap().take();
@@ -5828,6 +5881,7 @@ pub mod test_support {
             &self,
             request: Request<database::CreateActorRequest>,
         ) -> Result<Response<database::CreateActorResponse>, Status> {
+            self.create_rpc_calls.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
             let request = request.into_inner();
             if !request.task_upserts.is_empty() {
                 return Err(Status::invalid_argument(
@@ -5841,12 +5895,13 @@ pub mod test_support {
             &self,
             request: Request<database::CreateActorRequest>,
         ) -> Result<Response<database::CreateActorResponse>, Status> {
+            self.create_rpc_calls.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
             if self
                 .reject_task_create
                 .load(std::sync::atomic::Ordering::Acquire)
             {
                 return Err(Status::unimplemented(
-                    "old sidecar lacks CreateActorWithTasks",
+                    "engine changed after preflight; CreateActorWithTasks unavailable",
                 ));
             }
             self.create_atomic(request.into_inner()).await

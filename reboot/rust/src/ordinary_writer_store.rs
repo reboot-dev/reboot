@@ -440,6 +440,35 @@ impl Drop for ConstructorCreateAttempt {
 }
 
 impl DatabaseActorStore {
+    /// Negotiate on the same Database channel used for the subsequent write.
+    /// Never cache across reconnects or probe a mutating RPC for compatibility.
+    async fn require_atomic_constructor_tasks(&self) -> Result<(), Status> {
+        let response = self
+            .database
+            .clone()
+            .get_capabilities(database::DatabaseCapabilitiesRequest {})
+            .await
+            .map_err(|status| {
+                if status.code() == tonic::Code::Unimplemented {
+                    Status::failed_precondition(
+                        "Database lacks GetCapabilities: atomic constructor tasks require reboot.atomic-constructor-tasks.v1 version 1",
+                    )
+                } else {
+                    status
+                }
+            })?
+            .into_inner();
+        if response.atomic_constructor_tasks_protocol != "reboot.atomic-constructor-tasks.v1"
+            || response.atomic_constructor_tasks_version != 1
+            || !response.atomic_constructor_tasks_enabled
+        {
+            return Err(Status::failed_precondition(
+                "Database does not support enabled reboot.atomic-constructor-tasks.v1 version 1",
+            ));
+        }
+        Ok(())
+    }
+
     /// Standalone external writer constructor: absent actor + response checkpoint
     /// + Pending effects use one native CreateActor(sync=true), never Store.
     ///
@@ -542,6 +571,13 @@ impl DatabaseActorStore {
                 .tasks
                 .validate_staged_for_admission(&execution.task_upserts, admission)
                 .await?;
+            {
+                let _owner = admission.lock()?;
+            }
+            // Read-only preflight must precede reservation/sealing: old engines,
+            // transport failures and cancellation here cannot retain ownership.
+            self.require_atomic_constructor_tasks().await?;
+            // Never adopt a replacement generation after the network await.
             let _owner = admission.lock()?;
         }
         let mutation = if scheduling {

@@ -831,6 +831,14 @@ async fn original_account_saved_token_restart_recovery_public_wait() {
 
 #[tonic::async_trait]
 impl db::database_server::Database for ObservedDatabase {
+    async fn get_capabilities(
+        &self,
+        request: tonic::Request<db::DatabaseCapabilitiesRequest>,
+    ) -> Result<tonic::Response<db::DatabaseCapabilitiesResponse>, tonic::Status> {
+        self.observations.calls.lock().unwrap().push("GetCapabilities");
+        self.client.clone().get_capabilities(request).await
+    }
+
     async fn colocated_range(
         &self,
         request: tonic::Request<db::ColocatedRangeRequest>,
