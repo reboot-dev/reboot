@@ -7,6 +7,10 @@ tags: auth, oauth, tokens, store_tokens, oauth-token-manager, ciphertext, workfl
 
 ## Calling External-Service APIs on the User's Behalf
 
+> **At 1.6.0:** `reboot.std.oauth` is not in the released wheel, so
+> the imports below fail. See
+> [`KNOWN-ISSUES.md`](../../../KNOWN-ISSUES.md#rebootstdoauth-cant-be-imported-so-store_tokenstrue-fails).
+
 Beyond telling you _who_ the caller is, OAuth can let your app act **as
 the user** at an external service — read their Google Calendar, open
 GitHub issues, post to their Slack — even in a background workflow long

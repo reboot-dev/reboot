@@ -7,6 +7,10 @@ tags: stdlib, oauth, tokens, access-token, refresh-token, store-tokens, cipherte
 
 ## Store Provider OAuth Tokens in `OAuthTokenManager`
 
+> **At 1.6.0:** `reboot.std.oauth` is not in the released wheel, so
+> the imports below fail. See
+> [`KNOWN-ISSUES.md`](../../../KNOWN-ISSUES.md#rebootstdoauth-cant-be-imported-so-store_tokenstrue-fails).
+
 > **Critical:** never store an external provider's OAuth access/refresh
 > token in a plain `str` state field — that is a secret in plaintext at
 > rest. And don't hand-roll `Ciphertext` for it either: the
