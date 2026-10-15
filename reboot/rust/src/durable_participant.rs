@@ -37,6 +37,80 @@ pub struct ParticipantRecovery {
     pub shard_ids: Vec<String>,
 }
 
+/// Exact-owner recovery reservation. Create before starting a canonical Recover
+/// stream. This freezes the original gate binding; it does not grant host
+/// registration, placement, task dispatch, or public-readiness authority.
+/// The host must retain the original participant across adoption/cancellation.
+pub(crate) struct ParticipantRecoveryReservation<C: ParticipantSidecar> {
+    participant: DurableActorParticipant<C>,
+    gate: ActorGate,
+}
+
+/// Validated exact-actor partition of an EOF-complete canonical scan. Private
+/// fields prevent bypassing path validation or transferring it to another actor.
+/// Provisional tasks/checkpoints remain transaction effects, never Pending tasks.
+pub(crate) struct ParticipantRecoverySnapshot<C: ParticipantSidecar> {
+    reservation: ParticipantRecoveryReservation<C>,
+    recovered: Option<(Uuid, Vec<Uuid>, database::Transaction)>,
+}
+
+impl<C: ParticipantSidecar> ParticipantRecoveryReservation<C> {
+    /// Caller supplies only a successfully EOF-collected canonical stream, from
+    /// the original Database authority/shards. Other owners are deliberately
+    /// ignored: graph ownership/unknown-local-owner policy belongs to the host.
+    pub(crate) fn validate(
+        self,
+        responses: &[database::RecoverResponse],
+    ) -> Result<ParticipantRecoverySnapshot<C>, Status> {
+        let mut recovered = None;
+        for transaction in responses.iter()
+            .flat_map(|response| &response.participant_transactions)
+            .filter(|transaction| transaction.state_type == self.participant.state_type
+                && transaction.state_ref == self.participant.state_ref)
+        {
+            if recovered.is_some() {
+                return Err(Status::failed_precondition(
+                    "multiple durable transactions recovered for one actor",
+                ));
+            }
+            if transaction.transaction_ids.is_empty() {
+                return Err(Status::failed_precondition(
+                    "recovered transaction ID path must not be empty",
+                ));
+            }
+            let transaction_ids = transaction.transaction_ids.iter().map(|id| {
+                Uuid::from_slice(id).map_err(|_| Status::failed_precondition(
+                    "recovered transaction ID path must contain 16-byte UUIDs",
+                ))
+            }).collect::<Result<Vec<_>, _>>()?;
+            if has_duplicate_transaction_ids(&transaction_ids) {
+                return Err(Status::failed_precondition(
+                    "recovered transaction ID path must not contain duplicate UUIDs",
+                ));
+            }
+            if transaction.coordinator_state_type.is_empty()
+                || transaction.coordinator_state_ref.is_empty()
+            {
+                return Err(Status::failed_precondition(
+                    "recovered transaction must identify its coordinator",
+                ));
+            }
+            recovered = Some((transaction_ids[0], transaction_ids, transaction.clone()));
+        }
+        Ok(ParticipantRecoverySnapshot { reservation: self, recovered })
+    }
+}
+
+impl<C: ParticipantSidecar> ParticipantRecoverySnapshot<C> {
+    /// Installs only validated ownership; performs no Recover, Watch or task
+    /// dispatch. Reserve/validate all graph partitions before adopting any.
+    pub(crate) async fn adopt(self) -> Result<(), Status> {
+        self.reservation.participant.adopt_recovery_snapshot(
+            self.reservation.gate, self.recovered,
+        ).await
+    }
+}
+
 /// Minimal sidecar boundary. Production code uses [`TonicParticipantSidecar`];
 /// tests may use this trait to verify requests and failure ordering without
 /// pretending to be a database.
@@ -2932,7 +3006,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         }
         // Freeze before constructing/polling recovery IO, not just after its
         // response. Recovery reservation and adapter binding cannot race.
-        let recovery_gate = self.lock.freeze();
+        let reservation = self.reserve_recovery_snapshot();
         let responses = self
             .sidecar
             .recover(database::RecoverRequest {
@@ -2941,50 +3015,19 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 skip_idempotent_mutations: true,
             })
             .await?;
-        let mut recovered = None;
-        for transaction in responses
-            .into_iter()
-            .flat_map(|response| response.participant_transactions)
-            .filter(|transaction| {
-                transaction.state_type == self.state_type && transaction.state_ref == self.state_ref
-            })
-        {
-            if recovered.is_some() {
-                return Err(Status::failed_precondition(
-                    "multiple durable transactions recovered for one actor",
-                ));
-            }
-            if transaction.transaction_ids.is_empty() {
-                return Err(Status::failed_precondition(
-                    "recovered transaction ID path must not be empty",
-                ));
-            }
-            let transaction_ids = transaction
-                .transaction_ids
-                .iter()
-                .map(|id| {
-                    Uuid::from_slice(id).map_err(|_| {
-                        Status::failed_precondition(
-                            "recovered transaction ID path must contain 16-byte UUIDs",
-                        )
-                    })
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            if has_duplicate_transaction_ids(&transaction_ids) {
-                return Err(Status::failed_precondition(
-                    "recovered transaction ID path must not contain duplicate UUIDs",
-                ));
-            }
-            let root_id = transaction_ids[0];
-            if transaction.coordinator_state_type.is_empty()
-                || transaction.coordinator_state_ref.is_empty()
-            {
-                return Err(Status::failed_precondition(
-                    "recovered transaction must identify its coordinator",
-                ));
-            }
-            recovered = Some((root_id, transaction_ids, transaction));
-        }
+        reservation.validate(&responses)?.adopt().await
+    }
+
+    /// Freeze each exact owner before the shared scan starts. Does not perform IO.
+    pub(crate) fn reserve_recovery_snapshot(&self) -> ParticipantRecoveryReservation<C> {
+        ParticipantRecoveryReservation { participant: self.clone(), gate: self.lock.freeze() }
+    }
+
+    async fn adopt_recovery_snapshot(
+        &self,
+        recovery_gate: ActorGate,
+        recovered: Option<(Uuid, Vec<Uuid>, database::Transaction)>,
+    ) -> Result<(), Status> {
         let Some((root_id, transaction_ids, transaction)) = recovered else {
             return Ok(());
         };
@@ -3613,6 +3656,7 @@ impl<C: ParticipantSidecar> database::participant_server::Participant
 
 #[cfg(test)]
 mod tests {
+    include!("participant_recovery_snapshot_tests.rs");
     use super::*;
     use std::collections::VecDeque;
     use std::sync::Mutex;

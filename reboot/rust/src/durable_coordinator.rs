@@ -82,6 +82,14 @@ pub struct CoordinatorRecovery {
     pub coordinator_state_ref: String,
 }
 
+/// Validated exact-coordinator partition of EOF-complete Database Recover.
+/// Uses actual Database protobuf records and the existing participant validator.
+/// This is not an all-owner catalog: unrelated coordinator/actor records are
+/// ignored. Host graph/placement/authority validation and custody remain required.
+pub(crate) struct CoordinatorRecoverySnapshot {
+    records: Vec<(Uuid, database::TransactionCoordinator, ParticipantSet)>,
+}
+
 /// Database control records, not actor staging. A coordinator must use these
 /// three RPCs rather than `Store` or an in-memory substitute.
 pub trait CoordinatorSidecar: Send + Sync + 'static {
@@ -1169,17 +1177,54 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
                 skip_idempotent_mutations: true,
             })
             .await?;
-        for (id, record) in responses
-            .into_iter()
-            .flat_map(|response| response.transaction_coordinators)
+        let snapshot = self.validate_recovery_snapshot(
+            &recovery.coordinator_state_ref, &responses,
+        )?;
+        self.adopt_recovery_snapshot(snapshot).await
+    }
+
+    /// Validate the complete owned partition before any decision/Prepare IO.
+    /// The caller must supply successful canonical EOF from the same Database
+    /// authority, retain exact participant owners and freeze their gates before
+    /// starting that scan. This method performs no Recover or ownership minting.
+    pub(crate) fn validate_recovery_snapshot(
+        &self,
+        coordinator_state_ref: &str,
+        responses: &[database::RecoverResponse],
+    ) -> Result<CoordinatorRecoverySnapshot, Status> {
+        if coordinator_state_ref.is_empty() {
+            return Err(Status::invalid_argument(
+                "coordinator recovery requires a coordinator state reference",
+            ));
+        }
+        let mut records = Vec::new();
+        let mut seen = BTreeSet::new();
+        for (id, record) in responses.iter()
+            .flat_map(|response| &response.transaction_coordinators)
+            .filter(|(_, record)| record.state_ref == coordinator_state_ref)
         {
-            if record.state_ref != recovery.coordinator_state_ref {
-                continue;
-            }
-            let transaction_id = Uuid::parse_str(&id).map_err(|_| {
+            let transaction_id = Uuid::parse_str(id).map_err(|_| {
                 Status::failed_precondition("recovered coordinator key must be a UUID")
             })?;
-            let participants = Self::participants_from_record(&record)?;
+            if !seen.insert(transaction_id) {
+                return Err(Status::failed_precondition(
+                    "duplicate recovered coordinator transaction UUID",
+                ));
+            }
+            let participants = Self::participants_from_record(record)?;
+            records.push((transaction_id, record.clone(), participants));
+        }
+        Ok(CoordinatorRecoverySnapshot { records })
+    }
+
+    /// Replay validated canonical records without another Recover. The host must
+    /// adopt every participant partition first, and retain original owners on
+    /// errors/cancellation; non-definitive failure never means Abort or Ready.
+    pub(crate) async fn adopt_recovery_snapshot(
+        &self,
+        snapshot: CoordinatorRecoverySnapshot,
+    ) -> Result<(), Status> {
+        for (transaction_id, record, participants) in snapshot.records {
             if record.preparing {
                 // Read-only actors released their lock after the original Prepare;
                 // a recovered coordinator must never re-prepare them.
@@ -1585,6 +1630,7 @@ pub mod test_support {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    include!("coordinator_recovery_snapshot_tests.rs");
     use super::*;
     use std::collections::VecDeque;
     use std::sync::Mutex;

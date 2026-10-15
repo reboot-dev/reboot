@@ -97,6 +97,57 @@ exit zero preceded fresh container terminal inspection, and the original lock
 was free. Hot reload, new-consumer compilation and restart durability remain
 separate. This is not latest-upstream/full-native/overall SDK qualification.
 
+## Coordinated ownership foundations checkpoint (2026-10-15)
+
+Three substantial production foundations are now integrated and independently
+source-reviewed, without enabling taskful constructor children:
+
+- Static and late local services share bounded exact-target reservation and
+  atomic binding/directory publication. A host-minted fixed service-family
+  capability retains the supplied typed owner **before callbacks**, fences
+  generations/revocation, and retains failed or uncertain installs. The opaque
+  owner bundle is trusted application composition: this does **not** prove its
+  adapter contains the exact participant/control/task allocations. Retention
+  is bounded per host and intentionally process-lifetime, not healthy eviction
+  or a process-global bound across repeatedly recreated hosts.
+- Participant recovery uses the same original allocation and pre-scan binding
+  freeze through validated snapshot adoption; coordinator recovery validates
+  the complete matching partition and duplicate UUIDs before replay effects.
+  Existing singleton paths reuse these seams. Snapshot slices are crate-private
+  and do **not** themselves authenticate successful EOF, placement, owned graph
+  completeness or host custody. Full graph collection/integration remains open.
+- One committed-Pending collector prepares bounded partitions for supplied
+  exact task owners, including writers. Existing singleton and reader-registry
+  callers reuse its validation; no provisional tasks become committed and no
+  shard-global transaction veto is imposed. Preparation grants no DispatchOwner,
+  scheduling, Ready or Wait authority. Completed-only owners need a trusted
+  membership source; Recover cannot discover them.
+
+The first aggregate compiled but failed **18 existing tests** because shared
+scope requirements were incorrectly imposed on singleton scheduling recovery.
+That candidate was not published. The repair keeps a private explicit singleton
+path accepting the original empty request unchanged, with whole-stream canonical
+task validation and error ordering, while shared/reader scope remains strict.
+Source review alone had missed this compatibility contract.
+
+The [repaired actual library receipt](tests/evidence/ownership-foundations-library-20261015.json)
+records **700 passed, 0 failed, 7 ignored**, including all 23 new foundation and
+compatibility regressions. The generated native consumer compiled from that
+exact source; the [fresh native rerun](tests/evidence/ownership-foundations-native-20261015.json)
+then passed **all 15 existing constructor/default-root controls**. This is
+regression coverage, not native execution of dynamic taskful catalog recovery.
+Parent independently rehashed **3271** frozen source members, compile/test logs,
+new executable and native inputs, verified genuine Cargo and all **30** native
+SDK/Database joins, SDK-before-Database barriers, no adopted/cleanup obligations,
+exact attach before terminal CID readback, and original lock release.
+
+Still missing: coordinated dynamic owner graph discovery/adoption and completed
+Bank membership, allocation-verifiable full owner bundles, shared writer staged
+admission/live dispatch, catalog control/public/Wait front doors, taskful child
+integration, and original WelcomeEmail SignUp/restart/fault acceptance. Existing
+taskful-child and shared Transfer refusals remain. The cached native Database
+qualification is unchanged; no latest-upstream native build/full parity claim.
+
 ## Actual registered empty-Bank native controls (2026-10-15)
 
 The [fresh native receipt](tests/evidence/registered-empty-root-native-20261015.json)
@@ -5079,7 +5130,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 070b95707867fd5b47500c053ec9e5858adda8881edfee3ee7ca940f464b128f -->
+<!-- parity-source-sha256: 88b839581174ca85c763e8bff7004f47ffb2bc4bcd333cf3cdc6102828ba0bc2 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

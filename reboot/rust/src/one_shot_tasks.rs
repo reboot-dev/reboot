@@ -1025,37 +1025,9 @@ impl OneShotTasks {
         }
     }
     async fn pending(&self, request: db::RecoverRequest) -> Result<Vec<db::Task>, Status> {
-        let mut stream = self
-            .inner
-            .store
-            .task_database()
-            .recover(request)
-            .await?
-            .into_inner();
-        let mut pending = Vec::new();
-        while let Some(batch) = stream.message().await? {
-            if pending.len().saturating_add(batch.pending_tasks.len()) > MAX_TASKS {
-                return Err(Status::resource_exhausted(
-                    "durable pending task admission exceeds 1024",
-                ));
-            }
-            pending.extend(batch.pending_tasks);
-        }
-        self.validate_recovered(&pending)?;
-        for task in &pending {
-            if let Some((alias, version)) = self.cursor_declaration(task) {
-                self.inner
-                    .store
-                    .workflow_validate_cursor_binding(
-                        task,
-                        alias,
-                        version,
-                        self.declaration(task).expect("cursor declaration").method,
-                    )
-                    .await?;
-            }
-        }
-        Ok(pending)
+        CommittedTaskPartitions::recover_singleton(self.clone(), request)
+            .await
+            .map(CommittedTaskPartitions::into_pending)
     }
     pub(crate) fn local_execution_admission(&self) -> Result<RunningTaskAdmission, Status> {
         let generation = self
@@ -1971,6 +1943,239 @@ impl HostRecovery for OneShotTaskRecovery {
     }
 }
 
+// A preparation result is data, never a DispatchOwner or scheduling receipt.
+// Its only constructor drains successful EOF and validates every exact binding.
+// In particular writer owners (including generated WelcomeEmail) are NOT
+// converted to reader-only owners: execution must use their original allocation.
+pub(crate) struct CommittedTaskPartitions {
+    owners: std::collections::BTreeMap<(String, String), OneShotTasks>,
+    pending: Vec<db::Task>,
+}
+
+// Private accumulation state cannot escape as a prepared partition on partial
+// EOF, stream failure or a late invalid task. Transaction records belong to the
+// separately validated participant/coordinator graph; their presence is neither
+// an ANY-transaction startup refusal nor a source of committed Pending tasks.
+struct CommittedTaskScan {
+    owners: std::collections::BTreeMap<(String, String), OneShotTasks>,
+    pending: Vec<db::Task>,
+    singleton: bool,
+}
+impl CommittedTaskScan {
+    // Trusted exact singleton ownership predates request scope requirements.
+    // Keep its canonical whole-stream validation (including error ordering).
+    fn singleton(owner: OneShotTasks) -> Self {
+        let key = (owner.inner.state_type.clone(), owner.inner.state_ref.clone());
+        Self {
+            owners: [(key, owner)].into(),
+            pending: Vec::new(),
+            singleton: true,
+        }
+    }
+    fn new(
+        owners: impl IntoIterator<Item = OneShotTasks>,
+        request: &db::RecoverRequest,
+    ) -> Result<Self, Status> {
+        let mut exact = std::collections::BTreeMap::new();
+        let mut endpoint = None;
+        for owner in owners {
+            if exact.len() == MAX_TASKS {
+                return Err(Status::resource_exhausted(
+                    "task partition owner limit exceeds 1024",
+                ));
+            }
+            if endpoint
+                .as_ref()
+                .is_some_and(|value: &String| value != owner.inner.store.database_endpoint())
+            {
+                return Err(Status::invalid_argument(
+                    "task partitions require one Database endpoint",
+                ));
+            }
+            endpoint = Some(owner.inner.store.database_endpoint().to_owned());
+            if !request
+                .state_tags_by_state_type
+                .contains_key(&owner.inner.state_type)
+            {
+                return Err(Status::invalid_argument(
+                    "task partitions need every registered state tag",
+                ));
+            }
+            let key = (
+                owner.inner.state_type.clone(),
+                owner.inner.state_ref.clone(),
+            );
+            if exact.insert(key, owner).is_some() {
+                return Err(Status::already_exists(
+                    "duplicate exact task partition owner",
+                ));
+            }
+        }
+        if exact.is_empty() || request.shard_ids.is_empty() {
+            return Err(Status::invalid_argument(
+                "task partitions need owners and exact shards",
+            ));
+        }
+        Ok(Self {
+            owners: exact,
+            pending: Vec::new(),
+            singleton: false,
+        })
+    }
+    fn push(&mut self, batch: db::RecoverResponse) -> Result<(), Status> {
+        // Count during collection, not after allocating an unbounded stream.
+        if self.pending.len().saturating_add(batch.pending_tasks.len()) > MAX_TASKS {
+            return Err(Status::resource_exhausted(
+                "durable pending task admission exceeds 1024",
+            ));
+        }
+        self.pending.extend(batch.pending_tasks);
+        Ok(())
+    }
+    fn finish(self, eof: Result<(), Status>) -> Result<CommittedTaskPartitions, Status> {
+        eof?;
+        if self.singleton {
+            self.owners.first_key_value().expect("singleton owner").1
+                .validate_recovered(&self.pending)?;
+            return Ok(CommittedTaskPartitions { owners: self.owners, pending: self.pending });
+        }
+        let mut partitions = std::collections::BTreeMap::<_, Vec<db::Task>>::new();
+        for task in &self.pending {
+            let id = task
+                .task_id
+                .as_ref()
+                .ok_or_else(|| Status::invalid_argument("missing task ID"))?;
+            let key = (id.state_type.clone(), id.state_ref.clone());
+            if !self.owners.contains_key(&key) {
+                return Err(Status::invalid_argument(
+                    "unregistered actor in committed task partitions",
+                ));
+            }
+            partitions.entry(key).or_default().push(task.clone());
+        }
+        for (key, tasks) in partitions {
+            // Same UUID-v4, Pending, schedule, iteration, declaration and
+            // generated binding validation used by singleton recovery/admission.
+            self.owners[&key].validate_recovered(&tasks)?;
+        }
+        Ok(CommittedTaskPartitions {
+            owners: self.owners,
+            pending: self.pending,
+        })
+    }
+}
+impl CommittedTaskPartitions {
+    /// Prepare one committed Pending snapshot for supplied PRE-EXISTING exact
+    /// owners. No owner discovery, registration, task execution or activation.
+    /// Recover does not enumerate completed-only actors: their trusted owners
+    /// must also be supplied, and are retained as empty partitions.
+    ///
+    /// Caller owns participant/coordinator convergence and original gate/store,
+    /// policy/placement/cancellation custody. This result does not certify that
+    /// graph or public readiness. Claim/retain real DispatchOwner leases before
+    /// scanning under host recovery; recheck budgets/generations across awaits
+    /// and use the existing public_ready gate before any eventual execution.
+    pub(crate) async fn recover(
+        owners: impl IntoIterator<Item = OneShotTasks>,
+        request: db::RecoverRequest,
+    ) -> Result<Self, Status> {
+        Self::collect(CommittedTaskScan::new(owners, &request)?, request).await
+    }
+    async fn recover_singleton(
+        owner: OneShotTasks,
+        request: db::RecoverRequest,
+    ) -> Result<Self, Status> {
+        Self::collect(CommittedTaskScan::singleton(owner), request).await
+    }
+    async fn collect(
+        mut scan: CommittedTaskScan,
+        request: db::RecoverRequest,
+    ) -> Result<Self, Status> {
+        let store = scan
+            .owners
+            .first_key_value()
+            .expect("nonempty owners")
+            .1
+            .inner
+            .store
+            .clone();
+        let mut stream = store.task_database().recover(request).await?.into_inner();
+        while let Some(batch) = stream.message().await? {
+            scan.push(batch)?;
+        }
+        let prepared = scan.finish(Ok(()))?;
+        // Finish the complete synchronous validation before any cursor Load.
+        // These use the exact owner's original store and declaration, not a
+        // reader registry or a regenerated binding from recovered method strings.
+        for task in &prepared.pending {
+            let id = task.task_id.as_ref().expect("validated task ID");
+            let owner = &prepared.owners[&(id.state_type.clone(), id.state_ref.clone())];
+            if let Some((alias, version)) = owner.cursor_declaration(task) {
+                owner
+                    .inner
+                    .store
+                    .workflow_validate_cursor_binding(
+                        task,
+                        alias,
+                        version,
+                        owner.declaration(task).expect("cursor declaration").method,
+                    )
+                    .await?;
+            }
+        }
+        Ok(prepared)
+    }
+    /// Delivery capacity is distinct from canonical collection capacity. Existing
+    /// singleton rescan/admission keeps its original budget check and ordering;
+    /// a future multi-owner dispatcher must call this before consuming partitions
+    /// while retaining its actual claims (limits freeze when claims are held).
+    pub(crate) fn validate_delivery_budgets(&self) -> Result<(), Status> {
+        let mut counts = std::collections::BTreeMap::<_, usize>::new();
+        for task in &self.pending {
+            let id = task.task_id.as_ref().expect("validated task ID");
+            *counts
+                .entry((id.state_type.clone(), id.state_ref.clone()))
+                .or_default() += 1;
+        }
+        for (key, count) in counts {
+            if count
+                > self.owners[&key]
+                    .inner
+                    .max_live
+                    .load(std::sync::atomic::Ordering::Acquire)
+            {
+                return Err(Status::resource_exhausted(
+                    "recovered pending tasks exceed live delivery budget",
+                ));
+            }
+        }
+        Ok(())
+    }
+    /// Ownership-preserving preparation only. Does not enable scheduling/Wait,
+    /// set active, consume receivers, mint generations or spawn work.
+    pub(crate) fn into_partitions(self) -> Result<Vec<(OneShotTasks, Vec<db::Task>)>, Status> {
+        self.validate_delivery_budgets()?;
+        let mut partitions: std::collections::BTreeMap<_, _> = self
+            .owners
+            .into_iter()
+            .map(|(key, owner)| (key, (owner, Vec::new())))
+            .collect();
+        for task in self.pending {
+            let id = task.task_id.as_ref().expect("validated task ID");
+            partitions
+                .get_mut(&(id.state_type.clone(), id.state_ref.clone()))
+                .expect("validated exact owner")
+                .1
+                .push(task);
+        }
+        Ok(partitions.into_values().collect())
+    }
+    fn into_pending(self) -> Vec<db::Task> {
+        // Preserve original stream order for existing singleton/reader callers.
+        self.pending
+    }
+}
+
 /// Reader-only recovery over one canonical shared-shard Database stream.
 /// Register after legacy transaction recovery. Scheduling is deliberately not
 /// enabled: cross-actor staged admission needs a separate capacity contract.
@@ -2032,61 +2237,9 @@ impl ReaderTaskRecoveryRegistry {
         })
     }
     async fn pending(&self) -> Result<Vec<db::Task>, Status> {
-        let store = &self
-            .tasks
-            .first_key_value()
-            .expect("nonempty registry")
-            .1
-            .inner
-            .store;
-        let mut stream = store
-            .task_database()
-            .recover(self.request.clone())
-            .await?
-            .into_inner();
-        let mut pending = Vec::new();
-        while let Some(batch) = stream.message().await? {
-            if pending.len().saturating_add(batch.pending_tasks.len()) > MAX_TASKS {
-                return Err(Status::resource_exhausted(
-                    "durable pending task admission exceeds 1024",
-                ));
-            }
-            pending.extend(batch.pending_tasks);
-        }
-        // No handler runs until the complete stream and every binding validate.
-        let mut partitions = std::collections::BTreeMap::<_, Vec<db::Task>>::new();
-        for task in &pending {
-            let id = task
-                .task_id
-                .as_ref()
-                .ok_or_else(|| Status::invalid_argument("missing task ID"))?;
-            let key = (id.state_type.clone(), id.state_ref.clone());
-            if !self.tasks.contains_key(&key) {
-                return Err(Status::invalid_argument(
-                    "unregistered actor in shared task recovery",
-                ));
-            }
-            partitions.entry(key).or_default().push(task.clone());
-        }
-        for (key, batch) in partitions {
-            let owner = &self.tasks[&key];
-            owner.validate_recovered(&batch)?;
-            for task in &batch {
-                if let Some((alias, version)) = owner.cursor_declaration(task) {
-                    owner
-                        .inner
-                        .store
-                        .workflow_validate_cursor_binding(
-                            task,
-                            alias,
-                            version,
-                            owner.declaration(task).expect("cursor declaration").method,
-                        )
-                        .await?;
-                }
-            }
-        }
-        Ok(pending)
+        CommittedTaskPartitions::recover(self.tasks.values().cloned(), self.request.clone())
+            .await
+            .map(CommittedTaskPartitions::into_pending)
     }
 }
 #[tonic::async_trait]
@@ -2691,6 +2844,10 @@ mod ordinary_scheduling_tests;
 #[cfg(test)]
 #[path = "ordinary_task_admission_tests.rs"]
 mod ordinary_task_admission_tests;
+
+#[cfg(test)]
+#[path = "committed_task_partition_tests.rs"]
+mod committed_task_partition_tests;
 
 #[cfg(test)]
 mod tests {

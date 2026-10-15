@@ -1079,6 +1079,26 @@ impl ApplicationHost {
         adapter.bind_participant_cleanup(&self.participant_cleanup)?;
         self.local_registry.register_service(adapter)
     }
+    /// Trusted host composition only. Configure before bind; never distribute
+    /// this capability through request extensions. The fixed typed factory must
+    /// consume the exact retained participant/task bundle; no recovery or task
+    /// dispatch authority follows from service registration alone.
+    #[doc(hidden)]
+    pub fn register_late_local_service_family<A, O>(
+        &mut self,
+        fixed: crate::registered_local::GeneratedLocalAdapterConfig,
+        capacity: usize,
+        factory: impl Fn(Arc<O>) -> Result<A, tonic::Status> + Send + Sync + 'static,
+    ) -> Result<crate::registered_local::LateLocalServiceFamily<A, O>, tonic::Status>
+    where
+        A: crate::registered_local_service::GeneratedLocalTransactionService,
+        <A::Service as Service<http::Request<BoxBody>>>::Future: Send + 'static,
+        O: Send + Sync + 'static,
+    {
+        self.local_registry.late_service_family(
+            fixed, capacity, self.participant_cleanup.clone(), factory,
+        )
+    }
     #[doc(hidden)]
     pub fn registered_transaction_service_count(&self) -> usize {
         self.local_registry.service_count()

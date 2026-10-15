@@ -82,7 +82,7 @@ pub struct RegisteredAdapterBinding {
     committed: Arc<std::sync::atomic::AtomicBool>,
     configuration: GeneratedLocalAdapterConfig,
     gate: tokio::sync::watch::Receiver<HostLocalState>,
-    directory: Weak<std::sync::Mutex<BTreeMap<ParticipantTarget, RegisteredLocalDestination>>>,
+    directory: Weak<std::sync::Mutex<LocalRegistryState>>,
 }
 /// Exact registered service snapshot. Lookup supplies composition, not a ticket,
 /// authorization or readiness reservation across later execution.
@@ -203,6 +203,7 @@ impl RegisteredAdapterBinding {
         let destination = directory
             .lock()
             .expect("local service directory poisoned")
+            .services
             .get(target)
             .cloned()
             .ok_or_else(|| {
@@ -239,12 +240,31 @@ impl std::fmt::Debug for RegisteredOutboundPermission {
     }
 }
 
+#[derive(Default)]
+struct LocalRegistryState {
+    registrations: BTreeMap<ParticipantTarget, RegisteredAdapterBinding>,
+    services: BTreeMap<ParticipantTarget, RegisteredLocalDestination>,
+    reservations: BTreeMap<ParticipantTarget, Arc<()>>,
+    retained: BTreeMap<ParticipantTarget, RetainedLocalOwner>,
+}
+
+// Late owners can contain uncertain native state. We cannot infer healthy
+// cleanup from dropping a server future. Retain the original allocation until
+// process exit, just as sealed task dispatch ownership does; never replace it.
+struct RetainedLocalOwner(Option<Arc<dyn std::any::Any + Send + Sync>>);
+impl Drop for RetainedLocalOwner {
+    fn drop(&mut self) {
+        if let Some(owner) = self.0.take() { std::mem::forget(owner); }
+    }
+}
+
 pub(crate) struct HostLocalRegistry {
     identity: Arc<()>,
-    registrations: BTreeMap<ParticipantTarget, RegisteredAdapterBinding>,
     gate: Arc<tokio::sync::watch::Sender<HostLocalState>>,
-    services: Arc<std::sync::Mutex<BTreeMap<ParticipantTarget, RegisteredLocalDestination>>>,
+    services: Arc<std::sync::Mutex<LocalRegistryState>>,
 }
+
+include!("registered_local_late.rs");
 impl Drop for HostLocalRegistry {
     fn drop(&mut self) {
         self.revoke();
@@ -301,95 +321,54 @@ impl Default for HostLocalRegistry {
         Self {
             identity: Arc::new(()),
             gate: Arc::new(tokio::sync::watch::channel(HostLocalState::Starting).0),
-            registrations: BTreeMap::new(),
-            services: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
+            services: Arc::new(std::sync::Mutex::new(LocalRegistryState::default())),
         }
     }
 }
 impl HostLocalRegistry {
+    fn reserve(&self, target: ParticipantTarget) -> Result<LocalRegistrationReservation, tonic::Status> {
+        LocalRegistrationReservation::new(
+            Arc::downgrade(&self.identity), self.gate.subscribe(), self.services.clone(), target,
+        )
+    }
     pub(crate) fn register<A: GeneratedLocalTransactionAdapter>(
-        &mut self,
-        adapter: A,
+        &mut self, adapter: A,
     ) -> Result<A, tonic::Status> {
         let config = adapter.local_configuration()?;
         config.validate()?;
-        if self.registrations.contains_key(&config.target) {
-            return Err(tonic::Status::already_exists(
-                "local adapter target already registered",
-            ));
-        }
-        if self.registrations.len() >= 1024 {
-            return Err(tonic::Status::resource_exhausted(
-                "local adapter registry capacity exceeded",
-            ));
-        }
-        let binding = RegisteredAdapterBinding {
-            host: Arc::downgrade(&self.identity),
-            registration: Arc::new(()),
-            configuration: config.clone(),
-            committed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            gate: self.gate.subscribe(),
-            directory: Arc::downgrade(&self.services),
-        };
+        let reservation = self.reserve(config.target.clone())?;
+        let binding = reservation.binding(config.clone());
         let registered = adapter.with_local_registration(binding.clone())?;
         if !config.same_identity(&registered.local_configuration()?) {
-            return Err(tonic::Status::failed_precondition(
-                "adapter configuration changed during registration",
-            ));
+            return Err(tonic::Status::failed_precondition("adapter configuration changed during registration"));
         }
-        self.registrations.insert(config.target, binding.clone());
-        binding
-            .committed
-            .store(true, std::sync::atomic::Ordering::Release);
+        reservation.publish(binding, None)?;
         Ok(registered)
     }
     pub(crate) fn register_service<A>(
-        &mut self,
-        adapter: A,
-    ) -> Result<
-        (
-            A,
-            crate::registered_local_service::RegisteredServiceTemplate,
-        ),
-        tonic::Status,
-    >
+        &mut self, adapter: A,
+    ) -> Result<(A, crate::registered_local_service::RegisteredServiceTemplate), tonic::Status>
     where
         A: crate::registered_local_service::GeneratedLocalTransactionService,
         <A::Service as tower::Service<http::Request<tonic::body::BoxBody>>>::Future: Send + 'static,
     {
-        let target = adapter.local_configuration()?.target;
-        let registered = self.register(adapter)?;
-        let service =
-            crate::registered_local_service::RegisteredServiceTemplate::new(tower::Layer::layer(
-                &crate::successful_trailers::SuccessfulParticipantTrailerLayer,
-                registered.local_service(),
-            ))
-            .with_inbound_factory(registered.local_inbound_factory());
-        let binding = self
-            .registrations
-            .get(&target)
-            .expect("registered service binding absent")
-            .clone();
-        self.services
-            .lock()
-            .expect("local service directory poisoned")
-            .insert(
-                target,
-                RegisteredLocalDestination {
-                    binding,
-                    service: service.clone(),
-                },
-            );
+        let config = adapter.local_configuration()?;
+        config.validate()?;
+        let reservation = self.reserve(config.target.clone())?;
+        let binding = reservation.binding(config.clone());
+        let registered = adapter.with_local_registration(binding.clone())?;
+        if !config.same_identity(&registered.local_configuration()?) {
+            return Err(tonic::Status::failed_precondition("adapter configuration changed during registration"));
+        }
+        let service = local_service_template(&registered);
+        reservation.publish(binding, Some(service.clone()))?;
         Ok((registered, service))
     }
     pub(crate) fn service_count(&self) -> usize {
-        self.services
-            .lock()
-            .expect("local service directory poisoned")
-            .len()
+        self.services.lock().expect("local registry poisoned").services.len()
     }
     pub(crate) fn len(&self) -> usize {
-        self.registrations.len()
+        self.services.lock().expect("local registry poisoned").registrations.len()
     }
 }
 
@@ -422,6 +401,7 @@ pub(crate) fn ready_binding_for_guard_test(
 #[cfg(test)]
 mod tests {
     use super::*;
+    include!("registered_local_late_tests.rs");
     #[derive(Clone)]
     struct Adapter {
         config: GeneratedLocalAdapterConfig,
@@ -972,7 +952,7 @@ mod tests {
         let mut foreign_host = HostLocalRegistry::default();
         let (foreign, foreign_service) = foreign_host.register_service(adapter()).unwrap();
         foreign_host.gate.send_replace(HostLocalState::Ready);
-        registry.services.lock().unwrap().insert(
+        registry.services.lock().unwrap().services.insert(
             target.clone(),
             RegisteredLocalDestination {
                 binding: foreign.binding.unwrap(),
@@ -988,6 +968,7 @@ mod tests {
             .services
             .lock()
             .unwrap()
+            .services
             .insert(target.clone(), found.clone());
         registry.revoke();
         assert_eq!(
