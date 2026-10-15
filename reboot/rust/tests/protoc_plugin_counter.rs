@@ -158,9 +158,25 @@ fn counter_cargo_build_helper_executes_durable_adapters_in_a_downstream_fixture(
     .unwrap();
     let build_script = std::fs::read_to_string(fixture.join("build.rs")).unwrap();
     let build_prefix = build_script.strip_suffix("}\n").unwrap();
-    let injection = r#"
+    let injection = r##"
+    // Unchanged original Account schema; constructor-child tests use its public
+    // generated client/receiver, not a relabelled synthetic transaction RPC.
+    let api = repository.join("reboot/rust/tests/fixtures/mixed_constructor_original/pinned/api");
+    reboot::build::compile_protos_with_runtime(
+        &[api.join("bank/v1/account.proto"), api.join("bank/v1/errors.proto")],
+        &[api, repository.to_owned()], "crate::bank::v1", "reboot",
+    ).unwrap();
+    let account_path = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("bank/v1/account.reboot.rs");
+    let account = std::fs::read_to_string(&account_path).unwrap();
+    let constructor_anchor = "let request_bytes = <proto::OpenRequest as prost::Message>::encode_to_vec(request.get_ref());";
+    assert_eq!(account.matches(constructor_anchor).count(), 1);
+    // Fixture-only timing hook AFTER true constructor admission, BEFORE actual
+    // registered handler entry. No replacement handler/receipt is fabricated.
+    std::fs::write(account_path, account.replace(constructor_anchor, &format!("#[cfg(test)] crate::tests::constructor_child::after_admission(binding).await;\n{constructor_anchor}"))).unwrap();
     let emitted_path = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("tests/reboot/protoc/transaction_counter.reboot.rs");
     let emitted = std::fs::read_to_string(&emitted_path).unwrap();
+    assert!(emitted.contains("reboot::runtime::boxed_generated_future(|| local.abort_local_after_denial()).await?; return Err(error);"));
+    assert!(!emitted.contains("reboot_rust_schema::runtime::boxed_generated_future(|| local.abort_local_after_denial()"));
     // A consumed local ticket carries receiver policy; builder flags alone are not authority.
     assert!(emitted.contains("self.sequential_reusable || context.reusable_participants()"));
     assert!(emitted.contains("declared && (self.supervised_tree || context.reusable_participants()) && context.supports_rollback_leaf_path()"));
@@ -169,7 +185,7 @@ fn counter_cargo_build_helper_executes_durable_adapters_in_a_downstream_fixture(
     assert_eq!(emitted.matches(anchor).count(), 2);
     let injected = format!("let handler_request_bytes = crate::fixture_authorized_entry_request(&context, handler_request_bytes);\n{anchor}");
     std::fs::write(emitted_path, emitted.replace(anchor, &injected)).unwrap();
-"#;
+"##;
     std::fs::write(
         fixture.join("build.rs"),
         format!("{build_prefix}{injection}}}\n"),
@@ -190,32 +206,46 @@ fn counter_cargo_build_helper_executes_durable_adapters_in_a_downstream_fixture(
     )
     .unwrap();
     std::fs::write(
+        fixture.join("src/constructor_child.rs"),
+        include_str!("fixtures/generated_constructor_child.rs"),
+    ).unwrap();
+    std::fs::write(
         fixture.join("src/lib.rs"),
-        r#"pub mod proto {
+        r#"// Generated Tonic APIs intentionally return tonic::Status (including rich details).
+// Match the SDK's result_large_err policy without changing the wire/API contract
+// or suppressing any lint in the handwritten fixture tests below.
+#[allow(clippy::result_large_err)]
+pub mod rbt { pub mod v1alpha1 { tonic::include_proto!("rbt.v1alpha1"); } }
+#[allow(clippy::result_large_err)]
+pub mod bank { pub mod v1 { tonic::include_proto!("bank.v1"); } }
+#[allow(clippy::result_large_err)]
+pub mod account_generated { include!(concat!(env!("OUT_DIR"), "/bank/v1/account.reboot.rs")); }
+#[allow(clippy::result_large_err)]
+pub mod proto {
     tonic::include_proto!("tests.reboot.protoc");
 }
 
-#[allow(dead_code)]
+#[allow(dead_code, clippy::result_large_err)]
 mod generated {
     include!(concat!(env!("OUT_DIR"), "/tests/reboot/protoc/counter.reboot.rs"));
 }
 
-#[allow(dead_code)]
+#[allow(dead_code, clippy::result_large_err)]
 mod constructor_generated {
     include!(concat!(env!("OUT_DIR"), "/tests/reboot/protoc/constructor_counter.reboot.rs"));
 }
 
-#[allow(dead_code)]
+#[allow(dead_code, clippy::result_large_err)]
 mod owner_generated {
     include!(concat!(env!("OUT_DIR"), "/tests/reboot/protoc/owner_account.reboot.rs"));
 }
 
-#[allow(dead_code)]
+#[allow(dead_code, clippy::result_large_err)]
 mod map_generated {
     include!(concat!(env!("OUT_DIR"), "/tests/reboot/protoc/map_counter.reboot.rs"));
 }
 
-#[allow(dead_code)]
+#[allow(dead_code, clippy::result_large_err)]
 mod transaction_generated {
     include!(concat!(env!("OUT_DIR"), "/tests/reboot/protoc/transaction_counter.reboot.rs"));
 }
@@ -268,6 +298,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 mod shared_root_slots { include!("shared_root_slots.rs"); }
+pub(crate) mod constructor_child { include!("constructor_child.rs"); }
 
 struct Counter;
 
@@ -365,13 +396,18 @@ impl generated::CounterReadsMethodsDatabaseHandler for Counter {
     }
 }
 
+type AuthorizationSnapshots = Arc<std::sync::Mutex<Vec<(Option<Vec<u8>>, Vec<u8>)>>>;
+type RecordedUnaryRequests = Arc<std::sync::Mutex<Vec<(Vec<u8>, reboot::RebootHeaders)>>>;
+type IdempotentRecoveryResult = Result<Vec<reboot::database_proto::RecoverIdempotentMutationsResponse>, tonic::Status>;
+type IdempotentRecoveryQueue = Arc<std::sync::Mutex<VecDeque<IdempotentRecoveryResult>>>;
+
 struct AuthProbe {
     verifier_calls: Arc<AtomicUsize>,
     authorizer_calls: Arc<AtomicUsize>,
     handler_calls: Arc<AtomicUsize>,
     decision: AuthorizationDecision,
     contexts: Arc<std::sync::Mutex<Vec<AuthorizationContext>>>,
-    snapshots: Arc<std::sync::Mutex<Vec<(Option<Vec<u8>>, Vec<u8>)>>>,
+    snapshots: AuthorizationSnapshots,
 }
 
 impl TokenVerifier for AuthProbe {
@@ -494,7 +530,7 @@ impl proto::counter_writes_methods_server::CounterWritesMethods for RichErrorSer
 #[derive(Clone)]
 struct UnaryRetryScript {
     outcomes: Arc<std::sync::Mutex<VecDeque<tonic::Code>>>,
-    requests: Arc<std::sync::Mutex<Vec<(Vec<u8>, reboot::RebootHeaders)>>>,
+    requests: RecordedUnaryRequests,
 }
 
 impl UnaryRetryScript {
@@ -671,7 +707,7 @@ impl transaction_generated::TransactionCounterWritesMethodsTransactionHandler fo
             match client.increment(
                 context,
                 &transaction_generated::TransactionCounterWritesMethodsTarget::new("remote-transaction-counter"),
-                request.clone(),
+                request,
             ).await {
                 Err(transaction_generated::TransactionCounterWritesMethodsIncrementError::TransactionLimitExceeded(_)) => self.trace.lock().unwrap().push("caught declared"),
                 Err(transaction_generated::TransactionCounterWritesMethodsIncrementError::System(error)) if error.is_recoverable() => self.trace.lock().unwrap().push("caught recoverable system"),
@@ -767,13 +803,13 @@ struct TransactionParticipantSidecar {
     trace: Arc<std::sync::Mutex<Vec<&'static str>>>,
     state: Option<proto::TransactionCounter>,
     staged_states: Arc<std::sync::Mutex<Vec<Option<Vec<u8>>>>>,
-    idempotent_recovery: Arc<std::sync::Mutex<VecDeque<Result<Vec<reboot::database_proto::RecoverIdempotentMutationsResponse>, tonic::Status>>>>,
+    idempotent_recovery: IdempotentRecoveryQueue,
 }
 
 impl reboot::durable_participant::ParticipantSidecar for TransactionParticipantSidecar {
     fn load(&self, _: reboot::database_proto::LoadRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::LoadResponse, tonic::Status>> + Send + '_>> {
         self.trace.lock().unwrap().push("participant load");
-        let state = self.state.clone().map(|state| state.encode_to_vec());
+        let state = self.state.map(|state| state.encode_to_vec());
         Box::pin(async move { Ok(reboot::database_proto::LoadResponse {
             actors: vec![reboot::database_proto::Actor {
                 state_type: "tests.reboot.protoc.TransactionCounter".into(),
@@ -868,7 +904,7 @@ struct AuthorizationCleanupParticipantSidecar {
     trace: Arc<std::sync::Mutex<Vec<&'static str>>>,
     state: Option<proto::TransactionCounter>,
     staged_states: Arc<std::sync::Mutex<Vec<Option<Vec<u8>>>>>,
-    idempotent_recovery: Arc<std::sync::Mutex<VecDeque<Result<Vec<reboot::database_proto::RecoverIdempotentMutationsResponse>, tonic::Status>>>>,
+    idempotent_recovery: IdempotentRecoveryQueue,
     aborts: std::sync::Mutex<Vec<reboot::database_proto::TransactionParticipantAbortRequest>>,
     abort_entered: tokio::sync::Semaphore,
     abort_release: tokio::sync::Notify,
@@ -881,7 +917,7 @@ impl reboot::durable_participant::ParticipantSidecar for AuthorizationCleanupPar
     fn database_endpoint(&self) -> Option<&str> { Some("http://127.0.0.1:1/") }
     fn load(&self, _: reboot::database_proto::LoadRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::LoadResponse, tonic::Status>> + Send + '_>> {
         self.trace.lock().unwrap().push("participant load");
-        let state = self.state.clone().map(|state| state.encode_to_vec());
+        let state = self.state.map(|state| state.encode_to_vec());
         Box::pin(async move { Ok(reboot::database_proto::LoadResponse {
             actors: vec![reboot::database_proto::Actor {
                 state_type: "tests.reboot.protoc.TransactionCounter".into(),
@@ -943,6 +979,291 @@ impl reboot::durable_coordinator::CoordinatorSidecar for AuthorizationCleanupCoo
     }
 }
 
+
+// Authored source-only: these generated-adapter tests have NOT been executed.
+struct DenialFaultParticipant {
+    base: AuthorizationCleanupParticipantSidecar,
+    endpoint: String,
+    abort_result: Result<reboot::database_proto::TransactionParticipantAbortResponse, tonic::Status>,
+}
+struct DenialFaultCoordinator {
+    base: AuthorizationCleanupCoordinatorSidecar,
+    endpoint: String,
+    entered: tokio::sync::Semaphore,
+    release: tokio::sync::Notify,
+    result: Result<reboot::database_proto::TransactionCoordinatorDecisionPutResponse, tonic::Status>,
+}
+impl reboot::durable_participant::ParticipantSidecar for DenialFaultParticipant {
+    fn database_endpoint(&self) -> Option<&str> { Some(&self.endpoint) }
+    fn load(&self, _: reboot::database_proto::LoadRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::LoadResponse, tonic::Status>> + Send + '_>> {
+        self.base.trace.lock().unwrap().push("participant load");
+        let state = self.base.state.map(|state| state.encode_to_vec());
+        Box::pin(async move { Ok(reboot::database_proto::LoadResponse {
+            actors: vec![reboot::database_proto::Actor {
+                state_type: "tests.reboot.protoc.TransactionCounter".into(),
+                state_ref: "transaction-counter".into(),
+                state,
+            }],
+            ..Default::default()
+        }) })
+    }
+    fn prepare(&self, request: reboot::database_proto::TransactionParticipantPrepareRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionParticipantPrepareResponse, tonic::Status>> + Send + '_>> {
+        self.base.staged_states.lock().unwrap().push(request.state.clone());
+        self.base.trace.lock().unwrap().push("participant prepare");
+        Box::pin(async { Ok(reboot::database_proto::TransactionParticipantPrepareResponse::default()) })
+    }
+    fn commit(&self, _: reboot::database_proto::TransactionParticipantCommitRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionParticipantCommitResponse, tonic::Status>> + Send + '_>> {
+        self.base.trace.lock().unwrap().push("participant commit");
+        Box::pin(async { Ok(reboot::database_proto::TransactionParticipantCommitResponse::default()) })
+    }
+    fn abort(&self, request: reboot::database_proto::TransactionParticipantAbortRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionParticipantAbortResponse, tonic::Status>> + Send + '_>> {
+        self.base.trace.lock().unwrap().push("participant abort");
+        self.base.aborts.lock().unwrap().push(request);
+        self.base.abort_entered.add_permits(1);
+        Box::pin(async move { self.base.abort_release.notified().await; self.abort_result.clone() })
+    }
+    fn recover(&self, _: reboot::database_proto::RecoverRequest) -> Pin<Box<dyn Future<Output = Result<Vec<reboot::database_proto::RecoverResponse>, tonic::Status>> + Send + '_>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+    fn recover_idempotent_mutations(&self, _: reboot::database_proto::RecoverIdempotentMutationsRequest) -> Pin<Box<dyn Future<Output = Result<Vec<reboot::database_proto::RecoverIdempotentMutationsResponse>, tonic::Status>> + Send + '_>> {
+        let response = self.base.idempotent_recovery.lock().unwrap().pop_front().unwrap_or(Ok(Vec::new()));
+        let park = response.as_ref().is_err_and(|error| error.code() == tonic::Code::Cancelled && error.message() == "fixture park receipt lookup");
+        let trace = Arc::clone(&self.base.trace);
+        Box::pin(async move {
+            if park { trace.lock().unwrap().push("participant recovery parked"); std::future::pending::<()>().await; }
+            response
+        })
+    }
+}
+impl reboot::durable_coordinator::CoordinatorSidecar for DenialFaultCoordinator {
+    fn database_endpoint(&self) -> Option<&str> { Some(&self.endpoint) }
+    fn coordinator_prepare(&self, _: reboot::database_proto::TransactionCoordinatorPrepareRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionCoordinatorPrepareResponse, tonic::Status>> + Send + '_>> {
+        self.base.trace.lock().unwrap().push("coordinator DB prepare");
+        Box::pin(async { Ok(reboot::database_proto::TransactionCoordinatorPrepareResponse::default()) })
+    }
+    fn coordinator_prepared(&self, _: reboot::database_proto::TransactionCoordinatorPreparedRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionCoordinatorPreparedResponse, tonic::Status>> + Send + '_>> {
+        self.base.trace.lock().unwrap().push("coordinator DB prepared");
+        Box::pin(async { Ok(reboot::database_proto::TransactionCoordinatorPreparedResponse::default()) })
+    }
+    fn coordinator_cleanup(&self, _: reboot::database_proto::TransactionCoordinatorCleanupRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionCoordinatorCleanupResponse, tonic::Status>> + Send + '_>> {
+        self.base.trace.lock().unwrap().push("coordinator DB cleanup");
+        Box::pin(async { Ok(reboot::database_proto::TransactionCoordinatorCleanupResponse::default()) })
+    }
+    fn decision_put(&self, request: reboot::database_proto::TransactionCoordinatorDecisionPutRequest) -> Pin<Box<dyn Future<Output = Result<reboot::database_proto::TransactionCoordinatorDecisionPutResponse, tonic::Status>> + Send + '_>> {
+        self.base.decisions.lock().unwrap().push(request);
+        self.base.trace.lock().unwrap().push("coordinator DB decision");
+        Box::pin(async move { self.entered.add_permits(1); self.release.notified().await; self.result.clone() })
+    }
+    fn recover(&self, _: reboot::database_proto::RecoverRequest) -> Pin<Box<dyn Future<Output = Result<Vec<reboot::database_proto::RecoverResponse>, tonic::Status>> + Send + '_>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+}
+
+
+fn denial_rich_status(code: tonic::Code, decision: bool) -> tonic::Status {
+    let (message, details, metadata) = if decision {
+        ("SECRET_decision_actor_path", &b"SECRET_decision_details"[..], "SECRET_decision_metadata")
+    } else {
+        ("SECRET_abort_actor_path", &b"SECRET_abort_details"[..], "SECRET_abort_metadata")
+    };
+    let mut status = tonic::Status::with_details(code, message, details.to_vec().into());
+    status.metadata_mut().insert("x-private-cause", metadata.parse().unwrap());
+    status.metadata_mut().insert_bin("x-private-cause-bin", tonic::metadata::MetadataValue::from_bytes(details));
+    status
+}
+fn assert_denial_public(status: &tonic::Status) {
+    assert_eq!(status.code(), tonic::Code::Unavailable);
+    assert_eq!(status.message(), "authorization cleanup unavailable");
+    assert!(status.details().is_empty());
+    assert!(status.metadata().is_empty());
+}
+struct DenialWorkerRecovery {
+    owner: reboot::explicit_abort::ExplicitAbortOwner,
+    ready: std::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    failure: std::sync::Mutex<Option<tokio::sync::oneshot::Sender<tonic::Status>>>,
+}
+#[tonic::async_trait]
+impl reboot::application_host::HostRecovery for DenialWorkerRecovery {
+    async fn start(&self, supervisor: &mut tokio::task::JoinSet<Result<(), tonic::Status>>, cancel: reboot::application_host::RecoveryCancellation) -> Result<(), tonic::Status> {
+        let mut children = tokio::task::JoinSet::new();
+        self.owner.recovery_registration().start(&mut children, cancel).await?;
+        let failure = self.failure.lock().unwrap().take().unwrap();
+        supervisor.spawn(async move {
+            let result = children.join_next().await.expect("worker exists").expect("worker joined");
+            if let Err(status) = &result { let _ = failure.send(status.clone()); }
+            result
+        });
+        self.ready.lock().unwrap().take().unwrap().send(()).unwrap();
+        Ok(())
+    }
+}
+#[tokio::test]
+async fn generated_ordinary_denial_redacts_abort_and_decision_faults() {
+    use proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethods;
+    // Legacy Abort, reserved DecisionPut, reserved Abort-after-decision, and ACK.
+    for route in 0..5 {
+        for code in [tonic::Code::Internal, tonic::Code::DataLoss, tonic::Code::Unavailable, tonic::Code::PermissionDenied] {
+            for unauthenticated in [false, true] {
+                let endpoint = format!("http://denial-{}.invalid:1/", Uuid::new_v4());
+                let store = DatabaseActorStore::connect_lazy(&endpoint).unwrap();
+                let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
+                let key = Uuid::new_v4();
+                let recovery = Arc::new(std::sync::Mutex::new(VecDeque::from([Ok(vec![reboot::database_proto::RecoverIdempotentMutationsResponse {
+                    idempotent_mutations: vec![reboot::database_proto::IdempotentMutation {
+                        state_type: "tests.reboot.protoc.TransactionCounter".into(), state_ref: "transaction-counter".into(),
+                        key: key.as_bytes().to_vec(), response: proto::TransactionCounterValue { value: 987654321 }.encode_to_vec(),
+                        request_fingerprint: Some(reboot::runtime::request_fingerprint("tests.reboot.protoc.TransactionCounterWritesMethods.Increment", &proto::TransactionIncrementRequest { amount: 3 })),
+                        ..Default::default()
+                    }],
+                }])])));
+                let rich = denial_rich_status(code, route == 1);
+                let sidecar = Arc::new(DenialFaultParticipant {
+                    endpoint: endpoint.clone(), abort_result: if route == 3 || route == 4 { Ok(Default::default()) } else { Err(rich.clone()) },
+                    base: AuthorizationCleanupParticipantSidecar {
+                        trace: trace.clone(), state: Some(proto::TransactionCounter { value: 4 }),
+                        staged_states: Arc::new(std::sync::Mutex::new(Vec::new())), idempotent_recovery: recovery.clone(),
+                        aborts: std::sync::Mutex::new(Vec::new()), abort_entered: tokio::sync::Semaphore::new(0), abort_release: tokio::sync::Notify::new(),
+                    },
+                });
+                let participant = reboot::durable_participant::DurableActorParticipant::new(sidecar.clone(), "tests.reboot.protoc.TransactionCounter", "transaction-counter").with_database_actor_gate(&store);
+                let decisions = Arc::new(DenialFaultCoordinator {
+                    endpoint, entered: tokio::sync::Semaphore::new(0), release: tokio::sync::Notify::new(),
+                    result: if route == 1 { Err(rich.clone()) } else { Ok(Default::default()) },
+                    base: AuthorizationCleanupCoordinatorSidecar { trace: trace.clone(), decisions: std::sync::Mutex::new(Vec::new()) },
+                });
+                let coordinator = reboot::durable_coordinator::DurableRootCoordinator::new(decisions.clone(), Arc::new(reboot::durable_coordinator::SingleParticipantResolver::new(
+                    participant.actor_target(), reboot::durable_participant::DurableActorParticipantHost::new(participant.clone()),
+                ).unwrap())).with_identity(participant.actor_target());
+                let probe = Arc::new(AuthProbe {
+                    verifier_calls: Arc::new(AtomicUsize::new(0)), authorizer_calls: Arc::new(AtomicUsize::new(0)), handler_calls: Arc::new(AtomicUsize::new(0)),
+                    decision: if unauthenticated { AuthorizationDecision::Unauthenticated { message: "policy unauthenticated".into() } } else { AuthorizationDecision::PermissionDenied { message: "policy denied".into() } },
+                    contexts: Arc::new(std::sync::Mutex::new(Vec::new())), snapshots: Arc::new(std::sync::Mutex::new(Vec::new())),
+                });
+                let owner = reboot::explicit_abort::ExplicitAbortOwner::new(2).unwrap();
+                let mut adapter = transaction_generated::TransactionCounterWritesMethodsTransactionAdapter::new(store.clone(), participant.clone(), coordinator.clone(), TransactionStartFactory,
+                    TransactionCounter { fresh_shared_probe: None, trace: trace.clone(), fail: false, downstream: None, final_state_override: None })
+                    .with_authorization(AuthorizationPolicy::new(Some(probe.clone()), Some(probe.clone())));
+                let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+                let (ready, started) = tokio::sync::oneshot::channel();
+                let (failure, failed) = tokio::sync::oneshot::channel();
+                let server = if route == 1 || route == 2 || route == 4 {
+                    adapter = adapter.with_explicit_abort_owner(owner.clone());
+                    let host = reboot::application_host::ApplicationHost::new("denial-fault").with_host_recovery(DenialWorkerRecovery { owner: owner.clone(), ready: std::sync::Mutex::new(Some(ready)), failure: std::sync::Mutex::new(Some(failure)) });
+                    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                    let served = adapter.clone();
+                    let server = tokio::spawn(host.add_public_service(proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethodsServer::new(served)).serve_with_listener_shutdown(listener, async { let _ = stopped.await; }));
+                    tokio::time::timeout(std::time::Duration::from_secs(2), started).await.unwrap().unwrap();
+                    Some(server)
+                } else { None };
+                let mut headers = reboot::RebootHeaders::new("transaction-counter");
+                if route == 0 || route == 3 { headers.idempotency_key = Some(key); }
+                let mut request = tonic::Request::new(proto::TransactionIncrementRequest { amount: 3 });
+                *request.metadata_mut() = headers.to_metadata().unwrap();
+                // One representative case crosses a real generated Tonic server/client.
+                let wire = route == 0 && code == tonic::Code::Internal && !unauthenticated;
+                let mut wire_server = None;
+                let mut rpc: Pin<Box<dyn Future<Output = Result<tonic::Response<proto::TransactionCounterValue>, tonic::Status>> + Send + '_>> = if wire {
+                    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                    let address = listener.local_addr().unwrap();
+                    let served = adapter.clone();
+                    wire_server = Some(tokio::spawn(async move {
+                        tonic::transport::Server::builder().add_service(proto::transaction_counter_writes_methods_server::TransactionCounterWritesMethodsServer::new(served))
+                            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener)).await.unwrap();
+                    }));
+                    let mut client = proto::transaction_counter_writes_methods_client::TransactionCounterWritesMethodsClient::connect(format!("http://{address}")).await.unwrap();
+                    Box::pin(async move { client.increment(request).await })
+                } else { Box::pin(TransactionCounterWritesMethods::increment(&adapter, request)) };
+                let reserved = route == 1 || route == 2 || route == 4;
+                // Drive the same generated RPC until cleanup is causally parked.
+                if reserved {
+                    tokio::select! {
+                        entered = tokio::time::timeout(std::time::Duration::from_secs(1), decisions.entered.acquire()) => entered.unwrap().unwrap().forget(),
+                        early = &mut rpc => panic!("RPC completed before DecisionPut ACK: {early:?}"),
+                    }
+                } else {
+                    tokio::select! {
+                        entered = tokio::time::timeout(std::time::Duration::from_secs(1), sidecar.base.abort_entered.acquire()) => entered.unwrap().unwrap().forget(),
+                        early = &mut rpc => panic!("RPC completed before Abort ACK: {early:?}"),
+                    }
+                }
+                let gate = store.actor_gate("tests.reboot.protoc.TransactionCounter", "transaction-counter");
+                // Probe reader first: no queued writer can manufacture exclusion.
+                assert!(tokio::time::timeout(std::time::Duration::from_millis(30), gate.shared()).await.is_err());
+                assert!(tokio::time::timeout(std::time::Duration::from_millis(30), gate.exclusive()).await.is_err());
+                assert!(tokio::time::timeout(std::time::Duration::from_millis(30), &mut rpc).await.is_err());
+                let disjoint = store.actor_gate("tests.reboot.protoc.TransactionCounter", "disjoint");
+                drop(tokio::time::timeout(std::time::Duration::from_secs(1), disjoint.exclusive()).await.unwrap());
+                if reserved {
+                    decisions.release.notify_one();
+                }
+                if route != 1 {
+                    if reserved {
+                        tokio::select! {
+                            entered = tokio::time::timeout(std::time::Duration::from_secs(1), sidecar.base.abort_entered.acquire()) => entered.unwrap().unwrap().forget(),
+                            early = &mut rpc => panic!("RPC completed before reserved Abort ACK: {early:?}"),
+                        }
+                    }
+                    // DecisionPut ACK must not release the actor before native Abort ACK.
+                    assert!(tokio::time::timeout(std::time::Duration::from_millis(30), gate.shared()).await.is_err());
+                    assert!(tokio::time::timeout(std::time::Duration::from_millis(30), gate.exclusive()).await.is_err());
+                    assert!(tokio::time::timeout(std::time::Duration::from_millis(30), &mut rpc).await.is_err());
+                    sidecar.base.abort_release.notify_one();
+                }
+                let status = tokio::time::timeout(std::time::Duration::from_secs(2), rpc).await.unwrap().unwrap_err();
+                if route == 3 || route == 4 {
+                    assert_eq!(status.code(), if unauthenticated { tonic::Code::Unauthenticated } else { tonic::Code::PermissionDenied });
+                    assert_eq!(status.message(), if unauthenticated { "policy unauthenticated" } else { "policy denied" });
+                    assert!(status.details().is_empty()); assert!(status.metadata().is_empty());
+                    drop(tokio::time::timeout(std::time::Duration::from_secs(1), gate.exclusive()).await.unwrap());
+                } else {
+                    if wire {
+                        assert_eq!(status.code(), tonic::Code::Unavailable);
+                        assert_eq!(status.message(), "authorization cleanup unavailable");
+                        assert!(status.details().is_empty());
+                        assert!(status.metadata().get("x-private-cause").is_none());
+                        assert!(status.metadata().get_bin("x-private-cause-bin").is_none());
+                        assert!(status.metadata().get_bin("grpc-status-details-bin").is_none());
+                        assert!(!format!("{:?}", status.metadata()).contains("SECRET_"));
+                    } else { assert_denial_public(&status); }
+                    assert!(tokio::time::timeout(std::time::Duration::from_millis(30), gate.shared()).await.is_err());
+                    assert!(tokio::time::timeout(std::time::Duration::from_millis(30), gate.exclusive()).await.is_err());
+                }
+                if route == 1 || route == 2 {
+                    let internal = tokio::time::timeout(std::time::Duration::from_secs(2), failed).await.unwrap().unwrap();
+                    assert_eq!(internal.code(), rich.code()); assert_eq!(internal.message(), rich.message()); assert_eq!(internal.details(), rich.details());
+                    assert_eq!(internal.metadata().get("x-private-cause"), rich.metadata().get("x-private-cause"));
+                    assert_eq!(internal.metadata().get_bin("x-private-cause-bin"), rich.metadata().get_bin("x-private-cause-bin"));
+                }
+                let decisions_seen = decisions.base.decisions.lock().unwrap().clone();
+                assert_eq!(decisions_seen.len(), if route == 1 || route == 2 || route == 4 { 1 } else { 0 });
+                for decision in &decisions_seen {
+                    assert_eq!(decision.root_transaction_id, Uuid::from_u128(102).as_bytes());
+                    assert_eq!(decision.decision.as_ref().unwrap().outcome, reboot::database_proto::transaction_coordinator_decision::Outcome::Abort as i32);
+                }
+                assert_eq!(sidecar.base.aborts.lock().unwrap().len(), if route == 1 { 0 } else { 1 });
+                assert!(sidecar.base.staged_states.lock().unwrap().is_empty());
+                if route == 1 || route == 2 {
+                    let root = reboot::runtime::RootTransactionContext::start(reboot::RebootHeaders::new("transaction-counter"), "tests.reboot.protoc.TransactionCounter", reboot::runtime::TransactionMode::Exclusive, Uuid::new_v4(), prost_types::Timestamp::default()).unwrap();
+                    assert!(reboot::explicit_abort::RegisteredRoot::before_load(&participant, root.transaction().clone(), coordinator.clone(), Some(&owner)).is_err());
+                }
+                assert_eq!(probe.authorizer_calls.load(Ordering::SeqCst), 1);
+                assert_eq!(recovery.lock().unwrap().len(), 1, "no receipt lookup/replay on denial");
+                let expected = if route == 1 { vec!["participant load", "coordinator DB decision"] } else if route == 2 || route == 4 { vec!["participant load", "coordinator DB decision", "participant abort"] } else { vec!["participant load", "participant abort"] };
+                assert_eq!(*trace.lock().unwrap(), expected, "no handler, Prepare, Commit, or extra Load");
+                if route == 4 {
+                    owner.wait_for_idle_for_test(std::time::Duration::from_secs(2)).await.unwrap();
+                }
+                if let Some(server) = wire_server { server.abort(); let _ = server.await; }
+                let _ = stop.send(());
+                if let Some(server) = server {
+                    let joined = tokio::time::timeout(std::time::Duration::from_secs(2), server).await.unwrap().unwrap();
+                    if route == 4 { joined.unwrap(); } else { assert!(joined.is_err(), "failed recovery must fail host"); }
+                }
+            }
+        }
+    }
+}
+
 struct TransactionStartFactory;
 
 impl reboot::runtime::RootTransactionStartFactory for TransactionStartFactory {
@@ -984,7 +1305,7 @@ fn transaction_adapter(
 fn transaction_adapter_with_idempotent_recovery(
     trace: Arc<std::sync::Mutex<Vec<&'static str>>>,
     fail: bool,
-    idempotent_recovery: Arc<std::sync::Mutex<VecDeque<Result<Vec<reboot::database_proto::RecoverIdempotentMutationsResponse>, tonic::Status>>>>,
+    idempotent_recovery: IdempotentRecoveryQueue,
 ) -> transaction_generated::TransactionCounterWritesMethodsTransactionAdapter<
     TransactionCounter,
     TransactionParticipantSidecar,
@@ -1023,7 +1344,7 @@ fn transaction_adapter_with_store_and_idempotent_recovery(
     trace: Arc<std::sync::Mutex<Vec<&'static str>>>,
     fail: bool,
     store: DatabaseActorStore,
-    idempotent_recovery: Arc<std::sync::Mutex<VecDeque<Result<Vec<reboot::database_proto::RecoverIdempotentMutationsResponse>, tonic::Status>>>>,
+    idempotent_recovery: IdempotentRecoveryQueue,
 ) -> transaction_generated::TransactionCounterWritesMethodsTransactionAdapter<
     TransactionCounter,
     TransactionParticipantSidecar,
@@ -1216,11 +1537,11 @@ impl tonic::codegen::Body for PendingLocalEof {
     fn poll_frame(mut self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Option<Result<http_body::Frame<Self::Data>, Self::Error>>> {
         if self.trailers_seen { self.probe.entered.notify_one(); return std::task::Poll::Pending; }
         let frame = Pin::new(&mut self.inner).poll_frame(cx);
-        if let std::task::Poll::Ready(Some(Ok(ref frame))) = frame {
-            if let Some(trailers) = frame.trailers_ref() {
-                assert!(trailers.contains_key(reboot::successful_trailers::TRANSACTION_PARTICIPANTS_HEADER));
-                self.trailers_seen = true;
-            }
+        if let std::task::Poll::Ready(Some(Ok(ref frame))) = frame
+            && let Some(trailers) = frame.trailers_ref()
+        {
+            assert!(trailers.contains_key(reboot::successful_trailers::TRANSACTION_PARTICIPANTS_HEADER));
+            self.trailers_seen = true;
         }
         frame
     }
@@ -1430,7 +1751,7 @@ impl reboot::durable_coordinator::CoordinatorSidecar for TicketCoordinatorSideca
             headers.transaction_coordinator_state_ref = Some(context.transaction_coordinator_state_ref().into());
             headers.coordinator_read_only_aware = context.headers().coordinator_read_only_aware;
             let make_request = |ticket| {
-                let mut request = tonic::Request::new(message.clone());
+                let mut request = tonic::Request::new(message);
                 *request.metadata_mut() = headers.to_metadata().unwrap();
                 request.extensions_mut().insert(ticket);
                 request
@@ -1572,7 +1893,7 @@ impl reboot::durable_coordinator::CoordinatorSidecar for TicketCoordinatorSideca
         if mode < 8 { assert_eq!(error.message(), "parent probe complete"); }
     }
     assert_eq!(allocations.load(Ordering::SeqCst), usize::from(!matches!(mode, 9 | 11 | 12) && !(writer && mode == 8)));
-    if matches!(mode, 13 | 14 | 15) {
+    if matches!(mode, 13..=15) {
         assert!(database.participant_prepare_requests().is_empty());
         assert!(database.participant_commit_requests().is_empty());
         // Owned root abort may persist an abort decision; that is not Commit authority.
@@ -2269,7 +2590,7 @@ async fn generated_cached_factory_recovery_cancellation_releases_pre_handler_inc
             key: key.as_bytes().to_vec(), response: proto::TransactionCounterValue { value: 99 }.encode_to_vec(),
             request_fingerprint: Some(reboot::runtime::request_fingerprint("tests.reboot.protoc.TransactionCounterWritesMethods.FactoryIncrement", &proto::TransactionIncrementRequest { amount: 3 })),
             ..Default::default()
-        }], ..Default::default()
+        }],
     };
     let recoveries = Arc::new(std::sync::Mutex::new(VecDeque::from([
         Err(tonic::Status::cancelled("fixture park receipt lookup")), Ok(vec![recovery]),
@@ -2331,7 +2652,6 @@ async fn generated_fresh_non_factory_exclusive_transaction_replay_requires_curre
                 )),
                 ..Default::default()
             }],
-            ..Default::default()
         }
     }
     fn request(token: &str, key: Uuid) -> tonic::Request<proto::TransactionIncrementRequest> {
@@ -2873,7 +3193,7 @@ async fn generated_root_star_and_reusable_policy_cancellation_releases_same_root
             let policy = Arc::new(ParkThenDeny { calls: AtomicUsize::new(0), snapshots: std::sync::Mutex::new(Vec::new()) });
             let trace = Arc::new(std::sync::Mutex::new(Vec::new()));
             let staged = Arc::new(std::sync::Mutex::new(Vec::new()));
-            let adapter = factory_transaction_adapter(trace.clone(), state.clone(), staged.clone(), false, None)
+            let adapter = factory_transaction_adapter(trace.clone(), state, staged.clone(), false, None)
                 .with_authorization(AuthorizationPolicy::new(None, Some(policy.clone())));
             let adapter = if reusable { adapter.with_sequential_reusable_participants() }
                 else { adapter.with_sequential_root_star() };
@@ -3547,27 +3867,29 @@ async fn generated_external_unary_clients_retry_only_unavailable_with_canonical_
             .value,
         77
     );
-    let writer_requests = writer_requests.lock().unwrap();
-    assert_eq!(writer_requests.len(), 2);
-    assert_eq!(writer_requests[0], writer_requests[1]);
-    let writer_headers = &writer_requests[0].1;
-    let writer_key = writer_headers.idempotency_key.expect("automatic writer key");
-    assert_eq!(writer_key.get_version_num(), 7);
-    drop(writer_requests);
+    {
+        let writer_requests = writer_requests.lock().unwrap();
+        assert_eq!(writer_requests.len(), 2);
+        assert_eq!(writer_requests[0], writer_requests[1]);
+        let writer_headers = &writer_requests[0].1;
+        let writer_key = writer_headers.idempotency_key.expect("automatic writer key");
+        assert_eq!(writer_key.get_version_num(), 7);
+    }
 
     let mut reads = generated::CounterReadsMethodsExternalClient::new(
         context.connect(address.clone()).await.unwrap(),
         context,
     );
     assert_eq!(reads.get(proto::Empty {}).await.unwrap().into_inner().value, 78);
-    let reader_requests = reader_requests.lock().unwrap();
-    assert_eq!(reader_requests.len(), 2);
-    assert_eq!(reader_requests[0], reader_requests[1]);
-    assert!(
-        reader_requests[0].1.idempotency_key.is_none(),
-        "readers must not acquire writer idempotency metadata"
-    );
-    drop(reader_requests);
+    {
+        let reader_requests = reader_requests.lock().unwrap();
+        assert_eq!(reader_requests.len(), 2);
+        assert_eq!(reader_requests[0], reader_requests[1]);
+        assert!(
+            reader_requests[0].1.idempotency_key.is_none(),
+            "readers must not acquire writer idempotency metadata"
+        );
+    }
     server.abort();
 
     let writer = script(vec![tonic::Code::InvalidArgument]);
@@ -3825,7 +4147,6 @@ async fn generated_subscription_binding_rejects_credentials_before_embedded_deco
     let mut request = tonic::Request::new(Query {
         method: "tests.reboot.protoc.CounterReadsMethods.Get".into(),
         request: vec![0xff],
-        ..Default::default()
     });
     *request.metadata_mut() = headers.to_metadata().unwrap();
     let status = ReaderBinding::read(&reader, request).await.unwrap_err();
@@ -4056,9 +4377,10 @@ async fn generated_external_constructor_authorization_hides_absence_and_authoriz
     assert_eq!(denied.authorizer_calls.load(Ordering::SeqCst), 1);
     assert_eq!(denied.handler_calls.load(Ordering::SeqCst), 0);
     assert!(database.create_requests().is_empty(), "absent-state denial must not create an actor or idempotency mutation");
-    let denied_snapshots = denied.snapshots.lock().unwrap();
-    assert_eq!(denied_snapshots.as_slice(), &[(None, proto::ConstructorCreateRequest { initial_value: 5 }.encode_to_vec())]);
-    drop(denied_snapshots);
+    {
+        let denied_snapshots = denied.snapshots.lock().unwrap();
+        assert_eq!(denied_snapshots.as_slice(), &[(None, proto::ConstructorCreateRequest { initial_value: 5 }.encode_to_vec())]);
+    }
     server.abort();
 
     let allowed = probe(AuthorizationDecision::Allow);
@@ -4493,6 +4815,17 @@ async fn generated_transaction_client_reroutes_through_legacy_application_placem
         .status()
         .unwrap();
     assert!(status.success());
+
+    if std::env::var_os("RBT_STRICT_GENERATED_CLIPPY").as_deref()
+        == Some(std::ffi::OsStr::new("1"))
+    {
+        let lint = Command::new("cargo")
+            .args(["clippy", "--locked", "--offline", "--all-targets", "--", "-D", "warnings"])
+            .current_dir(&fixture)
+            .status()
+            .unwrap();
+        assert!(lint.success(), "strict generated-consumer Clippy failed");
+    }
 
     // The matching consumer above uses the real SDK renamed to `reboot`.
     // Change only an emitted guard literal; leave runtime and adapter APIs intact.

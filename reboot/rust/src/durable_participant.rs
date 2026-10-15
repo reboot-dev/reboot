@@ -466,6 +466,9 @@ struct Pending {
     // metadata/effects, and it preserves existing safe terminal retry policy.
     native_control_started: bool,
     factory: bool,
+    // Minted only by consumed registered constructor-child admission. Never a
+    // factory policy or task-owner authority; recovery retains native ownership.
+    constructor_child: bool,
     disposition: PendingDisposition,
     // Kept until a terminal sidecar response is acknowledged.
     lock: PendingLock,
@@ -1792,6 +1795,10 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             .await
     }
 
+    pub(crate) fn database_endpoint(&self) -> Option<&str> {
+        self.sidecar.database_endpoint()
+    }
+
     #[doc(hidden)]
     pub fn actor_target(&self) -> crate::durable_coordinator::ParticipantTarget {
         crate::durable_coordinator::ParticipantTarget {
@@ -1835,7 +1842,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 ));
             }
         }
-        self.start_owned_reserved(start, mode, local_owner, false, preallow_load)
+        self.start_owned_reserved(start, mode, local_owner, false, preallow_load, false)
             .await
     }
 
@@ -1876,6 +1883,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         local_owner: Option<Uuid>,
         reusable: bool,
         preallow_load: bool,
+        constructor_child: bool,
     ) -> Result<Option<Vec<u8>>, Status> {
         // Reserve a bounded root slot before any gate/Load await. Keep its Arc
         // alive through publication so cancellation/pruning cannot detach it.
@@ -1941,6 +1949,20 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;
             }
         }
+        if constructor_child {
+            // Native Load omits missing actors (database.cc MultiGet IsNotFound),
+            // rather than returning a fabricated Actor with unset state.
+            if !response.tasks.is_empty()
+                || response.actors.len() > 1
+                || response.actors.first().is_some_and(|actor| {
+                    actor.state_type != self.state_type
+                        || actor.state_ref != self.state_ref
+                        || actor.state.is_none()
+                })
+            {
+                return Err(Status::data_loss("constructor Load returned malformed or foreign records"));
+            }
+        }
         let state = response
             .actors
             .into_iter()
@@ -1985,6 +2007,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             native_uncertain: false,
             native_control_started: false,
             factory: start.factory,
+            constructor_child,
             disposition: if start.read_only {
                 PendingDisposition::ReadOnly
             } else {
@@ -2210,7 +2233,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             }
         }
         let state = self
-            .start_owned_reserved(start, mode, Some(owner), true, preallow_load)
+            .start_owned_reserved(start, mode, Some(owner), true, preallow_load, false)
             .await?;
         Ok(StartedLocalTransaction {
             cleanup_producer,
@@ -2240,6 +2263,56 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         let _pending = self.pending.lock().await;
         entered.send(()).unwrap();
         release.await.unwrap();
+    }
+
+    /// Called only after the existing registered one-use ticket is consumed and
+    /// a live root Watch reservation is held by RootHandlerGuard admission.
+    pub(crate) async fn start_constructor_child(
+        &self,
+        context: &crate::runtime::TransactionContext,
+    ) -> Result<StartedLocalTransaction<C>, Status> {
+        if context.is_fresh_root()
+            || context.mode() != TransactionMode::Exclusive
+            || context.transaction_ids().len() != 2
+            || context.headers().idempotency_key.is_some()
+            || context.headers().task_schedule.is_some()
+            || context.shared_existing_writer_member()
+            || (context.transaction_coordinator_state_type() == self.state_type
+                && context.transaction_coordinator_state_ref() == self.state_ref)
+        {
+            return Err(Status::failed_precondition("constructor child requires registered exclusive direct-root admission"));
+        }
+        let start = ActorTransactionStart {
+            transaction_ids: context.transaction_ids().to_vec(),
+            transaction_path: TransactionPathContract::PreserveNested,
+            coordinator_state_type: context.transaction_coordinator_state_type().to_owned(),
+            coordinator_state_ref: context.transaction_coordinator_state_ref().to_owned(),
+            mode: TransactionMode::Exclusive,
+            read_only: false,
+            factory: false,
+            state_type: self.state_type.clone(),
+            state_ref: context.headers().state_ref.clone(),
+        };
+        self.validate_start(&start)?;
+        let root = start.transaction_ids[0];
+        let cleanup_producer = self.reserve_cleanup_producer()?;
+        let owner = Uuid::new_v4();
+        let _admission = self.reserve_admission(root, false)?;
+        let state = self.start_owned_reserved(
+            start, ParticipantStartMode::Exclusive, Some(owner), false, true, true,
+        ).await?;
+        Ok(StartedLocalTransaction {
+            cleanup_producer,
+            cleanup_slot: self.pending.lookup(root),
+            participant: self.clone(),
+            transaction_id: root,
+            state,
+            local_owner: owner,
+            admitted_explicit_root_scope: false,
+            armed: true,
+            cancellation_authority: false,
+            handed_off: false,
+        })
     }
 
     /// Starts a local handler with cancellation-safe pre-durable cleanup.
@@ -2342,6 +2415,17 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         {
             return Err(Status::failed_precondition(
                 "pending transaction ID or local incarnation differs",
+            ));
+        }
+        if current.constructor_child
+            && (current.loaded_state.is_some()
+                || owner != current.local_owner
+                || effects.state.is_none()
+                || !effects.task_upserts.is_empty()
+                || !effects.idempotent_mutations.is_empty())
+        {
+            return Err(Status::failed_precondition(
+                "constructor child requires owned state staging; dynamic task-owner integration is required for tasks",
             ));
         }
         if current.native_control_started
@@ -2758,6 +2842,9 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             self.changed.notify_waiters();
             return Ok(PrepareOutcome::Prepared);
         }
+        if current.constructor_child && (!current.staged || current.effects.state.is_none() || read_only) {
+            return Err(Status::failed_precondition("constructor child Prepare requires staged writable state"));
+        }
         // Native Prepare owns the actor, not a registry slot. Shared metadata
         // and a root ID are not exclusive authority; staging must first obtain
         // the actual exclusive ActorGate lease (or classify local read-only).
@@ -2940,6 +3027,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             native_uncertain: false,
             native_control_started: false,
             factory: false,
+            constructor_child: false,
             disposition: PendingDisposition::Commit,
             lock: PendingLock::Exclusive(lock),
         });
@@ -3136,10 +3224,18 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 "native ACK uncertain; ownership retained until sidecar restart/recovery",
             ));
         }
-        if live && commit && !current.prepared {
+        if (live || current.constructor_child) && commit && !current.prepared {
             return Err(Status::failed_precondition(
                 "live Commit requires exact prepared ownership",
             ));
+        }
+        if current.constructor_child && !current.has_native_ownership() {
+            // This exact admitted constructor has never sent native mutation or
+            // control. Root Abort discards only its local slot, not an actor-wide
+            // Database transaction guessed from absence.
+            *pending = None;
+            self.changed.notify_waiters();
+            return Ok(true);
         }
         if current.lock.is_shared() {
             // Neither Commit nor Abort carries a root to the native Database.
@@ -6348,6 +6444,7 @@ mod tests {
     include!("actor_gate_binding_tests.rs");
     include!("actor_gate_binding_recovery_tests.rs");
     include!("host_participant_cleanup_tests.rs");
+    include!("constructor_child_tests.rs");
 
     #[derive(Clone, Debug, PartialEq)]
     enum Call {

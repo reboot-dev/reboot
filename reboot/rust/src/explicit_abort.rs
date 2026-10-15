@@ -522,6 +522,7 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> RegisteredRoot<C, R> {
         }
         Ok(RootHandlerGuard {
             local: Some(local),
+            constructor_child: None,
             admission_context: self.original_context.clone(),
             pre_handler_cleanup: std::sync::atomic::AtomicBool::new(true),
             context: self.context.clone(),
@@ -553,6 +554,7 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> Drop for RegisteredRoot<C, R
 /// The awaited handler temporary drops before this enclosing lifetime does.
 pub struct RootHandlerGuard<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver> {
     local: Option<StartedLocalTransaction<P>>,
+    constructor_child: Option<(crate::registered_local::RegisteredAdapterBinding, crate::registered_local::GeneratedLocalAdapterConfig)>,
     // Authorization runs before host execution capabilities are installed.
     // Retain that immutable identity separately from the live handler context.
     admission_context: TransactionContext,
@@ -577,6 +579,74 @@ pub struct RootHandlerGuard<P: ParticipantSidecar, C: CoordinatorSidecar, R: Par
 impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
     RootHandlerGuard<P, C, R>
 {
+    /// Trusted generated receiver seam for a registered taskless writer
+    /// constructor. The one-use ticket is consumed before any storage IO;
+    /// registration alone and wire metadata never grant this authority.
+    /// Generator integration must select this seam only for declared constructors
+    /// and still consume the configured authorization entry before user effects.
+    #[doc(hidden)]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn registered_constructor_child<Req: prost::Message>(
+        participant: &crate::durable_participant::DurableActorParticipant<P>,
+        ticket: &crate::runtime::RegisteredLocalTicket,
+        binding: &crate::registered_local::RegisteredAdapterBinding,
+        configuration: &crate::registered_local::GeneratedLocalAdapterConfig,
+        method: &str,
+        headers: &crate::RebootHeaders,
+        request: &Req,
+        coordinator: DurableRootCoordinator<C, R>,
+        owner: &crate::live_participant::LiveParticipantOwner,
+    ) -> Result<(Self, TransactionContext, crate::auth::AuthorizedHandlerEntry), Status> {
+        let mut context = ticket.consume(binding, configuration, method, headers, request)?;
+        context.enforce_live_leaf()?;
+        binding.require_host_ready(configuration)?;
+        if configuration.target != participant.actor_target()
+            || participant.database_endpoint() != Some(configuration.database_endpoint.as_str())
+            || !configuration.methods.contains(method)
+        {
+            return Err(Status::failed_precondition("constructor child registration differs from participant"));
+        }
+        configuration.policy.require_authorizer()?;
+        let (authorization_context, auth) = configuration.policy.verify(
+            context.headers().clone(), configuration.target.state_type.clone(), method,
+        ).await?;
+        binding.require_host_ready(configuration)?;
+        // Reserve real running root outcome supervision BEFORE gate/Load awaits.
+        let reservation = owner.reserve(&context)?;
+        let mut local = participant.start_constructor_child(&context).await?;
+        let entry = configuration.policy.authorize_handler_entry(
+            &local.authorized_handler_admission(), &context, &authorization_context,
+            auth.as_ref(), local.state(), &request.encode_to_vec(),
+        ).await?;
+        // Policy precedes existence disclosure and user-state decoding. A stored
+        // empty protobuf is existing state, never absent construction authority.
+        if local.state().is_some() {
+            return Err(Status::already_exists("constructor child actor already exists"));
+        }
+        binding.require_host_ready(configuration)?;
+        reservation.validate_active()?;
+        let execution = local.reserve_live_execution(&context).await?;
+        let guard = Self {
+            local: Some(local),
+            constructor_child: Some((binding.clone(), configuration.clone())),
+            admission_context: context.clone(),
+            pre_handler_cleanup: std::sync::atomic::AtomicBool::new(true),
+            context: context.clone(),
+            coordinator,
+            reservation: None,
+            registration: None,
+            inbound: Some((reservation, execution)),
+            task_dispatcher: std::sync::Mutex::new(None),
+            builtin_map_active: None,
+            shared_handler_registration: Mutex::new(None),
+        };
+        // Any rejection now drops the actual Watch obligation; no disarmed local
+        // capability can escape between the await and its supervising aggregate.
+        guard.inbound.as_ref().unwrap().0.validate_active()?;
+        binding.require_host_ready(configuration)?;
+        Ok((guard, context, entry))
+    }
+
     #[doc(hidden)]
     pub async fn before_handler(
         mut local: StartedLocalTransaction<P>,
@@ -611,6 +681,7 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
         };
         Ok(Self {
             local: Some(local),
+            constructor_child: None,
             admission_context: context.clone(),
             pre_handler_cleanup: std::sync::atomic::AtomicBool::new(true),
             context,
@@ -669,6 +740,17 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
         F: std::future::Future<Output = T>,
     {
         let (method, request) = call;
+        if let Some((admitted_binding, admitted_configuration)) = &self.constructor_child {
+            let (binding, configuration) = registration.as_ref().ok_or_else(|| {
+                Status::failed_precondition("constructor handler requires its sealed registered configuration")
+            })?;
+            if entry.is_none()
+                || !admitted_binding.same_registration(binding)
+                || !admitted_configuration.same_identity_for_ticket(configuration)
+            {
+                return Err(Status::failed_precondition("constructor handler registration or policy entry differs"));
+            }
+        }
         if self.context.shared_existing_writer_root() && (entry.is_none() || registration.is_none())
         {
             return Err(Status::failed_precondition(
@@ -767,6 +849,9 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
     }
 
     fn validate_authorized_handler_owner(&self) -> Result<(), Status> {
+        if let Some((binding, configuration)) = &self.constructor_child {
+            binding.require_host_ready(configuration)?;
+        }
         if self.context.is_fresh_root() {
             let token = self.registration.as_ref().ok_or_else(|| {
                 Status::failed_precondition("authorized handler requires registered root")
@@ -1084,6 +1169,15 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
         local: crate::durable_coordinator::ParticipantTarget,
         read_only: bool,
     ) -> Result<crate::successful_trailers::ParticipantMetadata, Status> {
+        if self.constructor_child.is_some()
+            && (read_only || self.local.as_ref().is_none_or(|local_transaction| {
+                local_transaction.state().is_some()
+                    || local_transaction.actor_state_type() != local.state_type
+                    || local_transaction.actor_state_ref() != local.state_ref
+            }))
+        {
+            return Err(Status::failed_precondition("constructor child membership must be exact and writable"));
+        }
         let mut returned = if self.context.tree_owned() {
             self.context.seal_explicit_abort()?
         } else {
@@ -1450,6 +1544,9 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
         &self,
         effects: crate::durable_participant::PendingActorEffects,
     ) -> Result<Option<crate::durable_participant::SharedPromotion>, Status> {
+        if self.constructor_child.is_some() {
+            self.validate_authorized_handler_owner()?;
+        }
         let local = self
             .local
             .as_ref()
@@ -1518,7 +1615,11 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
                 return result;
             }
         }
-        local.stage(effects).await
+        let result = local.stage(effects).await;
+        if self.constructor_child.is_some() {
+            self.validate_authorized_handler_owner()?;
+        }
+        result
     }
 
     /// Complete exactly this admitted call before successful trailers authorize
@@ -1613,6 +1714,18 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
             return self.abort_explicit().await;
         }
         self.local.as_mut().unwrap().abort_legacy().await
+    }
+
+    /// Generated ordinary pre-Allow denial cleanup only. Keep cleanup ownership
+    /// and internal errors intact, but never disclose their rich Status to callers.
+    #[doc(hidden)]
+    pub async fn abort_local_after_denial(self) -> Result<(), Status> {
+        self.abort_local().await.map_err(|cause| {
+            // Code-only diagnostic: storage messages, details, and metadata may
+            // contain private actor data or credentials, even in server logs.
+            eprintln!("authorization denial cleanup failed: code={:?}", cause.code());
+            Status::unavailable("authorization cleanup unavailable")
+        })
     }
 
     #[cfg(test)]

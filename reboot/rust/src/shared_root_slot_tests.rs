@@ -124,13 +124,8 @@ struct B1ActorOnlySidecar {
 
 impl B1ActorOnlySidecar {
     fn assert_exclusion_before_io(&self) {
-        struct Noop;
-        impl std::task::Wake for Noop {
-            fn wake(self: Arc<Self>) {}
-        }
         let gate = self.gate.lock().unwrap().as_ref().unwrap().clone();
-        let waker = std::task::Waker::from(Arc::new(Noop));
-        let mut cx = std::task::Context::from_waker(&waker);
+        let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
         // Poll shared FIRST so our own exclusive probe cannot queue a writer
         // and manufacture the very exclusion being asserted. These cases have
         // no external queued writer/upgrader at native entry. Both probes are
