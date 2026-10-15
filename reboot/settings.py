@@ -149,6 +149,9 @@ ENVVAR_RBT_FRONTEND_ROOT_PATH = 'RBT_FRONTEND_ROOT_PATH'
 # Project-relative directory holding the built MCP Apps, e.g.
 # "frontend/dist", served under "/__/frontend/".
 ENVVAR_RBT_MCP_APP_DIST_PATH = 'RBT_MCP_APP_DIST_PATH'
+# Project-relative directory holding the built web app, e.g.
+# "frontend/dist/web", served at "/".
+ENVVAR_RBT_WEB_APP_DIST_PATH = 'RBT_WEB_APP_DIST_PATH'
 
 # Environment variable indicating that `rbt` is being invoked from
 # Node.js.

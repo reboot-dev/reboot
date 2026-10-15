@@ -209,6 +209,26 @@ flag does.
 
 ## Going to production
 
+The built SPA can be served by the backend itself, at `/`, or by a
+static host on its own origin.
+
+**Served by the backend.** Build the frontend (`npm run build`) and
+tell `rbt serve` where the builds landed, the MCP Apps and the SPA;
+the backend serves the SPA at `/`, with its `index.html` answering
+any path the app has no route or file for, so the SPA's own routing
+works on reload:
+
+```
+serve run --mcp-app-dist-path=frontend/dist
+serve run --web-app-dist-path=frontend/dist/web
+```
+
+The SPA is same-origin with the backend, so it needs no
+`VITE_REBOOT_URL` and no `allowed_origins` entry. To try the same
+thing locally, `rbt dev run --config=dist` with the same flags.
+
+**Served by a static host.**
+
 1. Build the SPA (`npm run build`) and publish it to any static host.
 2. Set `VITE_REBOOT_URL` to the backend's public origin at build time.
 3. Deploy the backend — [Reboot Cloud](/deploy_on_reboot_cloud) or

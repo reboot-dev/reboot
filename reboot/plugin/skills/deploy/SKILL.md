@@ -133,22 +133,13 @@ at the root of any host.
    is `frontend/dist/web/`, the directory containing the built
    `index.html`. Pages serves `index.html` for any path it has no
    file for when the build has no top-level `404.html`, so an app
-   with URL-path routes needs no routing file of its own.
+   with URL-path routes needs no routing file of its own. The web
+   build is at `base: "/"` whether or not the app also has MCP Apps,
+   so keep any URL-path router's basename at `"/"`.
 
-   An app that also has MCP Apps builds with the `mcp-app` skill's
-   `vite.config.ts`, whose web build carries the
-   `/__/frontend/web/` prefix the backend serves it under. For that
-   app, put a `_redirects` file in `frontend/web/public/` (Vite
-   copies it into the build output) mapping the prefix back onto
-   the published files, and keep any URL-path router's basename at
-   `"/"` — never `basename={import.meta.env.BASE_URL}`, which bakes
-   the prefix into route matching in the browser, where no host
-   rewrite can fix it:
-
-   ```
-   /__/frontend/web/* /:splat 200
-   /* /index.html 200
-   ```
+   (Alternatively, skip the static host: `rbt serve run --web-app-dist-path=frontend/dist/web` has the backend serve the
+   same build at `/`, same-origin, with no `VITE_REBOOT_URL` or
+   `allowed_origins` to set.)
 
 ## Step 5 — Publish to Cloudflare Pages and attach the domain
 
@@ -222,9 +213,8 @@ and domain stay put.
 ## Troubleshooting
 
 - **Blank page, console full of MIME-type or 404 asset errors:**
-  the build's asset prefix doesn't match the host — on the
-  dual-frontend layout, the `/__/frontend/web/*` rewrite line is
-  missing from `_redirects` (or isn't first).
+  the build's `base` doesn't match where it is served; the web
+  build must be at `base: "/"`.
 - **Routes render nothing on the custom domain but the app loads
   at `/`:** router basename baked from `import.meta.env.BASE_URL`
   (Step 4.3).

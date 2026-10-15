@@ -224,6 +224,7 @@ dev run --default-config=hmr
 | `dev run --frontend-url=<url>` | The frontend's dev server (e.g. Vite at `http://localhost:5173`): Envoy proxies `/__/frontend/**` to it, with Hot Module Replacement. Says only where the frontend is; alone it is an error. |
 | `dev run --mcp-app` | Serve the application's MCP Apps (its `UI(...)` methods) from `--frontend-url`, which it requires. An application with `UI(...)` methods needs this or `--mcp-app-dist-path`; one without refuses both. |
 | `dev run --mcp-app-dist-path=<dir>` | Dist: serve the built MCP Apps from `<dir>` (e.g. `frontend/dist`) on disk; mutually exclusive with `--frontend-url` and `--mcp-app`. |
+| `dev run --web-app-dist-path=<dir>` | Serve the built web app from `<dir>` (e.g. `frontend/dist/web`) at `/`, with its `index.html` answering any path the app has no route or file for. Without it, `/` is Reboot's page. Python applications only: with `--nodejs` it is an error. |
 | `dev run --default-config=<name>` | Sets the default configuration profile when `--config` is not specified. |
 | `dev run:hmr` / `dev run:dist` | Named configurations. Flags prefixed with `dev run:<name>` only apply when `--config=<name>` is used. |
 

@@ -4,6 +4,7 @@ import uvicorn  # type: ignore[import]
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from fastapi import Depends, FastAPI  # type: ignore[import]
+from pathlib import Path
 from reboot.aio.caller_id import CallerID
 from reboot.aio.external import ExternalContext
 from reboot.aio.internals.channel_manager import _ChannelManager
@@ -11,7 +12,10 @@ from reboot.aio.types import ApplicationId, ServerId
 from reboot.rootpage.page import probe, root_page_asset, root_page_endpoint
 from reboot.settings import ONLY_LOCALHOST_NETWORK_ADDRESS
 from reboot.wait_for_tasks import wait_for_tasks
+from starlette.exceptions import HTTPException  # type: ignore[import]
 from starlette.requests import Request  # type: ignore[import]
+from starlette.responses import Response  # type: ignore[import]
+from starlette.staticfiles import StaticFiles  # type: ignore[import]
 from starlette.types import Receive, Scope, Send  # type: ignore[import]
 from typing import (
     Any,
@@ -22,6 +26,58 @@ from typing import (
     Protocol,
     overload,
 )
+
+
+class WebApp(StaticFiles):
+    """A built web app served from a directory at `/`.
+
+    `StaticFiles` serves the files and `index.html` for `/`; the
+    override in `get_response` serves `index.html` for the app's own
+    routes too. The Vite plugin's `serveWebAppAtRoot` does the same
+    for `--web-app`. Built MCP Apps are each one `index.html` a host
+    loads whole, so a plain `StaticFiles` serves those.
+    """
+
+    def __init__(self, directory: Path):
+        super().__init__(
+            directory=str(directory),
+            html=True,
+            # A not-yet-built web app doesn't stop the application
+            # from starting; `/` 404s until it is built.
+            check_dir=False,
+            # Under Bazel runfiles the built app is a symlink farm
+            # into `bazel-out`, which Starlette's default `realpath`
+            # check would reject as escaping the directory.
+            follow_symlink=True,
+        )
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        """Overriding this so that we can serve `index.html`, status
+        200, for a navigation to a client-routed page (`/accounts` on
+        a reload or from a shared link), which `StaticFiles` 404s
+        since no file is behind it, leaving the app's router to
+        handle it. Any other 404 (a missing asset, a mistyped API
+        path) stays a 404 rather than a page.
+        """
+        try:
+            return await super().get_response(path, scope)
+        except HTTPException as e:
+            if e.status_code != 404 or not self._navigation(scope):
+                raise
+            return await super().get_response("index.html", scope)
+
+    @staticmethod
+    def _navigation(scope: Scope) -> bool:
+        """Whether a browser is navigating to a page: a `GET` that
+        accepts HTML, which an asset or API fetch doesn't. A helper
+        for `get_response`, not an override.
+        """
+        if scope.get("method") != "GET":
+            return False
+        for name, value in scope.get("headers", []):
+            if name == b"accept":
+                return b"text/html" in value
+        return False
 
 
 class WebFramework(ABC):
@@ -94,6 +150,12 @@ class PythonWebFramework(WebFramework):
         def __init__(self):
             self._api_routes: list[PythonWebFramework.APIRoute] = []
             self._mounts: list[PythonWebFramework.Mount] = []
+            # The built web app Reboot serves at `/` (`--web-app-dist-path`),
+            # if any. Kept apart from `_mounts` because it must be
+            # mounted last, after every route, and because it isn't one
+            # of the application's own routes (see
+            # `has_http_routes_or_mounts`).
+            self._web_app_directory: Optional[Path] = None
             # Exact request paths whose handlers receive an *app-internal*
             # context (one that can call app-internal-only servicers)
             # instead of the usual external one, because they opted in via
@@ -335,17 +397,23 @@ class PythonWebFramework(WebFramework):
                 **api_route.kwargs,
             )
 
-        # Reboot's page at `/`, or a redirect to the application's
-        # `root`. Registered after the application's own routes and
-        # mounts so that any of those that claims `/` wins, and not
-        # through `self._http` so that it doesn't count as one of the
-        # application's routes (see `has_http_routes_or_mounts`).
-        fastapi.add_api_route(
-            "/",
-            root_page_endpoint(root),
-            methods=["GET"],
-            include_in_schema=False,
-        )
+        # What answers `/`, registered after the application's own
+        # routes and mounts so that any of those that claims a path
+        # wins, and not through `self._http` so that it doesn't count
+        # as one of the application's routes (see
+        # `has_http_routes_or_mounts`): the built web app
+        # (`--web-app-dist-path`), which also catches every path nothing
+        # else claimed; else Reboot's page at `/`, or a redirect to
+        # the application's `root`.
+        if self._http._web_app_directory is not None:
+            fastapi.mount("/", WebApp(self._http._web_app_directory))
+        else:
+            fastapi.add_api_route(
+                "/",
+                root_page_endpoint(root),
+                methods=["GET"],
+                include_in_schema=False,
+            )
 
         config = uvicorn.Config(
             fastapi,

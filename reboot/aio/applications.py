@@ -58,6 +58,7 @@ from reboot.settings import (
     ENVVAR_RBT_NAME,
     ENVVAR_RBT_SERVERS,
     ENVVAR_RBT_STATE_DIRECTORY,
+    ENVVAR_RBT_WEB_APP_DIST_PATH,
     ENVVAR_REBOOT_CLOUD_DATABASE_ADDRESS,
     ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
     ENVVAR_REBOOT_EXPECTED_VERSION,
@@ -695,6 +696,7 @@ class Application:
             self._servicers or [],
             auto_construct_state_type_full_names,
         )
+        self._mount_web_app()
 
     def _mount_oauth(
         self,
@@ -941,16 +943,16 @@ class Application:
             ),
         )
 
-        # In dist mode (a built frontend, no Vite dev server) serve the
+        # In dist mode (built MCP Apps, no Vite dev server) serve the
         # `--mcp-app-dist-path` directory over `/__/frontend/` from this
         # same HTTP server, alongside `/mcp`. Envoy has no frontend route
         # in this mode, so a browser's `/__/frontend/...` request falls
         # through to the app's HTTP cluster and lands here. Starlette
         # strips the mount prefix, so `StaticFiles(directory=dist_dir)`
-        # resolves `/__/frontend/web/index.html` to
-        # `dist_dir/web/index.html`. The mount must be present in every
-        # serving server subprocess, so it is established here at serve
-        # time. In HMR mode `ENVVAR_RBT_FRONTEND_URL` points at the
+        # resolves `/__/frontend/mcp/<name>/index.html` to
+        # `dist_dir/mcp/<name>/index.html`. The mount must be present in
+        # every serving server subprocess, so it is established here at
+        # serve time. In HMR mode `ENVVAR_RBT_FRONTEND_URL` points at the
         # Vite dev server and Envoy routes `/__/frontend/` there
         # instead, so skip the mount.
         mcp_app_dist_path = os.environ.get(ENVVAR_RBT_MCP_APP_DIST_PATH)
@@ -960,12 +962,11 @@ class Application:
                 "/__/frontend",
                 app=StaticFiles(
                     directory=str(project_root / mcp_app_dist_path),
-                    # `html=True` so directory URLs like
-                    # `/__/frontend/web/` (the web app's pop-out target)
-                    # serve `index.html`. `check_dir=False` so a
+                    # `html=True` so a directory URL serves its
+                    # `index.html`. `check_dir=False` so a
                     # not-yet-built dist doesn't crash startup: `ui.py`
                     # still serves its "build not found" placeholder for
-                    # MCP UIs, and the web app 404s until it's built.
+                    # MCP Apps until it's built.
                     # `follow_symlink=True` so a dist whose files are
                     # symlinks pointing outside the served tree still
                     # resolves — notably under Bazel runfiles, where the
@@ -978,9 +979,45 @@ class Application:
                 ),
             )
 
+    def _mount_web_app(self) -> None:
+        """Have the web framework serve the built web app named by
+        `--web-app-dist-path` at `/`, when there is one.
+
+        Only noted here; the web framework mounts it when it starts,
+        after every route, since a mount at `/` claims every path
+        nothing else does (see `WebApp`).
+        """
+        web_app_dist_path = os.environ.get(ENVVAR_RBT_WEB_APP_DIST_PATH)
+        if not web_app_dist_path:
+            return
+        if self._root is not None:
+            raise InputError(
+                reason=(
+                    "`--web-app-dist-path` and `Application(root=...)` both "
+                    "say what `/` is: the web app, or a redirect to "
+                    f"'{self._root}'. Pass one or the other."
+                )
+            )
+        # An application that mounts or routes `/` itself has said
+        # what `/` is; serving the web app there too would silently
+        # lose to it.
+        if any(mount.path.rstrip("/") == "" for mount in self.http._mounts
+              ) or any(route.path == "/" for route in self.http._api_routes):
+            raise InputError(
+                reason=(
+                    "`--web-app-dist-path` was set, but this application "
+                    "mounts `/` itself (via `application.http`), so both "
+                    "say what `/` is. Pass one or the other."
+                )
+            )
+        directory = Path(web_app_dist_path)
+        if not directory.is_absolute():
+            directory = self._frontend_project_root() / directory
+        self.http._web_app_directory = directory
+
     def _frontend_project_root(self) -> Path:
         """The project root (the directory containing `.rbtrc`) that
-        `--mcp-app-dist-path` is relative to.
+        `--mcp-app-dist-path` and `--web-app-dist-path` are relative to.
 
         `self.servicers` mixes the user's servicers with
         framework-provided ones (libraries, `memoize`,
@@ -998,11 +1035,12 @@ class Application:
                 continue
         raise InputError(
             reason=(
-                "`--mcp-app-dist-path` was set, but no project root (a "
-                "directory containing `.rbtrc`) was found above any of "
-                "this application's servicers, so the built frontend "
-                "can't be located. Make sure your deployment includes "
-                "your project's `.rbtrc` alongside its code."
+                "A built frontend was named (`--mcp-app-dist-path` or "
+                "`--web-app-dist-path`), but no project root (a directory "
+                "containing `.rbtrc`) was found above any of this "
+                "application's servicers, so it can't be located. Make "
+                "sure your deployment includes your project's `.rbtrc` "
+                "alongside its code."
             )
         )
 
@@ -1345,6 +1383,11 @@ class NodeApplication(Application):
         auto_construct_state_type_full_names: list[StateTypeName],
     ) -> None:
         # MCP is not supported for Node.js applications.
+        pass
+
+    def _mount_web_app(self) -> None:
+        # The Python web framework serves the web app; a Node.js
+        # application's own web framework owns `/`.
         pass
 
     @property
