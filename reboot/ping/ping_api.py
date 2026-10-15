@@ -129,7 +129,7 @@ api = API(
         methods=Methods(
             show_pinger=UI(
                 request=None,
-                path="frontend/mcp/pinger",
+                path="pinger",
                 title="Ping Counter",
                 description="Interactive UI for the Ping's counter.",
             ),
@@ -208,7 +208,7 @@ api = API(
         methods=Methods(
             show_clicker=UI(
                 request=ShowClickerProps,
-                path="frontend/mcp/clicker",
+                path="clicker",
                 title="Counter Clicker",
                 description=("Interactive clicker for the Counter."),
             ),

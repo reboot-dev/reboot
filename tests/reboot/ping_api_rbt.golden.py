@@ -2,7 +2,7 @@
 # isort: skip_file
 # ruff: noqa
 # mypy: disable-error-code="func-returns-value"
-# Generated from an API digesting to 07f11c913717f77cda1dcb03a1598f12dbaf8a905b7e74113390afd4f9f2db7a.
+# Generated from an API digesting to 62dfd8efc520ac6d59b15a65a99013a7eec6ba428b4ea31455d43ccbc7b61c20.
 
 
 
@@ -15302,14 +15302,10 @@ class PingBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             return await ref.num_pings(reboot_context)
 
 
-        # Map UI method names to web app paths.
+        # Map UI method names to their URL paths under
+        # `/__/frontend/mcp/` (`UI(path=...)`).
         _ui_app_paths: dict[str, str] = {
-            "show_pinger": "frontend/mcp/pinger",
-        }
-
-        # Optional artifact path overrides (only populated
-        # when `artifact_path` is explicitly set).
-        _ui_artifact_paths: dict[str, str] = {
+            "show_pinger": "pinger",
         }
 
         # Cache-bust tokens: content hash of each UI's built
@@ -15328,7 +15324,6 @@ class PingBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             IMPORT_reboot_mcp_ui.compute_ui_cache_busts(
                 __file__,
                 _ui_app_paths,
-                _ui_artifact_paths,
             )
         )
 
@@ -15345,7 +15340,6 @@ class PingBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             caller_file=__file__,
             ui_path=_ui_app_paths["show_pinger"],
             ui_name="show_pinger",
-            artifact_path=_ui_artifact_paths.get("show_pinger"),
             uri_prefix=(
                 "ui://ping/"
                 "show_pinger/"
@@ -15444,7 +15438,6 @@ class PingBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 _ui_app_paths[ui],
                 reboot_url,
                 ui_name=ui,
-                artifact_path=_ui_artifact_paths.get(ui),
                 cache_bust=cache_bust,
             )
 
@@ -18889,14 +18882,10 @@ class CounterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             return await ref.value(reboot_context)
 
 
-        # Map UI method names to web app paths.
+        # Map UI method names to their URL paths under
+        # `/__/frontend/mcp/` (`UI(path=...)`).
         _ui_app_paths: dict[str, str] = {
-            "show_clicker": "frontend/mcp/clicker",
-        }
-
-        # Optional artifact path overrides (only populated
-        # when `artifact_path` is explicitly set).
-        _ui_artifact_paths: dict[str, str] = {
+            "show_clicker": "clicker",
         }
 
         # Cache-bust tokens: content hash of each UI's built
@@ -18915,7 +18904,6 @@ class CounterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             IMPORT_reboot_mcp_ui.compute_ui_cache_busts(
                 __file__,
                 _ui_app_paths,
-                _ui_artifact_paths,
             )
         )
 
@@ -18932,7 +18920,6 @@ class CounterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             caller_file=__file__,
             ui_path=_ui_app_paths["show_clicker"],
             ui_name="show_clicker",
-            artifact_path=_ui_artifact_paths.get("show_clicker"),
             uri_prefix=(
                 "ui://counter/"
                 "show_clicker/"
@@ -19053,7 +19040,6 @@ class CounterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 _ui_app_paths[ui],
                 reboot_url,
                 ui_name=ui,
-                artifact_path=_ui_artifact_paths.get(ui),
                 cache_bust=cache_bust,
             )
 

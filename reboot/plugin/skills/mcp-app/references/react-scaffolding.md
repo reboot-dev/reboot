@@ -85,21 +85,23 @@ export default defineConfig({
 ```
 
 `reboot()` takes the frontend's directories, relative to the file:
-`mcpAppPath`, the directory whose `<name>/index.html` subdirectories
-are the MCP Apps; `webAppPath`, the web app's directory, if there is one;
-`apiPath`, the generated client, for the `@api` alias. Leave out what
-the frontend doesn't have — an MCP-only frontend passes
-`reboot({ mcpAppPath: "mcp", apiPath: "api" })`. With those it drives
-three jobs: the `serve` dev server (HMR for every MCP App and the web
-app under `/__/frontend/`, on Vite's default port unless the config
-sets `server.port`, listening on every interface), and two builds
-selected by `RBT_BUILD_TARGET` (set per UI by `build()`) —
-`mcp:<name>` builds one MCP App, rooted
-at `mcp/<name>/` so its `index.html` lands at the **nested**
-`dist/mcp/<name>/index.html` the MCP server resolves, with the JS/CSS
-inlined by `vite-plugin-singlefile`; `web` builds the web app into
-`dist/web/`. It also dedupes `react`, `react-dom` and `zod`, and
-reads `.env*` from `webAppPath`.
+`mcpAppPath`, the directory whose `<path>/index.html` subdirectories
+are the MCP Apps, one per `UI(path=...)`; `webAppPath`, the web app's
+directory, if there is one; `apiPath`, the generated client, for the
+`@api` alias. Leave out what the frontend doesn't have — an MCP-only
+frontend passes `reboot({ mcpAppPath: "mcp", apiPath: "api" })`. With
+those it drives three jobs: the `serve` dev server (HMR for every MCP
+App and the web app under `/__/frontend/`, each MCP App at its
+`UI(path=...)` URL `/__/frontend/mcp/<path>/`, on Vite's default port
+unless the config sets `server.port`, listening on every interface),
+and two builds selected by `RBT_BUILD_TARGET` (set per UI by
+`build()`) — `mcp:<path>` builds one MCP App, rooted at `mcp/<path>/`
+so its `index.html` lands at the **nested**
+`dist/mcp/<path>/index.html` the MCP server reads
+(`--mcp-app-dist-path=frontend/dist/mcp`), with the JS/CSS inlined by
+`vite-plugin-singlefile`; `web` builds the web app into `dist/web/`.
+It also dedupes `react`, `react-dom` and `zod`, and reads `.env*`
+from `webAppPath`.
 
 Everything else is ordinary Vite config, added to the literal as in
 any project — another plugin
@@ -115,9 +117,9 @@ the config resolve against each build's root (`mcp/<name>/` or
 `path.resolve(__dirname, ...)`.
 
 **Don't replace this file with a hand-written config.** If you see
-`Web artifact 'frontend/dist/mcp/<name>/index.html' is missing`, the
-fix is `cd frontend && npm run build`, **not** a Vite config that
-emits a flat `dist/<name>.html`; that breaks discovery.
+`The '<ui>' MCP App's build '.../index.html' is missing`, the fix is
+`cd frontend && npm run build`, **not** a Vite config that emits a
+flat `dist/<name>.html`; that breaks the lookup.
 
 ## `frontend/tsconfig.json`
 

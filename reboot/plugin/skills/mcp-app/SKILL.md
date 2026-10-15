@@ -209,8 +209,7 @@ under Key Framework Concepts):
 **Before the frontend:**
 
 - [`references/react-scaffolding.md`](references/react-scaffolding.md)
-  — the `frontend/` shell: `package.json` and `build.mjs` (`npm run
-  build` calls the package's `build()`, which builds every UI the
+  — the `frontend/` shell: `package.json` and `build.mjs` (`npm run build` calls the package's `build()`, which builds every UI the
   plugin declares; a frontend with one UI could use plain `vite build`, as the web-only shell does),
   `vite.config.ts` (the stock Vite file plus `reboot()`),
   `tsconfig.json` / `tsconfig.app.json` / `tsconfig.node.json`,
@@ -538,9 +537,12 @@ describes (each fixes the Servicer's context type). The MCP App
 adds one more:
 
 - **`UI()`** — opens a React UI inside the MCP client. Takes
-  `request=` (config type or `None`), `path=` (web dir relative to
-  project root), `title=`, `description=`. **No servicer
-  implementation needed** — the React app _is_ the implementation.
+  `request=` (config type or `None`), `path=` (the UI's URL path
+  under `/__/frontend/mcp/`, like `"clicker"` or `"shop/cart"`; its
+  source is `frontend/mcp/<path>/`, its build
+  `frontend/dist/mcp/<path>/index.html`), `title=`, `description=`.
+  **No servicer implementation needed** — the React app _is_ the
+  implementation.
   When `request=` is a `Model`, its fields become props on the React
   component.
 

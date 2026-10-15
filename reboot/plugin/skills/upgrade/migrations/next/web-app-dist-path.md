@@ -15,7 +15,7 @@ For an app with a `frontend/web/` SPA:
    web build already uses `base: "/"` (a web-only app on the stock
    Vite config) needs no change here.
 2. In `.rbtrc`, where a `dev run:dist` or `serve run` config has
-   `--mcp-app-dist-path=frontend/dist`, add the web app beside it:
+   `--mcp-app-dist-path=frontend/dist/mcp`, add the web app beside it:
 
    ```
    dev run:dist --web-app-dist-path=frontend/dist/web

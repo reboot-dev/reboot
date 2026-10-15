@@ -65,7 +65,6 @@ def api_of(api: API, *, filename: str) -> api_pb2.API:
                     ),
                     title=ui_method.title,
                     description=ui_method.description,
-                    artifact_path=ui_method.artifact_path,
                 )
             )
 

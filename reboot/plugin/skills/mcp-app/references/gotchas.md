@@ -38,8 +38,13 @@ The list below is what's specific to the MCP App layer:
 
 7. **Use `--default-config=hmr`** in `.rbtrc` (not `--default=hmr`).
 
-8. **`UI(path="frontend/mcp/<name>")`** — path is relative to project
-   root.
+8. **`UI(path="<name>")`** — `path` is the UI's URL path under
+   `/__/frontend/mcp/` (`"clicker"`, or nested, `"shop/cart"`), not
+   a directory: its source is `frontend/mcp/<path>/` (the Vite
+   plugin's `mcpAppPath`) and its build
+   `frontend/dist/mcp/<path>/index.html`
+   (`--mcp-app-dist-path=frontend/dist/mcp`). `path="frontend/mcp/x"`
+   is refused.
 
 9. **`UI(request=<ConfigType>)`** passes config as React component
    props. `UI(request=None)` passes no props. `request=<Model>` is
@@ -156,16 +161,16 @@ The list below is what's specific to the MCP App layer:
     `python/references/servicer-workflow.md`.)
 
 19. **`frontend/dist/mcp/<name>/index.html` is the right location** for
-    the built MCP App — that's where the MCP server's
-    `_resolve_dist_path` looks. Reboot's Vite plugin (`reboot()` from
-    `@reboot-dev/reboot-react/vite`) produces it correctly out of the
-    box: the
+    the built MCP App — `<--mcp-app-dist-path>/<path>/index.html`,
+    with `--mcp-app-dist-path=frontend/dist/mcp` in `.rbtrc`. Reboot's
+    Vite plugin (`reboot()` from `@reboot-dev/reboot-react/vite`)
+    produces it correctly out of the box: the
     `RBT_BUILD_TARGET=mcp:<name>` build roots itself at `mcp/<name>/`,
     so its `index.html` lands at the nested path while
     `viteSingleFile` inlines the JS/CSS. If you see
-    `Web artifact 'frontend/dist/mcp/<name>/index.html' is missing`, run
+    `The '<ui>' MCP App's build '.../index.html' is missing`, run
     `cd frontend && npm run build` — do **not** rewrite the Vite config
-    to emit a flat `dist/<name>.html`; that breaks discovery.
+    to emit a flat `dist/<name>.html`; that breaks the lookup.
 
 20. **LLM / model API calls go in a `Workflow`, never a
     `Transaction`.** MCP Apps routinely call a model (to summarize,

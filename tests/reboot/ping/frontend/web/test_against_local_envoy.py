@@ -101,7 +101,7 @@ class PingStandaloneSpaTest(unittest.IsolatedAsyncioTestCase):
         # serve). All must be set before the cluster comes up so the
         # servers inherit them.
         os.environ[ENVVAR_RBT_DEV] = "true"
-        os.environ[ENVVAR_RBT_MCP_APP_DIST_PATH] = "frontend/dist"
+        os.environ[ENVVAR_RBT_MCP_APP_DIST_PATH] = "frontend/dist/mcp"
         os.environ[ENVVAR_RBT_WEB_APP_DIST_PATH] = "frontend/dist/web"
         self.rbt = Reboot()
         await self.rbt.start()

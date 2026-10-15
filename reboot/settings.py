@@ -145,9 +145,9 @@ ENVVAR_RBT_FRONTEND_URL = 'RBT_FRONTEND_URL'
 # server (`rbt dev run --mcp-app`); their builds are served from
 # `RBT_MCP_APP_DIST_PATH` instead.
 ENVVAR_RBT_MCP_APP = 'RBT_MCP_APP'
-ENVVAR_RBT_FRONTEND_ROOT_PATH = 'RBT_FRONTEND_ROOT_PATH'
 # Project-relative directory holding the built MCP Apps, e.g.
-# "frontend/dist", served under "/__/frontend/".
+# "frontend/dist/mcp", one directory per `UI(path=...)`, served under
+# "/__/frontend/mcp/".
 ENVVAR_RBT_MCP_APP_DIST_PATH = 'RBT_MCP_APP_DIST_PATH'
 # Project-relative directory holding the built web app, e.g.
 # "frontend/dist/web", served at "/".

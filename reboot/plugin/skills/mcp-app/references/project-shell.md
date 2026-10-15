@@ -26,8 +26,8 @@ MCP App adds on top:
 
 Same shape as `python/references/lifecycle-rbtrc.md`. Chat
 apps add `--default-config=hmr` plus `:hmr` and `:dist` named
-configs that route Envoy to a Vite dev server (HMR) or a built
-`frontend/dist/` (production):
+configs that route Envoy to a Vite dev server (HMR) or serve the
+built MCP Apps from `frontend/dist/mcp/` (production):
 
 ```
 # Find API definitions in 'api/'.
@@ -62,15 +62,13 @@ dev run --default-config=hmr
 # HMR: Vite dev server proxied through Envoy.
 # Run Vite in a separate terminal: cd frontend && npm run dev
 # Envoy routes "/__/frontend/**" to Vite for HMR support.
-dev run --frontend-root-path=frontend
-
 dev run:hmr --frontend-url=http://localhost:5173
 dev run:hmr --mcp-app
 
-# Dist mode: serve pre-built artifacts from "frontend/dist/" (no Vite HMR).
+# Dist mode: serve the built MCP Apps from "frontend/dist/mcp/" (no Vite HMR).
 # Usage: uv run rbt dev run --config=dist
 # Requires: cd frontend && npm run build
-dev run:dist --mcp-app-dist-path=frontend/dist
+dev run:dist --mcp-app-dist-path=frontend/dist/mcp
 # A dual-frontend app also serves its built web app at `/`:
 # dev run:dist --web-app-dist-path=frontend/dist/web
 
@@ -83,7 +81,7 @@ dev expunge --application-name=<project-name>
 # block above, minus the dev-only knobs (`--watch`, `--env-file`,
 # the `:hmr`/`:dist` configs).
 serve run --python
-serve run --mcp-app-dist-path=frontend/dist --frontend-root-path=frontend
+serve run --mcp-app-dist-path=frontend/dist/mcp
 # A dual-frontend app also serves its built web app at `/`:
 # serve run --web-app-dist-path=frontend/dist/web
 serve run --application=backend/src/main.py

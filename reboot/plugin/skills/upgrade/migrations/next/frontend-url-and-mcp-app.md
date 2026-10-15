@@ -26,9 +26,12 @@ In `.rbtrc`, rename the flags and add `--mcp-app` beside
 ```
 dev run:hmr --frontend-url=http://localhost:5173
 dev run:hmr --mcp-app
-dev run:dist --mcp-app-dist-path=frontend/dist
-serve run --mcp-app-dist-path=frontend/dist
+dev run:dist --mcp-app-dist-path=frontend/dist/mcp
+serve run --mcp-app-dist-path=frontend/dist/mcp
 ```
+
+(`frontend/dist/mcp`, not `frontend/dist`: see the `UI(path=...)`
+migration below, which the same release makes.)
 
 If a `Dockerfile`, shell script, or CI config sets any of the old
 environment variables, rename it to the new one.

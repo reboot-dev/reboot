@@ -112,8 +112,8 @@ production lines that need to be in `.rbtrc` for a Cloud deploy:
 serve run --python
 
 # If the app has MCP Apps (built to `frontend/dist/mcp/`), serve them
-# at `/__/frontend/` from the built-in HTTP server.
-serve run --mcp-app-dist-path=frontend/dist --frontend-root-path=frontend
+# at `/__/frontend/mcp/` from the built-in HTTP server.
+serve run --mcp-app-dist-path=frontend/dist/mcp
 
 # If the app has a web app (built to `frontend/dist/web/`) that the
 # backend should serve at `/` (rather than a static host).

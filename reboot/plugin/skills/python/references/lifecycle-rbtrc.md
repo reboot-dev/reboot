@@ -142,13 +142,12 @@ the command line:
 ```sh
 # Default config (HMR / Vite).
 dev run --default-config=hmr
-dev run --frontend-root-path=frontend
 
 dev run:hmr --frontend-url=http://localhost:5173
 dev run:hmr --mcp-app
 
 # Dist mode (no Vite): the built MCP Apps.
-dev run:dist --mcp-app-dist-path=frontend/dist
+dev run:dist --mcp-app-dist-path=frontend/dist/mcp
 # A dual-frontend app also serves its built web app at `/`:
 # dev run:dist --web-app-dist-path=frontend/dist/web
 ```

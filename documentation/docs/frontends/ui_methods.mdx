@@ -27,7 +27,7 @@ other methods:
 ```python
 show_clicker=UI(
     request=None,
-    path="frontend/mcp/clicker",
+    path="clicker",
     title="Counter Clicker",
     description="Interactive clicker UI "
     "for the counter.",
@@ -41,7 +41,7 @@ show_clicker=UI(
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `request` | `Model` subclass or `None` | If provided, the AI passes parameters to the React component as props. If `None`, the UI takes no parameters from the AI. |
-| `path` | `str` | Path to the React app directory relative to the project root. Must contain an `index.html`. |
+| `path` | `str` | The UI's URL path under Reboot's `/__/frontend/mcp/`, such as `"clicker"` or `"shop/cart"`. In development the frontend's dev server (`--frontend-url`) serves it at `/__/frontend/mcp/clicker/`, from `mcp/clicker/` (the `mcpAppPath` of the [Vite plugin](#vite-configuration)); built, Reboot reads it from `<--mcp-app-dist-path>/clicker/index.html`. The method name, not the path, is the UI's identity. |
 | `title` | `str` or `None` | Human-readable title shown in tool listings. |
 | `description` | `str` or `None` | Description used by the AI to decide when to open this UI. Write it as instructions to the AI. |
 
@@ -57,7 +57,7 @@ From the `mcp-app-counter` example:
 ```python
 show_clicker=UI(
     request=None,
-    path="frontend/mcp/clicker",
+    path="clicker",
     title="Counter Clicker",
     description="Interactive clicker UI "
     "for the counter.",
@@ -76,7 +76,7 @@ From the `mcp-app-counter-dashboard` example:
 ```python
 show_dashboard=UI(
     request=DashboardConfig,
-    path="frontend/mcp/dashboard",
+    path="dashboard",
     title="Counter Dashboard",
     description="Dashboard UI. Use "
     "`personalized_message` to impart wisdom "
@@ -246,8 +246,9 @@ the `web/` SPA at once with `npm run build`, whose `build.mjs` calls
 cd frontend && RBT_BUILD_TARGET=mcp:clicker npx vite build
 ```
 
-The bundled HTML file is written to `frontend/dist/mcp/clicker/index.html`.
-The Reboot server discovers and serves it as an MCP resource.
+The bundled HTML file is written to `frontend/dist/mcp/clicker/index.html`,
+`<--mcp-app-dist-path>/<path>/index.html` for `--mcp-app-dist-path=frontend/dist/mcp`.
+The Reboot server serves it as an MCP resource.
 
 ## No backend servicer
 

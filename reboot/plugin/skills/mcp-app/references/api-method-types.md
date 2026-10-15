@@ -179,7 +179,7 @@ api = API(
             # section above for the full rule.
             show_clicker=UI(
                 request=None,
-                path="frontend/mcp/clicker",
+                path="clicker",
                 title="Counter Clicker",
                 description="Interactive clicker UI for the counter.",
             ),
@@ -238,7 +238,7 @@ class DashboardConfig(Model):
 # still the tool-call target, implicit.
 show_dashboard=UI(
     request=DashboardConfig,
-    path="frontend/mcp/dashboard",
+    path="dashboard",
     title="Counter Dashboard",
     description="Dashboard UI. Use `personalized_message` to impart "
     "wisdom on the topic of counting things.",
@@ -282,7 +282,7 @@ User=Type(
     methods=Methods(
         show_person=UI(
             request=ShowPersonProps,
-            path="frontend/mcp/person",
+            path="person",
             ...
         ),
     ),
@@ -300,7 +300,7 @@ Person=Type(
     methods=Methods(
         show=UI(
             request=None,
-            path="frontend/mcp/person",
+            path="person",
             title="Person",
             description="Open the visual UI for this Person.",
         ),

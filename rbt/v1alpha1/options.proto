@@ -97,14 +97,15 @@ message UI {
   string title = 2;
   // Optional description.
   optional string description = 3;
-  // Relative path to the web app assets.
+  // The UI's URL path under `/__/frontend/mcp/` (e.g. "clicker"),
+  // which is also where its build sits under `--mcp-app-dist-path`.
   string path = 4;
   // Name of the generated request message type (empty if
   // no request).
   optional string request_message = 5;
-  // Override for the build artifact path. Defaults to
-  // inserting `dist/` after the first component of `path`.
-  optional string artifact_path = 6;
+  // Was `artifact_path`, an override for where the build is; the
+  // build is always at `<--mcp-app-dist-path>/<path>/index.html` now.
+  reserved 6;
 }
 
 message MethodOptions {

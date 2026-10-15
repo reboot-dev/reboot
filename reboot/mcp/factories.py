@@ -134,7 +134,6 @@ async def _list_tools_with_fresh_cache_busts(
                 project_root,
                 info["ui_path"],
                 info["ui_name"],
-                info.get("artifact_path"),
             )
         except Exception:
             # Keep the existing URI baked in at registration.
@@ -206,9 +205,7 @@ async def _serve_ui_asset(
 
     # Dist directory = parent of the `index.html` path that
     # `_resolve_dist_path` returns.
-    dist_index = _resolve_dist_path(
-        project_root, info["ui_path"], info.get("artifact_path")
-    )
+    dist_index = _resolve_dist_path(project_root, info["ui_path"])
     if dist_index is None:
         await reject("frontend dist path not configured")
         return

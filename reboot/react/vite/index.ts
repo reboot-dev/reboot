@@ -1,6 +1,7 @@
 // The Vite plugin for a Reboot frontend: a directory holding MCP Apps
-// (`<mcpAppPath>/<name>/index.html`, each built into one self-contained
-// HTML file the backend serves as an MCP resource), a web app
+// (`<mcpAppPath>/<path>/index.html` for each `UI(path=...)`, each built
+// into one self-contained HTML file the backend serves as an MCP
+// resource), a web app
 // (`<webAppPath>/index.html`, a normal SPA), or both, beside the
 // generated client (`<apiPath>/`). `vite.config.ts` is the stock Vite
 // file with this plugin added:
@@ -24,11 +25,13 @@
 //
 //   * `vite` (serve): a single dev server that delivers HMR for every
 //     MCP App AND the web app, all under `base: "/__/frontend/"`. Envoy
-//     proxies that prefix to this dev server (`--frontend-url`).
-//   * `RBT_BUILD_TARGET=mcp:<name> vite build`: builds one MCP App into
-//     a single, self-contained `dist/mcp/<name>/index.html` (assets
-//     inlined via `vite-plugin-singlefile`). The framework serves it
-//     at `/__/frontend/mcp/<name>/index.html` in dist mode.
+//     proxies that prefix to this dev server (`--frontend-url`). Each
+//     MCP App is served at `/__/frontend/mcp/<path>/`, its
+//     `UI(path=...)` URL, from `<mcpAppPath>/<path>/`.
+//   * `RBT_BUILD_TARGET=mcp:<path> vite build`: builds one MCP App into
+//     a single, self-contained `dist/mcp/<path>/index.html` (assets
+//     inlined via `vite-plugin-singlefile`). The framework reads it
+//     from `<--mcp-app-dist-path>/<path>/index.html` in dist mode.
 //   * `RBT_BUILD_TARGET=web vite build`: builds the web app into
 //     `dist/web/` with normal (non-inlined) assets at `base: "/"`,
 //     to be served at `/` by the backend (`--web-app-dist-path`) or any
@@ -56,11 +59,18 @@ import { viteSingleFile } from "vite-plugin-singlefile";
 // which is also what the backend serves built MCP Apps under.
 const BASE = "/__/frontend/";
 
+// The URL prefix under which the MCP Apps are served: each
+// `UI(path=...)` is served at `/__/frontend/mcp/<path>/`, which the dev
+// server maps onto `<mcpAppPath>/<path>/` (see `serveMcpAppsAtMcp`).
+const MCP_BASE = `${BASE}mcp/`;
+
 export interface RebootOptions {
   /**
    * The directory of the MCP Apps, relative to the Vite config's
-   * directory: each `<mcpAppPath>/<name>/index.html` is one, built to
-   * `dist/mcp/<name>/index.html`. Absent means no MCP Apps.
+   * directory: each `<mcpAppPath>/<path>/index.html` is the UI whose
+   * `UI(path=...)` is `<path>`, served at `/__/frontend/mcp/<path>/`
+   * and built to `dist/mcp/<path>/index.html`. Absent means no MCP
+   * Apps.
    */
   mcpAppPath?: string;
   /**
@@ -82,14 +92,24 @@ export interface RebootOptions {
 export type BuildTarget = { kind: "web" } | { kind: "mcp"; name: string };
 
 /**
- * The names of the MCP Apps in a directory: every subdirectory with
- * an `index.html`.
+ * The MCP Apps in a directory, as their `UI(path=...)` values: every
+ * directory under it, at any depth, with an `index.html`, relative to
+ * it with `/` separators (`clicker`, `shop/cart`).
  */
 export function mcpUiNames(mcpUiDir: string): string[] {
-  return fs
-    .readdirSync(mcpUiDir)
-    .filter((name) => fs.existsSync(path.join(mcpUiDir, name, "index.html")))
-    .sort();
+  const names: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const full = path.join(dir, entry.name);
+      if (fs.existsSync(path.join(full, "index.html"))) {
+        names.push(normalizePath(path.relative(mcpUiDir, full)));
+      }
+      walk(full);
+    }
+  };
+  walk(mcpUiDir);
+  return names.sort();
 }
 
 /**
@@ -169,6 +189,39 @@ function redirectFrontendDirTrailingSlash(): Plugin {
             res.setHeader("Location", `${pathname}/${query}`);
             res.end();
             return;
+          }
+        }
+        next();
+      });
+    },
+  };
+}
+
+// Serve each MCP App at its `UI(path=...)` URL, `/__/frontend/mcp/<path>/`,
+// from `<mcpAppPath>/<path>/`. The dev server's root is the Vite
+// config's directory, so when `mcpAppPath` is `mcp` Vite already does
+// this; for any other directory, rewrite the URL onto it. Only a URL
+// that names something under `mcpAppPath` (a UI's directory, or a
+// file in one) is rewritten, so nothing else under `/__/frontend/mcp/`
+// changes meaning.
+function serveMcpAppsAtMcp(mcpAppPath: string): Plugin {
+  const dir = segment(mcpAppPath);
+  return {
+    name: "reboot:serve-mcp-apps-at-mcp",
+    apply: "serve",
+    configureServer(server) {
+      if (dir === "mcp") return;
+      const root = server.config.root;
+      server.middlewares.use((req, _res, next) => {
+        const url = req.url ?? "";
+        if (url.startsWith(MCP_BASE)) {
+          const queryAt = url.indexOf("?");
+          const rest = url.slice(
+            MCP_BASE.length,
+            queryAt === -1 ? undefined : queryAt
+          );
+          if (rest !== "" && fs.existsSync(path.join(root, mcpAppPath, rest))) {
+            req.url = `${BASE}${dir}/${url.slice(MCP_BASE.length)}`;
           }
         }
         next();
@@ -283,6 +336,19 @@ export function reboot(options: RebootOptions = {}): Plugin[] {
       ) {
         throw new Error(
           `\`mcpAppPath\` names '${mcpAppPath}', which is not a directory under '${root}'.`
+        );
+      }
+      if (
+        mcpAppPath !== undefined &&
+        webAppPath !== undefined &&
+        mcpUiNames(path.resolve(root, mcpAppPath)).some(
+          (name) =>
+            path.resolve(root, mcpAppPath, name) ===
+            path.resolve(root, webAppPath)
+        )
+      ) {
+        throw new Error(
+          `\`webAppPath\` names '${webAppPath}', which is inside \`mcpAppPath\` '${mcpAppPath}', so it would be taken for an MCP App. Keep the web app outside the MCP Apps' directory.`
         );
       }
       if (
@@ -413,16 +479,17 @@ export function reboot(options: RebootOptions = {}): Plugin[] {
         return result;
       }
 
-      // Build one MCP App. We root the build at `<mcpAppPath>/<name>/`
-      // so the output lands directly at `dist/mcp/<name>/index.html`,
+      // Build one MCP App. We root the build at `<mcpAppPath>/<path>/`
+      // so the output lands directly at `dist/mcp/<path>/index.html`,
       // a single self-contained file: `vite-plugin-singlefile`, which
       // the plugin adds for this build, inlines the assets and sets
-      // the relative `base` that needs. The framework serves it at
-      // `/__/frontend/mcp/<name>/index.html` in dist mode.
+      // the relative `base` that needs. The framework reads it from
+      // `<--mcp-app-dist-path>/<path>/index.html` in dist mode, so
+      // `dist/mcp` is what `--mcp-app-dist-path` names.
       claim(
         config,
         "build.outDir",
-        "to `dist/mcp/<name>`, where `--mcp-app-dist-path` looks for each built MCP App"
+        "to `dist/mcp/<path>`, where `--mcp-app-dist-path=.../dist/mcp` looks for each built MCP App"
       );
       claim(
         config,
@@ -449,6 +516,9 @@ export function reboot(options: RebootOptions = {}): Plugin[] {
     singlefile,
     redirectFrontendDirTrailingSlash(),
   ];
+  if (mcpAppPath !== undefined) {
+    plugins.push(serveMcpAppsAtMcp(mcpAppPath));
+  }
   if (webAppPath !== undefined) {
     plugins.push(serveWebAppAtRoot(webAppPath));
   }
