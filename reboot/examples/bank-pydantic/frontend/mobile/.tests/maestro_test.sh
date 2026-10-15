@@ -147,7 +147,7 @@ RBT_STDIN_FIFO="$(mktemp -u)"
 mkfifo "${RBT_STDIN_FIFO}"
 exec {RBT_STDIN_FD}<>"${RBT_STDIN_FIFO}"
 rm -f "${RBT_STDIN_FIFO}"
-rbt ${RBT_FLAGS} dev run <&"${RBT_STDIN_FD}" > "${RBT_LOG}" 2>&1 &
+rbt ${RBT_FLAGS} dev run --config=ports <&"${RBT_STDIN_FD}" > "${RBT_LOG}" 2>&1 &
 backend_pid=$!
 # Wait for the backend to serve traffic on the default port 9991.
 until curl -s -o /dev/null --max-time 3 http://localhost:9991/; do

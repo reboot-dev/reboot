@@ -50,12 +50,13 @@ const Clicker: FC<{ counter: UseCounterApi }> = ({ counter }) => {
   };
 
   const handlePopOut = async () => {
-    // The standalone web app lives on its own origin (in production
-    // typically a CDN), never on the backend's, so `VITE_WEB_APP_URL`
-    // is required in every environment: `web/.env.development` points
-    // it at the local Vite dev server, and `web/.env.production` must
-    // name the real web-app host.
-    const webAppUrl = import.meta.env.VITE_WEB_APP_URL;
+    // The web app is at the backend's own origin, which serves it at
+    // `/` (`--web-app` in development, `--web-app-dist-path` in
+    // production), unless `VITE_WEB_APP_URL` (`web/.env.production`)
+    // names a host it is deployed to elsewhere.
+    const webAppUrl =
+      import.meta.env.VITE_WEB_APP_URL ??
+      new URL(window.REBOOT_URL ?? window.location.origin).origin;
     const url = webAppUrl + "/?counter=" + encodeURIComponent(counterId);
     // The sandboxed MCP App iframe blocks `window.open` unless the
     // host grants `allow-popups`, so ask the host to open the link

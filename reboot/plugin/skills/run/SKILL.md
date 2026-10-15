@@ -44,9 +44,10 @@ strongest first.
   requires the `mcp=` argument, so a Web App has `mcp=None` on all
   of them.
 - There is a `frontend/mcp/<name>/index.html`.
-- `.rbtrc` has a `dev run --default-config=hmr` line together with
-  a `dev run:hmr --frontend-url=...` line: Envoy proxying the
-  frontend, which only MCP Apps need.
+- `.rbtrc` has a `dev run:portless --frontend-url=...` line (or a
+  `dev run:hmr --frontend-url=...` one, for an app kept on plain
+  ports) with `--mcp-app`: Envoy proxying the MCP Apps from the dev
+  server.
 
 **Web App** — all of:
 
@@ -288,9 +289,9 @@ Confirm every process is up from its logs, then give the user:
   me"). Don't hand over an MCPJam URL — MCPJam isn't running, and
   only starts if the user picks it in the wizard (see the on-demand
   step above);
-- for a Web App — the URL the Vite dev server printed
-  (`https://<app>.localhost` with portless)
-  (`http://localhost:5173/` by default) and a first page to open.
+- for a Web App — the backend's URL, where the web app is served
+  (`https://<app>.localhost/` with portless, `http://localhost:9991/`
+  without), and a first page to open.
 
 > **Always start every process the app needs.** An MCP App needs
 > backend and frontend; a Web App needs the same. (MCPJam is not in
