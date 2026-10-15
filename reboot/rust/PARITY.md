@@ -97,6 +97,45 @@ exit zero preceded fresh container terminal inspection, and the original lock
 was free. Hot reload, new-consumer compilation and restart durability remain
 separate. This is not latest-upstream/full-native/overall SDK qualification.
 
+## Actual registered empty-Bank native controls (2026-10-15)
+
+The [fresh native receipt](tests/evidence/registered-empty-root-native-20261015.json)
+records **15 exact tests passed**, using the actual source-linked generated
+constructor fixture and a fresh pristine canonical Database for each case.
+The first four tests exercised the new constructorless registered Bank root:
+
+- Public generated SignUp began with both Bank and Account canonically absent,
+  retained the child gate while returning to its parent, then required actual
+  root/child Prepare and Commit ACKs and exact canonical final state bytes.
+- Failure after the genuine child returned produced Aborted and aborted public
+  Watch, released ownership, and left **both actors absent**. This control does
+  not separately assert a native Abort ACK for every actor.
+- Root policy denial and no-owner admission both rejected **before either
+  handler entered**, without creating Bank or Account.
+
+All **11 existing constructor controls** also passed, including present-empty
+state, taskful-effect refusal, forged/no-opt-in/ticket/authorization rejection,
+held real Prepare ACK and actual Prepare-ACK TCP-loss process-lifetime custody.
+That last control is not restart reconciliation. Healthy empty-root logs reject
+foreign success and uncertainty markers; independent source review exercised
+four clean and 32 contaminated validator logs.
+
+Parent actually serialized **15 per-case ServerInfo protobufs** with the
+qualified application Python and retained the genuine serializer join. Native
+readback rehashed all **3266** frozen source members, bundle/compiled fixture,
+protobufs, receipts and row logs. All **30** direct SDK/Database children joined;
+SDK custody/FD obligations closed before each Database retirement, with no
+adopted descendants or sticky cleanup failure. Exact attach exit zero preceded
+fresh exact-CID terminal exit zero/PID zero/no OOM/error and original lock release.
+
+This closes the **bounded taskless default-root native control**, using unchanged
+pinned original Bank/Account schemas but a fixed child and taskless Open. It is
+**not** original SignUp-with-WelcomeEmail, dynamic task-owner recovery, concurrent
+first calls, new cancellation/restart proof, shared Transfer or overall parity.
+Database provenance remains the qualified cached native binary and source
+projection, not a freshly built latest-upstream native Database. Dynamic taskful
+children remain refused pending coordinated ownership/recovery implementation.
+
 ## Registered constructorless default-root source checkpoint (2026-10-15)
 
 Constructorless transaction roots can now construct default state only after
@@ -117,15 +156,17 @@ registration boundary; the earlier broader candidate was not published.
 The generated constructor-child fixture also compiled successfully, including
 four new empty-Bank controls. Its inventory preserves all eleven old tests
 and adds Commit, Abort-after-child, policy denial and no-owner rejection,
-for **15** tests total. These new native controls have **not executed** yet.
+for **15** tests total. At that source checkpoint the new native controls had
+not executed; the separate native receipt above now records their execution.
 They use unchanged original example schemas but a fixed, taskless child Open;
 they are not the original WelcomeEmail-producing SignUp behavior.
 
 Parent independently rehashed **3266** frozen source members and both actual
 command logs, verified both Cargo children joined, no adopted descendants or
 cleanup failure, then exact attach join before fresh container terminal exit
-zero/PID zero and original lock release. Native/public empty-root acceptance,
-concurrent first calls, cancellation, actual ACK loss and restart remain open.
+zero/PID zero and original lock release. The native control above supersedes
+this checkpoint's earlier empty-root runtime gap; concurrent first calls,
+cancellation, new ACK-loss and restart acceptance remain open.
 Dynamic task-owner recovery is not implemented; taskful constructor children
 and unsupported shared Transfer remain refused. No full Bank or parity claim.
 
