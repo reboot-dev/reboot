@@ -97,6 +97,37 @@ exit zero preceded fresh container terminal inspection, and the original lock
 was free. Hot reload, new-consumer compilation and restart durability remain
 separate. This is not latest-upstream/full-native/overall SDK qualification.
 
+## Actual current-SDK remaining Legacy crash windows (2026-10-15)
+
+The [remaining-case receipt](tests/evidence/legacy-current-sdk-remaining-crashes-20261015.json)
+records two further real app-only crashes with locked/offline builds and strict
+all-target Clippy:
+
+- **Pending before Started:** live and post-crash reads showed actual absent
+  checkpoint/Stored files, zero callback effects and byte-exact actor/Task
+  records. One hook-free restart ran the callback once, logged ten acknowledged
+  greetings (six Reboot effects), completed the original UUID with Stored and
+  a successful terminal response. Task identity invariants were preserved;
+  actor/checkpoint state legitimately advanced.
+- **All effects before Stored:** ten acknowledged greetings produced five
+  Reboot effects. Live/post-crash reads showed Pending/Started. Two hook-free
+  recovery starts refused callback replay with the exact FailedPrecondition
+  diagnostic, preserving raw actor/checkpoint bytes and all committed effects.
+
+Parent independently rehashed **seven** canonical inspections (**65** artifacts),
+all **3264** source members, **2678** overlay files, saved per-case binaries,
+markers/session slices and row logs. All **25** direct children joined, with
+no adopted descendants or cleanup failure. Exact attach zero preceded fresh
+container exit zero/PID zero/no OOM/error and original lock release. Producer-
+relative signal returns were below eight seconds; timing is measured, not an
+atomic scheduling guarantee.
+
+Together with the preceding three-case receipt this freshly exercises all
+**five existing observation-window scenarios** against the current qualified
+Rust SDK. It does **not** prove dropped/ambiguous Start/Store ACK handling,
+full Bank/shared/public behavior, latest-upstream native build or overall SDK
+parity. No empty placeholder was used to stand in for absent canonical state.
+
 ## Actual current-SDK Legacy acknowledged-boundary crashes (2026-10-15)
 
 The [three-case crash receipt](tests/evidence/legacy-current-sdk-acknowledged-crashes-20261015.json)
