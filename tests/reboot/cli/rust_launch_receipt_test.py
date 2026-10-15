@@ -65,5 +65,106 @@ class LaunchReceiptTests(unittest.TestCase):
             self.assertEqual(module.database_port_candidate({20005}), 20006)
 
 
+class DatabasePortCandidateTests(unittest.TestCase):
+    class Listener:
+        def __init__(self, attempts, collisions):
+            self.attempts = attempts
+            self.collisions = collisions
+            self.closed = False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            self.closed = True
+
+        def bind(self, address):
+            self.attempts.append(address)
+            if address[1] in self.collisions:
+                raise OSError('address already in use')
+
+    def probe(self, *, text='32768 60999', error=None, exclude=None,
+              collisions=()):
+        attempts, listeners = [], []
+
+        def socket():
+            listener = self.Listener(attempts, collisions)
+            listeners.append(listener)
+            return listener
+
+        with patch.object(Path, 'read_text', return_value=text,
+                          side_effect=error), patch.object(module.socket, 'socket', socket):
+            port = module.database_port_candidate(exclude or set())
+        self.assertTrue(all(listener.closed for listener in listeners))
+        return port, attempts
+
+    def test_missing_procfs_falls_back_and_releases_probe(self):
+        port, attempts = self.probe(error=FileNotFoundError(), exclude={20000})
+        self.assertEqual(port, 20001)
+        self.assertEqual(attempts, [('127.0.0.1', 20001)])
+
+    def test_unreadable_procfs_falls_back(self):
+        port, _ = self.probe(error=PermissionError())
+        self.assertEqual(port, 20000)
+
+    def test_malformed_ranges_fall_back(self):
+        for text in ('', 'not numbers', '20000', '1 2 3', '30000 20000',
+                     '0 30000', '20000 65536'):
+            with self.subTest(text=text):
+                port, _ = self.probe(text=text)
+                self.assertEqual(port, 20000)
+
+    def test_collisions_and_exclusions_are_skipped(self):
+        port, attempts = self.probe(exclude={20000, 20002}, collisions={20001})
+        self.assertEqual(port, 20003)
+        self.assertEqual(attempts, [('127.0.0.1', 20001), ('127.0.0.1', 20003)])
+
+    def test_linux_ephemeral_endpoints_are_inclusive(self):
+        port, attempts = self.probe(text='20001 20003', exclude={20000})
+        self.assertEqual(port, 20004)
+        self.assertEqual(attempts, [('127.0.0.1', 20004)])
+
+    def test_excluded_range_exhaustion_does_not_probe(self):
+        with patch.object(Path, 'read_text', return_value='32768 60999'), \
+                patch.object(module.socket, 'socket') as socket:
+            with self.assertRaisesRegex(module.RustDevError, 'No free.*Database port'):
+                module.database_port_candidate(set(range(20000, 30000)))
+            socket.assert_not_called()
+
+    def test_ephemeral_range_exhaustion_does_not_probe(self):
+        with patch.object(Path, 'read_text', return_value='20000 29999'), \
+                patch.object(module.socket, 'socket') as socket:
+            with self.assertRaisesRegex(module.RustDevError, 'No free.*Database port'):
+                module.database_port_candidate(set())
+            socket.assert_not_called()
+
+    def test_probe_collision_exhaustion_closes_every_socket(self):
+        attempts, listeners = [], []
+
+        def socket():
+            listener = self.Listener(attempts, range(20000, 30000))
+            listeners.append(listener)
+            return listener
+
+        with patch.object(Path, 'read_text', side_effect=FileNotFoundError()), \
+                patch.object(module.socket, 'socket', socket):
+            with self.assertRaisesRegex(module.RustDevError, 'No free.*Database port'):
+                module.database_port_candidate(set())
+        self.assertEqual(len(attempts), 10000)
+        self.assertTrue(all(listener.closed for listener in listeners))
+
+    def test_socket_creation_failure_is_a_clear_allocation_error(self):
+        with patch.object(Path, 'read_text', return_value='32768 60999'), \
+                patch.object(module.socket, 'socket', side_effect=OSError('too many open files')):
+            with self.assertRaisesRegex(module.RustDevError, 'No free.*Database port'):
+                module.database_port_candidate(set())
+
+    def test_missing_procfs_with_real_loopback_probe(self):
+        # Linux-host source test of the actual helper, not native macOS acceptance.
+        with patch.object(Path, 'read_text', side_effect=FileNotFoundError()):
+            port = module.database_port_candidate({20000})
+        self.assertIn(port, range(20001, 30000))
+
+
 if __name__ == '__main__':
     unittest.main()

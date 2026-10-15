@@ -75,17 +75,31 @@ def launch_receipt(process, command: tuple[str, ...], label: str) -> dict:
 
 def database_port_candidate(exclude: set[int]) -> int:
     """Best-effort released candidate, not atomic/inherited-fd allocation."""
-    low, high = map(int, Path('/proc/sys/net/ipv4/ip_local_port_range').read_text().split())
+    try:
+        low, high = map(int, Path('/proc/sys/net/ipv4/ip_local_port_range').read_text().split())
+        if not 1 <= low <= high <= 65535:
+            raise ValueError('Invalid ephemeral port range')
+    except (OSError, ValueError):
+        # macOS has no procfs. Keep probing the fixed low candidate range,
+        # outside the conventional dynamic range, when Linux's range is
+        # unavailable/invalid. Custom non-Linux ephemeral ranges are unknown.
+        low, high = 49152, 65535
     for candidate in range(20000, 30000):
         if candidate in exclude or low <= candidate <= high:
             continue
-        with socket.socket() as listener:
+        try:
+            listener = socket.socket()
+        except OSError as error:
+            raise RustDevError('No free Rust development Database port: '
+                               'unable to create probe socket') from error
+        with listener:
             try:
                 listener.bind(('127.0.0.1', candidate))
             except OSError:
                 continue
             return candidate
-    raise RustDevError('No free non-ephemeral Rust development Database port')
+    raise RustDevError('No free Rust development Database port in 20000..29999 '
+                       '(excluding application and known ephemeral ports)')
 
 
 @asynccontextmanager
