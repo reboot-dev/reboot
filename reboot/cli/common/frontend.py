@@ -2,8 +2,8 @@ from reboot.cli.common.rc import SubcommandParser
 
 
 def add_common_frontend_args(subcommand: SubcommandParser) -> None:
-    """Add the frontend-serving flags shared by `dev run` and
-    `serve run`: `--mcp-app-path-prefix` and `--frontend-dist-path`.
+    """Add the MCP UI serving flags shared by `dev run` and
+    `serve run`: `--mcp-app-path-prefix` and `--mcp-app-dist-path`.
     """
     subcommand.add_argument(
         '--mcp-app-path-prefix',
@@ -14,9 +14,9 @@ def add_common_frontend_args(subcommand: SubcommandParser) -> None:
             '`UI(path="frontend/mcp/counter")`). The prefix is '
             'stripped and the rest is served under '
             '`/__/frontend/`, or looked up under '
-            '`--frontend-dist-path`. Required with, and only '
-            'valid alongside, `--frontend-dist-path` or (in '
-            '`dev run`) `--frontend-host`.'
+            '`--mcp-app-dist-path`. Required with, and only '
+            'valid alongside, `--mcp-app-dist-path` or (in '
+            '`dev run`) `--mcp-app-url`.'
         ),
     )
     subcommand.add_renamed_flag(
@@ -24,12 +24,16 @@ def add_common_frontend_args(subcommand: SubcommandParser) -> None:
         '--mcp-app-path-prefix',
     )
     subcommand.add_argument(
-        '--frontend-dist-path',
+        '--mcp-app-dist-path',
         type=str,
         help=(
             'project-relative directory holding the built '
-            'frontend assets (e.g., `frontend/dist`), served '
-            'from disk under `/__/frontend/`. Requires '
+            'MCP UIs (e.g., `frontend/dist`), served from '
+            'disk under `/__/frontend/`. Requires '
             '`--mcp-app-path-prefix`.'
         ),
+    )
+    subcommand.add_renamed_flag(
+        '--frontend-dist-path',
+        '--mcp-app-dist-path',
     )

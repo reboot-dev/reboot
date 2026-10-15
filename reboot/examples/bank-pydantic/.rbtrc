@@ -30,12 +30,12 @@ dev run --default-config=hmr
 # Run Vite in a separate terminal: `cd frontend && npm run dev`
 dev run --mcp-app-path-prefix=frontend
 
-dev run:hmr --frontend-host=http://localhost:4444
+dev run:hmr --mcp-app-url=http://localhost:4444
 
 # Dist mode: serve pre-built artifacts from "frontend/dist/" (no Vite
 # HMR). Usage: `rbt dev run --config=dist`
 # Requires: `cd frontend && npm run build`
-dev run:dist --frontend-dist-path=frontend/dist
+dev run:dist --mcp-app-dist-path=frontend/dist
 
 # When expunging, expunge that state we've saved.
 dev expunge --application-name=bank

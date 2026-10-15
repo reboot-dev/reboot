@@ -37,7 +37,7 @@ from starlette.staticfiles import StaticFiles
 
 # The built page, beside this module, which is the same arrangement
 # `InspectServicer` uses for its own assets. Mounting it directly
-# avoids `RBT_FRONTEND_DIST_PATH`, which resolves against a project
+# avoids `RBT_MCP_APP_DIST_PATH`, which resolves against a project
 # root discovered by walking up from a servicer's file; the servicers
 # here come from `reboot.std.presence`, so no such root exists above
 # them.

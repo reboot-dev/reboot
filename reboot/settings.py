@@ -137,15 +137,17 @@ ENVVAR_RBT_STATE_DIRECTORY = 'RBT_STATE_DIRECTORY'
 ENVVAR_RBT_NODEJS = 'RBT_NODEJS'
 ENVVAR_RBT_SERVERS = 'RBT_SERVERS'
 
-# URL of the frontend dev server (web + MCP) for HMR support.
-# Format: "http://host:port" (e.g., "http://localhost:4444").
+# URL of the dev server (e.g., Vite) that serves the MCP UIs, for
+# HMR. Format: "http://host:port" (e.g., "http://localhost:4444").
 # When set, Envoy routes "/__/frontend/**" to this server.
-ENVVAR_RBT_FRONTEND_HOST = 'RBT_FRONTEND_HOST'
+ENVVAR_RBT_MCP_APP_URL = 'RBT_MCP_APP_URL'
 # The prefix of each MCP `UI(path=...)` that names the frontend
 # directory, e.g. "frontend"; stripped to find the UI under
 # "/__/frontend/" and under the dist directory.
 ENVVAR_RBT_MCP_APP_PATH_PREFIX = 'RBT_MCP_APP_PATH_PREFIX'
-ENVVAR_RBT_FRONTEND_DIST_PATH = 'RBT_FRONTEND_DIST_PATH'
+# Project-relative directory holding the built MCP UIs, e.g.
+# "frontend/dist", served under "/__/frontend/".
+ENVVAR_RBT_MCP_APP_DIST_PATH = 'RBT_MCP_APP_DIST_PATH'
 
 # Environment variable indicating that `rbt` is being invoked from
 # Node.js.

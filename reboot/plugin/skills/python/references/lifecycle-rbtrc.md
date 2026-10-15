@@ -144,10 +144,10 @@ the command line:
 dev run --default-config=hmr
 dev run --mcp-app-path-prefix=frontend
 
-dev run:hmr --frontend-host=http://localhost:4444
+dev run:hmr --mcp-app-url=http://localhost:4444
 
 # Dist mode (no Vite).
-dev run:dist --frontend-dist-path=frontend/dist
+dev run:dist --mcp-app-dist-path=frontend/dist
 ```
 
 Run with `rbt dev run` (uses `--default-config=hmr`) or

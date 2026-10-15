@@ -28,12 +28,12 @@ dev run --default-config=hmr
 # Envoy routes "/__/frontend/**" to Vite for HMR support.
 dev run --mcp-app-path-prefix=frontend
 
-dev run:hmr --frontend-host=http://localhost:4444
+dev run:hmr --mcp-app-url=http://localhost:4444
 
 # Dist mode: serve pre-built artifacts from "frontend/dist/" (no Vite HMR).
 # Usage: uv run rbt dev run --config=dist
 # Requires: cd frontend && npm run build
-dev run:dist --frontend-dist-path=frontend/dist
+dev run:dist --mcp-app-dist-path=frontend/dist
 
 # When expunging, expunge that state we've saved.
 dev expunge --application-name=chick-potle
@@ -41,10 +41,10 @@ dev expunge --application-name=chick-potle
 # Production (`rbt serve run`) settings, used by the Dockerfile
 # when deploying to the Reboot Cloud. In production the built
 # `frontend/dist/` is served on disk by the static-file server
-# (`--frontend-dist-path`); the `--frontend-host` Vite dev server
+# (`--mcp-app-dist-path`); the `--mcp-app-url` Vite dev server
 # is dev-only.
 serve run --python
-serve run --frontend-dist-path=frontend/dist
+serve run --mcp-app-dist-path=frontend/dist
 serve run --mcp-app-path-prefix=frontend
 serve run --application-name=chick-potle
 serve run --application=backend/src/main.py

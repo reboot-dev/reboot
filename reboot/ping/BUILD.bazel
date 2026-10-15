@@ -194,7 +194,7 @@ py_binary(
     srcs = ["ping.py"],
     env = dict(
         _PING_RUN_ENV,
-        RBT_FRONTEND_DIST_PATH = "frontend/dist",
+        RBT_MCP_APP_DIST_PATH = "frontend/dist",
         RBT_MCP_APP_PATH_PREFIX = "frontend",
     ),
     main = "ping.py",

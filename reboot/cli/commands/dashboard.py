@@ -34,9 +34,9 @@ from reboot.dashboard.backend.constants import (
 from reboot.settings import (
     ENVVAR_RBT_DEV,
     ENVVAR_RBT_EFFECT_VALIDATION,
-    ENVVAR_RBT_FRONTEND_DIST_PATH,
-    ENVVAR_RBT_FRONTEND_HOST,
+    ENVVAR_RBT_MCP_APP_DIST_PATH,
     ENVVAR_RBT_MCP_APP_PATH_PREFIX,
+    ENVVAR_RBT_MCP_APP_URL,
     ENVVAR_RBT_NAME,
     ENVVAR_RBT_NODEJS,
     ENVVAR_RBT_SERVE,
@@ -162,8 +162,8 @@ def _dashboard_env(
     # dashboard a Node.js application or serve their frontend.
     for name in (
         ENVVAR_RBT_NODEJS,
-        ENVVAR_RBT_FRONTEND_HOST,
-        ENVVAR_RBT_FRONTEND_DIST_PATH,
+        ENVVAR_RBT_MCP_APP_URL,
+        ENVVAR_RBT_MCP_APP_DIST_PATH,
         ENVVAR_RBT_MCP_APP_PATH_PREFIX,
     ):
         composed.pop(name, None)

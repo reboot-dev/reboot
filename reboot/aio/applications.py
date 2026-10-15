@@ -51,8 +51,8 @@ from reboot.run_environments import (
 from reboot.server.service_descriptor_validator import ProtoValidationError
 from reboot.settings import (
     DEFAULT_SECURE_PORT,
-    ENVVAR_RBT_FRONTEND_DIST_PATH,
-    ENVVAR_RBT_FRONTEND_HOST,
+    ENVVAR_RBT_MCP_APP_DIST_PATH,
+    ENVVAR_RBT_MCP_APP_URL,
     ENVVAR_RBT_NAME,
     ENVVAR_RBT_SERVERS,
     ENVVAR_RBT_STATE_DIRECTORY,
@@ -911,7 +911,7 @@ class Application:
         )
 
         # In dist mode (a built frontend, no Vite dev server) serve the
-        # `--frontend-dist-path` directory over `/__/frontend/` from this
+        # `--mcp-app-dist-path` directory over `/__/frontend/` from this
         # same HTTP server, alongside `/mcp`. Envoy has no frontend route
         # in this mode, so a browser's `/__/frontend/...` request falls
         # through to the app's HTTP cluster and lands here. Starlette
@@ -919,16 +919,16 @@ class Application:
         # resolves `/__/frontend/web/index.html` to
         # `dist_dir/web/index.html`. The mount must be present in every
         # serving server subprocess, so it is established here at serve
-        # time. In HMR mode `ENVVAR_RBT_FRONTEND_HOST` points at the
+        # time. In HMR mode `ENVVAR_RBT_MCP_APP_URL` points at the
         # Vite dev server and Envoy routes `/__/frontend/` there
         # instead, so skip the mount.
-        frontend_dist_path = os.environ.get(ENVVAR_RBT_FRONTEND_DIST_PATH)
-        if frontend_dist_path and not os.environ.get(ENVVAR_RBT_FRONTEND_HOST):
+        mcp_app_dist_path = os.environ.get(ENVVAR_RBT_MCP_APP_DIST_PATH)
+        if mcp_app_dist_path and not os.environ.get(ENVVAR_RBT_MCP_APP_URL):
             project_root = self._frontend_project_root()
             self.http.mount(
                 "/__/frontend",
                 app=StaticFiles(
-                    directory=str(project_root / frontend_dist_path),
+                    directory=str(project_root / mcp_app_dist_path),
                     # `html=True` so directory URLs like
                     # `/__/frontend/web/` (the web app's pop-out target)
                     # serve `index.html`. `check_dir=False` so a
@@ -949,7 +949,7 @@ class Application:
 
     def _frontend_project_root(self) -> Path:
         """The project root (the directory containing `.rbtrc`) that
-        `--frontend-dist-path` is relative to.
+        `--mcp-app-dist-path` is relative to.
 
         `self.servicers` mixes the user's servicers with
         framework-provided ones (libraries, `memoize`,
@@ -967,7 +967,7 @@ class Application:
                 continue
         raise InputError(
             reason=(
-                "`--frontend-dist-path` was set, but no project root (a "
+                "`--mcp-app-dist-path` was set, but no project root (a "
                 "directory containing `.rbtrc`) was found above any of "
                 "this application's servicers, so the built frontend "
                 "can't be located. Make sure your deployment includes "

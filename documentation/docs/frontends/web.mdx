@@ -187,20 +187,20 @@ cd frontend && npm run dev
 `rbt dev run` generates the React client before it starts, so the dev
 server always has an up-to-date `frontend/api/`.
 
-If you want Reboot to serve the frontend too — so both are on one
-origin, and so `UI` methods work — point it at your frontend directory
-in `.rbtrc`:
+If the application also has `UI` methods, Reboot must serve those
+MCP UIs from its own origin; point it at your frontend directory in
+`.rbtrc`:
 
 ```
 # The frontend directory, shared by the `:hmr` and `:dist` configs below.
 dev run --mcp-app-path-prefix=frontend
 
 # HMR: proxy `/__/frontend/**` to the Vite dev server.
-dev run:hmr --frontend-host=http://localhost:4444
+dev run:hmr --mcp-app-url=http://localhost:4444
 dev run --default-config=hmr
 
-# Dist: serve pre-built assets instead. `rbt dev run --config=dist`.
-dev run:dist --frontend-dist-path=frontend/dist
+# Dist: serve the built MCP UIs instead. `rbt dev run --config=dist`.
+dev run:dist --mcp-app-dist-path=frontend/dist
 ```
 
 See [Develop locally](/develop_locally#frontend-flags) for what each

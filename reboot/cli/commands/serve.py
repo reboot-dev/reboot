@@ -36,7 +36,7 @@ from reboot.run_environments import on_cloud
 from reboot.settings import (
     ENVVAR_LOCAL_ENVOY_USE_TLS,
     ENVVAR_RBT_EFFECT_VALIDATION,
-    ENVVAR_RBT_FRONTEND_DIST_PATH,
+    ENVVAR_RBT_MCP_APP_DIST_PATH,
     ENVVAR_RBT_MCP_APP_PATH_PREFIX,
     ENVVAR_RBT_NAME,
     ENVVAR_RBT_NODEJS,
@@ -265,17 +265,17 @@ async def serve_run(
             env[ENVVAR_RBT_STATE_DIRECTORY] = args.state_directory
 
         prefix = args.mcp_app_path_prefix
-        if args.frontend_dist_path is not None:
+        if args.mcp_app_dist_path is not None:
             if prefix is None:
                 terminal.fail(
-                    "`--frontend-dist-path` requires `--mcp-app-path-prefix`."
+                    "`--mcp-app-dist-path` requires `--mcp-app-path-prefix`."
                 )
-            env[ENVVAR_RBT_FRONTEND_DIST_PATH] = args.frontend_dist_path
+            env[ENVVAR_RBT_MCP_APP_DIST_PATH] = args.mcp_app_dist_path
             env[ENVVAR_RBT_MCP_APP_PATH_PREFIX] = prefix
         elif prefix is not None:
             terminal.fail(
                 "`--mcp-app-path-prefix` is only valid alongside "
-                "`--frontend-dist-path`."
+                "`--mcp-app-dist-path`."
             )
 
         # Pick the mode we'll run Envoy in (either as a stand-alone

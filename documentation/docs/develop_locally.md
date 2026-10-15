@@ -208,10 +208,10 @@ When your application has a React frontend — a
 # Generate typed React hooks, shared by every frontend.
 generate --react=frontend/api
 
-# Proxy the frontend through Vite for hot module replacement.
+# Proxy the MCP UIs through Vite for hot module replacement.
 dev run --mcp-app-path-prefix=frontend
 
-dev run:hmr --frontend-host=http://localhost:4444
+dev run:hmr --mcp-app-url=http://localhost:4444
 
 # Default to HMR mode when --config is not specified.
 dev run --default-config=hmr
@@ -220,8 +220,8 @@ dev run --default-config=hmr
 | Flag | Description |
 | --- | --- |
 | `dev run --mcp-app-path-prefix=<dir>` | The prefix of each `UI(path=...)` that names the frontend directory (e.g. `frontend`). Set once on the base `dev run` line so the `:hmr` and `:dist` configs inherit it. |
-| `dev run --frontend-host=<url>` | HMR: point at the Vite dev server URL (e.g. `http://localhost:4444`); Envoy proxies `/__/frontend/**` to it. |
-| `dev run --frontend-dist-path=<dir>` | Dist: serve pre-built frontend assets from `<dir>` (e.g. `frontend/dist`) on disk; mutually exclusive with `--frontend-host`. |
+| `dev run --mcp-app-url=<url>` | HMR: the Vite dev server URL (e.g. `http://localhost:4444`) that serves the MCP UIs; Envoy proxies `/__/frontend/**` to it. |
+| `dev run --mcp-app-dist-path=<dir>` | Dist: serve the built MCP UIs from `<dir>` (e.g. `frontend/dist`) on disk; mutually exclusive with `--mcp-app-url`. |
 | `dev run --default-config=<name>` | Sets the default configuration profile when `--config` is not specified. |
 | `dev run:hmr` / `dev run:dist` | Named configurations. Flags prefixed with `dev run:<name>` only apply when `--config=<name>` is used. |
 

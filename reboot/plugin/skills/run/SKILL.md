@@ -45,8 +45,8 @@ strongest first.
   of them.
 - There is a `frontend/mcp/<name>/index.html`.
 - `.rbtrc` has a `dev run --default-config=hmr` line together with
-  a `dev run:hmr --frontend-host=...` line: Envoy proxying the
-  frontend, which only MCP UIs need.
+  a `dev run:hmr --mcp-app-url=...` line: Envoy proxying the
+  MCP UIs from the dev server.
 
 **Web App** — all of:
 
