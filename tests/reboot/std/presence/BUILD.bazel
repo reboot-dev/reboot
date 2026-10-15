@@ -30,6 +30,7 @@ ts_project(
     visibility = ["//visibility:public"],
     deps = [
         "//:node_modules/@reboot-dev/reboot",
+        "//:node_modules/@reboot-dev/reboot-api",
         "//:node_modules/@reboot-dev/reboot-std",
         "//:node_modules/@types/node",
     ],

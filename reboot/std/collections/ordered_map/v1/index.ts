@@ -1,5 +1,12 @@
-import { NativeLibrary, NativeServicer } from "@reboot-dev/reboot";
-import { OrderedMap } from "@reboot-dev/reboot-std-api/collections/ordered_map/v1/ordered_map_rbt.js";
+import {
+  AuthorizerRule,
+  NativeLibrary,
+  NativeServicer,
+} from "@reboot-dev/reboot";
+import {
+  OrderedMap,
+  OrderedMapRequestTypes,
+} from "@reboot-dev/reboot-std-api/collections/ordered_map/v1/ordered_map_rbt.js";
 export * from "@reboot-dev/reboot-std-api/collections/ordered_map/v1/ordered_map_rbt.js";
 
 export default {
@@ -22,11 +29,20 @@ export function orderedMapLibrary({
   // Just using `OrderedMap.Authorizer` results in ts(2749), "refers to a value,
   // but is being used as a type." `InstanceType<typeof ...>` allows us to
   // refer to the type.
-  authorizer?: InstanceType<typeof OrderedMap.Authorizer>;
+  authorizer?:
+    | InstanceType<typeof OrderedMap.Authorizer>
+    | AuthorizerRule<OrderedMap.State, OrderedMapRequestTypes>;
 } = {}): NativeLibrary {
+  const authorizers: NativeLibrary["authorizers"] = {};
+  if (authorizer !== undefined) {
+    authorizers["authorizer"] =
+      authorizer instanceof AuthorizerRule
+        ? new OrderedMap.Authorizer({ _default: authorizer })
+        : authorizer;
+  }
   return {
     nativeLibraryModule: "reboot.std.collections.ordered_map.v1.ordered_map",
     nativeLibraryFunction: "ordered_map_library",
-    authorizer,
+    authorizers,
   };
 }
