@@ -26,9 +26,38 @@ Parent verification independently rehashed all **634 archived files**, frozen
 source/helper/executable pins and exact child joins. Genuine attach completion
 preceded fresh exact-container terminal inspection: exited, PID zero, exit zero,
 no OOM/error. The original task lock was acquirable afterward. These are actual
-runtime results, not the seeded/private cursor tests. A separate fresh native
-Database/reader canonical check remains pending; full native/public qualification,
-current-upstream qualification and overall SDK parity are **not** asserted.
+runtime results, not the seeded/private cursor tests. The separate fresh native
+Database canonical readback has now **passed** (below). Full native/public
+qualification, current-upstream qualification and overall SDK parity are **not**
+asserted.
+
+## Cursor/results independent canonical readback (2026-10-15)
+
+The [database-only verifier](tests/fixtures/workflow_cursor_results_app/canonical_verifier.py)
+ran through the original exclusive owner with a **fresh native Database**, two
+fresh generated Rust CLI inspect processes and **no SDK host**. Its input was a
+byte-for-byte copy of the closed passing-run RocksDB dataset: **21 files**,
+distinct inodes, pinned original server-info bytes, and a verified read-only
+input mount. The historical dataset remained unchanged.
+
+The [canonical receipt](tests/evidence/cursor-canonical-readback-20261015.json)
+records complete terminal task/status/iteration/raw-record preservation at
+iteration **1029**, with the later global actor state (consumed **1030**,
+concurrent **3**, after **1**, B commits **1031**). The entire Pending snapshot
+matched the prior run, including raw task bytes and its sole Started record,
+with no Stored record. Single-shard topology is tied to the pinned original
+source construction and reused server-info bytes; no separate live topology
+introspection claim is made.
+
+All **three** children genuinely joined with exit zero, including intentional
+graceful Database SIGTERM. Parent readback independently verified **92 archived
+files**, all **2822** source members, **33** bundle members and **40** runtime
+pins; exact attach join preceded fresh terminal container inspection, with no
+OOM/error and the original lock free. This closes the bounded cursor/results
+native fixture proof, **not** public qualification, current-upstream
+qualification or overall SDK parity. The reboot-examples remote HEAD was
+rechecked and remains `5c332a2910122d6035799bfaf2a314bf1de830b8`; this
+new-feature fixture is not claimed as corresponding examples parity.
 
 ## Cursor/results fixture source checkpoint (2026-10-15)
 
@@ -36,7 +65,7 @@ The [fixture](tests/fixtures/workflow_cursor_results_app/HANDOFF.md) is now
 available for parent-owned native qualification. Its generated Rust consumer
 compiled and passed strict all-target Clippy. The later mandatory writer-metadata
 fix also passed an actual locked/offline rebuild; strict Clippy describes the
-earlier main.rs. Eight repository-local cleanup unit regressions
+earlier main.rs. Ten repository-local cleanup/wait unit regressions
 exercise the actual helper, including unresolved short clients, unrepresented
 reservations and open/missing descriptor obligations. The standalone Rust
 wrapper compiles and remains intentionally ignored. These are **source,
@@ -44,7 +73,7 @@ compile and unit results**, not native/public cursor acceptance.
 
 The >1024 continuation, typed cross-actor result replay, saved Break replay
 and Started-uncertainty driver assertions have now passed on the real native
-runtime. Independent post-run canonical qualification remains pending. The fixture refuses
+runtime, followed by the passing independent canonical readback above. The fixture refuses
 to substitute subprocess polling for the required parent custody adapter.
 Unknown SDK custody blocks Database retirement; independent outer preflight,
 archival, real build provenance and approved native execution remain required.
@@ -4730,7 +4759,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 900e730d4168ef98427b1ed26455a957bacb7178c15c9043395c46931fea840e -->
+<!-- parity-source-sha256: 43523d887bcbe1e3c617bb00e28c8b46690079fbbe9e7a0f6abcfca3ca372f9d -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,
