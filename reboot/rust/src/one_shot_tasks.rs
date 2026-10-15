@@ -2629,6 +2629,153 @@ impl Drop for WaitLoadTestBarrier {
     }
 }
 
+/// Bounded result-only lookup supplied by trusted host composition. This is not
+/// actor discovery, recovery, a scheduler, or a replacement for the static reader
+/// registry. Mount `service()` once with `ApplicationHost::add_public_service`;
+/// install only original exact task owners already bound by that serving host.
+/// Revoked entries remain strongly retained and consume capacity: no ABA/reuse.
+#[derive(Clone)]
+pub struct LiveTaskWaitCatalog {
+    inner: Arc<LiveTaskWaitInner>,
+}
+struct LiveTaskWaitInner {
+    endpoint: String,
+    state_type: String,
+    capacity: usize,
+    host: Mutex<Option<RecoveryCancellation>>,
+    entries: Mutex<std::collections::BTreeMap<(String, String), Arc<LiveTaskWaitEntry>>>,
+    policy: ReaderTaskWaitService,
+}
+struct LiveTaskWaitEntry {
+    tasks: OneShotTasks,
+    generation: Arc<()>,
+    host: RecoveryCancellation,
+    revoked: Mutex<bool>,
+}
+impl LiveTaskWaitEntry {
+    fn check(&self) -> Result<std::sync::MutexGuard<'_, bool>, Status> {
+        let revoked = self.revoked.lock().expect("live Wait revocation poisoned");
+        if *revoked || self.host.is_cancelled() {
+            return Err(Status::unavailable("live task Wait owner revoked"));
+        }
+        if !self.tasks.inner.recovery_owner.lock().expect("task recovery owner poisoned")
+            .as_ref().is_some_and(|host| host.same_recovery_owner(&self.host)) {
+            return Err(Status::unavailable("live task Wait host binding changed"));
+        }
+        Ok(revoked)
+    }
+}
+impl LiveTaskWaitCatalog {
+    /// Fix one endpoint, state family, placement and server-owned identity before
+    /// mount. Policy defaults to deny; no owner is created by a request. The host
+    /// token is supplied at install by actual HostRecovery composition, never a
+    /// readiness bool. Owner capacity includes revoked/completed-only entries.
+    pub fn new(
+        endpoint: String,
+        state_type: String,
+        capacity: usize,
+        application: crate::legacy_placement::LegacyApplicationId,
+        server_id: String,
+        placement: crate::legacy_placement::PlanOnlyLegacyPlacement,
+        wait_policy: crate::auth::AuthorizationPolicy,
+    ) -> Result<Self, Status> {
+        if endpoint.is_empty() || state_type.is_empty() || server_id.is_empty()
+            || capacity == 0 || capacity > MAX_TASKS {
+            return Err(Status::invalid_argument("live Wait requires endpoint, family, server and 1..1024 capacity"));
+        }
+        // Compare the same Tonic URI representation used by DatabaseActorStore,
+        // rather than rejecting an equivalent endpoint lacking a trailing slash.
+        let endpoint = tonic::transport::Endpoint::from_shared(endpoint)
+            .map_err(|_| Status::invalid_argument("invalid live Wait Database endpoint"))?
+            .uri().to_string();
+        Ok(Self { inner: Arc::new(LiveTaskWaitInner {
+            endpoint, state_type, capacity, host: Mutex::new(None),
+            entries: Mutex::new(std::collections::BTreeMap::new()),
+            policy: ReaderTaskWaitService {
+                tasks: std::collections::BTreeMap::new(), application, server_id,
+                placement, admin: None, wait_policy: Some(wait_policy),
+            },
+        }) })
+    }
+    /// Bind once from the actual host recovery callback. Rebinding is forbidden.
+    pub fn bind_host(&self, host: RecoveryCancellation) -> Result<(), Status> {
+        let mut bound = self.inner.host.lock().expect("live Wait host poisoned");
+        if bound.is_some() {
+            return Err(Status::already_exists("live Wait host already bound"));
+        }
+        if host.is_cancelled() {
+            return Err(Status::unavailable("live Wait host cancelled"));
+        }
+        *bound = Some(host);
+        Ok(())
+    }
+    /// Retain the original allocation and its CURRENT dispatcher generation.
+    /// Does not activate tasks or take dispatch ownership. Writer-capable owners
+    /// are legal: result lookup uses the same binding/terminal validation as Wait.
+    pub fn install(&self, tasks: OneShotTasks, host: RecoveryCancellation) -> Result<(), Status> {
+        if !self.inner.host.lock().expect("live Wait host poisoned").as_ref()
+            .is_some_and(|bound| bound.same_recovery_owner(&host)) {
+            return Err(Status::failed_precondition("live Wait requires original bound host"));
+        }
+        if tasks.inner.store.database_endpoint() != self.inner.endpoint
+            || tasks.inner.state_type != self.inner.state_type {
+            return Err(Status::invalid_argument("live Wait endpoint or family mismatch"));
+        }
+        self.inner.policy.require_authority(&tasks.inner.state_ref)?;
+        let generation = tasks.inner.running_owner.lock().expect("task owner poisoned")
+            .clone().ok_or_else(|| Status::unavailable("task dispatcher is not active"))?;
+        let entry = Arc::new(LiveTaskWaitEntry { tasks, generation, host, revoked: Mutex::new(false) });
+        let admission = RunningTaskAdmission { tasks: entry.tasks.clone(), generation: entry.generation.clone() };
+        let _generation = admission.lock_result()?;
+        let _host = entry.check()?;
+        let key = (entry.tasks.inner.state_type.clone(), entry.tasks.inner.state_ref.clone());
+        let mut entries = self.inner.entries.lock().expect("live Wait catalog poisoned");
+        if entries.contains_key(&key) {
+            return Err(Status::already_exists("live Wait exact owner already installed"));
+        }
+        if entries.len() >= self.inner.capacity {
+            return Err(Status::resource_exhausted("live Wait owner capacity exhausted"));
+        }
+        entries.insert(key, entry.clone());
+        Ok(())
+    }
+    /// Close this exact entry without releasing original allocation custody.
+    pub fn revoke(&self, state_ref: &str) -> Result<(), Status> {
+        let entry = self.inner.entries.lock().expect("live Wait catalog poisoned")
+            .get(&(self.inner.state_type.clone(), state_ref.to_owned())).cloned()
+            .ok_or_else(|| Status::not_found("live Wait owner is not installed"))?;
+        *entry.revoked.lock().expect("live Wait revocation poisoned") = true;
+        Ok(())
+    }
+    fn lookup(&self, id: &db::TaskId) -> Option<Arc<LiveTaskWaitEntry>> {
+        self.inner.entries.lock().expect("live Wait catalog poisoned")
+            .get(&(id.state_type.clone(), id.state_ref.clone())).cloned()
+    }
+    /// The ordinary generated Tonic Tasks NamedService, not an alternate route.
+    /// Do not mount together with a second Tasks service of the same name.
+    pub fn service(&self) -> db::tasks_server::TasksServer<LiveTaskWaitService> {
+        db::tasks_server::TasksServer::new(LiveTaskWaitService { catalog: self.clone() })
+    }
+}
+#[derive(Clone)]
+pub struct LiveTaskWaitService { catalog: LiveTaskWaitCatalog }
+#[tonic::async_trait]
+impl db::tasks_server::Tasks for LiveTaskWaitService {
+    async fn wait(&self, request: tonic::Request<db::WaitRequest>) -> Result<tonic::Response<db::WaitResponse>, Status> {
+        self.catalog.inner.policy.wait_exact(request, Some(&self.catalog)).await
+    }
+    async fn list_tasks(&self, _: tonic::Request<db::ListTasksRequest>) -> Result<tonic::Response<db::ListTasksResponse>, Status> {
+        Err(Status::permission_denied("live Wait grants no task administration"))
+    }
+    type ListTasksStreamStream = <ReaderTaskWaitService as db::tasks_server::Tasks>::ListTasksStreamStream;
+    async fn list_tasks_stream(&self, _: tonic::Request<db::ListTasksRequest>) -> Result<tonic::Response<Self::ListTasksStreamStream>, Status> {
+        Err(Status::permission_denied("live Wait grants no task administration"))
+    }
+    async fn cancel_task(&self, _: tonic::Request<db::CancelTaskRequest>) -> Result<tonic::Response<db::CancelTaskResponse>, Status> {
+        Err(Status::permission_denied("live Wait grants no task administration"))
+    }
+}
+
 /// Read-only canonical task results for explicitly registered host-owned actors.
 #[derive(Clone)]
 pub struct ReaderTaskWaitService {
@@ -2854,6 +3001,48 @@ impl db::tasks_server::Tasks for ReaderTaskWaitService {
         &self,
         request: tonic::Request<db::WaitRequest>,
     ) -> Result<tonic::Response<db::WaitResponse>, Status> {
+        self.wait_exact(request, None).await
+    }
+    async fn list_tasks(
+        &self,
+        request: tonic::Request<db::ListTasksRequest>,
+    ) -> Result<tonic::Response<db::ListTasksResponse>, Status> {
+        let admissions = self.list_admissions();
+        self.list_snapshot(&request, "rbt.v1alpha1.Tasks.ListTasks", &admissions)
+            .await
+            .map(tonic::Response::new)
+    }
+    type ListTasksStreamStream = std::pin::Pin<
+        Box<
+            dyn tonic::codegen::tokio_stream::Stream<Item = Result<db::ListTasksResponse, Status>>
+                + Send,
+        >,
+    >;
+    async fn list_tasks_stream(
+        &self,
+        request: tonic::Request<db::ListTasksRequest>,
+    ) -> Result<tonic::Response<Self::ListTasksStreamStream>, Status> {
+        let admissions = self.list_admissions();
+        let initial = self
+            .list_snapshot(&request, "rbt.v1alpha1.Tasks.ListTasksStream", &admissions)
+            .await?;
+        let stream = TaskListStream::new(self.clone(), request, admissions?, initial);
+        Ok(tonic::Response::new(Box::pin(stream)))
+    }
+    async fn cancel_task(
+        &self,
+        request: tonic::Request<db::CancelTaskRequest>,
+    ) -> Result<tonic::Response<db::CancelTaskResponse>, Status> {
+        self.cancel_scheduled_workflow(request).await
+    }
+}
+
+impl ReaderTaskWaitService {
+    async fn wait_exact(
+        &self,
+        request: tonic::Request<db::WaitRequest>,
+        live: Option<&LiveTaskWaitCatalog>,
+    ) -> Result<tonic::Response<db::WaitResponse>, Status> {
         let headers = crate::RebootHeaders::from_request(&request)
             .map_err(|error| Status::invalid_argument(error.to_string()))?;
         let expected_method = request
@@ -2873,12 +3062,20 @@ impl db::tasks_server::Tasks for ReaderTaskWaitService {
                 "task ID does not match routed state ref",
             ));
         }
-        let tasks = self
-            .tasks
-            .get(&(id.state_type.clone(), id.state_ref.clone()));
+        let live_entry = live.and_then(|catalog| catalog.lookup(&id));
+        let tasks = if live.is_some() {
+            live_entry.as_ref().map(|entry| &entry.tasks)
+        } else {
+            self.tasks.get(&(id.state_type.clone(), id.state_ref.clone()))
+        };
         // Capture before any policy await. A stopped/replaced dispatcher cannot
         // lend its replacement generation to an already-pending protected Wait.
-        let admission = tasks.and_then(|tasks| {
+        let admission = if let Some(entry) = &live_entry {
+            Some(RunningTaskAdmission {
+                tasks: entry.tasks.clone(),
+                generation: entry.generation.clone(),
+            })
+        } else { tasks.and_then(|tasks| {
             tasks
                 .inner
                 .running_owner
@@ -2889,7 +3086,7 @@ impl db::tasks_server::Tasks for ReaderTaskWaitService {
                     tasks: tasks.clone(),
                     generation,
                 })
-        });
+        }) };
         self.authorize_wait(&headers, &id, &encoded_request).await?;
         let tasks =
             tasks.ok_or_else(|| Status::invalid_argument("task actor is not registered"))?;
@@ -2902,6 +3099,10 @@ impl db::tasks_server::Tasks for ReaderTaskWaitService {
         }
         loop {
             self.authorize_wait(&headers, &id, &encoded_request).await?;
+            if let Some(entry) = &live_entry {
+                entry.host.check_reader_admission()?;
+                drop(entry.check()?);
+            }
             if self.wait_policy.is_some() {
                 let _owner = admission
                     .as_ref()
@@ -3001,7 +3202,12 @@ impl db::tasks_server::Tasks for ReaderTaskWaitService {
             // before revealing existence or a terminal, then original ownership
             // and current placement. No actor lease is held across policy IO.
             self.authorize_wait(&headers, &id, &encoded_request).await?;
+            if let Some(entry) = &live_entry {
+                entry.host.check_reader_admission()?;
+            }
             {
+                // Revocation and terminal disclosure share this exact entry lock.
+                let _live_publication = live_entry.as_ref().map(|entry| entry.check()).transpose()?;
                 // Retain the original owner through the synchronous disclosure decision.
                 // Uncertainty is rechecked here, not linearized with policy or transport.
                 let _publication = if self.wait_policy.is_some() {
@@ -3080,38 +3286,6 @@ impl db::tasks_server::Tasks for ReaderTaskWaitService {
             // failed-readiness cancellation drop it; no detached waiter or write.
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
-    }
-    async fn list_tasks(
-        &self,
-        request: tonic::Request<db::ListTasksRequest>,
-    ) -> Result<tonic::Response<db::ListTasksResponse>, Status> {
-        let admissions = self.list_admissions();
-        self.list_snapshot(&request, "rbt.v1alpha1.Tasks.ListTasks", &admissions)
-            .await
-            .map(tonic::Response::new)
-    }
-    type ListTasksStreamStream = std::pin::Pin<
-        Box<
-            dyn tonic::codegen::tokio_stream::Stream<Item = Result<db::ListTasksResponse, Status>>
-                + Send,
-        >,
-    >;
-    async fn list_tasks_stream(
-        &self,
-        request: tonic::Request<db::ListTasksRequest>,
-    ) -> Result<tonic::Response<Self::ListTasksStreamStream>, Status> {
-        let admissions = self.list_admissions();
-        let initial = self
-            .list_snapshot(&request, "rbt.v1alpha1.Tasks.ListTasksStream", &admissions)
-            .await?;
-        let stream = TaskListStream::new(self.clone(), request, admissions?, initial);
-        Ok(tonic::Response::new(Box::pin(stream)))
-    }
-    async fn cancel_task(
-        &self,
-        request: tonic::Request<db::CancelTaskRequest>,
-    ) -> Result<tonic::Response<db::CancelTaskResponse>, Status> {
-        self.cancel_scheduled_workflow(request).await
     }
 }
 
@@ -4215,3 +4389,11 @@ mod writer_completion_identity_tests {
 #[cfg(test)]
 #[path = "multi_owner_task_lifecycle_tests.rs"]
 mod multi_owner_task_lifecycle_tests;
+
+#[cfg(test)]
+#[path = "live_task_wait_tests.rs"]
+mod live_task_wait_tests;
+
+#[cfg(test)]
+#[path = "live_task_wait_revocation_tests.rs"]
+mod live_task_wait_revocation_tests;

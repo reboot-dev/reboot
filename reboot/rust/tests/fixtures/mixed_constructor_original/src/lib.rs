@@ -1,18 +1,26 @@
 //! Actual unchanged pinned-original DatabaseHandler consumer. UNCOMPILED source target.
 //! Withdraw remains an ordinary declared-error writer; no TransactionContext is invented.
+#[allow(clippy::result_large_err)] // External Tonic Status and generated wire signatures.
 pub mod rbt {
     pub mod v1alpha1 {
         tonic::include_proto!("rbt.v1alpha1");
     }
 }
+#[allow(clippy::result_large_err)] // External Tonic Status and generated wire signatures.
 pub mod bank {
     pub mod v1 {
         tonic::include_proto!("bank.v1");
     }
 }
+#[allow(clippy::result_large_err)] // External Tonic Status and generated wire signatures.
 pub mod account_generated {
     include!(concat!(env!("OUT_DIR"), "/bank/v1/account.reboot.rs"));
 }
+#[allow(clippy::result_large_err)] // External Tonic Status and generated wire signatures.
+pub mod bank_generated {
+    include!(concat!(env!("OUT_DIR"), "/bank/v1/bank.reboot.rs"));
+}
+pub mod committed_membership;
 pub mod semantics;
 use account_generated as a;
 use bank::v1 as b;

@@ -2348,12 +2348,15 @@ fn emit_transaction_flow(output: &mut String, flow: TransactionFlow<'_>) {
     } else {
         "false"
     };
+    // Fold the factory/default disjunction before emitting Rust. Keep the
+    // conditional fresh-root guard intact; its authorization remains below.
+    let creation_guard = if factory { "true" } else { default_creation };
     let default_value = if default_creation != "false" {
         format!("{{ if !({factory}) {{ let admission = async {{ let configuration = <Self as {runtime_module}::registered_local::GeneratedLocalTransactionAdapter>::local_configuration(self)?; local.authorize_default_root(&context, self.local_registration.as_ref(), &configuration).await }}.await; if let Err(error) = admission {{ {runtime_module}::runtime::boxed_generated_future(|| local.abort_local_after_denial()).await?; return Err(error); }} }} proto::{state}::default() }}")
     } else {
         format!("proto::{state}::default()")
     };
-    output.push_str(&format!("{prefix}let mut state = match loaded.as_ref() {{ Some(bytes) => match <proto::{state} as prost::Message>::decode(bytes.as_slice()) {{ Ok(state) => state, Err(error) => {{ {runtime_module}::runtime::boxed_generated_future(|| local.abort_local()).await?; return Err(tonic::Status::failed_precondition(format!(\"stored actor state is not a valid {state}: {{error}}\"))); }} }}, None if {factory} || ({default_creation}) => {default_value}, None => {{ {runtime_module}::runtime::boxed_generated_future(|| local.abort_local()).await?; return Err(tonic::Status::failed_precondition(\"non-factory transaction requires an existing actor state\")); }} }};\n"));
+    output.push_str(&format!("{prefix}let mut state = match loaded.as_ref() {{ Some(bytes) => match <proto::{state} as prost::Message>::decode(bytes.as_slice()) {{ Ok(state) => state, Err(error) => {{ {runtime_module}::runtime::boxed_generated_future(|| local.abort_local()).await?; return Err(tonic::Status::failed_precondition(format!(\"stored actor state is not a valid {state}: {{error}}\"))); }} }}, None if {creation_guard} => {default_value}, None => {{ {runtime_module}::runtime::boxed_generated_future(|| local.abort_local()).await?; return Err(tonic::Status::failed_precondition(\"non-factory transaction requires an existing actor state\")); }} }};\n"));
     let factory_existing_check = if factory {
         "if loaded.is_some() { local.abort_local().await?; return Err(tonic::Status::failed_precondition(\"factory transaction requires an absent actor state\")); }"
     } else {
@@ -3761,6 +3764,51 @@ mod tests {
     }
 
     #[test]
+    fn absent_state_creation_guard_folds_constants_without_granting_default_authority() {
+        for (factory, default_root, expected_guard) in [
+            (true, false, "true"),
+            (true, true, "true"),
+            (false, false, "false"),
+            (false, true, "!inbound && context.transaction_ids().len() == 1"),
+        ] {
+            let mut output = String::new();
+            emit_exclusive_transaction_method(
+                &mut output,
+                TransactionFlow {
+                    method: "apply",
+                    request: "Request",
+                    response: "Response",
+                    method_identity: "example.ActorMethods.Apply",
+                    state: "Actor",
+                    declaration: "Declaration",
+                    runtime_module: "sdk",
+                    mode: "Exclusive",
+                    factory,
+                    default_root,
+                    declared_error: false,
+                    writer: false,
+                    inbound: TransactionInbound::Dynamic,
+                    shared_root_ownership_seam: false,
+                    authorize_after_load: true,
+                },
+            );
+            assert!(output.contains(&format!("None if {expected_guard} =>")));
+            assert!(!output.contains("None if false ||"));
+            assert!(!output.contains("None if true ||"));
+            assert_eq!(
+                output.matches("local.authorize_default_root(").count(),
+                usize::from(default_root && !factory)
+            );
+            if !factory {
+                // Registered inbound admission must still refuse absent state.
+                assert!(output.contains("None if false => proto::Actor::default()"));
+            }
+            assert!(output.contains("self.authorization.authorize("));
+            assert!(output.contains("non-factory transaction requires an existing actor state"));
+        }
+    }
+
+    #[test]
     fn constructorless_default_creation_is_fresh_exclusive_root_only() {
         let flow = TransactionFlow {
             method: "sign_up", request: "SignUpRequest", response: "SignUpResponse",
@@ -3772,10 +3820,10 @@ mod tests {
         };
         let mut output = String::new();
         emit_exclusive_transaction_method(&mut output, flow);
-        let root_default = "None if false || (!inbound && context.transaction_ids().len() == 1) => {";
+        let root_default = "None if !inbound && context.transaction_ids().len() == 1 => {";
         assert_eq!(output.matches(root_default).count(), 1);
         // The separate inbound branch does not inherit default authority.
-        assert!(output.contains("None if false || (false) => proto::Bank::default()"));
+        assert!(output.contains("None if false => proto::Bank::default()"));
         let fresh = output.rfind("let registered_root =").unwrap();
         let default = output.find(root_default).unwrap();
         assert!(fresh + output[fresh..].find("authorize_handler_entry").unwrap() < default);
@@ -6728,7 +6776,7 @@ mod tests {
                 .contains("reboot_rust_schema::runtime::boxed_generated_future(|| local.abort_local()).await?; return Ok(tonic::Response::new(response))")
         );
         assert!(content.contains("root-local idempotency stages exactly one automatic mutation"));
-        assert!(content.contains("None if true || (false) => proto::Counter::default()"));
+        assert!(content.contains("None if true => proto::Counter::default()"));
         assert!(content.contains("<proto::Counter as prost::Message>::encode_to_vec(&state)"));
         assert!(!content.contains("factory transactions are not supported"));
     }

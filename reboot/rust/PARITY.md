@@ -97,6 +97,67 @@ exit zero preceded fresh container terminal inspection, and the original lock
 was free. Hot reload, new-consumer compilation and restart durability remain
 separate. This is not latest-upstream/full-native/overall SDK qualification.
 
+## Late-owner task results and committed Bank index checkpoint (2026-10-15)
+
+`LiveTaskWaitCatalog` now mounts one generated Tasks service and admits late
+exact task-owner installations from trusted host composition. It retains the
+original task allocation and dispatcher generation, binds the actual host
+cancellation identity, bounds capacity including revoked entries, and denies
+administration. It creates neither owners nor dispatch authority from requests.
+Static reader APIs and both routes reuse the same Wait policy, placement,
+request/method, canonical Load, terminal and generation validation.
+
+An independent source review caught a new readiness await after final policy
+authorization. It is replaced with a synchronous host-admission check before
+terminal/existence disclosure. The causal regression snapshots a post-Load
+Allow, withdraws placement, releases and polls that same RPC, revokes policy,
+restores placement, and requires refusal for both completed and absent tasks.
+This closes that specific stale-authorization window, not atomic transport or
+distributed policy revocation. Endpoint comparisons use the same Tonic URI
+representation as the original store, not raw trailing-slash spelling.
+
+The unchanged-schema Bank consumer now has a callable committed-membership
+loader using original `Bank.account_ids`, literal ID-to-StateRef conversion,
+raw-entry capacity before deduplication, original store-owned shared gates and
+canonical Bank/Account Loads via generated durable declarations. A missing fresh
+Bank yields no members; a missing indexed Account fails the complete lookup.
+Standalone Account.Open identities are deliberately excluded. Separate Loads
+are not an atomic cross-actor snapshot, ownership/readiness certification or
+remote-read quiescence proof after local cancellation. The consuming coordinated
+recovery must establish convergence and retain its own placement/owner authority.
+
+The [actual aggregate receipt](tests/evidence/live-wait-bank-index-library-20261015.json)
+records **714 SDK library tests passed, 0 failed, 7 ignored**, plus **9 original
+Bank/Account consumer tests passed, 0 failed, 0 ignored**. SDK, generated original
+Bank/Account consumer and pinned hello-legacy-grpc strict Clippy passed with
+`-D warnings`; the Legacy binaries and native constructor consumer rebuilt.
+The real generated Tasks HTTP/2 server/client starts before two late installs
+and returns typed completed results via canonical Load. Task owners in this
+transport test are privately fixture-activated and use a handwritten task
+binding: it is not real ApplicationHost activation or generated Bank auth proof.
+Membership tests explicitly arrange a storage model, not native SignUp state.
+
+Generated creation guards now fold constant factory/default disjunctions before
+emission, preserving the conditional fresh-root check and actual default-root
+authorization. This fixes downstream `false || (false)` strict-lint failures
+without suppressing them. External Tonic/generated module boundaries have scoped
+large-error allowances; new handwritten membership errors are boxed.
+
+A [fresh native regression receipt](tests/evidence/live-wait-bank-index-native-controls-20261015.json)
+records **15 existing constructor/default-root controls passed**, with **30
+SDK/Database joins**, against the rebuilt current-source consumer. Both runs'
+3276 source members, inputs/logs and exact container retirement were independently
+read back; no cleanup failure or adopted children remained and the original lock
+was released. Native Wait/index recovery, taskful SignUp and latest-upstream
+native builds are not established by these controls. The examples upstream HEAD
+was rechecked and still matches pinned revision
+`5c332a2910122d6035799bfaf2a314bf1de830b8`.
+
+The coordinated graph/startup bridge remains a separate unaccepted candidate.
+Exact resolver/binding/participant allocation proof, provisional checkpoint
+validation, host-retained bundle lifecycle and integrated recovery/Ready remain
+open; taskful constructor and shared Transfer refusals are unchanged.
+
 ## Supplied-owner lifecycle and fixed late frontdoor checkpoint (2026-10-15)
 
 Two further bounded production pieces are integrated, without enabling taskful
@@ -5186,7 +5247,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 0710ed04898bed6d2be1670b2667179962dcd03845aed360e889b35d3238654a -->
+<!-- parity-source-sha256: b83645e37921170520171eb7a9b156f97eb555dc4619c4a6f0457aa2c6db17d4 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

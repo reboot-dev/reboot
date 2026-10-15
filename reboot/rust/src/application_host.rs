@@ -316,6 +316,13 @@ impl RecoveryCancellation {
         cancel.test_placement_sender = Some(sender);
         (cancel, receiver)
     }
+    #[cfg(test)]
+    pub(crate) fn test_set_placement_ready(&self, ready: bool) {
+        self.test_placement_sender
+            .as_ref()
+            .expect("test_host placement sender")
+            .send_replace(ready);
+    }
     // Only ApplicationHost installs this authority. No public readiness setter.
     pub(crate) fn fail(&self) {
         self.failure_latched
