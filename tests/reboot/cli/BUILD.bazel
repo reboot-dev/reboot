@@ -80,6 +80,7 @@ py_test(
     main = "serve_tests.py",
     deps = [
         ":mock_exit_py",
+        "//reboot/cli/commands:dev_py",
         "//reboot/cli/common:cli_py",
         "//reboot/cli/common:rc_py",
     ],

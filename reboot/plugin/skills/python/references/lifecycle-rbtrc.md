@@ -145,6 +145,8 @@ dev run --default-config=hmr
 
 dev run:hmr --frontend-url=http://localhost:5173
 dev run:hmr --mcp-app
+# A dual-frontend app also serves its web app from the dev server, at `/`:
+# dev run:hmr --web-app
 
 # Dist mode (no Vite): the built MCP Apps.
 dev run:dist --mcp-app-dist-path=frontend/dist/mcp
