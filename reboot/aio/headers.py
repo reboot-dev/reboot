@@ -97,8 +97,6 @@ CALLER_ID_HEADER = 'x-reboot-caller-id'
 
 AUTHORIZATION_HEADER = 'authorization'
 
-COOKIE_HEADER = 'cookie'
-
 # Headers for calling/scheduling tasks directly.
 TASK_SCHEDULE = 'x-reboot-task-schedule'
 
@@ -168,8 +166,6 @@ class Headers:
 
     server_id: Optional[ServerId] = None
 
-    cookie: Optional[str] = None
-
     # Contains a "caller ID" that encodes the identity of the calling
     # application and, for a call from within a Reboot method, the
     # `Auth` on whose behalf it is made (see `CallerID.auth`).
@@ -232,7 +228,6 @@ class Headers:
             application_id=self.application_id,
             server_id=self.server_id,
             state_ref=self.state_ref,
-            cookie=self.cookie,
             caller_id=self.caller_id,
             bearer_token=self.bearer_token,
             traceparent=self.traceparent,
@@ -352,8 +347,6 @@ class Headers:
             if len(value) else DateTimeWithTimeZone.now(),
         )
 
-        cookie: Optional[str] = extract_maybe(COOKIE_HEADER)
-
         caller_id: Optional[CallerID] = extract_maybe(
             CALLER_ID_HEADER,
             convert=CallerID.parse,
@@ -385,7 +378,6 @@ class Headers:
             idempotency_key=idempotency_key,
             bearer_token=bearer_token,
             task_schedule=task_schedule,
-            cookie=cookie,
             caller_id=caller_id,
             traceparent=traceparent,
             tracestate=tracestate,
@@ -416,11 +408,6 @@ class Headers:
                 return (
                     (AUTHORIZATION_HEADER, f'Bearer {self.bearer_token}'),
                 )
-            return ()
-
-        def maybe_add_cookie_header() -> GrpcMetadata | tuple[()]:
-            if self.cookie is not None:
-                return ((COOKIE_HEADER, self.cookie),)
             return ()
 
         def maybe_add_workflow_headers() -> GrpcMetadata | tuple[()]:
@@ -517,7 +504,7 @@ class Headers:
         return (
             ((STATE_REF_HEADER, self.state_ref.to_str()),) +
             maybe_add_application_id_header() + maybe_add_server_id_header() +
-            maybe_add_authorization_header() + maybe_add_cookie_header() +
+            maybe_add_authorization_header() +
             maybe_add_transaction_headers() +
             maybe_add_transaction_retry_age_header() +
             maybe_add_workflow_headers() + maybe_add_idempotency_key_header() +

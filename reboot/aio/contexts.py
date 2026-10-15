@@ -985,10 +985,6 @@ class Context(ABC, IdempotencyManager):
         return self._headers.state_ref
 
     @property
-    def cookie(self) -> Optional[str]:
-        return self._headers.cookie
-
-    @property
     def internal_call(self) -> bool:
         """Return whether this call originated within a Reboot
         method (as opposed to externally, e.g., using `ExternalContext`).

@@ -736,11 +736,6 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
           ? call.context.callerBearerToken
           : null
       ),
-      cookie: (
-        call.context.cookie !== undefined
-          ? call.context.cookie
-          : null
-      ),
       appInternal: call.context.appInternal,
       auth: (
         call.context.auth !== undefined
@@ -1340,7 +1335,6 @@ export class {{ state.proto.name }}Authorizer extends reboot.Authorizer<{{ state
       method: call.context.method,
       stateTypeName: call.context.stateTypeName,
       callerBearerToken: call.context.callerBearerToken,
-      cookie: call.context.cookie,
       appInternal: call.context.appInternal,
       auth: (
         call.context.auth !== undefined
