@@ -286,6 +286,18 @@ py_test(
 )
 
 py_test(
+    name = "servicer_instances_tests_py",
+    srcs = [":servicer_instances_tests.py"],
+    main = "servicer_instances_tests.py",
+    deps = [
+        ":greeter_servicers_py",
+        "//reboot/aio:applications_py",
+        "//reboot/aio:contexts_py",
+        "//reboot/aio:tests_py",
+    ],
+)
+
+py_test(
     name = "invalid_header_tests_py",
     srcs = [
         ":invalid_header_tests.py",
