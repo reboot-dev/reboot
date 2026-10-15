@@ -1,8 +1,11 @@
 import asyncio
 import contextlib
+import re
 import uvicorn  # type: ignore[import]
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from envoy.config.route.v3 import route_components_pb2
+from envoy.type.matcher.v3 import regex_pb2
 from fastapi import Depends, FastAPI  # type: ignore[import]
 from pathlib import Path
 from reboot.aio.caller_id import CallerID
@@ -84,6 +87,15 @@ class WebFramework(ABC):
     """Web framework for HTTP endpoints in a Reboot application."""
 
     @abstractmethod
+    def route_matches(self) -> list[route_components_pb2.RouteMatch]:
+        """The paths this web framework answers, as Envoy route matches:
+        the application's own routes and mounts and Reboot's, so that
+        Envoy can route them to it ahead of whatever else answers `/`.
+        Known before the framework starts, since routes are registered
+        on the `Application` before it runs."""
+        raise NotImplementedError()
+
+    @abstractmethod
     async def start(
         self,
         server_id: ServerId,
@@ -118,6 +130,32 @@ class HTTPASGIApp(Protocol):
         ...
 
 
+def _route_regex(path: str) -> str:
+    """The RE2 regular expression matching the paths a FastAPI route
+    with parameters matches: `/users/{id}/orders` -> `^/users/[^/]+/orders$`,
+    `/files/{name:path}` -> `^/files/.*$`."""
+    return "^" + re.sub(
+        r"\{[^}:]+(:[^}]+)?\}",
+        lambda m: ".*" if m.group(1) == ":path" else "[^/]+",
+        re.escape(path).replace(r"\{", "{").replace(r"\}", "}"),
+    ) + "$"
+
+
+def _route_match(
+    api_route: "PythonWebFramework.APIRoute",
+) -> route_components_pb2.RouteMatch:
+    """What Envoy matches for the route: its path, exactly; or, for a
+    route with path parameters, a regex matching exactly what FastAPI
+    would (`{name}` is one segment, `{name:path}` the rest of the
+    path), never a prefix, which would take a web app's own URLs under
+    it too."""
+    if "{" not in api_route.path:
+        return route_components_pb2.RouteMatch(path=api_route.path)
+    return route_components_pb2.RouteMatch(
+        safe_regex=regex_pb2.RegexMatcher(regex=_route_regex(api_route.path)),
+    )
+
+
 class PythonWebFramework(WebFramework):
 
     @dataclass(kw_only=True, frozen=True)
@@ -134,6 +172,20 @@ class PythonWebFramework(WebFramework):
         app: Optional[HTTPASGIApp]
         factory: Optional[Callable[[Callable[[Request], ExternalContext]],
                                    HTTPASGIApp]]
+
+    def route_matches(self) -> list[route_components_pb2.RouteMatch]:
+        # Order is irrelevant: every match routes to the one HTTP
+        # cluster, ahead of Envoy's catch-all. Which route answers
+        # a request is FastAPI's call, in the order `start` registers
+        # them.
+        matches = [
+            _route_match(api_route) for api_route in self._internal_api_routes
+        ]
+        for mount in self._http._mounts:
+            matches.append(route_components_pb2.RouteMatch(prefix=mount.path))
+        for api_route in self._http._api_routes:
+            matches.append(_route_match(api_route))
+        return matches
 
     class HTTP:
         """Interface for decorating functions as API routes.
@@ -272,6 +324,23 @@ class PythonWebFramework(WebFramework):
 
     def __init__(self):
         self._http = PythonWebFramework.HTTP()
+        # Reboot's own routes: the root page's assets and the install
+        # wizard's probe. Not in `self._http`, so that they don't count
+        # as the application's (see `has_http_routes_or_mounts`), but
+        # the same records, so that `start` and `route_matches` read
+        # them from here and nowhere else.
+        self._internal_api_routes = [
+            PythonWebFramework.APIRoute(
+                path="/__/rootpage/{file:path}",
+                endpoint=root_page_asset,
+                kwargs=dict(methods=["GET"], include_in_schema=False),
+            ),
+            PythonWebFramework.APIRoute(
+                path="/__/probe",
+                endpoint=probe,
+                kwargs=dict(methods=["GET"], include_in_schema=False),
+            ),
+        ]
 
         self._servers: dict[
             ServerId,
@@ -360,23 +429,14 @@ class PythonWebFramework(WebFramework):
 
             return await call_next(request)
 
-        # Reboot's own paths: the root page's assets and the install
-        # wizard's probe. Registered before the application's routes
-        # and mounts so that a catch-all mount can't swallow them, and
-        # not through `self._http` so that they don't count as the
-        # application's (see `has_http_routes_or_mounts`).
-        fastapi.add_api_route(
-            "/__/rootpage/{file:path}",
-            root_page_asset,
-            methods=["GET"],
-            include_in_schema=False,
-        )
-        fastapi.add_api_route(
-            "/__/probe",
-            probe,
-            methods=["GET"],
-            include_in_schema=False,
-        )
+        # Reboot's own routes first, so that a catch-all mount can't
+        # swallow them.
+        for api_route in self._internal_api_routes:
+            fastapi.add_api_route(
+                api_route.path,
+                api_route.endpoint,
+                **api_route.kwargs,
+            )
 
         for mount in self._http._mounts:
             assert mount.app is not None or mount.factory is not None
@@ -489,6 +549,11 @@ class PythonWebFramework(WebFramework):
 
 
 class NodeWebFramework(WebFramework):
+
+    def route_matches(self) -> list[route_components_pb2.RouteMatch]:
+        # A Node.js application's web framework is its own; Envoy's
+        # catch-all already sends everything there.
+        return []
 
     def __init__(
         self,

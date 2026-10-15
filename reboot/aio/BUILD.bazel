@@ -204,6 +204,8 @@ py_library(
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
+        "//envoy/config/route/v3:routev3_py_proto",
+        "//envoy/type/matcher/v3:matcherv3_py_proto",
         requirement("fastapi"),
         requirement("uvicorn"),
         ":caller_id_py",
