@@ -145,6 +145,11 @@ ENVVAR_RBT_FRONTEND_URL = 'RBT_FRONTEND_URL'
 # server (`rbt dev run --mcp-app`); their builds are served from
 # `RBT_MCP_APP_DIST_PATH` instead.
 ENVVAR_RBT_MCP_APP = 'RBT_MCP_APP'
+# "true" when the application's web app is served from that dev server
+# (`rbt dev run --web-app`): Envoy sends `/`, and every path the
+# application doesn't answer, to it. Its build is served from
+# `RBT_WEB_APP_DIST_PATH` instead.
+ENVVAR_RBT_WEB_APP = 'RBT_WEB_APP'
 # Project-relative directory holding the built MCP Apps, e.g.
 # "frontend/dist/mcp", one directory per `UI(path=...)`, served under
 # "/__/frontend/mcp/".

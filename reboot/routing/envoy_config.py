@@ -20,7 +20,7 @@ from envoy.extensions.filters.network.http_connection_manager.v3 import (
 from envoy.extensions.transport_sockets.tls.v3 import common_pb2, tls_pb2
 from envoy.extensions.upstreams.http.v3 import http_protocol_options_pb2
 from envoy.type.matcher.v3 import regex_pb2, string_pb2
-from google.protobuf import any_pb2
+from google.protobuf import any_pb2, struct_pb2
 from google.protobuf.descriptor_pb2 import FileDescriptorSet
 from google.protobuf.duration_pb2 import Duration
 from google.protobuf.message import Message
@@ -49,6 +49,7 @@ from reboot.settings import (
     ENVOY_PER_CONNECTION_BUFFER_LIMIT_BYTES,
     ENVVAR_RBT_DEV,
     ENVVAR_RBT_FRONTEND_URL,
+    ENVVAR_RBT_WEB_APP,
     EVERY_LOCAL_NETWORK_ADDRESS,
     LocalEnvoyMode,
 )
@@ -92,6 +93,9 @@ class FrontendConfig:
     host: str
     port: int
     original_url: str
+    # Whether the dev server also serves the web app (`--web-app`):
+    # `/`, and every path the application doesn't answer, goes to it.
+    web_app: bool
 
 
 def _get_frontend_config() -> FrontendConfig | None:
@@ -121,6 +125,7 @@ def _get_frontend_config() -> FrontendConfig | None:
         host=parsed.hostname,
         port=parsed.port,
         original_url=frontend_url,
+        web_app=os.environ.get(ENVVAR_RBT_WEB_APP) == "true",
     )
 
 
@@ -604,13 +609,42 @@ def _routes_for_server(
     ]
 
 
+# Marks a route to the frontend's dev server, so that the error page
+# filter (`_frontend_error_filters`) knows a 503 came from there.
+_FRONTEND_ROUTE_METADATA = base_pb2.Metadata(
+    filter_metadata={
+        "envoy.filters.http.lua":
+            struct_pb2.Struct(
+                fields={"frontend": struct_pb2.Value(string_value="1")},
+            ),
+    },
+)
+
+
+def _frontend_route(
+    match: route_components_pb2.RouteMatch,
+) -> route_components_pb2.Route:
+    """A route to the frontend's dev server. Envoy handles WebSocket
+    upgrades (for Hot Module Replacement) transparently."""
+    return route_components_pb2.Route(
+        match=match,
+        route=route_components_pb2.RouteAction(
+            cluster=FRONTEND_CLUSTER_NAME,
+        ),
+        typed_per_filter_config={
+            GRPC_JSON_TRANSCODER_HTTP_FILTER_NAME:
+                EMPTY_GRPC_JSON_TRANSCODER_CONFIG,
+        },
+        metadata=_FRONTEND_ROUTE_METADATA,
+    )
+
+
 def _frontend_routes() -> list[route_components_pb2.Route]:
     """Routes for web dev server assets ("/__/frontend/**").
 
     MCP Apps use a double iframe: the outer `srcdoc` contains an inner
-    `<iframe src="/__/frontend/ui/...">`. This route proxies those requests
-    to the web dev server. Envoy handles WebSocket upgrades (for Hot Module Replacement)
-    transparently.
+    `<iframe src="/__/frontend/mcp/...">`. This route proxies those
+    requests to the web dev server.
 
     Returns empty list if the frontend is not configured.
     """
@@ -620,18 +654,11 @@ def _frontend_routes() -> list[route_components_pb2.Route]:
 
     # Route for web dev server assets: "/__/frontend/**".
     # Dev server is configured with `base: "/__/frontend/"` so paths match directly.
-    web_route = route_components_pb2.Route(
-        match=route_components_pb2.RouteMatch(
-            prefix="/__/frontend/",
-        ),
-        route=route_components_pb2.RouteAction(
-            cluster=FRONTEND_CLUSTER_NAME,
-        ),
-        typed_per_filter_config={
-            GRPC_JSON_TRANSCODER_HTTP_FILTER_NAME:
-                EMPTY_GRPC_JSON_TRANSCODER_CONFIG,
-        },
-    )
+    return [
+        _frontend_route(
+            route_components_pb2.RouteMatch(prefix="/__/frontend/")
+        )
+    ]
 
 
 def _frontend_catch_all_routes() -> list[route_components_pb2.Route]:
@@ -646,9 +673,7 @@ def _frontend_catch_all_routes() -> list[route_components_pb2.Route]:
     config = _get_frontend_config()
     if config is None or not config.web_app:
         return []
-    return [
-        _frontend_route(config, route_components_pb2.RouteMatch(prefix="/"))
-    ]
+    return [_frontend_route(route_components_pb2.RouteMatch(prefix="/"))]
 
 
 def _frontend_cluster(
@@ -750,23 +775,12 @@ def _frontend_error_filters() -> list[http_connection_manager_pb2.HttpFilter]:
         '</body></html>'
     ).replace('__FRONTEND_URL__', config.original_url)
 
-    # Lua filter: tag `/__/frontend/` requests in `envoy_on_request`
-    # via dynamic metadata, then intercept 503 responses and
-    # replace the body.
+    # Lua filter: a 503 on a route to the dev server (marked by
+    # `_FRONTEND_ROUTE_METADATA`, which `metadata()` reads from the
+    # matched route) gets the page in place of Envoy's raw body.
     lua_source = (
-        'function envoy_on_request(request_handle)\n'
-        '  local p = request_handle:headers():get(":path")'
-        ' or ""\n'
-        '  if string.sub(p, 1, 13) == "/__/frontend/" then\n'
-        '    request_handle:streamInfo():dynamicMetadata()'
-        ':set("reboot", "frontend_request", "1")\n'
-        '  end\n'
-        'end\n'
-        '\n'
         'function envoy_on_response(response_handle)\n'
-        '  local md = response_handle:streamInfo()'
-        ':dynamicMetadata():get("reboot")\n'
-        '  if md and md["frontend_request"] == "1" and\n'
+        '  if response_handle:metadata():get("frontend") == "1" and\n'
         '     response_handle:headers():get(":status")'
         ' == "503" then\n'
         '    response_handle:headers():replace(\n'
@@ -793,6 +807,11 @@ def _filter_http_connection_manager(
     allowed_origins: Optional[list[str]],
     route_matches: list[route_components_pb2.RouteMatch],
 ) -> listener_components_pb2.Filter:
+    # With `--web-app` the frontend's dev server, not the HTTP port,
+    # answers whatever is left; see `_frontend_catch_all_routes`.
+    frontend = _get_frontend_config()
+    web_app = frontend is not None and frontend.web_app
+
     http_connection_manager = http_connection_manager_pb2.HttpConnectionManager(
         stat_prefix="grpc_json",
         stream_idle_timeout=ZERO_SECONDS,
@@ -842,7 +861,7 @@ def _filter_http_connection_manager(
                                 route_matches=route_matches,
                                 catch_all=not web_app,
                             )
-                        ]
+                        ] + _frontend_catch_all_routes()
                     ),
                 ),
             ],

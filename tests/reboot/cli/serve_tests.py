@@ -1,6 +1,7 @@
 import os
 import reboot.cli.common.cli as cli
 import unittest
+from reboot.cli.commands.dev import _check_common_args
 from reboot.cli.common.rc import ArgumentParser
 from reboot.controller.settings import (
     ENVVAR_PORT,
@@ -47,6 +48,26 @@ class RbtServeTestCase(unittest.IsolatedAsyncioTestCase):
         args, _ = parser.parse_args()
         self.assertEqual(1337, args.port)
         self.assertEqual('/tmp', args.state_directory)
+
+    async def test_serve_nodejs_passes_common_checks(self) -> None:
+        # Tests: `serve run --nodejs` gets past the checks it shares with
+        # `dev run`, which must not touch flags only `dev run` has (such
+        # as `--web-app`); it once raised an `AttributeError` on one.
+        parser: ArgumentParser = cli.create_parser(
+            argv=[
+                'rbt',
+                'serve',
+                'run',
+                '--nodejs',
+                '--application=backend/src/main.ts',
+                '--application-name=test',
+                '--tls=external',
+                '--state-directory=/tmp',
+                '--port=1337',
+            ]
+        )
+        args, _ = parser.parse_args()
+        _check_common_args(args)
 
     async def test_serve_args_via_envvar(self) -> None:
         # Tests: some flags can also be set via environmetn variable.
