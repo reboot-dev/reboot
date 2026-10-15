@@ -154,8 +154,10 @@ to try.
 
 ## Connecting a client
 
-Your app serves a **setup wizard** at its root URL — `http://localhost:9991`
-under `rbt dev run`, or the public URL of a deployed app. It walks you
+Your app serves a **setup wizard** at its root URL —
+`https://<app>.localhost` under `rbt dev run --portless`,
+`http://localhost:9991` under a plain `rbt dev run`, or the public URL
+of a deployed app. It walks you
 through connecting the MCP client of your choice, including the public
 tunnel that cloud-hosted clients need to reach a development machine,
 and confirms once the first request arrives.

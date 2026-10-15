@@ -37,10 +37,16 @@ export const ClickerApp = () => {
   const mcpApp = useMcpApp();
 
   const handlePopOut = async () => {
+    // Where the web app is: at the backend's own origin, which serves
+    // it at `/` (`--web-app-url` in development, `--web-app-dist-path` in
+    // production), unless `VITE_WEB_APP_URL` (`web/.env.production`)
+    // names a host it is deployed to elsewhere.
+    const webAppUrl =
+      import.meta.env.VITE_WEB_APP_URL ??
+      new URL(window.REBOOT_URL ?? window.location.origin).origin;
     // Pass the entity ID to the web app as a query param it reads
     // on load to render that one entity.
-    const url =
-      "https://your-web-app.example/?counter=" + encodeURIComponent(counterId);
+    const url = webAppUrl + "/?counter=" + encodeURIComponent(counterId);
 
     // Ask the host to open the link; `window.open` is blocked in
     // the sandboxed iframe. Fall back to `window.open` when not

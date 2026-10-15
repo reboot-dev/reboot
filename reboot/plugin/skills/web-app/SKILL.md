@@ -516,7 +516,7 @@ The layout is the one every Reboot app has, `frontend/` included
     ├── api/                 # Generated TypeScript client
     │                        # (output of `rbt generate --react=`)
     └── web/
-        ├── .env.development # VITE_REBOOT_URL=http://localhost:9991
+        ├── .env.production  # VITE_REBOOT_URL=<the deployed backend>
         ├── index.html       # The single SPA entry
         ├── public/
         └── src/
@@ -527,9 +527,17 @@ The layout is the one every Reboot app has, `frontend/` included
                 └── <page>.tsx
 ```
 
-In development the Vite dev server (`cd frontend && npm run dev`)
-serves the SPA at its own origin, `http://localhost:5173/` by
-default, and the SPA calls the backend at `VITE_REBOOT_URL`. Built,
+In development the backend serves the SPA at its own origin from
+the Vite dev server (`--web-app-url`): `https://<app>.localhost/` under
+portless (`cd frontend && npm run dev`, whose default is the
+`dev:portless` script, beside `rbt dev run --portless`), or
+`http://localhost:9991/` from `npm run dev:hmr`, same-origin either
+way. Opened at the dev server's own origin instead
+(`https://vite.<app>.localhost`, or `http://localhost:5173/`), the
+Reboot client finds the backend on its own; on a plain Vite port it
+assumes Reboot's default `http://localhost:9991` (set
+`VITE_REBOOT_URL` in `web/.env.development` only for a non-default
+port). Built,
 it lands in `frontend/dist/web/` with `base: "/"`, which a static
 host can serve at `/`, or the backend can with
 `--web-app-dist-path=frontend/dist/web` on `rbt serve run` (and on a

@@ -56,16 +56,26 @@ dev run --env-file=.env
 # Run the application!
 dev run --application=backend/src/main.py
 
-# Default to HMR mode when no --config is specified.
-dev run --default-config=hmr
+# Default to named URLs via portless (https://github.com/vercel-labs/portless)
+# when no --config is specified: the app is https://<project-name>.localhost, serving
+# the MCP UIs (and a web app) from Vite, run as `cd frontend && npm run dev`
+# (`portless vite.<project-name> vite`) at https://vite.<project-name>.localhost,
+# serves the MCP UIs at https://<project-name>.localhost. Needs the `portless`
+# CLI and its proxy (`portless proxy start`).
+dev run --default-config=portless
 
-# HMR: the MCP UIs are proxied from the Vite dev server through Envoy.
-# Run Vite in a separate terminal: cd frontend && npm run dev
-# Envoy routes "/__/frontend/**" to Vite for HMR support.
+# HMR: the MCP UIs are proxied from the Vite dev server through Envoy,
+# in either config.
 dev run --mcp-app-path-prefix=frontend
 
-dev run:hmr --mcp-app-url=http://localhost:5173
+dev run:portless --portless
+dev run:portless --mcp-app-url=https://vite.<project-name>.localhost
 # A dual-frontend app also serves the web app Vite serves at `/`:
+# dev run:portless --web-app-url=https://vite.<project-name>.localhost
+
+# Plain ports instead: `rbt dev run --config=hmr`, with Vite run as
+# `cd frontend && npm run dev:hmr`.
+dev run:hmr --mcp-app-url=http://localhost:5173
 # dev run:hmr --web-app-url=http://localhost:5173
 
 # Dist mode: serve the built MCP UIs from "frontend/dist/" (no Vite HMR).

@@ -44,9 +44,9 @@ strongest first.
   requires the `mcp=` argument, so a Web App has `mcp=None` on all
   of them.
 - There is a `frontend/mcp/<name>/index.html`.
-- `.rbtrc` has a `dev run --default-config=hmr` line together with
-  a `dev run:hmr --mcp-app-url=...` line: Envoy proxying the
-  MCP UIs from the dev server.
+- `.rbtrc` has a `dev run:portless --mcp-app-url=...` line (or a
+  `dev run:hmr --mcp-app-url=...` one, for an app kept on plain
+  ports): Envoy proxying the MCP UIs from the dev server.
 
 **Web App** — all of:
 

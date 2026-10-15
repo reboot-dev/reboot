@@ -70,7 +70,9 @@ function locationOrigin(): string | undefined {
  * Priority:
  * 1. `window.REBOOT_URL` (injected by server)
  * 2. `rebootUrl` query parameter (dev iframe mode)
- * 3. `window.location.origin` (if valid HTTP)
+ * 3. `http://localhost:9991`, Reboot's default local address, for a
+ *    page a Vite dev server serves on a plain loopback port
+ * 4. `window.location.origin` (if valid HTTP)
  */
 function detectRebootUrl(): string {
   // Server-injected URL (for remote MCP Apps).
@@ -81,8 +83,29 @@ function detectRebootUrl(): string {
   const queryUrl = new URLSearchParams(locationSearch()).get("rebootUrl");
   if (queryUrl) return queryUrl;
 
-  // Same-origin deployment.
   const origin = locationOrigin();
+
+  // A page a Vite dev server serves on a plain loopback port (its
+  // `@vite/client` script is in the document) is the frontend of an
+  // `rbt dev run` on Reboot's default local address. A page under
+  // `/__/frontend/` is Vite's too, but reached through the
+  // application's own Envoy, so it is same-origin, below.
+  if (
+    origin &&
+    origin.startsWith("http") &&
+    typeof document !== "undefined" &&
+    document.querySelector('script[src*="/@vite/client"]') !== null
+  ) {
+    const { hostname, pathname } = new URL(origin + window.location.pathname);
+    if (
+      (hostname === "localhost" || hostname === "127.0.0.1") &&
+      !pathname.startsWith("/__/frontend/")
+    ) {
+      return "http://localhost:9991";
+    }
+  }
+
+  // Same-origin deployment.
   if (origin && origin !== "null" && origin.startsWith("http")) {
     return origin;
   }

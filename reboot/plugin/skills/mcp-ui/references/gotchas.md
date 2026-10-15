@@ -36,7 +36,8 @@ The list below is what's specific to the MCP UI layer:
 6. **Generated React import path:**
    `@api/<pkg>/v1/<name>_rbt_react`.
 
-7. **Use `--default-config=hmr`** in `.rbtrc` (not `--default=hmr`).
+7. **Use `--default-config=portless`** in `.rbtrc` (not
+   `--default=portless`).
 
 8. **`UI(path="frontend/mcp/<name>")`** — path is relative to project
    root.

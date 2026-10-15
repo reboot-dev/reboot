@@ -19,12 +19,22 @@ cd frontend && npm install && cd ..
 # Generate API code.
 uv run rbt generate
 
-# Terminal 1: Start Vite dev server (for Hot Module Replacement).
+# Terminal 1: Start Vite dev server (for Hot Module Replacement), as
+# https://vite.mcp-ui-counter.localhost via portless
+# (https://github.com/vercel-labs/portless): `npm run dev` is
+# `portless vite.mcp-ui-counter vite`, portless being a dev dependency.
+# The backend needs the `portless` CLI too (`npm install -g portless`
+# once) and its proxy (`portless proxy start`).
 cd frontend && npm run dev
 
-# Terminal 2: Start Reboot backend.
+# Terminal 2: Start Reboot backend, as https://mcp-ui-counter.localhost,
+# which serves the web app and the MCP UIs from that Vite.
 uv run rbt dev run
 ```
+
+For plain ports instead, run `cd frontend && npm run dev:hmr` and
+`uv run rbt dev run --config=hmr`, and read `http://localhost:9991`
+for the backend below.
 
 ## Using as a standalone web app
 
@@ -41,7 +51,8 @@ uv run rbt dev run
 cd frontend && npm run dev
 ```
 
-Open <http://localhost:9991/>. Click sign-in, pick a `Development`
+Open <https://mcp-ui-counter.localhost/>. Click sign-in, pick a
+`Development`
 identity, land back on the SPA, and create counters. If you also
 launch MCPJam against the same backend, MCPJam's authorize step
 short-circuits (no second IdP picker) because the browser already
@@ -54,7 +65,7 @@ For testing with MCPJam Inspector:
 
 ```bash
 # In another terminal, run MCPJam:
-npx @mcpjam/inspector@2.23.3 --url http://localhost:9991/mcp --oauth
+npx @mcpjam/inspector@2.23.3 --url https://mcp-ui-counter.localhost/mcp --oauth
 ```
 
 This opens a browser-based inspector where you can test tools.

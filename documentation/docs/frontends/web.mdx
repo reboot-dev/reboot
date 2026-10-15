@@ -47,15 +47,15 @@ createRoot(document.getElementById("root")!).render(
 );
 ```
 
-Read the URL from the environment rather than hard-coding it. A web
-app is served from its own origin — a CDN or static host — almost
-never the same origin as the backend, so a real deployment *must* set
-it:
-
-```
-# frontend/web/.env.development
-VITE_REBOOT_URL="http://localhost:9991"
-```
+Read the URL from the environment rather than hard-coding it. In
+development the client finds the backend on its own when `url` is
+`undefined`: the backend serves the web app from the Vite dev server
+at its own origin (`--web-app-url`, see
+[Develop locally](/develop_locally#named-local-urls-with---portless)),
+and on a plain Vite port it is Reboot's default
+`http://localhost:9991`. A web app deployed to a CDN
+or static host is on a different origin from the backend, so a real
+deployment *must* set it:
 
 ```
 # frontend/web/.env.production
@@ -185,7 +185,11 @@ cd frontend && npm run dev
 ```
 
 `rbt dev run` generates the React client before it starts, so the dev
-server always has an up-to-date `frontend/api/`.
+server always has an up-to-date `frontend/api/`. The frontend's
+`package.json` mirrors the `.rbtrc` configs below: `npm run dev` is
+the default, `dev:portless` (`portless vite.<app> vite`, with `portless` as
+a dev dependency), and `dev:hmr` is plain `vite`; see
+[Named local URLs](/develop_locally#named-local-urls-with---portless).
 
 If the application also has `UI` methods, Reboot must serve those
 MCP UIs from its own origin; point it at your frontend directory in
@@ -195,11 +199,17 @@ MCP UIs from its own origin; point it at your frontend directory in
 # The frontend directory, shared by the `:hmr` and `:dist` configs below.
 dev run --mcp-app-path-prefix=frontend
 
-# HMR: proxy `/__/frontend/**` to the Vite dev server, and serve the
-# web app it serves at `/`.
+# Named URLs via portless: Vite, run as the frontend's `npm run dev:portless`
+# (`portless vite.<app> vite`), is at https://vite.<app>.localhost; proxy
+# `/__/frontend/**` there, and serve the web app it serves at `/`.
+dev run --default-config=portless
+dev run:portless --portless
+dev run:portless --mcp-app-url=https://vite.<app>.localhost
+dev run:portless --web-app-url=https://vite.<app>.localhost
+
+# Plain ports: `rbt dev run --config=hmr`, Vite from `npm run dev:hmr`.
 dev run:hmr --mcp-app-url=http://localhost:5173
 dev run:hmr --web-app-url=http://localhost:5173
-dev run --default-config=hmr
 
 # Dist: serve the built MCP UIs instead. `rbt dev run --config=dist`.
 dev run:dist --mcp-app-dist-path=frontend/dist

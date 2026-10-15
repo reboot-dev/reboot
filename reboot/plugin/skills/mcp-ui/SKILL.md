@@ -776,7 +776,8 @@ a worked set are in
     and secrets are in place, and starts the backend and
     frontend. **The handoff for an MCP UI is the setup wizard,
     not the `/mcp` URL.** The backend serves an interactive
-    **setup wizard at its root (`http://localhost:9991`)** — the
+    **setup wizard at its root (`https://<app>.localhost` under
+    portless, else `http://localhost:9991`)** — the
     page that connects an MCP client (Claude, ChatGPT, MCPJam, …)
     and completes OAuth. As the run skill directs, surface that
     URL to the user and open it once at first startup. Do **not**
