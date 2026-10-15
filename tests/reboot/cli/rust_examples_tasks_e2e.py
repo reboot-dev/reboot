@@ -59,9 +59,9 @@ print('STAGE', STAGE, flush=True)
 TARGET = Path(os.environ['CARGO_TARGET_DIR'])
 
 APP = STAGE / 'examples/hello-tasks'
-shutil.copytree(SOURCE / 'api', STAGE / 'examples/api')
-shutil.copytree(SOURCE / 'hello-tasks', APP)
-shutil.copytree(SOURCE / 'src', STAGE / 'examples/src')
+shutil.copytree(SOURCE / 'api', STAGE / 'examples/api', copy_function=shutil.copyfile)
+shutil.copytree(SOURCE / 'hello-tasks', APP, copy_function=shutil.copyfile)
+shutil.copytree(SOURCE / 'src', STAGE / 'examples/src', copy_function=shutil.copyfile)
 cargo = APP / 'backend/Cargo.toml'
 cargo.write_text(cargo.read_text().replace('"../../../../../"', json.dumps(str(SDK))))
 build = APP / 'backend/build.rs'
