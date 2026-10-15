@@ -31,6 +31,15 @@ archival, real build provenance and approved native execution remain required.
 This fixture is not reboot-examples parity evidence and changes no overall
 SDK parity verdict.
 
+A subsequent **actual offline Linux x86-64 build** of that published fixture
+succeeded with `cargo build --locked --offline`. Parent verification correlated
+the frozen source, generated consumers and linked executable, rechecked all
+source/helper/output hashes, and verified exact attach completion followed by
+fresh exact-container terminal inspection. The original task lock was released
+and the build custody record was clean. This is a real built artifact, **not a
+native cursor scenario**: no >1024 continuation or result-replay runtime claim
+is made. See the [generated app build receipt](tests/evidence/cursor-generated-app-build-20261015.json).
+
 ## Cursor and typed-result library checkpoint (2026-10-15)
 
 The experimental library now supports explicitly registered canonical workflow
