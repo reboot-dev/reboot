@@ -97,6 +97,38 @@ exit zero preceded fresh container terminal inspection, and the original lock
 was free. Hot reload, new-consumer compilation and restart durability remain
 separate. This is not latest-upstream/full-native/overall SDK qualification.
 
+## Actual fresh scaffold hot reload and durable restart (2026-10-15)
+
+The [scaffold runtime receipt](tests/evidence/cli-scaffold-watch-restart-20261015.json)
+closes the separate fresh-consumer compilation, normal watch and greeting
+restart gates on the qualified frozen merged snapshot:
+
+- A fresh normal `rbt init` greeting project compiled and served through its
+  own `.rbtrc` and normal `rbt dev run`. Public create returned zero;
+  greet plus same-UUID replay and reads returned one.
+- Adding then restoring a real protobuf message rebuilt and replaced the app
+  twice while retaining the **same Database PID and birth identity**. Each
+  phase renewed canonical Serving, retired the old app leader/group, and
+  preserved public count one. Actual generated Rust struct presence/absence
+  was checked against separately saved phase bytes, independently rehashed
+  after execution (not a mutable Cargo-output pathname alone).
+- After TERM (genuine exit **-15**), restarting the same project/state created
+  a fresh Database process and read count one. Replaying the same greeting
+  UUID still returned one. INT exited **-2**; both shutdowns removed owned
+  leaders/groups/listeners while the unrelated sentinel survived.
+- **Five actual Database Load RPCs** read canonical serialized actor state
+  `0801`, count one: before watch, after each reload, and before/after replay
+  following restart. These were real RPCs, not expected-value receipts.
+
+Parent independently rehashed **3255** source files, **2665** overlay files,
+all **25** row logs and both saved binding snapshots. All **25** direct children
+joined, with no adopted descendants or cleanup failure. Exact attach joined
+zero before fresh exact-CID terminal inspection (exit zero, PID zero, no
+OOM/error); the original lock was free. The examples repository HEAD remained
+`5c332a2910122d6035799bfaf2a314bf1de830b8` on this wake; this greeting test is
+not additional example-repository behavioral acceptance. Current-upstream
+native build, Bank/shared/public and overall SDK parity remain separate.
+
 ## Cursor/results actual native driver milestone (2026-10-15)
 
 The [actual native driver receipt](tests/evidence/cursor-native-driver-20261015.json)
