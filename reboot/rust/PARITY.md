@@ -31,6 +31,44 @@ the five tests successfully. **No actual Bazel execution or merged-main signal
 acceptance is inferred from these source/unit checks.** The separate real CLI
 runtime gate remains distinct.
 
+The separate [real merged-main prefix receipt](tests/evidence/cli-merged-import-help-20261015.json)
+now records actual fresh generation of **40** schemas, successful imports of
+normal CLI main/current dashboard/presence/BDD/Database descriptors, and a real
+normal-main `--help` exit zero. This uses the frozen merged snapshot417: the
+published Rust helper and regression bytes match, and the actual dev-call AST
+matches, but the entire snapshot is not latest PR/upstream HEAD. The private
+source overlay explicitly reuses the pinned qualified installed package native
+extension; it is **not** a fresh upstream native library build. Earlier missing
+asset/internal Memoize bindings and subsequent obsolete harness arguments were
+real failures, not accepted signal tests. All children and the exact container
+retired cleanly for the recorded failed trial; serving, insecure refusal and
+real signal cleanup acceptance were not established by that prefix run.
+
+## Actual normal merged-main signal cleanup (2026-10-15)
+
+A fresh successor [real signal receipt](tests/evidence/cli-merged-signals-20261015.json)
+now records passing normal-main `rbt dev run --rust` trials for **SIGTERM,
+SIGINT, SIGHUP and SIGQUIT**. Every trial first reached canonical gRPC Serving
+and passed the actual public client health command. The CLI retained the
+original terminating signal (exits **-15, -2, -1, -3**), with two birth/argv
+qualified Database/app children per trial. The pinned in-container worker
+checked leaders/groups absent and listeners closed afterward, while its
+unrelated owned sentinel remained alive through every signal trial. The
+explicit insecure Database refusal also passed without child launches.
+
+Parent readback independently verified all **3255 frozen source files**,
+helper pins, all **2665** generated-overlay files and all row-log hashes. All
+owned children joined, with no adopted descendants or cleanup failure; exact
+attach exit zero preceded fresh exact-container terminal inspection (PID zero,
+exit zero, no OOM/error), and the original owner lock was free. Container child
+PIDs were not looked up in host `/proc`.
+
+This closes the **bounded merged-main signal compatibility proof**, using the
+same frozen-snapshot and qualified-package native-extension limits above. It
+is not latest-upstream build qualification, full CLI parity, init/generate,
+hot reload, restart durability or overall SDK parity. Earlier failures were
+preserved and never converted to success.
+
 ## Cursor/results actual native driver milestone (2026-10-15)
 
 The [actual native driver receipt](tests/evidence/cursor-native-driver-20261015.json)
