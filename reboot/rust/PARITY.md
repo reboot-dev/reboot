@@ -97,6 +97,62 @@ exit zero preceded fresh container terminal inspection, and the original lock
 was free. Hot reload, new-consumer compilation and restart durability remain
 separate. This is not latest-upstream/full-native/overall SDK qualification.
 
+## Supplied-owner lifecycle and fixed late frontdoor checkpoint (2026-10-15)
+
+Two further bounded production pieces are integrated, without enabling taskful
+constructor children or claiming complete dynamic ownership:
+
+- `MultiOwnerTaskRecovery` claims every supplied exact pre-existing task owner
+  before canonical recovery, binds actual host cancellation, validates shared
+  committed-Pending partitions and total budgets, and dispatches only through
+  the host Ready gate. Writer staged admission reconciles that same shared
+  owner set rather than performing an incompatible singleton scan. Periodic
+  canonical reconciliation handles lost advisory hints. Original writer
+  checkpoint/policy/placement and uncertainty behavior is reused.
+- Aggregate supervisor custody revokes every original generation before owned
+  delivery fields are destroyed, including forced supervisor Drop. Per-child
+  original-owner leases retain exclusion through actual child destruction.
+  The forced-abort regression exercises a reader's parked destruction; it is
+  not native writer-checkpoint qualification or an executed unpolled-supervisor
+  regression. The synthetic WelcomeEmail validator uses a Counter fixture,
+  not the generated example request schema.
+- A fixed `NamedService` frontdoor mounts once and looks up subsequently
+  installed exact family owners without creating them from requests. It checks
+  canonical duplicate-free state refs and fixed method paths, polls and calls
+  the same service clone, rechecks binding/readiness after Pending, and forwards
+  the original request. HTTP/2 scheme/authority are transport metadata, not
+  actor identity; ordinary authority-bearing ingress is accepted. Generated
+  adapter authorization remains mandatory.
+
+The [actual aggregate receipt](tests/evidence/multiowner-frontdoor-library-20261015.json)
+records **709 passed, 0 failed, 7 ignored**, strict all-target SDK Clippy with
+`-D warnings`, and successful binary build plus strict Clippy for the pinned
+`reboot-examples` hello-legacy-grpc consumer (revision
+`5c332a2910122d6035799bfaf2a314bf1de830b8`). The suite includes a genuine Tonic
+HTTP/2 loopback request with protobuf body bytes, preserved headers and a
+server-injected opaque extension; the response has proper final gRPC trailers.
+A causally controlled Pending-to-revocation regression proves zero adapter
+calls after revocation. These use handwritten adapters, not generated
+cryptographic ticket/authentication proof or real host startup acceptance.
+Earlier compiler/lint failures and an origin-only URI assumption were corrected
+and requalified, not treated as successful results.
+
+The generated native constructor consumer was rebuilt from the same frozen
+source; a [fresh native control receipt](tests/evidence/multiowner-frontdoor-native-controls-20261015.json)
+records **all 15 existing constructor/default-root controls passing**, with
+**30 SDK/Database joins**. This is regression qualification, not new multi-owner
+native dispatch or full Bank acceptance. Independent readback verified all
+3273 source members, log/input hashes, exact container retirement and the
+original lock release for both runs. Cached qualified Database bytes were used;
+no latest-upstream native build or green hosted CI is inferred.
+
+Trusted composition must still supply every exact task owner, including
+completed-only identities; this is not dynamic membership discovery. Durable
+Bank account-index reconstruction, exact production bundle integration, owned
+recovery-graph convergence and dynamic Wait routing remain open. Taskful-child
+admission stays disabled and shared Transfer remains refused. **Late enlistment
+is retained; explicit cleanup is incomplete.**
+
 ## Coordinated ownership foundations checkpoint (2026-10-15)
 
 Three substantial production foundations are now integrated and independently
@@ -5130,7 +5186,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 88b839581174ca85c763e8bff7004f47ffb2bc4bcd333cf3cdc6102828ba0bc2 -->
+<!-- parity-source-sha256: 0710ed04898bed6d2be1670b2667179962dcd03845aed360e889b35d3238654a -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

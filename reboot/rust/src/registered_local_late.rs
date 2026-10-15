@@ -135,6 +135,21 @@ where
             .and_then(|entry| entry.downcast_ref::<(Arc<O>, tokio::sync::OwnedSemaphorePermit, Arc<()>)>())
             .filter(|entry| Arc::ptr_eq(&entry.2, &self.family))
             .ok_or_else(|| tonic::Status::failed_precondition("late owner belongs to another family"))?;
+        let registration = state.registrations.get(target)
+            .ok_or_else(|| tonic::Status::failed_precondition("installed registration absent"))?;
+        let config = destination.configuration();
+        if !Weak::ptr_eq(&self.host, &destination.binding.host)
+            || !registration.same_registration(&destination.binding)
+            || !registration.configuration.same_identity(config)
+            || config.target != *target
+            || config.target.state_type != self.fixed.target.state_type
+            || config.database_endpoint != self.fixed.database_endpoint
+            || config.methods != self.fixed.methods
+            || !config.policy.same_entry_identity(&self.fixed.policy)
+        {
+            return Err(tonic::Status::failed_precondition("installed late family identity changed"));
+        }
+        destination.binding.validate_configuration(config)?;
         Ok((retained.0.clone(), destination.clone()))
     }
 
@@ -195,3 +210,86 @@ impl HostLocalRegistry {
         })
     }
 }
+
+/// Fixed public router for an installed late family. Routing is not authority:
+/// the original generated adapter still validates policy, placement, factory,
+/// tickets and host readiness. Mount once with ApplicationHost::add_public_service.
+#[doc(hidden)]
+pub struct LateLocalServiceFrontdoor<A, O> {
+    family: Arc<LateLocalServiceFamily<A, O>>,
+}
+impl<A, O> Clone for LateLocalServiceFrontdoor<A, O> {
+    fn clone(&self) -> Self { Self { family: self.family.clone() } }
+}
+impl<A, O> tonic::server::NamedService for LateLocalServiceFrontdoor<A, O>
+where A: crate::registered_local_service::GeneratedLocalTransactionService,
+      A::Service: tonic::server::NamedService,
+{
+    const NAME: &'static str = <A::Service as tonic::server::NamedService>::NAME;
+}
+impl<A, O> LateLocalServiceFamily<A, O>
+where A: crate::registered_local_service::GeneratedLocalTransactionService + 'static,
+      A::Service: tonic::server::NamedService,
+      <A::Service as tower::Service<http::Request<tonic::body::BoxBody>>>::Future: Send + 'static,
+      O: Send + Sync + 'static,
+{
+    /// Lookup-only public frontdoor. The generated service type supplies its
+    /// real name; no fallback name or request-supplied service is accepted.
+    pub fn public_frontdoor(&self) -> Result<LateLocalServiceFrontdoor<A, O>, tonic::Status> {
+        let name = <A::Service as tonic::server::NamedService>::NAME;
+        if name.is_empty() || self.fixed.methods.iter().any(|method| {
+            method.strip_prefix(name).and_then(|s| s.strip_prefix('.'))
+                .is_none_or(|s| s.is_empty() || !s.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_'))
+        }) {
+            return Err(tonic::Status::failed_precondition("fixed methods differ from generated NamedService"));
+        }
+        Ok(LateLocalServiceFrontdoor { family: Arc::new(LateLocalServiceFamily {
+            host: self.host.clone(), state: self.state.clone(), gate: self.gate.clone(),
+            family: self.family.clone(), fixed: self.fixed.clone(), cleanup: self.cleanup.clone(),
+            permits: self.permits.clone(), factory: self.factory.clone(),
+        }) })
+    }
+}
+impl<A, O> tower::Service<http::Request<tonic::body::BoxBody>> for LateLocalServiceFrontdoor<A, O>
+where A: crate::registered_local_service::GeneratedLocalTransactionService + 'static,
+      A::Service: tonic::server::NamedService,
+      <A::Service as tower::Service<http::Request<tonic::body::BoxBody>>>::Future: Send + 'static,
+      O: Send + Sync + 'static,
+{
+    type Response = http::Response<tonic::body::BoxBody>;
+    type Error = std::convert::Infallible;
+    type Future = crate::registered_local_service::LocalServiceFuture;
+    fn poll_ready(&mut self, _: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> {
+        // Destination is selected per request; its own readiness is awaited in call.
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: http::Request<tonic::body::BoxBody>) -> Self::Future {
+        let family = self.family.clone();
+        Box::pin(async move {
+            let result = async {
+                let target = crate::registered_local_service::public_route_target(
+                    &request, <A::Service as tonic::server::NamedService>::NAME,
+                    &family.fixed.target.state_type, &family.fixed.methods,
+                )?;
+                let (owner, destination) = family.lookup_installed(&target)?;
+                destination.binding.require_host_ready(destination.configuration())?;
+                let mut service = destination.service.clone_service();
+                std::future::poll_fn(|cx| tower::Service::poll_ready(&mut service, cx)).await.unwrap();
+                // Readiness can yield. Revalidate exact installed allocation and
+                // binding/generation, without retaining a synchronous gate lock.
+                let (current_owner, current) = family.lookup_installed(&target)?;
+                if !Arc::ptr_eq(&owner, &current_owner)
+                    || !destination.binding.same_registration(&current.binding) {
+                    return Err(tonic::Status::failed_precondition("late destination changed while awaiting readiness"));
+                }
+                current.binding.require_host_ready(current.configuration())?;
+                // Move the ORIGINAL HTTP request, not reconstructed Tonic metadata.
+                // Body, opaque extensions, auth and tickets reach the adapter intact.
+                Ok::<_, tonic::Status>(tower::Service::call(&mut service, request).await.unwrap())
+            }.await;
+            Ok(result.unwrap_or_else(tonic::Status::into_http))
+        })
+    }
+}
+#[cfg(test)]
+mod frontdoor_tests { include!("registered_local_frontdoor_tests.rs"); }

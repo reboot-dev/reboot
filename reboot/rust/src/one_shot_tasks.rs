@@ -368,6 +368,8 @@ struct Inner {
     receiver: Mutex<Option<mpsc::Receiver<()>>>,
     active: std::sync::atomic::AtomicBool,
     recovery_request: Mutex<Option<db::RecoverRequest>>,
+    // Weak avoids a cycle: the host supervisor retains the exact shared scope.
+    shared_recovery: Mutex<Option<std::sync::Weak<SharedTaskScope>>>,
     running_owner: Mutex<Option<Arc<()>>>,
     // Read/write only while running_owner is locked. Bound to the cancellation
     // actually supplied to OneShotTaskRecovery::start, never an erased wrapper.
@@ -459,6 +461,7 @@ impl OneShotTasks {
                 receiver: Mutex::new(Some(receiver)),
                 active: false.into(),
                 recovery_request: Mutex::new(None),
+                shared_recovery: Mutex::new(None),
                 running_owner: Mutex::new(None),
                 recovery_owner: Mutex::new(None),
                 uncertain: tokio::sync::watch::channel(false).0,
@@ -936,7 +939,33 @@ impl OneShotTasks {
             // Recover, after each await, and again at effect publication.
             let _owner = admission.lock()?;
         }
-        let pending = self.pending(request).await?;
+        let shared = self
+            .inner
+            .shared_recovery
+            .lock()
+            .expect("shared recovery poisoned")
+            .clone();
+        let pending = if let Some(shared) = shared {
+            let scope = shared
+                .upgrade()
+                .ok_or_else(|| Status::failed_precondition("shared task recovery stopped"))?;
+            let snapshot = scope.pending().await?;
+            if snapshot.pending.len().saturating_add(tasks.len()) > MAX_TASKS {
+                return Err(Status::resource_exhausted(
+                    "shared pending plus staged tasks exceed 1024",
+                ));
+            }
+            snapshot
+                .pending
+                .into_iter()
+                .filter(|task| {
+                    let id = task.task_id.as_ref().expect("validated ID");
+                    id.state_type == self.inner.state_type && id.state_ref == self.inner.state_ref
+                })
+                .collect::<Vec<_>>()
+        } else {
+            self.pending(request).await?
+        };
         {
             let _owner = admission.lock()?;
         }
@@ -1707,6 +1736,12 @@ impl DispatchOwner {
             .recovery_owner
             .lock()
             .expect("task recovery owner mutex poisoned") = None;
+        *self
+            .tasks
+            .inner
+            .shared_recovery
+            .lock()
+            .expect("shared recovery poisoned") = None;
         self.tasks.inner.listing.clear();
         self.tasks
             .inner
@@ -1724,6 +1759,24 @@ struct DispatchSupervisorOwner(Arc<DispatchOwner>);
 impl Drop for DispatchSupervisorOwner {
     fn drop(&mut self) {
         self.0.revoke();
+    }
+}
+// One structural custody boundary: Drop runs before ANY owned field drops,
+// including JoinSet's abort-on-drop and the original claims themselves.
+struct MultiOwnerSupervisor {
+    claims: std::collections::BTreeMap<(String, String), Arc<DispatchOwner>>,
+    deliveries: JoinSet<(Vec<u8>, Result<(), Status>)>,
+}
+impl MultiOwnerSupervisor {
+    fn revoke(&self) {
+        for owner in self.claims.values() {
+            owner.revoke();
+        }
+    }
+}
+impl Drop for MultiOwnerSupervisor {
+    fn drop(&mut self) {
+        self.revoke();
     }
 }
 fn spawn_owned_delivery<T: Send + 'static>(
@@ -1775,6 +1828,12 @@ impl Drop for DispatchOwner {
             .recovery_owner
             .lock()
             .expect("task recovery owner mutex poisoned") = None;
+        *self
+            .tasks
+            .inner
+            .shared_recovery
+            .lock()
+            .expect("shared recovery poisoned") = None;
         self.tasks.inner.listing.clear();
         self.tasks
             .inner
@@ -1965,7 +2024,10 @@ impl CommittedTaskScan {
     // Trusted exact singleton ownership predates request scope requirements.
     // Keep its canonical whole-stream validation (including error ordering).
     fn singleton(owner: OneShotTasks) -> Self {
-        let key = (owner.inner.state_type.clone(), owner.inner.state_ref.clone());
+        let key = (
+            owner.inner.state_type.clone(),
+            owner.inner.state_ref.clone(),
+        );
         Self {
             owners: [(key, owner)].into(),
             pending: Vec::new(),
@@ -2035,9 +2097,15 @@ impl CommittedTaskScan {
     fn finish(self, eof: Result<(), Status>) -> Result<CommittedTaskPartitions, Status> {
         eof?;
         if self.singleton {
-            self.owners.first_key_value().expect("singleton owner").1
+            self.owners
+                .first_key_value()
+                .expect("singleton owner")
+                .1
                 .validate_recovered(&self.pending)?;
-            return Ok(CommittedTaskPartitions { owners: self.owners, pending: self.pending });
+            return Ok(CommittedTaskPartitions {
+                owners: self.owners,
+                pending: self.pending,
+            });
         }
         let mut partitions = std::collections::BTreeMap::<_, Vec<db::Task>>::new();
         for task in &self.pending {
@@ -2173,6 +2241,238 @@ impl CommittedTaskPartitions {
     fn into_pending(self) -> Vec<db::Task> {
         // Preserve original stream order for existing singleton/reader callers.
         self.pending
+    }
+}
+
+/// Host-owned recovery for a bounded, trusted, PRE-EXISTING exact owner set.
+/// Register after participant/coordinator convergence. This does not discover
+/// actors (especially completed-only actors), install routes, or grant Wait policy.
+/// Supply the original store/gate/binding/policy/placement allocations, including
+/// empty owners from the committed identity index. No request may mint this set.
+/// Configure per-owner delivery budgets before start; their sum must be <=1024.
+#[derive(Clone)]
+pub struct MultiOwnerTaskRecovery {
+    scope: Arc<SharedTaskScope>,
+}
+struct SharedTaskScope {
+    tasks: std::collections::BTreeMap<(String, String), OneShotTasks>,
+    request: db::RecoverRequest,
+    scan: tokio::sync::Mutex<()>,
+}
+impl SharedTaskScope {
+    async fn pending(&self) -> Result<CommittedTaskPartitions, Status> {
+        // Admission and live delivery use one canonical owner set, never a
+        // singleton scan on shared shards. Serialize scans, not actor effects.
+        let _scan = self.scan.lock().await;
+        let snapshot =
+            CommittedTaskPartitions::recover(self.tasks.values().cloned(), self.request.clone())
+                .await?;
+        snapshot.validate_delivery_budgets()?;
+        Ok(snapshot)
+    }
+}
+impl MultiOwnerTaskRecovery {
+    pub fn new(
+        tasks: impl IntoIterator<Item = OneShotTasks>,
+        request: db::RecoverRequest,
+    ) -> Result<Self, Status> {
+        let scan = CommittedTaskScan::new(tasks, &request)?;
+        Ok(Self {
+            scope: Arc::new(SharedTaskScope {
+                tasks: scan.owners,
+                request,
+                scan: tokio::sync::Mutex::new(()),
+            }),
+        })
+    }
+}
+#[tonic::async_trait]
+impl HostRecovery for MultiOwnerTaskRecovery {
+    async fn start(
+        &self,
+        supervisor: &mut JoinSet<Result<(), Status>>,
+        cancel: RecoveryCancellation,
+    ) -> Result<(), Status> {
+        let scope = self.scope.clone();
+        let mut claims = std::collections::BTreeMap::new();
+        // Claim EVERY original generation before the first Recover/Load await.
+        // Failure releases healthy claims; sealed DispatchOwner retention remains
+        // the same process-lifetime policy as singleton recovery.
+        for (key, tasks) in &scope.tasks {
+            let claim = Arc::new(DispatchOwner::claim(tasks.clone())?);
+            *tasks
+                .inner
+                .recovery_owner
+                .lock()
+                .expect("recovery owner poisoned") = Some(cancel.clone());
+            claims.insert(key.clone(), claim);
+        }
+        // A global scan/delivery cap is enforceable under concurrent actors only
+        // when their frozen per-actor budgets fit inside it.
+        let total_budget: usize = scope
+            .tasks
+            .values()
+            .map(|tasks| {
+                tasks
+                    .inner
+                    .max_live
+                    .load(std::sync::atomic::Ordering::Acquire)
+            })
+            .sum();
+        if total_budget > MAX_TASKS {
+            return Err(Status::resource_exhausted(
+                "shared configured delivery budgets exceed 1024",
+            ));
+        }
+        for tasks in scope.tasks.values() {
+            if tasks
+                .inner
+                .receiver
+                .lock()
+                .expect("task receiver poisoned")
+                .is_none()
+            {
+                return Err(Status::failed_precondition(
+                    "task recovery already registered",
+                ));
+            }
+        }
+        let initial = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => return Err(Status::cancelled("shared task recovery cancelled")),
+            result = scope.pending() => result?,
+        };
+        let pending = initial.pending.clone();
+        let partitions = initial.into_partitions()?;
+        // No fallible setup may follow activation. Keep receivers in the owned
+        // supervisor (hints are advisory; periodic reconciliation handles loss).
+        let mut receivers = Vec::new();
+        for tasks in scope.tasks.values() {
+            receivers.push(
+                tasks
+                    .inner
+                    .receiver
+                    .lock()
+                    .expect("task receiver poisoned")
+                    .take()
+                    .ok_or_else(|| {
+                        Status::failed_precondition("task recovery already registered")
+                    })?,
+            );
+        }
+        for (tasks, partition) in partitions {
+            tasks.inner.listing.observe(&partition);
+            *tasks
+                .inner
+                .recovery_request
+                .lock()
+                .expect("task recovery poisoned") = Some(scope.request.clone());
+            *tasks
+                .inner
+                .shared_recovery
+                .lock()
+                .expect("shared recovery poisoned") = Some(Arc::downgrade(&scope));
+            tasks
+                .inner
+                .active
+                .store(true, std::sync::atomic::Ordering::Release);
+        }
+        // Construct before spawn so even an unpolled supervisor revokes first.
+        let mut custody = MultiOwnerSupervisor {
+            claims,
+            deliveries: JoinSet::new(),
+        };
+        supervisor.spawn(async move {
+            let _receivers = receivers;
+            let mut failures = JoinSet::new();
+            for tasks in scope.tasks.values() {
+                let mut uncertain = tasks.inner.uncertain.subscribe();
+                failures.spawn(async move {
+                    loop {
+                        if *uncertain.borrow_and_update() {
+                            return Status::unavailable("scheduling root outcome uncertain; restart host through durable recovery");
+                        }
+                        if uncertain.changed().await.is_err() {
+                            return Status::unavailable("shared scheduling supervision lost");
+                        }
+                    }
+                });
+            }
+            let work = async {
+                cancel.public_ready().await?;
+                let mut pending = pending;
+                let mut inflight: HashSet<Vec<u8>> = HashSet::new();
+                loop {
+                    for task in pending {
+                        cancel.public_ready().await?;
+                        let id = task.task_id.as_ref().expect("validated ID");
+                        let actor = (id.state_type.clone(), id.state_ref.clone());
+                        // A UUID may legitimately repeat across distinct actors.
+                        // Length-prefixed protobuf TaskId is an unambiguous key.
+                        let key = prost::Message::encode_to_vec(id);
+                        let tasks = scope.tasks[&actor].clone();
+                        let actor_inflight = inflight.iter().filter(|key: &&Vec<u8>| {
+                            // Count by exact ID actor, not prefix or UUID alone.
+                            <db::TaskId as prost::Message>::decode(key.as_slice()).is_ok_and(|id|
+                                id.state_type == actor.0 && id.state_ref == actor.1)
+                        }).count();
+                        if schedule_due(&task)? && !inflight.contains(&key)
+                            && actor_inflight < tasks.inner.max_live.load(std::sync::atomic::Ordering::Acquire)
+                            && custody.deliveries.len() < MAX_TASKS
+                        {
+                            inflight.insert(key.clone());
+                            let cancel = cancel.clone();
+                            spawn_owned_delivery(&mut custody.deliveries, &custody.claims[&actor], async move {
+                                (key, tasks.execute(task, &cancel).await)
+                            });
+                        }
+                    }
+                    tokio::select! {
+                        joined = custody.deliveries.join_next(), if !custody.deliveries.is_empty() => {
+                            let (key, result) = joined.expect("nonempty deliveries")
+                                .map_err(|error| Status::internal(format!("task delivery child failed: {error}")))?;
+                            inflight.remove(&key);
+                            result?;
+                        },
+                        _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {},
+                    }
+                    cancel.public_ready().await?;
+                    let snapshot = scope.pending().await?;
+                    for (key, tasks) in &scope.tasks {
+                        let partition: Vec<_> = snapshot.pending.iter().filter(|task| {
+                            let id = task.task_id.as_ref().expect("validated ID");
+                            id.state_type == key.0 && id.state_ref == key.1
+                        }).cloned().collect();
+                        tasks.inner.listing.observe(&partition);
+                    }
+                    pending = snapshot.into_pending();
+                }
+            };
+            let (result, fallback) = tokio::select! {
+                biased;
+                result = work => (result, false),
+                failure = failures.join_next() => (Err(match failure {
+                    Some(Ok(error)) => error,
+                    Some(Err(error)) => Status::internal(error.to_string()),
+                    None => Status::unavailable("shared scheduling supervision lost"),
+                }), true),
+                _ = cancel.cancelled() => (Ok(()), true),
+            };
+            // Revoke before draining; children still retain exact DispatchOwner
+            // leases, including on forced supervisor abortion.
+            custody.revoke();
+            let result = abort_drain_deliveries(&mut custody.deliveries, result, fallback).await;
+            failures.abort_all();
+            while failures.join_next().await.is_some() {}
+            if scope.tasks.values().any(|tasks| *tasks.inner.uncertain.borrow()) {
+                cancel.fail();
+                if result.is_ok() {
+                    return Err(Status::unavailable("durable task operation dropped during shutdown"));
+                }
+            }
+            result
+        });
+        Ok(())
     }
 }
 
@@ -3911,3 +4211,7 @@ mod writer_completion_identity_tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "multi_owner_task_lifecycle_tests.rs"]
+mod multi_owner_task_lifecycle_tests;

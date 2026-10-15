@@ -82,10 +82,10 @@ async fn absent_default_root_uncertain_terminal_keeps_gate_and_original_owner() 
         participant.terminal(id, commit).await.unwrap();
         // Model canonical readback only AFTER terminal ACK; this fake does not
         // apply native writes. The second admission must load, never reinitialize.
-        *sidecar.load_state.lock().unwrap() = commit.then(|| vec![]);
+        *sidecar.load_state.lock().unwrap() = commit.then(Vec::new);
         assert_eq!(
             participant.start(start(next)).await.unwrap(),
-            commit.then(|| vec![])
+            commit.then(Vec::new)
         );
         participant.terminal(next, false).await.unwrap();
     }

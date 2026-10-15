@@ -91,9 +91,11 @@ fn snapshot_validates_owned_paths_but_ignores_malformed_unrelated_owners() {
         let scan = vec![database::RecoverResponse { participant_transactions: vec![record], ..Default::default() }];
         assert!(owner.reserve_recovery_snapshot().validate(&scan).is_err());
     }
-    let mut unrelated = database::Transaction::default();
-    unrelated.state_type = "other.Type".into();
-    unrelated.state_ref = "actor/1".into();
+    let unrelated = database::Transaction {
+        state_type: "other.Type".into(),
+        state_ref: "actor/1".into(),
+        ..Default::default()
+    };
     let scan = vec![database::RecoverResponse { participant_transactions: vec![unrelated], ..Default::default() }];
     assert!(owner.reserve_recovery_snapshot().validate(&scan).unwrap().recovered.is_none());
     assert!(sidecar.calls.lock().unwrap().is_empty());

@@ -90,6 +90,69 @@ impl RegisteredServiceTemplate {
         self.inbound_factory.clone()
     }
 }
+/// Validate only routing metadata. RebootHeaders intentionally has last-value
+/// semantics; reject duplicate state refs BEFORE invoking that real parser.
+/// Do not parse/rebuild all metadata here: inbound auth/tickets belong to the
+/// selected generated adapter, and the original request must remain untouched.
+pub(crate) fn public_route_target(
+    request: &Request,
+    service: &str,
+    state_type: &str,
+    methods: &std::collections::BTreeSet<String>,
+) -> Result<crate::durable_coordinator::ParticipantTarget, tonic::Status> {
+    // HTTP/2 scheme/authority are transport metadata, not actor identity.
+    // Route independently; preserve the original request unchanged.
+    let bad = || tonic::Status::invalid_argument("noncanonical public service route");
+    if request.method() != http::Method::POST || request.uri().query().is_some() {
+        return Err(bad());
+    }
+    let prefix = format!("/{service}/");
+    let method = request.uri().path().strip_prefix(&prefix).ok_or_else(bad)?;
+    if !methods.contains(&format!("{service}.{method}")) {
+        return Err(tonic::Status::unimplemented(
+            "method outside fixed generated service",
+        ));
+    }
+    let values = request.headers().get_all(crate::STATE_REF_HEADER);
+    let mut values = values.iter();
+    let value = values.next().ok_or_else(bad)?;
+    if values.next().is_some() {
+        return Err(bad());
+    }
+    let text = value.to_str().map_err(|_| bad())?;
+    if !text.is_ascii() {
+        return Err(bad());
+    }
+    let mut metadata = tonic::metadata::MetadataMap::new();
+    metadata.insert(crate::STATE_REF_HEADER, text.parse().map_err(|_| bad())?);
+    let parsed = crate::RebootHeaders::from_metadata(&metadata).map_err(|_| bad())?;
+    // The SDK's is_encoded checks only the final component and its readable
+    // parser normalizes. Require every component to round-trip WITHOUT changing
+    // a byte, including escaped slash IDs and colocated references.
+    for component in parsed.state_ref.split('/') {
+        if !crate::state_ref::StateRef::is_encoded(component) {
+            return Err(bad());
+        }
+        let reference =
+            crate::state_ref::StateRef::from_maybe_readable(component).map_err(|_| bad())?;
+        let id = reference.id();
+        let checked = crate::state_ref::StateRef::from_id(state_type, &id).map_err(|_| bad())?;
+        let suffix = component.split_once(':').ok_or_else(bad)?.1;
+        if checked.as_str().split_once(':').ok_or_else(bad)?.1 != suffix {
+            return Err(bad());
+        }
+    }
+    let reference = crate::state_ref::StateRef::from_maybe_readable(parsed.state_ref.clone())
+        .map_err(|_| bad())?;
+    if reference.as_str() != text || !reference.matches_state_type(state_type) {
+        return Err(bad());
+    }
+    Ok(crate::durable_coordinator::ParticipantTarget {
+        state_type: state_type.to_owned(),
+        state_ref: parsed.state_ref,
+    })
+}
+
 /// Generated composition uses the very same configured adapter to create its
 /// local Tonic service. No independent handler/policy/factory triples.
 #[doc(hidden)]
