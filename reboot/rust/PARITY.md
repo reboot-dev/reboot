@@ -97,6 +97,39 @@ exit zero preceded fresh container terminal inspection, and the original lock
 was free. Hot reload, new-consumer compilation and restart durability remain
 separate. This is not latest-upstream/full-native/overall SDK qualification.
 
+## Actual current-SDK Legacy acknowledged-boundary crashes (2026-10-15)
+
+The [three-case crash receipt](tests/evidence/legacy-current-sdk-acknowledged-crashes-20261015.json)
+records real app-only SIGKILL tests using explicit native-test-support features,
+locked/offline builds and strict all-target Clippy on the qualified current SDK:
+
+- **Started-after-ACK:** live Database readback showed Pending/Started and zero
+  effects before killing the exact app. Two hook-free recovery starts failed
+  with the required Started-without-Stored refusal, without callback replay.
+- **Partial effects:** after three acknowledged proxy replies (two routed to
+  Reboot), live Pending/Started readback preceded the crash. Two recovery starts
+  refused callback replay and preserved those actual effects exactly.
+- **Stored-after-ACK:** ten callback replies included seven Reboot effects.
+  Live Pending/Stored readback preceded the crash; a hook-free restart completed
+  the same task from Stored with no repeated callback or greeting effects.
+
+Parked/crashed raw actor, Task and checkpoint bytes matched exactly. Recovery
+preserved actor/checkpoint bytes and Task identity invariants. Eleven canonical
+inspections retained independently rehashed files; app-free Database reopen
+occurred only after actual CLI/child retirement. Crash authority used qualified
+app birth/argv and pidfd, never Database/CLI/group kills or borrowed child waits.
+Producer-marker-to-signal-return measurements were **0.143s, 0.149s, 0.147s**,
+all below the eight-second acceptance bound; these are measurements, not an
+atomic scheduler guarantee.
+
+Parent verified **3264** source members, **2678** overlay files, every row-log,
+case-specific saved binary and canonical artifact, **37** direct joins, no
+adopted descendants/cleanup failure, exact attach zero before fresh container
+exit zero/PID zero/no OOM/error, and original lock release. These are crashes
+at acknowledged boundaries, **not ACK-loss fault injection**. Pending-before-
+Started, all-effects-before-Stored, full Bank/shared/public, current-upstream
+native build and overall parity remain unclaimed by this batch.
+
 ## Legacy requalification against current published SDK (2026-10-15)
 
 The [current-SDK Legacy receipt](tests/evidence/legacy-current-sdk-restart-20261015.json)
