@@ -76,7 +76,6 @@ export namespace rbt_native {
   function Context_stateId(external: NapiExternal): string;
   function Context_callerBearerToken(external: NapiExternal): string;
   function Context_iteration(external: NapiExternal): number;
-  function Context_cookie(external: NapiExternal): string;
   function Context_appInternal(external: NapiExternal): boolean;
   function Context_generateIdempotentStateId(
     external: NapiExternal,
