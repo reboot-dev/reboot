@@ -8,9 +8,9 @@ tags: web-app, react, vite, hooks, errors, RebootClientProvider
 ## Wire the Web SPA to the Reboot Backend
 
 Everything the standalone browser frontend needs. This is the
-web-app equivalent of the `mcp-ui` skill's scaffolding references —
+web-app equivalent of the `mcp-app` skill's scaffolding references —
 **do not read those**: their `vite.config.ts` and `build.mjs` serve
-MCP UIs through Envoy and build one-file `mcp/<name>/index.html`
+MCP Apps through Envoy and build one-file `mcp/<name>/index.html`
 bundles, which a web app has no use for.
 
 ## The `frontend/` Shell
@@ -19,7 +19,7 @@ A stock Vite React-TS project
 (`npm create vite@latest frontend -- --template react-ts`) with the
 SPA's `index.html`, `src/`, and `public/` moved under `web/`, so
 that the generated client at `frontend/api/` and, should the app
-ever add MCP UIs, `frontend/mcp/` sit beside it:
+ever add MCP Apps, `frontend/mcp/` sit beside it:
 
 ```
 frontend/

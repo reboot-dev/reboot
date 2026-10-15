@@ -1,14 +1,14 @@
 # UI methods
 
 A `UI` method declares a React component that an
-[MCP client](/frontends/mcp_ui) opens inside the conversation when
+[MCP client](/frontends/mcp_app) opens inside the conversation when
 the AI calls the associated tool. Unlike `reader`, `writer`,
 `transaction`, and `workflow` methods, a `UI` method has no backend
 servicer code — the React `App.tsx` component **is** the
 implementation.
 
-:::info MCP UIs only
-`UI` methods exist for [MCP](/frontends/mcp_ui), where they appear as
+:::info MCP Apps only
+`UI` methods exist for [MCP](/frontends/mcp_app), where they appear as
 tools. There is no way to invoke one from a browser or from your
 backend. Your [web](/frontends/web) and
 [React Native](/frontends/react_native) frontends render their own
@@ -21,8 +21,8 @@ You declare a `UI` method in your
 [API definition](/define/pydantic), alongside your
 other methods:
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/mcp-ui-counter-dashboard/api/mcp_ui_counter/v1/counter.py&lines=90-96&syntax=python) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/mcp-ui-counter-dashboard/api/mcp_ui_counter/v1/counter.py -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/mcp-app-counter-dashboard/api/mcp_app_counter/v1/counter.py&lines=90-96&syntax=python) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/mcp-app-counter-dashboard/api/mcp_app_counter/v1/counter.py -->
 
 ```python
 show_clicker=UI(
@@ -49,10 +49,10 @@ show_clicker=UI(
 
 ### Zero-config UI
 
-From the `mcp-ui-counter` example:
+From the `mcp-app-counter` example:
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/mcp-ui-counter/api/mcp_ui_counter/v1/counter.py&lines=94-100&syntax=python) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/mcp-ui-counter/api/mcp_ui_counter/v1/counter.py -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/mcp-app-counter/api/mcp_app_counter/v1/counter.py&lines=94-100&syntax=python) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/mcp-app-counter/api/mcp_app_counter/v1/counter.py -->
 
 ```python
 show_clicker=UI(
@@ -68,10 +68,10 @@ show_clicker=UI(
 
 ### Parameterized UI
 
-From the `mcp-ui-counter-dashboard` example:
+From the `mcp-app-counter-dashboard` example:
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/mcp-ui-counter-dashboard/api/mcp_ui_counter/v1/counter.py&lines=97-104&syntax=python) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/mcp-ui-counter-dashboard/api/mcp_ui_counter/v1/counter.py -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/mcp-app-counter-dashboard/api/mcp_app_counter/v1/counter.py&lines=97-104&syntax=python) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/mcp-app-counter-dashboard/api/mcp_app_counter/v1/counter.py -->
 
 ```python
 show_dashboard=UI(
@@ -93,7 +93,7 @@ import {
   type DashboardConfig,
   type UseCounterApi,
   useCounter,
-} from "@api/mcp_ui_counter/v1/counter_rbt_react";
+} from "@api/mcp_app_counter/v1/counter_rbt_react";
 
 export const DashboardApp: React.FC<DashboardConfig> = ({
   personalizedMessage,
@@ -136,7 +136,7 @@ the ID resolves, so check both before using the handle:
 import {
   type UseCounterApi,
   useCounter,
-} from "@api/mcp_ui_counter/v1/counter_rbt_react";
+} from "@api/mcp_app_counter/v1/counter_rbt_react";
 
 export const ClickerApp: FC = () => {
   const { counter, isLoading } = useCounter();
@@ -204,14 +204,14 @@ One `vite.config.ts` drives three jobs: the dev server, and two
 builds selected by the `RBT_BUILD_TARGET` env var (set per UI by
 `build.mjs`) — a per-UI MCP build (`RBT_BUILD_TARGET=mcp:<name>`) and
 the standalone `web/` SPA build (`RBT_BUILD_TARGET=web`). It
-auto-discovers MCP UIs from the `mcp/` directory (each subdirectory
+auto-discovers MCP Apps from the `mcp/` directory (each subdirectory
 with an `index.html`).
 
 <details>
 <summary>The full <code>frontend/vite.config.ts</code></summary>
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/mcp-ui-counter/frontend/vite.config.ts&syntax=typescript) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/mcp-ui-counter/frontend/vite.config.ts -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/mcp-app-counter/frontend/vite.config.ts&syntax=typescript) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/mcp-app-counter/frontend/vite.config.ts -->
 
 ```typescript
 // Vite configuration for Reboot UIs.
@@ -226,7 +226,7 @@ with an `index.html`).
 //     `mcp/<name>` UI AND the standalone `web/` SPA, all under
 //     `base: "/__/frontend/"`. Envoy proxies that prefix to this dev
 //     server (`run --config=hmr`).
-//   * `RBT_BUILD_TARGET=mcp:<name> vite build`: builds one MCP UI into
+//   * `RBT_BUILD_TARGET=mcp:<name> vite build`: builds one MCP App into
 //     a single, self-contained `dist/mcp/<name>/index.html` (assets
 //     inlined via `vite-plugin-singlefile`). The framework serves it
 //     at `/__/frontend/mcp/<name>/index.html` in dist mode.
@@ -321,9 +321,9 @@ function serveWebAppAtRoot(root: string): Plugin {
   };
 }
 
-// Auto-discover MCP UIs: every `mcp/<name>/` with an `index.html`.
+// Auto-discover MCP Apps: every `mcp/<name>/` with an `index.html`.
 // There may be no `mcp/` directory at all (a web-only frontend, or
-// one whose last MCP UI was removed), so guard the read.
+// one whose last MCP App was removed), so guard the read.
 const mcpDir = path.resolve(__dirname, "mcp");
 const mcpNames: string[] = fs.existsSync(mcpDir)
   ? fs
@@ -340,7 +340,7 @@ const resolve = {
 };
 
 export default defineConfig(({ command }) => {
-  // Dev server: serves both the MCP UIs and the `web/` SPA.
+  // Dev server: serves both the MCP Apps and the `web/` SPA.
   //
   // UIs use a double iframe architecture:
   //   MCP Host -> srcdoc (origin=null) -> iframe (origin=localhost:9991)
@@ -410,7 +410,7 @@ export default defineConfig(({ command }) => {
     };
   }
 
-  // Build one MCP UI (`RBT_BUILD_TARGET=mcp:<name>`). We root the
+  // Build one MCP App (`RBT_BUILD_TARGET=mcp:<name>`). We root the
   // build at `mcp/<name>/` so the output lands directly at
   // `dist/mcp/<name>/index.html`, a single self-contained file
   // (assets inlined by `vite-plugin-singlefile`). The framework
@@ -428,7 +428,7 @@ export default defineConfig(({ command }) => {
     plugins: [react(), viteSingleFile()],
     root: path.resolve(__dirname, "mcp", name),
     base: "/__/frontend/",
-    // Read `.env*` from `web/` (the shared frontend env), so an MCP UI
+    // Read `.env*` from `web/` (the shared frontend env), so an MCP App
     // can pick up e.g. `VITE_WEB_APP_URL` for a pop-out link.
     envDir: path.resolve(__dirname, "web"),
     build: {

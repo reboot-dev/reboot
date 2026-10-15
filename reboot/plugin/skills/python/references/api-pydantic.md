@@ -232,7 +232,7 @@ to call factory methods through `<Type>.ref(<id>).<method>(...)`
 ### Every Method Factory Takes a Required `mcp=` Argument
 
 `Reader`, `Writer`, `Transaction`, **and `Workflow`** all require an
-explicit `mcp=` kwarg. The MCP-Apps integration uses it to control
+explicit `mcp=` kwarg. The MCP Apps integration uses it to control
 tool exposure; in non-MCP projects (or for methods you don't want
 exposed as tools) the right value is `mcp=None`. Omitting it raises
 at codegen:

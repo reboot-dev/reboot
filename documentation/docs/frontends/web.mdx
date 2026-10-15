@@ -25,7 +25,7 @@ generate --react=frontend/api
 ```
 
 Generating into `frontend/api/` — a sibling of the app itself — means
-every frontend of your application (web, mobile, MCP UIs) shares one
+every frontend of your application (web, mobile, MCP Apps) shares one
 client. Keep your bundler's root at `frontend/` so that directory is
 inside it; if your app root is `frontend/web/` instead, Vite needs
 `server.fs.allow: [".."]` to read a sibling.

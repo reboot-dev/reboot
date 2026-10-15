@@ -938,7 +938,7 @@ class MethodModel(pydantic.BaseModel):
     mcp: Optional[Tool]
 
     # TODO(rjh): we need more experience with resources
-    #            in the context of MCP UIs before
+    #            in the context of MCP Apps before
     #            officially supporting them in Reboot. It
     #            seems that many (most? all?) LLMs do not
     #            use available resources in responses to

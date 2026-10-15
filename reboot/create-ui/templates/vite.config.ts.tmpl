@@ -10,7 +10,7 @@
 //     `mcp/<name>` UI AND the standalone `web/` SPA, all under
 //     `base: "/__/frontend/"`. Envoy proxies that prefix to this dev
 //     server (`run --config=hmr`).
-//   * `RBT_BUILD_TARGET=mcp:<name> vite build`: builds one MCP UI into
+//   * `RBT_BUILD_TARGET=mcp:<name> vite build`: builds one MCP App into
 //     a single, self-contained `dist/mcp/<name>/index.html` (assets
 //     inlined via `vite-plugin-singlefile`). The framework serves it
 //     at `/__/frontend/mcp/<name>/index.html` in dist mode.
@@ -105,9 +105,9 @@ function serveWebAppAtRoot(root: string): Plugin {
   };
 }
 
-// Auto-discover MCP UIs: every `mcp/<name>/` with an `index.html`.
+// Auto-discover MCP Apps: every `mcp/<name>/` with an `index.html`.
 // There may be no `mcp/` directory at all (a web-only frontend, or
-// one whose last MCP UI was removed), so guard the read.
+// one whose last MCP App was removed), so guard the read.
 const mcpDir = path.resolve(__dirname, "mcp");
 const mcpNames: string[] = fs.existsSync(mcpDir)
   ? fs
@@ -124,7 +124,7 @@ const resolve = {
 };
 
 export default defineConfig(({ command }) => {
-  // Dev server: serves both the MCP UIs and the `web/` SPA.
+  // Dev server: serves both the MCP Apps and the `web/` SPA.
   //
   // UIs use a double iframe architecture:
   //   MCP Host -> srcdoc (origin=null) -> iframe (origin=localhost:9991)
@@ -194,7 +194,7 @@ export default defineConfig(({ command }) => {
     };
   }
 
-  // Build one MCP UI (`RBT_BUILD_TARGET=mcp:<name>`). We root the
+  // Build one MCP App (`RBT_BUILD_TARGET=mcp:<name>`). We root the
   // build at `mcp/<name>/` so the output lands directly at
   // `dist/mcp/<name>/index.html`, a single self-contained file
   // (assets inlined by `vite-plugin-singlefile`). The framework
@@ -212,7 +212,7 @@ export default defineConfig(({ command }) => {
     plugins: [react(), viteSingleFile()],
     root: path.resolve(__dirname, "mcp", name),
     base: "/__/frontend/",
-    // Read `.env*` from `web/` (the shared frontend env), so an MCP UI
+    // Read `.env*` from `web/` (the shared frontend env), so an MCP App
     // can pick up e.g. `VITE_WEB_APP_URL` for a pop-out link.
     envDir: path.resolve(__dirname, "web"),
     build: {
