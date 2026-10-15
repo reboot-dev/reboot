@@ -23,8 +23,13 @@ Reboot's Lua routing filters. Envoy stops answering HTTP/2 keepalives,
 so readers that fan out to other states fail with
 `Unavailable: ping timeout`, and writes can hang.
 
-Workaround: turn the JIT off in the routing filters. In the project's
-virtual environment, edit `reboot/routing/envoy_config.py` so that
+Workaround, only once the symptom appears, never ahead of it: first
+tell the user that it edits the installed Reboot package in the
+project's `.venv` and that `uv sync` undoes it, and go on only on
+their yes (a host's auto mode blocks the edit otherwise). Until then,
+wait it out and restart less. The edit turns the JIT off in the
+routing filters: in the project's virtual environment, edit
+`reboot/routing/envoy_config.py` so that
 `_lua_any` prepends `if jit then jit.off() end` to the filter source:
 
 ```python
