@@ -308,7 +308,6 @@ export class Context {
   readonly method: string;
   readonly stateTypeName: string;
   readonly callerBearerToken: string | null;
-  readonly cookie: string | null;
   readonly appInternal: boolean;
   readonly auth: Auth | null;
   readonly workflowId: string | null;
@@ -320,7 +319,6 @@ export class Context {
     method,
     stateTypeName,
     callerBearerToken,
-    cookie,
     appInternal,
     auth,
     workflowId,
@@ -332,7 +330,6 @@ export class Context {
     method: string;
     stateTypeName: string;
     callerBearerToken: string | null;
-    cookie: string | null;
     appInternal: boolean;
     auth: Auth | null;
     workflowId: string | null;
@@ -350,7 +347,6 @@ export class Context {
     this.method = toCamelCase(method);
     this.stateTypeName = stateTypeName;
     this.callerBearerToken = callerBearerToken;
-    this.cookie = cookie;
     this.appInternal = appInternal;
     this.auth = auth;
     this.workflowId = workflowId;
@@ -684,7 +680,6 @@ export abstract class TokenVerifier {
       method: call.context.method,
       stateTypeName: call.context.stateTypeName,
       callerBearerToken: call.context.callerBearerToken,
-      cookie: call.context.cookie,
       appInternal: call.context.appInternal,
       auth: null,
       workflowId:

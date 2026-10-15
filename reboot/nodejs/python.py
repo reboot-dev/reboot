@@ -305,7 +305,6 @@ class NodeAdaptorAuthorizer(Authorizer[Message, Message]):
                         state_id=context.state_id,
                         state_type_name=context.state_type_name,
                         caller_bearer_token=context.caller_bearer_token,
-                        cookie=context.cookie,
                         app_internal=context.app_internal,
                         auth=(
                             None if context.auth is None else
@@ -383,7 +382,6 @@ class NodeAdaptorTokenVerifier(TokenVerifier):
                         state_id=context.state_id,
                         state_type_name=context.state_type_name,
                         caller_bearer_token=context.caller_bearer_token,
-                        cookie=context.cookie,
                         app_internal=context.app_internal,
                         workflow_id=(
                             None if context.workflow_id is None else
