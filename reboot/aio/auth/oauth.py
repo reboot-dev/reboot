@@ -29,18 +29,25 @@ class OAuth:
         which takes Reboot-minted access tokens only.
     :param allowed_origins: exact-match list of HTTP origins
         (`scheme://host[:port]`, e.g. `"https://app.example.com"`)
-        that browsers are allowed to talk to this backend from when
-        the request needs to carry credentials (the OAuth session
-        cookie or, post sign-in, the bearer JWT minted by
-        `/__/oauth/whoami`). The backend's own origin is always
+        that browsers are allowed to act on the OAuth session cookie
+        from: calling `/__/oauth/whoami` to turn the cookie into the
+        bearer JWT the SPA sends on RPCs, `/__/oauth/refresh` to renew
+        it, and the other `/__/oauth/` endpoints, with
+        `credentials: "include"`. The backend's own origin is always
         trusted on top of this list, so same-origin browser clients
         work no matter what; `allowed_origins` only ever *widens*
         trust to additional, cross-origin SPAs. An explicit empty list
         (`[]`) means *no* cross-origin credentialed traffic; only
-        same-origin browser clients can sign in or call RPCs. An
-        application with no `oauth=...` at all keeps serving
-        permissive CORS (any origin): without browser credentials
-        there is nothing an allow-list would protect.
+        same-origin browser clients can sign in.
+
+        Only the `/__/oauth/` paths are restricted this way. Every
+        other path — RPCs, `/mcp`, your HTTP routes — answers any
+        origin without credentials and never honors the cookie on a
+        cross-origin request; a cross-origin caller authenticates by
+        the bearer it presents. So a UI shown by an MCP host, whose
+        sandbox origin cannot be listed in advance, reaches the backend
+        with the bearer it holds. An application with no `oauth=...`
+        has no cookie and answers any origin everywhere.
 
         Two environment-driven defaults sit on top of this:
 

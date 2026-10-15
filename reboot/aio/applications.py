@@ -407,16 +407,13 @@ class Application:
         self._initialize_bearer_token = initialize_bearer_token
         self._oauth = oauth
         self._oauth_server: Optional[OAuthServer] = None
-        # `allowed_origins=None` (the default) is meaningfully
-        # distinct from `allowed_origins=[]` (an explicit choice).
-        # The default tells us the developer hasn't thought about
-        # cross-origin CORS yet — which is fine in dev (we'll fill
-        # in `http://localhost(:*)?` automatically downstream) and
-        # for MCP-only / same-origin deployments, but in prod with
-        # `oauth=...` it's almost always a forgotten config.
-        # Reject loudly there so production never silently 403s
-        # every cross-origin sign-in attempt; in dev, warn so the
-        # gap is caught before `rbt cloud up`.
+        # `allowed_origins=None` (the default) is distinct from `[]`
+        # (an explicit choice): the default means the developer has
+        # not chosen which origins may act on the session cookie.
+        # That is fine under `rbt dev run`, where localhost is
+        # allowed automatically, but in production with `oauth=...`
+        # it is almost always a forgotten config that would 403 every
+        # cross-origin sign-in. Refuse there; warn in dev.
         if (
             oauth is not None and
             oauth.provider.requires_allowed_origins_in_production() and
@@ -457,11 +454,11 @@ class Application:
                 "list `allowed_origins=[]` to opt into "
                 "same-origin-only browser auth."
             )
-        # `None` — kept distinct from an empty list — means the
-        # application has no credentialed browser traffic to
-        # protect (no `oauth=`), and CORS stays permissive. Once
-        # the application has an `OAuth`, its exact-match
-        # allow-list (possibly empty) applies.
+        # `None` (no `oauth=`) means no session cookie exists, so no
+        # path needs a credentialed CORS policy. With an `OAuth`, the
+        # exact-match allow-list (possibly empty) applies to the
+        # `/__/oauth/` paths only; every other path answers any origin
+        # without credentials (see `reboot/routing/envoy_config.py`).
         self._allowed_origins: Optional[list[str]] = None
         self._skip_consent_for_redirect_uris: list[str] = []
         if oauth is not None:

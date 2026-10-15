@@ -20,6 +20,12 @@ DEV_ORIGIN_REGEXES = (
     r"http://127\.0\.0\.1(:\d+)?",
 )
 
+# The OAuth server's path prefix. Only paths under it act on a
+# browser's session cookie from a cross-origin request, so only they
+# get a credentialed CORS policy restricted to the trusted origins;
+# every other path answers any origin without credentials.
+OAUTH_PATH_PREFIX = "/__/oauth/"
+
 
 def is_allowed_origin(
     origin: str,

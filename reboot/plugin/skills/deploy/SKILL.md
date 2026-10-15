@@ -81,8 +81,11 @@ build (Step 4) bakes it in.
 
 ## Step 3 — Allow the frontend's origin on the backend
 
-The browser only gets to call the backend cross-origin if the
-frontend's origin is in the app's allow-list:
+The browser only gets to sign in cross-origin — act on the session
+cookie at `/__/oauth/whoami` and `/__/oauth/refresh` — if the
+frontend's origin is in the app's allow-list. (RPCs and other paths
+answer any origin without credentials, so a bearer-carrying caller
+such as an MCP UI needs no entry here.)
 
 ```python
 application = Application(
@@ -228,9 +231,11 @@ and domain stay put.
 - **Routes render nothing on the custom domain but the app loads
   at `/`:** router basename baked from `import.meta.env.BASE_URL`
   (Step 4.3).
-- **Browser console shows CORS errors:** the exact origin (watch
-  scheme and `www.`) is missing from `allowed_origins`, or the
-  backend wasn't redeployed after adding it.
+- **Browser console shows CORS errors on `/__/oauth/whoami` or
+  `/__/oauth/refresh`:** the exact origin (watch scheme and `www.`)
+  is missing from `allowed_origins`, or the backend wasn't
+  redeployed after adding it. (RPCs are never CORS-blocked by
+  origin; a CORS error there means a missing or expired bearer.)
 - **Sign-in fails with an invalid-redirect error:** same cause —
   the frontend origin isn't on `allowed_origins`, so
   `/__/oauth/start` refuses the `return_to`.

@@ -82,8 +82,10 @@ provider=OAuthProviderByEnvironment(
 ### `allowed_origins`
 
 `allowed_origins` is the exact-match list of HTTP origins
-(`scheme://host[:port]`) that browsers may make signed-in requests
-from.
+(`scheme://host[:port]`) that browsers may act on the session cookie
+from: the `/__/oauth/` endpoints that turn the cookie into the bearer
+your frontend sends (`/__/oauth/whoami`) and renew it
+(`/__/oauth/refresh`).
 
 Your backend's own origin is always trusted, so a same-origin browser
 client works no matter what. `allowed_origins` only ever widens trust
@@ -104,6 +106,14 @@ allowed_origins=["https://app.example.com", "https://staging.example.com"]
 Entries must be bare origins (`scheme://host[:port]`): a trailing
 slash, path, query, or fragment is rejected. Matching is exact;
 wildcards are not supported.
+
+Only the `/__/oauth/` paths are restricted to these origins. Every
+other path — your RPCs, `/mcp`, your HTTP routes — authenticates a
+browser's request by the bearer it carries and answers any origin
+without credentials, so a page can call only with a bearer it already
+holds, never with the user's cookie. That is what lets a UI shown by an
+MCP host, whose sandbox origin you cannot know in advance, or a page
+calling with an API key, reach your backend without being listed here.
 
 ### `skip_consent_for_redirect_uris`
 
