@@ -62,6 +62,7 @@ Both flags match `rbt export` / `rbt import` (see
   page URL. It is the address printed as **"Your API is available
   at:"** when the app starts.
   - **Local dev:** the URL `rbt dev run` prints (e.g.
+    `https://<app>.localhost` under `--portless`, else
     `http://localhost:9991`).
   - **Reboot Cloud:** the URL `rbt cloud up` prints (e.g.
     `https://<application-id>.prod1.rbt.cloud:9991`).

@@ -516,7 +516,7 @@ The layout is the one every Reboot app has, `frontend/` included
     ├── api/                 # Generated TypeScript client
     │                        # (output of `rbt generate --react=`)
     └── web/
-        ├── .env.development # VITE_REBOOT_URL=http://localhost:9991
+        ├── .env.production  # VITE_REBOOT_URL=<the deployed backend>
         ├── index.html       # The single SPA entry
         ├── public/
         └── src/
@@ -527,9 +527,15 @@ The layout is the one every Reboot app has, `frontend/` included
                 └── <page>.tsx
 ```
 
-In development the Vite dev server (`cd frontend && npm run dev`)
-serves the SPA at its own origin, `http://localhost:5173/` by
-default, and the SPA calls the backend at `VITE_REBOOT_URL`. Built,
+In development Envoy serves the SPA at the backend's origin from
+the Vite dev server (`--web-app`): `https://<app>.localhost/` under
+portless (`cd frontend && npm run dev`, whose default is the
+`dev:portless` script, beside `rbt dev run --portless`), or
+`http://localhost:9991/` from `npm run dev:hmr`, same-origin either
+way, so the Reboot client needs no URL. Open it there, not at the
+dev server's own origin (`https://frontend.<app>.localhost` or
+`http://localhost:5173/`), where the client would take Vite's origin
+for the backend. Built,
 it lands in `frontend/dist/web/` with `base: "/"`, which a static
 host can serve at `/`, or the backend can with
 `--web-app-dist-path=frontend/dist/web` on `rbt serve run` (and on a
@@ -577,8 +583,10 @@ serve the MCP Apps through Envoy.
    shape it as [`references/react-client.md`](references/react-client.md)
    shows: the SPA's `index.html`, `src/`, and `public/` under
    `frontend/web/`, the config rooted there with the `dedupe` and
-   `server.host` entries, the Reboot packages in `package.json`, and
-   `frontend/web/.env.development` with `VITE_REBOOT_URL`.
+   `server.host` entries, and the Reboot packages in `package.json`.
+   No `VITE_REBOOT_URL` in development: the web app is served at the
+   backend's origin (`--web-app`); `.env.production` sets it for a
+   deploy elsewhere.
 9. `cd frontend && npm install`.
 10. `uv run rbt generate` again — the React bindings need
     `node_modules` to resolve types correctly.

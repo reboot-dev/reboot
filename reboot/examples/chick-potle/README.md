@@ -53,14 +53,24 @@ Then run the app (each command in its own terminal, from the
 project directory):
 
 ```bash
-# Terminal 1: start the Reboot backend.
+# Terminal 1: start the Reboot backend, as https://chick-potle.localhost.
 uv run rbt dev run
 
-# Terminal 2: start the Vite dev server for Hot Module Replacement.
+# Terminal 2: start the Vite dev server for Hot Module Replacement,
+# as https://frontend.chick-potle.localhost.
 cd frontend && npm run dev
 ```
 
-Then open <http://localhost:9991> and follow the setup wizard to
+Both run under [portless](https://github.com/vercel-labs/portless),
+which gives them names instead of ports: `npm run dev` is
+`portless frontend.chick-potle vite`, portless being a dev dependency, and
+`rbt dev run` needs the `portless` CLI too: install it once with
+`npm install -g portless` and start its proxy with
+`portless proxy start`. (For plain ports instead, run
+`uv run rbt dev run --config=hmr` and `cd frontend && npm run dev:hmr`,
+and read `http://localhost:9991` below.)
+
+Then open <https://chick-potle.localhost> and follow the setup wizard to
 connect a chat host (such as Claude or ChatGPT) to the app.
 
 State persists between restarts under the name `chick-potle`

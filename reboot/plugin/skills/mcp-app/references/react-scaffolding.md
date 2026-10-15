@@ -33,7 +33,9 @@ changes when it does.
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "npm run dev:portless",
+    "dev:portless": "portless frontend.<project-name> vite",
+    "dev:hmr": "vite",
     "build": "tsc -b && node build.mjs"
   },
   "dependencies": {
@@ -50,12 +52,19 @@ changes when it does.
     "@types/react": "^18.2.67",
     "@types/react-dom": "^18.2.22",
     "@vitejs/plugin-react": "^4.7.0",
+    "portless": "^0.15.7",
     "typescript": "^5.9.2",
     "vite": "^6.3.5",
     "vite-plugin-singlefile": "^2.0.3"
   }
 }
 ```
+
+The `dev` scripts mirror the `.rbtrc`'s configs: `npm run dev` is
+the default, `dev:portless`, which runs `portless frontend.<project-name> vite`
+(`portless` is a dev dependency and appends Vite's `--port` itself),
+and `dev:hmr` is plain `vite`. `<project-name>` is the `.rbtrc`'s
+`--application-name`.
 
 Adding or removing a UI needs no script changes: `build()` loads
 `vite.config.ts`, asks `reboot()` for the frontend's UIs (every

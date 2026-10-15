@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "npm run dev:portless",
+    "dev:portless": "portless frontend.agent-wiki vite",
+    "dev:hmr": "vite",
     "build": "tsc -b && node build.mjs"
   },
   "dependencies": {
@@ -23,6 +25,7 @@
     "@types/react": "^18.2.67",
     "@types/react-dom": "^18.2.22",
     "@vitejs/plugin-react": "^4.7.0",
+    "portless": "^0.15.7",
     "typescript": "^5.9.2",
     "vite": "^6.3.5",
     "vite-plugin-singlefile": "^2.0.3"

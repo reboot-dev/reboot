@@ -15,12 +15,22 @@ cd frontend && npm install && cd ..
 # Generate API code.
 uv run rbt generate
 
-# Terminal 1: Start Vite dev server (for Hot Module Replacement).
+# Terminal 1: Start Vite dev server (for Hot Module Replacement), as
+# https://frontend.mcp-app-counter-dashboard.localhost via portless
+# (https://github.com/vercel-labs/portless): `npm run dev` is
+# `portless frontend.mcp-app-counter-dashboard vite`, portless being a dev dependency. The
+# backend needs the `portless` CLI too (`npm install -g portless`
+# once) and its proxy (`portless proxy start`).
 cd frontend && npm run dev
 
-# Terminal 2: Start Reboot backend.
+# Terminal 2: Start Reboot backend, as
+# https://mcp-app-counter-dashboard.localhost.
 uv run rbt dev run
 ```
+
+For plain ports instead, run `cd frontend && npm run dev:hmr` and
+`uv run rbt dev run --config=hmr`, and read `http://localhost:9991`
+for the backend below.
 
 ## Testing with MCPJam Inspector
 
@@ -28,7 +38,7 @@ For testing with MCPJam Inspector:
 
 ```bash
 # In another terminal, run MCPJam:
-npx @mcpjam/inspector@2.23.3 --url http://localhost:9991/mcp --oauth
+npx @mcpjam/inspector@2.23.3 --url https://mcp-app-counter-dashboard.localhost/mcp --oauth
 ```
 
 This opens a browser-based inspector where you can test tools.
