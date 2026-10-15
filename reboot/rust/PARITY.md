@@ -97,6 +97,28 @@ exit zero preceded fresh container terminal inspection, and the original lock
 was free. Hot reload, new-consumer compilation and restart durability remain
 separate. This is not latest-upstream/full-native/overall SDK qualification.
 
+## Legacy requalification against current published SDK (2026-10-15)
+
+The [current-SDK Legacy receipt](tests/evidence/legacy-current-sdk-restart-20261015.json)
+repeats the rich-consumer build, strict all-target Clippy, three-service,
+initializer, writer-replay, same-RocksDB restart and app-free canonical checks
+with **all 245 tracked Rust SDK Rust/TOML/lock/proto inputs** matching published
+`e10ce36b`. The previous merged-CLI run used its historical frozen SDK, not the
+later cursor implementation. This successor explicitly refreshed eight changed
+and nine added members; source association was independently reviewed.
+
+Actual execution passed. Ten initializer greetings included seven Reboot writes;
+writer replay left canonical count **8**, and proxy added one for final count
+**9**. Restart did not repeat initialization or the writer effect; original
+Task/Stored bytes stayed equal in two app-free Database inspections. Parent
+rehashed all **3264** source members, **2678** Python overlay files, copied
+consumer/binary/log pins and canonical files. Exact child joins, container
+terminal exit zero/PID zero/no OOM/error and original lock release passed.
+
+This refresh qualifies the current **Rust SDK** with the existing merged CLI
+and cached native Database. It does not turn the cached native binary into a
+latest-upstream build, certify new crash/ACK windows, or close overall parity.
+
 ## Fresh pinned Legacy consumer through merged CLI (2026-10-15)
 
 The [Legacy merged-CLI receipt](tests/evidence/legacy-merged-cli-restart-20261015.json)
