@@ -1238,6 +1238,9 @@ class LocalServerManager(ServerManager):
             # (i.e., system services).
             routables=user_serviceables + ServiceServer.ROUTABLES,
             allowed_origins=self._revision.allowed_origins,
+            # The paths the web framework answers, which Envoy routes
+            # to it ahead of its catch-all.
+            route_matches=self._revision.web_framework.route_matches(),
         )
 
         await self._local_envoy.start()

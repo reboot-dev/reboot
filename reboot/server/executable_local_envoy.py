@@ -3,6 +3,7 @@ import json
 import logging
 import tempfile
 import urllib.request
+from envoy.config.route.v3 import route_components_pb2
 from google.protobuf.descriptor_pb2 import FileDescriptorSet
 from log.log import get_logger
 from pathlib import Path
@@ -29,6 +30,7 @@ class ExecutableLocalEnvoy(LocalEnvoy):
         key: Optional[Path],
         debug_mode: bool,
         allowed_origins: Optional[list[str]],
+        route_matches: list[route_components_pb2.RouteMatch],
     ):
         self._requested_public_port = public_port
         self._public_port = 0
@@ -82,6 +84,7 @@ class ExecutableLocalEnvoy(LocalEnvoy):
             use_tls=use_tls,
             observed_dir=Path(self._tmp_envoy_dir.name),
             allowed_origins=allowed_origins,
+            route_matches=route_matches,
         )
 
         self._envoy_config_path = self._write_envoy_dir(

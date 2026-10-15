@@ -445,12 +445,26 @@ def _http_filter_router() -> http_connection_manager_pb2.HttpFilter:
     )
 
 
+def _for_server(
+    route_match: route_components_pb2.RouteMatch,
+    server_header_matcher: route_components_pb2.HeaderMatcher,
+) -> route_components_pb2.RouteMatch:
+    """The web framework's route match, for this server: as given,
+    plus the header that picks the server."""
+    match = route_components_pb2.RouteMatch()
+    match.CopyFrom(route_match)
+    match.headers.append(server_header_matcher)
+    return match
+
+
 def _routes_for_server(
     application_id: ApplicationId,
     server: ServerInfo,
     kind: ClusterKind,
     file_descriptor_set: FileDescriptorSet,
     trust_caller_id: bool,
+    route_matches: list[route_components_pb2.RouteMatch],
+    catch_all: bool = True,
 ) -> list[route_components_pb2.Route]:
     # Every server gets routes to the websocket port, the gRPC
     # port, and the HTTP "catchall" port as described below.
@@ -523,12 +537,12 @@ def _routes_for_server(
         ]
 
     elif kind == ClusterKind.HTTP:
-        return [
-            route_components_pb2.Route(
-                match=route_components_pb2.RouteMatch(
-                    prefix="/",
-                    headers=[server_header_matcher],
-                ),
+
+        def http_route(
+            match: route_components_pb2.RouteMatch,
+        ) -> route_components_pb2.Route:
+            return route_components_pb2.Route(
+                match=match,
                 route=route_components_pb2.RouteAction(
                     cluster=cluster_name,
                     # Set `max_stream_duration` to 0 to disable the timeout for this route.
@@ -540,7 +554,25 @@ def _routes_for_server(
                         EMPTY_GRPC_JSON_TRANSCODER_CONFIG,
                 },
             )
-        ]
+
+        return [
+            # The paths the web framework answers (the application's
+            # routes and mounts, and Reboot's), each its own route,
+            # ahead of the catch-all below: today both go to the same
+            # place, but something else may come to answer `/`.
+            http_route(_for_server(route_match, server_header_matcher))
+            for route_match in route_matches
+        ] + (
+            [
+                # The catch-all: everything else goes to the HTTP port too.
+                http_route(
+                    route_components_pb2.RouteMatch(
+                        prefix="/",
+                        headers=[server_header_matcher],
+                    )
+                ),
+            ] if catch_all else []
+        )
 
     assert kind == ClusterKind.WEBSOCKET
 
@@ -601,7 +633,22 @@ def _frontend_routes() -> list[route_components_pb2.Route]:
         },
     )
 
-    return [web_route]
+
+def _frontend_catch_all_routes() -> list[route_components_pb2.Route]:
+    """With `--web-app`, the dev server serves the web app at `/`, so
+    it gets `/` and every path nothing else claimed: this comes last,
+    after the application's own paths and the MCP, OAuth and Reboot
+    paths the web framework answers (`route_matches`).
+
+    Returns empty list if the frontend is not configured or isn't
+    serving the web app.
+    """
+    config = _get_frontend_config()
+    if config is None or not config.web_app:
+        return []
+    return [
+        _frontend_route(config, route_components_pb2.RouteMatch(prefix="/"))
+    ]
 
 
 def _frontend_cluster(
@@ -744,6 +791,7 @@ def _filter_http_connection_manager(
     file_descriptor_set: FileDescriptorSet,
     trust_caller_id: bool,
     allowed_origins: Optional[list[str]],
+    route_matches: list[route_components_pb2.RouteMatch],
 ) -> listener_components_pb2.Filter:
     http_connection_manager = http_connection_manager_pb2.HttpConnectionManager(
         stat_prefix="grpc_json",
@@ -791,6 +839,8 @@ def _filter_http_connection_manager(
                                 kind=kind,
                                 file_descriptor_set=file_descriptor_set,
                                 trust_caller_id=trust_caller_id,
+                                route_matches=route_matches,
+                                catch_all=not web_app,
                             )
                         ]
                     ),
@@ -873,6 +923,7 @@ def listeners(
     certificate_path: Path,
     key_path: Path,
     allowed_origins: Optional[list[str]],
+    route_matches: list[route_components_pb2.RouteMatch],
 ) -> list[listener_pb2.Listener]:
 
     @dataclass
@@ -927,6 +978,7 @@ def listeners(
                             file_descriptor_set=file_descriptor_set,
                             trust_caller_id=listener.trust_caller_id,
                             allowed_origins=allowed_origins,
+                            route_matches=route_matches,
                         ),
                     ],
                     transport_socket=_tls_socket(certificate_path, key_path)
