@@ -12,6 +12,25 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Cursor/results fixture source checkpoint (2026-10-15)
+
+The [fixture](tests/fixtures/workflow_cursor_results_app/HANDOFF.md) is now
+available for parent-owned native qualification. Its generated Rust consumer
+compiled and passed strict all-target Clippy; all six Rust/Cargo/proto inputs
+match that checked source. Eight repository-local cleanup unit regressions
+exercise the actual helper, including unresolved short clients, unrepresented
+reservations and open/missing descriptor obligations. The standalone Rust
+wrapper compiles and remains intentionally ignored. These are **source,
+compile and unit results**, not native/public cursor acceptance.
+
+The actual >1024 continuation, cross-actor result replay, saved Break replay
+and Started-uncertainty objectives remain **UNEXECUTED**. The fixture refuses
+to substitute subprocess polling for the required parent custody adapter.
+Unknown SDK custody blocks Database retirement; independent outer preflight,
+archival, real build provenance and approved native execution remain required.
+This fixture is not reboot-examples parity evidence and changes no overall
+SDK parity verdict.
+
 ## Cursor and typed-result library checkpoint (2026-10-15)
 
 The experimental library now supports explicitly registered canonical workflow
@@ -28,8 +47,9 @@ valid terminal and corrupted-checkpoint controls. Malformed stored typed results
 taint the attempt before acknowledgement and cannot be swallowed to permit finish
 or local retry.
 
-**Acceptance boundary:** this is a library-only checkpoint. The new two-actor
-native/public proof is still under repair and is not included or accepted here.
+**Acceptance boundary:** that checkpoint verified the library only. The later
+fixture source checkpoint above does not establish two-actor native/public
+acceptance; the actual native proof remains pending.
 The seeded cursor unit case is not evidence of executing more than 1024 Continue
 steps. Persistence/restarts, real generated cross-actor typed replay and current
 upstream merged behavior remain separate gates. Started-without-Stored stays
@@ -4663,7 +4683,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 9dd007e3922ee724526f38b46f83b9a2ec6aa4e74e3eef17491178ce34b66d6a -->
+<!-- parity-source-sha256: cfdd955ab297593752bd87947738d0c88d95c52cdebfa2ce8ca65fb1eb48b188 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,
