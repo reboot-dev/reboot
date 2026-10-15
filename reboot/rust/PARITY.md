@@ -97,6 +97,38 @@ exit zero preceded fresh container terminal inspection, and the original lock
 was free. Hot reload, new-consumer compilation and restart durability remain
 separate. This is not latest-upstream/full-native/overall SDK qualification.
 
+## Fresh pinned Legacy consumer through merged CLI (2026-10-15)
+
+The [Legacy merged-CLI receipt](tests/evidence/legacy-merged-cli-restart-20261015.json)
+records fresh execution of pinned `hello-legacy-grpc`, not a relabeling of its
+historical acceptance. Locked/offline bins build and strict all-target Clippy
+passed. Three scoped `result_large_err` allowances preserve the existing
+Tonic `Status` ABI in the two generated transport modules and one handwritten
+salutation function; no signatures, wire behavior or state logic changed.
+
+Normal merged `rbt dev run` used the sample's own `.rbtrc`. Canonical health,
+deprecated/proxy/Reboot services, salutation and direct-workflow refusal passed.
+The serving initializer ran once with ten indexed greetings (three actual
+Reboot writes). A writer call plus same-key replay contributed one further
+write. After complete CLI retirement, app-free native inspection read count
+**4** and the completed initializer's actual task/Stored bytes.
+
+Restarting the same RocksDB/server-info retained the original initializer task
+UUID with no new callback/greetings. The same UUIDv7 writer request returned
+identical response bytes. Proxy calls exercised both branches (one additional
+Reboot write). A second app-free inspection read count **5**, with byte-exact
+original task/Stored equality. Both inspection artifact sets were retained
+and independently rehashed. All **20** direct children joined without adopted
+descendants or cleanup failure; exact attach zero preceded fresh terminal CID
+exit zero/PID zero/no OOM/error and original lock release. Parent also rehashed
+all **3255** frozen source members and **2665** Python overlay files.
+
+The initial strict-lint and duplicate-CLI-option failures remain preserved;
+only fresh corrected execution passed. This is the bounded rich-consumer
+happy/restart gate on the qualified frozen merged snapshot, not renewed
+Legacy crash/ACK-window certification, current-upstream native build, full
+Bank/shared/public or overall SDK parity.
+
 ## Actual fresh scaffold hot reload and durable restart (2026-10-15)
 
 The [scaffold runtime receipt](tests/evidence/cli-scaffold-watch-restart-20261015.json)
@@ -4876,7 +4908,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: a4b0ef644d9af01c57583beff058dc7a2533a43a29577856998e8b0eb84c7498 -->
+<!-- parity-source-sha256: 488120f195ef69379f64fd40afd97f39308916a8f14e08c9c3d576dbb8efdcd8 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

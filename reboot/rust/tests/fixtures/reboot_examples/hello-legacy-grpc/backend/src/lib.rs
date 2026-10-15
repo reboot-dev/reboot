@@ -3,9 +3,13 @@ use rand::Rng;
 use reboot::legacy_grpc::{LegacyGrpcContext, LegacyGrpcDirectory};
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
+// Generated Tonic transport signatures retain tonic::Status, matching the SDK ABI policy.
+#[allow(clippy::result_large_err)]
 pub mod proto {
     tonic::include_proto!("hello_legacy_grpc.v1");
 }
+// Generated Reboot adapters retain the same tonic::Status transport contract.
+#[allow(clippy::result_large_err)]
 pub mod generated {
     include!(concat!(
         env!("OUT_DIR"),
@@ -84,6 +88,8 @@ pub struct RebootGreeter {
     pub directory: Arc<LegacyGrpcDirectory>,
 }
 impl RebootGreeter {
+    // Preserve the tonic::Status error API used by the generated service handlers.
+    #[allow(clippy::result_large_err)]
     async fn salutation(&self) -> Result<proto::GetSalutationResponse, Status> {
         let channel = self.directory.channel(DEPRECATED).await?;
         Ok(
