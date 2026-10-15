@@ -1,0 +1,222 @@
+{
+  "scope": "SDK/generated registered taskless constructor-child and pre-Allow denial cleanup checkpoint; not native/public/full-parity acceptance",
+  "source_manifest_sha256": "c2a9a9b375caef87bae49d8989beaabfdf53658d1d1a5eebe41a104fad892c0f",
+  "source_members": 405,
+  "published_files_sha256": {
+    "reboot/rust/src/codegen.rs": "d4b5ee61b3cb7032b7d71a349f6041f5ac2239c3defe391e8897f3a5375d21d3",
+    "reboot/rust/src/durable_participant.rs": "944ed6beecd5823a47cd627eceda2fe50b0d18bd5154ac29687739d36c644ec9",
+    "reboot/rust/src/explicit_abort.rs": "2c4f7e85195b438b58652e4e0a287d5de3d4c3f1ae13e7bfccf40766c380f63e",
+    "reboot/rust/src/shared_root_slot_tests.rs": "96019d7f90b73aeb62ccee5df134af446b6561a3857e7738a099ff62870d12b5",
+    "reboot/rust/src/constructor_child_tests.rs": "fdd050a9b44b098311130490efeee371998fd633372a0139180fff822bcd950c",
+    "reboot/rust/tests/protoc_plugin_counter.rs": "6a5715296ef1f6d3030f37491d07ed297f46bad32b10c66026bac9c0c2a1258d",
+    "reboot/rust/tests/fixtures/generated_constructor_child.rs": "defdf90ebd9d41a87770c1c6084aff29ddcb41665279cb59e2a41ad65b7fb926"
+  },
+  "phases": [
+    {
+      "name": "lib-support",
+      "kind": "test",
+      "argv": [
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/toolchain/bin/cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--manifest-path",
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustSDK395-20261015/source/reboot/rust/Cargo.toml",
+        "--lib",
+        "--features",
+        "test-support"
+      ],
+      "exit": 0,
+      "counts": [
+        [
+          "ok",
+          "653",
+          "0",
+          "6"
+        ]
+      ],
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustSDK395-20261015/runtime/lib-support.log",
+      "sha256": "ab258486c2b79e004f015cc03614fda4fb4cf364525ab7cd09252f15a4c8cda6"
+    },
+    {
+      "name": "protoc_plugin_counter",
+      "kind": "test",
+      "argv": [
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/toolchain/bin/cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--manifest-path",
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustSDK395-20261015/source/reboot/rust/Cargo.toml",
+        "--test",
+        "protoc_plugin_counter",
+        "--features",
+        "test-support"
+      ],
+      "exit": 0,
+      "counts": [
+        [
+          "ok",
+          "53",
+          "0",
+          "0"
+        ],
+        [
+          "ok",
+          "0",
+          "0",
+          "0"
+        ],
+        [
+          "ok",
+          "1",
+          "0",
+          "0"
+        ],
+        [
+          "ok",
+          "0",
+          "0",
+          "0"
+        ],
+        [
+          "ok",
+          "5",
+          "0",
+          "0"
+        ]
+      ],
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustSDK395-20261015/runtime/protoc_plugin_counter.log",
+      "sha256": "4f832cd36928fd364c2d4735f898522321d39cd58da80773cb85023dea68c017"
+    },
+    {
+      "name": "sdk-clippy",
+      "kind": "clippy",
+      "argv": [
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/toolchain/bin/cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "--manifest-path",
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustSDK395-20261015/source/reboot/rust/Cargo.toml",
+        "--all-targets",
+        "--features",
+        "test-support",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "counts": [],
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustSDK395-20261015/runtime/sdk-clippy.log",
+      "sha256": "bf29df868d7f3e30fe3b69cd146a82455065c15f36030401f24d8edab6685c61"
+    }
+  ],
+  "exact_cid": "b480cd890a0e795390d010dd0a1bc33789d5df32c3fdd70752258c28f37dc016",
+  "attach_kernel_wait": {
+    "pid": 1352774,
+    "birth": "89597776",
+    "si_code": 1,
+    "si_status": 0,
+    "exit": 0,
+    "joined": true
+  },
+  "container_state": {
+    "Status": "exited",
+    "Running": false,
+    "Paused": false,
+    "Restarting": false,
+    "OOMKilled": false,
+    "Dead": false,
+    "Pid": 0,
+    "ExitCode": 0,
+    "Error": "",
+    "StartedAt": "2026-10-15T14:50:52.932147752Z",
+    "FinishedAt": "2026-10-15T14:53:58.999383875Z"
+  },
+  "custody": {
+    "direct": [
+      {
+        "pid": 7,
+        "birth": "89597857",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/toolchain/bin/cargo",
+          "test",
+          "--locked",
+          "--offline",
+          "--manifest-path",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustSDK395-20261015/source/reboot/rust/Cargo.toml",
+          "--lib",
+          "--features",
+          "test-support"
+        ],
+        "fd_identity": [
+          6,
+          1346367
+        ]
+      },
+      {
+        "pid": 839,
+        "birth": "89604337",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/toolchain/bin/cargo",
+          "test",
+          "--locked",
+          "--offline",
+          "--manifest-path",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustSDK395-20261015/source/reboot/rust/Cargo.toml",
+          "--test",
+          "protoc_plugin_counter",
+          "--features",
+          "test-support"
+        ],
+        "fd_identity": [
+          6,
+          1361008
+        ]
+      },
+      {
+        "pid": 1229,
+        "birth": "89614464",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/toolchain/bin/cargo",
+          "clippy",
+          "--locked",
+          "--offline",
+          "--manifest-path",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustSDK395-20261015/source/reboot/rust/Cargo.toml",
+          "--all-targets",
+          "--features",
+          "test-support",
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "fd_identity": [
+          6,
+          1347500
+        ]
+      }
+    ],
+    "adopted": [],
+    "cleanup_failure": null
+  },
+  "source_review": "Conditional SOURCE PASS; /tmp/reboot-rust-prepublication395-review.md",
+  "remaining": [
+    "D2 capability/version preflight before taskful retained admission",
+    "Current native/public constructor/task and reboot-examples acceptance",
+    "A2 cancellation/private-slot/factory/full-wire matrix",
+    "Uncompiled registered_constructor_child_native fixture excluded from this commit"
+  ],
+  "examples_pinned_revision": "5c332a2910122d6035799bfaf2a314bf1de830b8",
+  "examples_source_provenance": "13 manifest inputs and all14 Constructor/Tasks scenario files match pinned upstream; source comparison only"
+}

@@ -15,11 +15,13 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//reboot:settings_cc",
+        "@googleapis//google/rpc:status_cc_proto",
         "@com_github_3rdparty_stout//:stout",
         "@com_github_facebook_rocksdb//:rocksdb",
         "@com_github_fmtlib_fmt//:fmt",
         "@com_github_google_glog//:glog",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:database_cc_grpc",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:native_2pc_cc_grpc",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_cc_proto",
         "@com_github_tl_expected//:expected",
     ],

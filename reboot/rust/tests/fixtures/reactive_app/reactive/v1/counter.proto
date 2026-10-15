@@ -1,0 +1,15 @@
+syntax = "proto3";
+package reactive.v1;
+import "rbt/v1alpha1/options.proto";
+message Counter { option (rbt.v1alpha1.state) = { implements: ["reactive.v1.CounterMethods"] }; int64 value = 1; }
+message Empty {}
+message Add { int64 amount = 1; bool fail = 2; }
+message Value { int64 value = 1; bytes padding = 2; }
+message Refused { int64 value = 1; }
+service CounterMethods {
+ option (rbt.v1alpha1.service) = {state: "reactive.v1.Counter"};
+ rpc Create(Empty) returns (Empty) { option (rbt.v1alpha1.method) = {writer: {constructor: {}}}; }
+ rpc Increment(Add) returns (Value) { option (rbt.v1alpha1.method) = {writer: {} errors: ".reactive.v1.Refused"}; }
+ rpc Query(Empty) returns (Value) { option (rbt.v1alpha1.method) = {reader: {}}; }
+ rpc Refuse(Empty) returns (Value) { option (rbt.v1alpha1.method) = {reader: {} errors: ".reactive.v1.Refused"}; }
+}

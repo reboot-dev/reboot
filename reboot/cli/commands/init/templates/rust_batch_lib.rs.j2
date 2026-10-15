@@ -1,0 +1,1359 @@
+use reboot::{
+    one_shot_tasks::WorkflowContext,
+    runtime::{TransactionContext, TransactionExecution},
+};
+use std::sync::Arc;
+pub mod proto {
+    tonic::include_proto!("{{ name }}.v1");
+}
+pub mod generated {
+    include!(concat!(env!("OUT_DIR"), "/{{ name }}/v1/batch.reboot.rs"));
+}
+pub mod generated_map {
+    include!(concat!(
+        env!("OUT_DIR"),
+        "/rbt/std/collections/v1/sorted_map.reboot.rs"
+    ));
+}
+pub mod host;
+pub const STATE_TYPE: &str = "{{ name }}.v1.Ledger";
+pub fn reference() -> Result<String, Box<dyn std::error::Error>> {
+    Ok(reboot::state_ref::StateRef::from_id(STATE_TYPE, "ledger")?.to_string())
+}
+fn valid_groups(count: u32, group_size: u32) -> bool {
+    group_size == 0 || (group_size <= count && count.is_multiple_of(group_size))
+}
+#[allow(clippy::result_large_err)]
+fn validate_batch(batch: &str, count: u32) -> Result<(), tonic::Status> {
+    if batch.is_empty()
+        || batch.len() > 48
+        || !batch
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || c == b'-')
+        || count == 0
+        || count > 100
+    {
+        return Err(tonic::Status::invalid_argument(
+            "batch must be bounded ASCII; count must be 1..100",
+        ));
+    }
+    Ok(())
+}
+/// Append-only handler entries are visible in the normal rbt host log.
+fn event(name: &str) {
+    eprintln!("batch-ledger-handler {name}");
+}
+#[derive(Clone)]
+pub struct Ledger;
+#[tonic::async_trait]
+impl generated::LedgerWorkMethodsDatabaseHandler for Ledger {
+    async fn create(
+        &self,
+        _: &mut proto::Ledger,
+        _: proto::Empty,
+    ) -> Result<proto::Empty, tonic::Status> {
+        Ok(proto::Empty {})
+    }
+    async fn observe(
+        &self,
+        state: &proto::Ledger,
+        _: proto::Empty,
+    ) -> Result<proto::Ledger, tonic::Status> {
+        Ok(state.clone())
+    }
+    async fn submit_batch(
+        &self,
+        _: &mut proto::Ledger,
+        _: proto::Submit,
+    ) -> Result<proto::Handle, tonic::Status> {
+        Err(tonic::Status::failed_precondition(
+            "requires generated scheduling writer",
+        ))
+    }
+    async fn submit_batch_scheduled(
+        &self,
+        state: &mut proto::Ledger,
+        request: proto::Submit,
+        state_ref: String,
+    ) -> Result<TransactionExecution<proto::Handle>, tonic::Status> {
+        validate_batch(&request.batch, request.count)?;
+        if !valid_groups(request.count, request.group_size) {
+            return Err(tonic::Status::invalid_argument(
+                "group size must divide the bounded count",
+            ));
+        }
+        if request.stop_enabled && request.not_before != 0 {
+            return Err(tonic::Status::invalid_argument(
+                "cooperative stop requires an immediate batch",
+            ));
+        }
+        if state.completed < state.count
+            && !state.rejected
+            && !state.stopped
+            && !state.decision_finished
+        {
+            return Err(tonic::Status::failed_precondition("previous batch pending"));
+        }
+        if request.break_after > request.count
+            || (request.break_after != 0
+                && (request.stop_enabled || request.reject_step || request.reject_after != 0))
+        {
+            return Err(tonic::Status::invalid_argument(
+                "finite break threshold exceeds count or conflicts with stop/rejection",
+            ));
+        }
+        if request.reject_after > request.count {
+            return Err(tonic::Status::invalid_argument(
+                "reject_after exceeds count",
+            ));
+        }
+        let timestamp = (request.not_before != 0).then_some(prost_types::Timestamp {
+            seconds: request.not_before,
+            nanos: 0,
+        });
+        let task = generated::LedgerWorkMethodsTasks::run_batch(&state_ref, &request, timestamp);
+        let id = task
+            .task_id
+            .as_ref()
+            .ok_or_else(|| tonic::Status::internal("missing generated task identity"))?
+            .task_uuid
+            .clone();
+        state.batch = request.batch;
+        state.count = request.count;
+        state.approved = 0;
+        state.completed = 0;
+        state.rejected = false;
+        state.stop_enabled = request.stop_enabled;
+        state.stop_requested = false;
+        state.stopped = false;
+        state.decision_finished = false;
+        state.break_after = request.break_after;
+        state.audit_mismatch = false;
+        state.audit_requested = request.audit_batch;
+        state.workflow_id = if request.stop_enabled {
+            id.clone()
+        } else {
+            Vec::new()
+        };
+        state.submissions += 1;
+        let mut execution = TransactionExecution::new(proto::Handle { id });
+        execution.task_upserts.push(task);
+        Ok(execution)
+    }
+    async fn observe_batch(
+        &self,
+        state: &proto::Ledger,
+        request: proto::Batch,
+    ) -> Result<proto::Ledger, generated::LedgerWorkMethodsObserveBatchError> {
+        if !state.audit_requested.is_empty() {
+            event("reader-audit-observe");
+        }
+        if !request.batch.is_empty() && request.batch != state.batch {
+            return Err(
+                generated::LedgerWorkMethodsObserveBatchError::BatchMismatch(
+                    proto::BatchMismatch {
+                        expected: request.batch,
+                        actual: state.batch.clone(),
+                    },
+                ),
+            );
+        }
+        Ok(state.clone())
+    }
+
+    async fn stop_batch(
+        &self,
+        state: &mut proto::Ledger,
+        request: proto::StopRequest,
+    ) -> Result<proto::Ledger, generated::LedgerWorkMethodsStopBatchError> {
+        let reason = if request.batch != state.batch {
+            Some("batch identity mismatch")
+        } else if !state.stop_enabled {
+            Some("batch did not opt into cooperative stop")
+        } else if request.task_id.len() != 16 || request.task_id != state.workflow_id {
+            Some("workflow identity mismatch")
+        } else if state.rejected || state.count == 0 || state.completed >= state.count {
+            Some("batch already finished")
+        } else {
+            None
+        };
+        if let Some(reason) = reason {
+            return Err(generated::LedgerWorkMethodsStopBatchError::StopDenied(
+                proto::StopDenied {
+                    batch: request.batch,
+                    reason: reason.into(),
+                },
+            ));
+        }
+        if !state.stop_requested {
+            event(&format!("stop-request-{}", request.batch));
+        }
+        state.stop_requested = true;
+        Ok(state.clone())
+    }
+    async fn record_audit(
+        &self,
+        state: &mut proto::Ledger,
+        request: proto::BatchMismatch,
+    ) -> Result<proto::Ledger, tonic::Status> {
+        if state.batch != request.actual
+            || state.audit_requested != request.expected
+            || request.actual == request.expected
+            || state.audit_mismatch
+        {
+            return Err(tonic::Status::failed_precondition(
+                "audit identity mismatch or already recorded",
+            ));
+        }
+        event("reader-audit-fallback");
+        state.audit_mismatch = true;
+        Ok(state.clone())
+    }
+    async fn record_audit_scheduled(
+        &self,
+        _: &mut proto::Ledger,
+        _: proto::BatchMismatch,
+        _: String,
+    ) -> Result<TransactionExecution<proto::Ledger>, tonic::Status> {
+        Err(tonic::Status::permission_denied(
+            "audit continuation requires private workflow authority",
+        ))
+    }
+    async fn finish_decision(
+        &self,
+        state: &mut proto::Ledger,
+        request: proto::Step,
+    ) -> Result<proto::Ledger, tonic::Status> {
+        if state.batch != request.batch
+            || state.break_after == 0
+            || state.completed != state.break_after
+            || request.index != state.completed
+            || state.decision_finished
+            || state.rejected
+            || state.stop_enabled
+            || request.reject
+        {
+            return Err(tonic::Status::failed_precondition(
+                "finite decision finalizer identity/progress mismatch",
+            ));
+        }
+        event(&format!("after-loop-{}-{}", request.batch, request.index));
+        state.decision_finished = true;
+        Ok(state.clone())
+    }
+    async fn finish_decision_scheduled(
+        &self,
+        _: &mut proto::Ledger,
+        _: proto::Step,
+        _: String,
+    ) -> Result<TransactionExecution<proto::Ledger>, tonic::Status> {
+        Err(tonic::Status::permission_denied(
+            "finite decision finalizer requires private workflow authority",
+        ))
+    }
+    async fn finish_stopped(
+        &self,
+        state: &mut proto::Ledger,
+        request: proto::Step,
+    ) -> Result<proto::Ledger, tonic::Status> {
+        if !state.stop_enabled
+            || !state.stop_requested
+            || state.stopped
+            || state.rejected
+            || state.batch != request.batch
+            || state.completed != request.index
+            || request.index >= state.count
+            || request.reject
+        {
+            return Err(tonic::Status::failed_precondition(
+                "stop checkpoint identity or control mismatch",
+            ));
+        }
+        event(&format!(
+            "finish-stopped-{}-{}",
+            request.batch, request.index
+        ));
+        state.stopped = true;
+        Ok(state.clone())
+    }
+    async fn finish_stopped_scheduled(
+        &self,
+        _: &mut proto::Ledger,
+        _: proto::Step,
+        _: String,
+    ) -> Result<TransactionExecution<proto::Ledger>, tonic::Status> {
+        Err(tonic::Status::permission_denied(
+            "stop completion requires private workflow authority",
+        ))
+    }
+    async fn try_checkpoint(
+        &self,
+        state: &mut proto::Ledger,
+        request: proto::Step,
+    ) -> Result<proto::Ledger, generated::LedgerWorkMethodsTryCheckpointError> {
+        if state.batch != request.batch
+            || state.completed != request.index
+            || state.approved <= request.index
+        {
+            return Err(tonic::Status::failed_precondition(
+                "try checkpoint identity or approval mismatch",
+            )
+            .into());
+        }
+        event(&format!(
+            "try-checkpoint-{}-{}",
+            request.batch, request.index
+        ));
+        // The rejected handler deliberately changes its tentative local copy.
+        // A declared outcome must persist only its decision, never this state.
+        state.completed += 1;
+        if request.reject {
+            state.rejected = true;
+            return Err(
+                generated::LedgerWorkMethodsTryCheckpointError::StepRejected(proto::StepRejected {
+                    batch: request.batch,
+                    index: request.index,
+                    reason: "writer declined tentative checkpoint".into(),
+                }),
+            );
+        }
+        Ok(state.clone())
+    }
+    async fn try_checkpoint_scheduled(
+        &self,
+        _: &mut proto::Ledger,
+        _: proto::Step,
+        _: String,
+    ) -> Result<TransactionExecution<proto::Ledger>, generated::LedgerWorkMethodsTryCheckpointError>
+    {
+        Err(
+            tonic::Status::permission_denied("try checkpoint requires private workflow authority")
+                .into(),
+        )
+    }
+    async fn checkpoint(
+        &self,
+        state: &mut proto::Ledger,
+        request: proto::Step,
+    ) -> Result<proto::Ledger, tonic::Status> {
+        if state.rejected
+            || state.batch != request.batch
+            || state.completed != request.index
+            || state.approved <= request.index
+        {
+            return Err(tonic::Status::failed_precondition(
+                "checkpoint identity or approval mismatch",
+            ));
+        }
+        event(&format!("checkpoint-{}-{}", request.batch, request.index));
+        state.completed += 1;
+        state.rejected = request.reject;
+        Ok(state.clone())
+    }
+    // Ordinary public Checkpoint RPCs use this scheduling hook. Only the private
+    // workflow-step binding invokes checkpoint directly with dispatcher authority.
+    async fn checkpoint_scheduled(
+        &self,
+        _: &mut proto::Ledger,
+        _: proto::Step,
+        _: String,
+    ) -> Result<TransactionExecution<proto::Ledger>, tonic::Status> {
+        Err(tonic::Status::permission_denied(
+            "checkpoint requires private workflow authority",
+        ))
+    }
+    async fn run_batch(
+        &self,
+        context: &WorkflowContext<'_>,
+        request: proto::Submit,
+    ) -> Result<proto::Ledger, generated::LedgerWorkMethodsRunBatchError> {
+        validate_batch(&request.batch, request.count)?;
+        if !valid_groups(request.count, request.group_size) {
+            return Err(tonic::Status::invalid_argument(
+                "group size must divide the bounded count",
+            )
+            .into());
+        }
+        if request.break_after > request.count
+            || (request.break_after != 0
+                && (request.stop_enabled || request.reject_step || request.reject_after != 0))
+        {
+            return Err(tonic::Status::invalid_argument(
+                "finite break threshold exceeds count or conflicts with stop/rejection",
+            )
+            .into());
+        }
+        if request.reject_after > request.count {
+            return Err(tonic::Status::invalid_argument("reject_after exceeds count").into());
+        }
+        event(&format!("body-{}", request.batch));
+        if !request.audit_batch.is_empty() {
+            match generated::LedgerWorkMethodsWorkflowSteps::observe_batch_try_until(
+                context,
+                Arc::new(self.clone()),
+                "audit-reader",
+                "audit-batch-identity.v1",
+                proto::Batch {
+                    batch: request.audit_batch.clone(),
+                },
+                |_| true,
+            )
+            .await
+            {
+                Ok(_) => {}
+                Err(generated::LedgerWorkMethodsObserveBatchError::BatchMismatch(error)) => {
+                    event("reader-audit-caught");
+                    if let Some(path) = std::env::var_os("RBT_RUST_READER_AUDIT_PROBE") {
+                        let path = std::path::PathBuf::from(path);
+                        std::fs::write(&path, b"declared reader error saved; fallback not entered")
+                            .map_err(|e| tonic::Status::internal(e.to_string()))?;
+                        while !path.with_extension("release").exists() {
+                            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                        }
+                    }
+                    generated::LedgerWorkMethodsWorkflowSteps::record_audit(
+                        context,
+                        Arc::new(self.clone()),
+                        "audit-fallback",
+                        error,
+                    )
+                    .await?;
+                }
+                Err(generated::LedgerWorkMethodsObserveBatchError::Grpc(error)) => {
+                    return Err(error.into());
+                }
+            }
+        }
+        let mut result = proto::Ledger::default();
+        let groups = request.count.checked_div(request.group_size).unwrap_or(1);
+        let items = if request.group_size == 0 {
+            request.count
+        } else {
+            request.group_size
+        };
+        'groups: for group_index in 0..groups {
+            for item_index in 0..items {
+                let index = group_index * items + item_index;
+                // Explicit two-level finite composition. Reconstruct the parent on
+                // replay; a reused inner index in another group has a distinct key.
+                let group;
+                let iteration = if request.group_size == 0 {
+                    context.iteration("batch-v1", u64::from(index), u64::from(request.count))?
+                } else {
+                    group = context.iteration(
+                        "batch-groups-v1",
+                        u64::from(group_index),
+                        u64::from(groups),
+                    )?;
+                    group.iteration(
+                        "group-items-v1",
+                        u64::from(item_index),
+                        u64::from(request.group_size),
+                    )?
+                };
+                let batch = request.batch.clone();
+                let stop_enabled = request.stop_enabled;
+                let observed = generated::LedgerWorkMethodsWorkflowSteps::observe_batch_until(
+                    &iteration,
+                    Arc::new(self.clone()),
+                    "approval",
+                    if stop_enabled {
+                        "approved-or-stop.v1"
+                    } else {
+                        "approved-through-index.v1"
+                    },
+                    proto::Batch { batch },
+                    move |state| state.approved > index || (stop_enabled && state.stop_requested),
+                )
+                .await?;
+                if stop_enabled && observed.stop_requested {
+                    return Ok(generated::LedgerWorkMethodsWorkflowSteps::finish_stopped(
+                        &iteration,
+                        Arc::new(self.clone()),
+                        "stop",
+                        proto::Step {
+                            batch: request.batch.clone(),
+                            index,
+                            reject: false,
+                        },
+                    )
+                    .await?);
+                }
+                if request.reject_step && index == 0 {
+                    match generated::LedgerWorkMethodsWorkflowSteps::try_checkpoint(
+                        &iteration,
+                        Arc::new(self.clone()),
+                        "try-complete",
+                        proto::Step {
+                            batch: request.batch.clone(),
+                            index,
+                            reject: true,
+                        },
+                    )
+                    .await
+                    {
+                        Err(generated::LedgerWorkMethodsTryCheckpointError::StepRejected(
+                            error,
+                        )) if error.batch == request.batch && error.index == index => {
+                            event(&format!("caught-step-{}-{}", error.batch, error.index));
+                        }
+                        Err(generated::LedgerWorkMethodsTryCheckpointError::Grpc(error)) => {
+                            return Err(error.into());
+                        }
+                        _ => {
+                            return Err(tonic::Status::data_loss(
+                                "unexpected tentative checkpoint outcome",
+                            )
+                            .into());
+                        }
+                    }
+                }
+                result = generated::LedgerWorkMethodsWorkflowSteps::checkpoint(
+                    &iteration,
+                    Arc::new(self.clone()),
+                    "complete",
+                    proto::Step {
+                        batch: request.batch.clone(),
+                        index,
+                        reject: request.reject_after == index + 1,
+                    },
+                )
+                .await?;
+                if request.break_after != 0 {
+                    let threshold = request.break_after;
+                    let decision = generated::LedgerWorkMethodsWorkflowSteps::observe_batch_decide(
+                        &iteration,
+                        Arc::new(self.clone()),
+                        "control",
+                        "completed-at-threshold.v1",
+                        proto::Batch {
+                            batch: request.batch.clone(),
+                        },
+                        move |state| state.completed >= threshold,
+                    )
+                    .await?;
+                    match decision {
+                        std::ops::ControlFlow::Continue(_) => {}
+                        std::ops::ControlFlow::Break(_) => {
+                            break 'groups;
+                        }
+                    }
+                }
+                if result.rejected {
+                    return Err(generated::LedgerWorkMethodsRunBatchError::BatchRejected(
+                        proto::BatchRejected {
+                            batch: request.batch.clone(),
+                            completed: result.completed,
+                            reason: "rejected after acknowledged checkpoint".into(),
+                        },
+                    ));
+                }
+            }
+        }
+        if request.break_after != 0 {
+            result = generated::LedgerWorkMethodsWorkflowSteps::finish_decision(
+                context,
+                Arc::new(self.clone()),
+                "after-loop",
+                proto::Step {
+                    batch: request.batch,
+                    index: result.completed,
+                    reject: false,
+                },
+            )
+            .await?;
+        }
+        Ok(result)
+    }
+}
+fn archive_rejection(key: String, reason: &str) -> tonic::Status {
+    // Preserve the existing Status handler contract; the generated typed
+    // transaction-result hook validates this method-scoped declared envelope.
+    reboot::declared_error_status(
+        tonic::Code::Unknown,
+        reason,
+        "type.googleapis.com/{{ name }}.v1.ArchiveRejected",
+        &proto::ArchiveRejected {
+            key,
+            reason: reason.into(),
+        },
+    )
+}
+fn increment_archive_count(state: &mut proto::Ledger) -> Result<(), Box<tonic::Status>> {
+    state.archived = state
+        .archived
+        .checked_add(1)
+        .ok_or_else(|| Box::new(tonic::Status::resource_exhausted("archive count overflow")))?;
+    Ok(())
+}
+pub struct Index {
+    pub map: generated_map::SortedMap,
+    pub archive: generated_map::SortedMap,
+}
+#[tonic::async_trait]
+impl generated::LedgerIndexMethodsTransactionHandler for Index {
+    async fn approval_snapshot(
+        &self,
+        state: &proto::Ledger,
+        request: proto::Batch,
+    ) -> Result<proto::Ledger, generated::LedgerIndexMethodsApprovalSnapshotError> {
+        if !request.batch.is_empty() && request.batch != state.batch {
+            return Err(
+                generated::LedgerIndexMethodsApprovalSnapshotError::BatchMismatch(
+                    proto::BatchMismatch {
+                        expected: request.batch,
+                        actual: state.batch.clone(),
+                    },
+                ),
+            );
+        }
+        Ok(state.clone())
+    }
+    async fn approve(
+        &self,
+        context: &TransactionContext,
+        state: &mut proto::Ledger,
+        request: proto::Approval,
+    ) -> Result<TransactionExecution<proto::Ledger>, tonic::Status> {
+        if state.rejected
+            || state.stop_requested
+            || state.stopped
+            || state.decision_finished
+            || (state.break_after != 0 && request.index >= state.break_after)
+            || state.batch != request.batch
+            || request.index != state.approved
+            || request.index >= state.count
+        {
+            return Err(tonic::Status::invalid_argument(
+                "approval must be the next active batch index",
+            ));
+        }
+        let guard = self.map.in_transaction(context).await?;
+        guard
+            .insert(reboot::sorted_map_proto::InsertRequest {
+                entries: [(format!("{}:{:04}", request.batch, request.index), vec![])].into(),
+            })
+            .await?;
+        state.approved += 1;
+        if request.invalid_range {
+            // Catch deliberately: the nested failure must still doom the whole root.
+            guard
+                .range(reboot::sorted_map_proto::RangeRequest {
+                    limit: 0,
+                    ..Default::default()
+                })
+                .await
+                .expect_err("invalid range accepted");
+        }
+        Ok(TransactionExecution::new(state.clone()))
+    }
+    async fn archive_entry(
+        &self,
+        context: &TransactionContext,
+        state: &mut proto::Ledger,
+        request: proto::ArchiveRequest,
+    ) -> Result<TransactionExecution<proto::ArchiveResult>, tonic::Status> {
+        // Serial, handler-awaited admission of two distinct map actors. Do not
+        // escape/spawn any of these sessions/futures. Serial root-owned reuse is safe.
+        let source = self.map.in_transaction(context).await?;
+        let value = source
+            .get(reboot::sorted_map_proto::GetRequest {
+                key: request.key.clone(),
+            })
+            .await?
+            .value;
+        let Some(value) = value else {
+            return Err(archive_rejection(request.key, "source entry is absent"));
+        };
+        let destination = self.archive.in_transaction(context).await?;
+        if destination
+            .get(reboot::sorted_map_proto::GetRequest {
+                key: request.key.clone(),
+            })
+            .await?
+            .value
+            .is_some()
+        {
+            return Err(archive_rejection(
+                request.key,
+                "archive entry already exists",
+            ));
+        }
+        // Some(empty) is an existing value, not a missing entry.
+        source
+            .remove(reboot::sorted_map_proto::RemoveRequest {
+                keys: vec![request.key.clone()],
+            })
+            .await?;
+        destination
+            .insert(reboot::sorted_map_proto::InsertRequest {
+                entries: [(request.key.clone(), value.clone())].into(),
+            })
+            .await?;
+        if source
+            .get(reboot::sorted_map_proto::GetRequest {
+                key: request.key.clone(),
+            })
+            .await?
+            .value
+            .is_some()
+            || destination
+                .get(reboot::sorted_map_proto::GetRequest {
+                    key: request.key.clone(),
+                })
+                .await?
+                .value
+                != Some(value.clone())
+        {
+            return Err(tonic::Status::data_loss(
+                "archive read-own-writes did not preserve exact presence/value",
+            ));
+        }
+        increment_archive_count(state).map_err(|error| *error)?;
+        if request.invalid_range {
+            // A caught map failure after touching BOTH actors must doom ALL
+            // enrolled participants and discard the tentative app increment.
+            destination
+                .range(reboot::sorted_map_proto::RangeRequest {
+                    limit: 0,
+                    ..Default::default()
+                })
+                .await
+                .expect_err("invalid archive range accepted");
+        }
+        Ok(TransactionExecution::new(proto::ArchiveResult {
+            key: request.key,
+            value,
+            archived: state.archived,
+        }))
+    }
+    async fn archive_entries(
+        &self,
+        context: &TransactionContext,
+        state: &mut proto::Ledger,
+        request: proto::ArchiveEntriesRequest,
+    ) -> Result<TransactionExecution<proto::ArchiveEntriesResult>, tonic::Status> {
+        validate_archive_keys(&request.keys).map_err(|error| *error)?;
+        let mut entries = Vec::with_capacity(request.keys.len());
+        let last = request.keys.len() - 1;
+        for (index, key) in request.keys.into_iter().enumerate() {
+            // Reopens each map per logical transfer, reusing the exact native
+            // root participant. No independent child commits or compensations.
+            let moved = self
+                .archive_entry(
+                    context,
+                    state,
+                    proto::ArchiveRequest {
+                        key,
+                        invalid_range: request.invalid_range && index == last,
+                    },
+                )
+                .await?;
+            entries.push(moved.response);
+        }
+        Ok(TransactionExecution::new(proto::ArchiveEntriesResult {
+            entries,
+            archived: state.archived,
+        }))
+    }
+    async fn history_page(
+        &self,
+        context: &TransactionContext,
+        _: &mut proto::Ledger,
+        request: proto::HistoryPageRequest,
+    ) -> Result<TransactionExecution<proto::HistoryPageResult>, tonic::Status> {
+        let map = if request.archive {
+            &self.archive
+        } else {
+            &self.map
+        };
+        let session = map.in_transaction(context).await?;
+        let page = session
+            .page(reboot::sorted_map::PageRequest {
+                start_key: request.start_key,
+                end_key: request.end_key,
+                reverse: request.reverse,
+                limit: request.limit,
+                continuation: request.continuation,
+            })
+            .await?;
+        Ok(TransactionExecution::new(proto::HistoryPageResult {
+            entries: page
+                .entries
+                .into_iter()
+                .map(|entry| proto::HistoryPageEntry {
+                    key: entry.key,
+                    value: entry.value,
+                })
+                .collect(),
+            continuation: page.continuation,
+        }))
+    }
+    async fn archive_history(
+        &self,
+        context: &TransactionContext,
+        _: &mut proto::Ledger,
+        request: proto::Batch,
+    ) -> Result<TransactionExecution<proto::HistoryResult>, tonic::Status> {
+        validate_batch(&request.batch, 1)?;
+        let session = self.archive.in_transaction(context).await?;
+        let range = session
+            .range(reboot::sorted_map_proto::RangeRequest {
+                start_key: Some(format!("{}:", request.batch)),
+                end_key: Some(format!("{};", request.batch)),
+                limit: 100,
+            })
+            .await?;
+        Ok(TransactionExecution::new(proto::HistoryResult {
+            keys: range.entries.into_iter().map(|entry| entry.key).collect(),
+        }))
+    }
+    async fn history(
+        &self,
+        context: &TransactionContext,
+        _: &mut proto::Ledger,
+        request: proto::Batch,
+    ) -> Result<TransactionExecution<proto::HistoryResult>, tonic::Status> {
+        validate_batch(&request.batch, 1)?;
+        let guard = self.map.in_transaction(context).await?;
+        let range = guard
+            .range(reboot::sorted_map_proto::RangeRequest {
+                start_key: Some(format!("{}:", request.batch)),
+                end_key: Some(format!("{};", request.batch)),
+                limit: 100,
+            })
+            .await?;
+        Ok(TransactionExecution::new(proto::HistoryResult {
+            keys: range.entries.into_iter().map(|entry| entry.key).collect(),
+        }))
+    }
+}
+fn validate_archive_keys(keys: &[String]) -> Result<(), Box<tonic::Status>> {
+    if keys.is_empty() || keys.len() > 100 {
+        return Err(Box::new(archive_rejection(
+            String::new(),
+            "archive requires 1..=100 keys",
+        )));
+    }
+    let mut unique = std::collections::BTreeSet::new();
+    for key in keys {
+        if key.is_empty() || !unique.insert(key) {
+            return Err(Box::new(archive_rejection(
+                key.clone(),
+                "archive keys must be nonempty and unique",
+            )));
+        }
+    }
+    Ok(())
+}
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn grouped_counts_are_explicit_divisors_or_legacy_zero() {
+        assert!(super::valid_groups(4, 2));
+        assert!(super::valid_groups(4, 4));
+        assert!(super::valid_groups(4, 0));
+        assert!(!super::valid_groups(4, 3));
+        assert!(!super::valid_groups(4, 5));
+    }
+    #[test]
+    fn bulk_archive_admission_is_bounded_and_unique() {
+        assert!(super::validate_archive_keys(&[]).is_err());
+        assert!(super::validate_archive_keys(&[String::new()]).is_err());
+        assert!(super::validate_archive_keys(&["entry".into(), "entry".into()]).is_err());
+        assert!(
+            super::validate_archive_keys(&(0..101).map(|i| i.to_string()).collect::<Vec<_>>())
+                .is_err()
+        );
+        assert!(
+            super::validate_archive_keys(&(0..100).map(|i| i.to_string()).collect::<Vec<_>>())
+                .is_ok()
+        );
+    }
+
+    #[tokio::test]
+    async fn audit_fallback_is_private_and_binds_exact_business_payload() {
+        use generated::LedgerWorkMethodsDatabaseHandler as _;
+        let mut state = proto::Ledger {
+            batch: "actual".into(),
+            audit_requested: "expected".into(),
+            ..Default::default()
+        };
+        let error = proto::BatchMismatch {
+            actual: "actual".into(),
+            expected: "expected".into(),
+        };
+        let before = state.clone();
+        assert_eq!(
+            Ledger
+                .record_audit_scheduled(&mut state, error.clone(), "actor".into())
+                .await
+                .err()
+                .unwrap()
+                .code(),
+            tonic::Code::PermissionDenied
+        );
+        assert_eq!(state, before);
+        assert!(
+            Ledger
+                .record_audit(
+                    &mut state,
+                    proto::BatchMismatch {
+                        actual: "other".into(),
+                        ..error.clone()
+                    }
+                )
+                .await
+                .is_err()
+        );
+        assert_eq!(state, before);
+        assert!(
+            Ledger
+                .record_audit(
+                    &mut state,
+                    proto::BatchMismatch {
+                        expected: "other".into(),
+                        ..error.clone()
+                    }
+                )
+                .await
+                .is_err()
+        );
+        assert_eq!(state, before);
+        assert!(
+            Ledger
+                .record_audit(&mut state, error.clone())
+                .await
+                .unwrap()
+                .audit_mismatch
+        );
+        let once = state.clone();
+        assert!(Ledger.record_audit(&mut state, error).await.is_err());
+        assert_eq!(state, once);
+    }
+
+    use super::*;
+    #[test]
+    fn archive_rejection_preserves_method_declared_payload() {
+        use prost::Message;
+        let status = archive_rejection("entry".into(), "source entry is absent");
+        let rich = reboot::declared_error_details(&status).unwrap().unwrap();
+        assert_eq!(status.code(), tonic::Code::Unknown);
+        assert_eq!(rich.details.len(), 1);
+        assert_eq!(
+            rich.details[0].type_url,
+            "type.googleapis.com/{{ name }}.v1.ArchiveRejected"
+        );
+        let rejected = proto::ArchiveRejected::decode(rich.details[0].value.as_slice()).unwrap();
+        assert_eq!(rejected.key, "entry");
+        assert_eq!(rejected.reason, "source entry is absent");
+    }
+    #[test]
+    fn archive_count_is_checked_without_partial_increment() {
+        let mut state = proto::Ledger {
+            archived: 4,
+            ..Default::default()
+        };
+        increment_archive_count(&mut state).unwrap();
+        assert_eq!(state.archived, 5);
+        state.archived = u64::MAX;
+        let before = state.clone();
+        assert_eq!(
+            increment_archive_count(&mut state).unwrap_err().code(),
+            tonic::Code::ResourceExhausted
+        );
+        assert_eq!(state, before);
+    }
+    #[tokio::test]
+    async fn tentative_writer_returns_exact_declared_rejection() {
+        use generated::LedgerWorkMethodsDatabaseHandler;
+        let mut state = proto::Ledger {
+            batch: "batch".into(),
+            count: 2,
+            approved: 1,
+            ..Default::default()
+        };
+        let error = Ledger
+            .try_checkpoint(
+                &mut state,
+                proto::Step {
+                    batch: "batch".into(),
+                    index: 0,
+                    reject: true,
+                },
+            )
+            .await
+            .unwrap_err();
+        match error {
+            generated::LedgerWorkMethodsTryCheckpointError::StepRejected(error) => {
+                assert_eq!(error.batch, "batch");
+                assert_eq!(error.index, 0);
+            }
+            generated::LedgerWorkMethodsTryCheckpointError::Grpc(error) => {
+                panic!("unexpected framework failure {error}")
+            }
+        }
+        // Handler effects are tentative; native Store acceptance proves rollback.
+        assert_eq!(state.completed, 1);
+        assert!(state.rejected);
+    }
+    #[tokio::test]
+    async fn public_checkpoint_cannot_mint_rejection_or_progress() {
+        use generated::LedgerWorkMethodsDatabaseHandler;
+        let original = proto::Ledger {
+            batch: "batch".into(),
+            count: 2,
+            approved: 1,
+            ..Default::default()
+        };
+        for reject in [false, true] {
+            let mut state = original.clone();
+            let error = Ledger
+                .checkpoint_scheduled(
+                    &mut state,
+                    proto::Step {
+                        batch: "batch".into(),
+                        index: 0,
+                        reject,
+                    },
+                    reference().unwrap(),
+                )
+                .await
+                .err()
+                .unwrap();
+            assert_eq!(error.code(), tonic::Code::PermissionDenied);
+            assert_eq!(state, original);
+            let error = Ledger
+                .try_checkpoint_scheduled(
+                    &mut state,
+                    proto::Step {
+                        batch: "batch".into(),
+                        index: 0,
+                        reject: true,
+                    },
+                    reference().unwrap(),
+                )
+                .await
+                .err()
+                .unwrap();
+            assert!(
+                matches!(error,generated::LedgerWorkMethodsTryCheckpointError::Grpc(status) if status.code()==tonic::Code::PermissionDenied)
+            );
+            assert_eq!(state, original);
+        }
+    }
+    #[tokio::test]
+    async fn rejected_checkpoint_preserves_progress_and_allows_next_batch() {
+        use generated::LedgerWorkMethodsDatabaseHandler;
+        let mut state = proto::Ledger {
+            batch: "batch".into(),
+            count: 2,
+            approved: 1,
+            ..Default::default()
+        };
+        Ledger
+            .checkpoint(
+                &mut state,
+                proto::Step {
+                    batch: "batch".into(),
+                    index: 0,
+                    reject: true,
+                },
+            )
+            .await
+            .unwrap();
+        assert!(state.rejected);
+        assert_eq!(state.completed, 1);
+        assert!(
+            Ledger
+                .checkpoint(
+                    &mut state,
+                    proto::Step {
+                        batch: "batch".into(),
+                        index: 1,
+                        reject: false
+                    }
+                )
+                .await
+                .is_err()
+        );
+        let result = Ledger
+            .submit_batch_scheduled(
+                &mut state,
+                proto::Submit {
+                    batch: "next".into(),
+                    count: 1,
+                    ..Default::default()
+                },
+                reference().unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.task_upserts.len(), 1);
+        assert_eq!(state.batch, "next");
+        assert!(!state.rejected);
+    }
+    #[test]
+    fn default_control_fields_preserve_legacy_wire_encoding() {
+        use prost::Message;
+        #[derive(Clone, PartialEq, prost::Message)]
+        struct LegacySubmit {
+            #[prost(string, tag = "1")]
+            batch: String,
+            #[prost(uint32, tag = "2")]
+            count: u32,
+            #[prost(int64, tag = "3")]
+            not_before: i64,
+            #[prost(uint32, tag = "4")]
+            reject_after: u32,
+            #[prost(bool, tag = "5")]
+            reject_step: bool,
+        }
+        #[derive(Clone, PartialEq, prost::Message)]
+        struct LegacyLedger {
+            #[prost(string, tag = "1")]
+            batch: String,
+            #[prost(uint32, tag = "2")]
+            count: u32,
+            #[prost(uint32, tag = "3")]
+            approved: u32,
+            #[prost(uint32, tag = "4")]
+            completed: u32,
+            #[prost(uint64, tag = "5")]
+            submissions: u64,
+            #[prost(bool, tag = "6")]
+            rejected: bool,
+            #[prost(uint64, tag = "7")]
+            archived: u64,
+        }
+        let current = proto::Submit {
+            batch: "compat".into(),
+            count: 3,
+            reject_step: true,
+            ..Default::default()
+        };
+        let legacy = LegacySubmit {
+            batch: current.batch.clone(),
+            count: current.count,
+            not_before: current.not_before,
+            reject_after: current.reject_after,
+            reject_step: current.reject_step,
+        };
+        assert_eq!(current.encode_to_vec(), legacy.encode_to_vec());
+        let current = proto::Ledger {
+            batch: "compat".into(),
+            count: 3,
+            approved: 2,
+            completed: 1,
+            submissions: 7,
+            archived: 5,
+            ..Default::default()
+        };
+        let legacy = LegacyLedger {
+            batch: current.batch.clone(),
+            count: current.count,
+            approved: current.approved,
+            completed: current.completed,
+            submissions: current.submissions,
+            rejected: current.rejected,
+            archived: current.archived,
+        };
+        assert_eq!(current.encode_to_vec(), legacy.encode_to_vec());
+    }
+
+    #[tokio::test]
+    async fn cooperative_stop_is_opt_in_and_identity_bound() {
+        use generated::LedgerWorkMethodsDatabaseHandler;
+        let mut state = proto::Ledger {
+            batch: "batch".into(),
+            count: 3,
+            approved: 1,
+            completed: 1,
+            ..Default::default()
+        };
+        let before = state.clone();
+        assert!(matches!(
+            Ledger
+                .stop_batch(
+                    &mut state,
+                    proto::StopRequest {
+                        batch: "batch".into(),
+                        task_id: vec![1; 16]
+                    }
+                )
+                .await
+                .unwrap_err(),
+            generated::LedgerWorkMethodsStopBatchError::StopDenied(_)
+        ));
+        assert_eq!(state, before);
+        let before = state.clone();
+        let error = Ledger
+            .submit_batch_scheduled(
+                &mut state,
+                proto::Submit {
+                    batch: "future".into(),
+                    count: 1,
+                    stop_enabled: true,
+                    not_before: 1,
+                    ..Default::default()
+                },
+                reference().unwrap(),
+            )
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(error.code(), tonic::Code::InvalidArgument);
+        assert_eq!(state, before);
+        state.stop_enabled = true;
+        state.workflow_id = vec![1; 16];
+        let before = state.clone();
+        assert!(
+            Ledger
+                .stop_batch(
+                    &mut state,
+                    proto::StopRequest {
+                        batch: "batch".into(),
+                        task_id: vec![2; 16],
+                    }
+                )
+                .await
+                .is_err()
+        );
+        assert_eq!(state, before);
+        assert!(
+            Ledger
+                .stop_batch(
+                    &mut state,
+                    proto::StopRequest {
+                        batch: "other".into(),
+                        task_id: vec![1; 16]
+                    }
+                )
+                .await
+                .is_err()
+        );
+        assert_eq!(state, before);
+        let reply = Ledger
+            .stop_batch(
+                &mut state,
+                proto::StopRequest {
+                    batch: "batch".into(),
+                    task_id: vec![1; 16],
+                },
+            )
+            .await
+            .unwrap();
+        assert!(reply.stop_requested && !reply.stopped);
+        assert_eq!((reply.approved, reply.completed, reply.count), (1, 1, 3));
+        let repeated = Ledger
+            .stop_batch(
+                &mut state,
+                proto::StopRequest {
+                    batch: "batch".into(),
+                    task_id: vec![1; 16],
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(reply, repeated);
+        state.completed = 3;
+        let before = state.clone();
+        assert!(
+            Ledger
+                .stop_batch(
+                    &mut state,
+                    proto::StopRequest {
+                        batch: "batch".into(),
+                        task_id: vec![1; 16]
+                    }
+                )
+                .await
+                .is_err()
+        );
+        assert_eq!(state, before);
+    }
+    #[tokio::test]
+    async fn stopped_completion_is_private_preserves_progress_and_resets_on_submit() {
+        use generated::LedgerWorkMethodsDatabaseHandler;
+        let mut state = proto::Ledger {
+            batch: "batch".into(),
+            count: 3,
+            approved: 1,
+            completed: 1,
+            stop_enabled: true,
+            stop_requested: true,
+            ..Default::default()
+        };
+        let before = state.clone();
+        let step = proto::Step {
+            batch: "batch".into(),
+            index: 1,
+            reject: false,
+        };
+        let error = Ledger
+            .finish_stopped_scheduled(&mut state, step.clone(), reference().unwrap())
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(error.code(), tonic::Code::PermissionDenied);
+        assert_eq!(state, before);
+        let wrong = proto::Step {
+            index: 0,
+            ..step.clone()
+        };
+        assert!(Ledger.finish_stopped(&mut state, wrong).await.is_err());
+        assert_eq!(state, before);
+        let reply = Ledger.finish_stopped(&mut state, step).await.unwrap();
+        assert!(reply.stopped);
+        assert_eq!((reply.approved, reply.completed, reply.count), (1, 1, 3));
+        let execution = Ledger
+            .submit_batch_scheduled(
+                &mut state,
+                proto::Submit {
+                    batch: "next".into(),
+                    count: 1,
+                    ..Default::default()
+                },
+                reference().unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(execution.task_upserts.len(), 1);
+        assert!(!state.stop_enabled && !state.stop_requested && !state.stopped);
+        assert_eq!((state.approved, state.completed, state.count), (0, 0, 1));
+    }
+    #[test]
+    fn bounded_batch_identity() {
+        assert!(validate_batch("batch-001", 3).is_ok());
+        for s in ["", "a/b", "a:b", "é"] {
+            assert!(validate_batch(s, 3).is_err());
+        }
+        assert!(validate_batch("batch", 101).is_err());
+    }
+    #[tokio::test]
+    async fn checkpoint_requires_approval() {
+        use generated::LedgerWorkMethodsDatabaseHandler;
+        let mut state = proto::Ledger {
+            batch: "batch".into(),
+            count: 2,
+            ..Default::default()
+        };
+        let step = proto::Step {
+            batch: "batch".into(),
+            index: 0,
+            reject: false,
+        };
+        assert!(Ledger.checkpoint(&mut state, step.clone()).await.is_err());
+        assert_eq!(state.completed, 0);
+        state.approved = 1;
+        assert_eq!(
+            Ledger
+                .checkpoint(&mut state, step.clone())
+                .await
+                .unwrap()
+                .completed,
+            1
+        );
+        assert!(Ledger.checkpoint(&mut state, step).await.is_err());
+    }
+}

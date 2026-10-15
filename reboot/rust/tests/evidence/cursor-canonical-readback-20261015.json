@@ -1,0 +1,293 @@
+{
+  "scope": "Bounded workflow cursor/results native fixture and separate database-only canonical readback; NOT public/upstream/full SDK parity",
+  "verification": {
+    "independent_canonical_readback_verified": true,
+    "public_acceptance": false,
+    "source_count": 2822,
+    "bundle_count": 33,
+    "runtime_pin_count": 40,
+    "archive_count": 92,
+    "archive_all_hashes_verified": true,
+    "input_files": 21,
+    "pristine_input_readonly_mount_verified": true,
+    "original_dataset_unchanged_and_distinct_inodes": true,
+    "canonical_snapshots_equal": true,
+    "fresh_cli_inspect_count": 2,
+    "sdk_host_started": false,
+    "all_three_children_genuine_zero_join": true,
+    "cleanup_failure": null,
+    "original_task_lock_acquirable": true,
+    "cid": "378f6fa666ebb5787857d96617c39508d4df984354b82b9339c99a4fc86da8ba",
+    "fresh_terminal": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-15T19:09:09.247950524Z",
+      "FinishedAt": "2026-10-15T19:09:13.006366861Z"
+    },
+    "config_sha256": "33e10a256d7c635a71728bacc6196d5afbf71841d465a2c4411ce921cf59fcd6",
+    "accepted_retired_sha256": "be8f73db634fa4331ea7c2f03b3af0292ebfdfa3e535bab40ec5e007529aadf4",
+    "driver_evidence_sha256": "8c3d9d3df55b032be1e6109c52267684d0207faebecb62ab7546e1d519d66fec",
+    "gate_receipt_sha256": "b62dfd58900aa151def9a4807a184991b7d84d2ac9ee0d488ed82586299fecc6",
+    "archive_index_sha256": "17709e6f24e8d7955e02672762f68890dbf0d438be4dbc3d338bb06a45635ac9",
+    "app_sha256": "183bcdc6a1aec0da98338bdcf7c70bf7f41ff322cd80ea6f4667defb5d9a6bd9",
+    "database_sha256": "e39cf47afbd72cd8bd27fb2b4e3f3c28feb6ce65ad71c3d8c8f02c764bdbface",
+    "verifier_sha256": "9419914e70bfd48fc430ff54ea5a6cd609df9b0c2e0e7b03e3cde29e397b52ae"
+  },
+  "original_native_driver_receipt": "cursor-native-driver-20261015.json",
+  "original_driver_accepted_sha256": "e8507b603856676e7ca5a9c580e65dad46f3b15b995fd416d1cfbeee73085cfb",
+  "cursor_native_fixture_acceptance": true,
+  "full_native_acceptance": false,
+  "public_acceptance": false,
+  "examples_revision_rechecked": "5c332a2910122d6035799bfaf2a314bf1de830b8",
+  "examples_claim": "Reference revision unchanged; this is a new-feature proof, not reboot-examples parity",
+  "attach_kernel_wait": {
+    "pid": 1508689,
+    "birth": "91147407",
+    "si_code": 1,
+    "si_status": 0,
+    "exit": 0,
+    "joined": true
+  },
+  "child_receipts": [
+    {
+      "command": [
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustCursorCanonical489-20261015/runtime/cursor-driver/rocksdb",
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustCursorCanonical489-20261015/runtime/cursor-driver/server-info.pb",
+        "21000"
+      ],
+      "joined_exact": true,
+      "exit": 0,
+      "signals": [
+        15
+      ],
+      "failure": null,
+      "policy_failure": null,
+      "receipt": {
+        "returncode": 0,
+        "joined_exact": true,
+        "natural_exit": false,
+        "kernel": {
+          "pid": 7,
+          "birth": "91147615",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        },
+        "intentional_database_sigterm": true,
+        "policy": "database-intentional-graceful-SIGTERM-exit-zero"
+      }
+    },
+    {
+      "command": [
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+        "inspect",
+        "http://127.0.0.1:21000",
+        "ae6dd3be-4b94-4b24-9880-e76578c49d62",
+        "1029"
+      ],
+      "joined_exact": true,
+      "exit": 0,
+      "signals": [],
+      "failure": null,
+      "policy_failure": null,
+      "receipt": {
+        "returncode": 0,
+        "joined_exact": true,
+        "natural_exit": true,
+        "kernel": {
+          "pid": 71,
+          "birth": "91147663",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        },
+        "intentional_database_sigterm": false
+      }
+    },
+    {
+      "command": [
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+        "inspect",
+        "http://127.0.0.1:21000",
+        "f497952f-9499-4847-80bc-ca52022c69f2",
+        "0"
+      ],
+      "joined_exact": true,
+      "exit": 0,
+      "signals": [],
+      "failure": null,
+      "policy_failure": null,
+      "receipt": {
+        "returncode": 0,
+        "joined_exact": true,
+        "natural_exit": true,
+        "kernel": {
+          "pid": 75,
+          "birth": "91147679",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        },
+        "intentional_database_sigterm": false
+      }
+    }
+  ],
+  "snapshot_assertions": {
+    "terminal_task_and_records_preserved": true,
+    "global_actors_equal_later_pending": true,
+    "whole_pending_equal": true,
+    "raw_task_and_started_record_equal": true,
+    "no_stored": true,
+    "fresh_cli_process_per_inspect": true,
+    "sdk_host_started": false
+  },
+  "input_manifest": {
+    "expected_sha256": "bc4252ef01a993f57fa4b034a314fd40488e665d097fe1fb00c3e7d28b8e9bd3",
+    "rocksdb": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustCursorCanonical489-20261015/canonical-input/rocksdb",
+    "rocksdb_manifest": {
+      "000008.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "000012.log": "ef5d053362f8dd4861bd6ac787152d2bdbfba59d6c57b67acb18ad9ac543c6ad",
+      "000018.sst": "089357cf539188694a73ac7e907b763492db77f2e77b5fee2d25b02bed31ef10",
+      "000026.log": "4d49b28c6e75e11704176681d7424852de31c11d6b8d0b43e955fffd26106039",
+      "000043.log": "16895785a6f6695519ae1621d560ffc94326452576edd12d581c14d5f07ca85d",
+      "000056.log": "d9632e3f03fee22d56a5ff59ae8f74ee2d77bfed95dabd244ea081fcf3bae2db",
+      "000066.sst": "865219493c8c61fefaa9a81bae0174d4333d6758474ddeb7930fe3adbb29ad46",
+      "000069.sst": "4c6ab19a470040a4d0b7ff6036bf7867491c86a5a1108652b6c6b872981cb408",
+      "000071.log": "0483ebb33409265c55ea19cd75d3968e7f236f4a48bb307403ccc5855dca8894",
+      "000078.sst": "f1e9739ec0322fa813e711e1e81bbedbbcfdc0b555e7961f0d7c7856981189d2",
+      "000082.sst": "103d4539b3188d1ce84f48a6b683be6d3338589ecba5368223f8b547018c0a84",
+      "000083.sst": "12a59c5d685d21a0f161bb2da812a2ee9b4e85af26219138496ddcb5f4f37949",
+      "000085.log": "943d5bebd3ee2742f059af2dbd2dc5cb8f7b617afa4bd5cb5ffee93bf2b8064f",
+      "000094.sst": "e2b0b3fd786f3f259b81f6fc3f9ceb683294c39174df8be176bad5bbcb555acb",
+      "CURRENT": "5bcb6c65ef32bb3ff4622a903d2bdc28facbf3cee5dfea01a6d1447068522534",
+      "IDENTITY": "a0781edb146c8d9321c701b69a9eea291e1ff669320a5c530b038f2b1331c1f8",
+      "LOCK": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "LOG": "7732dc83d10589ba9039f04470bd2878996181e09a4f5933765fe4a3c75603e4",
+      "MANIFEST-000086": "8469d0f8ff75938df46c1a5d0323af0f61e338f4601fc66b6b853ec2d09863e1",
+      "OPTIONS-000092": "f147ac883c674a281f4a8ef7e89df08bc6a8238cea970ce5dccb54d42d0e6699",
+      "OPTIONS-000095": "a2df35572bce0cff9c9006c37f098a1c390aca1dbf60b2e684e1a7f3f4b06b55"
+    },
+    "server_info": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustCursorCanonical489-20261015/canonical-input/server-info.pb",
+    "server_info_sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0",
+    "copy_before_database_start": true,
+    "copy_method": "copyfile; distinct inodes, no hardlinks"
+  },
+  "single_shard_scope": {
+    "main_rs": {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustCursorCanonical489-20261015/source/reboot/rust/tests/fixtures/workflow_cursor_results_app/src/main.rs",
+      "sha256": "870d4b72bef978d4e5d411b3a0e6904a2b0a610913f9662ef1707d235a51ced4"
+    },
+    "inspect_rs": {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustCursorCanonical489-20261015/source/reboot/rust/tests/fixtures/workflow_cursor_results_app/src/inspect.rs",
+      "sha256": "f188958ac6146021818e38389b1bcad9dc4be1b0134281c6556bfc61c59529ab"
+    },
+    "single_shard_construction": "source assertion only; original info bytes copied, not regenerated",
+    "shard_id": "s000000000",
+    "shard_first_key_hex": ""
+  },
+  "terminal_snapshot": {
+    "consumed": 1030,
+    "concurrent": 3,
+    "after": 1,
+    "a_state": "08860810031801",
+    "b_state": "088708",
+    "status": 2,
+    "iteration": 1029,
+    "terminal": true,
+    "task": "0a350a0b637572736f722e76312e411214414b61334e536c303056643173413a70726f6f661a10ae6dd3be4b944b249880e76578c49d62120352756e1802220308860832430a24747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e526573756c74121b0885081086081a13636f6d6d69747465643a313032393a31303330388508",
+    "b_commits": 1031,
+    "records": [
+      {
+        "type": "type.googleapis.com/cursor.v1.Value",
+        "phase": 0,
+        "result_type": "",
+        "reply": null,
+        "record": "0a10d655c54e72385fe59e1b669bdcfd3517122a0a23747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e56616c75651203088608220b637572736f722e76312e412a14414b61334e536c303056643173413a70726f6f663210ae6dd3be4b944b249880e76578c49d6238850842203e2c39d1495cf1903a51f11982e81ba66d857bd3ff140b3b69fe48c11be3bfa5",
+        "raw_response": "0a23747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e56616c75651203088608"
+      },
+      {
+        "type": "type.googleapis.com/reboot.rust.workflow.AtMostOnceResultV1",
+        "phase": 2,
+        "result_type": "type.googleapis.com/cursor.v1.EffectReply",
+        "reply": {
+          "iteration": 1029,
+          "ordinal": 1030,
+          "proof": "committed:1029:1030"
+        },
+        "record": "0a10d7ef1f6742d75fc78b77f06384f51675128d010a3b747970652e676f6f676c65617069732e636f6d2f7265626f6f742e727573742e776f726b666c6f772e41744d6f73744f6e6365526573756c745631124e080110021a480a29747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e4566666563745265706c79121b0886081085081a13636f6d6d69747465643a313032393a31303330220b637572736f722e76312e412a14414b61334e536c303056643173413a70726f6f663210ae6dd3be4b944b249880e76578c49d6238850842206b38888b18bc8187ead5c8f2ae24d170853bcd20eb2663d09008bc8d50aa3d3c",
+        "raw_response": "0a3b747970652e676f6f676c65617069732e636f6d2f7265626f6f742e727573742e776f726b666c6f772e41744d6f73744f6e6365526573756c745631124e080110021a480a29747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e4566666563745265706c79121b0886081085081a13636f6d6d69747465643a313032393a31303330"
+      },
+      {
+        "type": "type.googleapis.com/reboot.rust.workflow.AtMostOnceResultV1",
+        "phase": 2,
+        "result_type": "type.googleapis.com/cursor.v1.Result",
+        "reply": {
+          "cursor": 1029,
+          "ordinal": 1030,
+          "proof": "committed:1029:1030"
+        },
+        "record": "0a10e2f91fad274d5fcca82645ecee63cc261288010a3b747970652e676f6f676c65617069732e636f6d2f7265626f6f742e727573742e776f726b666c6f772e41744d6f73744f6e6365526573756c7456311249080110021a430a24747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e526573756c74121b0885081086081a13636f6d6d69747465643a313032393a31303330220b637572736f722e76312e412a14414b61334e536c303056643173413a70726f6f663210ae6dd3be4b944b249880e76578c49d6238850842209570c871232872ee6c83bca633ab4810434afc9d6fcb9c6627a45d25dc01f10d",
+        "raw_response": "0a3b747970652e676f6f676c65617069732e636f6d2f7265626f6f742e727573742e776f726b666c6f772e41744d6f73744f6e6365526573756c7456311249080110021a430a24747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e526573756c74121b0885081086081a13636f6d6d69747465643a313032393a31303330"
+      }
+    ]
+  },
+  "pending_snapshot": {
+    "consumed": 1030,
+    "concurrent": 3,
+    "after": 1,
+    "a_state": "08860810031801",
+    "b_state": "088708",
+    "status": 1,
+    "iteration": 0,
+    "terminal": false,
+    "task": "0a350a0b637572736f722e76312e411214414b61334e536c303056643173413a70726f6f661a10f497952f9499484780bcca52022c69f2120352756e180122020801",
+    "b_commits": 1031,
+    "records": [
+      {
+        "type": "type.googleapis.com/reboot.rust.workflow.AtMostOnceResultV1",
+        "phase": 1,
+        "result_type": "",
+        "reply": null,
+        "record": "0a103af8d6f8001b5b5f87c35eccf4ad88a912430a3b747970652e676f6f676c65617069732e636f6d2f7265626f6f742e727573742e776f726b666c6f772e41744d6f73744f6e6365526573756c745631120408011001220b637572736f722e76312e412a14414b61334e536c303056643173413a70726f6f663210f497952f9499484780bcca52022c69f2380042206033c361903e87cfc78b30338e89724d14fb4b4b20de245a029130314c2087d5",
+        "raw_response": "0a3b747970652e676f6f676c65617069732e636f6d2f7265626f6f742e727573742e776f726b666c6f772e41744d6f73744f6e6365526573756c745631120408011001"
+      }
+    ]
+  },
+  "commands": [
+    {
+      "command": [
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+        "inspect",
+        "http://127.0.0.1:21000",
+        "ae6dd3be-4b94-4b24-9880-e76578c49d62",
+        "1029"
+      ],
+      "exit": 0,
+      "stdout": "{\"consumed\":1030,\"concurrent\":3,\"after\":1,\"a_state\":\"08860810031801\",\"b_state\":\"088708\",\n\"status\":2,\"iteration\":1029,\"terminal\":true,\"task\":\"0a350a0b637572736f722e76312e411214414b61334e536c303056643173413a70726f6f661a10ae6dd3be4b944b249880e76578c49d62120352756e1802220308860832430a24747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e526573756c74121b0885081086081a13636f6d6d69747465643a313032393a31303330388508\",\"b_commits\":1031,\"records\":[{\"type\":\"type.googleapis.com/cursor.v1.Value\",\"phase\":0,\"result_type\":\"\",\"reply\":null,\"record\":\"0a10d655c54e72385fe59e1b669bdcfd3517122a0a23747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e56616c75651203088608220b637572736f722e76312e412a14414b61334e536c303056643173413a70726f6f663210ae6dd3be4b944b249880e76578c49d6238850842203e2c39d1495cf1903a51f11982e81ba66d857bd3ff140b3b69fe48c11be3bfa5\",\"raw_response\":\"0a23747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e56616c75651203088608\"},{\"type\":\"type.googleapis.com/reboot.rust.workflow.AtMostOnceResultV1\",\"phase\":2,\"result_type\":\"type.googleapis.com/cursor.v1.EffectReply\",\"reply\":{\"iteration\":1029,\"ordinal\":1030,\"proof\":\"committed:1029:1030\"},\"record\":\"0a10d7ef1f6742d75fc78b77f06384f51675128d010a3b747970652e676f6f676c65617069732e636f6d2f7265626f6f742e727573742e776f726b666c6f772e41744d6f73744f6e6365526573756c745631124e080110021a480a29747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e4566666563745265706c79121b0886081085081a13636f6d6d69747465643a313032393a31303330220b637572736f722e76312e412a14414b61334e536c303056643173413a70726f6f663210ae6dd3be4b944b249880e76578c49d6238850842206b38888b18bc8187ead5c8f2ae24d170853bcd20eb2663d09008bc8d50aa3d3c\",\"raw_response\":\"0a3b747970652e676f6f676c65617069732e636f6d2f7265626f6f742e727573742e776f726b666c6f772e41744d6f73744f6e6365526573756c745631124e080110021a480a29747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e4566666563745265706c79121b0886081085081a13636f6d6d69747465643a313032393a31303330\"},{\"type\":\"type.googleapis.com/reboot.rust.workflow.AtMostOnceResultV1\",\"phase\":2,\"result_type\":\"type.googleapis.com/cursor.v1.Result\",\"reply\":{\"cursor\":1029,\"ordinal\":1030,\"proof\":\"committed:1029:1030\"},\"record\":\"0a10e2f91fad274d5fcca82645ecee63cc261288010a3b747970652e676f6f676c65617069732e636f6d2f7265626f6f742e727573742e776f726b666c6f772e41744d6f73744f6e6365526573756c7456311249080110021a430a24747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e526573756c74121b0885081086081a13636f6d6d69747465643a313032393a31303330220b637572736f722e76312e412a14414b61334e536c303056643173413a70726f6f663210ae6dd3be4b944b249880e76578c49d6238850842209570c871232872ee6c83bca633ab4810434afc9d6fcb9c6627a45d25dc01f10d\",\"raw_response\":\"0a3b747970652e676f6f676c65617069732e636f6d2f7265626f6f742e727573742e776f726b666c6f772e41744d6f73744f6e6365526573756c7456311249080110021a430a24747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e526573756c74121b0885081086081a13636f6d6d69747465643a313032393a31303330\"}]}\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+        "inspect",
+        "http://127.0.0.1:21000",
+        "f497952f-9499-4847-80bc-ca52022c69f2",
+        "0"
+      ],
+      "exit": 0,
+      "stdout": "{\"consumed\":1030,\"concurrent\":3,\"after\":1,\"a_state\":\"08860810031801\",\"b_state\":\"088708\",\n\"status\":1,\"iteration\":0,\"terminal\":false,\"task\":\"0a350a0b637572736f722e76312e411214414b61334e536c303056643173413a70726f6f661a10f497952f9499484780bcca52022c69f2120352756e180122020801\",\"b_commits\":1031,\"records\":[{\"type\":\"type.googleapis.com/reboot.rust.workflow.AtMostOnceResultV1\",\"phase\":1,\"result_type\":\"\",\"reply\":null,\"record\":\"0a103af8d6f8001b5b5f87c35eccf4ad88a912430a3b747970652e676f6f676c65617069732e636f6d2f7265626f6f742e727573742e776f726b666c6f772e41744d6f73744f6e6365526573756c745631120408011001220b637572736f722e76312e412a14414b61334e536c303056643173413a70726f6f663210f497952f9499484780bcca52022c69f2380042206033c361903e87cfc78b30338e89724d14fb4b4b20de245a029130314c2087d5\",\"raw_response\":\"0a3b747970652e676f6f676c65617069732e636f6d2f7265626f6f742e727573742e776f726b666c6f772e41744d6f73744f6e6365526573756c745631120408011001\"}]}\n",
+      "stderr": ""
+    }
+  ]
+}

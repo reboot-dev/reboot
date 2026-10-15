@@ -5,6 +5,7 @@
 
 #include <filesystem>
 #include <functional>
+#include <optional>
 #include <string>
 
 #include "glog/logging.h"
@@ -82,6 +83,8 @@ class DatabaseServer final {
       REBOOT_DATABASE_LOG(1)
           << "Waited for database gRPC server at " << address_;
       server_.reset();
+      native_coordinator_service_.reset();
+      native_service_.reset();
       service_.reset();
     }
   }
@@ -103,13 +106,21 @@ class DatabaseServer final {
  private:
   DatabaseServer(
       std::unique_ptr<grpc::Service>&& service,
+      std::unique_ptr<grpc::Service>&& native_service,
+      std::unique_ptr<grpc::Service>&& native_coordinator_service,
       std::unique_ptr<grpc::Server>&& server,
       const std::string& address)
     : service_(std::move(service)),
+      native_service_(std::move(native_service)),
+      native_coordinator_service_(std::move(native_coordinator_service)),
       server_(std::move(server)),
       address_(address) {}
 
   std::unique_ptr<grpc::Service> service_;
+  // Deliberately separate from Database: Native2pc never extends legacy RPCs.
+  std::unique_ptr<grpc::Service> native_service_;
+  // Durable coordinator observation is native-only, never a legacy watch.
+  std::unique_ptr<grpc::Service> native_coordinator_service_;
   std::unique_ptr<grpc::Server> server_;
   const std::string address_;
 };
@@ -119,6 +130,17 @@ class DatabaseServer final {
 // Function to enable legacy coordinator prepared format for testing.
 // This should only be used in tests.
 void TestOnly_EnableLegacyCoordinatorPrepared(grpc::Service* service);
+
+// Direct default-column-family access for sidecar isolation tests. These are
+// intentionally test-only helpers: production callers cannot select a column
+// family or execute arbitrary database operations through them.
+tl::expected<void, std::string> TestOnly_PutDefaultRecord(
+    grpc::Service* service,
+    std::string key,
+    std::string value);
+tl::expected<std::optional<std::string>, std::string> TestOnly_GetDefaultRecord(
+    grpc::Service* service,
+    const std::string& key);
 
 // Identifies the exact call site where the test-only hook fires.
 enum class TestOnlyLongRunningRPCHookSite {
@@ -138,6 +160,13 @@ enum class TestOnlyLongRunningRPCHookSite {
   // a test can commit or abort a participant transaction that the
   // snapshot still lists.
   RECOVER_TRANSACTIONS_RIGHT_AFTER_IMPLICIT_SNAPSHOT,
+  // `CompleteTask`: after validating the request and before acquiring the CAS
+  // lock. Tests use this to prove a competing RPC reaches the lock boundary.
+  COMPLETE_TASK_ENTERED,
+  // `CompleteTask`: after reading the durable pending record and while holding
+  // the completion CAS lock, before writing the terminal record. Tests use
+  // this to prove a concurrent completer cannot slip between the read/write.
+  COMPLETE_TASK_AFTER_PENDING_READ,
   // `DeleteTransaction`: immediately after entering, while the
   // committed or rolled back transaction is still in memory, so that
   // a test can observe it there.

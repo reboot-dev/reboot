@@ -1,0 +1,748 @@
+use {{ name }}::{generated, proto};
+use std::time::Duration;
+fn work_reader_status(error: generated::LedgerWorkMethodsObserveBatchError) -> tonic::Status {
+    match error {
+        generated::LedgerWorkMethodsObserveBatchError::BatchMismatch(error) => {
+            reboot::declared_error_status(
+                tonic::Code::Unknown,
+                "declared error",
+                "type.googleapis.com/{{ name }}.v1.BatchMismatch",
+                &error,
+            )
+        }
+        generated::LedgerWorkMethodsObserveBatchError::Grpc(error) => error,
+    }
+}
+
+fn index_status(error: generated::LedgerIndexMethodsApprovalSnapshotError) -> tonic::Status {
+    match error {
+        generated::LedgerIndexMethodsApprovalSnapshotError::BatchMismatch(error) => {
+            reboot::declared_error_status(
+                tonic::Code::Unknown,
+                "declared error",
+                "type.googleapis.com/{{ name }}.v1.BatchMismatch",
+                &error,
+            )
+        }
+        generated::LedgerIndexMethodsApprovalSnapshotError::System(system) => {
+            system.error.into_status(system.message)
+        }
+        generated::LedgerIndexMethodsApprovalSnapshotError::Grpc(error) => error,
+    }
+}
+fn show(state: proto::Ledger) {
+    println!(
+        "{} {} {} {} {}",
+        state.batch, state.count, state.approved, state.completed, state.submissions
+    );
+    if state.stop_enabled {
+        println!(
+            "control {} {} {}",
+            state.stop_enabled, state.stop_requested, state.stopped
+        );
+    }
+}
+fn show_tasks(
+    tasks: Vec<reboot::database_proto::TaskInfo>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    for task in tasks {
+        let id = task.task_id.ok_or("listed task lacks identity")?;
+        let phase = reboot::database_proto::task_info::Status::try_from(task.status)?;
+        let occurred = task
+            .occurred_at
+            .ok_or("listed task lacks phase timestamp")?;
+        let due = task
+            .scheduled_at
+            .map(|time| format!("{}.{:09}", time.seconds, time.nanos))
+            .unwrap_or_else(|| "-".into());
+        println!(
+            "{} {} {} {}.{:09} {} {} {}",
+            uuid::Uuid::from_slice(&id.task_uuid)?,
+            phase.as_str_name(),
+            task.method,
+            occurred.seconds,
+            occurred.nanos,
+            due,
+            task.iterations,
+            task.num_runs_failed_recently
+        );
+    }
+    Ok(())
+}
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let command = args.first().map(String::as_str).ok_or("command required")?;
+    let url = std::env::var("RBT_RUST_URL").unwrap_or_else(|_| "http://127.0.0.1:9991".into());
+    let channel = tonic::transport::Endpoint::from_shared(url)?
+        .connect_timeout(Duration::from_secs(3))
+        .timeout(Duration::from_secs(10))
+        .connect()
+        .await?;
+    if command == "health" {
+        let mut client = tonic_health::pb::health_client::HealthClient::new(channel);
+        let mut request = tonic::Request::new(tonic_health::pb::HealthCheckRequest {
+            service: String::new(),
+        });
+        request.set_timeout(Duration::from_secs(1));
+        let result = client.check(request).await?.into_inner();
+        if result.status != tonic_health::pb::health_check_response::ServingStatus::Serving as i32 {
+            return Err("application is not ready".into());
+        }
+        println!("SERVING");
+        return Ok(());
+    }
+    let context = reboot::ExternalContext::new({{ name }}::reference()?);
+    let arg = |index: usize| args.get(index).cloned().ok_or("missing argument");
+    // Raw generated Tonic clients send mutations ONCE, with explicit deadlines.
+    // There is deliberately no generated external Unavailable retry loop here.
+    match command {
+        "create" => {
+            let mut client =
+                proto::ledger_work_methods_client::LedgerWorkMethodsClient::new(channel);
+            let mut request = context.writer(proto::Empty {})?;
+            request.set_timeout(Duration::from_secs(5));
+            client.create(request).await?;
+            println!("created");
+        }
+        "read" => {
+            let mut client =
+                proto::ledger_work_methods_client::LedgerWorkMethodsClient::new(channel);
+            show(
+                client
+                    .observe(context.reader(proto::Empty {})?)
+                    .await?
+                    .into_inner(),
+            );
+        }
+        "audit-read" => {
+            let mut client =
+                proto::ledger_work_methods_client::LedgerWorkMethodsClient::new(channel);
+            let value = client
+                .observe(context.reader(proto::Empty {})?)
+                .await?
+                .into_inner();
+            println!(
+                "{} {} {}",
+                value.batch, value.audit_requested, value.audit_mismatch
+            );
+        }
+        "audit-direct" => {
+            let mut client =
+                proto::ledger_work_methods_client::LedgerWorkMethodsClient::new(channel);
+            let _ = client
+                .record_audit(context.writer(proto::BatchMismatch {
+                    actual: arg(1)?,
+                    expected: arg(2)?,
+                })?)
+                .await?;
+        }
+        "submit"
+        | "submit-audited"
+        | "submit-grouped"
+        | "submit-grouped-break"
+        | "submit-break"
+        | "submit-rejecting"
+        | "submit-step-reject"
+        | "submit-stoppable"
+        | "submit-stoppable-step-reject" => {
+            let mut client =
+                proto::ledger_work_methods_client::LedgerWorkMethodsClient::new(channel);
+            let key = uuid::Uuid::parse_str(&arg(3)?)?;
+            let mut request = context.writer(proto::Submit {
+                group_size: if matches!(command, "submit-grouped" | "submit-grouped-break") {
+                    arg(5)?.parse()?
+                } else {
+                    0
+                },
+                audit_batch: if command == "submit-audited" {
+                    arg(5)?
+                } else {
+                    String::new()
+                },
+                batch: arg(1)?,
+                count: arg(2)?.parse()?,
+                not_before: args.get(4).map(|s| s.parse()).transpose()?.unwrap_or(0),
+                reject_step: matches!(
+                    command,
+                    "submit-step-reject" | "submit-stoppable-step-reject"
+                ),
+                stop_enabled: matches!(
+                    command,
+                    "submit-stoppable" | "submit-stoppable-step-reject"
+                ),
+                break_after: if command == "submit-grouped-break" {
+                    arg(6)?.parse()?
+                } else if command == "submit-break" {
+                    arg(5)?.parse()?
+                } else {
+                    0
+                },
+                reject_after: if command == "submit-rejecting" {
+                    arg(5)?.parse()?
+                } else {
+                    0
+                },
+            })?;
+            request
+                .metadata_mut()
+                .insert("x-reboot-idempotency-key", key.to_string().parse()?);
+            request.set_timeout(Duration::from_secs(5));
+            let id = client.submit_batch(request).await?.into_inner().id;
+            println!("{}", uuid::Uuid::from_slice(&id)?);
+        }
+        "stop" => {
+            let mut client =
+                proto::ledger_work_methods_client::LedgerWorkMethodsClient::new(channel);
+            let key = uuid::Uuid::parse_str(&arg(3)?)?;
+            let mut request = context.writer(proto::StopRequest {
+                batch: arg(1)?,
+                task_id: uuid::Uuid::parse_str(&arg(2)?)?.as_bytes().to_vec(),
+            })?;
+            request
+                .metadata_mut()
+                .insert("x-reboot-idempotency-key", key.to_string().parse()?);
+            if let Ok(token) = std::env::var("RBT_RUST_TASK_ADMIN_TOKEN") {
+                request
+                    .metadata_mut()
+                    .insert("authorization", format!("Bearer {token}").parse()?);
+            }
+            request.set_timeout(Duration::from_secs(5));
+            use prost::Message;
+            match client.stop_batch(request).await {
+                Ok(response) => show(response.into_inner()),
+                Err(error) => {
+                    let denied = reboot::declared_error_details(&error)
+                        .ok()
+                        .flatten()
+                        .filter(|rich| {
+                            error.code() == tonic::Code::Unknown
+                                && rich.details.len() == 1
+                                && rich.details[0].type_url
+                                    == "type.googleapis.com/{{ name }}.v1.StopDenied"
+                        })
+                        .and_then(|rich| {
+                            proto::StopDenied::decode(rich.details[0].value.as_slice()).ok()
+                        });
+                    if let Some(denied) = denied {
+                        return Err(
+                            format!("StopDenied {}: {}", denied.batch, denied.reason).into()
+                        );
+                    }
+                    return Err(error.into());
+                }
+            }
+        }
+        "stop-finish-direct" | "decision-finish-direct" => {
+            let mut client =
+                proto::ledger_work_methods_client::LedgerWorkMethodsClient::new(channel);
+            let mut request = context.writer(proto::Step {
+                batch: arg(1)?,
+                index: arg(2)?.parse()?,
+                reject: false,
+            })?;
+            if let Ok(token) = std::env::var("RBT_RUST_TASK_ADMIN_TOKEN") {
+                request
+                    .metadata_mut()
+                    .insert("authorization", format!("Bearer {token}").parse()?);
+            }
+            request.set_timeout(Duration::from_secs(3));
+            if command == "decision-finish-direct" {
+                show(client.finish_decision(request).await?.into_inner());
+            } else {
+                show(client.finish_stopped(request).await?.into_inner());
+            }
+        }
+        "reader-target-error" | "index-target-error" => {
+            let mut client =
+                reboot::reactive::wire::local_readers_client::LocalReadersClient::new(channel);
+            let request = context.reader(reboot::reactive::wire::Query {
+                method: format!(
+                    "{{ name }}.v1.{}.{}",
+                    if command == "index-target-error" {
+                        "LedgerIndexMethods"
+                    } else {
+                        "LedgerWorkMethods"
+                    },
+                    arg(1)?
+                ),
+                request: vec![],
+            })?;
+            let error = match client.subscribe(request).await {
+                Err(error) => error,
+                Ok(response) => match response.into_inner().message().await {
+                    Err(error) => error,
+                    Ok(_) => return Err("nonreader entered subscription surface".into()),
+                },
+            };
+            if error.code() != tonic::Code::Unimplemented {
+                return Err(error.into());
+            }
+            println!("NONREADER_DENIED");
+        }
+        "checkpoint-direct" => {
+            let mut client =
+                proto::ledger_work_methods_client::LedgerWorkMethodsClient::new(channel);
+            let mut request = context.writer(proto::Step {
+                batch: arg(1)?,
+                index: arg(2)?.parse()?,
+                reject: arg(3)?.parse()?,
+            })?;
+            request.set_timeout(Duration::from_secs(3));
+            show(client.checkpoint(request).await?.into_inner());
+        }
+        "approve" | "approve-invalid" => {
+            let mut client =
+                proto::ledger_index_methods_client::LedgerIndexMethodsClient::new(channel);
+            let mut request = context.writer(proto::Approval {
+                batch: arg(1)?,
+                index: arg(2)?.parse()?,
+                invalid_range: command == "approve-invalid",
+            })?;
+            request.metadata_mut().remove("x-reboot-idempotency-key");
+            request.set_timeout(Duration::from_secs(5));
+            show(client.approve(request).await?.into_inner());
+        }
+        "archive-many" | "archive-many-invalid" => {
+            let mut client =
+                proto::ledger_index_methods_client::LedgerIndexMethodsClient::new(channel);
+            let mut request = context.writer(proto::ArchiveEntriesRequest {
+                keys: arg(1)?.split(',').map(str::to_owned).collect(),
+                invalid_range: command == "archive-many-invalid",
+            })?;
+            request.metadata_mut().remove("x-reboot-idempotency-key");
+            request.set_timeout(Duration::from_secs(5));
+            let result = client.archive_entries(request).await?.into_inner();
+            println!("ARCHIVED_MANY {} {}", result.entries.len(), result.archived);
+        }
+        "archive" | "archive-invalid" => {
+            use prost::Message;
+            let mut client =
+                proto::ledger_index_methods_client::LedgerIndexMethodsClient::new(channel);
+            let mut request = context.writer(proto::ArchiveRequest {
+                key: arg(1)?,
+                invalid_range: command == "archive-invalid",
+            })?;
+            // Same admitted direct-map contract as approve/history: no automatic
+            // root idempotency. No RPC status retry or exactly-once claim.
+            request.metadata_mut().remove("x-reboot-idempotency-key");
+            request.set_timeout(Duration::from_secs(5));
+            match client.archive_entry(request).await {
+                Ok(response) => {
+                    let moved = response.into_inner();
+                    println!(
+                        "ARCHIVED {} {} {}",
+                        moved.key,
+                        moved.value.len(),
+                        moved.archived
+                    );
+                }
+                Err(error) => {
+                    if error.code() == tonic::Code::Aborted {
+                        println!("ABORTED");
+                    } else if let Some(rich) = reboot::declared_error_details(&error)? {
+                        if command == "archive-invalid"
+                            && error.code() == tonic::Code::Unknown
+                            && rich.details.len() == 1
+                            && rich.details[0].type_url
+                                == "type.googleapis.com/rbt.std.collections.v1.InvalidRangeError"
+                        {
+                            reboot::sorted_map_proto::InvalidRangeError::decode(
+                                rich.details[0].value.as_slice(),
+                            )?;
+                            println!("DOOMED_MAP_RANGE Unknown");
+                            return Ok(());
+                        }
+                        if error.code() != tonic::Code::Unknown
+                            || rich.details.len() != 1
+                            || rich.details[0].type_url
+                                != "type.googleapis.com/{{ name }}.v1.ArchiveRejected"
+                        {
+                            return Err(error.into());
+                        }
+                        let rejected =
+                            proto::ArchiveRejected::decode(rich.details[0].value.as_slice())?;
+                        println!("REJECTED {} {}", rejected.key, rejected.reason);
+                    } else {
+                        return Err(error.into());
+                    }
+                }
+            }
+        }
+        "history-page" => {
+            let optional = |index: usize| {
+                args.get(index)
+                    .filter(|value| value.as_str() != "-")
+                    .cloned()
+            };
+            let mut client =
+                proto::ledger_index_methods_client::LedgerIndexMethodsClient::new(channel);
+            let mut request = context.writer(proto::HistoryPageRequest {
+                archive: arg(1)?.parse()?,
+                limit: arg(2)?.parse()?,
+                reverse: arg(3)?.parse()?,
+                start_key: optional(4),
+                end_key: optional(5),
+                continuation: optional(6),
+            })?;
+            request.metadata_mut().remove("x-reboot-idempotency-key");
+            request.set_timeout(Duration::from_secs(5));
+            let page = client.history_page(request).await?.into_inner();
+            let entries: Vec<_> = page
+                .entries
+                .into_iter()
+                .map(|entry| {
+                    serde_json::json!({
+                        "key": entry.key, "value": entry.value,
+                    })
+                })
+                .collect();
+            println!(
+                "{}",
+                serde_json::json!({"entries": entries, "continuation": page.continuation})
+            );
+        }
+        "history" | "archive-history" => {
+            let mut client =
+                proto::ledger_index_methods_client::LedgerIndexMethodsClient::new(channel);
+            let mut request = context.writer(proto::Batch { batch: arg(1)? })?;
+            request.metadata_mut().remove("x-reboot-idempotency-key");
+            request.set_timeout(Duration::from_secs(5));
+            let keys = if command == "archive-history" {
+                client.archive_history(request).await?.into_inner().keys
+            } else {
+                client.history(request).await?.into_inner().keys
+            };
+            for key in keys {
+                println!("{key}");
+            }
+        }
+        "tasks" | "tasks-watch" => {
+            let mut client = reboot::database_proto::tasks_client::TasksClient::new(channel);
+            let mut request = tonic::Request::new(reboot::database_proto::ListTasksRequest {
+                only_server_id: Some(args.get(1).cloned().unwrap_or_else(|| "local-rust".into())),
+            });
+            if let Ok(token) = std::env::var("RBT_RUST_TASK_ADMIN_TOKEN") {
+                request
+                    .metadata_mut()
+                    .insert("authorization", format!("Bearer {token}").parse()?);
+            }
+            request.set_timeout(Duration::from_secs(3));
+            if command == "tasks-watch" {
+                request.set_timeout(Duration::from_millis(
+                    args.get(2)
+                        .map(|s| s.parse())
+                        .transpose()?
+                        .unwrap_or(60_000),
+                ));
+                let mut stream = client.list_tasks_stream(request).await?.into_inner();
+                while let Some(snapshot) = stream.message().await? {
+                    println!("TASKS {}", snapshot.tasks.len());
+                    show_tasks(snapshot.tasks)?;
+                }
+            } else {
+                show_tasks(client.list_tasks(request).await?.into_inner().tasks)?;
+            }
+        }
+        "cancel" => {
+            let id = uuid::Uuid::parse_str(&arg(1)?)?;
+            let mut client = reboot::database_proto::tasks_client::TasksClient::new(channel);
+            let mut request = context.reader(reboot::database_proto::CancelTaskRequest {
+                task_id: Some(reboot::database_proto::TaskId {
+                    state_type: {{ name }}::STATE_TYPE.into(),
+                    state_ref: {{ name }}::reference()?,
+                    task_uuid: id.as_bytes().to_vec(),
+                }),
+            })?;
+            if let Ok(token) = std::env::var("RBT_RUST_TASK_ADMIN_TOKEN") {
+                request
+                    .metadata_mut()
+                    .insert("authorization", format!("Bearer {token}").parse()?);
+            }
+            request.set_timeout(Duration::from_secs(3));
+            let status = reboot::database_proto::cancel_task_response::Status::try_from(
+                client.cancel_task(request).await?.into_inner().status,
+            )?;
+            println!("{}", status.as_str_name());
+        }
+        "wait" => {
+            let id = uuid::Uuid::parse_str(&arg(1)?)?;
+            let mut request = tonic::Request::new(reboot::database_proto::TaskId {
+                state_type: {{ name }}::STATE_TYPE.into(),
+                state_ref: {{ name }}::reference()?,
+                task_uuid: id.as_bytes().to_vec(),
+            });
+            request.set_timeout(Duration::from_millis(arg(2)?.parse()?));
+            if let Ok(token) = std::env::var("RBT_RUST_TASK_RESULT_TOKEN") {
+                request
+                    .metadata_mut()
+                    .insert("authorization", format!("Bearer {token}").parse()?);
+            }
+            match generated::LedgerWorkMethodsTasksWait::run_batch(channel, request).await {
+                Ok(state) => show(state),
+                Err(generated::LedgerWorkMethodsRunBatchError::BatchRejected(error)) => println!(
+                    "REJECTED {} {} {}",
+                    error.batch, error.completed, error.reason
+                ),
+                Err(generated::LedgerWorkMethodsRunBatchError::Grpc(error)) => {
+                    if reboot::one_shot_tasks::task_cancellation_status(&prost_types::Any {
+                        type_url: "type.googleapis.com/google.rpc.Status".into(),
+                        value: error.details().to_vec(),
+                    })
+                    .ok()
+                    .flatten()
+                    .is_some()
+                    {
+                        println!("CANCELLED");
+                    } else {
+                        return Err(error.into());
+                    }
+                }
+            }
+        }
+        "watch-reconnect" => {
+            use std::io::BufRead;
+            let mut client = generated::LedgerWorkMethodsReactiveClient::new(channel, context);
+            let mut stream = client
+                .observe_with_timeout(
+                    proto::Empty {},
+                    Duration::from_millis(
+                        args.get(1)
+                            .map(|s| s.parse())
+                            .transpose()?
+                            .unwrap_or(600_000),
+                    ),
+                )
+                .await?;
+            println!("CONNECTED");
+            if let Some(state) = stream.message().await? {
+                show(state);
+            }
+            // Explicit commands, not an automatic status-based reconnect loop.
+            for line in std::io::stdin().lock().lines() {
+                match line?.trim() {
+                    "reconnect" => match stream.reconnect().await {
+                        Ok(()) => {
+                            println!("CONNECTED");
+                            match stream.message().await {
+                                Ok(Some(state)) => show(state),
+                                Ok(None) => println!("CLOSED"),
+                                Err(error) => println!("DISCONNECTED {:?}", error.code()),
+                            }
+                        }
+                        Err(error) => println!("DISCONNECTED {:?}", error.code()),
+                    },
+                    "next" => match stream.message().await {
+                        Ok(Some(state)) => show(state),
+                        Ok(None) => println!("CLOSED"),
+                        Err(error) => println!("DISCONNECTED {:?}", error.code()),
+                    },
+                    "disconnect" => {
+                        stream.disconnect();
+                        println!("DISCONNECTED");
+                    }
+                    "quit" => break,
+                    _ => return Err("expected next, reconnect, disconnect, or quit".into()),
+                }
+            }
+        }
+        "watch-index-reconnect" => {
+            use std::io::BufRead;
+            let mut client = generated::LedgerIndexMethodsReactiveClient::new(channel, context);
+            let mut stream = client
+                .approval_snapshot_with_timeout(
+                    proto::Batch {
+                        batch: String::new(),
+                    },
+                    Duration::from_millis(
+                        args.get(1)
+                            .map(|s| s.parse())
+                            .transpose()?
+                            .unwrap_or(600_000),
+                    ),
+                )
+                .await
+                .map_err(index_status)?;
+            println!("CONNECTED");
+            if let Some(state) = stream.message().await.map_err(index_status)? {
+                show(state);
+            }
+            // Explicit commands, not an automatic status-based reconnect loop.
+            for line in std::io::stdin().lock().lines() {
+                match line?.trim() {
+                    "reconnect" => match stream.reconnect().await {
+                        Ok(()) => {
+                            println!("CONNECTED");
+                            match stream.message().await {
+                                Ok(Some(state)) => show(state),
+                                Ok(None) => println!("CLOSED"),
+                                Err(error) => {
+                                    println!("DISCONNECTED {:?}", index_status(error).code())
+                                }
+                            }
+                        }
+                        Err(error) => println!("DISCONNECTED {:?}", index_status(error).code()),
+                    },
+                    "next" => match stream.message().await {
+                        Ok(Some(state)) => show(state),
+                        Ok(None) => println!("CLOSED"),
+                        Err(error) => println!("DISCONNECTED {:?}", index_status(error).code()),
+                    },
+                    "disconnect" => {
+                        stream.disconnect();
+                        println!("DISCONNECTED");
+                    }
+                    "quit" => break,
+                    _ => return Err("expected next, reconnect, disconnect, or quit".into()),
+                }
+            }
+        }
+        "watch-work-reconnect" => {
+            use std::io::BufRead;
+            let mut client = generated::LedgerWorkMethodsReactiveClient::new(channel, context);
+            let mut stream = client
+                .observe_batch_with_timeout(
+                    proto::Batch {
+                        batch: String::new(),
+                    },
+                    Duration::from_millis(
+                        args.get(1)
+                            .map(|s| s.parse())
+                            .transpose()?
+                            .unwrap_or(600_000),
+                    ),
+                )
+                .await
+                .map_err(work_reader_status)?;
+            println!("CONNECTED");
+            if let Some(state) = stream.message().await.map_err(work_reader_status)? {
+                show(state);
+            }
+            // Explicit commands, not an automatic status-based reconnect loop.
+            for line in std::io::stdin().lock().lines() {
+                match line?.trim() {
+                    "reconnect" => match stream.reconnect().await {
+                        Ok(()) => {
+                            println!("CONNECTED");
+                            match stream.message().await {
+                                Ok(Some(state)) => show(state),
+                                Ok(None) => println!("CLOSED"),
+                                Err(error) => {
+                                    println!("DISCONNECTED {:?}", work_reader_status(error).code())
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            println!("DISCONNECTED {:?}", work_reader_status(error).code())
+                        }
+                    },
+                    "next" => match stream.message().await {
+                        Ok(Some(state)) => show(state),
+                        Ok(None) => println!("CLOSED"),
+                        Err(error) => {
+                            println!("DISCONNECTED {:?}", work_reader_status(error).code())
+                        }
+                    },
+                    "disconnect" => {
+                        stream.disconnect();
+                        println!("DISCONNECTED");
+                    }
+                    "quit" => break,
+                    _ => return Err("expected next, reconnect, disconnect, or quit".into()),
+                }
+            }
+        }
+        "work-read" | "work-mismatch" => {
+            let mut client = generated::LedgerWorkMethodsReactiveClient::new(channel, context);
+            let error = match client
+                .observe_batch_with_timeout(proto::Batch { batch: arg(1)? }, Duration::from_secs(3))
+                .await
+            {
+                Err(error) => Some(error),
+                Ok(mut stream) => match stream.message().await {
+                    Ok(Some(state)) => {
+                        show(state);
+                        None
+                    }
+                    Ok(None) => return Err("workflow snapshot closed without response".into()),
+                    Err(error) => Some(error),
+                },
+            };
+            match error {
+                Some(generated::LedgerWorkMethodsObserveBatchError::BatchMismatch(error)) => {
+                    println!("MISMATCH {} {}", error.expected, error.actual)
+                }
+                Some(generated::LedgerWorkMethodsObserveBatchError::Grpc(error)) => {
+                    return Err(error.into());
+                }
+                None if command == "work-mismatch" => {
+                    return Err("expected declared workflow reader error".into());
+                }
+                None => {}
+            }
+        }
+        "work-unary" => {
+            use prost::Message;
+            let mut work = proto::ledger_work_methods_client::LedgerWorkMethodsClient::new(channel);
+            let request = context.reader(proto::Batch { batch: arg(1)? })?;
+            match work.observe_batch(request).await {
+                Ok(response) => show(response.into_inner()),
+                Err(error) => {
+                    let rich =
+                        reboot::declared_error_details(&error)?.ok_or_else(|| error.clone())?;
+                    if error.code() != tonic::Code::Unknown
+                        || rich.details.len() != 1
+                        || rich.details[0].type_url
+                            != "type.googleapis.com/{{ name }}.v1.BatchMismatch"
+                    {
+                        return Err(error.into());
+                    }
+                    let detail = proto::BatchMismatch::decode(rich.details[0].value.as_slice())?;
+                    println!("MISMATCH {} {}", detail.expected, detail.actual);
+                }
+            }
+        }
+        "index-read" | "index-mismatch" => {
+            let mut client = generated::LedgerIndexMethodsReactiveClient::new(channel, context);
+            let request = proto::Batch { batch: arg(1)? };
+            let error = match client
+                .approval_snapshot_with_timeout(request, Duration::from_secs(3))
+                .await
+            {
+                Err(error) => Some(error),
+                Ok(mut stream) => match stream.message().await {
+                    Ok(Some(state)) => {
+                        show(state);
+                        None
+                    }
+                    Ok(None) => return Err("snapshot closed without response".into()),
+                    Err(error) => Some(error),
+                },
+            };
+            if let Some(error) = error {
+                match error {
+                    generated::LedgerIndexMethodsApprovalSnapshotError::BatchMismatch(error) => {
+                        println!("MISMATCH {} {}", error.expected, error.actual)
+                    }
+                    error @ generated::LedgerIndexMethodsApprovalSnapshotError::System(_) => {
+                        return Err(index_status(error).into());
+                    }
+                    generated::LedgerIndexMethodsApprovalSnapshotError::Grpc(error) => {
+                        return Err(error.into());
+                    }
+                }
+            } else if command == "index-mismatch" {
+                return Err("expected declared reader error".into());
+            }
+        }
+        "watch" => {
+            let mut client = generated::LedgerWorkMethodsReactiveClient::new(channel, context);
+            let mut stream = client.observe(proto::Empty {}).await?;
+            while let Some(state) = stream.message().await? {
+                show(state);
+            }
+        }
+        _ => return Err("unknown command".into()),
+    }
+    Ok(())
+}

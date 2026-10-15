@@ -1,0 +1,874 @@
+{
+  "verification": {
+    "driver_native_scenarios_verified": true,
+    "native_acceptance": false,
+    "independent_postrun_canonical_check": "pending",
+    "scenario_count": 2,
+    "actual_pending_cursor": 1025,
+    "terminal_consumed": 1030,
+    "uncertainty_b_commits": 1031,
+    "archive_count": 634,
+    "archive_all_hashes_verified": true,
+    "source_bundle_runtime_pins_unchanged": true,
+    "all_children_joined": true,
+    "expected_natural_recovery_host_exit": 1,
+    "cleanup_failure": null,
+    "original_task_lock_acquirable": true,
+    "accepted_retired_sha256": "e8507b603856676e7ca5a9c580e65dad46f3b15b995fd416d1cfbeee73085cfb",
+    "driver_evidence_sha256": "71923eb1907426457104fe306d0c0b6d6d015e32d5215cdd09b2ca29c8a44398",
+    "gate_receipt_sha256": "b2a6a343e6206487e5ccfcd452ad38016018a00243283049631fd0c3fe9130f6",
+    "archive_index_sha256": "5fd204313e207dbfd304fe2beb12a26fd4f44301c5a00dd3a5982f432fe5cf5a",
+    "cid": "376c3ec25b7a7ed2d704595e186b862b39b860dfac536f60a6378392ca131c39",
+    "fresh_terminal": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-15T18:48:13.587326778Z",
+      "FinishedAt": "2026-10-15T18:50:10.455965158Z"
+    },
+    "app_sha256": "183bcdc6a1aec0da98338bdcf7c70bf7f41ff322cd80ea6f4667defb5d9a6bd9"
+  },
+  "canonical_scenarios": [
+    {
+      "name": "stored-cursor-break-terminal",
+      "stored_before": {
+        "consumed": 0,
+        "concurrent": 1,
+        "after": 0,
+        "a_state": "1001",
+        "b_state": "0801",
+        "status": 1,
+        "iteration": 0,
+        "terminal": false,
+        "task": "0a350a0b637572736f722e76312e411214414b61334e536c303056643173413a70726f6f661a10ae6dd3be4b944b249880e76578c49d62120352756e18012203088608",
+        "b_commits": 1,
+        "records": [
+          {
+            "type": "type.googleapis.com/reboot.rust.workflow.AtMostOnceResultV1",
+            "phase": 2,
+            "result_type": "type.googleapis.com/cursor.v1.EffectReply",
+            "reply": {
+              "iteration": 0,
+              "ordinal": 1,
+              "proof": "committed:0:1"
+            },
+            "record": "0a10e7dd22e890b853fb9a9fcec608e63e8f1283010a3b747970652e676f6f676c65617069732e636f6d2f7265626f6f742e727573742e776f726b666c6f772e41744d6f73744f6e6365526573756c7456311244080110021a3e0a29747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e4566666563745265706c79121108011a0d636f6d6d69747465643a303a31220b637572736f722e76312e412a14414b61334e536c303056643173413a70726f6f663210ae6dd3be4b944b249880e76578c49d6238004220c0e3e4789ce0bcc1d6cd749fdea90930f2f4cf5a23c493421606c9b6a9eb2b79",
+            "raw_response": "0a3b747970652e676f6f676c65617069732e636f6d2f7265626f6f742e727573742e776f726b666c6f772e41744d6f73744f6e6365526573756c7456311244080110021a3e0a29747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e4566666563745265706c79121108011a0d636f6d6d69747465643a303a31"
+          }
+        ]
+      },
+      "stored_after_replay": {
+        "consumed": 1025,
+        "concurrent": 1,
+        "after": 0,
+        "a_state": "0881081001",
+        "b_state": "088108",
+        "status": 1,
+        "iteration": 1025,
+        "terminal": false,
+        "task": "0a350a0b637572736f722e76312e411214414b61334e536c303056643173413a70726f6f661a10ae6dd3be4b944b249880e76578c49d62120352756e18012203088608388108",
+        "b_commits": 1025,
+        "records": [
+          {
+            "type": "type.googleapis.com/cursor.v1.Value",
+            "phase": 0,
+            "result_type": "",
+            "reply": null,
+            "record": "0a10d22114f6ad9e5af19e053ea9f2fee27d12290a23747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e56616c756512020801220b637572736f722e76312e412a14414b61334e536c303056643173413a70726f6f663210ae6dd3be4b944b249880e76578c49d6238004220e59c4b6e09fa11198e0b92ad12d7a350aa75f6ddab18e2dd83662b5165147484",
+            "raw_response": "0a23747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e56616c756512020801"
+          },
+          {
+            "type": "type.googleapis.com/reboot.rust.workflow.AtMostOnceResultV1",
+            "phase": 2,
+            "result_type": "type.googleapis.com/cursor.v1.EffectReply",
+            "reply": {
+              "iteration": 0,
+              "ordinal": 1,
+              "proof": "committed:0:1"
+            },
+            "record": "0a10e7dd22e890b853fb9a9fcec608e63e8f1283010a3b747970652e676f6f676c65617069732e636f6d2f7265626f6f742e727573742e776f726b666c6f772e41744d6f73744f6e6365526573756c7456311244080110021a3e0a29747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e4566666563745265706c79121108011a0d636f6d6d69747465643a303a31220b637572736f722e76312e412a14414b61334e536c303056643173413a70726f6f663210ae6dd3be4b944b249880e76578c49d6238004220c0e3e4789ce0bcc1d6cd749fdea90930f2f4cf5a23c493421606c9b6a9eb2b79",
+            "raw_response": "0a3b747970652e676f6f676c65617069732e636f6d2f7265626f6f742e727573742e776f726b666c6f772e41744d6f73744f6e6365526573756c7456311244080110021a3e0a29747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e4566666563745265706c79121108011a0d636f6d6d69747465643a303a31"
+          }
+        ]
+      },
+      "pending_cursor": {
+        "consumed": 1025,
+        "concurrent": 1,
+        "after": 0,
+        "a_state": "0881081001",
+        "b_state": "088108",
+        "status": 1,
+        "iteration": 1025,
+        "terminal": false,
+        "task": "0a350a0b637572736f722e76312e411214414b61334e536c303056643173413a70726f6f661a10ae6dd3be4b944b249880e76578c49d62120352756e18012203088608388108",
+        "b_commits": 1025,
+        "records": []
+      },
+      "pending_break": {
+        "consumed": 1030,
+        "concurrent": 2,
+        "after": 0,
+        "a_state": "0886081002",
+        "b_state": "088608",
+        "status": 1,
+        "iteration": 1029,
+        "terminal": false,
+        "task": "0a350a0b637572736f722e76312e411214414b61334e536c303056643173413a70726f6f661a10ae6dd3be4b944b249880e76578c49d62120352756e18012203088608388508",
+        "b_commits": 1030,
+        "records": [
+          {
+            "type": "type.googleapis.com/cursor.v1.Value",
+            "phase": 0,
+            "result_type": "",
+            "reply": null,
+            "record": "0a10d655c54e72385fe59e1b669bdcfd3517122a0a23747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e56616c75651203088608220b637572736f722e76312e412a14414b61334e536c303056643173413a70726f6f663210ae6dd3be4b944b249880e76578c49d6238850842203e2c39d1495cf1903a51f11982e81ba66d857bd3ff140b3b69fe48c11be3bfa5",
+            "raw_response": "0a23747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e56616c75651203088608"
+          },
+          {
+            "type": "type.googleapis.com/reboot.rust.workflow.AtMostOnceResultV1",
+            "phase": 2,
+            "result_type": "type.googleapis.com/cursor.v1.EffectReply",
+            "reply": {
+              "iteration": 1029,
+              "ordinal": 1030,
+              "proof": "committed:1029:1030"
+            },
+            "record": "0a10d7ef1f6742d75fc78b77f06384f51675128d010a3b747970652e676f6f676c65617069732e636f6d2f7265626f6f742e727573742e776f726b666c6f772e41744d6f73744f6e6365526573756c745631124e080110021a480a29747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e4566666563745265706c79121b0886081085081a13636f6d6d69747465643a313032393a31303330220b637572736f722e76312e412a14414b61334e536c303056643173413a70726f6f663210ae6dd3be4b944b249880e76578c49d6238850842206b38888b18bc8187ead5c8f2ae24d170853bcd20eb2663d09008bc8d50aa3d3c",
+            "raw_response": "0a3b747970652e676f6f676c65617069732e636f6d2f7265626f6f742e727573742e776f726b666c6f772e41744d6f73744f6e6365526573756c745631124e080110021a480a29747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e4566666563745265706c79121b0886081085081a13636f6d6d69747465643a313032393a31303330"
+          },
+          {
+            "type": "type.googleapis.com/reboot.rust.workflow.AtMostOnceResultV1",
+            "phase": 2,
+            "result_type": "type.googleapis.com/cursor.v1.Result",
+            "reply": {
+              "cursor": 1029,
+              "ordinal": 1030,
+              "proof": "committed:1029:1030"
+            },
+            "record": "0a10e2f91fad274d5fcca82645ecee63cc261288010a3b747970652e676f6f676c65617069732e636f6d2f7265626f6f742e727573742e776f726b666c6f772e41744d6f73744f6e6365526573756c7456311249080110021a430a24747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e526573756c74121b0885081086081a13636f6d6d69747465643a313032393a31303330220b637572736f722e76312e412a14414b61334e536c303056643173413a70726f6f663210ae6dd3be4b944b249880e76578c49d6238850842209570c871232872ee6c83bca633ab4810434afc9d6fcb9c6627a45d25dc01f10d",
+            "raw_response": "0a3b747970652e676f6f676c65617069732e636f6d2f7265626f6f742e727573742e776f726b666c6f772e41744d6f73744f6e6365526573756c7456311249080110021a430a24747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e526573756c74121b0885081086081a13636f6d6d69747465643a313032393a31303330"
+          }
+        ]
+      },
+      "terminal": {
+        "cursor": 1029,
+        "ordinal": 1030,
+        "proof": "committed:1029:1030"
+      },
+      "completed": {
+        "consumed": 1030,
+        "concurrent": 2,
+        "after": 1,
+        "a_state": "08860810021801",
+        "b_state": "088608",
+        "status": 2,
+        "iteration": 1029,
+        "terminal": true,
+        "task": "0a350a0b637572736f722e76312e411214414b61334e536c303056643173413a70726f6f661a10ae6dd3be4b944b249880e76578c49d62120352756e1802220308860832430a24747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e526573756c74121b0885081086081a13636f6d6d69747465643a313032393a31303330388508",
+        "b_commits": 1030,
+        "records": [
+          {
+            "type": "type.googleapis.com/cursor.v1.Value",
+            "phase": 0,
+            "result_type": "",
+            "reply": null,
+            "record": "0a10d655c54e72385fe59e1b669bdcfd3517122a0a23747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e56616c75651203088608220b637572736f722e76312e412a14414b61334e536c303056643173413a70726f6f663210ae6dd3be4b944b249880e76578c49d6238850842203e2c39d1495cf1903a51f11982e81ba66d857bd3ff140b3b69fe48c11be3bfa5",
+            "raw_response": "0a23747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e56616c75651203088608"
+          },
+          {
+            "type": "type.googleapis.com/reboot.rust.workflow.AtMostOnceResultV1",
+            "phase": 2,
+            "result_type": "type.googleapis.com/cursor.v1.EffectReply",
+            "reply": {
+              "iteration": 1029,
+              "ordinal": 1030,
+              "proof": "committed:1029:1030"
+            },
+            "record": "0a10d7ef1f6742d75fc78b77f06384f51675128d010a3b747970652e676f6f676c65617069732e636f6d2f7265626f6f742e727573742e776f726b666c6f772e41744d6f73744f6e6365526573756c745631124e080110021a480a29747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e4566666563745265706c79121b0886081085081a13636f6d6d69747465643a313032393a31303330220b637572736f722e76312e412a14414b61334e536c303056643173413a70726f6f663210ae6dd3be4b944b249880e76578c49d6238850842206b38888b18bc8187ead5c8f2ae24d170853bcd20eb2663d09008bc8d50aa3d3c",
+            "raw_response": "0a3b747970652e676f6f676c65617069732e636f6d2f7265626f6f742e727573742e776f726b666c6f772e41744d6f73744f6e6365526573756c745631124e080110021a480a29747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e4566666563745265706c79121b0886081085081a13636f6d6d69747465643a313032393a31303330"
+          },
+          {
+            "type": "type.googleapis.com/reboot.rust.workflow.AtMostOnceResultV1",
+            "phase": 2,
+            "result_type": "type.googleapis.com/cursor.v1.Result",
+            "reply": {
+              "cursor": 1029,
+              "ordinal": 1030,
+              "proof": "committed:1029:1030"
+            },
+            "record": "0a10e2f91fad274d5fcca82645ecee63cc261288010a3b747970652e676f6f676c65617069732e636f6d2f7265626f6f742e727573742e776f726b666c6f772e41744d6f73744f6e6365526573756c7456311249080110021a430a24747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e526573756c74121b0885081086081a13636f6d6d69747465643a313032393a31303330220b637572736f722e76312e412a14414b61334e536c303056643173413a70726f6f663210ae6dd3be4b944b249880e76578c49d6238850842209570c871232872ee6c83bca633ab4810434afc9d6fcb9c6627a45d25dc01f10d",
+            "raw_response": "0a3b747970652e676f6f676c65617069732e636f6d2f7265626f6f742e727573742e776f726b666c6f772e41744d6f73744f6e6365526573756c7456311249080110021a430a24747970652e676f6f676c65617069732e636f6d2f637572736f722e76312e526573756c74121b0885081086081a13636f6d6d69747465643a313032393a31303330"
+          }
+        ]
+      }
+    },
+    {
+      "name": "started-after-actual-b-commit",
+      "pending": {
+        "consumed": 1030,
+        "concurrent": 3,
+        "after": 1,
+        "a_state": "08860810031801",
+        "b_state": "088708",
+        "status": 1,
+        "iteration": 0,
+        "terminal": false,
+        "task": "0a350a0b637572736f722e76312e411214414b61334e536c303056643173413a70726f6f661a10f497952f9499484780bcca52022c69f2120352756e180122020801",
+        "b_commits": 1031,
+        "records": [
+          {
+            "type": "type.googleapis.com/reboot.rust.workflow.AtMostOnceResultV1",
+            "phase": 1,
+            "result_type": "",
+            "reply": null,
+            "record": "0a103af8d6f8001b5b5f87c35eccf4ad88a912430a3b747970652e676f6f676c65617069732e636f6d2f7265626f6f742e727573742e776f726b666c6f772e41744d6f73744f6e6365526573756c745631120408011001220b637572736f722e76312e412a14414b61334e536c303056643173413a70726f6f663210f497952f9499484780bcca52022c69f2380042206033c361903e87cfc78b30338e89724d14fb4b4b20de245a029130314c2087d5",
+            "raw_response": "0a3b747970652e676f6f676c65617069732e636f6d2f7265626f6f742e727573742e776f726b666c6f772e41744d6f73744f6e6365526573756c745631120408011001"
+          }
+        ]
+      },
+      "host_failure": {
+        "exit": 1,
+        "diagnostic": "at-most-once block Started without Stored; callback will not run again",
+        "log": "Error: RecoveryTask(Status { code: FailedPrecondition, message: \"at-most-once block Started without Stored; callback will not run again\", source: None })\n",
+        "joined_exact": true,
+        "natural_exit": true
+      }
+    }
+  ],
+  "attach_kernel_wait": {
+    "pid": 1498846,
+    "birth": "91021842",
+    "si_code": 1,
+    "si_status": 0,
+    "exit": 0,
+    "joined": true
+  },
+  "custody": {
+    "direct": [
+      {
+        "pid": 7,
+        "birth": "91022011",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+          "info",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustCursorNative484-20261015/runtime/cursor-driver/server-info.pb"
+        ],
+        "fd_identity": [
+          6,
+          1486603
+        ]
+      },
+      {
+        "pid": 10,
+        "birth": "91022039",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustCursorNative484-20261015/runtime/cursor-driver/rocksdb",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustCursorNative484-20261015/runtime/cursor-driver/server-info.pb",
+          "21000"
+        ],
+        "fd_identity": [
+          6,
+          1486604
+        ]
+      },
+      {
+        "pid": 60,
+        "birth": "91022091",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+          "serve",
+          "http://127.0.0.1:21000",
+          "127.0.0.1:21001",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustCursorNative484-20261015/runtime/cursor-driver/shutdown-1"
+        ],
+        "fd_identity": [
+          6,
+          1500893
+        ]
+      },
+      {
+        "pid": 64,
+        "birth": "91022106",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+          "create",
+          "http://127.0.0.1:21001",
+          "c0b4ec93-c9a3-49c5-8dd3-1a614905e85c",
+          "c37e5b57-fd28-47ae-b482-85444288b088"
+        ],
+        "fd_identity": [
+          6,
+          1500894
+        ]
+      },
+      {
+        "pid": 68,
+        "birth": "91022130",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+          "start-run",
+          "http://127.0.0.1:21001",
+          "3ee0d29f-0427-4f01-acaa-16a095e7b7f4",
+          "1030"
+        ],
+        "fd_identity": [
+          6,
+          1486626
+        ]
+      },
+      {
+        "pid": 71,
+        "birth": "91022157",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+          "concurrent",
+          "http://127.0.0.1:21001",
+          "57d9c7c3-0de1-49fa-aea1-6cdf5f28da3e"
+        ],
+        "fd_identity": [
+          6,
+          1500901
+        ]
+      },
+      {
+        "pid": 74,
+        "birth": "91022177",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+          "inspect",
+          "http://127.0.0.1:21000",
+          "ae6dd3be-4b94-4b24-9880-e76578c49d62",
+          "0"
+        ],
+        "fd_identity": [
+          6,
+          1500902
+        ]
+      },
+      {
+        "pid": 78,
+        "birth": "91022208",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustCursorNative484-20261015/runtime/cursor-driver/rocksdb",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustCursorNative484-20261015/runtime/cursor-driver/server-info.pb",
+          "21000"
+        ],
+        "fd_identity": [
+          6,
+          1486635
+        ]
+      },
+      {
+        "pid": 142,
+        "birth": "91022256",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+          "inspect",
+          "http://127.0.0.1:21000",
+          "ae6dd3be-4b94-4b24-9880-e76578c49d62",
+          "0"
+        ],
+        "fd_identity": [
+          6,
+          1486639
+        ]
+      },
+      {
+        "pid": 146,
+        "birth": "91022272",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+          "serve",
+          "http://127.0.0.1:21000",
+          "127.0.0.1:21001",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustCursorNative484-20261015/runtime/cursor-driver/shutdown-3"
+        ],
+        "fd_identity": [
+          6,
+          1500971
+        ]
+      },
+      {
+        "pid": 1447,
+        "birth": "91032773",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+          "inspect",
+          "http://127.0.0.1:21000",
+          "ae6dd3be-4b94-4b24-9880-e76578c49d62",
+          "0"
+        ],
+        "fd_identity": [
+          6,
+          1516366
+        ]
+      },
+      {
+        "pid": 1450,
+        "birth": "91032789",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+          "inspect",
+          "http://127.0.0.1:21000",
+          "ae6dd3be-4b94-4b24-9880-e76578c49d62",
+          "1025"
+        ],
+        "fd_identity": [
+          6,
+          1516367
+        ]
+      },
+      {
+        "pid": 1454,
+        "birth": "91032805",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+          "read-state",
+          "http://127.0.0.1:21001"
+        ],
+        "fd_identity": [
+          6,
+          1516372
+        ]
+      },
+      {
+        "pid": 1458,
+        "birth": "91032837",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustCursorNative484-20261015/runtime/cursor-driver/rocksdb",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustCursorNative484-20261015/runtime/cursor-driver/server-info.pb",
+          "21000"
+        ],
+        "fd_identity": [
+          6,
+          1502089
+        ]
+      },
+      {
+        "pid": 1522,
+        "birth": "91032887",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+          "inspect",
+          "http://127.0.0.1:21000",
+          "ae6dd3be-4b94-4b24-9880-e76578c49d62",
+          "1025"
+        ],
+        "fd_identity": [
+          6,
+          1516427
+        ]
+      },
+      {
+        "pid": 1526,
+        "birth": "91032902",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+          "serve",
+          "http://127.0.0.1:21000",
+          "127.0.0.1:21001",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustCursorNative484-20261015/runtime/cursor-driver/shutdown-5"
+        ],
+        "fd_identity": [
+          6,
+          1516428
+        ]
+      },
+      {
+        "pid": 1535,
+        "birth": "91032970",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+          "concurrent",
+          "http://127.0.0.1:21001",
+          "626edf3f-7687-4af0-a672-9e20efef2ffe"
+        ],
+        "fd_identity": [
+          6,
+          1502117
+        ]
+      },
+      {
+        "pid": 1539,
+        "birth": "91033003",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustCursorNative484-20261015/runtime/cursor-driver/rocksdb",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustCursorNative484-20261015/runtime/cursor-driver/server-info.pb",
+          "21000"
+        ],
+        "fd_identity": [
+          6,
+          1516439
+        ]
+      },
+      {
+        "pid": 1603,
+        "birth": "91033053",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+          "inspect",
+          "http://127.0.0.1:21000",
+          "ae6dd3be-4b94-4b24-9880-e76578c49d62",
+          "1029"
+        ],
+        "fd_identity": [
+          6,
+          1516442
+        ]
+      },
+      {
+        "pid": 1607,
+        "birth": "91033069",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+          "serve",
+          "http://127.0.0.1:21000",
+          "127.0.0.1:21001",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustCursorNative484-20261015/runtime/cursor-driver/shutdown-7"
+        ],
+        "fd_identity": [
+          6,
+          1516443
+        ]
+      },
+      {
+        "pid": 1610,
+        "birth": "91033084",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+          "wait",
+          "http://127.0.0.1:21001",
+          "ae6dd3be-4b94-4b24-9880-e76578c49d62"
+        ],
+        "fd_identity": [
+          6,
+          1516444
+        ]
+      },
+      {
+        "pid": 1613,
+        "birth": "91033101",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+          "read-state",
+          "http://127.0.0.1:21001"
+        ],
+        "fd_identity": [
+          6,
+          1502192
+        ]
+      },
+      {
+        "pid": 1616,
+        "birth": "91033121",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+          "inspect",
+          "http://127.0.0.1:21000",
+          "ae6dd3be-4b94-4b24-9880-e76578c49d62",
+          "1029"
+        ],
+        "fd_identity": [
+          6,
+          1502195
+        ]
+      },
+      {
+        "pid": 1619,
+        "birth": "91033151",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustCursorNative484-20261015/runtime/cursor-driver/rocksdb",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustCursorNative484-20261015/runtime/cursor-driver/server-info.pb",
+          "21000"
+        ],
+        "fd_identity": [
+          6,
+          1502196
+        ]
+      },
+      {
+        "pid": 1683,
+        "birth": "91033201",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+          "serve",
+          "http://127.0.0.1:21000",
+          "127.0.0.1:21001",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustCursorNative484-20261015/runtime/cursor-driver/shutdown-9"
+        ],
+        "fd_identity": [
+          6,
+          1502201
+        ]
+      },
+      {
+        "pid": 1687,
+        "birth": "91033216",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+          "wait",
+          "http://127.0.0.1:21001",
+          "ae6dd3be-4b94-4b24-9880-e76578c49d62"
+        ],
+        "fd_identity": [
+          6,
+          1502202
+        ]
+      },
+      {
+        "pid": 1690,
+        "birth": "91033233",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+          "inspect",
+          "http://127.0.0.1:21000",
+          "ae6dd3be-4b94-4b24-9880-e76578c49d62",
+          "1029"
+        ],
+        "fd_identity": [
+          6,
+          1502203
+        ]
+      },
+      {
+        "pid": 1693,
+        "birth": "91033250",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+          "serve",
+          "http://127.0.0.1:21000",
+          "127.0.0.1:21001",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustCursorNative484-20261015/runtime/cursor-driver/shutdown-10"
+        ],
+        "fd_identity": [
+          6,
+          1502208
+        ]
+      },
+      {
+        "pid": 1696,
+        "birth": "91033265",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+          "start-run",
+          "http://127.0.0.1:21001",
+          "6c336585-c291-483a-b9e4-b22087ac2028",
+          "1"
+        ],
+        "fd_identity": [
+          6,
+          1502210
+        ]
+      },
+      {
+        "pid": 1699,
+        "birth": "91033291",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+          "concurrent",
+          "http://127.0.0.1:21001",
+          "c51fc3c1-d6fc-4503-bdc1-4866f5c76595"
+        ],
+        "fd_identity": [
+          6,
+          1516532
+        ]
+      },
+      {
+        "pid": 1702,
+        "birth": "91033308",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+          "inspect",
+          "http://127.0.0.1:21000",
+          "f497952f-9499-4847-80bc-ca52022c69f2",
+          "0"
+        ],
+        "fd_identity": [
+          6,
+          1516535
+        ]
+      },
+      {
+        "pid": 1706,
+        "birth": "91033340",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustCursorNative484-20261015/runtime/cursor-driver/rocksdb",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustCursorNative484-20261015/runtime/cursor-driver/server-info.pb",
+          "21000"
+        ],
+        "fd_identity": [
+          6,
+          1502216
+        ]
+      },
+      {
+        "pid": 1770,
+        "birth": "91033390",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+          "inspect",
+          "http://127.0.0.1:21000",
+          "f497952f-9499-4847-80bc-ca52022c69f2",
+          "0"
+        ],
+        "fd_identity": [
+          6,
+          1502220
+        ]
+      },
+      {
+        "pid": 1774,
+        "birth": "91033405",
+        "exit": 1,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+          "serve",
+          "http://127.0.0.1:21000",
+          "127.0.0.1:21001",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustCursorNative484-20261015/runtime/cursor-driver/shutdown-12"
+        ],
+        "fd_identity": [
+          6,
+          1502221
+        ]
+      },
+      {
+        "pid": 1777,
+        "birth": "91033424",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+          "inspect",
+          "http://127.0.0.1:21000",
+          "f497952f-9499-4847-80bc-ca52022c69f2",
+          "0"
+        ],
+        "fd_identity": [
+          6,
+          1516608
+        ]
+      }
+    ],
+    "adopted": [],
+    "cleanup_failure": null
+  },
+  "runtime_driver_sha256": "b3355f0fe548eb3bd7201c50bf1f88c6131f7a346b01eab33ee783187d77d1ec",
+  "runtime_helper_sha256": "b00fc43ce7b9117798b4e7d66c7deed10876452b4fa543dbf981dca73f14f608",
+  "compiled_fixture_main_sha256": "870d4b72bef978d4e5d411b3a0e6904a2b0a610913f9662ef1707d235a51ced4"
+}

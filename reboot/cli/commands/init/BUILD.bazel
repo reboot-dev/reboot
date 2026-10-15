@@ -3,8 +3,17 @@ load("@rules_python//python:defs.bzl", "py_library")
 
 py_library(
     name = "init_py",
-    srcs = ["init.py"],
+    srcs = ["init.py", "rust_init.py"],
     data = [
+        "//reboot/cli/commands/init/templates:rust_Cargo.toml.j2",
+        "//reboot/cli/commands/init/templates:rust_build.rs.j2",
+        "//reboot/cli/commands/init/templates:rust_lib.rs.j2",
+        "//reboot/cli/commands/init/templates:rust_main.rs.j2",
+        "//reboot/cli/commands/init/templates:rust_client.rs.j2",
+        "//reboot/cli/commands/init/templates:rust_hello_world.proto.j2",
+        "//reboot/cli/commands/init/templates:rust_rbtrc.j2",
+        "//reboot/cli/commands/init/templates:rust_README.md.j2",
+
         "//reboot/cli/commands/init/templates:.env.j2",
         "//reboot/cli/commands/init/templates:.rbtrc.j2",
         "//reboot/cli/commands/init/templates:App.module.css.j2",
@@ -30,6 +39,7 @@ py_library(
         "//reboot/cli/common:rc_py",
         "//reboot/cli/common:terminal_py",
         requirement("jinja2"),
+        requirement("tomli"),
     ],
 )
 

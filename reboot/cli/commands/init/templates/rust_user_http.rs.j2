@@ -1,0 +1,132 @@
+use crate::{generated, proto};
+use reboot::{ExternalContext, application_host::ApplicationHost, http_host::HttpRequestContext};
+use std::{net::SocketAddr, time::Duration};
+
+fn response(status: u16, body: String) -> axum::response::Response {
+    axum::response::Response::builder()
+        .status(status)
+        .body(axum::body::Body::from(body))
+        .expect("valid response")
+}
+
+async fn dispatch(
+    context: HttpRequestContext,
+    request: axum::extract::Request,
+    endpoint: String,
+    reference: String,
+) -> axum::response::Response {
+    if request.headers().get_all("authorization").iter().count() > 1 {
+        return response(400, "ambiguous authorization".into());
+    }
+    let operation = request.uri().path().to_owned();
+    if !matches!(operation.as_str(), "/user" | "/user/create" | "/user/greet") {
+        return response(404, "unknown operation".into());
+    }
+    let body = match tokio::time::timeout(
+        Duration::from_secs(1),
+        axum::body::to_bytes(request.into_body(), 1024),
+    )
+    .await
+    {
+        Ok(Ok(body)) => body,
+        Ok(Err(_)) => return response(400, "body limit is 1024 bytes".into()),
+        Err(_) => return response(408, "body deadline".into()),
+    };
+    // Forward credentials, but pin the target independently of caller metadata.
+    // The secured RPC adapter verifies/authorizes every call, including replay.
+    let mut headers = context.external().headers().clone();
+    headers.state_ref = reference;
+    let external = ExternalContext::with_headers(headers);
+    let result = tokio::time::timeout(Duration::from_secs(5), async move {
+        let channel = external
+            .connect(endpoint)
+            .await
+            .map_err(|error| tonic::Status::unavailable(error.to_string()))?;
+        let mut client = generated::HelloWorldMethodsExternalClient::new(channel, external);
+        if operation == "/user" {
+            return client
+                .num_greetings(proto::NumGreetingsRequest {})
+                .await
+                .map(|reply| reply.into_inner().number_of_greetings);
+        }
+        let key = std::str::from_utf8(&body)
+            .ok()
+            .and_then(|value| value.parse::<uuid::Uuid>().ok())
+            .ok_or_else(|| tonic::Status::invalid_argument("body must be an idempotency UUID"))?;
+        if operation == "/user/create" {
+            client
+                .create_with_key(proto::CreateRequest {}, key)
+                .await
+                .map(|reply| reply.into_inner().number_of_greetings)
+        } else {
+            client
+                .greet_with_key(proto::GreetRequest {}, key)
+                .await
+                .map(|reply| reply.into_inner().number_of_greetings)
+        }
+    })
+    .await;
+    match result {
+        Ok(Ok(value)) => response(200, value.to_string()),
+        Ok(Err(status)) => response(
+            match status.code() {
+                tonic::Code::Unauthenticated => 401,
+                tonic::Code::PermissionDenied => 403,
+                tonic::Code::InvalidArgument => 400,
+                tonic::Code::FailedPrecondition => 409,
+                tonic::Code::Unavailable => 503,
+                _ => 502,
+            },
+            format!("{:?}", status.code()),
+        ),
+        Err(_) => response(503, "RPC deadline".into()),
+    }
+}
+
+pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
+    let address: SocketAddr = std::env::var("RBT_USER_HTTP_LISTEN_ADDR")?.parse()?;
+    if !address.ip().is_loopback() {
+        return Err("User HTTP example requires a loopback listen address".into());
+    }
+    let endpoint = std::env::var("RBT_USER_HTTP_RPC_URL")?;
+    let origin = endpoint
+        .strip_prefix("http://")
+        .ok_or("User HTTP RPC URL must be a literal HTTP loopback origin")?;
+    let upstream: SocketAddr = origin.strip_suffix('/').unwrap_or(origin).parse()?;
+    if !upstream.ip().is_loopback() || upstream.port() == 0 || upstream.port() == address.port() {
+        return Err("User HTTP RPC origin requires a distinct nonzero loopback port".into());
+    }
+    let reference = reboot::state_ref::StateRef::from_id(
+        "{{ name }}.v1.HelloWorld",
+        &std::env::var("RBT_USER_HTTP_OWNER_ID")?,
+    )?
+    .to_string();
+    let read_endpoint = endpoint.clone();
+    let read_reference = reference.clone();
+    let create_endpoint = endpoint.clone();
+    let create_reference = reference.clone();
+    ApplicationHost::new("{{ name }}-user-http")
+        .http()
+        .get_with_request("/user", move |context, request| {
+            dispatch(
+                context,
+                request,
+                read_endpoint.clone(),
+                read_reference.clone(),
+            )
+        })
+        .post_with_request("/user/create", move |context, request| {
+            dispatch(
+                context,
+                request,
+                create_endpoint.clone(),
+                create_reference.clone(),
+            )
+        })
+        .post_with_request("/user/greet", move |context, request| {
+            dispatch(context, request, endpoint.clone(), reference.clone())
+        })
+        .serve_with_shutdown(address, crate::shutdown())
+        .await?;
+    Ok(())
+}
