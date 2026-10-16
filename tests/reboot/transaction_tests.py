@@ -4301,6 +4301,160 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
                 f"{trailing_metadata_tuples}",
             )
 
+    async def test_cancel_during_participant_prepare_reordered_after_abort(
+        self,
+    ) -> None:
+        """A caller cancels a transaction while a participant's prepare is
+        in flight to the database. The coordinator then aborts, and the
+        participant's abort reaches the database before the cancelled
+        prepare does: gRPC cancellation stops the Python side waiting
+        for the prepare, but the database still handles the request it
+        has already received, on its own thread, in whatever order it
+        gets to it.
+
+        The participant must not end up with a transaction in the
+        database that the Python side has already forgotten; a later
+        writer on the participant must proceed.
+        """
+        alice_prepare_in_flight = asyncio.Event()
+        alice_abort_received = asyncio.Event()
+        alice_aborted_in_database = asyncio.Event()
+
+        # A prepare that the database received before the abort but
+        # handled after it; the test awaits it so the writer below runs
+        # after it lands.
+        late_prepares: list[asyncio.Task] = []
+
+        intercept = False
+
+        def is_alice(state_type: str, state_ref: StateRef) -> bool:
+            return (
+                intercept and state_type == Account.__state_type_name__ and
+                state_ref.id == 'alice'
+            )
+
+        database_transaction_participant_prepare = (
+            DatabaseClient.transaction_participant_prepare
+        )
+        database_transaction_participant_abort = (
+            DatabaseClient.transaction_participant_abort
+        )
+        transaction_participant_abort = (
+            SidecarStateManager.transaction_participant_abort
+        )
+
+        async def mock_database_transaction_participant_prepare(
+            database_client, state_type, state_ref, *args, **kwargs
+        ):
+            if not is_alice(state_type, state_ref):
+                return await database_transaction_participant_prepare(
+                    database_client, state_type, state_ref, *args, **kwargs
+                )
+
+            # Only an abort after this point ends this attempt.
+            alice_abort_received.clear()
+            alice_aborted_in_database.clear()
+            alice_prepare_in_flight.set()
+
+            try:
+                # The database gets to this request only once the
+                # participant has been told to abort.
+                await alice_abort_received.wait()
+            except asyncio.CancelledError:
+                # The Python side gave up waiting for this request,
+                # but the database already has it and will handle it
+                # after the abort it is about to receive.
+                async def prepare_after_abort():
+                    await alice_aborted_in_database.wait()
+                    await database_transaction_participant_prepare(
+                        database_client,
+                        state_type,
+                        state_ref,
+                        *args,
+                        **kwargs,
+                    )
+
+                late_prepares.append(
+                    asyncio.create_task(prepare_after_abort())
+                )
+                raise
+
+            return await database_transaction_participant_prepare(
+                database_client, state_type, state_ref, *args, **kwargs
+            )
+
+        async def mock_database_transaction_participant_abort(
+            database_client, state_type, state_ref
+        ):
+            await database_transaction_participant_abort(
+                database_client, state_type, state_ref
+            )
+            if is_alice(state_type, state_ref):
+                alice_aborted_in_database.set()
+
+        async def mock_transaction_participant_abort(
+            state_manager, transaction
+        ):
+            if is_alice(transaction.state_type, transaction.state_ref):
+                alice_abort_received.set()
+            await transaction_participant_abort(state_manager, transaction)
+
+        with mock.patch(
+            'reboot.server.database.DatabaseClient'
+            '.transaction_participant_prepare',
+            mock_database_transaction_participant_prepare,
+        ), mock.patch(
+            'reboot.server.database.DatabaseClient'
+            '.transaction_participant_abort',
+            mock_database_transaction_participant_abort,
+        ), mock.patch(
+            'reboot.aio.state_managers.SidecarStateManager'
+            '.transaction_participant_abort',
+            mock_transaction_participant_abort,
+        ):
+            await self.rbt.up(
+                Application(servicers=[AccountServicer, BankServicer])
+            )
+
+            context = self.rbt.create_external_context(name=self.id())
+
+            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+
+            await bank.SignUp(context, account_id='alice', initial_deposit=100)
+            await bank.SignUp(context, account_id='bob', initial_deposit=100)
+
+            intercept = True
+
+            transfer_task = asyncio.create_task(
+                bank.Transfer(
+                    context,
+                    from_account_id='alice',
+                    to_account_id='bob',
+                    amount=10,
+                )
+            )
+
+            await alice_prepare_in_flight.wait()
+
+            transfer_task.cancel()
+
+            with self.assertRaises(asyncio.CancelledError):
+                await transfer_task
+
+            await alice_aborted_in_database.wait()
+
+            await asyncio.gather(*late_prepares)
+
+            # A writer on the participant waits for the aborted
+            # transaction to release the lock and must then be able to
+            # store.
+            context = self.rbt.create_external_context(name=self.id())
+
+            await Account.ref('alice').Deposit(context, amount=1)
+
+            balance_response = await Account.ref('alice').Balance(context)
+            self.assertEqual(balance_response.amount, 101)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
