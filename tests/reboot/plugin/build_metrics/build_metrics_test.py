@@ -1,6 +1,6 @@
 """Tests for reading a build's numbers from its transcript.
 
-`testdata/` holds five small transcripts written for these tests:
+`testdata/` holds six small transcripts written for these tests:
 
 * `baseline.jsonl`: one question answered after a 60 s wait, the design
   shown at 90 s, the API file written at 160 s, 3 scenarios passing at
@@ -14,6 +14,10 @@
   ("Ready to build?"), the feature file, API file and servicers, a test
   run read back from its record (one failing, then passing), a page,
   and a long handoff with its "Your turn";
+* `with_sub_agent.jsonl`, with `with_sub_agent/subagents/agent-a1.jsonl`
+  beside it: the API file and servicers in the session, a sub-agent
+  that reads, writes the first page and passes 2 browser scenarios, then
+  the session's own run of 9;
 * `codex.jsonl`: a Codex session in the shapes Codex records: its skill
   roots, an `AGENTS.md` taken in, code-mode scripts (one with
   JavaScript arrows, one reading a file, one writing a patch), then
@@ -86,6 +90,27 @@ class TheDesignDocument(unittest.TestCase):
     def test_a_build_before_the_design_document_still_reads(self) -> None:
         # No design.md: the long message, as before.
         self.assertEqual(read("baseline.jsonl").design_s, 30)
+
+
+class SubAgents(unittest.TestCase):
+
+    def test_a_sub_agents_work_counts_toward_the_moments(self) -> None:
+        # The page and the first passing run are the sub-agent's.
+        m = read("with_sub_agent.jsonl")
+        self.assertEqual((m.api_s, m.servicers_s), (40, 90))
+        self.assertEqual((m.page_s, m.green_s), (120, 170))
+        self.assertEqual(m.passed, 9)
+
+    def test_its_reading_stays_out_of_the_main_conversation(self) -> None:
+        m = read("with_sub_agent.jsonl")
+        self.assertGreaterEqual(m.sub_agent_words, 120)
+        self.assertLess(m.words_before_api, 60)
+
+    def test_its_messages_are_not_the_handoff(self) -> None:
+        self.assertEqual(read("with_sub_agent.jsonl").handoff_s, -1)
+
+    def test_a_session_without_sub_agents_reads_as_before(self) -> None:
+        self.assertEqual(read("baseline.jsonl").sub_agent_words, 0)
 
 
 class WhatItSkips(unittest.TestCase):

@@ -47,6 +47,7 @@ def main() -> int:
     print(f"plugin: {build.plugin or 'unknown'}")
     rows = build_metrics.COMPARED + (
         ("passed", "Scenarios passed, last run"),
+        ("sub_agent_words", "Words read by sub-agents"),
     )
     for key, label in rows:
         line = f"{label:<44}{shown(key, getattr(build, key)):>10}"

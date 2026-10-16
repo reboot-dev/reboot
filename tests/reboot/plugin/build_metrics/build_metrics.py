@@ -16,6 +16,12 @@ Both formats are the agents' own and undocumented, so each adapter
 the same few `Event`s and skips anything it doesn't understand. Every
 number is then worked out from the events alone (`measure`).
 
+A Claude Code session's sub-agents (`<session>/subagents/agent-*.jsonl`,
+a frontend built in parallel, say) are read with it: what they write and
+run counts toward the moments below, on the session's clock, while what
+they read is counted apart (`sub_agent_words`), since it never enters
+the main conversation.
+
 Times are active seconds: from the first event, less the time spent
 waiting for the person to answer a question. A build is not slower for
 waiting on a person. -1 means the moment never came.
@@ -42,7 +48,7 @@ What each moment is taken to be:
 import json
 import re
 from collections.abc import Iterable, Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 
@@ -81,6 +87,10 @@ class Event:
     * "load": a skill or an `AGENTS.md` taken in (`text`, and `source`,
       where a skill came from);
     * "start": the session's first moment.
+
+    `sub` marks an event from one of the session's sub-agents: it counts
+    toward the build's moments, but not toward what the person was asked
+    or shown, nor the main conversation's reading.
     """
 
     at: datetime
@@ -92,6 +102,7 @@ class Event:
     questions: int = 0
     failed: bool = False
     source: str = ""
+    sub: bool = False
 
 
 @dataclass
@@ -112,6 +123,10 @@ class Metrics:
     errors: int = 0
     error_lines: list[str] = field(default_factory=list)
     words_before_api: int = 0
+    # What the session's sub-agents took in (skills, files, results):
+    # read outside the main conversation, so it is never sent again on
+    # its later turns.
+    sub_agent_words: int = 0
     # Whether an `AGENTS.md` was taken in: Codex records it, Claude Code
     # doesn't (`claude_events`).
     map_loaded: bool = False
@@ -231,7 +246,8 @@ def _claude_assistant(at: datetime, block: dict) -> Iterator[Event]:
         items = args.get("questions") or []
         questions = len(items)
         asked = "\n".join(
-            str(item.get("question", "")) for item in items
+            str(item.get("question", ""))
+            for item in items
             if isinstance(item, dict)
         )
     yield Event(
@@ -350,14 +366,27 @@ def _codex_message(at: datetime, payload: dict) -> Iterator[Event]:
                 yield Event(at, "load", source=root)
 
 
+def sub_agents(path: Path) -> list[Path]:
+    """A Claude Code session's sub-agent transcripts, which it keeps
+    beside its own: `<session>/subagents/agent-<id>.jsonl`."""
+    folder = path.parent / path.stem / "subagents"
+    return sorted(folder.glob("agent-*.jsonl"))
+
+
 def events(path: Path) -> list[Event]:
-    """The session's events, in the order they happened, after a
-    "start" event at its first timestamp, whatever record holds it (the
-    person's prompt, usually)."""
-    read = codex_events if agent_of(path) == "codex" else claude_events
+    """The session's events, its sub-agents' among them, in the order
+    they happened, after a "start" event at the session's first
+    timestamp, whatever record holds it (the person's prompt, usually).
+    Codex keeps no sub-agent transcripts of this kind."""
+    codex = agent_of(path) == "codex"
+    read = codex_events if codex else claude_events
     times = (parse_time(record) for record in lines(path))
     start = min((t for t in times if t is not None), default=None)
-    found = sorted(read(path), key=lambda e: e.at)
+    found = list(read(path))
+    if not codex:
+        for sub in sub_agents(path):
+            found += [replace(e, sub=True) for e in claude_events(sub)]
+    found.sort(key=lambda e: e.at)
     return ([Event(start, "start")] if start else []) + found
 
 
@@ -398,6 +427,11 @@ def measure(stream: Iterable[Event], agent: str = "") -> Metrics:
     for event in stream:
         clock = clock or _Clock(event.at)
         api_written = metrics.api_s >= 0
+        if event.sub and event.kind in ("result", "load"):
+            # A sub-agent's reading stays out of the main conversation.
+            metrics.sub_agent_words += len(event.text.split())
+        if event.sub and event.kind == "say":
+            continue  # a sub-agent's words go to the build, not the person
         if event.kind == "say":
             if long_s < 0 and len(event.text.split()) >= DESIGN_WORDS:
                 long_s = clock.active(event.at)
@@ -406,21 +440,20 @@ def measure(stream: Iterable[Event], agent: str = "") -> Metrics:
             if metrics.handoff_s < 0 and HANDOFF in event.text:
                 metrics.handoff_s = clock.active(event.at)
         elif event.kind == "call":
-            if event.questions:
+            if event.questions and not event.sub:
                 asked[event.id] = event.at
                 if not api_written:
                     metrics.questions += event.questions
                 if (
-                    go_ahead_s < 0
-                    and design_written
-                    and any(q in event.text for q in GO_AHEAD)
+                    go_ahead_s < 0 and design_written and
+                    any(q in event.text for q in GO_AHEAD)
                 ):
                     go_ahead_s = clock.active(event.at)
             if any(DESIGN_FILE.search(path) for path in event.writes):
                 design_written = True
             if event.writes and metrics.edit_s < 0:
                 metrics.edit_s = clock.active(event.at)
-            if metrics.edit_s < 0:
+            if metrics.edit_s < 0 and not event.sub:
                 metrics.calls_before_edit += 1
             if not api_written and any(
                 API_FILE.search(path) for path in event.writes
@@ -438,7 +471,7 @@ def measure(stream: Iterable[Event], agent: str = "") -> Metrics:
                 metrics.map_loaded = True
             elif not metrics.plugin:
                 metrics.plugin = plugin_source(event.source)
-            if not api_written:
+            if not api_written and not event.sub:
                 metrics.words_before_api += len(event.text.split())
     metrics.design_s = next(
         (s for s in (go_ahead_s, heading_s, long_s) if s >= 0), -1
@@ -456,7 +489,7 @@ def _result(
     if question is not None:
         clock.waits.append((question, event.at))
         return
-    if metrics.api_s < 0:
+    if metrics.api_s < 0 and not event.sub:
         metrics.words_before_api += len(event.text.split())
     if event.failed or TRACEBACK in event.text:
         metrics.errors += 1
