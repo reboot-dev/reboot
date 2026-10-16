@@ -4,6 +4,8 @@ import os
 import subprocess
 import threading
 import time
+from contextlib import asynccontextmanager
+from datetime import timedelta
 from log.log import get_logger
 from reboot.settings import (
     ENVVAR_REBOOT_ASYNCIO_SLOW_CALLBACK_DURATION_SECONDS,
@@ -14,7 +16,8 @@ from reboot.settings import (
     ENVVAR_REBOOT_PY_SPY_OUTPUT,
     ENVVAR_REBOOT_PY_SPY_RATE,
 )
-from typing import Optional
+from reboot.wait_for_tasks import wait_for_tasks
+from typing import AsyncIterator, Optional
 
 logger = get_logger(__name__)
 
@@ -31,6 +34,41 @@ LAG_SMOOTHING_FACTOR = 1 / 3
 # (e.g., a synchronous call that prevents the loop from
 # running).
 BLOCKED_HIGHWATER_SECONDS = 2.0
+
+
+@asynccontextmanager
+async def warn_when_slow(
+    step: str,
+    *,
+    expected: timedelta,
+) -> AsyncIterator[None]:
+    """Warns every `expected` for as long as the body is still
+    running, naming `step` as what we are waiting on, so that a step
+    taking far longer than it should -- or never completing at all --
+    says so in the logs. A body that finishes within `expected` logs
+    nothing.
+    """
+    interval_seconds = expected.total_seconds()
+
+    async def warn() -> None:
+        elapsed_seconds = 0.0
+        while True:
+            await asyncio.sleep(interval_seconds)
+            elapsed_seconds += interval_seconds
+            logger.warning(
+                f"'{step}' is still running after "
+                f"{elapsed_seconds:g} seconds"
+            )
+
+    warn_task = asyncio.create_task(
+        warn(),
+        name=f'warn_when_slow({step!r}) in {__name__}',
+    )
+
+    try:
+        yield
+    finally:
+        await wait_for_tasks([warn_task], cancel=True)
 
 
 def _blocked_event_loop_watchdog(
