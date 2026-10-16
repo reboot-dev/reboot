@@ -14,14 +14,14 @@ from reboot.aio.headers import AUTHORIZATION_HEADER
 from reboot.aio.internals.channel_manager import _ChannelManager
 from reboot.aio.types import ApplicationId, ServerId
 from reboot.rootpage.page import probe, root_page, root_page_asset
-from reboot.settings import ONLY_LOCALHOST_NETWORK_ADDRESS
 from reboot.routing.cors_settings import permissive_cors_headers
+from reboot.settings import ONLY_LOCALHOST_NETWORK_ADDRESS
 from reboot.wait_for_tasks import wait_for_tasks
 from starlette.exceptions import HTTPException  # type: ignore[import]
 from starlette.requests import Request  # type: ignore[import]
 from starlette.responses import Response  # type: ignore[import]
-from starlette.staticfiles import StaticFiles  # type: ignore[import]
 from starlette.routing import compile_path
+from starlette.staticfiles import StaticFiles  # type: ignore[import]
 from starlette.types import Receive, Scope, Send  # type: ignore[import]
 from typing import (
     Any,
@@ -208,6 +208,13 @@ class PythonWebFramework(WebFramework):
             matches.append(_route_match(api_route))
         return matches
     @dataclass(frozen=True)
+    class AppInternalPath:
+        """The path of a route registered with `app_internal=True`,
+        compiled as Starlette matches it so a path template
+        (`/x/{id}`) matches its requests."""
+        pattern: re.Pattern[str]
+
+    @dataclass(frozen=True)
     class RequireOAuthTokenRoute:
         """A route registered with `require_oauth_token=True`: its
         path, compiled as Starlette matches it so a path template
@@ -235,11 +242,12 @@ class PythonWebFramework(WebFramework):
             # of the application's own routes (see
             # `has_http_routes_or_mounts`).
             self._web_app_directory: Optional[Path] = None
-            # Exact request paths whose handlers receive an *app-internal*
+            # Request paths whose handlers receive an *app-internal*
             # context (one that can call app-internal-only servicers)
             # instead of the usual external one, because they opted in via
             # `app_internal=True`. See the DANGER note in `_api_route`.
-            self._app_internal_paths: set[str] = set()
+            self._app_internal_paths: list[PythonWebFramework.AppInternalPath
+                                          ] = []
             self._require_oauth_token_routes: list[
                 PythonWebFramework.RequireOAuthTokenRoute] = []
             self._verify_oauth_token: Optional[Callable[[Request],
@@ -274,7 +282,11 @@ class PythonWebFramework(WebFramework):
             # validated. Never set it on a route that acts on unvalidated
             # request input.
             if kwargs.pop("app_internal", False):
-                self._app_internal_paths.add(path)
+                self._app_internal_paths.append(
+                    PythonWebFramework.AppInternalPath(
+                        pattern=compile_path(path)[0]
+                    )
+                )
 
             # `require_oauth_token` is ours too. Such a route serves only
             # a request signed in as a user of the application: by the
@@ -479,7 +491,10 @@ class PythonWebFramework(WebFramework):
             # `app_internal=True` get an *app-internal* context instead —
             # see the DANGER note on `HTTP._api_route`. We namespace this
             # on `request.state` so other middleware doesn't clash.
-            if request.url.path in self._http._app_internal_paths:
+            if any(
+                app_internal.pattern.match(request.url.path)
+                for app_internal in self._http._app_internal_paths
+            ):
                 request.state.reboot_external_context = (
                     app_internal_external_context_from_request(request)
                 )
