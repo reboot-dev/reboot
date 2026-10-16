@@ -619,3 +619,6 @@ mod coordinated_transaction_recovery;
 
 #[path = "coordinated_multiowner_abort.rs"]
 mod coordinated_multiowner_abort;
+
+#[path = "dynamic_catalog_recovery.rs"]
+mod dynamic_catalog_recovery;

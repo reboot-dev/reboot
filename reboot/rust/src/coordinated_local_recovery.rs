@@ -56,6 +56,9 @@ pub struct CoordinatedLocalRecovery<P: ParticipantSidecar, C: CoordinatorSidecar
     // Retained by the host-owned phase even if the startup future is cancelled.
     prepared_tasks: std::sync::Mutex<Option<Arc<PreparedSharedTaskStartup>>>,
     started: AtomicBool,
+    // Immutable extra catalog custody, with NO back-edge to this phase.
+    // Existing uncertain Custody retention keeps it; healthy Drop releases it.
+    _additional_custody: Option<Arc<dyn std::any::Any + Send + Sync>>,
 }
 
 // The HOST must retain the original phase across cancellation. As a last-resort
@@ -90,6 +93,27 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar> CoordinatedLocalRecovery<P, C
         coordinators: impl IntoIterator<Item = LocalCoordinator<P, C>>,
         resolver: Arc<LocalResolver<P>>,
         tasks: MultiOwnerTaskRecovery,
+    ) -> Result<Arc<Self>, Status> {
+        Self::new_with_custody(
+            store,
+            request,
+            participants,
+            coordinators,
+            resolver,
+            tasks,
+            None,
+        )
+    }
+
+    /// Catalog bridge only: attach immutable snapshots before any startup IO.
+    pub(crate) fn new_with_custody(
+        store: DatabaseActorStore,
+        request: db::RecoverRequest,
+        participants: impl IntoIterator<Item = DurableActorParticipant<P>>,
+        coordinators: impl IntoIterator<Item = LocalCoordinator<P, C>>,
+        resolver: Arc<LocalResolver<P>>,
+        tasks: MultiOwnerTaskRecovery,
+        additional_custody: Option<Arc<dyn std::any::Any + Send + Sync>>,
     ) -> Result<Arc<Self>, Status> {
         if request.shard_ids.is_empty() || !request.skip_idempotent_mutations {
             return Err(Status::invalid_argument(
@@ -155,6 +179,7 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar> CoordinatedLocalRecovery<P, C
             tasks,
             prepared_tasks: std::sync::Mutex::new(None),
             started: AtomicBool::new(false),
+            _additional_custody: additional_custody,
         }))
     }
 

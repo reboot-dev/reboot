@@ -173,7 +173,10 @@ async fn original_generated_catalog_serves_deposit_after_ready_but_excludes_bala
     // Returning a clone preserves the actual generated local_incarnation allocation.
     let captured = adapter.clone();
     // SDK callback requires tonic::Status; boxing would change its contract.
-    #[expect(clippy::result_large_err, reason = "catalog factory requires tonic::Status")]
+    #[expect(
+        clippy::result_large_err,
+        reason = "catalog factory requires tonic::Status"
+    )]
     let catalog = DynamicLocalCatalog::register(
         &mut host,
         configuration.clone(),
@@ -582,7 +585,10 @@ async fn generated_factory_policy_or_incarnation_change_never_publishes() {
         });
         let mut host = ApplicationHost::new("source689-refusal");
         // SDK callback requires tonic::Status; boxing would change its contract.
-        #[expect(clippy::result_large_err, reason = "catalog factory requires tonic::Status")]
+        #[expect(
+            clippy::result_large_err,
+            reason = "catalog factory requires tonic::Status"
+        )]
         let catalog = DynamicLocalCatalog::register(
             &mut host,
             configuration.clone(),
@@ -600,6 +606,316 @@ async fn generated_factory_policy_or_incarnation_change_never_publishes() {
         assert_eq!(host.registered_transaction_service_count(), 0);
         // Failed construction consumes retained uncertainty/quota, not retry permission.
         assert!(catalog.install(owner).is_err());
+    }
+    database_server.abort();
+    let _ = database_server.await;
+}
+
+// SOURCE770: real emitted Account adapters, installation/lookup only. No fake
+// Ready, task execution, canonical recovery or native-storage qualification.
+struct CatalogVerifier770;
+impl reboot::auth::TokenVerifier for CatalogVerifier770 {
+    fn verify<'a>(
+        &'a self,
+        _: &'a reboot::auth::AuthorizationContext,
+        _: Option<&'a str>,
+    ) -> reboot::auth::VerifyFuture<'a> {
+        Box::pin(async { reboot::auth::TokenVerification::NoOpinion })
+    }
+}
+struct CatalogAuthorizer770;
+impl reboot::auth::Authorizer for CatalogAuthorizer770 {
+    fn authorize<'a>(
+        &'a self,
+        _: &'a reboot::auth::AuthorizationContext,
+        _: Option<&'a reboot::auth::Auth>,
+        _: Option<&'a [u8]>,
+        _: &'a [u8],
+    ) -> reboot::auth::AuthorizeFuture<'a> {
+        Box::pin(async { reboot::auth::AuthorizationDecision::Allow })
+    }
+}
+
+#[tokio::test]
+async fn two_original_generated_owners_share_only_explicitly_prebound_policy() {
+    let (database_endpoint, model, database_server) =
+        reboot::runtime::test_support::start_database().await;
+    let store = DatabaseActorStore::connect_lazy(&database_endpoint).unwrap();
+    let sidecar = Arc::new(
+        bounded(TonicParticipantSidecar::connect(&database_endpoint))
+            .await
+            .unwrap(),
+    );
+    let coordinator_sidecar = Arc::new(
+        bounded(TonicCoordinatorSidecar::connect(&database_endpoint))
+            .await
+            .unwrap(),
+    );
+    // Bind ONCE, outside construction of either original adapter. SOURCE769's
+    // exact already-bound declaration no-op must preserve this policy lineage;
+    // separately binding sibling unbound policies is deliberately unsupported.
+    let policy = AuthorizationPolicy::permissive_for_development()
+        .for_declaration::<a::AccountDurableState>();
+    let references: Vec<_> = [
+        "owner770a",
+        "owner770b",
+        "independent770",
+        "verifier770",
+        "authorizer770",
+    ]
+    .into_iter()
+    .map(|id| {
+        reboot::state_ref::StateRef::from_id("bank.v1.Account", id)
+            .unwrap()
+            .to_string()
+    })
+    .collect();
+    let participants: Vec<_> = references
+        .iter()
+        .map(|reference| {
+            DurableActorParticipant::new(sidecar.clone(), "bank.v1.Account", reference)
+                .with_database_actor_gate(&store)
+        })
+        .collect();
+    let endpoints: Vec<_> = participants
+        .iter()
+        .map(|participant| {
+            Arc::new(InProcessParticipantEndpoint::new(
+                DurableActorParticipantHost::new(participant.clone()),
+            ))
+        })
+        .collect();
+    let resolver = Arc::new(
+        ExactParticipantResolver::new(
+            participants
+                .iter()
+                .zip(&endpoints)
+                .map(|(participant, endpoint)| (participant.actor_target(), endpoint.clone())),
+        )
+        .unwrap(),
+    );
+    let mut originals = Vec::new();
+    for (index, (participant, endpoint)) in participants.iter().zip(&endpoints).enumerate() {
+        let selected_policy = match index {
+            0 | 1 => policy.clone(),
+            // Equivalent behavior and descriptor do NOT mint the family's identity.
+            2 => AuthorizationPolicy::permissive_for_development()
+                .for_declaration::<a::AccountDurableState>(),
+            // Public replacement is construction, not a nonexistent policy setter.
+            3 => AuthorizationPolicy::new(Some(Arc::new(CatalogVerifier770)), None)
+                .for_declaration::<a::AccountDurableState>(),
+            4 => AuthorizationPolicy::new(None, Some(Arc::new(CatalogAuthorizer770)))
+                .for_declaration::<a::AccountDurableState>(),
+            _ => unreachable!(),
+        };
+        let (adapter, tasks) = a::AccountMethodsTransactionAdapter::new(
+            store.clone(),
+            participant.clone(),
+            DurableRootCoordinator::new(coordinator_sidecar.clone(), resolver.clone()),
+            NoStarts,
+            ResponseOnlyAccount {
+                logical_state_id: references[index].clone(),
+            },
+        )
+        .with_authorization(selected_policy)
+        .with_one_shot_writer_tasks(&references[index])
+        .unwrap();
+        // Never rewrite configuration fields or regenerate a participant in the factory.
+        let configuration = adapter.local_configuration().unwrap();
+        assert_eq!(configuration.target, participant.actor_target());
+        assert_eq!(configuration.database_endpoint, store.database_endpoint());
+        assert!(
+            configuration
+                .methods
+                .contains("bank.v1.AccountMethods.Deposit")
+        );
+        assert!(
+            !configuration
+                .methods
+                .contains("bank.v1.AccountMethods.Open")
+        );
+        assert!(
+            !configuration
+                .methods
+                .contains("bank.v1.AccountMethods.Balance")
+        );
+        let owner = DynamicLocalOwner::new(
+            configuration,
+            participant.clone(),
+            tasks,
+            endpoint.clone(),
+            resolver.clone(),
+        )
+        .unwrap();
+        // Successful public owner construction checks original participant/tasks/endpoint.
+        originals.push((owner, adapter));
+    }
+    assert_ne!(
+        originals[0].0.configuration().target,
+        originals[1].0.configuration().target
+    );
+    assert!(!Arc::ptr_eq(&endpoints[0], &endpoints[1]));
+    assert!(!Arc::ptr_eq(
+        &originals[0].0.configuration().incarnation,
+        &originals[1].0.configuration().incarnation
+    ));
+    assert!(
+        DynamicLocalOwner::new(
+            originals[0].0.configuration().clone(),
+            participants[0].clone(),
+            originals[1].0.tasks().clone(),
+            endpoints[0].clone(),
+            resolver.clone(),
+        )
+        .is_err(),
+        "other original's task allocation must fail ownership validation"
+    );
+    assert!(
+        DynamicLocalOwner::new(
+            originals[0].0.configuration().clone(),
+            participants[0].clone(),
+            originals[0].0.tasks().clone(),
+            endpoints[1].clone(),
+            resolver.clone(),
+        )
+        .is_err(),
+        "other original's endpoint must fail ownership validation"
+    );
+    let captured = originals.clone();
+    let mut host = ApplicationHost::new("source770-two-original-owners");
+    #[expect(
+        clippy::result_large_err,
+        reason = "catalog factory requires tonic::Status"
+    )]
+    let catalog = DynamicLocalCatalog::register(
+        &mut host,
+        originals[0].0.configuration().clone(),
+        originals.len(),
+        move |original: Arc<Owner>| {
+            let (_, adapter) = captured
+                .iter()
+                .find(|(owner, _)| Arc::ptr_eq(owner, &original))
+                .ok_or_else(|| {
+                    Status::failed_precondition("factory requires exact retained original")
+                })?;
+            // Clone the fully configured incarnation, not one adapter for all actors.
+            Ok(adapter.clone())
+        },
+    )
+    .unwrap();
+    let baseline = model.store_requests().len();
+    let mut destinations = Vec::new();
+    for (index, (owner, adapter)) in originals.iter().take(2).enumerate() {
+        let configuration = owner.configuration();
+        assert!(catalog.resolve(&configuration.target).await.is_err());
+        let destination = catalog.install(owner.clone()).unwrap();
+        let (found, installed) = catalog.lookup_installed(&configuration.target).unwrap();
+        assert!(Arc::ptr_eq(&found, owner));
+        assert!(std::ptr::eq(found.participant(), owner.participant()));
+        assert!(std::ptr::eq(found.tasks(), owner.tasks()));
+        assert!(Arc::ptr_eq(found.endpoint(), &endpoints[index]));
+        assert!(Arc::ptr_eq(found.custody(), &resolver));
+        assert!(Arc::ptr_eq(
+            &resolver.resolve(&configuration.target).await.unwrap(),
+            &endpoints[index]
+        ));
+        assert!(Arc::ptr_eq(
+            &catalog.resolve(&configuration.target).await.unwrap(),
+            &endpoints[index]
+        ));
+        assert!(destination.binding().same_registration(installed.binding()));
+        let registered = adapter
+            .clone()
+            .with_local_registration(destination.binding().clone())
+            .unwrap();
+        destination
+            .binding()
+            .validate_configuration(&registered.clone().local_configuration().unwrap())
+            .unwrap();
+        assert_eq!(
+            destination
+                .binding()
+                .require_host_ready(configuration)
+                .unwrap_err()
+                .code(),
+            tonic::Code::Unavailable
+        );
+        // Policy no-op is NOT adapter reconfiguration no-op. Even the SAME
+        // prebound clone must invalidate the old registration/incarnation.
+        for replacement in [
+            policy.clone(),
+            AuthorizationPolicy::permissive_for_development()
+                .for_declaration::<a::AccountDurableState>(),
+        ] {
+            let changed = registered.clone().with_authorization(replacement);
+            assert!(
+                destination
+                    .binding()
+                    .validate_configuration(&changed.local_configuration().unwrap())
+                    .is_err()
+            );
+            // Attachment stores a binding; admission validates its exact configuration.
+            let reattached = changed
+                .with_local_registration(destination.binding().clone())
+                .unwrap();
+            assert!(
+                destination
+                    .binding()
+                    .validate_configuration(&reattached.local_configuration().unwrap())
+                    .is_err()
+            );
+        }
+        destinations.push(destination);
+    }
+    assert!(
+        !destinations[0]
+            .binding()
+            .same_registration(destinations[1].binding())
+    );
+    assert_eq!(host.registered_transaction_adapter_count(), 2);
+    assert_eq!(host.registered_transaction_service_count(), 2);
+    for (owner, _) in originals.iter().skip(2) {
+        let before = Arc::strong_count(owner);
+        assert_eq!(
+            catalog.install(owner.clone()).err().unwrap().code(),
+            tonic::Code::FailedPrecondition
+        );
+        assert!(
+            Arc::strong_count(owner) > before,
+            "uncertain original custody remains retained"
+        );
+        assert!(
+            catalog
+                .lookup_installed(&owner.configuration().target)
+                .is_err()
+        );
+        assert!(
+            catalog
+                .resolve(&owner.configuration().target)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            catalog.install(owner.clone()).err().unwrap().code(),
+            tonic::Code::AlreadyExists
+        );
+    }
+    assert_eq!(host.registered_transaction_adapter_count(), 2);
+    assert_eq!(host.registered_transaction_service_count(), 2);
+    assert_eq!(
+        model.store_requests().len(),
+        baseline,
+        "composition must not issue Store"
+    );
+    // No host serve or test readiness setter: both destinations remain beforeReady.
+    drop(host);
+    for (destination, (owner, _)) in destinations.iter().zip(&originals) {
+        assert!(
+            destination
+                .binding()
+                .validate_configuration(owner.configuration())
+                .is_err()
+        );
     }
     database_server.abort();
     let _ = database_server.await;

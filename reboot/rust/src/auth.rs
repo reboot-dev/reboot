@@ -232,9 +232,22 @@ impl AuthorizationPolicy {
     }
 
     /// Bind descriptor policy without granting authenticated internal authority.
+    ///
+    /// Only rebinding the exact already-bound (STATE_TYPE, AUTO_CONSTRUCT) tuple
+    /// preserves policy identity. Bind once before cloning to share a policy
+    /// across generated adapters; separately binding unbound clones does not share
+    /// identity. A declaration transition, including changing away and back,
+    /// rotates identity. Independently constructed policies remain independent.
+    ///
+    /// Repeating the same bound call is not a handler-receipt revocation boundary.
+    /// Generated with_authorization still invalidates adapter incarnation and
+    /// registration, even when passed the same already-bound policy clone.
     pub fn for_declaration<D: crate::runtime::DurableStateDeclaration>(mut self) -> Self {
-        self.declaration = Some((D::STATE_TYPE, D::AUTO_CONSTRUCT));
-        self.entry_identity = Arc::new(());
+        let declaration = Some((D::STATE_TYPE, D::AUTO_CONSTRUCT));
+        if self.declaration != declaration {
+            self.entry_identity = Arc::new(());
+            self.declaration = declaration;
+        }
         self
     }
 
@@ -343,6 +356,10 @@ impl AuthorizationPolicy {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "auth_policy_binding_tests.rs"]
+mod policy_binding_tests;
 
 #[cfg(test)]
 mod tests {

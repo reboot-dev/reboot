@@ -1,8 +1,9 @@
 //! Exact-owner installation over the real host late-registration authority.
 //!
-//! This is a callable composition foundation, not dynamic graph recovery. It
-//! never discovers actors from request labels, adopts Pending state, starts task
-//! dispatch, or enables constructor tasks. Control lookup is composition only.
+//! Installation alone never discovers actors, adopts Pending state, starts task
+//! dispatch, or enables constructor tasks. For fixed supplied-owner canonical
+//! recovery consume the catalog with `into_recovery`; lookup alone is not control
+//! eligibility and does not grant readiness.
 use crate::{
     application_host::ApplicationHost,
     durable_coordinator::{InProcessParticipantEndpoint, ParticipantResolver, ParticipantTarget},
@@ -83,6 +84,9 @@ pub type DynamicLocalFrontdoor<A, P, C> = crate::registered_local::LateLocalServ
 
 pub struct DynamicLocalCatalog<A, P: ParticipantSidecar, C: Send + Sync + 'static> {
     family: LateLocalServiceFamily<CatalogAdapter<A, P, C>, DynamicLocalOwner<P, C>>,
+    // Includes failed/panicked installation attempts: uncertainty cannot be
+    // omitted from a later closed recovery inventory. No callback under lock.
+    attempted: std::sync::Mutex<std::collections::BTreeSet<ParticipantTarget>>,
 }
 
 /// Internal generated-service carrier. Binding cleanup always binds the actual
@@ -174,7 +178,10 @@ where
                 Ok(CatalogAdapter { adapter, owner })
             },
         )?;
-        Ok(Self { family })
+        Ok(Self {
+            family,
+            attempted: std::sync::Mutex::new(Default::default()),
+        })
     }
     /// Exact target is derived from the retained participant, never supplied by
     /// an HTTP/recovery request. Host custody precedes the first user callback.
@@ -182,7 +189,29 @@ where
         &self,
         owner: Arc<DynamicLocalOwner<P, C>>,
     ) -> Result<RegisteredLocalDestination, Status> {
-        self.family.install(owner.participant.actor_target(), owner)
+        let target = owner.participant.actor_target();
+        {
+            let mut attempted = self.attempted.lock().expect("catalog inventory poisoned");
+            if !attempted.insert(target.clone()) {
+                return Err(Status::already_exists(
+                    "catalog installation already attempted",
+                ));
+            }
+        }
+        self.family.install(target, owner)
+    }
+    pub(crate) fn validate_closed_inventory<'a>(
+        &self,
+        supplied: impl IntoIterator<Item = &'a ParticipantTarget>,
+    ) -> Result<(), Status> {
+        let supplied: std::collections::BTreeSet<_> = supplied.into_iter().cloned().collect();
+        let attempted = self.attempted.lock().expect("catalog inventory poisoned");
+        if supplied.is_empty() || *attempted != supplied {
+            return Err(Status::failed_precondition(
+                "recovery inventory must cover the entire installed catalog generation",
+            ));
+        }
+        Ok(())
     }
     /// Available during beforeReady for trusted recovery composition only.
     /// This is NOT recovery-control eligibility or permission to execute tasks.
@@ -220,5 +249,7 @@ where
 }
 
 #[cfg(test)]
-#[path = "dynamic_local_catalog_tests.rs"]
-mod tests;
+mod tests {
+    include!("dynamic_local_catalog_tests.rs");
+    include!("dynamic_catalog_recovery_tests.rs");
+}

@@ -97,6 +97,75 @@ exit zero preceded fresh container terminal inspection, and the original lock
 was free. Hot reload, new-consumer compilation and restart durability remain
 separate. This is not latest-upstream/full-native/overall SDK qualification.
 
+## Native generated Account catalog recovery and policy binding (2026-10-16)
+
+The [generated native control](tests/fixtures/registered_constructor_child_native/src/dynamic_catalog_recovery.rs)
+now installs two original Account TransactionAdapters into one consumed
+DynamicLocalCatalog and runs its actual HostRecovery through the original exact
+resolver, coordinators, participants, task owners and concrete endpoints. Each
+adapter is fully configured before its configuration/factory clone is taken.
+The [consuming bridge](src/dynamic_catalog_recovery.rs) validates the closed
+installed original inventory before recovery and retains catalog/factory,
+registration/service snapshots and exact resolver in immutable custody shared
+with the canonical inner phase. Existing uncertainty retention thus reaches
+those additional allocations without a cycle or stronger Weak host authority.
+Actual host models exercise healthy additional-payload release and retention
+after post-adoption rescan cancellation/error, with joined auxiliary servers.
+The existing original-owner/C/permit retention is **not** claimed repaired.
+
+[Authorization declaration binding](src/auth.rs) is idempotent only for the
+exact already-bound `(STATE_TYPE, AUTO_CONSTRUCT)` tuple. The host explicitly
+binds one policy once before cloning it into the original adapters. Binding an
+unbound policy or changing either declaration component rotates identity;
+independently minted equivalent policies and separately bound unbound siblings
+remain distinct. Same-bound rebinding is no longer a handler-receipt revocation
+primitive. Generated `with_authorization` still clears registration and rotates
+adapter incarnation/reactive identity even with the same prebound policy.
+[Real receipt regressions](src/auth_policy_binding_tests.rs) preserve consuming
+validation and original-authorizer no-rerun checks. The
+[original generated consumer](tests/fixtures/mixed_constructor_original/src/generated_catalog.rs)
+proves both owner installations/lookups, independent-policy refusal and rejection
+of old registration configurations after same-policy reconfiguration. Attaching
+a binding is not itself validation; the exact configuration is checked at the
+admission boundary.
+
+The native control uses two real STARTED/unprepared transaction roots, with
+empty task/provisional inventories. The second actual native Abort response is
+parked before SDK receipt: canonical participant rollbacks have happened, but
+coordinator replay, host readiness and public Deposit remain blocked. After
+both ACKs, canonical Abort decisions/cleanup converge; a later real HostRecovery
+still withholds global Ready and public Deposit remains Unavailable with no
+handler/Store effect. Releasing that phase permits one real generated HTTP/2
+Deposit. Direct canonical reads join its returned balance, original actor bytes,
+unchanged second Account and UUID-keyed persisted response to the actual Store.
+Balance remains outside this catalog's registered methods. Host/proxy joins and
+readiness revocation precede the completion marker. Each original task owner is
+configured with one delivery slot before startup, within the unchanged shared
+1024-slot bound; no budget guard is bypassed.
+
+Fresh parent-owned qualification and independent readback:
+
+- **763 SDK tests passed, 0 failed, 7 ignored; 12 consumer tests passed.** Strict
+  SDK/consumer lint, pinned Legacy build/lint and current native-fixture
+  compilation passed. See the
+  [library evidence](tests/evidence/generated-catalog-recovery-library-20261016.json).
+- **21 listed native controls passed, with all 42 SDK/Database children joined.**
+  All 20 previous controls were rerun against the same current binary/source.
+  Input/bundle/protobuf pins, SDK-before-Database retirement, sticky health,
+  drained custody and exact container retirement were independently verified.
+  See the [native evidence](tests/evidence/generated-catalog-recovery-native-controls-20261016.json).
+- All **13** pinned reboot-examples references were rechecked remotely and
+  locally at revision `5c332a2910122d6035799bfaf2a314bf1de830b8`.
+
+This closes bounded supplied-original-owner generated catalog recovery and its
+healthy public ordinary-writer path, not dynamic membership discovery,
+nonempty task recovery, constructor scheduling, native restart/lost-ACK or
+multi-owner cancellation, same-key replay/external exactly-once, provisional
+checkpoint adoption, shared Transfer, full taskful Bank or overall parity.
+The cached canonical native projection is not latest-upstream build
+qualification, and hosted fork CI still awaits approval. Earlier failed
+policy/configuration and consumer trials remain failed; they were not relabeled.
+
 ## Actual native two-original-owner Abort ACK barrier (2026-10-16)
 
 The [native two-owner control](tests/fixtures/registered_constructor_child_native/src/coordinated_multiowner_abort.rs)
@@ -141,9 +210,9 @@ Fresh parent-owned qualification and independent readback:
 
 This closes the bounded healthy native two-unprepared-owner ACK ordering
 control. It does not establish native multi-owner cancellation/ACK-loss/restart,
-a generated catalog-to-recovery bridge, taskful Bank constructors, provisional
-checkpoint adoption, shared Transfer, full native inventory coverage or a
-latest-upstream native build. Those remain open.
+taskful Bank constructors, provisional checkpoint adoption, shared Transfer,
+full native inventory coverage or a latest-upstream native build. Those remain
+open; the generated catalog bridge has its separate evidence above.
 
 ## Generated Account catalog and two-owner ACK fences (2026-10-16)
 
@@ -5522,7 +5591,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 719db862e90ab036d45e93b49bab005dcde1f93a779e0c0b0548de657ef177a3 -->
+<!-- parity-source-sha256: 91a0037c70f18b407a8317ca003402dc1528a7d854160924eddd118a941489f9 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,
