@@ -1762,8 +1762,14 @@ class GreeterInstance {
     }
     unref() {
         this.refs -= 1;
-        if (this.refs === 0 && this.websocket !== undefined) {
-            this.websocket.close();
+        // An empty `id` never connected, see the constructor.
+        if (this.refs === 0 && this.id !== "") {
+            // We might not have a websocket right now, e.g., because we
+            // are backing off before trying to reconnect it, but we always
+            // have a connection that we need to disconnect.
+            if (this.websocket !== undefined) {
+                this.websocket.close();
+            }
             reboot_web.websockets.disconnect(this.url, this.stateRef);
         }
         return this.refs;
