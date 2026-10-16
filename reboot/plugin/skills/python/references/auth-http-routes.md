@@ -27,18 +27,20 @@ serves itself, the `rbt_session` cookie the browser sends on its own.
 Anything else gets a 401. It needs `Application(oauth=...)`; an
 application without one refuses to start with such a route.
 
-The route is callable from any origin, the way `/mcp` is: it answers
-its own CORS preflight with no credentials allowed, so a cross-origin
-page can call it only with a bearer it already holds, never with the
-user's cookie, which is what lets a page in an MCP host's sandbox
-fetch from it. Do not add `Access-Control-*` headers of your own, do
-not check the bearer yourself, and do not use `app_internal=True` to
-skip auth: that gives every caller an app-internal context, which
-bypasses every authorizer.
+The route is callable from any origin, the way `/mcp` is: Envoy's
+CORS policy answers any origin without credentials on every path but
+the OAuth server's, so a cross-origin page can call the route only
+with a bearer it already holds, never with the user's cookie, which
+is what lets a page in an MCP host's sandbox fetch from it. Do not
+add `Access-Control-*` headers of your own, do not check the bearer
+yourself, and do not use `app_internal=True` to skip auth: that gives
+every caller an app-internal context, which bypasses every
+authorizer.
 
 To act as the signed-in user inside the handler, call Reboot methods
-with `external_context(request)` (from `reboot.aio.http`): the bearer
-is forwarded, and the methods' authorizers see `context.auth.user_id`.
+with `external_context(request)` (from `reboot.aio.http`): it carries
+the token the route accepted, from the header or from the cookie, and
+the methods' authorizers see `context.auth.user_id`.
 
 ## The Page Side
 

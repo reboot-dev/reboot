@@ -3,9 +3,9 @@
 `application.http.get(path, require_oauth_token=True)` (and `post`)
 serves a route only to a request signed in as a user of the
 application, by the access JWT as `Authorization: Bearer` or by the
-`rbt_session` cookie on a same-origin navigation, and answers its own
-CORS preflight with any origin and no credentials. Delete the code a
-route had for this. Find candidates:
+`rbt_session` cookie on a same-origin request; Envoy's CORS policy
+lets any origin call it without credentials. Delete the code a route
+had for this. Find candidates:
 
     grep -rn 'headers.get("authorization")\|jwt.decode(\|Access-Control-Allow' --include=*.py backend/
 

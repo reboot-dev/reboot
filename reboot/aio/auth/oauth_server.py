@@ -426,19 +426,18 @@ class OAuthServer:
         # only apps that actually serve an OAuth flow pay for it.
         self._consent_page_template: Optional[Template] = None
 
-    def verify_token(self, request: Request) -> Optional[UserId]:
-        """The user `request` is signed in as, by the access JWT in its
-        `Authorization: Bearer` header or in its session cookie, when
-        that counts (`_cookie_may_authenticate`); `None` otherwise.
-        `require_oauth_token=True` routes verify with this."""
+    def verify_token(self, request: Request) -> Optional[str]:
+        """The access JWT `request` is signed in with, verified: the one
+        in its `Authorization: Bearer` header or, when that counts
+        (`_cookie_may_authenticate`), in its session cookie. `None`
+        otherwise. `require_oauth_token=True` routes verify with this."""
         token = _bearer_token(request)
         if token is None and _cookie_may_authenticate(request):
             token = request.cookies.get(SESSION_COOKIE_NAME)
         if token is None:
             return None
         decoded = self._verify_jwt(token, "access")
-        sub = decoded.get("sub") if decoded is not None else None
-        return UserId(sub) if sub else None
+        return token if decoded is not None and decoded.get("sub") else None
 
     @property
     def token_verifier(self) -> OAuthTokenVerifier:

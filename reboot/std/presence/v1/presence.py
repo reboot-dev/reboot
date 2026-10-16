@@ -71,13 +71,18 @@ class Event:
         return self._waiters
 
 
+# What `presence_library()` sets without `authorizer=`: the application
+# itself, or a caller with a verified token.
+DEFAULT_AUTHORIZER: Authorizer | AuthorizerRule = allow_if(
+    any=[is_app_internal, has_verified_token]
+)
+
+
 class PresenceServicer(Presence.singleton.Servicer):
 
-    # A class attribute, so the last `presence_library(authorizer=...)`
-    # call sets it for every application in the process.
-    _authorizer: Authorizer | AuthorizerRule = allow_if(
-        any=[is_app_internal, has_verified_token]
-    )
+    # A class attribute, so the last `presence_library(...)` call sets
+    # it for every application in the process.
+    _authorizer: Authorizer | AuthorizerRule = DEFAULT_AUTHORIZER
 
     def authorizer(self):
         return self._authorizer
@@ -154,11 +159,9 @@ class SubscriberServicer(Subscriber.singleton.Servicer):
 
     _disconnect_events: dict[str, Event] = {}
 
-    # A class attribute, so the last `presence_library(authorizer=...)`
-    # call sets it for every application in the process.
-    _authorizer: Authorizer | AuthorizerRule = allow_if(
-        any=[is_app_internal, has_verified_token]
-    )
+    # A class attribute, so the last `presence_library(...)` call sets
+    # it for every application in the process.
+    _authorizer: Authorizer | AuthorizerRule = DEFAULT_AUTHORIZER
 
     def authorizer(self):
         return self._authorizer
@@ -260,11 +263,9 @@ class SubscriberServicer(Subscriber.singleton.Servicer):
 
 class MousePositionServicer(MousePosition.singleton.Servicer):
 
-    # A class attribute, so the last `presence_library(authorizer=...)`
-    # call sets it for every application in the process.
-    _authorizer: Authorizer | AuthorizerRule = allow_if(
-        any=[is_app_internal, has_verified_token]
-    )
+    # A class attribute, so the last `presence_library(...)` call sets
+    # it for every application in the process.
+    _authorizer: Authorizer | AuthorizerRule = DEFAULT_AUTHORIZER
 
     def authorizer(self):
         return self._authorizer
@@ -309,14 +310,16 @@ class PresenceLibrary(Library):
         *,
         authorizer: Optional[Authorizer | AuthorizerRule] = None,
     ):
-        if authorizer is not None:
-            # Set on the classes rather than on a subclass per library,
-            # because a servicer subclass defined inside a function does
-            # not work:
-            # https://github.com/reboot-dev/mono/pull/5140#issuecomment-3667592432
-            PresenceServicer._authorizer = authorizer
-            SubscriberServicer._authorizer = authorizer
-            MousePositionServicer._authorizer = authorizer
+        # Set on every construction, so an application started after
+        # one that passed `authorizer=allow()` gets the default, not
+        # the earlier application's rule. Set on the classes rather
+        # than on a subclass per library, because a servicer subclass
+        # defined inside a function does not work:
+        # https://github.com/reboot-dev/mono/pull/5140#issuecomment-3667592432
+        rule = DEFAULT_AUTHORIZER if authorizer is None else authorizer
+        PresenceServicer._authorizer = rule
+        SubscriberServicer._authorizer = rule
+        MousePositionServicer._authorizer = rule
 
     def servicers(self):
         return [
