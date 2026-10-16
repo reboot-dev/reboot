@@ -503,9 +503,13 @@ class Reboot:
                 servers=servers,
                 allowed_origins=allowed_origins,
             )
+            # This step makes the application metadata calls, which
+            # carry a deadline of their own; expect it to finish well
+            # within that deadline so the log names the step we are
+            # stuck on before the deadline fails the process.
             async with warn_when_slow(
                 "Validate the application's schema against the database",
-                expected=timedelta(seconds=30),
+                expected=timedelta(seconds=10),
             ):
                 await self._application_metadata.validate_schema_backwards_compatibility(
                     config
