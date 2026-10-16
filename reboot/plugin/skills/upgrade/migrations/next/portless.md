@@ -30,6 +30,7 @@ case make the changes below anyway and leave them running with
 
    ```
    dev run --default-config=ports
+
    dev run:ports --frontend-url=http://localhost:5173
    dev run:ports --mcp-app
    dev run:ports --web-app
