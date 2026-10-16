@@ -97,6 +97,57 @@ exit zero preceded fresh container terminal inspection, and the original lock
 was free. Hot reload, new-consumer compilation and restart durability remain
 separate. This is not latest-upstream/full-native/overall SDK qualification.
 
+## Native generated committed WelcomeEmail recovery (2026-10-16)
+
+The [committed-task control](tests/fixtures/registered_constructor_child_native/src/committed_welcome_catalog_recovery.rs)
+now exercises two real generated WelcomeEmail tasks belonging to the catalog's
+original participant-bound Account owners. Actual generated helpers create the
+Pending task IDs; a synchronous nontransactional canonical Store commits them
+**before** the two STARTED transaction graphs are created. The Database rejected
+the earlier reverse seed order; that failed run remains failed. No provisional
+effect or constructor scheduling guard was relaxed.
+
+The actual second native Abort response is held after canonical success but
+before SDK receipt. Both tasks remain Pending, both generated handlers remain
+unexecuted and no completion Store/CompleteTask is observed. After both ACKs,
+canonical Abort convergence and original-gate release occur, but a later real
+HostRecovery still withholds global readiness and public writers remain blocked.
+Its real host-bound LiveTaskWaitCatalog uses the exact original task allocations,
+finite accepted placement and running generations; it is not a readiness setter.
+
+Only actual global Ready permits both generated WelcomeEmail ordinary writers.
+Their bodies log the original example's welcome text and original Account IDs;
+**no external email is sent**. Each owner has exactly one acknowledged writer
+Store. Its receipt must match that actual task's public writer-task key, exact
+request fingerprint, unchanged Account bytes, absent workflow/child-task fields,
+and the corresponding canonical Completed response bytes. Real synchronous
+CompleteTask ACKs form a one-per-task bijection, generated typed Wait returns
+success, and direct canonical reload preserves each task's identity/request/
+schedule/iteration and terminal response. Host/proxy joins and final canonical
+readback precede the success marker.
+
+Fresh independent qualification:
+
+- **763 SDK tests passed, 0 failed, 7 ignored; 12 consumer tests passed.**
+  Strict SDK/consumer lint, pinned Legacy build/lint and current fixture
+  compilation passed; [library evidence](tests/evidence/committed-welcome-recovery-library-20261016.json).
+- **All 22 native controls passed; all 44 SDK/Database children joined.** All
+  21 prior controls were rerun on the same frozen source/binary. Exact input,
+  serializer and log pins, SDK-before-Database retirement, healthy/drained
+  custody and exact container terminal status were independently verified;
+  [native evidence](tests/evidence/committed-welcome-recovery-native-controls-20261016.json).
+- All **13** pinned reboot-examples references were rechecked locally and remotely
+  at `5c332a2910122d6035799bfaf2a314bf1de830b8`.
+
+This closes bounded generated **committed Pending task recovery**, not proof
+that a constructor scheduled those tasks. It does not accept taskful Bank.SignUp,
+registered constructor-child tasks, provisional adoption, shared Transfer,
+new restart/lost-ACK/cancellation behavior, external exactly-once effects or
+healthy original-owner registry release. The cached native projection is not a
+latest-upstream build; hosted fork CI remains approval-pending. A prior native
+observation/retirement-policy failure and the rejected seed order remain failed,
+not silently promoted by this fresh successful run.
+
 ## Native generated Account catalog recovery and policy binding (2026-10-16)
 
 The [generated native control](tests/fixtures/registered_constructor_child_native/src/dynamic_catalog_recovery.rs)
@@ -5591,7 +5642,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 91a0037c70f18b407a8317ca003402dc1528a7d854160924eddd118a941489f9 -->
+<!-- parity-source-sha256: df33fe132fc23fdfe050637cd8c635fdd110f7e4da5cec76483546d2a34ead90 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

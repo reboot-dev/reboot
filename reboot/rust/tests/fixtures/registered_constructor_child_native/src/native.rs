@@ -622,3 +622,5 @@ mod coordinated_multiowner_abort;
 
 #[path = "dynamic_catalog_recovery.rs"]
 mod dynamic_catalog_recovery;
+#[path = "committed_welcome_catalog_recovery.rs"]
+mod committed_welcome_catalog_recovery;
