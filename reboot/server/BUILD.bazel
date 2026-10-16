@@ -60,6 +60,7 @@ py_library(
         "//reboot:settings_py",
         "//reboot/aio:contexts_py",
         "//reboot/grpc:options_py",
+        "@com_github_reboot_dev_reboot//log:log_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:database_py_grpc",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:database_py_proto",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_proto",

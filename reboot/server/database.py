@@ -4,7 +4,9 @@ import os
 import sys
 import uuid
 from cffi import FFI
+from contextlib import contextmanager
 from google.protobuf.timestamp_pb2 import Timestamp
+from log.log import get_logger
 from rbt.v1alpha1 import (
     application_metadata_pb2,
     database_pb2,
@@ -18,7 +20,7 @@ from reboot.aio.types import StateRef, StateTypeName
 # both 'respect' and 'reboot'.
 from reboot.grpc.options import make_retry_channel_options
 from reboot.settings import MAX_DATABASE_GRPC_MESSAGE_LENGTH_BYTES
-from typing import AsyncIterator, Mapping, Optional, cast, overload
+from typing import AsyncIterator, Iterator, Mapping, Optional, cast, overload
 
 # Deadline for reading and writing the application metadata. These
 # two are the only calls we make to the database before the process
@@ -31,6 +33,8 @@ from typing import AsyncIterator, Mapping, Optional, cast, overload
 # deadline on a mutating one would leave the caller unable to tell
 # whether its write landed.
 APPLICATION_METADATA_DEADLINE_SECONDS = 30
+
+logger = get_logger(__name__)
 
 _ffi = FFI()
 _ffi.cdef(
@@ -693,15 +697,33 @@ class DatabaseClient:
             for item in batch.items:
                 yield item
 
+    @contextmanager
+    def _report_deadline_exceeded(self, call: str) -> Iterator[None]:
+        """Logs which call to which database exceeded its deadline, as a
+        `DEADLINE_EXCEEDED` `grpc.aio.AioRpcError` names neither, and
+        re-raises so that the process still exits and gets restarted.
+        """
+        try:
+            yield
+        except grpc.aio.AioRpcError as error:
+            if error.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
+                logger.warning(
+                    f"The database at '{self._target}' did not answer "
+                    f"`{call}` within "
+                    f"{APPLICATION_METADATA_DEADLINE_SECONDS} seconds"
+                )
+            raise
+
     async def get_application_metadata(
         self,
     ) -> Optional[application_metadata_pb2.ApplicationMetadata]:
         """Get application metadata from persistent storage."""
         stub = await self._get_database_stub()
-        response = await stub.GetApplicationMetadata(
-            database_pb2.GetApplicationMetadataRequest(),
-            timeout=APPLICATION_METADATA_DEADLINE_SECONDS,
-        )
+        with self._report_deadline_exceeded('GetApplicationMetadata'):
+            response = await stub.GetApplicationMetadata(
+                database_pb2.GetApplicationMetadataRequest(),
+                timeout=APPLICATION_METADATA_DEADLINE_SECONDS,
+            )
         return response.metadata if response.HasField('metadata') else None
 
     async def store_application_metadata(
@@ -710,10 +732,13 @@ class DatabaseClient:
     ) -> None:
         """Store application metadata to persistent storage."""
         stub = await self._get_database_stub()
-        await stub.StoreApplicationMetadata(
-            database_pb2.StoreApplicationMetadataRequest(metadata=metadata),
-            timeout=APPLICATION_METADATA_DEADLINE_SECONDS,
-        )
+        with self._report_deadline_exceeded('StoreApplicationMetadata'):
+            await stub.StoreApplicationMetadata(
+                database_pb2.StoreApplicationMetadataRequest(
+                    metadata=metadata
+                ),
+                timeout=APPLICATION_METADATA_DEADLINE_SECONDS,
+            )
 
     async def refresh_timestamp(self) -> Timestamp:
         """Get the current timestamp from the database's clock."""

@@ -28,7 +28,8 @@ class TestApplicationMetadataDeadline(unittest.IsolatedAsyncioTestCase):
         )
         port = self._server.add_insecure_port('127.0.0.1:0')
         await self._server.start()
-        self._client = DatabaseClient(f'127.0.0.1:{port}')
+        self._address = f'127.0.0.1:{port}'
+        self._client = DatabaseClient(self._address)
 
         patcher = mock.patch.object(
             database,
@@ -41,23 +42,34 @@ class TestApplicationMetadataDeadline(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self._server.stop(grace=None)
 
+    def _assert_reported(self, logs, call: str):
+        """Asserts that the warning names the call and the database,
+        neither of which a `DEADLINE_EXCEEDED` `AioRpcError` carries."""
+        self.assertEqual(len(logs.output), 1)
+        self.assertIn(call, logs.output[0])
+        self.assertIn(self._address, logs.output[0])
+
     async def test_get_application_metadata_deadline(self):
-        with self.assertRaises(grpc.aio.AioRpcError) as raised:
-            await self._client.get_application_metadata()
+        with self.assertLogs(database.logger, level='WARNING') as logs:
+            with self.assertRaises(grpc.aio.AioRpcError) as raised:
+                await self._client.get_application_metadata()
         self.assertEqual(
             raised.exception.code(),
             grpc.StatusCode.DEADLINE_EXCEEDED,
         )
+        self._assert_reported(logs, 'GetApplicationMetadata')
 
     async def test_store_application_metadata_deadline(self):
-        with self.assertRaises(grpc.aio.AioRpcError) as raised:
-            await self._client.store_application_metadata(
-                application_metadata_pb2.ApplicationMetadata()
-            )
+        with self.assertLogs(database.logger, level='WARNING') as logs:
+            with self.assertRaises(grpc.aio.AioRpcError) as raised:
+                await self._client.store_application_metadata(
+                    application_metadata_pb2.ApplicationMetadata()
+                )
         self.assertEqual(
             raised.exception.code(),
             grpc.StatusCode.DEADLINE_EXCEEDED,
         )
+        self._assert_reported(logs, 'StoreApplicationMetadata')
 
 
 if __name__ == '__main__':
