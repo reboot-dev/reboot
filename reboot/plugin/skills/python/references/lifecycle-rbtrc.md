@@ -120,6 +120,7 @@ serve run --python
 serve run --application=backend/src/main.py
 serve run --application-name=<app>
 serve run --tls=external
+
 # The built MCP Apps, which the backend serves from the image.
 serve run --mcp-app-dist-path=frontend/dist/mcp
 # A dual-frontend app also serves its built web app at `/`:

@@ -317,10 +317,12 @@ server, typically as a config that `.rbtrc` makes the default:
 ```shell
 dev run --application-name=bank
 dev run --default-config=portless
+
 dev run:portless --portless
 dev run:portless --frontend-url=https://frontend.bank.localhost
 dev run:portless --mcp-app
 dev run:portless --web-app
+
 dashboard --default-config=portless
 dashboard:portless --portless
 dashboard:ports --no-portless
