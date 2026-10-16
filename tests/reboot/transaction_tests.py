@@ -30,7 +30,12 @@ from reboot.aio.headers import (
 )
 from reboot.aio.internals.contextvars import Servicing, _servicing
 from reboot.aio.resolvers import NoResolver
-from reboot.aio.state_managers import Lock, SidecarStateManager, StateManager
+from reboot.aio.state_managers import (
+    TRANSACTION_DEADLOCK_GRACE,
+    Lock,
+    SidecarStateManager,
+    StateManager,
+)
 from reboot.aio.stubs import (
     NestedTransactionUnaryRetriedCall,
     Stub,
@@ -744,6 +749,130 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
         (_, first_exited), (second_entered, _) = runs
         self.assertGreaterEqual(second_entered, first_exited)
 
+    async def test_waiting_behind_a_moving_lock_is_not_a_deadlock(
+        self,
+    ) -> None:
+        """A younger transaction queued behind a run of older
+        transactions that each hold a state's lock briefly waits far
+        longer than the grace period, yet is never presumed
+        deadlocked: at each grace check the holder is a different
+        transaction from the one at the previous check, which means the
+        lock is changing hands, not stuck. Only a holder that has held
+        the lock for a whole grace period is a presumed deadlock.
+        """
+        hold = 4 * TRANSACTION_DEADLOCK_GRACE / 5
+
+        class TargetServicer(GeneralServicer):
+
+            def authorizer(self):
+                return allow()
+
+            async def ConstructorWriter(
+                self,
+                context: WriterContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                return GeneralResponse()
+
+            # A root that calls the target's exclusive transaction.
+            async def ConstructorTransaction(
+                self,
+                context: TransactionContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                await General.ref(request.content["target"]).Transaction(
+                    context,
+                    content={"hold": request.content["hold"]},
+                )
+                return GeneralResponse()
+
+            # The target's transaction holds its lock for `hold`.
+            async def Transaction(
+                self,
+                context: TransactionContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                await asyncio.sleep(float(request.content["hold"]))
+                return GeneralResponse()
+
+        # Record every `TransactionShouldRetry` the client parses, to
+        # prove that nothing was presumed deadlocked.
+        transaction_should_retry = UnaryRetriedCall._transaction_should_retry
+        should_retries: list[errors_pb2.TransactionShouldRetry] = []
+
+        async def mock_transaction_should_retry(unary_retried_call):
+            should_retry = await transaction_should_retry(unary_retried_call)
+            if should_retry is not None:
+                should_retries.append(should_retry)
+            return should_retry
+
+        with mock.patch(
+            'reboot.aio.stubs.UnaryRetriedCall._transaction_should_retry',
+            mock_transaction_should_retry,
+        ):
+            await self.rbt.up(
+                Application(servicers=[TargetServicer]),
+                # Run each body once, so that the holders queue in the
+                # order the roots were started.
+                effect_validation=EffectValidation.DISABLED,
+            )
+            context = self.rbt.create_external_context(name=self.id())
+
+            await General.ConstructorWriter(context, 'target')
+
+            # Four older roots, started in order so that each queues
+            # behind the previous one, together hold the target's lock
+            # for several grace periods.
+            older = []
+            for index in range(4):
+                older.append(
+                    asyncio.create_task(
+                        General.ConstructorTransaction(
+                            context,
+                            f'older-{index}',
+                            content={
+                                "target": "target",
+                                "hold": str(hold.total_seconds()),
+                            },
+                        )
+                    )
+                )
+                # Let this root reach the target before the next starts,
+                # so that the target's queue is in root order.
+                await asyncio.sleep(0.05)
+
+            # The youngest root queues last and holds the lock for no
+            # time at all once it gets it.
+            started = time.monotonic()
+            await General.ConstructorTransaction(
+                context,
+                'youngest',
+                content={
+                    "target": "target",
+                    "hold": "0"
+                },
+            )
+            waited = time.monotonic() - started
+            await asyncio.gather(*older)
+
+        # The youngest waited out more than one grace period behind the
+        # older holders, and nothing was presumed deadlocked. A retry
+        # for `RESTART_DETECTED` can still happen right after the server
+        # starts, when a transaction's id predates the server's recovery
+        # timestamp; that is unrelated to the lock.
+        self.assertGreater(waited, TRANSACTION_DEADLOCK_GRACE.total_seconds())
+        self.assertEqual(
+            [
+                should_retry for should_retry in should_retries
+                if should_retry.reason ==
+                errors_pb2.TransactionShouldRetry.PRESUMED_DEADLOCK
+            ],
+            [],
+        )
+
     async def test_shared_transactions_on_one_state_overlap(self) -> None:
         """Two transactions declared `shared`, each nested in its own root
         so that neither carries an idempotency key, take the same
@@ -816,6 +945,131 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertTrue(both_entered.is_set())
+
+    async def test_second_upgrader_retries_carrying_its_age(self) -> None:
+        """Two `shared` transactions on one state, each nested in its own
+        root, both write the state and so both upgrade. The two would
+        each wait for the other's shared hold to go, so the second to
+        upgrade aborts at once with `TransactionShouldRetry`, reason
+        `PRESUMED_DEADLOCK`, carrying its age, and its retry succeeds.
+        """
+        # Each body waits for the other to have entered too, so that
+        # both hold the state shared when they go to write it.
+        both_entered = asyncio.Event()
+        entered = 0
+
+        class TargetServicer(GeneralServicer):
+
+            def authorizer(self):
+                return allow()
+
+            async def ConstructorWriter(
+                self,
+                context: WriterContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                return GeneralResponse()
+
+            # A root that calls the target's shared transaction.
+            async def ConstructorTransaction(
+                self,
+                context: TransactionContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                await General.ref(request.content["target"]
+                                 ).SharedTransaction(context)
+                return GeneralResponse()
+
+            # Reads its state alongside the other, then writes it.
+            async def SharedTransaction(
+                self,
+                context: TransactionContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                nonlocal entered
+                entered += 1
+                if entered == 2:
+                    both_entered.set()
+                await asyncio.wait_for(both_entered.wait(), timeout=10)
+                state.content["writes"] = str(
+                    int(state.content.get("writes", "0")) + 1
+                )
+                return GeneralResponse()
+
+            async def Reader(
+                self,
+                context: ReaderContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                return GeneralResponse(content=state.content)
+
+        # Record every `TransactionShouldRetry` the client parses.
+        transaction_should_retry = UnaryRetriedCall._transaction_should_retry
+        should_retries: list[tuple[UnaryRetriedCall,
+                                   errors_pb2.TransactionShouldRetry]] = []
+
+        async def mock_transaction_should_retry(unary_retried_call):
+            should_retry = await transaction_should_retry(unary_retried_call)
+            if should_retry is not None:
+                should_retries.append((unary_retried_call, should_retry))
+            return should_retry
+
+        with mock.patch(
+            'reboot.aio.stubs.UnaryRetriedCall._transaction_should_retry',
+            mock_transaction_should_retry,
+        ):
+            await self.rbt.up(
+                Application(servicers=[TargetServicer]),
+                # Run each body once, so that exactly two bodies meet at
+                # the barrier and exactly two upgrades are attempted.
+                effect_validation=EffectValidation.DISABLED,
+            )
+            context = self.rbt.create_external_context(name=self.id())
+
+            await General.ConstructorWriter(context, 'target')
+            # Retries after the server starts are unrelated to the lock.
+            should_retries.clear()
+
+            started = time.monotonic()
+            await asyncio.gather(
+                General.ConstructorTransaction(
+                    context,
+                    'root-1',
+                    content={"target": "target"},
+                ),
+                General.ConstructorTransaction(
+                    context,
+                    'root-2',
+                    content={"target": "target"},
+                ),
+            )
+            elapsed = time.monotonic() - started
+
+        # Both writes landed, one of them on a retry.
+        target = await General.ref('target').Reader(context)
+        self.assertEqual(target.content["writes"], "2")
+
+        # The conflict was resolved at once rather than by the lock
+        # deadline, by the second upgrader asking to retry for a
+        # presumed deadlock with its age carried back on the retry.
+        self.assertLess(elapsed, 15)
+        deaths = [
+            (call, should_retry)
+            for call, should_retry in should_retries
+            if should_retry.reason ==
+            errors_pb2.TransactionShouldRetry.PRESUMED_DEADLOCK
+        ]
+        self.assertGreater(len(deaths), 0)
+        for call, should_retry in deaths:
+            self.assertNotEqual(should_retry.retry_age, '')
+            self.assertIn(
+                (TRANSACTION_RETRY_AGE_HEADER, should_retry.retry_age),
+                call._metadata,
+            )
 
     async def test_retry_carries_the_age_of_the_first_attempt(self) -> None:
         """A call that aborts with a `TransactionShouldRetry` whose

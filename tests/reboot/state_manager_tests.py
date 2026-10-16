@@ -1112,7 +1112,8 @@ class LockTest(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(0)
         self.assertFalse(first_upgrade_task.done())
 
-        # The second upgrade attempt must fail immediately.
+        # The second upgrade attempt must fail immediately; without a
+        # participant it is asked to retry as `Unavailable`.
         with self.assertRaises(SystemAborted) as aborted:
             await lock.upgrade(deadline=None)
         self.assertEqual(type(aborted.exception.error), Unavailable)
@@ -1122,6 +1123,47 @@ class LockTest(unittest.IsolatedAsyncioTestCase):
         lock.release_shared()
         await asyncio.wait_for(first_upgrade_task, timeout=1.0)
         lock.release_exclusive()
+
+    async def test_second_upgrade_by_a_transaction_retries_with_its_age(
+        self,
+    ) -> None:
+        """A transaction whose upgrade meets another pending upgrade is
+        asked to retry the way a presumed deadlock asks it, carrying its
+        age, since the two would each wait for the other's shared hold.
+        """
+        lock = Lock()
+        # Stand-ins for the participants; the lock only reports them.
+        first = unittest.mock.Mock(spec=StateManager.Transaction)
+        first.root_id = uuid7(timestamp_ms=1000)
+        first.age = first.root_id
+        second = unittest.mock.Mock(spec=StateManager.Transaction)
+        second.root_id = uuid7(timestamp_ms=2000)
+        second.age = second.root_id
+        await lock.acquire_shared(deadline=None, transaction=first)
+        await lock.acquire_shared(deadline=None, transaction=second)
+
+        first_upgrade_task = asyncio.create_task(
+            lock.upgrade(deadline=None, transaction=first)
+        )
+        await asyncio.sleep(0)
+        self.assertFalse(first_upgrade_task.done())
+
+        with self.assertRaises(SystemAborted) as aborted:
+            await lock.upgrade(deadline=None, transaction=second)
+        error = aborted.exception.error
+        assert isinstance(error, TransactionShouldRetry)
+        self.assertEqual(
+            error.reason, TransactionShouldRetry.PRESUMED_DEADLOCK
+        )
+        self.assertEqual(error.retry_age, str(second.age))
+        assert aborted.exception.message is not None
+        self.assertIn(str(first.root_id), aborted.exception.message)
+
+        # The second still holds shared; releasing it lets the first
+        # upgrade complete, and then the first releases exclusive.
+        lock.release_shared(transaction=second)
+        await asyncio.wait_for(first_upgrade_task, timeout=1.0)
+        lock.release_exclusive(transaction=first)
 
     async def test_downgrade_when_sole_holder(self) -> None:
         lock = Lock()
