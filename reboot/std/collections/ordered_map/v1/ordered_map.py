@@ -1175,6 +1175,7 @@ class OrderedMapLibrary(Library):
 
     def __init__(
         self,
+        *,
         authorizer: Optional[OrderedMap.Authorizer] = None,
     ):
         OrderedMapServicer._authorizer = authorizer
@@ -1190,5 +1191,5 @@ def servicers():
     ]
 
 
-def ordered_map_library(authorizer: Optional[OrderedMap.Authorizer] = None):
-    return OrderedMapLibrary(authorizer)
+def ordered_map_library(*, authorizer: Optional[OrderedMap.Authorizer] = None):
+    return OrderedMapLibrary(authorizer=authorizer)

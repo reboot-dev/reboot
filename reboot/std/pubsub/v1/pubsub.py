@@ -135,6 +135,7 @@ class PubSubLibrary(Library):
 
     def __init__(
         self,
+        *,
         authorizer: Optional[Topic.Authorizer] = None,
     ):
         TopicServicer._authorizer = authorizer
@@ -150,5 +151,5 @@ def servicers():
     return [TopicServicer] + queue.servicers()
 
 
-def pubsub_library(authorizer: Optional[Topic.Authorizer] = None):
-    return PubSubLibrary(authorizer)
+def pubsub_library(*, authorizer: Optional[Topic.Authorizer] = None):
+    return PubSubLibrary(authorizer=authorizer)

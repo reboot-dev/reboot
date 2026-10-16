@@ -697,7 +697,7 @@ class TestCase(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(
             Application(
                 servicers=[SortedMapConsumer],
-                libraries=[sorted_map_library(authorizer)],
+                libraries=[sorted_map_library(authorizer=authorizer)],
             ),
             local_envoy=True,
             local_envoy_tls=True,  # For TLS/SSL test coverage.
