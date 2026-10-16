@@ -36,11 +36,7 @@ from reboot.dashboard.backend.constants import (
     PREFERENCES_ID,
     PRESENCE_ID,
 )
-from reboot.dashboard.tunnel import (
-    CloudflaredNotFoundError,
-    TunnelError,
-    cloudflared_tunnel,
-)
+from reboot.dashboard.tunnel import TunnelError, cloudflared_tunnel
 from reboot.settings import (
     ENVVAR_LOCAL_ENVOY_USE_TLS,
     ENVVAR_RBT_DEV,
@@ -348,34 +344,34 @@ async def _tunnel(*, port: int, subprocesses: Subprocesses) -> None:
     """Keeps a tunnel to the dashboard on `port` open and prints each
     tunnel's address for the developer to add as an MCP connector: a
     connector added with a stopped tunnel's address reaches nothing.
-    Gives up after `_TUNNEL_ATTEMPTS` failures in a row, and at once
-    with no `cloudflared`; the dashboard serves this machine either
-    way.
+    A tunnel that cannot be opened is a warning, and the dashboard
+    serves this machine alone.
     """
     backoff = Backoff()
-    failures = 0
-    while failures < _TUNNEL_ATTEMPTS:
+    while True:
         try:
             async with cloudflared_tunnel(
                 port=port, subprocesses=subprocesses
             ) as tunnel:
-                failures = 0
+                backoff.clear()
                 terminal.info(
                     'To show your dashboard in Claude or ChatGPT, add this '
                     f'MCP connector: {tunnel.url}/mcp/\n'
                 )
-                await tunnel.task
-        except CloudflaredNotFoundError as error:
-            terminal.warn(f'{error}\n')
-            return
+                try:
+                    await tunnel.task
+                except TunnelError as error:
+                    terminal.warn(f'{error}\n')
         except TunnelError as error:
-            failures += 1
-            terminal.warn(f'{error}\n')
+            # Could not be opened at all: offline, blocked, or no
+            # `cloudflared`. Trying again would fail the same way.
+            terminal.warn(
+                f'{error}\n\n'
+                'Without a tunnel an MCP host cannot show your dashboard; '
+                f'it still serves at http://127.0.0.1:{port}/\n'
+            )
+            return
         await backoff()
-    terminal.warn(
-        'Giving up on a tunnel, so an MCP host cannot show your dashboard; '
-        f'it still serves at http://127.0.0.1:{port}/\n'
-    )
 
 
 async def _dashboard_context(dashboard_url: str) -> ExternalContext:
