@@ -58,7 +58,7 @@ def main():
         async def cancellable_cli() -> int:
             # A signal cancels `cli()`, and once it has finished, and
             # we have exited, terminates us.
-            async with signals.cancel_on_signal_and_raise_system_exit(
+            async with signals.cancel_on_signal_then_reraise_after_cancellation(
                 signals.TERMINATING_SIGNALS_FOR_CLIS
             ):
                 return await cli()
