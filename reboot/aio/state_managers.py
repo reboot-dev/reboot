@@ -127,6 +127,13 @@ def _restart_detected(exception: BaseException) -> bool:
     )
 
 
+def _task_raised(task: asyncio.Task) -> bool:
+    """Whether `task` finished by raising."""
+    return (
+        task.done() and not task.cancelled() and task.exception() is not None
+    )
+
+
 def check_idempotency_key_not_expired(idempotency_key: uuid.UUID) -> None:
     """Check if the idempotency key is an expired UUIDv7.
 
@@ -583,6 +590,14 @@ class StateManager(ABC):
             # the coordinator for updates about the transaction, i.e.,
             # if it was aborted or has been committed.
             self.watch_task: Optional[asyncio.Task] = None
+
+            # The prepare request this participant has made to the
+            # database, as a task that outlives the `Prepare` RPC that
+            # made it and records the outcome on this object itself. An
+            # abort awaits it before asking the database to roll back;
+            # see the race described in
+            # `SidecarStateManager.transaction_participant_prepare()`.
+            self.prepare_task: Optional[asyncio.Task[None]] = None
 
             # Whether or not the transaction has been prepared.
             self._prepared = prepared
@@ -1315,6 +1330,13 @@ class StateManager(ABC):
         def finished(self) -> bool:
             """Returns whether or not the transaction is finished."""
             return self._committed.done()
+
+        async def wait_for_prepare_task(self) -> None:
+            """Waits until the prepare request this participant has in
+            flight, if any, has been handled by the database, whatever
+            its outcome."""
+            if self.prepare_task is not None and not self.prepare_task.done():
+                await asyncio.wait([self.prepare_task])
 
     @property
     def latest_timestamp_ms(self) -> Optional[int]:
@@ -6450,52 +6472,114 @@ class SidecarStateManager(
                 # already applied to the RocksDB transaction during
                 # intermediate `_store()` calls, so we just need to
                 # call prepare on the existing transaction.
-                if transaction.using_restart_detection:
-                    timestamp = await self._database_client.transaction_participant_prepare(
-                        state_type,
-                        state_ref,
-                        transaction=(
-                            database_pb2.Transaction(
-                                state_type=state_type,
-                                state_ref=state_ref.to_str(),
-                                transaction_ids=[
-                                    transaction_id.bytes
-                                    for transaction_id in transaction.ids
-                                ],
-                                coordinator_state_type=(
-                                    transaction.coordinator_state_type
-                                ),
-                                coordinator_state_ref=(
-                                    transaction.coordinator_state_ref.to_str()
-                                ),
-                            )
-                        ),
-                        state=(
-                            transaction.state.SerializeToString()
-                            if transaction.state is not None and
-                            # Only persist the state when we actually
-                            # mutated it. A transaction holding a
-                            # shared lock means its
-                            # `transaction.state` has not been
-                            # mutated!
-                            transaction.mode == Lock.Mode.EXCLUSIVE else None
-                        ),
-                        task_upserts=[
-                            task.to_sidecar_task()
-                            for task in transaction.tasks
-                        ],
-                        idempotent_mutations=(
-                            list(transaction.idempotent_mutations.values()) if
-                            len(transaction.idempotent_mutations) > 0 else None
-                        ),
-                    )
-                else:
-                    timestamp = await self._database_client.transaction_participant_prepare(
-                        state_type, state_ref
+                async def prepare_in_database() -> None:
+                    if transaction.using_restart_detection:
+                        timestamp = await self._database_client.transaction_participant_prepare(
+                            state_type,
+                            state_ref,
+                            transaction=(
+                                database_pb2.Transaction(
+                                    state_type=state_type,
+                                    state_ref=state_ref.to_str(),
+                                    transaction_ids=[
+                                        transaction_id.bytes
+                                        for transaction_id in transaction.ids
+                                    ],
+                                    coordinator_state_type=(
+                                        transaction.coordinator_state_type
+                                    ),
+                                    coordinator_state_ref=(
+                                        transaction.coordinator_state_ref.
+                                        to_str()
+                                    ),
+                                )
+                            ),
+                            state=(
+                                transaction.state.SerializeToString()
+                                if transaction.state is not None and
+                                # Only persist the state when we actually
+                                # mutated it. A transaction holding a
+                                # shared lock means its
+                                # `transaction.state` has not been
+                                # mutated!
+                                transaction.mode == Lock.Mode.EXCLUSIVE else
+                                None
+                            ),
+                            task_upserts=[
+                                task.to_sidecar_task()
+                                for task in transaction.tasks
+                            ],
+                            idempotent_mutations=(
+                                list(
+                                    transaction.idempotent_mutations.values()
+                                ) if len(transaction.idempotent_mutations) > 0
+                                else None
+                            ),
+                        )
+                    else:
+                        timestamp = await self._database_client.transaction_participant_prepare(
+                            state_type, state_ref
+                        )
+
+                    self._update_latest_timestamp(timestamp)
+                    transaction.prepare()
+
+                # The prepare is a task owned by the transaction rather
+                # than an `await` in this RPC, because of the following
+                # race.
+                #
+                # A `Prepare` RPC is cancelled whenever the coordinator
+                # stops waiting for its answer, most commonly because
+                # the client cancelled the transaction: that cancels
+                # the coordinator's handler, which cancels the `Prepare`
+                # RPCs it fanned out, and gRPC then cancels this
+                # handler. Cancellation only stops the waiting; the
+                # database handles the request it has received
+                # regardless, on its own thread, in whatever order it
+                # gets to it. When using restart detection no earlier
+                # write reached the database, so the prepare is what
+                # begins the transaction there. Were the prepare a
+                # plain `await` here:
+                #
+                # 1. This handler sends the prepare, is cancelled while
+                #    waiting, and releases `transaction.lock`.
+                #
+                # 2. The coordinator aborts and sends `Abort`. The abort
+                #    takes `transaction.lock` and sends a rollback to
+                #    the database.
+                #
+                # 3. The database handles the rollback first. It has no
+                #    transaction for this state yet, so it does
+                #    nothing. The abort marks the transaction finished
+                #    and releases this state's lock.
+                #
+                # 4. The database handles the prepare: it begins the
+                #    transaction and prepares it. This server has
+                #    already forgotten the transaction, so nothing ever
+                #    commits or rolls it back, and every later write to
+                #    this state is refused with "Attempt to store
+                #    outside of a transaction while there is an ongoing
+                #    transaction" until this server restarts.
+                #
+                # As a task the prepare outlives this handler and
+                # records its outcome on the transaction, and
+                # `transaction_participant_abort()` awaits the task
+                # before sending its rollback, so the rollback is
+                # handled after the prepare and finds the transaction
+                # the prepare began. A retried `Prepare` awaits the task
+                # already in flight rather than sending a second
+                # prepare; only a prepare that failed is tried again.
+                if (
+                    transaction.prepare_task is None or
+                    _task_raised(transaction.prepare_task)
+                ):
+                    transaction.prepare_task = asyncio.create_task(
+                        prepare_in_database(),
+                        name=
+                        f'Prepare in database ({state_ref.id}) in {__name__}',
                     )
 
-                self._update_latest_timestamp(timestamp)
-                transaction.prepare()
+                await asyncio.shield(transaction.prepare_task)
 
     async def transaction_participant_commit(
         self, transaction: StateManager.Transaction
@@ -6509,6 +6593,19 @@ class SidecarStateManager(
         # check if the transaction has finished.
         async with transaction.lock:
             if not transaction.finished():
+                # A commit is only asked for once this participant has
+                # answered a `Prepare`, i.e., once its prepare task has
+                # finished; a transaction recovered from the database
+                # was prepared before the restart.
+                assert transaction.prepared(), (
+                    f"Commit of transaction '{transaction.root_id}' for "
+                    f"'{state_type}'/'{state_ref.id}' before it was prepared"
+                )
+                assert (
+                    transaction.prepare_task is None or
+                    transaction.prepare_task.done()
+                )
+
                 # TODO(benh): add test case for sidecar failure!
                 timestamp = await self._database_client.transaction_participant_commit(
                     state_type, state_ref
@@ -6645,12 +6742,17 @@ class SidecarStateManager(
         # check if the transaction has finished.
         async with transaction.lock:
             if not transaction.finished():
-                # If the prepare was cancelled before ever reaching
-                # the database when using restart detection we won't
-                # have anything to abort but the database tolerates
-                # "no transaction found" as a no-op. If the prepare is
-                # still in progress, the database ensures it is
-                # serialized with this abort.
+                # A prepare this participant has in flight is handled
+                # by the database before this abort is, so the rollback
+                # below acts on the transaction the prepare began rather
+                # than being overtaken by it; see the race described in
+                # `transaction_participant_prepare()`.
+                await transaction.wait_for_prepare_task()
+
+                # When using restart detection the database may not
+                # have begun the transaction at all, as only a prepare
+                # begins it there; the database answers an abort of a
+                # transaction it does not have as a no-op.
                 if transaction.stored or transaction.using_restart_detection:
                     await self._database_client.transaction_participant_abort(
                         state_type, state_ref
