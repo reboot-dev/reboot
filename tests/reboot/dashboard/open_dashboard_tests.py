@@ -59,7 +59,9 @@ class OpenDashboardTest(unittest.IsolatedAsyncioTestCase):
         connection it depends on exists, the same handshake
         `reboot/std/react/presence` performs in the browser.
         """
-        context = self.rbt.create_external_context(name=self.id())
+        context = self.rbt.create_external_context(
+            name=self.id(), app_internal=True
+        )
         subscriber = Subscriber.ref(subscriber_id)
         nonce = subscriber_id
 
@@ -88,14 +90,18 @@ class OpenDashboardTest(unittest.IsolatedAsyncioTestCase):
 
     async def _suppress_reopening(self, suppress: bool) -> None:
         """Makes the choice the dashboard's notice makes."""
-        context = self.rbt.create_external_context(name=self.id())
+        context = self.rbt.create_external_context(
+            name=self.id(), app_internal=True
+        )
         await Preferences.ref(PREFERENCES_ID).SetSuppressAutomaticOpen(
             context,
             suppress_automatic_open=suppress,
         )
 
     async def _viewer_ids(self) -> list[str]:
-        context = self.rbt.create_external_context(name=self.id())
+        context = self.rbt.create_external_context(
+            name=self.id(), app_internal=True
+        )
         try:
             response = await Presence.ref(PRESENCE_ID).List(context)
             return list(response.subscriber_ids)

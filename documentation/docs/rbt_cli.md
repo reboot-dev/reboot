@@ -16,7 +16,7 @@ more than the command itself.
 | `rbt generate` | Generate server, client, and React code from your API definitions. |
 | `rbt dev run` | Run your application for development, regenerating code and restarting on change. |
 | `rbt dev expunge` | Delete the state a named development application has persisted. |
-| `rbt dashboard` | Serve the developer dashboard, which watches your API directory and your [feature files](/features) as you write them, and open it in your browser. Needs the `reboot[dev]` extra installed. |
+| `rbt dashboard` | Serve the developer dashboard, which watches your API directory and your [feature files](/features) as you write them, and open it in your browser. Also serves it as an MCP App: it opens a Cloudflare tunnel to itself with `cloudflared`, which the Reboot plugin installs, and prints the address to add as an MCP connector in Claude or ChatGPT. Needs the `reboot[dev]` extra installed. |
 | `rbt inspect type list` | List the state types a running application serves. |
 | `rbt inspect state list` | List the state IDs of one type. |
 | `rbt inspect state get` | Print one instance's state as JSON. |

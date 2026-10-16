@@ -169,6 +169,12 @@ main {
 
 /* --- The opened-automatically notice --- */
 
+/* The line shown until the client holds a token; see `WithToken`. */
+.loading-token {
+  padding: 16px;
+  color: hsl(var(--muted-foreground));
+}
+
 /* Slides up once the page has settled: the CLI opened this tab by
    itself, and says so. */
 .opened-notice {

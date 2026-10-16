@@ -1445,19 +1445,24 @@ class Anonymous(OAuthProvider):
     """
     Anonymous provider — no external identity provider.
 
-    Generates a fresh `anon-{ULID}` user ID for every authorization. The
-    `authorization_url` redirects straight back to our own
-    `/oauth/callback` with a dummy code, so the user never sees a
+    Generates a fresh `anon-{ULID}` user ID for every authorization,
+    or signs every browser in as `user_id` when one is given: for an
+    application with a single user (a tool its owner runs for
+    themselves from a laptop and a phone), so every browser sees the
+    same state. The `authorization_url` redirects straight back to our
+    own `/oauth/callback` with a dummy code, so the user never sees a
     sign-in page.
     """
 
     def __init__(
         self,
         *,
+        user_id: Optional[str] = None,
         _is_dev_default: bool = False,
         access_token_ttl_seconds: int = _DEFAULT_ACCESS_TOKEN_TTL_SECONDS,
     ):
         super().__init__(access_token_ttl_seconds=access_token_ttl_seconds)
+        self._user_id = user_id
         self._is_dev_default = _is_dev_default
 
     def authorization_url(
@@ -1486,6 +1491,8 @@ class Anonymous(OAuthProvider):
                     "another provider) explicitly."
                 ),
             )
+        if self._user_id is not None:
+            return ExchangeResult(user_id=UserId(self._user_id), tokens=None)
         # ULID rather than UUIDv7: same entropy, but the Crockford
         # base32 encoding is shorter and easier on the human eye —
         # relevant here because anonymous user IDs are likely to be seen
