@@ -1408,17 +1408,17 @@ void DatabaseService::DeleteTransaction(
   // For the same reason the transaction may already be gone from
   // `txns_`, or `txns_` may hold a newer transaction for this actor,
   // in which case another call has already deleted ours.
-  decltype(txns_)::node_type node;
-
-  {
+  const decltype(txns_)::node_type node = [&]() {
     std::lock_guard lock(txns_mutex_);
 
     auto iterator = txns_.find(state_ref);
 
     if (iterator != std::end(txns_) && iterator->second.get() == &**txn) {
-      node = txns_.extract(iterator);
+      return txns_.extract(iterator);
     }
-  }
+
+    return decltype(txns_)::node_type{};
+  }();
 
   // Before `node` gets destroyed we need to release our borrow,
   // otherwise we'll wait on ourselves forever! We accomplish that by

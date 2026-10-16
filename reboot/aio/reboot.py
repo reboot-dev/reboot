@@ -4,8 +4,8 @@ import reboot.aio.signals
 import reboot.aio.tracing
 import tempfile
 import uuid
-from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import timedelta
 from log.log import get_logger
 from pathlib import Path
 from rbt.v1alpha1 import database_pb2
@@ -18,7 +18,7 @@ from reboot.aio.http import WebFramework
 from reboot.aio.internals.application_metadata import ApplicationMetadata
 from reboot.aio.internals.channel_manager import _ChannelManager
 from reboot.aio.libraries import AbstractLibrary
-from reboot.aio.monitoring import monitor_event_loop
+from reboot.aio.monitoring import monitor_event_loop, warn_when_slow
 from reboot.aio.placement import PlanOnlyPlacementClient
 from reboot.aio.resolvers import StaticResolver
 from reboot.aio.servers import run_application_initializer
@@ -43,14 +43,7 @@ from reboot.settings import (
     ENVVAR_REBOOT_CLOUD_DATABASE_ADDRESS,
 )
 from reboot.wait_for_tasks import wait_for_tasks
-from typing import (
-    AsyncIterator,
-    Awaitable,
-    Callable,
-    Optional,
-    Sequence,
-    overload,
-)
+from typing import Awaitable, Callable, Optional, Sequence, overload
 
 # The default number of servers run by a Reboot instance (including in
 # unit tests).
@@ -69,34 +62,6 @@ DEFAULT_NUM_SERVERS = 4
 DEFAULT_APPLICATION_NAME = "Reboot"
 
 logger = get_logger(__name__)
-
-# How long a step of bringing an application up may run before we
-# start warning about it, and how often we repeat that warning.
-SLOW_STEP_WARNING_INTERVAL_SECONDS = 30
-
-
-@asynccontextmanager
-async def _warn_while_slow(step: str) -> AsyncIterator[None]:
-    """Warns every `SLOW_STEP_WARNING_INTERVAL_SECONDS` for as long as
-    the body is still running, naming `step` as what we are waiting
-    for, so that a step that never completes is visible in the logs.
-    """
-
-    async def warn():
-        seconds = 0
-        while True:
-            await asyncio.sleep(SLOW_STEP_WARNING_INTERVAL_SECONDS)
-            seconds += SLOW_STEP_WARNING_INTERVAL_SECONDS
-            logger.warning(f"Still waiting to {step} after {seconds} seconds")
-
-    warn_task = asyncio.create_task(
-        warn(),
-        name=f'_warn_while_slow({step!r}) in {__name__}',
-    )
-    try:
-        yield
-    finally:
-        await wait_for_tasks([warn_task], cancel=True)
 
 
 @dataclass(kw_only=True)
@@ -538,8 +503,9 @@ class Reboot:
                 servers=servers,
                 allowed_origins=allowed_origins,
             )
-            async with _warn_while_slow(
-                "validate the application's schema against the database"
+            async with warn_when_slow(
+                "Validate the application's schema against the database",
+                expected=timedelta(seconds=30),
             ):
                 await self._application_metadata.validate_schema_backwards_compatibility(
                     config
@@ -550,7 +516,10 @@ class Reboot:
 
         # This addition will trigger a new plan being made: then, wait for it
         # to have been observed.
-        async with _warn_while_slow("start the application's servers"):
+        async with warn_when_slow(
+            "Start the application's servers",
+            expected=timedelta(seconds=30),
+        ):
             await self._config_tracker.add_config(revision.config)
             await self._wait_for_local_plan_sync()
 

@@ -276,6 +276,7 @@ py_library(
     deps = [
         requirement("grpcio"),
         "//reboot:settings_py",
+        "//reboot:wait_for_tasks_py",
         "@com_github_reboot_dev_reboot//log:log_py",
     ],
 )

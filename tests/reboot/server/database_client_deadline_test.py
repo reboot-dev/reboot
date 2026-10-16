@@ -3,7 +3,7 @@ import grpc
 import unittest
 from rbt.v1alpha1 import application_metadata_pb2, database_pb2_grpc
 from reboot.server import database
-from reboot.server.database import DatabaseClient, DatabaseDeadlineExceeded
+from reboot.server.database import DatabaseClient
 from unittest import mock
 
 
@@ -32,7 +32,7 @@ class TestApplicationMetadataDeadline(unittest.IsolatedAsyncioTestCase):
 
         patcher = mock.patch.object(
             database,
-            'APPLICATION_METADATA_TIMEOUT_SECONDS',
+            'APPLICATION_METADATA_DEADLINE_SECONDS',
             0.5,
         )
         patcher.start()
@@ -42,16 +42,22 @@ class TestApplicationMetadataDeadline(unittest.IsolatedAsyncioTestCase):
         await self._server.stop(grace=None)
 
     async def test_get_application_metadata_deadline(self):
-        with self.assertRaises(DatabaseDeadlineExceeded) as raised:
+        with self.assertRaises(grpc.aio.AioRpcError) as raised:
             await self._client.get_application_metadata()
-        self.assertIn('GetApplicationMetadata', str(raised.exception))
+        self.assertEqual(
+            raised.exception.code(),
+            grpc.StatusCode.DEADLINE_EXCEEDED,
+        )
 
     async def test_store_application_metadata_deadline(self):
-        with self.assertRaises(DatabaseDeadlineExceeded) as raised:
+        with self.assertRaises(grpc.aio.AioRpcError) as raised:
             await self._client.store_application_metadata(
                 application_metadata_pb2.ApplicationMetadata()
             )
-        self.assertIn('StoreApplicationMetadata', str(raised.exception))
+        self.assertEqual(
+            raised.exception.code(),
+            grpc.StatusCode.DEADLINE_EXCEEDED,
+        )
 
 
 if __name__ == '__main__':
