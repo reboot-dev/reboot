@@ -616,3 +616,6 @@ fn constructor_native_actual_prepare_ack_then_tcp_loss_retains_uncertainty_until
 
 #[path = "coordinated_transaction_recovery.rs"]
 mod coordinated_transaction_recovery;
+
+#[path = "coordinated_multiowner_abort.rs"]
+mod coordinated_multiowner_abort;

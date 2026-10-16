@@ -1,6 +1,40 @@
 //! Transparent observing proxy: every RPC forwards to actual canonical Database.
 //! No synthetic responses; held Prepare only parks an already successful real ACK.
 use super::*;
+
+// SOURCE721: test-only exact-reference ACK interposition. This does not create a
+// native outcome: observe success only AFTER the canonical Abort has returned.
+// The bounded park cannot strand a proxy connection forever on fixture failure.
+pub(super) struct AbortAckBarrier {
+    pub(super) refs: [String; 2],
+    pub(super) native: Mutex<Vec<String>>,
+    pub(super) delivered: AtomicUsize,
+    pub(super) parked: tokio::sync::Semaphore,
+    pub(super) release: tokio::sync::Semaphore,
+}
+static ABORT_BARRIERS: std::sync::OnceLock<Mutex<Vec<std::sync::Weak<AbortAckBarrier>>>> = std::sync::OnceLock::new();
+pub(super) fn register_abort_barrier(barrier: &Arc<AbortAckBarrier>) {
+    let mut entries = ABORT_BARRIERS.get_or_init(|| Mutex::new(vec![])).lock().unwrap();
+    entries.retain(|entry| entry.strong_count() != 0);
+    entries.push(Arc::downgrade(barrier));
+}
+async fn after_native_abort(reference: &str) -> Result<(), Status> {
+    let barrier = ABORT_BARRIERS.get_or_init(|| Mutex::new(vec![])).lock().unwrap()
+        .iter().filter_map(std::sync::Weak::upgrade)
+        .find(|barrier| barrier.refs.iter().any(|r| r == reference));
+    if let Some(barrier) = barrier {
+        barrier.native.lock().unwrap().push(reference.to_owned());
+        if reference == barrier.refs[1] {
+            barrier.parked.add_permits(1);
+            tokio::time::timeout(DEADLINE, barrier.release.acquire()).await
+                .map_err(|_| Status::deadline_exceeded("SOURCE721 Abort ACK release deadline"))?
+                .map_err(|_| Status::cancelled("SOURCE721 Abort ACK gate closed"))?.forget();
+        }
+        // This is the proxy return boundary, not a claim about client receipt.
+        barrier.delivered.fetch_add(1, Ordering::SeqCst);
+    }
+    Ok(())
+}
 #[derive(Clone)]
 pub(super) struct ObservedDatabase { pub(super) client: db::database_client::DatabaseClient<tonic::transport::Channel>, pub(super) observations: Arc<Observations> }
 #[tonic::async_trait]
@@ -100,6 +134,7 @@ impl db::database_server::Database for ObservedDatabase {
         let body = request.get_ref().clone();
         let result = self.client.clone().transaction_participant_abort(request).await;
         self.observations.record("TransactionParticipantAbort", &body, &result);
+        if result.is_ok() { after_native_abort(&body.state_ref).await?; }
         result
     }
     async fn transaction_coordinator_prepared(&self, request: Request<db::TransactionCoordinatorPreparedRequest>) -> Result<Response<db::TransactionCoordinatorPreparedResponse>, Status> {

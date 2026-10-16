@@ -1,0 +1,1632 @@
+{
+  "scope": "Actual native second-Abort-ACK park AFTER canonical rollback and BEFORE SDK response, two original actors/two independent preparing coordinators, zero replay/Ready before all ACKs, durable native Abort decisions/cleanup/unchanged actor bytes/original shared-gate re-admission; actual host and proxy joins before success marker. All19 prior controls rerun:20total/40SDKDatabasejoins.",
+  "verification": {
+    "passed": true,
+    "failure": [],
+    "all_child_joins_verified": true,
+    "cleanup_failure": null,
+    "original_task_lock_acquirable": true,
+    "cid": "9bb8f5b0c0ed97162fab24076dc875053a9d2c243cc403349867bdc46c9b7164",
+    "fresh_terminal": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-16T00:33:00.091368033Z",
+      "FinishedAt": "2026-10-16T00:36:24.566910584Z"
+    },
+    "config_sha256": "8f8b61334925621b4a805ce88d559e28d9230a6ab1f3b47c548841507e4a26fa",
+    "accepted_retired_sha256": "043b5b133f15b4559f51758488f6ab9129b286a238f168b7daf4996694557e91",
+    "source_manifest_sha256": "bdbbfc9cd64dcdf9e9d13c112889578e64d41583464ef275826f2ad220fad531",
+    "source_count": 3294,
+    "worker_sha256": "342df80845cea7f6032c16d545f2cb889e0db53f62963d6b5f688a171cc45cac",
+    "exact_case_count": 20,
+    "direct_join_count": 40,
+    "full_bank_acceptance": false,
+    "latest_upstream_native_build": false
+  },
+  "attach_kernel_wait": {
+    "pid": 1907640,
+    "birth": "93090492",
+    "si_code": 1,
+    "si_status": 0,
+    "exit": 0,
+    "joined": true
+  },
+  "result": {
+    "passed": true,
+    "failure": [],
+    "rows": [
+      {
+        "name": "native::coordinated_multiowner_abort::two_original_native_abort_acks_fence_replay_and_host_ready",
+        "case": "TwoAbort",
+        "exit": 0,
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-00-sdk.log",
+        "sha256": "41cb6eac067ad686f835b2b540f88c3dccc5d4ea407b97ed0cb6c3d41fb34178",
+        "native_log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-00-native.log",
+        "native_pid": 7,
+        "native_birth": "93091954",
+        "endpoint": "http://127.0.0.1:52707",
+        "protobuf_sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0",
+        "pristine_directory": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-00",
+        "sdk_kernel": {
+          "pid": 57,
+          "birth": "93092015",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        },
+        "native_kernel": {
+          "pid": 7,
+          "birth": "93091954",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        }
+      },
+      {
+        "name": "native::coordinated_transaction_recovery::native_nonempty_transaction_graph_commit",
+        "case": "Commit",
+        "exit": 0,
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-01-sdk.log",
+        "sha256": "a783a963a8106ad0c6aa036ddb33f57c9c2365dc486eec296eb9be837f4e653a",
+        "native_log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-01-native.log",
+        "native_pid": 60,
+        "native_birth": "93092897",
+        "endpoint": "http://127.0.0.1:47827",
+        "protobuf_sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0",
+        "pristine_directory": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-01",
+        "sdk_kernel": {
+          "pid": 110,
+          "birth": "93092958",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        },
+        "native_kernel": {
+          "pid": 60,
+          "birth": "93092897",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        }
+      },
+      {
+        "name": "native::coordinated_transaction_recovery::native_nonempty_transaction_graph_abort",
+        "case": "Abort",
+        "exit": 0,
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-02-sdk.log",
+        "sha256": "87a1bd549279cb97c406104e7983cc7f1b60e22260ef77c0e53de9e1c5d62732",
+        "native_log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-02-native.log",
+        "native_pid": 114,
+        "native_birth": "93093825",
+        "endpoint": "http://127.0.0.1:35211",
+        "protobuf_sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0",
+        "pristine_directory": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-02",
+        "sdk_kernel": {
+          "pid": 164,
+          "birth": "93093887",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        },
+        "native_kernel": {
+          "pid": 114,
+          "birth": "93093825",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        }
+      },
+      {
+        "name": "native::coordinated_recovery::empty_graph_actual_host_fences_reader_until_ready_and_releases_phase_claims",
+        "case": "ReaderReady",
+        "exit": 0,
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-03-sdk.log",
+        "sha256": "de8e88f1d685c88c21a4f37db85d679dd2879bea60a7f33dc5ebd46a9bb698b7",
+        "native_log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-03-native.log",
+        "native_pid": 167,
+        "native_birth": "93094757",
+        "endpoint": "http://127.0.0.1:59775",
+        "protobuf_sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0",
+        "pristine_directory": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-03",
+        "sdk_kernel": {
+          "pid": 217,
+          "birth": "93094818",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        },
+        "native_kernel": {
+          "pid": 167,
+          "birth": "93094757",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        }
+      },
+      {
+        "name": "native::coordinated_recovery::empty_graph_actual_host_rejects_same_gate_foreign_bound_participant",
+        "case": "WrongOwner",
+        "exit": 0,
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-04-sdk.log",
+        "sha256": "e25bb2620a61ea4edc60c02b77166789bbac09227a192d8c2fb2b47f1ef8a093",
+        "native_log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-04-native.log",
+        "native_pid": 230,
+        "native_birth": "93095846",
+        "endpoint": "http://127.0.0.1:44399",
+        "protobuf_sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0",
+        "pristine_directory": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-04",
+        "sdk_kernel": {
+          "pid": 280,
+          "birth": "93095908",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        },
+        "native_kernel": {
+          "pid": 230,
+          "birth": "93095846",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        }
+      },
+      {
+        "name": "native::empty_root::empty_bank_registered_signup_commit_creates_root_and_child",
+        "case": "EmptyCommit",
+        "exit": 0,
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-05-sdk.log",
+        "sha256": "c5f10c758d8c48edc4b2d67fb0dc4c969142c5009d625023079d538f12a7a853",
+        "native_log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-05-native.log",
+        "native_pid": 283,
+        "native_birth": "93096762",
+        "endpoint": "http://127.0.0.1:60527",
+        "protobuf_sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0",
+        "pristine_directory": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-05",
+        "sdk_kernel": {
+          "pid": 333,
+          "birth": "93096824",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        },
+        "native_kernel": {
+          "pid": 283,
+          "birth": "93096762",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        }
+      },
+      {
+        "name": "native::empty_root::empty_bank_abort_after_child_keeps_both_absent",
+        "case": "EmptyAbort",
+        "exit": 0,
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-06-sdk.log",
+        "sha256": "081167fca1caea1e6c6e3f2e113d3971fe86e204b9f970db679153dac36d777c",
+        "native_log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-06-native.log",
+        "native_pid": 337,
+        "native_birth": "93097720",
+        "endpoint": "http://127.0.0.1:52663",
+        "protobuf_sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0",
+        "pristine_directory": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-06",
+        "sdk_kernel": {
+          "pid": 387,
+          "birth": "93097781",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        },
+        "native_kernel": {
+          "pid": 337,
+          "birth": "93097720",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        }
+      },
+      {
+        "name": "native::empty_root::empty_bank_policy_denial_before_handler_keeps_both_absent",
+        "case": "EmptyDenied",
+        "exit": 0,
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-07-sdk.log",
+        "sha256": "d184ee8be89b9eb6fd07f15188ff42f4a7090f1ea64fcd3df9ccbedb87a11659",
+        "native_log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-07-native.log",
+        "native_pid": 390,
+        "native_birth": "93098655",
+        "endpoint": "http://127.0.0.1:59117",
+        "protobuf_sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0",
+        "pristine_directory": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-07",
+        "sdk_kernel": {
+          "pid": 440,
+          "birth": "93098716",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        },
+        "native_kernel": {
+          "pid": 390,
+          "birth": "93098655",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        }
+      },
+      {
+        "name": "native::empty_root::empty_bank_no_owner_rejected_before_handler",
+        "case": "EmptyNoOwner",
+        "exit": 0,
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-08-sdk.log",
+        "sha256": "1f087ac105d38825095ea6775f5e772abfb12dc5e72c6652f884ace1a23c56ab",
+        "native_log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-08-native.log",
+        "native_pid": 443,
+        "native_birth": "93099570",
+        "endpoint": "http://127.0.0.1:42725",
+        "protobuf_sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0",
+        "pristine_directory": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-08",
+        "sdk_kernel": {
+          "pid": 493,
+          "birth": "93099632",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        },
+        "native_kernel": {
+          "pid": 443,
+          "birth": "93099570",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        }
+      },
+      {
+        "name": "native::constructor_native_commit_nested_return_retains_lease_then_canonical_visibility",
+        "case": "Commit",
+        "exit": 0,
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-09-sdk.log",
+        "sha256": "c4f9b1014133410a984cebac56077774076dd3c841f5afcb69d849035ddfb88d",
+        "native_log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-09-native.log",
+        "native_pid": 496,
+        "native_birth": "93100489",
+        "endpoint": "http://127.0.0.1:38763",
+        "protobuf_sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0",
+        "pristine_directory": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-09",
+        "sdk_kernel": {
+          "pid": 546,
+          "birth": "93100550",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        },
+        "native_kernel": {
+          "pid": 496,
+          "birth": "93100489",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        }
+      },
+      {
+        "name": "native::constructor_native_default_bytes_prepare_is_writable_and_commits_present_empty",
+        "case": "DefaultCommit",
+        "exit": 0,
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-10-sdk.log",
+        "sha256": "009af348f86065564a5292e13ea0c5938407eb406ca17801ce7bea26e2509151",
+        "native_log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-10-native.log",
+        "native_pid": 549,
+        "native_birth": "93101449",
+        "endpoint": "http://127.0.0.1:43135",
+        "protobuf_sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0",
+        "pristine_directory": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-10",
+        "sdk_kernel": {
+          "pid": 599,
+          "birth": "93101510",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        },
+        "native_kernel": {
+          "pid": 549,
+          "birth": "93101449",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        }
+      },
+      {
+        "name": "native::constructor_native_root_abort_after_child_return_leaves_child_invisible",
+        "case": "Abort",
+        "exit": 0,
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-11-sdk.log",
+        "sha256": "8a6b352e5a6755d9b0fb7bfcaf1d746b53c5534998429d62d0404c7f8e7130a1",
+        "native_log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-11-native.log",
+        "native_pid": 602,
+        "native_birth": "93102409",
+        "endpoint": "http://127.0.0.1:54267",
+        "protobuf_sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0",
+        "pristine_directory": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-11",
+        "sdk_kernel": {
+          "pid": 652,
+          "birth": "93102470",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        },
+        "native_kernel": {
+          "pid": 602,
+          "birth": "93102409",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        }
+      },
+      {
+        "name": "native::constructor_native_existing_actor_rejected_before_child_hook",
+        "case": "Existing",
+        "exit": 0,
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-12-sdk.log",
+        "sha256": "b78da589e632239b0e86912595e3ddef36e3e7c3bd6aadf8417e87b513f13352",
+        "native_log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-12-native.log",
+        "native_pid": 655,
+        "native_birth": "93103354",
+        "endpoint": "http://127.0.0.1:52989",
+        "protobuf_sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0",
+        "pristine_directory": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-12",
+        "sdk_kernel": {
+          "pid": 705,
+          "birth": "93103421",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        },
+        "native_kernel": {
+          "pid": 655,
+          "birth": "93103354",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        }
+      },
+      {
+        "name": "native::constructor_native_taskful_effect_refused_without_task_success",
+        "case": "Taskful",
+        "exit": 0,
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-13-sdk.log",
+        "sha256": "e58734d5b100b741bf3ed525cd78feadc2d858d73466ba2e96e377766a4d435d",
+        "native_log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-13-native.log",
+        "native_pid": 708,
+        "native_birth": "93104291",
+        "endpoint": "http://127.0.0.1:35425",
+        "protobuf_sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0",
+        "pristine_directory": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-13",
+        "sdk_kernel": {
+          "pid": 758,
+          "birth": "93104357",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        },
+        "native_kernel": {
+          "pid": 708,
+          "birth": "93104291",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        }
+      },
+      {
+        "name": "native::constructor_native_incorrect_ticket_request_burns_alias_before_load",
+        "case": "WrongTicket",
+        "exit": 0,
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-14-sdk.log",
+        "sha256": "a55c097ace0f3d860500dde280e665b7942a5f5f2d271494609283070a42fd73",
+        "native_log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-14-native.log",
+        "native_pid": 762,
+        "native_birth": "93105223",
+        "endpoint": "http://127.0.0.1:32785",
+        "protobuf_sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0",
+        "pristine_directory": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-14",
+        "sdk_kernel": {
+          "pid": 812,
+          "birth": "93105290",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        },
+        "native_kernel": {
+          "pid": 762,
+          "birth": "93105223",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        }
+      },
+      {
+        "name": "native::constructor_native_authorization_refusal_observes_actual_absence_no_hook",
+        "case": "Refused",
+        "exit": 0,
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-15-sdk.log",
+        "sha256": "713f1fe10b63ba8ce9f049b69c2d512ecacc9daa4bbfd3c1c042286287ab0021",
+        "native_log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-15-native.log",
+        "native_pid": 815,
+        "native_birth": "93106159",
+        "endpoint": "http://127.0.0.1:52471",
+        "protobuf_sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0",
+        "pristine_directory": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-15",
+        "sdk_kernel": {
+          "pid": 865,
+          "birth": "93106220",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        },
+        "native_kernel": {
+          "pid": 815,
+          "birth": "93106159",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        }
+      },
+      {
+        "name": "native::constructor_native_held_real_prepare_ack_retains_lease_until_root_outcome",
+        "case": "HeldPrepare",
+        "exit": 0,
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-16-sdk.log",
+        "sha256": "8cdd2176fed4f116f17844ce0b660b69b565efad62e780e011df04f282059291",
+        "native_log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-16-native.log",
+        "native_pid": 868,
+        "native_birth": "93107085",
+        "endpoint": "http://127.0.0.1:33131",
+        "protobuf_sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0",
+        "pristine_directory": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-16",
+        "sdk_kernel": {
+          "pid": 918,
+          "birth": "93107147",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        },
+        "native_kernel": {
+          "pid": 868,
+          "birth": "93107085",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        }
+      },
+      {
+        "name": "native::constructor_native_no_optin_and_forged_metadata_refuse_before_load",
+        "case": "NoOptIn",
+        "exit": 0,
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-17-sdk.log",
+        "sha256": "1164d3eb8b3b4081f2216f4f81144424db0a4c19cffd5f881570fe1c82194614",
+        "native_log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-17-native.log",
+        "native_pid": 923,
+        "native_birth": "93108064",
+        "endpoint": "http://127.0.0.1:53611",
+        "protobuf_sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0",
+        "pristine_directory": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-17",
+        "sdk_kernel": {
+          "pid": 973,
+          "birth": "93108131",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        },
+        "native_kernel": {
+          "pid": 923,
+          "birth": "93108064",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        }
+      },
+      {
+        "name": "native::constructor_native_existing_present_empty_actor_is_not_missing",
+        "case": "ExistingEmpty",
+        "exit": 0,
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-18-sdk.log",
+        "sha256": "31bfd96a976d0e8a5475e890e61a93a8e1790ab736132cfe777495ce51f5dc1d",
+        "native_log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-18-native.log",
+        "native_pid": 976,
+        "native_birth": "93108998",
+        "endpoint": "http://127.0.0.1:40813",
+        "protobuf_sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0",
+        "pristine_directory": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-18",
+        "sdk_kernel": {
+          "pid": 1026,
+          "birth": "93109060",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        },
+        "native_kernel": {
+          "pid": 976,
+          "birth": "93108998",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        }
+      },
+      {
+        "name": "native::constructor_native_actual_prepare_ack_then_tcp_loss_retains_uncertainty_until_process_exit",
+        "case": "LostPrepare",
+        "exit": 0,
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-19-sdk.log",
+        "sha256": "5d124ddd5eb7956e8389a3f3e6d41e28557138eca7400ba046b0609f51f5fc6d",
+        "native_log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-19-native.log",
+        "native_pid": 1029,
+        "native_birth": "93109928",
+        "endpoint": "http://127.0.0.1:54517",
+        "protobuf_sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0",
+        "pristine_directory": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-19",
+        "sdk_kernel": {
+          "pid": 1079,
+          "birth": "93109994",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        },
+        "native_kernel": {
+          "pid": 1029,
+          "birth": "93109928",
+          "si_code": 1,
+          "si_status": 0,
+          "exit": 0,
+          "joined": true
+        }
+      }
+    ],
+    "custody": {
+      "direct": [
+        {
+          "pid": 7,
+          "birth": "93091954",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-00/rocksdb",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-00/server-info.pb",
+            "52707"
+          ],
+          "fd_identity": [
+            6,
+            1921239
+          ]
+        },
+        {
+          "pid": 57,
+          "birth": "93092015",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/deps/registered_constructor_child_native_fixture-64b58c468c0af8c6",
+            "--exact",
+            "native::coordinated_multiowner_abort::two_original_native_abort_acks_fence_replay_and_host_ready",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1"
+          ],
+          "fd_identity": [
+            6,
+            1921256
+          ]
+        },
+        {
+          "pid": 60,
+          "birth": "93092897",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-01/rocksdb",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-01/server-info.pb",
+            "47827"
+          ],
+          "fd_identity": [
+            6,
+            1921260
+          ]
+        },
+        {
+          "pid": 110,
+          "birth": "93092958",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/deps/registered_constructor_child_native_fixture-64b58c468c0af8c6",
+            "--exact",
+            "native::coordinated_transaction_recovery::native_nonempty_transaction_graph_commit",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1"
+          ],
+          "fd_identity": [
+            6,
+            1921278
+          ]
+        },
+        {
+          "pid": 114,
+          "birth": "93093825",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-02/rocksdb",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-02/server-info.pb",
+            "35211"
+          ],
+          "fd_identity": [
+            6,
+            1910376
+          ]
+        },
+        {
+          "pid": 164,
+          "birth": "93093887",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/deps/registered_constructor_child_native_fixture-64b58c468c0af8c6",
+            "--exact",
+            "native::coordinated_transaction_recovery::native_nonempty_transaction_graph_abort",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1"
+          ],
+          "fd_identity": [
+            6,
+            1910408
+          ]
+        },
+        {
+          "pid": 167,
+          "birth": "93094757",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-03/rocksdb",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-03/server-info.pb",
+            "59775"
+          ],
+          "fd_identity": [
+            6,
+            1921376
+          ]
+        },
+        {
+          "pid": 217,
+          "birth": "93094818",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/deps/registered_constructor_child_native_fixture-64b58c468c0af8c6",
+            "--exact",
+            "native::coordinated_recovery::empty_graph_actual_host_fences_reader_until_ready_and_releases_phase_claims",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1"
+          ],
+          "fd_identity": [
+            6,
+            1921394
+          ]
+        },
+        {
+          "pid": 230,
+          "birth": "93095846",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-04/rocksdb",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-04/server-info.pb",
+            "44399"
+          ],
+          "fd_identity": [
+            6,
+            1910527
+          ]
+        },
+        {
+          "pid": 280,
+          "birth": "93095908",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/deps/registered_constructor_child_native_fixture-64b58c468c0af8c6",
+            "--exact",
+            "native::coordinated_recovery::empty_graph_actual_host_rejects_same_gate_foreign_bound_participant",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1"
+          ],
+          "fd_identity": [
+            6,
+            1910541
+          ]
+        },
+        {
+          "pid": 283,
+          "birth": "93096762",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-05/rocksdb",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-05/server-info.pb",
+            "60527"
+          ],
+          "fd_identity": [
+            6,
+            1910543
+          ]
+        },
+        {
+          "pid": 333,
+          "birth": "93096824",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/deps/registered_constructor_child_native_fixture-64b58c468c0af8c6",
+            "--exact",
+            "native::empty_root::empty_bank_registered_signup_commit_creates_root_and_child",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1"
+          ],
+          "fd_identity": [
+            6,
+            1921580
+          ]
+        },
+        {
+          "pid": 337,
+          "birth": "93097720",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-06/rocksdb",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-06/server-info.pb",
+            "52663"
+          ],
+          "fd_identity": [
+            6,
+            1921584
+          ]
+        },
+        {
+          "pid": 387,
+          "birth": "93097781",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/deps/registered_constructor_child_native_fixture-64b58c468c0af8c6",
+            "--exact",
+            "native::empty_root::empty_bank_abort_after_child_keeps_both_absent",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1"
+          ],
+          "fd_identity": [
+            6,
+            1910649
+          ]
+        },
+        {
+          "pid": 390,
+          "birth": "93098655",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-07/rocksdb",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-07/server-info.pb",
+            "59117"
+          ],
+          "fd_identity": [
+            6,
+            1910656
+          ]
+        },
+        {
+          "pid": 440,
+          "birth": "93098716",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/deps/registered_constructor_child_native_fixture-64b58c468c0af8c6",
+            "--exact",
+            "native::empty_root::empty_bank_policy_denial_before_handler_keeps_both_absent",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1"
+          ],
+          "fd_identity": [
+            6,
+            1910675
+          ]
+        },
+        {
+          "pid": 443,
+          "birth": "93099570",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-08/rocksdb",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-08/server-info.pb",
+            "42725"
+          ],
+          "fd_identity": [
+            6,
+            1910680
+          ]
+        },
+        {
+          "pid": 493,
+          "birth": "93099632",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/deps/registered_constructor_child_native_fixture-64b58c468c0af8c6",
+            "--exact",
+            "native::empty_root::empty_bank_no_owner_rejected_before_handler",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1"
+          ],
+          "fd_identity": [
+            6,
+            1910698
+          ]
+        },
+        {
+          "pid": 496,
+          "birth": "93100489",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-09/rocksdb",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-09/server-info.pb",
+            "38763"
+          ],
+          "fd_identity": [
+            6,
+            1910748
+          ]
+        },
+        {
+          "pid": 546,
+          "birth": "93100550",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/deps/registered_constructor_child_native_fixture-64b58c468c0af8c6",
+            "--exact",
+            "native::constructor_native_commit_nested_return_retains_lease_then_canonical_visibility",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1"
+          ],
+          "fd_identity": [
+            6,
+            1910768
+          ]
+        },
+        {
+          "pid": 549,
+          "birth": "93101449",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-10/rocksdb",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-10/server-info.pb",
+            "43135"
+          ],
+          "fd_identity": [
+            6,
+            1910775
+          ]
+        },
+        {
+          "pid": 599,
+          "birth": "93101510",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/deps/registered_constructor_child_native_fixture-64b58c468c0af8c6",
+            "--exact",
+            "native::constructor_native_default_bytes_prepare_is_writable_and_commits_present_empty",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1"
+          ],
+          "fd_identity": [
+            6,
+            1910777
+          ]
+        },
+        {
+          "pid": 602,
+          "birth": "93102409",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-11/rocksdb",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-11/server-info.pb",
+            "54267"
+          ],
+          "fd_identity": [
+            6,
+            1922010
+          ]
+        },
+        {
+          "pid": 652,
+          "birth": "93102470",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/deps/registered_constructor_child_native_fixture-64b58c468c0af8c6",
+            "--exact",
+            "native::constructor_native_root_abort_after_child_return_leaves_child_invisible",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1"
+          ],
+          "fd_identity": [
+            6,
+            1922013
+          ]
+        },
+        {
+          "pid": 655,
+          "birth": "93103354",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-12/rocksdb",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-12/server-info.pb",
+            "52989"
+          ],
+          "fd_identity": [
+            6,
+            1922018
+          ]
+        },
+        {
+          "pid": 705,
+          "birth": "93103421",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/deps/registered_constructor_child_native_fixture-64b58c468c0af8c6",
+            "--exact",
+            "native::constructor_native_existing_actor_rejected_before_child_hook",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1"
+          ],
+          "fd_identity": [
+            6,
+            1922037
+          ]
+        },
+        {
+          "pid": 708,
+          "birth": "93104291",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-13/rocksdb",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-13/server-info.pb",
+            "35425"
+          ],
+          "fd_identity": [
+            6,
+            1910975
+          ]
+        },
+        {
+          "pid": 758,
+          "birth": "93104357",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/deps/registered_constructor_child_native_fixture-64b58c468c0af8c6",
+            "--exact",
+            "native::constructor_native_taskful_effect_refused_without_task_success",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1"
+          ],
+          "fd_identity": [
+            6,
+            1910993
+          ]
+        },
+        {
+          "pid": 762,
+          "birth": "93105223",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-14/rocksdb",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-14/server-info.pb",
+            "32785"
+          ],
+          "fd_identity": [
+            6,
+            1910994
+          ]
+        },
+        {
+          "pid": 812,
+          "birth": "93105290",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/deps/registered_constructor_child_native_fixture-64b58c468c0af8c6",
+            "--exact",
+            "native::constructor_native_incorrect_ticket_request_burns_alias_before_load",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1"
+          ],
+          "fd_identity": [
+            6,
+            1910999
+          ]
+        },
+        {
+          "pid": 815,
+          "birth": "93106159",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-15/rocksdb",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-15/server-info.pb",
+            "52471"
+          ],
+          "fd_identity": [
+            6,
+            1922254
+          ]
+        },
+        {
+          "pid": 865,
+          "birth": "93106220",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/deps/registered_constructor_child_native_fixture-64b58c468c0af8c6",
+            "--exact",
+            "native::constructor_native_authorization_refusal_observes_actual_absence_no_hook",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1"
+          ],
+          "fd_identity": [
+            6,
+            1911085
+          ]
+        },
+        {
+          "pid": 868,
+          "birth": "93107085",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-16/rocksdb",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-16/server-info.pb",
+            "33131"
+          ],
+          "fd_identity": [
+            6,
+            1922299
+          ]
+        },
+        {
+          "pid": 918,
+          "birth": "93107147",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/deps/registered_constructor_child_native_fixture-64b58c468c0af8c6",
+            "--exact",
+            "native::constructor_native_held_real_prepare_ack_retains_lease_until_root_outcome",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1"
+          ],
+          "fd_identity": [
+            6,
+            1922303
+          ]
+        },
+        {
+          "pid": 923,
+          "birth": "93108064",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-17/rocksdb",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-17/server-info.pb",
+            "53611"
+          ],
+          "fd_identity": [
+            6,
+            1911181
+          ]
+        },
+        {
+          "pid": 973,
+          "birth": "93108131",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/deps/registered_constructor_child_native_fixture-64b58c468c0af8c6",
+            "--exact",
+            "native::constructor_native_no_optin_and_forged_metadata_refuse_before_load",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1"
+          ],
+          "fd_identity": [
+            6,
+            1911183
+          ]
+        },
+        {
+          "pid": 976,
+          "birth": "93108998",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-18/rocksdb",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-18/server-info.pb",
+            "40813"
+          ],
+          "fd_identity": [
+            6,
+            1922431
+          ]
+        },
+        {
+          "pid": 1026,
+          "birth": "93109060",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/deps/registered_constructor_child_native_fixture-64b58c468c0af8c6",
+            "--exact",
+            "native::constructor_native_existing_present_empty_actor_is_not_missing",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1"
+          ],
+          "fd_identity": [
+            6,
+            1922469
+          ]
+        },
+        {
+          "pid": 1029,
+          "birth": "93109928",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-19/rocksdb",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/runtime/bank564/case-19/server-info.pb",
+            "54517"
+          ],
+          "fd_identity": [
+            6,
+            1911254
+          ]
+        },
+        {
+          "pid": 1079,
+          "birth": "93109994",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/deps/registered_constructor_child_native_fixture-64b58c468c0af8c6",
+            "--exact",
+            "native::constructor_native_actual_prepare_ack_then_tcp_loss_retains_uncertainty_until_process_exit",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1"
+          ],
+          "fd_identity": [
+            6,
+            1911256
+          ]
+        }
+      ],
+      "adopted": [],
+      "cleanup_failure": null
+    },
+    "bridge_global_health": true,
+    "bridge_global_drained": true,
+    "native_acceptance": false,
+    "public_acceptance": false,
+    "outer_exact_attach_terminal_verification_required": true,
+    "scope": "20 exact native controls: prior19 plus native two-original-owner Abort ACK barrier; not restart, provisional replay or taskful Bank"
+  },
+  "input_pins": [
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/deps/registered_constructor_child_native_fixture-64b58c468c0af8c6",
+      "sha256": "0e0a67a200974d03d71759c8f5811232fc73cb8773d200d49d7ff9064b1dc5b0"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+      "sha256": "e39cf47afbd72cd8bd27fb2b4e3f3c28feb6ce65ad71c3d8c8f02c764bdbface"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/host-runtime/parent-owned.json",
+      "sha256": "0b1839e09804642c89bd304b3f9b7768f4e1d252e081fec557752f8288458be8"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/qualified-projection.json",
+      "sha256": "71ced1ca4f4086a53aac32555db1b65e28609df8847e42fd225aa541f94f312d"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank729-20261015/host-runtime/accepted-retired.json",
+      "sha256": "534c9c27dc166115db4281d02e47ca0bb0afcb629c7a5414abb0c0d03cc10771"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank729-20261015/config.json",
+      "sha256": "88255bc040d5da2a6e84fa224b6874708bbd11d1a9ede5d4d62daba18b0be46b"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank569-20261015/runtime/protobuf/case-00.pb",
+      "sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank571-20261015/protobuf-receipt-00.json",
+      "sha256": "322a09fdacc6737b16426889dd98b2a4a4a7ab81647726534cfeccbffe996ef2"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank569-20261015/runtime/protobuf/case-01.pb",
+      "sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank571-20261015/protobuf-receipt-01.json",
+      "sha256": "ba284fc49fc64db2066069bf46fdc81bf1d27ad67fef7a3bf7edf0fce811fa83"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank569-20261015/runtime/protobuf/case-02.pb",
+      "sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank571-20261015/protobuf-receipt-02.json",
+      "sha256": "b805fc09e9f2a32508ec14b7984a447e00ea1b5f2cae75f0d46183772245307a"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank569-20261015/runtime/protobuf/case-03.pb",
+      "sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank571-20261015/protobuf-receipt-03.json",
+      "sha256": "f597eb5225da2ddfce0f1aa1e19e485c25303c46d3abfab1033d9a6edc080822"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank569-20261015/runtime/protobuf/case-04.pb",
+      "sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank571-20261015/protobuf-receipt-04.json",
+      "sha256": "5cea947b542cf66d63d5f163be94ae43d5e773154877f3c3624cdc607f40d5bf"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank569-20261015/runtime/protobuf/case-05.pb",
+      "sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank571-20261015/protobuf-receipt-05.json",
+      "sha256": "3e17dea9269392b053530e228c63794c34db8b56c3336ba0fba4e6519bdebf27"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank569-20261015/runtime/protobuf/case-06.pb",
+      "sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank571-20261015/protobuf-receipt-06.json",
+      "sha256": "6f52b3f19d207871e0a65fb7eac4b456bbbcc968349689c1814eeb1193d049cb"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank569-20261015/runtime/protobuf/case-07.pb",
+      "sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank571-20261015/protobuf-receipt-07.json",
+      "sha256": "a1051f0dfa09a3b836e63edc9fffb2218872ab107f305bee3f5bd7160dd631a0"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank569-20261015/runtime/protobuf/case-08.pb",
+      "sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank571-20261015/protobuf-receipt-08.json",
+      "sha256": "73ca9d6d1d1fff1eda94655f8d9eafdf4e5a9b90ff10ca0dd2b39326c29eff3b"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank569-20261015/runtime/protobuf/case-09.pb",
+      "sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank571-20261015/protobuf-receipt-09.json",
+      "sha256": "9d01a8c1631ed6247cbc19ef06a0cd189251f7a685beeef79c936233760b0d59"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank569-20261015/runtime/protobuf/case-10.pb",
+      "sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank571-20261015/protobuf-receipt-10.json",
+      "sha256": "da1a7d34e604d9ed89b14b5c691846d4bd16a7548de563b597afb5e4256654a3"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank569-20261015/runtime/protobuf/case-11.pb",
+      "sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank571-20261015/protobuf-receipt-11.json",
+      "sha256": "0911b94b54b5447bc844c111a34062fd7e06796db0dfc07619b21f43fc67eb0f"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank569-20261015/runtime/protobuf/case-12.pb",
+      "sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank571-20261015/protobuf-receipt-12.json",
+      "sha256": "5ba8711ae7c54b5e03fbe7b6e18fcdc91ce8a2b352cba314b544774f10f4b34f"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank569-20261015/runtime/protobuf/case-13.pb",
+      "sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank571-20261015/protobuf-receipt-13.json",
+      "sha256": "876c5714e92ec965a447b4f2ae3720f26f5fdcdb3084775385ea7d62eeaabf38"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank569-20261015/runtime/protobuf/case-14.pb",
+      "sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank571-20261015/protobuf-receipt-14.json",
+      "sha256": "e4295d86179a5c1807a2c25e7b779ec1cf34fe41c221b55dc9ec3f6a9cbf8014"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank660-20261015/runtime/protobuf/case-00.pb",
+      "sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank662-20261015/protobuf-host-receipt-00.json",
+      "sha256": "9bd6c45a30c0593afa0e0694a29fc72ee38223b4be386ab2a20001875015899b"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank660-20261015/runtime/protobuf/case-01.pb",
+      "sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank662-20261015/protobuf-host-receipt-01.json",
+      "sha256": "d732b7d7e27325231c3997c1b015790f17465ab9e036ef9f88a1f22bede50570"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank676-20261015/runtime/protobuf/case-00.pb",
+      "sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank678-20261015/protobuf-graph-receipt-00.json",
+      "sha256": "0d9993d8d7bd82d89828af2819c2a66ed6e0c686d7076d4d94ebfce15952dee4"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank676-20261015/runtime/protobuf/case-01.pb",
+      "sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank678-20261015/protobuf-graph-receipt-01.json",
+      "sha256": "312f7b310df7e7c4d30d64363d9bbc66d087d556e8d8c197877b4949211e8266"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank730-20261015/runtime/protobuf/case-00.pb",
+      "sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0"
+    },
+    {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank731-20261015/protobuf-multi-receipt-00.json",
+      "sha256": "e27182a75b0d39450c17485b8055c0b7c51a1b004f8294bc38adea102179e067"
+    }
+  ],
+  "current_sdk_input_count_checked_before_ledger_edit": 320,
+  "protobuf_serialization": {
+    "verification": {
+      "passed": true,
+      "failure": null,
+      "all_child_joins_verified": true,
+      "cleanup_failure": null,
+      "original_task_lock_acquirable": true,
+      "cid": "8e38a8597389e172b5884e8fba4aa4da30cea35dc6adf7aedbf860c6eca46127",
+      "fresh_terminal": {
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-10-16T00:29:40.126701641Z",
+        "FinishedAt": "2026-10-16T00:29:43.450666222Z"
+      },
+      "config_sha256": "420a5c3aaee3fdbb8eaceceb968dd10ba5d502c1caf66785247ed1bd6099cff8",
+      "accepted_retired_sha256": "c669f0c6bbf23c5f2c68243f02c370298fe4b664e75beeaac86ebd52c7d0915b",
+      "source_manifest_sha256": "b3b3293f79fe4028bbb9eb1a764e40a1aab34b71b192a4d8fce3b2ae2e4c5d3c",
+      "source_count": 3266,
+      "worker_sha256": "dc4d10bc98012077f03b62f83149b78b6a81fa91a6ac308d4c1afc6727326e73",
+      "full_native_acceptance": false
+    },
+    "actual_one_case_serialization": {
+      "rows": [
+        {
+          "case": "native::coordinated_multiowner_abort::two_original_native_abort_acks_fence_replay_and_host_ready",
+          "server_info": {
+            "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank730-20261015/runtime/protobuf/case-00.pb",
+            "sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0"
+          },
+          "verified": true,
+          "actual_protobuf": true,
+          "shard_infos": [
+            {
+              "shard_id": "s000000000",
+              "shard_first_key_hex": ""
+            }
+          ]
+        }
+      ],
+      "application_python": {
+        "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/publicEnv405/python/bin/python3.12",
+        "sha256": "202c17d1671602a4ef1d43e9b2fdbef0769443f37bf5e51f6b603e0b2c27d9d8"
+      },
+      "generated_db_module": {
+        "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/publicEnv405/python/lib/python3.12/site-packages/rbt/v1alpha1/database_pb2.py",
+        "sha256": "1210114514539ac193f622248d1de0c2a838c79c8a266631fffb115b56309d13"
+      }
+    },
+    "serializer_join": {
+      "pid": 7,
+      "birth": "93070785",
+      "exit": 0,
+      "spawn_returned": true,
+      "joined": true,
+      "command": [
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/publicEnv405/python/bin/python3.12",
+        "-I",
+        "-B",
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank730-20261015/serialize.py",
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank730-20261015/runtime/protobuf",
+        "[\"native::coordinated_multiowner_abort::two_original_native_abort_acks_fence_replay_and_host_ready\"]"
+      ],
+      "fd_identity": [
+        6,
+        1910025
+      ],
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank730-20261015/runtime/protobuf-serializer.log"
+    }
+  },
+  "source_reviews": [
+    "SOURCE728 native seed/causality/ownership/joins",
+    "SOURCE735 new20-worker logic, prior19 byte-preserved validators/custody, synthetic checks are not native output"
+  ],
+  "limitations": [
+    "The new native control uses two original Account actors and two independent closed root graphs with empty task/provisional inventories. It is not taskful constructor replay, a shared transaction, or Bank Transfer.",
+    "Real transactional Store seeds native STARTED/unprepared records; successful TransactionParticipantPrepare would seed PREPARED and cannot test this pre-replay unprepared barrier.",
+    "No new native multi-owner cancellation/ACK-loss/restart or generated catalog-to-recovery bridge acceptance is established. Existing prior controls retain only their original bounded scope.",
+    "Latest-upstream native build and hosted fork CI remain unaccepted."
+  ]
+}

@@ -97,6 +97,54 @@ exit zero preceded fresh container terminal inspection, and the original lock
 was free. Hot reload, new-consumer compilation and restart durability remain
 separate. This is not latest-upstream/full-native/overall SDK qualification.
 
+## Actual native two-original-owner Abort ACK barrier (2026-10-16)
+
+The [native two-owner control](tests/fixtures/registered_constructor_child_native/src/coordinated_multiowner_abort.rs)
+now exercises two original Account participants and two independent closed root
+graphs against canonical C++ Database/RocksDB, using real CreateActor,
+CoordinatorPrepare and transactional Store RPCs. Store creates native
+STARTED/unprepared records: a successful TransactionParticipantPrepare would
+produce PREPARED records and would not exercise this barrier. The canonical
+Recover snapshot verifies the actual unprepared states and exact memberships.
+Task and provisional inventories are empty; no original Open/WelcomeEmail
+business or constructor-task acceptance is inferred from these seeds.
+
+The [observing proxy](tests/fixtures/registered_constructor_child_native/src/native/proxy.rs)
+parks the second exact original actor's Abort ACK **after** the canonical RPC
+succeeds but **before** returning the response to the SDK. While parked, direct
+canonical reads prove both participant records are gone, committed actor bytes
+are unchanged, both coordinator records remain and neither decision exists.
+There is no decision replay, cleanup or task completion, actual host readiness
+is blocked and the second original actor gate cannot admit a reader. The
+proxy-return counter alone is not treated as client receipt; the phase's
+sequential awaited unprepared-owner loop supplies that ordering.
+
+After ACK release, actual host readiness succeeds, both native Abort decisions
+are durable, coordinator/participant inventory is empty, original actor bytes
+remain unchanged and both original shared gates admit again. Exactly two
+successful Abort, DecisionPut and Cleanup RPCs are observed. Actual host and
+proxy joins precede the unique completion marker. The proxy hook uses weak
+registrations, exact actor references and a bounded ACK park; previous controls
+do not register it.
+
+Fresh parent-owned qualification and independent readback:
+
+- **754 SDK tests passed, 0 failed, 7 ignored**, **11 consumer tests passed**;
+  strict SDK/consumer lint, pinned Legacy build/lint and current native fixture
+  compilation passed. See the
+  [library evidence](tests/evidence/two-original-native-ack-library-20261016.json).
+- **20 listed native controls passed**, including all 19 prior controls and the
+  new two-owner case. All **40 SDK/Database children joined**, with original
+  SDK-before-Database retirement, clean custody and exact container retirement
+  independently verified. The actual new per-case ServerInfo serialization is
+  included in the [native evidence](tests/evidence/two-original-native-ack-controls-20261016.json).
+
+This closes the bounded healthy native two-unprepared-owner ACK ordering
+control. It does not establish native multi-owner cancellation/ACK-loss/restart,
+a generated catalog-to-recovery bridge, taskful Bank constructors, provisional
+checkpoint adoption, shared Transfer, full native inventory coverage or a
+latest-upstream native build. Those remain open.
+
 ## Generated Account catalog and two-owner ACK fences (2026-10-16)
 
 Ordinary-writer services without transaction annotations now retain their
@@ -5474,7 +5522,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: f0a5020edd446e32294276af206fd3e189dd9848388b6300afe864a8e7961695 -->
+<!-- parity-source-sha256: 719db862e90ab036d45e93b49bab005dcde1f93a779e0c0b0548de657ef177a3 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,
