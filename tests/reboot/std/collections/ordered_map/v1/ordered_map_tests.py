@@ -1245,7 +1245,7 @@ class TestOrderedMap(unittest.IsolatedAsyncioTestCase):
         )
         await self.rbt.up(
             Application(
-                libraries=[ordered_map_library(authorizer)],
+                libraries=[ordered_map_library(authorizer=authorizer)],
             ),
         )
 
