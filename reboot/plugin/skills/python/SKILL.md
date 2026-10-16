@@ -476,6 +476,9 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/lifecycle-secrets.md`
 - `references/lifecycle-dockerfile.md`
 - `references/lifecycle-reboot-cloud.md`
+- `references/lifecycle-signals.md` — usually nothing to do on
+  `SIGTERM`/`SIGINT`; when something is, `install_cleanup()`, never a
+  signal handler of your own
 
 **API** (`api-`):
 

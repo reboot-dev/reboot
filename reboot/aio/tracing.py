@@ -97,7 +97,7 @@ def _force_flush_on_signal():
     # interrupted has finished, and so has released the lock.
     #
     # The process has to still be alive by then. Within
-    # `reboot.aio.signals.cancel_on_signal_and_raise_system_exit()` it
+    # `reboot.aio.signals.cancel_on_signal_then_reraise_after_cancellation()` it
     # is: the cancellation is queued on the loop after our flush.
     # Otherwise the signal terminates the process as soon as the cleanup
     # handlers return, and nothing gets flushed.

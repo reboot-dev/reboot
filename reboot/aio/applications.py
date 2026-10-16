@@ -1190,7 +1190,7 @@ class Application:
         # everything we started gets stopped, rather than terminating
         # us right after the cleanup handlers; once we have exited it
         # terminates us.
-        async with reboot.aio.signals.cancel_on_signal_and_raise_system_exit(
+        async with reboot.aio.signals.cancel_on_signal_then_reraise_after_cancellation(
             reboot.aio.signals.TERMINATING_SIGNALS_FOR_SERVERS
         ):
             await self._run()
