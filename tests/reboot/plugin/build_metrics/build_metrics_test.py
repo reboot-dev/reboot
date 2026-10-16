@@ -1,6 +1,6 @@
 """Tests for reading a build's numbers from its transcript.
 
-`testdata/` holds four small transcripts written for these tests:
+`testdata/` holds five small transcripts written for these tests:
 
 * `baseline.jsonl`: one question answered after a 60 s wait, the design
   shown at 90 s, the API file written at 160 s, 3 scenarios passing at
@@ -9,6 +9,11 @@
 * `messy.jsonl`: lines that are not records, a declined tool call, a
   traceback, the API file written from a shell, and a failing test run
   before a passing one;
+* `design_first.jsonl`: today's shape: a question before the design,
+  `design/design.md` written, a short design message, the go-ahead
+  ("Ready to build?"), the feature file, API file and servicers, a test
+  run read back from its record (one failing, then passing), a page,
+  and a long handoff with its "Your turn";
 * `codex.jsonl`: a Codex session in the shapes Codex records: its skill
   roots, an `AGENTS.md` taken in, code-mode scripts (one with
   JavaScript arrows, one reading a file, one writing a patch), then
@@ -56,6 +61,31 @@ class Moments(unittest.TestCase):
 
     def test_a_moment_that_never_came_is_minus_one(self) -> None:
         self.assertEqual(read("messy.jsonl").design_s, -1)
+
+
+class TheDesignDocument(unittest.TestCase):
+    # Two waits: 30 s on the first question, 20 s on the go-ahead.
+
+    def test_the_design_is_the_go_ahead_after_design_md(self) -> None:
+        # Not "How should it be built?" before the design (5 s), not the
+        # long handoff (260 s): the go-ahead at 80 s, less 30 s waited.
+        self.assertEqual(read("design_first.jsonl").design_s, 50)
+
+    def test_each_moment_after_it(self) -> None:
+        m = read("design_first.jsonl")
+        self.assertEqual(
+            (m.feature_s, m.api_s, m.servicers_s, m.page_s, m.handoff_s),
+            (60, 80, 100, 170, 210),
+        )
+
+    def test_a_run_read_back_from_its_record(self) -> None:
+        # The record with a failure is not green; the next one is.
+        m = read("design_first.jsonl")
+        self.assertEqual((m.green_s, m.passed), (151, 4))
+
+    def test_a_build_before_the_design_document_still_reads(self) -> None:
+        # No design.md: the long message, as before.
+        self.assertEqual(read("baseline.jsonl").design_s, 30)
 
 
 class WhatItSkips(unittest.TestCase):

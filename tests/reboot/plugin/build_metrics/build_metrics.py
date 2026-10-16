@@ -22,12 +22,21 @@ waiting on a person. -1 means the moment never came.
 
 What each moment is taken to be:
 
-* the design: the first message to the person of `DESIGN_WORDS` words
-  or more, the first time a design is laid out in full;
+* the design: the go-ahead question (`GO_AHEAD`) asked once
+  `design/design.md` is written, the moment the design is shown for a
+  decision; failing that, the first message headed "the proposed
+  design"; failing that, the first message of `DESIGN_WORDS` words or
+  more (a build from before the design document);
 * an edit: the first tool call that writes a file;
+* the feature file: the first write of a `.feature` file;
 * the API file: the first write of a Python file under `api/`;
+* the servicers: the first write of a Python file under `servicers/`;
 * a passing scenario: the first tool result that reports `N passed`
-  and nothing failed.
+  and nothing failed, or a test run's record with `'passed': N` and
+  `'failed': 0` (a run in the background is read back that way);
+* the first page: the first write of a `.tsx` file under `frontend/`;
+* the handoff: the first message with a "Your turn" section, where the
+  person first tries what was built.
 """
 
 import json
@@ -38,10 +47,23 @@ from datetime import datetime
 from pathlib import Path
 
 DESIGN_WORDS = 200
+DESIGN_FILE = re.compile(r"(?:^|/)design/design\.md$")
+DESIGN_HEADING = "the proposed design"
+# The question that asks for the go-ahead on a shown design, in either
+# of the skills' wordings.
+GO_AHEAD = ("Ready to build?", "How should it be built?")
+FEATURE_FILE = re.compile(r"\.feature$")
+SERVICER_FILE = re.compile(r"(?:^|/)servicers/\S+\.py$")
+PAGE_FILE = re.compile(r"(?:^|/)frontend/\S+\.tsx$")
+HANDOFF = "Your turn"
 
 API_FILE = re.compile(r"(?:^|/)api/\S+\.py$")
 PASSED = re.compile(r"\b(\d+) passed\b")
 FAILED = re.compile(r"\b\d+ (?:failed|errors?)\b")
+# A test run's record, as Python or JSON: `{'passed': 11, 'failed': 0`.
+RECORD = re.compile(
+    r"""["']passed["']\s*:\s*(\d+)\s*,\s*["']failed["']\s*:\s*(\d+)"""
+)
 TRACEBACK = "Traceback (most recent call last)"
 
 
@@ -52,8 +74,9 @@ class Event:
     `kind` is one of:
 
     * "say": a message to the person (`text`);
-    * "call": a tool call (`id`, `name`, the files it `writes`, and
-      `questions`, how many it asks the person);
+    * "call": a tool call (`id`, `name`, the files it `writes`,
+      `questions`, how many it asks the person, and `text`, what they
+      ask);
     * "result": a tool call's result (`id`, `text`, `failed`);
     * "load": a skill or an `AGENTS.md` taken in (`text`, and `source`,
       where a skill came from);
@@ -78,8 +101,12 @@ class Metrics:
     questions: int = 0
     design_s: int = -1
     edit_s: int = -1
+    feature_s: int = -1
     api_s: int = -1
+    servicers_s: int = -1
     green_s: int = -1
+    page_s: int = -1
+    handoff_s: int = -1
     calls_before_edit: int = 0
     passed: int = 0
     errors: int = 0
@@ -199,13 +226,20 @@ def _claude_assistant(at: datetime, block: dict) -> Iterator[Event]:
     elif name == "Bash":
         writes = tuple(SHELL_WRITE.findall(str(args.get("command", ""))))
     questions = 0
+    asked = ""
     if name == "AskUserQuestion":
-        questions = len(args.get("questions") or [])
+        items = args.get("questions") or []
+        questions = len(items)
+        asked = "\n".join(
+            str(item.get("question", "")) for item in items
+            if isinstance(item, dict)
+        )
     yield Event(
         at,
         "call",
         id=str(block.get("id")),
         name=name,
+        text=asked,
         writes=writes,
         questions=questions,
     )
@@ -268,6 +302,7 @@ def codex_events(path: Path) -> Iterator[Event]:
                 "call",
                 id=str(payload.get("call_id")),
                 name=name,
+                text=source if questions else "",
                 writes=writes,
                 questions=questions,
             )
@@ -345,22 +380,44 @@ class _Clock:
         return max(0, round((at - self.start).total_seconds() - waited))
 
 
+# A moment set by the first write of a file its pattern matches.
+WRITTEN = (
+    ("feature_s", FEATURE_FILE),
+    ("servicers_s", SERVICER_FILE),
+    ("page_s", PAGE_FILE),
+)
+
+
 def measure(stream: Iterable[Event], agent: str = "") -> Metrics:
     metrics = Metrics(agent=agent)
     clock: _Clock | None = None
     asked: dict[str, datetime] = {}
+    design_written = False
+    # The design's three readings, best first (the module's docstring).
+    go_ahead_s = heading_s = long_s = -1
     for event in stream:
         clock = clock or _Clock(event.at)
         api_written = metrics.api_s >= 0
         if event.kind == "say":
-            long = len(event.text.split()) >= DESIGN_WORDS
-            if metrics.design_s < 0 and long:
-                metrics.design_s = clock.active(event.at)
+            if long_s < 0 and len(event.text.split()) >= DESIGN_WORDS:
+                long_s = clock.active(event.at)
+            if heading_s < 0 and DESIGN_HEADING in event.text:
+                heading_s = clock.active(event.at)
+            if metrics.handoff_s < 0 and HANDOFF in event.text:
+                metrics.handoff_s = clock.active(event.at)
         elif event.kind == "call":
             if event.questions:
                 asked[event.id] = event.at
                 if not api_written:
                     metrics.questions += event.questions
+                if (
+                    go_ahead_s < 0
+                    and design_written
+                    and any(q in event.text for q in GO_AHEAD)
+                ):
+                    go_ahead_s = clock.active(event.at)
+            if any(DESIGN_FILE.search(path) for path in event.writes):
+                design_written = True
             if event.writes and metrics.edit_s < 0:
                 metrics.edit_s = clock.active(event.at)
             if metrics.edit_s < 0:
@@ -369,6 +426,11 @@ def measure(stream: Iterable[Event], agent: str = "") -> Metrics:
                 API_FILE.search(path) for path in event.writes
             ):
                 metrics.api_s = clock.active(event.at)
+            for key, pattern in WRITTEN:
+                if getattr(metrics, key) < 0 and any(
+                    pattern.search(path) for path in event.writes
+                ):
+                    setattr(metrics, key, clock.active(event.at))
         elif event.kind == "result":
             _result(metrics, clock, asked, event)
         elif event.kind == "load":
@@ -378,6 +440,9 @@ def measure(stream: Iterable[Event], agent: str = "") -> Metrics:
                 metrics.plugin = plugin_source(event.source)
             if not api_written:
                 metrics.words_before_api += len(event.text.split())
+    metrics.design_s = next(
+        (s for s in (go_ahead_s, heading_s, long_s) if s >= 0), -1
+    )
     return metrics
 
 
@@ -404,6 +469,12 @@ def _result(
         metrics.passed = int(counts[-1])
         if metrics.green_s < 0 and not FAILED.search(event.text):
             metrics.green_s = clock.active(event.at)
+    records = RECORD.findall(event.text)
+    if records:
+        passed, failed = (int(n) for n in records[-1])
+        metrics.passed = passed
+        if metrics.green_s < 0 and passed and not failed:
+            metrics.green_s = clock.active(event.at)
 
 
 def read(path: Path) -> Metrics:
@@ -421,8 +492,12 @@ SLACK = 1.10
 COMPARED = (
     ("questions", "Questions before code"),
     ("design_s", "Active time to the design"),
+    ("feature_s", "Active time to the feature file"),
     ("api_s", "Active time to the API file"),
+    ("servicers_s", "Active time to the servicers"),
     ("green_s", "Active time to the first passing scenario"),
+    ("page_s", "Active time to the first page"),
+    ("handoff_s", "Active time to the first handoff"),
     ("words_before_api", "Words taken in before the API file"),
     ("errors", "Errors hit"),
 )
