@@ -33,6 +33,12 @@ def hostname(name: str) -> str:
     return f'{name}.localhost'
 
 
+def dashboard_name(name: str) -> str:
+    """The name `rbt dashboard --portless` registers an application's
+    developer dashboard under, `dashboard.<name>`."""
+    return f'dashboard.{name}'
+
+
 async def alias(name: str, port: int) -> None:
     """Register `name` with the running proxy as a route to the local
     `port`, replacing whatever the name pointed at before, so that

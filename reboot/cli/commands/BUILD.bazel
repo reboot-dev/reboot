@@ -14,6 +14,7 @@ py_library(
         "//reboot/aio:external_py",
         "//reboot/cli/common:dev_extra_py",
         "//reboot/cli/common:directories_py",
+        "//reboot/cli/common:portless_py",
         "//reboot/cli/common:rc_py",
         "//reboot/cli/common:subprocesses_py",
         "//reboot/cli/common:terminal_py",
@@ -21,6 +22,7 @@ py_library(
         # The application this command spawns as a subprocess, so
         # that it is importable from the CLI's own interpreter.
         "//reboot/dashboard/backend:main_py",
+        "@com_github_reboot_dev_reboot//reboot:portless_py",
         "@com_github_reboot_dev_reboot//reboot:settings_py",
         "@com_github_reboot_dev_reboot//reboot/aio/backoff:python",
     ],
