@@ -1,5 +1,4 @@
 import asyncio
-import math
 import os
 import time
 from reboot.aio.external import ExternalContext
@@ -11,7 +10,11 @@ from typing import Optional
 # NOTE: as of the writing of this test we are only using Chrome but
 # when we test against other browsers we'll need to change this.
 CHROME_WEBSOCKET_LIMIT = 255
-ACCOUNTS = math.floor((CHROME_WEBSOCKET_LIMIT - 2) / 2)
+
+# Every account has a websocket for `useBalance`, and the bank has one
+# for `useAssetsUnderManagement`. None of them have a websocket for
+# mutations because we never bind, or call, a mutator.
+ACCOUNTS = CHROME_WEBSOCKET_LIMIT - 1
 
 # How long the check that the "too many WebSockets" warning stays
 # absent while still under the limit keeps watching the console. A
@@ -87,20 +90,16 @@ async def test(context: ExternalContext, uri: str):
                         last_report = now
                     time.sleep(0.25)
 
-            # We should be able to create `ACCOUNTS`
-            # websockets without our `console.warn` showing
-            # up, accounting for 1 for `useBank` mutations
-            # and 1 for `useAssetsUnderManagement`.
+            # We should be able to create a websocket for every one
+            # of `ACCOUNTS` without our `console.warn` showing up,
+            # accounting for 1 for `useAssetsUnderManagement`.
             wait_for_accounts(ACCOUNTS)
 
             def look_for_warning(*, window_seconds: Optional[float]) -> bool:
                 """Watches the browser console for the "too many
                 WebSockets" warning: for `window_seconds` when a window
                 is given, otherwise until the warning appears."""
-                snippet = (
-                    'You can solve this by using HTTP/2'
-                    ' which allows an unlimited'
-                )
+                snippet = 'You have over 255 websockets'
                 deadline = (
                     time.perf_counter() +
                     window_seconds if window_seconds is not None else None
@@ -130,11 +129,11 @@ async def test(context: ExternalContext, uri: str):
                 loop,
             ).result()
 
-            # Only cleartext WebSockets are subject to the browser's
-            # limit (over TLS it uses HTTP/2), so only the cleartext
-            # case has a warning to wait for: the extra account pushes
-            # the browser past its limit, and the warning follows once
-            # it tries to open the WebSockets for that account.
+            # Only without TLS does a reactive reader use a WebSocket
+            # (with TLS it uses HTTP/2), so only then is there a
+            # warning to wait for: the extra account pushes the
+            # browser past its limit, and the warning follows once it
+            # tries to open the WebSocket for that account.
             if not uri.startswith('https:'):
                 look_for_warning(window_seconds=None)
 

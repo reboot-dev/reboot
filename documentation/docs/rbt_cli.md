@@ -45,9 +45,11 @@ browsers allow only around 200 open WebSockets per page (255 in
 Chrome); beyond that, new ones fail and the Reboot client logs a
 warning. Other calls share a handful of HTTP/1.1 connections per
 host, so many outstanding calls queue behind each other, which the
-client also warns about. Over HTTPS the browser multiplexes all of
-them over one HTTP/2 connection. To enable HTTPS you must provide
-your own TLS certificate when running `rbt dev run`.
+client also warns about. Over HTTPS reactive readers and other calls
+are all streams of one HTTP/2 connection. A WebSocket is then only
+used for the mutators of a state, and only once one of them is used.
+To enable HTTPS you must provide your own TLS certificate when running
+`rbt dev run`.
 
 ### Generating a Certificate with [mkcert](https://github.com/FiloSottile/mkcert)
 

@@ -117,7 +117,7 @@ the state, every mounted reader re-renders with the new response —
 no polling, no refetch call, no transport code of your own.
 
 The transport underneath is chosen for you: gRPC server-streaming
-over `https:`, and a WebSocket multiplex otherwise, which is what a
+over `https:`, and a WebSocket otherwise, which is what a
 local `http://` dev server uses. It matters only when you are
 reading a network trace — and because cross-origin WebSocket frames
 carry no cookies, which is why the session JWT rides in the request
