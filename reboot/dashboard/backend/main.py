@@ -13,7 +13,16 @@ from rbt.dashboard.v1.dashboard_rbt import Dashboard, Preferences
 from rbt.std.collections.ordered_map.v1.ordered_map_rbt import OrderedMap
 from rbt.std.presence.v1.presence_rbt import Presence
 from reboot.aio.applications import Application
-from reboot.aio.auth.authorizers import allow, allow_if, is_app_internal
+from reboot.aio.auth.authorizers import (
+    allow_if,
+    has_verified_token,
+    is_app_internal,
+)
+from reboot.aio.auth.oauth import OAuth
+from reboot.aio.auth.oauth_providers import (
+    Anonymous,
+    OAuthProviderByEnvironment,
+)
 from reboot.aio.external import InitializeContext
 from reboot.bdd import recordings
 from reboot.dashboard.backend.constants import (
@@ -29,7 +38,7 @@ from reboot.dashboard.backend.servicers import (
 from reboot.std.collections.ordered_map.v1.ordered_map import (
     ordered_map_library,
 )
-from reboot.std.presence.v1 import presence
+from reboot.std.presence.v1.presence import presence_library
 from starlette.exceptions import HTTPException
 from starlette.responses import FileResponse
 
@@ -62,22 +71,48 @@ def _recording(directory: Path, relative: str) -> Path:
 
 
 def application() -> Application:
-    """The dashboard application, with its page mounted."""
+    """The dashboard application, with its page mounted.
+
+    The OAuth server signs in whoever reaches it as the developer, so
+    the tunnel's address is what keeps the dashboard off the internet;
+    see `reboot/dashboard/tunnel.py`.
+    """
+    # `_dashboard_context` in `reboot/cli/commands/dashboard.py` signs
+    # in by following this provider's redirects alone; a provider that
+    # asks the user anything breaks it.
+    developer = Anonymous(user_id='developer')
     application = Application(
+        oauth=OAuth(
+            provider=OAuthProviderByEnvironment(dev=developer, prod=developer),
+            # Only this application's own origin, which serves the
+            # page, may act on the session cookie. An MCP host's UI
+            # sends a bearer token, which this list does not govern.
+            allowed_origins=[],
+        ),
         servicers=[
             DashboardServicer,
             PreferencesServicer,
-        ] + presence.servicers(),
+        ],
         libraries=[
+            # `is_app_internal` trusts the `x-reboot-caller-id` header,
+            # which Envoy removes from every request on the public
+            # listener, the one the tunnel reaches; see
+            # `_routes_for_server` in `reboot/routing/envoy_config.py`.
+            presence_library(
+                authorizer=allow_if(any=[is_app_internal, has_verified_token]),
+            ),
             ordered_map_library(
-                # The page reads the changelog straight from the
-                # browser; only the dashboard itself records what
-                # changed.
-                OrderedMap.Authorizer(
-                    search=allow(),
-                    range=allow(),
-                    reverse_range=allow(),
-                    stringify=allow(),
+                # The developer's page reads the changelog; only the
+                # dashboard itself records what changed.
+                authorizer=OrderedMap.Authorizer(
+                    search=allow_if(any=[is_app_internal, has_verified_token]),
+                    range=allow_if(any=[is_app_internal, has_verified_token]),
+                    reverse_range=allow_if(
+                        any=[is_app_internal, has_verified_token]
+                    ),
+                    stringify=allow_if(
+                        any=[is_app_internal, has_verified_token]
+                    ),
                     create=allow_if(all=[is_app_internal]),
                     insert=allow_if(all=[is_app_internal]),
                     remove=allow_if(all=[is_app_internal]),
@@ -87,7 +122,11 @@ def application() -> Application:
         initialize=initialize,
     )
 
-    @application.http.get(RECORDINGS_PATH + '/{relative:path}')
+    # Recordings are the developer's own screenshots and videos, and
+    # the tunnel reaches this path.
+    @application.http.get(
+        RECORDINGS_PATH + '/{relative:path}', require_oauth_token=True
+    )
     async def recording(relative: str) -> FileResponse:
         """A scenario's video or a step's screenshot, from beside the
         feature file under the working directory."""

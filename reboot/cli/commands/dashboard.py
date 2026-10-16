@@ -1,4 +1,5 @@
 """The `rbt dashboard` command, which runs the developer dashboard."""
+import aiohttp
 import argparse
 import asyncio
 import os
@@ -7,6 +8,7 @@ import secrets
 import shutil
 import sys
 import webbrowser
+from contextlib import suppress
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_rbt import Preferences
 from rbt.std.presence.v1.presence_rbt import Presence
@@ -34,7 +36,13 @@ from reboot.dashboard.backend.constants import (
     PREFERENCES_ID,
     PRESENCE_ID,
 )
+from reboot.dashboard.tunnel import (
+    CloudflaredNotFoundError,
+    TunnelError,
+    cloudflared_tunnel,
+)
 from reboot.settings import (
+    ENVVAR_LOCAL_ENVOY_USE_TLS,
     ENVVAR_RBT_DEV,
     ENVVAR_RBT_EFFECT_VALIDATION,
     ENVVAR_RBT_FRONTEND_URL,
@@ -185,7 +193,8 @@ def _dashboard_env(
     application: Optional[str],
     generated_directory: Optional[str],
 ) -> dict[str, str]:
-    """The environment for the dashboard application.
+    """The environment for the dashboard application, serving on
+    `port`.
 
     Built from the ambient environment rather than from any
     application environment, so that nothing naming a developer's
@@ -229,6 +238,11 @@ def _dashboard_env(
         # The dashboard application registers this name once it is
         # serving (see `reboot.portless.alias`).
         composed[ENVVAR_RBT_PORTLESS_NAME] = portless_name
+
+    # Plain HTTP: the tunnel terminates TLS. Set rather than popped,
+    # so that a developer's export for their own application does not
+    # reach this one.
+    composed[ENVVAR_LOCAL_ENVOY_USE_TLS] = 'false'
 
     # A single server, so that a subscriber's `Connect` and
     # `Toggle` always land on the same process; presence tracks its
@@ -330,18 +344,79 @@ async def _run_dashboard(
         await backoff()
 
 
-async def _viewers(dashboard_url: str) -> list[str]:
+async def _tunnel(*, port: int, subprocesses: Subprocesses) -> None:
+    """Keeps a tunnel to the dashboard on `port` open and prints each
+    tunnel's address for the developer to add as an MCP connector: a
+    connector added with a stopped tunnel's address reaches nothing.
+    Gives up after `_TUNNEL_ATTEMPTS` failures in a row, and at once
+    with no `cloudflared`; the dashboard serves this machine either
+    way.
+    """
+    backoff = Backoff()
+    failures = 0
+    while failures < _TUNNEL_ATTEMPTS:
+        try:
+            async with cloudflared_tunnel(
+                port=port, subprocesses=subprocesses
+            ) as tunnel:
+                failures = 0
+                terminal.info(
+                    'To show your dashboard in Claude or ChatGPT, add this '
+                    f'MCP connector: {tunnel.url}/mcp/\n'
+                )
+                await tunnel.task
+        except CloudflaredNotFoundError as error:
+            terminal.warn(f'{error}\n')
+            return
+        except TunnelError as error:
+            failures += 1
+            terminal.warn(f'{error}\n')
+        await backoff()
+    terminal.warn(
+        'Giving up on a tunnel, so an MCP host cannot show your dashboard; '
+        f'it still serves at http://127.0.0.1:{port}/\n'
+    )
+
+
+async def _dashboard_context(dashboard_url: str) -> ExternalContext:
+    """An `ExternalContext` signed in to the dashboard at
+    `dashboard_url` the way a browser signs in.
+
+    Depends on the dashboard's OAuth provider being `Anonymous` (see
+    `application()` in `reboot/dashboard/backend/main.py`): following
+    its redirects is the whole sign-in. A provider that asks the user
+    anything would never sign in here."""
+    # The session cookies are `Secure` and the dashboard is at an IP
+    # address; a browser accepts both on `http://127.0.0.1`, and so
+    # must this jar.
+    jar = aiohttp.CookieJar(unsafe=True, treat_as_secure_origin=dashboard_url)
+    async with aiohttp.ClientSession(cookie_jar=jar) as client:
+        async with client.get(
+            f'{dashboard_url}/__/oauth/start?return_to=/'
+        ) as response:
+            response.raise_for_status()
+        async with client.get(f'{dashboard_url}/__/oauth/whoami') as response:
+            session = await response.json()
+    if not session.get('authenticated'):
+        raise RuntimeError('Dashboard sign-in left nobody signed in')
+    return ExternalContext(
+        name="open-dashboard",
+        url=dashboard_url,
+        bearer_token=session['access_token'],
+    )
+
+
+async def _viewers(context: ExternalContext) -> list[str]:
     """The subscriber ids of everyone looking at a dashboard.
 
     The dashboard constructs the `Presence` instance, empty, when it
-    initializes, so there is an answer from the moment it is up.
+    initializes, so the list exists from the moment it is up.
     """
-    context = ExternalContext(name="open-dashboard", url=dashboard_url)
     response = await Presence.ref(PRESENCE_ID).List(context)
     return list(response.subscriber_ids)
 
 
-async def _should_open_automatically(dashboard_url: str) -> bool:
+async def _should_open_automatically(context: ExternalContext) -> bool:
     """Whether the developer still wants a dashboard opened for them.
 
     The dashboard's notice writes this when they click "Don't reopen
@@ -349,7 +424,6 @@ async def _should_open_automatically(dashboard_url: str) -> bool:
     it in. The dashboard writes the default when it initializes, so
     nobody ever clicking means a dashboard opens.
     """
-    context = ExternalContext(name="open-dashboard", url=dashboard_url)
     response = await Preferences.ref(PREFERENCES_ID).Get(context)
     return not response.suppress_automatic_open
 
@@ -380,9 +454,10 @@ async def _should_open(dashboard_url: str) -> bool:
     """
     while True:
         try:
-            if not await _should_open_automatically(dashboard_url):
+            context = await _dashboard_context(dashboard_url)
+            if not await _should_open_automatically(context):
                 return False
-            return len(await _viewers(dashboard_url)) == 0
+            return len(await _viewers(context)) == 0
         except Exception:
             await asyncio.sleep(_ASK_EVERY_SECONDS)
 
@@ -522,7 +597,12 @@ async def dashboard(
             _open_when_serving(origin=origin, portless_name=portless_name),
             name=f'_open_when_serving(...) in {__name__}',
         )
-
+        # A separate task, so a tunnel failure (every tunnel fails
+        # offline) leaves the dashboard serving this machine.
+        tunnel = asyncio.create_task(
+            _tunnel(port=port, subprocesses=subprocesses),
+            name=f'_tunnel(...) in {__name__}',
+        )
         try:
             await _run_dashboard(
                 env=env,
@@ -531,6 +611,8 @@ async def dashboard(
             )
         finally:
             open_task.cancel()
+            tunnel.cancel()
+            await asyncio.gather(tunnel, return_exceptions=True)
 
     return 0
 
