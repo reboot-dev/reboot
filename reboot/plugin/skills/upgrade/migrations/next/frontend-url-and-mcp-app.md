@@ -26,7 +26,9 @@ In `.rbtrc`, rename the flags and add `--mcp-app` beside
 ```
 dev run:ports --frontend-url=http://localhost:5173
 dev run:ports --mcp-app
+
 dev run:dist --mcp-app-dist-path=frontend/dist/mcp
+
 serve run --mcp-app-dist-path=frontend/dist/mcp
 ```
 

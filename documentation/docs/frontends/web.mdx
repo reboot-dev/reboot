@@ -200,10 +200,12 @@ origin, and so `UI` methods work — tell it where the frontend is in
 # (`portless frontend.<app> vite`), is at https://frontend.<app>.localhost; Envoy
 # proxies `/__/frontend/**` there, and `/` too, where it serves the web app.
 dev run --default-config=portless
+
 dev run:portless --portless
 dev run:portless --frontend-url=https://frontend.<app>.localhost
 dev run:portless --mcp-app
 dev run:portless --web-app
+
 # Plain ports: `rbt dev run --config=ports`, Vite from `npm run dev:ports`.
 dev run:ports --frontend-url=http://localhost:5173
 dev run:ports --mcp-app
