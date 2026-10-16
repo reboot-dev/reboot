@@ -320,7 +320,17 @@ dev run:portless --portless
 dev run:portless --frontend-url=https://frontend.bank.localhost
 dev run:portless --mcp-app
 dev run:portless --web-app
+dashboard --default-config=portless
+dashboard:portless --portless
+dashboard:hmr --no-portless
 ```
+
+`rbt dashboard --portless` serves the developer dashboard the same
+way, as `https://dashboard.<app>.localhost` on a free port the proxy
+routes to (the name is the `.rbtrc`'s `dev run --application-name`).
+The dashboard's configs are named like `rbt dev run`'s, so
+`rbt dashboard --config=hmr` goes with `rbt dev run --config=hmr`:
+the plain port, `http://127.0.0.1:9871`.
 
 ### Inspecting state
 

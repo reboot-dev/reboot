@@ -41,6 +41,7 @@ py_test(
     main = "dashboard_tests.py",
     deps = [
         ":mock_exit_py",
+        "//reboot:portless_py",
         "//reboot/cli/common:cli_py",
         "//reboot/cli/common:rc_py",
         "//reboot/dashboard/backend:constants_py",

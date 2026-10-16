@@ -163,12 +163,23 @@ dev run:hmr --mcp-app
 dev run:dist --mcp-app-dist-path=frontend/dist/mcp
 # A dual-frontend app also serves its built web app at `/`:
 # dev run:dist --web-app-dist-path=frontend/dist/web
+
+# The developer dashboard (`rbt dashboard`) too: https://dashboard.<app>.localhost
+# by default, or the plain port with `rbt dashboard --config=hmr`.
+dashboard --default-config=portless
+dashboard:portless --portless
+dashboard:hmr --no-portless
 ```
 
 Run with `rbt dev run` (uses `--default-config=portless`), or
 `rbt dev run --config=hmr` or `--config=dist` to switch. `--portless`
 requires `--application-name` (the name is the hostname), the
 `portless` CLI, and its proxy running (`portless proxy start`).
+`dashboard:portless --portless` has `rbt dashboard` serve as
+`https://dashboard.<app>.localhost`, on a free port the proxy
+routes to, so the dashboards of several applications run at once;
+its configs are named like `rbt dev run`'s, so
+`rbt dashboard --config=hmr` is the plain `http://127.0.0.1:9871/`.
 The frontend's `package.json` mirrors these configs as scripts:
 `dev` is the default, `dev:portless`, which runs
 `portless frontend.<app> vite` with `portless` as a dev dependency, and
