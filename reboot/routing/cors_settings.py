@@ -56,8 +56,8 @@ def permissive_cors_headers(
     headers: Sequence[str],
 ) -> dict[str, str]:
     """The CORS response headers for an endpoint any origin may call
-    without credentials: the OAuth server's public endpoints, a
-    `require_oauth_token=True` route. Never for an endpoint that
+    without credentials: the OAuth server's public endpoints, which
+    answer their own preflight. Never for an endpoint that
     honors the session cookie cross-origin: those get Envoy's
     exact-match policy, since `*` beside `Allow-Credentials` would let
     any page call them credentialed.

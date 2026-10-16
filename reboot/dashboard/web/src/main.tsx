@@ -725,8 +725,16 @@ const useRecording = (path: string): string | undefined => {
         return;
       }
       if (response.status === 401 && !refreshed) {
-        const fresh =
-          refreshBearerToken === null ? undefined : await refreshBearerToken();
+        let fresh: string | undefined;
+        try {
+          fresh =
+            refreshBearerToken === null
+              ? undefined
+              : await refreshBearerToken();
+        } catch {
+          // In an MCP host the refresh asks the host, which can fail.
+          fresh = undefined;
+        }
         if (cancelled) {
           return;
         }
@@ -746,7 +754,18 @@ const useRecording = (path: string): string | undefined => {
         console.warn(`Recording ${path}: ${response.status}`);
         return;
       }
-      const next = URL.createObjectURL(await response.blob());
+      let blob: Blob;
+      try {
+        blob = await response.blob();
+      } catch {
+        // `fetch` resolved on the headers; the connection dropped
+        // during the download.
+        if (!cancelled) {
+          later(() => fetchRecording(refreshed));
+        }
+        return;
+      }
+      const next = URL.createObjectURL(blob);
       if (cancelled) {
         URL.revokeObjectURL(next);
         return;
@@ -784,9 +803,10 @@ const Recording: FC<{
   return url === undefined ? null : <>{children(url)}</>;
 };
 
-// A recording over the whole page.
+// A recording over the whole page; the backdrop alone while `url` is
+// still arriving.
 const RecordingLightbox: FC<{
-  url: string;
+  url: string | undefined;
   video: boolean;
   title: string;
   onClose: () => void;
@@ -805,9 +825,14 @@ const RecordingLightbox: FC<{
       className="recording-lightbox"
       role="dialog"
       aria-label={title}
-      onClick={onClose}
+      // A click here closes the recording, not what the button that
+      // opened it sits in: a scenario's head toggles the scenario.
+      onClick={(event) => {
+        event.stopPropagation();
+        onClose();
+      }}
     >
-      {video ? (
+      {url === undefined ? null : video ? (
         <video
           src={url}
           controls
@@ -821,15 +846,31 @@ const RecordingLightbox: FC<{
   );
 };
 
+// A lightbox that fetches its recording only while shown: a video is
+// not fetched until opened, and `useRecording` releases its object URL
+// once the lightbox closes.
+const FetchedRecordingLightbox: FC<{
+  path: string;
+  video: boolean;
+  title: string;
+  onClose: () => void;
+}> = ({ path, ...rest }) => {
+  const url = useRecording(path);
+  return <RecordingLightbox url={url} {...rest} />;
+};
+
 // A thumbnail or link that opens the recording over the page rather
-// than in a new tab, which an MCP host's frame cannot open.
+// than in a new tab, which an MCP host's frame cannot open. With
+// `url`, the recording is already fetched, as a thumbnail's is; with
+// `path`, it is fetched when opened and released when closed, so a
+// feature with many videos does not pull them all through the tunnel.
 const RecordingButton: FC<{
   className: string;
-  url: string;
+  recording: { url: string } | { path: string };
   video?: boolean;
   title: string;
   children: ReactNode;
-}> = ({ className, url, video = false, title, children }) => {
+}> = ({ className, recording, video = false, title, children }) => {
   const [shown, setShown] = useState(false);
   const close = useCallback(() => setShown(false), []);
   return (
@@ -846,14 +887,22 @@ const RecordingButton: FC<{
       >
         {children}
       </button>
-      {shown && (
-        <RecordingLightbox
-          url={url}
-          video={video}
-          title={title}
-          onClose={close}
-        />
-      )}
+      {shown &&
+        ("url" in recording ? (
+          <RecordingLightbox
+            url={recording.url}
+            video={video}
+            title={title}
+            onClose={close}
+          />
+        ) : (
+          <FetchedRecordingLightbox
+            path={recording.path}
+            video={video}
+            title={title}
+            onClose={close}
+          />
+        ))}
     </>
   );
 };
@@ -2504,7 +2553,7 @@ const StepRow: FC<{
             {(url) => (
               <RecordingButton
                 className="step-screenshot"
-                url={url}
+                recording={{ url }}
                 title="The browser after this step, in the scenario's last run"
               >
                 <img src={url} alt="" />
@@ -2766,26 +2815,18 @@ const ScenarioRow: FC<{
           </span>
         )}
         {videos.map((video) => (
-          <Recording path={video.path} key={video.user}>
-            {(url) => (
-              <RecordingButton
-                className="scenario-video"
-                url={url}
-                video
-                title={`"${video.user}"'s browser in the scenario's last run`}
-              >
-                <svg
-                  viewBox="0 0 10 10"
-                  width="8"
-                  height="8"
-                  aria-hidden="true"
-                >
-                  <path d="M1.5 1 L9 5 L1.5 9 Z" fill="currentColor" />
-                </svg>
-                {videos.length > 1 ? `video · ${video.user}` : "video"}
-              </RecordingButton>
-            )}
-          </Recording>
+          <RecordingButton
+            key={video.user}
+            className="scenario-video"
+            recording={{ path: video.path }}
+            video
+            title={`"${video.user}"'s browser in the scenario's last run`}
+          >
+            <svg viewBox="0 0 10 10" width="8" height="8" aria-hidden="true">
+              <path d="M1.5 1 L9 5 L1.5 9 Z" fill="currentColor" />
+            </svg>
+            {videos.length > 1 ? `video · ${video.user}` : "video"}
+          </RecordingButton>
         ))}
         {recordingsStale && (
           <span

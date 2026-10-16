@@ -206,7 +206,6 @@ py_library(
     deps = [
         "//envoy/config/route/v3:routev3_py_proto",
         "//envoy/type/matcher/v3:matcherv3_py_proto",
-        "//reboot/routing:cors_settings_py",
         requirement("fastapi"),
         requirement("uvicorn"),
         ":caller_id_py",
