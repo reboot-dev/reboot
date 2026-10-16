@@ -86,6 +86,13 @@ dev run:dist --mcp-app-dist-path=frontend/dist/mcp
 # A dual-frontend app also serves its built web app at `/`:
 # dev run:dist --web-app-dist-path=frontend/dist/web
 
+# The developer dashboard (`rbt dashboard`) too: it is
+# https://dashboard.<project-name>.localhost by default, or on the plain
+# port http://127.0.0.1:9871 with `rbt dashboard --config=hmr`.
+dashboard --default-config=portless
+dashboard:portless --portless
+dashboard:hmr --no-portless
+
 # When expunging, expunge that state we've saved.
 dev expunge --application-name=<project-name>
 
