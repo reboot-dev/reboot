@@ -439,6 +439,8 @@ struct Inner {
     listing: TaskListing,
     #[cfg(feature = "test-support")]
     completed_operations: std::sync::atomic::AtomicUsize,
+    #[cfg(test)]
+    acknowledged_read_operations: std::sync::atomic::AtomicUsize,
 }
 impl OneShotTasks {
     /// Construct an owner from a concrete participant-bearing binding.
@@ -565,8 +567,14 @@ impl OneShotTasks {
                 listing: TaskListing::default(),
                 #[cfg(feature = "test-support")]
                 completed_operations: 0.into(),
+                #[cfg(test)]
+                acknowledged_read_operations: 0.into(),
             }),
         })
+    }
+    #[cfg(test)]
+    pub(crate) fn acknowledged_read_operations(&self) -> usize {
+        self.inner.acknowledged_read_operations.load(std::sync::atomic::Ordering::Acquire)
     }
     #[cfg(feature = "test-support")]
     pub fn completed_operations(&self) -> usize {
@@ -1488,6 +1496,9 @@ impl OneShotTasks {
             self.validate_terminal(&loaded.tasks[0], &response)?;
         }
         operation.acknowledged();
+        // Test observation follows real completion ACK and guard discharge.
+        #[cfg(test)]
+        self.inner.acknowledged_read_operations.fetch_add(1, std::sync::atomic::Ordering::Release);
         Ok(None)
     }
 }

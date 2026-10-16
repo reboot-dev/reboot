@@ -2895,7 +2895,14 @@ fn emit_reader_tasks(
             output.push_str(&format!("    /// Attach one actor-scoped owner; the ApplicationHost must supervise recovery before dispatch.\n    pub fn with_one_shot_{name}_tasks(mut self, state_ref: &str) -> Result<(Self, {runtime_module}::one_shot_tasks::OneShotTasks), Box<tonic::Status>> {{ if self.tasks.is_some() {{ return Err(Box::new(tonic::Status::failed_precondition(\"task owner already attached\"))); }} let reference = {runtime_module}::state_ref::StateRef::from_maybe_readable(state_ref).map_err(|_| Box::new(tonic::Status::invalid_argument(\"invalid task owner state reference\")))?; if !{runtime_module}::state_ref::StateRef::is_encoded(state_ref) || !reference.matches_state_type(<{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE) {{ return Err(Box::new(tonic::Status::invalid_argument(\"task owner reference must be encoded for its declared state type\"))); }} let canonical = {runtime_module}::state_ref::StateRef::from_id(<{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, &reference.id()).map_err(|_| Box::new(tonic::Status::invalid_argument(\"invalid task owner state id\")))?; if state_ref.rsplit('/').next() != Some(canonical.as_str()) {{ return Err(Box::new(tonic::Status::invalid_argument(\"noncanonical task owner state reference\"))); }} let tasks = {runtime_module}::one_shot_tasks::OneShotTasks::new_with_declarations(self.store.clone(), <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref.to_owned(), {binding} {{ handler: self.handler.clone(), store: self.store.clone(), writers: {writers} }}, {declarations})?; self.tasks = Some(tasks.clone()); Ok((self, tasks)) }}\n"));
         }
         output.push_str("}\n");
-        return;
+        // Ordinary writers also have a TransactionAdapter. Preserve the
+        // DatabaseAdapter helpers and provide original-participant helpers too.
+        // Reader/constructor-only services have no TransactionAdapter.
+        if !annotation.methods.values().any(|kind| matches!(
+            kind, DurableKind::Writer(WriterMetadata { constructor: false })
+        )) {
+            return;
+        }
     }
     output.push_str(&format!("impl<H, P, C, R, F> {service_name}TransactionAdapter<H, P, C, R, F> where H: {handler}, P: {runtime_module}::durable_participant::ParticipantSidecar, C: {runtime_module}::durable_coordinator::CoordinatorSidecar, R: {runtime_module}::durable_coordinator::ParticipantResolver, F: {runtime_module}::runtime::RootTransactionStartFactory + {runtime_module}::runtime::InboundTransactionStartFactory {{\n    pub fn with_one_shot_reader_tasks(mut self, state_ref: &str) -> Result<(Self, {runtime_module}::one_shot_tasks::OneShotTasks), Box<tonic::Status>> {{ self.participant.validate_task_owner(&self.store, <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, state_ref)?; let tasks = {runtime_module}::one_shot_tasks::OneShotTasks::new_with_participant_declarations(self.store.clone(), <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref.to_owned(), {runtime_module}::one_shot_tasks::ParticipantBoundTaskBinding::new(self.participant.clone(), {binding} {{ handler: self.handler.clone(), store: self.store.clone(), writers: false }}), {declarations})?; self.local_registration = None; self.local_incarnation = std::sync::Arc::new(()); self.tasks = Some(tasks.clone()); Ok((self, tasks)) }}\n    pub fn with_one_shot_writer_tasks(mut self, state_ref: &str) -> Result<(Self, {runtime_module}::one_shot_tasks::OneShotTasks), Box<tonic::Status>> {{ self.participant.validate_task_owner(&self.store, <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, state_ref)?; let tasks = {runtime_module}::one_shot_tasks::OneShotTasks::new_with_participant_declarations(self.store.clone(), <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref.to_owned(), {runtime_module}::one_shot_tasks::ParticipantBoundTaskBinding::new(self.participant.clone(), {binding} {{ handler: self.handler.clone(), store: self.store.clone(), writers: true }}), {declarations})?; self.local_registration = None; self.local_incarnation = std::sync::Arc::new(()); self.tasks = Some(tasks.clone()); Ok((self, tasks)) }}\n}}\n"));
 }
@@ -4391,7 +4398,9 @@ mod tests {
             "impl<H: CounterWritesMethodsDatabaseHandler> CounterWritesMethodsDatabaseAdapter<H>"
         ));
         assert!(content.contains("task owner already attached"));
-        assert!(!content.contains("self.participant.validate_task_owner"));
+        assert!(content.contains("self.participant.validate_task_owner"));
+        assert!(content.contains("OneShotTasks::new_with_declarations"));
+        assert!(content.contains("OneShotTasks::new_with_participant_declarations"));
     }
 
     #[test]

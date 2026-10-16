@@ -394,3 +394,600 @@ async fn empty_graph_actual_host_fences_reader_until_ready_and_releases_phase_cl
 async fn empty_graph_actual_host_rejects_same_gate_foreign_bound_participant() {
     exercise_host(true).await;
 }
+
+// SOURCE692: canonical-schema MODEL proxy; not native-engine acceptance.
+// Non-control RPCs forward to the existing model database. Recover merges its
+// canonical Pending tasks with a mutable two-root transaction model. ACK parking
+// occurs on the actual Tonic Abort call, never by manufacturing a Prepare vote.
+mod source692 {
+    use super::*;
+    use tonic::{Request, Response};
+    struct BarrierModel {
+        page: Mutex<db::RecoverResponse>,
+        second: String,
+        aborts: Mutex<Vec<String>>,
+        acks: AtomicUsize,
+        decisions: Mutex<Vec<db::TransactionCoordinatorDecisionPutRequest>>,
+        parked: tokio::sync::Semaphore,
+        abort_ack: tokio::sync::Semaphore,
+        cleanup_entered: tokio::sync::Semaphore,
+        cleanup_ack: tokio::sync::Semaphore,
+    }
+    #[derive(Clone)]
+    struct BarrierDatabase {
+        client: db::database_client::DatabaseClient<tonic::transport::Channel>,
+        model: Arc<BarrierModel>,
+    }
+    #[tonic::async_trait]
+    impl db::database_server::Database for BarrierDatabase {
+        async fn get_capabilities(
+            &self,
+            request: Request<db::DatabaseCapabilitiesRequest>,
+        ) -> Result<Response<db::DatabaseCapabilitiesResponse>, Status> {
+            self.client.clone().get_capabilities(request).await
+        }
+        async fn colocated_range(
+            &self,
+            request: Request<db::ColocatedRangeRequest>,
+        ) -> Result<Response<db::ColocatedRangeResponse>, Status> {
+            self.client.clone().colocated_range(request).await
+        }
+        async fn colocated_reverse_range(
+            &self,
+            request: Request<db::ColocatedReverseRangeRequest>,
+        ) -> Result<Response<db::ColocatedReverseRangeResponse>, Status> {
+            self.client.clone().colocated_reverse_range(request).await
+        }
+        async fn find(
+            &self,
+            request: Request<db::FindRequest>,
+        ) -> Result<Response<db::FindResponse>, Status> {
+            self.client.clone().find(request).await
+        }
+        async fn load(
+            &self,
+            request: Request<db::LoadRequest>,
+        ) -> Result<Response<db::LoadResponse>, Status> {
+            self.client.clone().load(request).await
+        }
+        type PreloadStream = tonic::Streaming<db::PreloadResponse>;
+        async fn preload(
+            &self,
+            request: Request<db::PreloadRequest>,
+        ) -> Result<Response<Self::PreloadStream>, Status> {
+            self.client.clone().preload(request).await
+        }
+        async fn store(
+            &self,
+            request: Request<db::StoreRequest>,
+        ) -> Result<Response<db::StoreResponse>, Status> {
+            self.client.clone().store(request).await
+        }
+        async fn complete_task(
+            &self,
+            request: Request<db::CompleteTaskRequest>,
+        ) -> Result<Response<db::CompleteTaskResponse>, Status> {
+            self.client.clone().complete_task(request).await
+        }
+        async fn create_actor(
+            &self,
+            request: Request<db::CreateActorRequest>,
+        ) -> Result<Response<db::CreateActorResponse>, Status> {
+            self.client.clone().create_actor(request).await
+        }
+        async fn create_actor_with_tasks(
+            &self,
+            request: Request<db::CreateActorRequest>,
+        ) -> Result<Response<db::CreateActorResponse>, Status> {
+            self.client.clone().create_actor_with_tasks(request).await
+        }
+        type RecoverStream =
+            tokio_stream::Iter<std::vec::IntoIter<Result<db::RecoverResponse, Status>>>;
+        async fn recover(
+            &self,
+            request: Request<db::RecoverRequest>,
+        ) -> Result<Response<Self::RecoverStream>, Status> {
+            let mut stream = self.client.clone().recover(request).await?.into_inner();
+            let mut pages = Vec::new();
+            while let Some(page) = stream.message().await? {
+                pages.push(Ok(page));
+            }
+            pages.push(Ok(self.model.page.lock().unwrap().clone()));
+            Ok(Response::new(tokio_stream::iter(pages)))
+        }
+        type RecoverIdempotentMutationsStream =
+            tonic::Streaming<db::RecoverIdempotentMutationsResponse>;
+        async fn recover_idempotent_mutations(
+            &self,
+            request: Request<db::RecoverIdempotentMutationsRequest>,
+        ) -> Result<Response<Self::RecoverIdempotentMutationsStream>, Status> {
+            self.client
+                .clone()
+                .recover_idempotent_mutations(request)
+                .await
+        }
+        async fn transaction_participant_prepare(
+            &self,
+            request: Request<db::TransactionParticipantPrepareRequest>,
+        ) -> Result<Response<db::TransactionParticipantPrepareResponse>, Status> {
+            self.client
+                .clone()
+                .transaction_participant_prepare(request)
+                .await
+        }
+        async fn transaction_participant_commit(
+            &self,
+            request: Request<db::TransactionParticipantCommitRequest>,
+        ) -> Result<Response<db::TransactionParticipantCommitResponse>, Status> {
+            self.client
+                .clone()
+                .transaction_participant_commit(request)
+                .await
+        }
+        async fn transaction_participant_abort(
+            &self,
+            request: Request<db::TransactionParticipantAbortRequest>,
+        ) -> Result<Response<db::TransactionParticipantAbortResponse>, Status> {
+            let body = request.get_ref().clone();
+            self.model
+                .aborts
+                .lock()
+                .unwrap()
+                .push(body.state_ref.clone());
+            let result = self
+                .client
+                .clone()
+                .transaction_participant_abort(request)
+                .await;
+            if result.is_ok() {
+                if body.state_ref == self.model.second {
+                    self.model.parked.add_permits(1);
+                    self.model.abort_ack.acquire().await.unwrap().forget();
+                }
+                self.model
+                    .page
+                    .lock()
+                    .unwrap()
+                    .participant_transactions
+                    .retain(|tx| tx.state_ref != body.state_ref);
+                self.model.acks.fetch_add(1, Ordering::SeqCst);
+            }
+            result
+        }
+        async fn transaction_coordinator_prepared(
+            &self,
+            request: Request<db::TransactionCoordinatorPreparedRequest>,
+        ) -> Result<Response<db::TransactionCoordinatorPreparedResponse>, Status> {
+            self.client
+                .clone()
+                .transaction_coordinator_prepared(request)
+                .await
+        }
+        async fn transaction_coordinator_prepare(
+            &self,
+            request: Request<db::TransactionCoordinatorPrepareRequest>,
+        ) -> Result<Response<db::TransactionCoordinatorPrepareResponse>, Status> {
+            self.client
+                .clone()
+                .transaction_coordinator_prepare(request)
+                .await
+        }
+        async fn transaction_coordinator_cleanup(
+            &self,
+            request: Request<db::TransactionCoordinatorCleanupRequest>,
+        ) -> Result<Response<db::TransactionCoordinatorCleanupResponse>, Status> {
+            self.model.cleanup_entered.add_permits(1);
+            self.model.cleanup_ack.acquire().await.unwrap().forget();
+            let root = uuid::Uuid::from_slice(&request.get_ref().transaction_id).unwrap();
+            let result = self
+                .client
+                .clone()
+                .transaction_coordinator_cleanup(request)
+                .await;
+            if result.is_ok() {
+                self.model
+                    .page
+                    .lock()
+                    .unwrap()
+                    .transaction_coordinators
+                    .remove(&root.to_string());
+            }
+            result
+        }
+        async fn transaction_coordinator_decision_put(
+            &self,
+            request: Request<db::TransactionCoordinatorDecisionPutRequest>,
+        ) -> Result<Response<db::TransactionCoordinatorDecisionPutResponse>, Status> {
+            assert_eq!(
+                self.model.acks.load(Ordering::SeqCst),
+                2,
+                "coordinator replay polled before BOTH original Abort ACKs"
+            );
+            self.model
+                .decisions
+                .lock()
+                .unwrap()
+                .push(request.get_ref().clone());
+            self.client
+                .clone()
+                .transaction_coordinator_decision_put(request)
+                .await
+        }
+        async fn transaction_coordinator_decision_get(
+            &self,
+            request: Request<db::TransactionCoordinatorDecisionGetRequest>,
+        ) -> Result<Response<db::TransactionCoordinatorDecisionGetResponse>, Status> {
+            self.client
+                .clone()
+                .transaction_coordinator_decision_get(request)
+                .await
+        }
+        async fn export(
+            &self,
+            request: Request<db::ExportRequest>,
+        ) -> Result<Response<db::ExportResponse>, Status> {
+            self.client.clone().export(request).await
+        }
+        type ExportStreamedStream = tonic::Streaming<db::ExportResponse>;
+        async fn export_streamed(
+            &self,
+            request: Request<db::ExportRequest>,
+        ) -> Result<Response<Self::ExportStreamedStream>, Status> {
+            self.client.clone().export_streamed(request).await
+        }
+        async fn get_application_metadata(
+            &self,
+            request: Request<db::GetApplicationMetadataRequest>,
+        ) -> Result<Response<db::GetApplicationMetadataResponse>, Status> {
+            self.client.clone().get_application_metadata(request).await
+        }
+        async fn store_application_metadata(
+            &self,
+            request: Request<db::StoreApplicationMetadataRequest>,
+        ) -> Result<Response<db::StoreApplicationMetadataResponse>, Status> {
+            self.client
+                .clone()
+                .store_application_metadata(request)
+                .await
+        }
+        async fn refresh_timestamp(
+            &self,
+            request: Request<db::RefreshTimestampRequest>,
+        ) -> Result<Response<db::RefreshTimestampResponse>, Status> {
+            self.client.clone().refresh_timestamp(request).await
+        }
+    }
+
+    // Same real phase, only observes the real host cancellation/readiness handle.
+    struct ObservePhase {
+        phase: Arc<Phase>,
+        observed: Mutex<Option<oneshot::Sender<RecoveryCancellation>>>,
+    }
+    #[tonic::async_trait]
+    impl HostRecovery for ObservePhase {
+        async fn start(
+            &self,
+            supervisor: &mut JoinSet<Result<(), Status>>,
+            cancel: RecoveryCancellation,
+        ) -> Result<(), Status> {
+            self.observed
+                .lock()
+                .unwrap()
+                .take()
+                .unwrap()
+                .send(cancel.clone())
+                .ok();
+            let result = self.phase.start(supervisor, cancel).await;
+            eprintln!("SOURCE692 actual phase startup result: {result:?}");
+            result
+        }
+    }
+    async fn permit(semaphore: &tokio::sync::Semaphore) {
+        tokio::time::timeout(DEADLINE, semaphore.acquire())
+            .await
+            .unwrap()
+            .unwrap()
+            .forget();
+    }
+    async fn exercise(cancel_parked: bool) {
+        let (database_endpoint, database, database_server) =
+            crate::runtime::test_support::start_database().await;
+        database.model_control_only_store();
+        database.model_task_completion();
+        let refs: Vec<String> = [
+            "00000000-0000-0000-0000-000000069201",
+            "00000000-0000-0000-0000-000000069202",
+        ]
+        .into_iter()
+        .map(|id| {
+            crate::state_ref::StateRef::from_id(Account::STATE_TYPE, id)
+                .unwrap()
+                .to_string()
+        })
+        .collect();
+        assert!(
+            refs[0] < refs[1],
+            "phase BTree ordering defines the second parked owner"
+        );
+        let roots = [uuid::Uuid::from_u128(69201), uuid::Uuid::from_u128(69202)];
+        let mut page = db::RecoverResponse::default();
+        for (reference, root) in refs.iter().zip(roots) {
+            page.participant_transactions.push(db::Transaction {
+                state_type: Account::STATE_TYPE.into(),
+                state_ref: reference.clone(),
+                coordinator_state_type: Account::STATE_TYPE.into(),
+                coordinator_state_ref: reference.clone(),
+                transaction_ids: vec![root.as_bytes().to_vec()],
+                prepared: false,
+                ..Default::default()
+            });
+            page.transaction_coordinators.insert(
+                root.to_string(),
+                db::TransactionCoordinator {
+                    state_ref: reference.clone(),
+                    preparing: true,
+                    participants: Some(db::Participants {
+                        should_commit: [(
+                            Account::STATE_TYPE.into(),
+                            db::participants::StateRefs {
+                                state_refs: vec![reference.clone()],
+                            },
+                        )]
+                        .into(),
+                        ..Default::default()
+                    }),
+                },
+            );
+        }
+        let model = Arc::new(BarrierModel {
+            page: Mutex::new(page),
+            second: refs[1].clone(),
+            aborts: Mutex::new(Vec::new()),
+            acks: AtomicUsize::new(0),
+            decisions: Mutex::new(Vec::new()),
+            parked: tokio::sync::Semaphore::new(0),
+            abort_ack: tokio::sync::Semaphore::new(0),
+            cleanup_entered: tokio::sync::Semaphore::new(0),
+            cleanup_ack: tokio::sync::Semaphore::new(0),
+        });
+        let proxy = BarrierDatabase {
+            client: db::database_client::DatabaseClient::connect(database_endpoint)
+                .await
+                .unwrap(),
+            model: model.clone(),
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let proxy_server = tokio::spawn(async move {
+            tonic::transport::Server::builder()
+                .add_service(db::database_server::DatabaseServer::new(proxy))
+                .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+                .await
+        });
+        let store = DatabaseActorStore::connect_lazy(&endpoint).unwrap();
+        let sidecar = Arc::new(TonicParticipantSidecar::connect(&endpoint).await.unwrap());
+        let participants: Vec<_> = refs
+            .iter()
+            .map(|reference| {
+                DurableActorParticipant::new(sidecar.clone(), Account::STATE_TYPE, reference)
+                    .with_database_actor_gate(&store)
+            })
+            .collect();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let mut tasks = Vec::new();
+        for participant in &participants {
+            let target = participant.actor_target();
+            let owner_tasks = OneShotTasks::new_with_participant_declarations(
+                store.clone(),
+                Account::STATE_TYPE.into(),
+                target.state_ref.clone(),
+                ParticipantBoundTaskBinding::new(participant.clone(), ReadCounter(calls.clone())),
+                vec![TaskMethodDeclaration::new::<
+                    Account,
+                    crate::proto::Counter,
+                    crate::proto::Counter,
+                >(METHOD, RESPONSE, vec![])],
+            )
+            .unwrap();
+            owner_tasks.set_max_live_deliveries(1).unwrap();
+            store
+                .task_database()
+                .store(db::StoreRequest {
+                    sync: true,
+                    task_upserts: vec![db::Task {
+                        task_id: Some(db::TaskId {
+                            state_type: Account::STATE_TYPE.into(),
+                            state_ref: target.state_ref,
+                            task_uuid: uuid::Uuid::new_v4().as_bytes().to_vec(),
+                        }),
+                        method: "Read".into(),
+                        request: crate::proto::Counter { value: 692 }.encode_to_vec(),
+                        timestamp: Some(prost_types::Timestamp {
+                            seconds: 1,
+                            nanos: 0,
+                        }),
+                        status: db::task::Status::Pending as i32,
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
+            tasks.push(owner_tasks);
+        }
+        let resolver = Arc::new(
+            ExactParticipantResolver::new(participants.iter().map(|p| {
+                (
+                    p.actor_target(),
+                    Arc::new(InProcessParticipantEndpoint::new(
+                        DurableActorParticipantHost::new(p.clone()),
+                    )),
+                )
+            }))
+            .unwrap(),
+        );
+        let coordinator_sidecar =
+            Arc::new(TonicCoordinatorSidecar::connect(&endpoint).await.unwrap());
+        let coordinators: Vec<_> = participants
+            .iter()
+            .map(|p| LocalCoordinator {
+                target: p.actor_target(),
+                owner: DurableRootCoordinator::new(coordinator_sidecar.clone(), resolver.clone())
+                    .with_identity(p.actor_target()),
+            })
+            .collect();
+        let phase = CoordinatedLocalRecovery::new(
+            store.clone(),
+            request(),
+            participants.clone(),
+            coordinators,
+            resolver,
+            MultiOwnerTaskRecovery::new(tasks.clone(), request()).unwrap(),
+        )
+        .unwrap();
+        let (observed_tx, observed_rx) = oneshot::channel();
+        let (stop_tx, stop_rx) = oneshot::channel();
+        // Mount a real canonical Watch service to obtain the host's serving
+        // router; the phase still uses its exact closed in-process Watch routes.
+        // This does not claim independent public Watch-path execution.
+        let host = ApplicationHost::new("source692")
+            .with_host_recovery(ObservePhase {
+                phase: phase.clone(),
+                observed: Mutex::new(Some(observed_tx)),
+            })
+            .add_public_service(db::coordinator_server::CoordinatorServer::new(
+                crate::legacy_coordinator::DurableCoordinatorWatchHost::new(
+                    coordinator_sidecar.clone(),
+                    Account::STATE_TYPE,
+                    refs[0].clone(),
+                )
+                .unwrap(),
+            ));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let mut serving = tokio::spawn(host.serve_with_listener_shutdown(listener, async move {
+            let _ = stop_rx.await;
+        }));
+        let cancel = tokio::time::timeout(DEADLINE, observed_rx)
+            .await
+            .unwrap()
+            .unwrap();
+        tokio::select! {
+            _ = permit(&model.parked) => {},
+            result = &mut serving => panic!("SOURCE692 host exited before second Abort ACK park: {result:?}"),
+        } // actual second Abort entered; first ACK returned
+        assert_eq!(model.aborts.lock().unwrap().as_slice(), refs.as_slice());
+        assert_eq!(model.acks.load(Ordering::SeqCst), 1);
+        assert!(model.decisions.lock().unwrap().is_empty());
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), cancel.public_ready())
+                .await
+                .is_err()
+        );
+        // Probe the ORIGINAL owner: its actor gate must remain held while Abort is uncertain.
+        let gate = store.actor_gate(Account::STATE_TYPE, &refs[1]);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), gate.shared())
+                .await
+                .is_err()
+        );
+        if cancel_parked {
+            stop_tx.send(()).unwrap();
+            // ApplicationHost treats an explicit pre-Ready stop as graceful.
+            // That return value is NOT transaction convergence: the assertions
+            // below still require failed Ready and retained uncertain ownership.
+            tokio::time::timeout(DEADLINE, &mut serving)
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            assert!(cancel.public_ready().await.is_err());
+            // A cancelled phase is single-use and must not issue another Abort/replay.
+            let mut supervisor = JoinSet::new();
+            assert!(phase.start(&mut supervisor, cancel.clone()).await.is_err());
+            assert_eq!(model.aborts.lock().unwrap().as_slice(), refs.as_slice());
+            assert_eq!(model.acks.load(Ordering::SeqCst), 1);
+            assert!(model.decisions.lock().unwrap().is_empty());
+            assert_eq!(calls.load(Ordering::SeqCst), 0);
+            assert!(phase.prepared_tasks.lock().unwrap().is_some());
+            assert!(
+                tokio::time::timeout(Duration::from_millis(50), gate.shared())
+                    .await
+                    .is_err(),
+                "original uncertain actor gate released on startup cancellation"
+            );
+            let retry = tokio::time::timeout(
+                Duration::from_millis(50),
+                participants[1].converge_recovered_unprepared(),
+            )
+            .await;
+            if let Ok(result) = retry {
+                assert!(
+                    result.is_err(),
+                    "uncertain original owner must not report convergence"
+                );
+            }
+            assert_eq!(model.aborts.lock().unwrap().len(), 2);
+        } else {
+            model.abort_ack.add_permits(1);
+            permit(&model.cleanup_entered).await;
+            assert_eq!(model.acks.load(Ordering::SeqCst), 2);
+            assert_eq!(model.decisions.lock().unwrap().len(), 1);
+            assert_eq!(calls.load(Ordering::SeqCst), 0);
+            assert!(
+                tokio::time::timeout(Duration::from_millis(50), cancel.public_ready())
+                    .await
+                    .is_err()
+            );
+            model.cleanup_ack.add_permits(1);
+            permit(&model.cleanup_entered).await;
+            assert_eq!(model.decisions.lock().unwrap().len(), 2);
+            assert_eq!(calls.load(Ordering::SeqCst), 0);
+            model.cleanup_ack.add_permits(1);
+            tokio::time::timeout(DEADLINE, cancel.public_ready())
+                .await
+                .unwrap()
+                .unwrap();
+            tokio::time::timeout(DEADLINE, async {
+                while calls.load(Ordering::SeqCst) != 2
+                    || tasks
+                        .iter()
+                        .any(|owner| owner.acknowledged_read_operations() != 1)
+                {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            for decision in model.decisions.lock().unwrap().iter() {
+                assert_eq!(
+                    decision.decision.as_ref().unwrap().outcome,
+                    db::transaction_coordinator_decision::Outcome::Abort as i32
+                );
+            }
+            {
+                let scan = model.page.lock().unwrap();
+                assert!(scan.participant_transactions.is_empty());
+                assert!(scan.transaction_coordinators.is_empty());
+            }
+            stop_tx.send(()).unwrap();
+            tokio::time::timeout(DEADLINE, &mut serving)
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+        }
+        proxy_server.abort();
+        let _ = proxy_server.await;
+        database_server.abort();
+        let _ = database_server.await;
+    }
+    #[tokio::test]
+    async fn both_original_abort_acks_fence_two_root_replay_and_actual_host_ready() {
+        exercise(false).await;
+    }
+    #[tokio::test]
+    async fn cancellation_at_second_abort_retains_phase_and_forbids_repeat_replay() {
+        exercise(true).await;
+    }
+}

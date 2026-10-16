@@ -97,6 +97,59 @@ exit zero preceded fresh container terminal inspection, and the original lock
 was free. Hot reload, new-consumer compilation and restart durability remain
 separate. This is not latest-upstream/full-native/overall SDK qualification.
 
+## Generated Account catalog and two-owner ACK fences (2026-10-16)
+
+Ordinary-writer services without transaction annotations now retain their
+DatabaseAdapter task helpers and also emit the original-participant-bound
+TransactionAdapter helpers in [the generator](src/codegen.rs). Reader- and
+constructor-only services do not gain a nonexistent TransactionAdapter impl;
+mixed-service behavior, constructor-task restrictions and authorization remain
+unchanged.
+
+The [original-schema generated consumer](tests/fixtures/mixed_constructor_original/src/generated_catalog.rs)
+uses the actual generated Account TransactionAdapter, original participant/task
+owner, exact endpoint/resolver bundle and a clone of the already configured
+adapter. Actual HTTP/2 ingress is unavailable before host readiness. After
+readiness, an admitted Deposit produces the modeled canonical state/response
+and a same-key replay causes no additional recorded Store. Direct
+DatabaseAdapter Balance confirms the resulting state. Catalog Balance remains
+**Unimplemented**: reader routing and local ticket eligibility were not widened.
+Policy/incarnation and replacement-owner refusals remain exercised. These are
+canonical-schema model tests, not native exactly-once or fingerprint-collision
+proof.
+
+The [integrated host model regressions](src/coordinated_local_host_tests.rs)
+exercise two original recovered-unprepared owners and two coordinator roots.
+The second real Tonic Abort ACK is parked; no coordinator decision replay,
+readiness or task callback can precede both ACKs. Both coordinator cleanups are
+also independently fenced before readiness. Cancellation preserves the
+original actor gate and phase custody and prohibits repeated Abort/replay.
+Graceful preReady stop returning Ok is explicitly **not** transaction convergence
+or completed native cleanup. Healthy shutdown waits for actual CompleteTask ACK
+processing, observed by a read-only, crate-private `cfg(test)` counter after
+canonical CAS validation and guard acknowledgement in
+[the task runtime](src/one_shot_tasks.rs); tests cannot set that counter.
+
+Fresh parent-owned acceptance against the exact source and rebuilt fixture:
+
+- **754 SDK tests passed, 0 failed, 7 ignored**; **11 original Bank/Account
+  consumer tests passed**. Strict all-target SDK/consumer lint, pinned Legacy
+  build/lint and native fixture compilation passed. See the
+  [library evidence](tests/evidence/generated-catalog-ack-fence-library-20261016.json).
+- **All 19 existing native controls passed**, with all **38 SDK/Database children
+  joined**, SDK-before-Database retirement, clean custody and independently
+  verified exact container retirement. See the
+  [native regression evidence](tests/evidence/generated-catalog-ack-fence-native-20261016.json).
+  The nonempty native Commit/Abort cases remain single-original-actor,
+  same-process controls; the new two-owner barrier tests above are models.
+- All 13 pinned `reboot-dev/reboot-examples` reference files were rechecked
+  against remote bytes and local references at revision
+  `5c332a2910122d6035799bfaf2a314bf1de830b8`.
+
+This does not enable provisional checkpoint adoption, taskful Bank constructors,
+shared Transfer, full replay/restart/ACK-loss acceptance, latest-upstream native
+qualification or full hosted CI. Those remain open.
+
 ## Canonical task identities, original-owner catalog and ordered recovery (2026-10-16)
 
 The [library acceptance](tests/evidence/identity-catalog-ordered-recovery-library-20261016.json)
@@ -5421,7 +5474,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 7ad47af1d4790431f3e373fa5f60c6f3e2d4d97c36d7ad7405488fbd9e91ef9a -->
+<!-- parity-source-sha256: f0a5020edd446e32294276af206fd3e189dd9848388b6300afe864a8e7961695 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,
