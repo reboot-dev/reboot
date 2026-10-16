@@ -120,7 +120,9 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
     async def _wait_for_api(self, satisfied):
         """Returns the recorded API once it satisfies, reading again
         whenever it changes."""
-        context = self.rbt.create_external_context(name=self.id())
+        context = self.rbt.create_external_context(
+            name=self.id(), app_internal=True
+        )
 
         async for response, aborted in Dashboard.ref(DASHBOARD_ID).reactively(
         ).Get(context):
@@ -134,7 +136,9 @@ class APIWatcherTest(unittest.IsolatedAsyncioTestCase):
 
     async def _changelog_entries(self) -> list[Change]:
         """What the dashboard has noticed, newest first."""
-        context = self.rbt.create_external_context(name=self.id())
+        context = self.rbt.create_external_context(
+            name=self.id(), app_internal=True
+        )
         try:
             response = await OrderedMap.ref(CHANGELOG_ID).ReverseRange(
                 context,

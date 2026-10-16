@@ -26,37 +26,41 @@ class PreferencesTest(unittest.IsolatedAsyncioTestCase):
         self.rbt = Reboot()
         await self.rbt.start()
         await self.rbt.up(application(), local_envoy=True)
-        self.url = f'http://127.0.0.1:{self.rbt.envoy_port()}'
 
     async def asyncTearDown(self) -> None:
         await self.rbt.stop()
 
     def _initialize_context(self) -> InitializeContext:
-        """A restart's context, seeded as
-        `Reboot.create_initialize_context` seeds it."""
-        return InitializeContext(
+        """The context `initialize` receives on a restart: the
+        application's own, with the same seed `rbt serve` uses."""
+        return self.rbt.create_initialize_context(
             name=self.id(),
-            url=self.url,
             idempotency_seed=uuid.uuid5(
                 uuid.NAMESPACE_DNS, 'anonymous.rbt.dev'
             ),
         )
 
     async def _read_preferences(self) -> bool:
-        context = self.rbt.create_external_context(name=self.id())
+        context = self.rbt.create_external_context(
+            name=self.id(), app_internal=True
+        )
         response = await Preferences.ref(PREFERENCES_ID).Get(context)
         return response.suppress_automatic_open
 
     async def _set_suppress_automatic_open(self, suppress: bool) -> None:
         """Makes the choice the dashboard's notice makes."""
-        context = self.rbt.create_external_context(name=self.id())
+        context = self.rbt.create_external_context(
+            name=self.id(), app_internal=True
+        )
         await Preferences.ref(PREFERENCES_ID).SetSuppressAutomaticOpen(
             context,
             suppress_automatic_open=suppress,
         )
 
     async def _read_expanded_methods(self) -> list[str]:
-        context = self.rbt.create_external_context(name=self.id())
+        context = self.rbt.create_external_context(
+            name=self.id(), app_internal=True
+        )
         response = await Preferences.ref(PREFERENCES_ID).Get(context)
         return list(response.expanded_methods)
 
@@ -68,7 +72,9 @@ class PreferencesTest(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         """Makes the choice a method's toggle makes: one method for
         its own, every method of a state type for the state type's."""
-        context = self.rbt.create_external_context(name=self.id())
+        context = self.rbt.create_external_context(
+            name=self.id(), app_internal=True
+        )
         await Preferences.ref(PREFERENCES_ID).SetMethodsExpanded(
             context,
             state_type=state_type,
