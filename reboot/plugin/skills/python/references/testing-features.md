@@ -213,11 +213,20 @@ And the resulting `account_id` is saved as "alice account id"
   property; `the resulting state id` and `the resulting task id`
   save what `creates` and `spawns` produced. `the result has ...`
   asserts on the last response.
-- **A saved name is a quoted string** and may have spaces, `"first account id"`, and is said back as `<first account id>`: in a
+- **A saved name is a quoted string** and may have spaces, `"first account id"`, and is said back as the variable `<first account id>`: in a
   state id (`of <account id>`), a user id, a bearer token, or a
-  property value (`amount=<balance>`). A `<name>` inside a JSON
-  string stays literal. A `Scenario Outline`'s columns are said the
-  same way, so a save may not reuse a column's name.
+  property value (`amount=<balance>`). A `Scenario Outline`'s columns
+  are said the same way, so a save may not reuse a column's name.
+- **A variable is replaced by its JSON text** before the step runs,
+  the way pytest-bdd substitutes a column: a saved string arrives
+  with its double quotes (`"uuid-1"`), a number or boolean bare, an
+  object or list as JSON with double-quoted keys and strings. So a
+  saved string is said bare, never in quotes: `of <account id>`, not
+  `of "<account id>"`, which would read `of ""uuid-1""` and fail as
+  not JSON (the error says what the text became). A `<name>` nothing
+  is saved under stays as written, so `body="<p>hi</p>"` is that
+  text; a bare one, `id=<acount id>`, fails as not JSON. A string column of an `Examples` table is written with
+  its quotes in the table, `| "uuid-1" |`, and said bare too.
 - **Values are JSON** with JSON5's leniencies: `owner={name: "Frank", tags: ["vip"]}`. A dotted path nests when calling,
   `owner.name="Frank"`, and reaches into the response when
   asserting, `balances[0].account_id=<ann account id>` or

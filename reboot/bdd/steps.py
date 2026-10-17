@@ -56,7 +56,7 @@ keeps the token it was created with.
 A factory makes the id up when the step leaves it out, '"alice"
 creates an `Account` via `open` ...', and the next line saves it,
 'the resulting state id is saved as "account_id"', so that later
-steps can say <account_id>.
+steps can say <account_id>: 'on `Account` of <account_id>'.
 
 A call runs as a task instead by saying '"alice" spawns a `method`
 on ...', with the next line saving 'the resulting task id is saved
@@ -93,16 +93,18 @@ value the way a property's value is, so it can say <name>. A Given
 or When 'has' instead saves a property under a backticked name,
 which later steps say as <name>, the way a Scenario Outline says a
 column of its Examples table, in a state's ID, a user's ID, a bearer
-token, or a property value. In a property value the saved value's
-JSON text takes the variable's place, as pytest-bdd substitutes a
-column, so a saved string arrives with its quotes and is said bare,
-`id=<account_id>`, never `id="<account_id>"`; a <name> nothing is
-saved under stays as written. A save may not use a column's name:
+token, or a property value. Wherever a step says a variable, its
+JSON text takes the variable's place before the step runs, as
+pytest-bdd substitutes a column: a saved string arrives with its
+quotes, so it is said bare, <owner_name>, never "<owner_name>", which
+would double the quotes. A <name> nothing is saved under stays as
+written, so "<p>hi</p>" is that text. A save may not use a column's
+name:
 
     When as "alice", `get_owner` on the `Account` for "frank" has
       `owner.name` saved as "owner_name"
     And the resulting `updated_balance` is saved as "balance"
-    And "alice" does a `deposit` with `amount=1` on `Account` of
+    And "alice" does a `deposit` with `amount=<balance>` on `Account` of
       <owner_name>
 """
 

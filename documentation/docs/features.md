@@ -199,7 +199,17 @@ Scenario: Opening an account with a deposit
 
 - **A call does one thing; its result is saved on the next line:**
   `` the resulting `account_id` is saved as "account id" ``. A saved
-  name is a quoted string and may have spaces.
+  name is a quoted string and may have spaces, and later steps say
+  it as the variable `<account id>`, the way a `Scenario Outline`
+  says a column. A variable is replaced by its JSON text before the
+  step runs: a saved string arrives with its double quotes
+  (`"uuid-1"`), a number bare, an object as JSON. So a saved string
+  is said bare, `` of <account id> `` or `` `id=<account id>` ``,
+  never `` of "<account id>" ``, which would double the quotes and
+  fail as not JSON. A `<name>` nothing is saved under stays as
+  written, so `` `body="<p>hi</p>"` `` is that text. A string
+  column of an `Examples` table is written with its quotes in the
+  table, `| "uuid-1" |`, and said bare too.
 - **`has`** reads and asserts. A path reaches into the response, and
   two more predicates say a length and a containment (a substring
   of a string, an element of a list, or a key of a map). A reader
@@ -344,7 +354,7 @@ a labelled heading. The one step that reads a value out of the
 page, `saves the text of the "account-id" element`, names it by
 `data-testid`.
 
-Quoted text may say `<name>` for a saved value. `eventually sees ... within 10 seconds` waits; `sees` looks now; `does not see`
+What the app shows or is told is a JSON string, or a variable for a saved value, `sees <alice account id> in the "Your Accounts" table`. `eventually sees ... within 10 seconds` waits; `sees` looks now; `does not see`
 asserts absence.
 
 Signing in is clicked through the app like a person would, and
