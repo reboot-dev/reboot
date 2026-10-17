@@ -93,8 +93,11 @@ value the way a property's value is, so it can say <name>. A Given
 or When 'has' instead saves a property under a backticked name,
 which later steps say as <name>, the way a Scenario Outline says a
 column of its Examples table, in a state's ID, a user's ID, a bearer
-token, or a property value (a quoted "<name>" stays the literal
-string); a save may not use a column's name:
+token, or a property value. In a property value the saved value's
+JSON text takes the variable's place, as pytest-bdd substitutes a
+column, so a saved string arrives with its quotes and is said bare,
+`id=<account_id>`, never `id="<account_id>"`; a <name> nothing is
+saved under stays as written. A save may not use a column's name:
 
     When as "alice", `get_owner` on the `Account` for "frank" has
       `owner.name` saved as "owner_name"
@@ -110,6 +113,7 @@ string); a save may not use a column's name:
 # ruff: noqa: F811
 
 import asyncio
+import json
 import json5
 import jsonpath_ng
 import pytest
@@ -171,6 +175,7 @@ from reboot.bdd.grammar import (
     SAVE_PATTERN,
     SEPARATOR,
     SHARED_CONTEXT,
+    VARIABLE,
 )
 from reboot.bdd.registry import client_types_by_name
 from typing import Any, Optional, Union, get_args, get_origin
@@ -338,22 +343,55 @@ def _almost_length_message(clause: str) -> str:
     )
 
 
-def _parsed_value(world: World, label: str, text: str) -> JsonValue:
-    """The JSON value the text says, a '<name>' being the saved value
-    going by that name; a lexical near-miss raises the fix."""
+def _json_text(value: JsonValue) -> str:
+    """The JSON text of a value, which is what takes a variable's place
+    in a step: a string with its quotes, `"uuid-1"`; a number, boolean
+    or null bare; an object or list as JSON, its keys and strings in
+    double quotes."""
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _substitute_saved_variables(world: World, text: str) -> str:
+    """The text with each variable naming a saved value replaced by the
+    value's JSON text, the way pytest-bdd has already replaced each
+    column of the Examples table; a variable naming nothing saved stays
+    as written, so text such as "<p>hi</p>" says what it says."""
+
+    def replacement(match: re.Match[str]) -> str:
+        name = match[0][1:-1]
+        if name not in world.saved:
+            return match[0]
+        return _json_text(world.saved[name])
+
+    return re.sub(VARIABLE, replacement, text)
+
+
+def _parsed_value(
+    world: World,
+    text: str,
+    *,
+    error_prefix: str,
+) -> JsonValue:
+    """The JSON value the text says once its variables are
+    substituted; a lexical near-miss raises the fix."""
     almost = _almost_variable_message(text)
     if almost is not None:
         raise ValueError(almost)
-    if re.fullmatch(r'<[^<>]+>', text):
-        return _saved_value(world, text[1:-1])
+    substituted = _substitute_saved_variables(world, text)
     try:
-        return json5.loads(text)
+        return json5.loads(substituted)
     except ValueError as error:
-        raise ValueError(
-            f"The value of {label} must be JSON, e.g. 50, 2.5, "
-            '"text", true, or {name: "value"}, but got: '
-            f"{text}"
-        ) from error
+        message = (
+            f'{error_prefix} must be JSON, e.g. 50, 2.5, "text", true, or '
+            f'{{name: "value"}}, but got: {text}'
+        )
+        if substituted != text:
+            message += (
+                "; with its saved variables substituted, that is: "
+                f"{substituted}. A saved string comes with its quotes, so it "
+                'is said bare, <name>, not "<name>"'
+            )
+        raise ValueError(message) from error
 
 
 def _almost_within_message(within: str) -> str:
@@ -427,8 +465,8 @@ def _parse_assignments(
             raise ValueError(_almost_property_message(clause_match[0]))
         value = _parsed_value(
             world,
-            f"`{property_match['path']}`",
             property_match['value'],
+            error_prefix=f"The value of `{property_match['path']}`",
         )
         assignments.append(
             Assignment(
@@ -455,13 +493,14 @@ def _parse_assertions(
         clause = clause_match[0]
         containing_match = CONTAINING_PATTERN.fullmatch(clause)
         if containing_match is not None:
+            path = containing_match['path']
             assertions.append(
                 Containing(
-                    path=PropertyPath.create(containing_match['path']),
+                    path=PropertyPath.create(path),
                     value=_parsed_value(
                         world,
-                        f"`{containing_match['path']}` containing",
                         containing_match['argument'],
+                        error_prefix=f"The argument of `{path}` containing",
                     ),
                 )
             )
@@ -470,8 +509,8 @@ def _parse_assertions(
         if length_match is not None:
             length = _parsed_value(
                 world,
-                f"`{length_match['path']}` of length",
                 length_match['length'],
+                error_prefix=f"The length of `{length_match['path']}`",
             )
             if isinstance(length, bool) or not isinstance(length, int):
                 raise ValueError(
@@ -494,8 +533,8 @@ def _parse_assertions(
             raise ValueError(_almost_property_message(clause))
         value = _parsed_value(
             world,
-            f"`{property_match['path']}`",
             property_match['value'],
+            error_prefix=f"The value of `{property_match['path']}`",
         )
         assertions.append(
             Equals(

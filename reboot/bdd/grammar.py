@@ -57,6 +57,14 @@ from typing import Optional
 # bracketed list indices, and bracketed map keys.
 PATH = r'\w+(?:\.\w+|\[\d+\]|\["[^"]*"\])*'
 
+# A variable in step text, `<name>`: a column of a Scenario Outline's
+# Examples table, or a value a step before it saved. Wherever a step
+# says one, the variable's JSON text takes its place before the step
+# runs, a column's as the table writes it and a saved value's as JSON
+# (a string with its quotes, `"uuid-1"`), the way pytest-bdd itself
+# substitutes a column.
+VARIABLE = r'<[^<>]+>'
+
 # One 'path=value' property clause: the property's path and value
 # in backticks, the value being anything up to the closing backtick.
 # The groupless form embeds in step patterns and deliberately also
