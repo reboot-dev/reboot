@@ -20,12 +20,6 @@ export interface FeatureEntry {
   feature: feature_pb.Feature;
 }
 
-// The path, on the dashboard application, of a recording named by its
-// path relative to the working directory, each segment escaped on its
-// own so the slashes stay.
-export const recordingPath = (path: string): string =>
-  "/recordings/" + path.split("/").map(encodeURIComponent).join("/");
-
 export const sortedFeatures = (features: Features): FeatureEntry[] =>
   Object.entries(features)
     .map(([filename, feature]) => ({ filename, feature }))

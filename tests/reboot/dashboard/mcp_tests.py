@@ -149,6 +149,10 @@ class McpTest(unittest.IsolatedAsyncioTestCase):
         async with self.client.get(url) as response:
             self.assertEqual(response.status, 200)
             self.assertEqual(await response.read(), b'png')
+            # Cacheable by this browser for as long as the URL is valid.
+            self.assertRegex(
+                response.headers['Cache-Control'], r'^private, max-age=\d+$'
+            )
         async with self.client.get(
             url, headers={'Range': 'bytes=1-2'}
         ) as response:
