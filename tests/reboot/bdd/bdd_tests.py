@@ -206,6 +206,53 @@ def test_a_recall_where_a_string_is_needed_must_be_a_string() -> None:
     assert 'Expecting the value saved as "account_id"' in str(raised.value)
 
 
+def test_a_variable_is_replaced_by_its_json_text() -> None:
+    """Wherever a step says a variable, <name>, the saved value's JSON
+    text takes its place before the step parses the value, the way
+    pytest-bdd substitutes a column: a saved string arrives with its
+    quotes, so it is said bare."""
+    world = World()
+    world.save('account id', 'uuid-1')
+    world.save('count', 5)
+    world.save('owner', {'name': 'Frank', 'tags': ['vip']})
+    [assignment] = _parse_assignments(world, '`id=<account id>`')
+    assert assignment.value == 'uuid-1'
+    [assignment] = _parse_assignments(world, '`amount=<count>`')
+    assert assignment.value == 5
+    [assignment] = _parse_assignments(world, '`owner=<owner>`')
+    assert assignment.value == {'name': 'Frank', 'tags': ['vip']}
+    [assignment] = _parse_assignments(world, '`ids=[<account id>, "x"]`')
+    assert assignment.value == ['uuid-1', 'x']
+
+
+def test_a_quoted_variable_doubles_the_quotes() -> None:
+    """The former spelling, "<name>", puts a saved string's quotes
+    inside quotes, which is not JSON; the error says what it became
+    and how to say it."""
+    world = World()
+    world.save('account id', 'uuid-1')
+    with pytest.raises(ValueError) as raised:
+        _parse_assignments(world, '`id="<account id>"`')
+    message = str(raised.value)
+    assert 'but got: "<account id>"' in message
+    assert 'that is: ""uuid-1""' in message
+    assert 'said bare, <name>, not "<name>"' in message
+
+
+def test_a_variable_nothing_is_saved_under_stays_as_written() -> None:
+    """Like pytest-bdd, a <name> naming nothing saved is left alone, so
+    text with angle brackets says what it says; a bare one is then not
+    JSON."""
+    world = World()
+    world.save('account id', 'uuid-1')
+    [assignment] = _parse_assignments(world, '`body="<p>hi</p>"`')
+    assert assignment.value == '<p>hi</p>'
+    [assignment] = _parse_assignments(world, '`to="Alice <alice@x.com>"`')
+    assert assignment.value == 'Alice <alice@x.com>'
+    with pytest.raises(ValueError, match='but got: <acount id>'):
+        _parse_assignments(world, '`id=<acount id>`')
+
+
 def test_a_save_may_not_use_an_examples_column() -> None:
     """A Scenario Outline's column is what <name> already says, so a
     save under its name would never be said."""

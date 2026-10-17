@@ -305,7 +305,7 @@ def _fills_in_web_app(
     label: str,
     value: str,
 ) -> None:
-    filled: Any = _parsed_value(world, f'"{label}"', value)
+    filled: Any = _parsed_value(world, value, error_prefix=f'"{label}"')
     web_app.page(user=user).get_by_label(label, exact=True).fill(str(filled))
 
 
