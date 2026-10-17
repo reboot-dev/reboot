@@ -166,8 +166,9 @@ class World:
     # JSON.
     spawned_task_id: Optional[JsonValue] = None
 
-    # Values saved under a name, as JSON; later steps say '<name>' to
-    # use.
+    # Values saved under a name, as JSON; later steps say the variable
+    # '<name>', which the value's JSON text replaces before the step
+    # runs.
     saved: dict[str, JsonValue] = field(default_factory=dict)
 
     # The columns of the scenario's Examples table, for a Scenario
