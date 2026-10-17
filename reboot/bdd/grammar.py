@@ -199,7 +199,7 @@ ATTEMPTS = (
     rf'{USER} attempts (?:a|an) `(?P<method>\w+)`{PROPERTIES} {ON_STATE}$'
 )
 AWAITS_TASK = (
-    rf'{USER} awaits the `(?P<method>\w+)` task (?P<name>{VALUE}) on '
+    rf'{USER} awaits the `(?P<method>\w+)` task (?P<task_id>{VALUE}) on '
     r'`(?P<state_type>[\w.]+)` within (?P<within>.+)$'
 )
 ATTEMPT_ABORTS_WITH = (
@@ -463,7 +463,7 @@ def parse(text: str) -> Optional[BuiltInSyntax]:
         return BuiltInSyntax(
             awaits_task=AwaitsTask(
                 method=match['method'],
-                task_id_saved_as=match['name'],
+                task_id=match['task_id'],
                 state_type=match['state_type'],
                 seconds=seconds,
                 user=match['user'],

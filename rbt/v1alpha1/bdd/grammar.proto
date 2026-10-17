@@ -168,7 +168,7 @@ message AwaitsTask {
 
   // The task's id as written: a variable, `<name>`, naming the
   // saved id.
-  string task_id_saved_as = 2;
+  string task_id = 2;
 
   string state_type = 3;
 
