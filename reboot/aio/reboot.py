@@ -41,6 +41,7 @@ from reboot.server.database import DatabaseServer, DatabaseServerFailed
 from reboot.settings import (
     ENVVAR_LOCAL_ENVOY_USE_TLS,
     ENVVAR_REBOOT_CLOUD_DATABASE_ADDRESS,
+    ONLY_LOCALHOST_NETWORK_ADDRESS,
 )
 from reboot.wait_for_tasks import wait_for_tasks
 from typing import Awaitable, Callable, Optional, Sequence, overload
@@ -194,8 +195,17 @@ class Reboot:
             # Let the PlacementPlanner choose its own port locally, in
             # case we are running multiple PlacementPlanners on the
             # same host (for example, running multiple unit tests in
-            # parallel).
-            '127.0.0.1:0'
+            # parallel). Only connections from this machine are expected, so we
+            # use only the loopback, and we couldn't use
+            # `EVERY_LOCAL_NETWORK_ADDRESS` anyway on macOS because gRPC binds
+            # IPv6 as well (one dual-stack socket) and macOS has a bug where
+            # its IPv6 ephemeral-port allocator doesn't check ports held by
+            # IPv4 sockets, so the server can be handed a port that an IPv4
+            # listener (e.g., an orphaned Envoy) already holds and connections
+            # to `ONLY_LOCALHOST_NETWORK_ADDRESS` (`127.0.0.1`) reach that
+            # listener instead; see
+            # https://github.com/reboot-dev/reboot/pull/234.
+            f'{ONLY_LOCALHOST_NETWORK_ADDRESS}:0'
         )
 
     async def start(self):

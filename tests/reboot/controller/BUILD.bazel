@@ -14,6 +14,7 @@ py_test(
         "//rbt/v1alpha1:placement_planner_py_grpc",
         "//rbt/v1alpha1:placement_planner_py_proto",
         "//reboot:helpers_py",
+        "//reboot:settings_py",
         "//reboot/aio:exceptions_py",
         "//reboot/aio:resolvers_py",
         "//reboot/controller:application_config_py",

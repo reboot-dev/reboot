@@ -19,7 +19,10 @@ from reboot.aio.types import StateRef, StateTypeName
 # TODO(benh): move this into a top-level 'grpc' module to be shared by
 # both 'respect' and 'reboot'.
 from reboot.grpc.options import make_retry_channel_options
-from reboot.settings import MAX_DATABASE_GRPC_MESSAGE_LENGTH_BYTES
+from reboot.settings import (
+    MAX_DATABASE_GRPC_MESSAGE_LENGTH_BYTES,
+    ONLY_LOCALHOST_NETWORK_ADDRESS,
+)
 from typing import AsyncIterator, Iterator, Mapping, Optional, cast, overload
 
 # Deadline for reading and writing the application metadata. These
@@ -48,6 +51,7 @@ _ffi.cdef(
     const char* state_directory,
     const char* server_info_proto,
     size_t server_info_length,
+    const char* host,
     int port
   );
 
@@ -98,6 +102,16 @@ class DatabaseServer:
         self,
         state_directory: str,
         server_info: database_pb2.ServerInfo,
+        # Only connections from the application's servers, on this machine, are
+        # expected, so we use only the loopback, and we couldn't use
+        # `EVERY_LOCAL_NETWORK_ADDRESS` anyway on macOS because gRPC binds IPv6
+        # as well (one dual-stack socket) and macOS has a bug where its IPv6
+        # ephemeral-port allocator doesn't check ports held by IPv4 sockets, so
+        # the server can be handed a port that an IPv4 listener (e.g., an
+        # orphaned Envoy) already holds and connections to
+        # `ONLY_LOCALHOST_NETWORK_ADDRESS` (`127.0.0.1`) reach that listener
+        # instead; see https://github.com/reboot-dev/reboot/pull/234.
+        host: str = ONLY_LOCALHOST_NETWORK_ADDRESS,
         port: int = 0,
     ):
         assert len(server_info.shard_infos
@@ -110,7 +124,11 @@ class DatabaseServer:
         # explicitly to avoid truncation when CFFI treats it as a C
         # string.
         self._ptr = _lib.database_server_create(
-            state_directory.encode(), serialized, len(serialized), port
+            state_directory.encode(),
+            serialized,
+            len(serialized),
+            host.encode(),
+            port,
         )
         if self._ptr == _ffi.NULL:
             raise DatabaseServerFailed("Failed to create DatabaseServer")

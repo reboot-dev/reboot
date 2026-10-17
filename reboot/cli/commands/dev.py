@@ -84,6 +84,7 @@ from reboot.settings import (
     ENVVAR_REBOOT_LOCAL_ENVOY_PORT,
     ENVVAR_REBOOT_OAUTH_SIGNING_SECRET,
     ENVVAR_REBOOT_USE_TTY,
+    EVERY_LOCAL_NETWORK_ADDRESS,
     RBT_APPLICATION_EXIT_CODE_BACKWARDS_INCOMPATIBILITY,
     LocalEnvoyMode,
 )
@@ -730,10 +731,13 @@ async def _run_jaeger():
         '-p',
         '4318:4318',
         f'jaegertracing/jaeger:{JAEGER_VERSION}',
+        # Inside the container, connections from outside it (this
+        # machine, through the ports published above) are expected, so
+        # Jaeger's receivers listen on every interface.
         '--set',
-        'receivers.otlp.protocols.http.endpoint=0.0.0.0:4318',
+        f'receivers.otlp.protocols.http.endpoint={EVERY_LOCAL_NETWORK_ADDRESS}:4318',
         '--set',
-        'receivers.otlp.protocols.grpc.endpoint=0.0.0.0:4317',
+        f'receivers.otlp.protocols.grpc.endpoint={EVERY_LOCAL_NETWORK_ADDRESS}:4317',
         # Disable clock skew adjustments, this is all running on the
         # same host so even though it is across processes we shouldn't
         # expect any clock skew and without this Jaeger adjusts some

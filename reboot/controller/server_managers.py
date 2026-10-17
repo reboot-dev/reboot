@@ -46,7 +46,7 @@ from reboot.settings import (
     ENVVAR_PYTHON_SERVER_BASE64_ARGS,
     ENVVAR_RBT_EFFECT_VALIDATION,
     ENVVAR_RBT_NODEJS,
-    EVERY_LOCAL_NETWORK_ADDRESS,
+    ONLY_LOCALHOST_NETWORK_ADDRESS,
 )
 from typing import Awaitable, Callable, Optional, Sequence
 
@@ -794,7 +794,17 @@ class LocalServerManager(ServerManager):
         async def launch():
             assert self._revision is not None
 
-            host = EVERY_LOCAL_NETWORK_ADDRESS
+            # Only connections from the local Envoy are expected, so we use
+            # only the loopback, and we couldn't use
+            # `EVERY_LOCAL_NETWORK_ADDRESS` anyway on macOS because gRPC binds
+            # IPv6 as well (one dual-stack socket) and macOS has a bug where
+            # its IPv6 ephemeral-port allocator doesn't check ports held by
+            # IPv4 sockets, so the server can be handed a port that an IPv4
+            # listener (e.g., an orphaned Envoy) already holds and connections
+            # to `ONLY_LOCALHOST_NETWORK_ADDRESS` (`127.0.0.1`) reach that
+            # listener instead; see
+            # https://github.com/reboot-dev/reboot/pull/234.
+            host = ONLY_LOCALHOST_NETWORK_ADDRESS
 
             if not self._revision.in_process:
                 return await self._launch_subprocess_server(

@@ -209,6 +209,7 @@ py_library(
         ":caller_id_py",
         ":external_py",
         ":types_py",
+        "//reboot:settings_py",
         "//reboot:wait_for_tasks_py",
         "//reboot/aio/internals:channel_manager_py",
     ],

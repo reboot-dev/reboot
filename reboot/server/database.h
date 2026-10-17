@@ -59,7 +59,16 @@ class DatabaseServer final {
   static tl::expected<std::unique_ptr<DatabaseServer>, std::string> Instantiate(
       const std::filesystem::path& state_directory,
       const rbt::v1alpha1::ServerInfo& server_info,
-      std::string address = "127.0.0.1:0");
+      // By default only connections from this machine are expected, so we use
+      // only the loopback, and we couldn't use `kEveryLocalNetworkAddress`
+      // anyway on macOS because gRPC binds IPv6 as well (one dual-stack
+      // socket) and macOS has a bug where its IPv6 ephemeral-port allocator
+      // doesn't check ports held by IPv4 sockets, so the server can be handed
+      // a port that an IPv4 listener (e.g., an orphaned Envoy) already holds
+      // and connections to `kOnlyLocalhostNetworkAddress` (`127.0.0.1`) reach
+      // that listener instead; see
+      // https://github.com/reboot-dev/reboot/pull/234.
+      std::string address = std::string(kOnlyLocalhostNetworkAddress) + ":0");
 
   ~DatabaseServer() {
     Shutdown();

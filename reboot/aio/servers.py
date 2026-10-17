@@ -70,7 +70,7 @@ from reboot.controller.settings import (
 from reboot.inspect.servicer import InspectServicer
 from reboot.nodejs.python import should_print_stacktrace
 from reboot.rootpage.servicer import RootPageServicer
-from reboot.settings import GRPC_SERVER_OPTIONS
+from reboot.settings import EVERY_LOCAL_NETWORK_ADDRESS, GRPC_SERVER_OPTIONS
 from typing import Awaitable, Callable, Optional
 
 logger = log.log.get_logger(__name__)
@@ -694,7 +694,9 @@ class ConfigServer(Server):
                 f'when {ENVVAR_REBOOT_MODE} is `{REBOOT_MODE_CONFIG}`.'
             )
 
-        listen_address = f'0.0.0.0:{server_port}'
+        # Config pods expect connections from elsewhere in the cluster,
+        # so we listen on every interface.
+        listen_address = f'{EVERY_LOCAL_NETWORK_ADDRESS}:{server_port}'
 
         super().__init__(listen_address, interceptors=[])
         routables = serviceables + ServiceServer.ROUTABLES
