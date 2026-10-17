@@ -210,6 +210,16 @@ Scenario: Opening an account with a deposit
   written, so `` `body="<p>hi</p>"` `` is that text. A string
   column of an `Examples` table is written with its quotes in the
   table, `| "uuid-1" |`, and said bare too.
+- **There is no string interpolation or concatenation.** A variable
+  inside a quoted string is still replaced by its JSON text, so a
+  saved number, boolean or `null` can be written into one,
+  `` `label="Order <count>"` `` is `Order 5`, but a saved string,
+  object or list cannot: `` `url="/accounts/<account id>"` `` reads
+  `"/accounts/"uuid-1""` and fails as not JSON. To assert that a
+  string holds a saved value, assert `containing` rather than
+  equality, `` has `url` containing `<account id>` ``; in the web
+  app, `sees <account id> in the web app` already matches text that
+  contains the value.
 - **`has`** reads and asserts. A path reaches into the response, and
   two more predicates say a length and a containment (a substring
   of a string, an element of a list, or a key of a map). A reader
@@ -354,7 +364,7 @@ a labelled heading. The one step that reads a value out of the
 page, `saves the text of the "account-id" element`, names it by
 `data-testid`.
 
-What the app shows or is told is a JSON string, or a variable for a saved value, `sees <alice account id> in the "Your Accounts" table`. `eventually sees ... within 10 seconds` waits; `sees` looks now; `does not see`
+What the app shows or is told is a JSON string, or a variable for a saved value, `sees <alice account id> in the "Your Accounts" table`; `sees` matches text that contains the value, so there is no need to spell out the text around it. `eventually sees ... within 10 seconds` waits; `sees` looks now; `does not see`
 asserts absence.
 
 Signing in is clicked through the app like a person would, and

@@ -98,8 +98,11 @@ JSON text takes the variable's place before the step runs, as
 pytest-bdd substitutes a column: a saved string arrives with its
 quotes, so it is said bare, <owner_name>, never "<owner_name>", which
 would double the quotes. A <name> nothing is saved under stays as
-written, so "<p>hi</p>" is that text. A save may not use a column's
-name:
+written, so "<p>hi</p>" is that text. There is no interpolation or
+concatenation: a saved number can be written inside a string,
+"Order <count>", but a saved string cannot, its quotes coming with
+it; assert `path` containing <name> instead. A save may not use a
+column's name:
 
     When as "alice", `get_owner` on the `Account` for "frank" has
       `owner.name` saved as "owner_name"
