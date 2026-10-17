@@ -671,7 +671,7 @@ a worked set are in
 ```
 <project>/
 ├── .python-version          # "3.10"
-├── .rbtrc                   # Line-based config (NOT YAML!)
+├── .rbtrc                   # rbt config, one flag per line
 ├── .mypy.ini                # Type-check config (python skill)
 ├── pyproject.toml           # Python deps (uv)
 ├── api/

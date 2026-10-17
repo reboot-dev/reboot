@@ -110,37 +110,19 @@ class ChatRoomServicer(ChatRoom.Servicer):
 
 ### Application Entry
 
-A Reboot application's `main` constructs an `Application` with the list of
-Servicer classes and runs it under `asyncio`:
-
-```python
-import asyncio
-from reboot.aio.applications import Application
-from reboot.aio.external import InitializeContext
-from chat_room.v1.chat_room_rbt import ChatRoom
-from chat_room_servicer import ChatRoomServicer
-
-
-async def initialize(context: InitializeContext):
-    # Implicitly construct the singleton on first write.
-    await ChatRoom.ref("reboot-chat-room").send(context, message="Hello!")
-
-
-async def main():
-    await Application(
-        servicers=[ChatRoomServicer],
-        initialize=initialize,
-    ).run()
-
-
-if __name__ == '__main__':
-    asyncio.run(main())
-```
+`main` awaits `Application(servicers=[ChatRoomServicer],
+initialize=initialize).run()` under `asyncio.run`, passing Servicer
+classes, not instances. `initialize(context: InitializeContext)` may
+construct a singleton implicitly by its first write
+(`references/lifecycle-application-entry.md`).
 
 ### The API File Drives Code Generation
 
 Never hand-edit generated `*_rbt.py` files. The pydantic API definition
-file is the source of truth (see `references/api-pydantic.md`):
+file is the source of truth (see `references/api-pydantic.md`).
+Older Reboot used `.proto` files and `rbt protoc`, which models
+remember best: never write a `.proto`, `rbt.v1alpha1` options or
+`_pb2` imports.
 
 ```python
 from reboot.api import API, Field, Methods, Model, Reader, Type, Writer
@@ -202,12 +184,16 @@ messages nested as attributes, the `Servicer` base class, and the
   factory. `Reader(...)` requires `ReaderContext`; `Writer(...)`
   requires `WriterContext`; `Transaction(...)` requires
   `TransactionContext`; `Workflow(...)` requires `WorkflowContext`.
+- A method takes `(self, context)` or `(self, context, request)`; the
+  state is `self.state`, never a parameter.
 - `self.state` is read-only inside `ReaderContext`. Mutate it only inside
-  `WriterContext` or `TransactionContext`. Workflows mutate state by
-  calling `Service.ref().write(context, callback)` — not `self.state` —
-  because workflows can re-execute on replay.
-- `.rbtrc` is **line-based**, not YAML. Each line is `<subcommand> <flag>`.
-  Use `--application-name=<app>` (canonical since Reboot 1.0.4; `--name`
+  `WriterContext` or `TransactionContext`.
+- A workflow method is a **`@classmethod`** taking `WorkflowContext`:
+  no `self`, no `self.state`. It mutates state by calling
+  `Service.ref().write(context, callback)`, because it can re-execute
+  on replay (`references/servicer-workflow.md`).
+- `.rbtrc`: each line is `<subcommand> <flag>`. Use
+  `--application-name=<app>` (canonical since Reboot 1.0.4; `--name`
   still works as a deprecated alias but warns).
 - The actor's ID is `self.ref().state_id` inside writer/reader/
   transaction methods, and `context.state_id` inside workflows.
@@ -228,14 +214,11 @@ messages nested as attributes, the `Servicer` base class, and the
   description, and describe the value, not the type: "What the
   account holds, in dollars, never below zero", not "The balance
   (float)".
-- Cross-actor and external-service calls belong in `TransactionContext`
-  (one-shot) or `WorkflowContext` (durable, long-running).
 - **Changing an API after the application has persisted state or has
   been deployed?** Read `references/api-schema-evolution.md` to
   understand the rules you must follow for API schema evolution.
-- Pass arguments to actor methods as **kwargs**, not as Request wrappers:
-  `await ref.deposit(context, amount=10)`, not
-  `await ref.deposit(context, DepositRequest(amount=10))`.
+- Tests are Gherkin `.feature` files run by `reboot.bdd`, not pytest or
+  unittest test classes (see Testing below).
 - **`Queue`, `Topic`, `OrderedMap`, `Presence`, `Item` are
   stdlib actor names — use them, don't redefine them.** If a
   design or task names any of these (e.g. "publish to a
