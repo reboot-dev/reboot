@@ -198,3 +198,23 @@ The list below is what's specific to the MCP UI layer:
     `--mobile` (React Native) client — `rbt generate` rejects
     `--react-extensions` with `--mobile`, because Metro can't resolve
     the `.js`-suffixed imports back to their `.ts` sources.
+
+22. **An MCP UI's RPCs are not gated by `allowed_origins`.** The UI
+    runs on the host's sandbox origin (a per-conversation
+    `*.claudemcpcontent.com` host in Claude, the opaque origin `null`
+    in MCPJam), which cannot be listed in advance, and it does not
+    need to be: RPCs, `/mcp` and HTTP routes answer any origin without
+    credentials, and the UI authenticates with the bearer from the
+    tool result. `OAuth(allowed_origins=...)` governs only the
+    `/__/oauth/` paths that act on a browser's session cookie, i.e.
+    the standalone web app's sign-in. A CORS error on an RPC from the
+    UI therefore means a missing or expired bearer, not a missing
+    origin.
+
+23. **An `<img src>` or `<a href>` pointing at the backend carries
+    no bearer.** The UI runs in the host's sandbox, cross-origin to
+    the backend, so a plain `src` or `href` arrives with no
+    credential and a `require_oauth_token=True` route returns 401.
+    Fetch with the client's bearer and show an object URL instead;
+    never put the token in the URL. Recipe in
+    `python/references/auth-http-routes.md`.

@@ -1,4 +1,5 @@
 """The `rbt dashboard` command, which runs the developer dashboard."""
+import aiohttp
 import argparse
 import asyncio
 import os
@@ -6,6 +7,7 @@ import secrets
 import shutil
 import sys
 import webbrowser
+from contextlib import suppress
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_rbt import Preferences
 from rbt.std.presence.v1.presence_rbt import Presence
@@ -33,7 +35,9 @@ from reboot.dashboard.backend.constants import (
     PREFERENCES_ID,
     PRESENCE_ID,
 )
+from reboot.dashboard.tunnel import TunnelError, cloudflared_tunnel
 from reboot.settings import (
+    ENVVAR_LOCAL_ENVOY_USE_TLS,
     ENVVAR_RBT_DEV,
     ENVVAR_RBT_EFFECT_VALIDATION,
     ENVVAR_RBT_FRONTEND_DIST_PATH,
@@ -149,7 +153,8 @@ def _dashboard_env(
     application: Optional[str],
     generated_directory: Optional[str],
 ) -> dict[str, str]:
-    """The environment for the dashboard application.
+    """The environment for the dashboard application, serving on
+    `port`.
 
     Built from the ambient environment rather than from any
     application environment, so that nothing naming a developer's
@@ -183,6 +188,11 @@ def _dashboard_env(
     composed[ENVVAR_REBOOT_EXPECTED_VERSION] = REBOOT_VERSION
     composed[ENVVAR_REBOOT_LOCAL_ENVOY] = 'true'
     composed[ENVVAR_REBOOT_LOCAL_ENVOY_PORT] = str(port)
+
+    # Plain HTTP: the tunnel terminates TLS. Set rather than popped,
+    # so that a developer's export for their own application does not
+    # reach this one.
+    composed[ENVVAR_LOCAL_ENVOY_USE_TLS] = 'false'
 
     # A single server, so that a subscriber's `Connect` and
     # `Toggle` always land on the same process; presence tracks its
@@ -284,18 +294,103 @@ async def _run_dashboard(
         await backoff()
 
 
-async def _viewers(dashboard_url: str) -> list[str]:
+async def _serve(
+    *,
+    env: dict[str, str],
+    port: int,
+    subprocesses: Subprocesses,
+) -> None:
+    """Runs the dashboard application in `env`, opening a browser on
+    it once it serves on `port`."""
+    open_task = asyncio.create_task(
+        _open_when_serving(port=port),
+        name=f'_open_when_serving(...) in {__name__}',
+    )
+    try:
+        await _run_dashboard(
+            env=env,
+            state_directory=Path(env[ENVVAR_RBT_STATE_DIRECTORY]),
+            subprocesses=subprocesses,
+        )
+    finally:
+        open_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await open_task
+
+
+async def _tunnel(*, port: int, subprocesses: Subprocesses) -> None:
+    """Keeps a tunnel to the dashboard on `port` open and prints each
+    tunnel's address for the developer to add as an MCP connector: a
+    connector added with a stopped tunnel's address reaches nothing.
+    A tunnel that cannot be opened is a warning, and the dashboard
+    serves this machine alone.
+    """
+    backoff = Backoff()
+    while True:
+        try:
+            async with cloudflared_tunnel(
+                port=port, subprocesses=subprocesses
+            ) as tunnel:
+                backoff.clear()
+                terminal.info(
+                    'To show your dashboard in Claude or ChatGPT, add this '
+                    f'MCP connector: {tunnel.url}/mcp/\n'
+                )
+                try:
+                    await tunnel.task
+                except TunnelError as error:
+                    terminal.warn(f'{error}\n')
+        except TunnelError as error:
+            # Could not be opened at all: offline, blocked, or no
+            # `cloudflared`. Trying again would fail the same way.
+            terminal.warn(
+                f'{error}\n\n'
+                'Without a tunnel an MCP host cannot show your dashboard; '
+                f'it still serves at http://127.0.0.1:{port}/\n'
+            )
+            return
+        await backoff()
+
+
+async def _dashboard_context(dashboard_url: str) -> ExternalContext:
+    """An `ExternalContext` signed in to the dashboard at
+    `dashboard_url` the way a browser signs in.
+
+    Depends on the dashboard's OAuth provider being `Anonymous` (see
+    `application()` in `reboot/dashboard/backend/main.py`): following
+    its redirects is the whole sign-in. A provider that asks the user
+    anything would never sign in here."""
+    # The session cookies are `Secure` and the dashboard is at an IP
+    # address; a browser accepts both on `http://127.0.0.1`, and so
+    # must this jar.
+    jar = aiohttp.CookieJar(unsafe=True, treat_as_secure_origin=dashboard_url)
+    async with aiohttp.ClientSession(cookie_jar=jar) as client:
+        async with client.get(
+            f'{dashboard_url}/__/oauth/start?return_to=/'
+        ) as response:
+            response.raise_for_status()
+        async with client.get(f'{dashboard_url}/__/oauth/whoami') as response:
+            session = await response.json()
+    if not session.get('authenticated'):
+        raise RuntimeError('Dashboard sign-in left nobody signed in')
+    return ExternalContext(
+        name="open-dashboard",
+        url=dashboard_url,
+        bearer_token=session['access_token'],
+    )
+
+
+async def _viewers(context: ExternalContext) -> list[str]:
     """The subscriber ids of everyone looking at a dashboard.
 
     The dashboard constructs the `Presence` instance, empty, when it
-    initializes, so there is an answer from the moment it is up.
+    initializes, so the list exists from the moment it is up.
     """
-    context = ExternalContext(name="open-dashboard", url=dashboard_url)
     response = await Presence.ref(PRESENCE_ID).List(context)
     return list(response.subscriber_ids)
 
 
-async def _should_open_automatically(dashboard_url: str) -> bool:
+async def _should_open_automatically(context: ExternalContext) -> bool:
     """Whether the developer still wants a dashboard opened for them.
 
     The dashboard's notice writes this when they click "Don't reopen
@@ -303,7 +398,6 @@ async def _should_open_automatically(dashboard_url: str) -> bool:
     it in. The dashboard writes the default when it initializes, so
     nobody ever clicking means a dashboard opens.
     """
-    context = ExternalContext(name="open-dashboard", url=dashboard_url)
     response = await Preferences.ref(PREFERENCES_ID).Get(context)
     return not response.suppress_automatic_open
 
@@ -342,9 +436,10 @@ async def _should_open(dashboard_url: str) -> bool:
     """
     while True:
         try:
-            if not await _should_open_automatically(dashboard_url):
+            context = await _dashboard_context(dashboard_url)
+            if not await _should_open_automatically(context):
                 return False
-            return len(await _viewers(dashboard_url)) == 0
+            return len(await _viewers(context)) == 0
         except Exception:
             await asyncio.sleep(_ASK_EVERY_SECONDS)
 
@@ -444,21 +539,18 @@ async def dashboard(
 
         terminal.info(f'Your dashboard is at http://127.0.0.1:{port}/\n')
 
-        open_task = asyncio.create_task(
-            _open_when_serving(port=port),
-            name=f'_open_when_serving(...) in {__name__}',
+        # A separate task, so a tunnel failure (every tunnel fails
+        # offline) leaves the dashboard serving this machine.
+        tunnel = asyncio.create_task(
+            _tunnel(port=port, subprocesses=subprocesses),
+            name=f'_tunnel(...) in {__name__}',
         )
-
         try:
-            await _run_dashboard(
-                env=env,
-                state_directory=Path(env[ENVVAR_RBT_STATE_DIRECTORY]),
-                subprocesses=subprocesses,
-            )
+            await _serve(env=env, port=port, subprocesses=subprocesses)
         finally:
-            open_task.cancel()
-
-    return 0
+            tunnel.cancel()
+            await asyncio.gather(tunnel, return_exceptions=True)
+        return 0
 
 
 async def handle_dashboard_subcommand(

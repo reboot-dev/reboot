@@ -10,7 +10,10 @@ message Context {
   string state_id = 2;
   string state_type_name = 3;
   optional string caller_bearer_token = 4;
-  optional string cookie = 5;
+  // Deprecated. Field 5 carried the request's `Cookie` header; nothing
+  // used it.
+  reserved 5;
+  reserved "cookie";
   bool app_internal = 6;
   optional bytes auth = 7;
   optional string workflow_id = 8;

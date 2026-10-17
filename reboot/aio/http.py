@@ -1,16 +1,20 @@
 import asyncio
 import contextlib
+import re
 import uvicorn  # type: ignore[import]
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from fastapi import Depends, FastAPI  # type: ignore[import]
 from reboot.aio.caller_id import CallerID
 from reboot.aio.external import ExternalContext
+from reboot.aio.headers import AUTHORIZATION_HEADER
 from reboot.aio.internals.channel_manager import _ChannelManager
 from reboot.aio.types import ApplicationId, ServerId
 from reboot.settings import ONLY_LOCALHOST_NETWORK_ADDRESS
 from reboot.wait_for_tasks import wait_for_tasks
 from starlette.requests import Request  # type: ignore[import]
+from starlette.responses import Response
+from starlette.routing import BaseRoute, Match, compile_path
 from starlette.types import Receive, Scope, Send  # type: ignore[import]
 from typing import (
     Any,
@@ -67,6 +71,9 @@ class PythonWebFramework(WebFramework):
         path: str
         kwargs: dict
         endpoint: Callable[..., Any]
+        # Whether its handler gets an app-internal context; see the
+        # DANGER note in `_api_route`.
+        app_internal: bool = False
 
     @dataclass(kw_only=True, frozen=True)
     class Mount:
@@ -75,6 +82,13 @@ class PythonWebFramework(WebFramework):
         app: Optional[HTTPASGIApp]
         factory: Optional[Callable[[Callable[[Request], ExternalContext]],
                                    HTTPASGIApp]]
+
+    @dataclass(frozen=True)
+    class RequireOAuthTokenRoute:
+        """The path of a route registered with `require_oauth_token=True`,
+        compiled as Starlette matches it so a path template (`/x/{id}`)
+        matches its requests."""
+        pattern: re.Pattern[str]
 
     class HTTP:
         """Interface for decorating functions as API routes.
@@ -89,11 +103,26 @@ class PythonWebFramework(WebFramework):
         def __init__(self):
             self._api_routes: list[PythonWebFramework.APIRoute] = []
             self._mounts: list[PythonWebFramework.Mount] = []
-            # Exact request paths whose handlers receive an *app-internal*
-            # context (one that can call app-internal-only servicers)
-            # instead of the usual external one, because they opted in via
-            # `app_internal=True`. See the DANGER note in `_api_route`.
-            self._app_internal_paths: set[str] = set()
+            self._require_oauth_token_routes: list[
+                PythonWebFramework.RequireOAuthTokenRoute] = []
+            # Returns the access token a request is signed in with, once
+            # verified, or `None`; see `verify_oauth_token_with`.
+            self._verify_oauth_token: Optional[Callable[[Request],
+                                                        Optional[str]]] = None
+
+        def verify_oauth_token_with(
+            self,
+            verify: Callable[[Request], Optional[str]],
+        ) -> None:
+            """Sets how a `require_oauth_token=True` route verifies a
+            request: `verify` returns the access token the request is
+            signed in with, verified, or `None`. `Application` calls
+            this once it has an OAuth server, whose access tokens sign
+            a request in."""
+            self._verify_oauth_token = verify
+
+        def has_require_oauth_token_routes(self) -> bool:
+            return len(self._require_oauth_token_routes) > 0
 
         def _api_route(self, path: str, **kwargs):
             # `app_internal` is our own kwarg, not one of FastAPI's, so we
@@ -110,8 +139,22 @@ class PythonWebFramework(WebFramework):
             # only after the authorization code has been exchanged and
             # validated. Never set it on a route that acts on unvalidated
             # request input.
-            if kwargs.pop("app_internal", False):
-                self._app_internal_paths.add(path)
+            app_internal = kwargs.pop("app_internal", False)
+
+            # `require_oauth_token` is ours too. Such a route serves only
+            # a request signed in as a user of the application: by the
+            # access JWT in its `Authorization: Bearer` header or, on a
+            # same-origin request, in its session cookie; anything else
+            # gets a 401. Envoy's CORS policy answers any origin without
+            # credentials on every path but the OAuth server's, so a
+            # page in an MCP host's sandbox can call it with a bearer,
+            # while the cookie counts only same-origin.
+            if kwargs.pop("require_oauth_token", False):
+                self._require_oauth_token_routes.append(
+                    PythonWebFramework.RequireOAuthTokenRoute(
+                        pattern=compile_path(path)[0],
+                    )
+                )
 
             # TODO: add type annotations for `endpoint` so that what
             # we take in is exactly what we return.
@@ -128,6 +171,7 @@ class PythonWebFramework(WebFramework):
                         path=path,
                         endpoint=endpoint,
                         kwargs=kwargs,
+                        app_internal=app_internal,
                     )
                 )
                 return endpoint
@@ -242,6 +286,15 @@ class PythonWebFramework(WebFramework):
                 if len(parts) == 2 and parts[0].lower() == "bearer":
                     bearer_token = parts[1]
 
+            # A `require_oauth_token=True` route may have been signed in
+            # by the session cookie rather than a header; its middleware
+            # records the token it verified, so that the handler's calls
+            # carry it too.
+            if bearer_token is None:
+                bearer_token = getattr(
+                    request.state, "reboot_verified_bearer_token", None
+                )
+
             # Namespace this so that any other middleware doesn't
             # clash on `request.state`.
             return ExternalContext(
@@ -274,6 +327,10 @@ class PythonWebFramework(WebFramework):
 
         fastapi = FastAPI()
 
+        # The routes FastAPI serves with an app-internal context, filled
+        # in as the routes are added below.
+        app_internal_routes: list[BaseRoute] = []
+
         @fastapi.middleware("http")
         async def external_context_middleware(request: Request, call_next):
             # Most routes get an *external* context (no `caller_id`): an
@@ -284,7 +341,20 @@ class PythonWebFramework(WebFramework):
             # `app_internal=True` get an *app-internal* context instead —
             # see the DANGER note on `HTTP._api_route`. We namespace this
             # on `request.state` so other middleware doesn't clash.
-            if request.url.path in self._http._app_internal_paths:
+            #
+            # FastAPI serves a request with the first route that matches
+            # it by path and method, so only that route's own
+            # `app_internal=True` counts: an app-internal `/files/{name}`
+            # must not trust a request an earlier, external
+            # `/files/status` serves.
+            route = next(
+                (
+                    route for route in fastapi.router.routes
+                    if route.matches(request.scope)[0] == Match.FULL
+                ),
+                None,
+            )
+            if any(route is internal for internal in app_internal_routes):
                 request.state.reboot_external_context = (
                     app_internal_external_context_from_request(request)
                 )
@@ -293,6 +363,44 @@ class PythonWebFramework(WebFramework):
                     external_context_from_request(request)
                 )
 
+            return await call_next(request)
+
+        # Registered after `external_context_middleware`, so it runs
+        # first and answers a 401 before anything builds a context.
+        @fastapi.middleware("http")
+        async def require_oauth_token_middleware(request: Request, call_next):
+            # Matched by path alone: every method on such a path needs
+            # the token, and an unserved one gets a 401 rather than a 405.
+            for route in self._http._require_oauth_token_routes:
+                if route.pattern.match(request.url.path):
+                    break
+            else:
+                return await call_next(request)
+            # `Application` refuses to mount a route requiring an OAuth
+            # token without an OAuth server.
+            assert self._http._verify_oauth_token is not None
+            token = self._http._verify_oauth_token(request)
+            if token is None:
+                # RFC 6750: a 401 carries `WWW-Authenticate: Bearer`,
+                # with `error="invalid_token"` only when the request
+                # presented a token in `Authorization`; a cookie the
+                # browser attached on its own does not count.
+                # `resource_metadata` (RFC 9728) tells the client where
+                # to sign in; `/mcp` sends the same.
+                base = str(request.base_url).rstrip("/")
+                challenge = (
+                    'Bearer error="invalid_token", '
+                    if AUTHORIZATION_HEADER in request.headers else "Bearer "
+                ) + (
+                    'resource_metadata="'
+                    f'{base}/.well-known/oauth-protected-resource"'
+                )
+                return Response(
+                    status_code=401,
+                    headers={"WWW-Authenticate": challenge},
+                )
+            # For `external_context_from_request`, which runs next.
+            request.state.reboot_verified_bearer_token = token
             return await call_next(request)
 
         for mount in self._http._mounts:
@@ -310,6 +418,8 @@ class PythonWebFramework(WebFramework):
                 api_route.endpoint,
                 **api_route.kwargs,
             )
+            if api_route.app_internal:
+                app_internal_routes.append(fastapi.router.routes[-1])
 
         config = uvicorn.Config(
             fastapi,

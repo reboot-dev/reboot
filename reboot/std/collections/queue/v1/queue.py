@@ -213,6 +213,7 @@ class QueueLibrary(Library):
 
     def __init__(
         self,
+        *,
         authorizer: Optional[Queue.Authorizer] = None,
     ):
         QueueServicer._authorizer = authorizer
@@ -228,5 +229,5 @@ def servicers():
     return [QueueServicer] + sorted_map.servicers()
 
 
-def queue_library(authorizer: Optional[Queue.Authorizer] = None):
-    return QueueLibrary(authorizer)
+def queue_library(*, authorizer: Optional[Queue.Authorizer] = None):
+    return QueueLibrary(authorizer=authorizer)

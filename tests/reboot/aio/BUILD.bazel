@@ -1,3 +1,4 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_test")
 
 py_test(
@@ -116,5 +117,22 @@ py_test(
     main = "tracing_test.py",
     deps = [
         "//reboot/aio:tracing_py",
+    ],
+)
+
+py_test(
+    name = "app_internal_routes_test_py",
+    size = "small",
+    timeout = "short",
+    srcs = ["app_internal_routes_test.py"],
+    main = "app_internal_routes_test.py",
+    deps = [
+        "//reboot/aio:applications_py",
+        "//reboot/aio:external_py",
+        "//reboot/aio:http_py",
+        "//reboot/aio:tests_py",
+        "//reboot/ping:ping_py",
+        requirement("httpx"),
+        requirement("starlette"),
     ],
 )

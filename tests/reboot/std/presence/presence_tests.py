@@ -1,19 +1,34 @@
 import asyncio
-import reboot.std.presence.v1.presence
 import unittest
 from rbt.v1alpha1.errors_pb2 import AlreadyExists, FailedPrecondition, NotFound
 from reboot.aio.applications import Application
+from reboot.aio.auth.authorizers import allow
 from reboot.aio.external import ExternalContext
 from reboot.aio.memoize import MemoizeServicer
 from reboot.aio.tests import Reboot
 from reboot.std.presence.v1.presence import (
+    DEFAULT_AUTHORIZER,
     ListResponse,
     MousePosition,
     PositionResponse,
     Presence,
+    PresenceServicer,
     StatusResponse,
     Subscriber,
+    presence_library,
 )
+
+
+class TestPresenceLibrary(unittest.TestCase):
+
+    def test_default_rule_comes_back(self) -> None:
+        # The rule is a class attribute, so an application started
+        # after one that allowed every caller must not inherit that.
+        rule = allow()
+        presence_library(authorizer=rule)
+        self.assertIs(PresenceServicer._authorizer, rule)
+        presence_library()
+        self.assertIs(PresenceServicer._authorizer, DEFAULT_AUTHORIZER)
 
 
 class TestPresence(unittest.IsolatedAsyncioTestCase):
@@ -23,8 +38,8 @@ class TestPresence(unittest.IsolatedAsyncioTestCase):
         await self.rbt.start()
         await self.rbt.up(
             Application(
-                servicers=reboot.std.presence.v1.presence.servicers() +
-                [MemoizeServicer]
+                servicers=[MemoizeServicer],
+                libraries=[presence_library()],
             )
         )
 
@@ -83,7 +98,9 @@ class TestPresence(unittest.IsolatedAsyncioTestCase):
         return connect_task
 
     async def test_mouse_position_basic(self) -> None:
-        context = self.rbt.create_external_context(name=f"test-{self.id()}")
+        context = await self.rbt.create_external_context_as(
+            name=f"test-{self.id()}"
+        )
 
         mouse_position = MousePosition.ref("id")
 
@@ -94,7 +111,9 @@ class TestPresence(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.top, 2)
 
     async def test_fail_toggle(self) -> None:
-        context = self.rbt.create_external_context(name=f"test-{self.id()}")
+        context = await self.rbt.create_external_context_as(
+            name=f"test-{self.id()}"
+        )
 
         subscriber = Subscriber.ref("testing-toggle-fail")
 
@@ -106,7 +125,9 @@ class TestPresence(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(isinstance(aborted.exception.error, NotFound))
 
     async def test_fail_connect(self) -> None:
-        context = self.rbt.create_external_context(name=f"test-{self.id()}")
+        context = await self.rbt.create_external_context_as(
+            name=f"test-{self.id()}"
+        )
 
         presence = Presence.ref("presence-testing-connect-fail")
         subscriber = Subscriber.ref("subscriber-testing-connect-fail")
@@ -126,7 +147,9 @@ class TestPresence(unittest.IsolatedAsyncioTestCase):
         connect_task.cancel()
 
     async def test_fail_subscribe(self) -> None:
-        context = self.rbt.create_external_context(name=f"test-{self.id()}")
+        context = await self.rbt.create_external_context_as(
+            name=f"test-{self.id()}"
+        )
 
         presence = Presence.ref("presence-testing-subscribe-fail")
         subscriber = Subscriber.ref("subscriber-testing-subscribe-fail")
@@ -147,7 +170,9 @@ class TestPresence(unittest.IsolatedAsyncioTestCase):
         Test that calling `Subscribe` multiple times with the same subscriber ID
         does not result in multiple subscribers being added to the list.
         """
-        context = self.rbt.create_external_context(name=f"test-{self.id()}")
+        context = await self.rbt.create_external_context_as(
+            name=f"test-{self.id()}"
+        )
 
         presence = Presence.ref("presence-testing-redundant-subscribe")
         subscriber = Subscriber.ref("subscriber-testing-redundant-subscribe")
@@ -192,7 +217,9 @@ class TestPresence(unittest.IsolatedAsyncioTestCase):
         Test that we can successfully connect a single subscriber and verify
         that the state is updated correctly.
         """
-        context = self.rbt.create_external_context(name=f"test-{self.id()}")
+        context = await self.rbt.create_external_context_as(
+            name=f"test-{self.id()}"
+        )
 
         presence = Presence.ref("presence-testing-single-subscriber")
         subscriber = Subscriber.ref("subscriber-testing-single-subscriber")

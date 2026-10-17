@@ -40,6 +40,19 @@ body,
   margin: 0;
 }
 
+/* An MCP host sizes the frame by the page's content height, and the
+   page (above) is as tall as its frame: circular, so in a host the
+   page sets a height of its own. */
+html.mcp-host body {
+  min-height: 800px;
+}
+
+/* In fullscreen or picture-in-picture the host gives the frame its
+   height; `useFullscreenInHost` keeps the class current. */
+html.mcp-host.mcp-host-sized body {
+  min-height: 0;
+}
+
 body {
   font-family: ui-sans-serif, system-ui, sans-serif;
   background: hsl(var(--background));
@@ -161,6 +174,12 @@ main {
 }
 
 /* --- The opened-automatically notice --- */
+
+/* The line shown until the client holds a token; see `WithToken`. */
+.loading-token {
+  padding: 16px;
+  color: hsl(var(--muted-foreground));
+}
 
 /* Slides up once the page has settled: the CLI opened this tab by
    itself, and says so. */
@@ -2042,7 +2061,42 @@ header h1 {
   display: inline-block;
 }
 
-/* The video of the scenario's last run, a small link beside its
+/* A `<button>` in place of a link. `all: unset` must come before
+   `.scenario-video` and `.step-screenshot`, which style it. */
+.recording-button {
+  all: unset;
+  cursor: pointer;
+}
+
+/* A click on the backdrop, not on the video, closes it; see
+   `RecordingLightbox`. */
+.recording-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: hsl(var(--background) / 0.92);
+  cursor: zoom-out;
+}
+
+.recording-lightbox img,
+.recording-lightbox video {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+  background: hsl(var(--background));
+}
+
+.recording-lightbox video {
+  cursor: auto;
+}
+
+/* The video of the scenario's last run, a small button beside its
    name. */
 .scenario-video {
   display: inline-flex;

@@ -8,14 +8,28 @@ own process, with its own state store, alongside the application
 being developed.
 """
 import asyncio
+import hashlib
+import hmac
+import json
+import time
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_rbt import Dashboard, Preferences
 from rbt.std.collections.ordered_map.v1.ordered_map_rbt import OrderedMap
 from rbt.std.presence.v1.presence_rbt import Presence
 from reboot.aio.applications import Application
-from reboot.aio.auth.authorizers import allow, allow_if, is_app_internal
+from reboot.aio.auth.authorizers import (
+    allow_if,
+    has_verified_token,
+    is_app_internal,
+)
+from reboot.aio.auth.oauth import OAuth
+from reboot.aio.auth.oauth_providers import (
+    Anonymous,
+    OAuthProviderByEnvironment,
+)
 from reboot.aio.external import InitializeContext
 from reboot.bdd import recordings
+from reboot.crypto import root_keys
 from reboot.dashboard.backend.constants import (
     CHANGELOG_ID,
     DASHBOARD_ID,
@@ -30,10 +44,11 @@ from reboot.dashboard.backend.servicers import (
 from reboot.std.collections.ordered_map.v1.ordered_map import (
     ordered_map_library,
 )
-from reboot.std.presence.v1 import presence
+from reboot.std.presence.v1.presence import presence_library
 from starlette.exceptions import HTTPException
-from starlette.responses import FileResponse
+from starlette.responses import FileResponse, JSONResponse
 from starlette.staticfiles import StaticFiles
+from urllib.parse import quote, urlencode
 
 # The built page, beside this module, which is the same arrangement
 # `InspectServicer` uses for its own assets. Mounting it directly
@@ -71,23 +86,64 @@ def _recording(directory: Path, relative: str) -> Path:
     return path
 
 
+_RECORDING_URL_SECONDS = 60 * 60
+
+
+def _recording_signature(directory: Path, relative: str, expires: int) -> str:
+    # A separate purpose from OAuth, scoped to this project even when
+    # several dashboards share the same managed root keys.
+    key = root_keys.derive_key(
+        info=b'reboot.dashboard.recordings', version=root_keys.active_version()
+    )
+    message = json.dumps(
+        [str(directory.resolve()), relative, expires], ensure_ascii=True
+    ).encode()
+    return hmac.new(key, message, hashlib.sha256).hexdigest()
+
+
 def application() -> Application:
-    """The dashboard application, with its page mounted."""
+    """The dashboard application, with its page mounted.
+
+    The OAuth server signs in whoever reaches it as the developer, so
+    the tunnel's address is what keeps the dashboard off the internet;
+    see `reboot/dashboard/tunnel.py`.
+    """
+    # `_dashboard_context` in `reboot/cli/commands/dashboard.py` signs
+    # in by following this provider's redirects alone; a provider that
+    # asks the user anything breaks it.
+    developer = Anonymous(user_id='developer')
     application = Application(
+        oauth=OAuth(
+            provider=OAuthProviderByEnvironment(dev=developer, prod=developer),
+            # Only this application's own origin, which serves the
+            # page, may act on the session cookie. An MCP host's UI
+            # sends a bearer token, which this list does not govern.
+            allowed_origins=[],
+        ),
         servicers=[
             DashboardServicer,
             PreferencesServicer,
-        ] + presence.servicers(),
+        ],
         libraries=[
+            # `is_app_internal` trusts the `x-reboot-caller-id` header,
+            # which Envoy removes from every request on the public
+            # listener, the one the tunnel reaches; see
+            # `_routes_for_server` in `reboot/routing/envoy_config.py`.
+            presence_library(
+                authorizer=allow_if(any=[is_app_internal, has_verified_token]),
+            ),
             ordered_map_library(
-                # The page reads the changelog straight from the
-                # browser; only the dashboard itself records what
-                # changed.
-                OrderedMap.Authorizer(
-                    search=allow(),
-                    range=allow(),
-                    reverse_range=allow(),
-                    stringify=allow(),
+                # The developer's page reads the changelog; only the
+                # dashboard itself records what changed.
+                authorizer=OrderedMap.Authorizer(
+                    search=allow_if(any=[is_app_internal, has_verified_token]),
+                    range=allow_if(any=[is_app_internal, has_verified_token]),
+                    reverse_range=allow_if(
+                        any=[is_app_internal, has_verified_token]
+                    ),
+                    stringify=allow_if(
+                        any=[is_app_internal, has_verified_token]
+                    ),
                     create=allow_if(all=[is_app_internal]),
                     insert=allow_if(all=[is_app_internal]),
                     remove=allow_if(all=[is_app_internal]),
@@ -100,11 +156,53 @@ def application() -> Application:
         root=DASHBOARD_PATH + '/',
     )
 
+    # Sign only after authenticating the developer. Keep this route
+    # before the catch-all; the element itself cannot send a bearer header.
+    @application.http.get(RECORDINGS_PATH + '/sign', require_oauth_token=True)
+    async def sign_recording(path: str) -> JSONResponse:
+        directory = Path.cwd()
+        _recording(directory, path)
+        expires = int(time.time()) + _RECORDING_URL_SECONDS
+        query = urlencode(
+            {
+                'expires': expires,
+                'sig': _recording_signature(directory, path, expires),
+            }
+        )
+        return JSONResponse(
+            {
+                'url': f'{RECORDINGS_PATH}/{quote(path, safe="/")}?{query}',
+                'expires': expires
+            },
+            headers={'Cache-Control': 'no-store'},
+        )
+
     @application.http.get(RECORDINGS_PATH + '/{relative:path}')
-    async def recording(relative: str) -> FileResponse:
-        """A scenario's video or a step's screenshot, from beside the
-        feature file under the working directory."""
-        return FileResponse(_recording(Path.cwd(), relative))
+    async def recording(
+        relative: str, expires: str = '', sig: str = ''
+    ) -> FileResponse:
+        directory = Path.cwd()
+        # Reject malformed credentials without leaking file existence.
+        if (
+            not expires.isascii() or not expires.isdecimal() or
+            len(expires) > 12
+        ):
+            raise HTTPException(status_code=401)
+        expiry = int(expires)
+        now = int(time.time())
+        if (
+            expiry <= now or not hmac.compare_digest(
+                _recording_signature(directory, relative, expiry).encode(),
+                sig.encode(),
+            )
+        ):
+            raise HTTPException(status_code=401)
+        return FileResponse(
+            _recording(directory, relative),
+            # This browser may keep the file for as long as the URL is
+            # valid, so a thumbnail is not fetched again on every render.
+            headers={'Cache-Control': f'private, max-age={expiry - now}'},
+        )
 
     application.http.mount(
         DASHBOARD_PATH,

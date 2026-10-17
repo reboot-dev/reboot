@@ -25,7 +25,10 @@ from reboot.aio.auth import (
     WHOAMI_PATH,
     Auth,
 )
-from reboot.aio.auth.allowed_origins import is_allowed_origin
+from reboot.aio.auth.allowed_origins import (
+    OAUTH_PATH_PREFIX,
+    is_allowed_origin,
+)
 from reboot.aio.auth.oauth_providers import (
     ClaimsChanged,
     OAuthProvider,
@@ -39,6 +42,7 @@ from reboot.aio.contexts import ReaderContext
 from reboot.aio.external import ExternalContext
 from reboot.aio.http import PythonWebFramework, external_context
 from reboot.crypto import root_keys
+from reboot.routing.cors_settings import permissive_cors_headers
 from starlette.requests import Request
 from starlette.responses import (
     HTMLResponse,
@@ -100,20 +104,37 @@ _REFRESH_PATH = "/__/oauth/refresh"
 _SIGNOUT_PATH = "/__/oauth/signout"
 _WHOAMI_PATH = WHOAMI_PATH
 
+# Envoy gives the credentialed, exact-match CORS policy to paths under
+# `OAUTH_PATH_PREFIX` and no others (`reboot/routing/envoy_config.py`),
+# so every endpoint that honors the session cookie on a cross-origin
+# request must live there.
+assert all(
+    path.startswith(OAUTH_PATH_PREFIX) for path in (
+        _AUTHORIZE_PATH,
+        _CONSENT_PATH,
+        _TOKEN_PATH,
+        _REGISTER_PATH,
+        _CALLBACK_PATH,
+        _START_PATH,
+        _FINISH_PATH,
+        _REFRESH_PATH,
+        _SIGNOUT_PATH,
+        _WHOAMI_PATH,
+    )
+)
+
 # `client_id` JWT type used for the internal "browser client" we
 # register on the fly in `/start`. Kept distinct from the MCP-client
 # `type=client` so that a public MCP client_id (handed out via DCR)
 # can't be used to drive the browser flow and vice versa.
 _BROWSER_CLIENT_TYPE = "browser-client"
 
-# CORS headers for browser-based MCP clients (e.g. MCPJam, MCP
-# Inspector). Allow any origin since the server is an OAuth
-# Authorization Server that public clients talk to.
-_CORS_HEADERS = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, MCP-Protocol-Version",
-}
+# CORS headers for the endpoints browser-based MCP clients (MCPJam,
+# MCP Inspector) call from any origin, without credentials.
+_CORS_HEADERS = permissive_cors_headers(
+    methods=("GET", "POST"),
+    headers=("content-type", "mcp-protocol-version"),
+)
 
 # HKDF `info` (domain separator) for the OAuth server's token-signing key.
 _SIGNING_INFO = b"reboot.oauth.signing"
@@ -149,6 +170,19 @@ def _bearer_token(request: Request) -> Optional[str]:
     if scheme.lower() != "bearer" or not token:
         return None
     return token
+
+
+def _cookie_may_authenticate(request: Request) -> bool:
+    """Whether the session cookie on `request` counts as a credential.
+
+    A browser attaches the cookie to cross-site requests too, so a page
+    on another site could otherwise get a route served as the signed-in
+    user. `Sec-Fetch-Site` says who made the request: `same-origin` and
+    `none` (the user navigated here) count; `same-site` and `cross-site`
+    do not. A client that sends no such header is not a browser, and
+    any cookie it sends it chose to send."""
+    site = request.headers.get("sec-fetch-site")
+    return site is None or site in ("same-origin", "none")
 
 
 def _compute_code_challenge(code_verifier: str) -> str:
@@ -392,6 +426,19 @@ class OAuthServer:
         # only apps that actually serve an OAuth flow pay for it.
         self._consent_page_template: Optional[Template] = None
 
+    def verify_token(self, request: Request) -> Optional[str]:
+        """The access JWT `request` is signed in with, verified: the one
+        in its `Authorization: Bearer` header or, when that counts
+        (`_cookie_may_authenticate`), in its session cookie. `None`
+        otherwise. `require_oauth_token=True` routes verify with this."""
+        token = _bearer_token(request)
+        if token is None and _cookie_may_authenticate(request):
+            token = request.cookies.get(SESSION_COOKIE_NAME)
+        if token is None:
+            return None
+        decoded = self._verify_jwt(token, "access")
+        return token if decoded is not None and decoded.get("sub") else None
+
     @property
     def token_verifier(self) -> OAuthTokenVerifier:
         """
@@ -447,12 +494,12 @@ class OAuthServer:
         http.post(_TOKEN_PATH, app_internal=True)(self.token)
         http.options(_TOKEN_PATH)(self.cors_preflight)
 
-        # Browser-flow endpoints. Envoy's CORS filter (configured in
-        # `reboot/routing/envoy_config.py`) echoes the request's
-        # `Origin` and sets `Access-Control-Allow-Credentials: true`
-        # for these paths, so a cross-origin SPA can complete the
-        # `credentials: "include"` flow without per-route headers
-        # here.
+        # Browser-flow endpoints. Envoy's CORS filter
+        # (`reboot/routing/envoy_config.py`) echoes an allow-listed
+        # `Origin` with `Access-Control-Allow-Credentials: true` on
+        # every path under `OAUTH_PATH_PREFIX`, so a cross-origin SPA
+        # completes the `credentials: "include"` flow without
+        # per-route headers here.
         http.get(_START_PATH)(self.start)
         http.get(_FINISH_PATH, app_internal=True)(self.finish)
         http.post(_REFRESH_PATH, app_internal=True)(self.refresh)
@@ -1918,9 +1965,9 @@ class OAuthServer:
         generated React hooks can resolve without the front end
         threading the user_id through every call.
 
-        The session comes from the `rbt_session` cookie, or, failing
-        that, from an `Authorization: Bearer` access JWT. The bearer
-        form is what a native app uses: it holds its access token
+        The session comes from an `Authorization: Bearer` access JWT
+        or, when none is present, from the `rbt_session` cookie. The
+        bearer form is what a native app uses: it holds its access token
         directly (it signed in through the authorization-code flow
         rather than the browser one, and has no cookie jar shared with
         the backend), and this is how it learns its `default_ids`
@@ -1955,9 +2002,9 @@ class OAuthServer:
         # The cookie's value IS the access JWT, so either way the
         # token we verify is the one we hand back — the front end's
         # bearer and its session then expire in lockstep.
-        access_token = request.cookies.get(SESSION_COOKIE_NAME)
+        access_token = _bearer_token(request)
         if access_token is None:
-            access_token = _bearer_token(request)
+            access_token = request.cookies.get(SESSION_COOKIE_NAME)
         if access_token is None:
             return JSONResponse({"authenticated": False})
         decoded = self._verify_jwt(access_token, "access")

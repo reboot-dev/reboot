@@ -176,6 +176,7 @@ class SortedMapLibrary(Library):
 
     def __init__(
         self,
+        *,
         authorizer: Optional[SortedMap.Authorizer] = None,
     ):
         SortedMapServicer._authorizer = authorizer
@@ -188,5 +189,5 @@ def servicers():
     return [SortedMapServicer]
 
 
-def sorted_map_library(authorizer: Optional[SortedMap.Authorizer] = None):
-    return SortedMapLibrary(authorizer)
+def sorted_map_library(*, authorizer: Optional[SortedMap.Authorizer] = None):
+    return SortedMapLibrary(authorizer=authorizer)

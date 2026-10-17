@@ -13,6 +13,7 @@ from reboot.aio.headers import (
     TRANSACTION_RETRY_AGE_HEADER,
     WORKFLOW_ID_HEADER,
 )
+from typing import Sequence
 
 # HTTP methods a browser may use on cross-origin requests.
 CORS_ALLOW_METHODS = ('GET', 'PUT', 'DELETE', 'POST', 'OPTIONS')
@@ -47,3 +48,23 @@ CORS_EXPOSE_HEADERS = ('grpc-status', 'grpc-message')
 # How long a browser may cache a CORS preflight response, in seconds
 # (20 days).
 CORS_MAX_AGE_SECONDS = 1728000
+
+
+def permissive_cors_headers(
+    *,
+    methods: Sequence[str],
+    headers: Sequence[str],
+) -> dict[str, str]:
+    """The CORS response headers for an endpoint any origin may call
+    without credentials: the OAuth server's public endpoints, which
+    answer their own preflight. Never for an endpoint that
+    honors the session cookie cross-origin: those get Envoy's
+    exact-match policy, since `*` beside `Allow-Credentials` would let
+    any page call them credentialed.
+    """
+    return {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': ', '.join(methods),
+        'Access-Control-Allow-Headers': ', '.join(headers),
+        'Access-Control-Max-Age': str(CORS_MAX_AGE_SECONDS),
+    }

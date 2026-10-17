@@ -9,7 +9,9 @@ the features page, which shows one feature file's scenarios.
 """
 import asyncio
 import copy
+import os
 import socket
+import tempfile
 import time
 import unittest
 from google.protobuf.json_format import ParseDict
@@ -22,6 +24,7 @@ from reboot.aio.tests import Reboot
 from reboot.dashboard.backend.constants import (
     DASHBOARD_ID,
     DASHBOARD_PATH,
+    ENVVAR_RBT_API_DIRECTORY,
     PREFERENCES_ID,
     PRESENCE_ID,
 )
@@ -31,6 +34,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions
 from selenium.webdriver.support.wait import WebDriverWait
 from testing.web import webtest
+from unittest.mock import patch
 
 
 def _new_driver():
@@ -302,6 +306,16 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
 
         self.url = f'http://127.0.0.1:{port}'
 
+        # `WatchApi`, which `initialize` spawns, reads this variable,
+        # though these tests put no API files in the directory: they
+        # write the page's state straight into the application.
+        self._api_directory = tempfile.TemporaryDirectory()
+        self._environment = patch.dict(
+            os.environ,
+            {ENVVAR_RBT_API_DIRECTORY: self._api_directory.name},
+        )
+        self._environment.start()
+
         self.rbt = Reboot()
         await self.rbt.start()
         await self.rbt.up(
@@ -312,6 +326,8 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self) -> None:
         await self.rbt.stop()
+        self._environment.stop()
+        self._api_directory.cleanup()
 
     async def _wait_for_viewers(self, satisfied, driver=None) -> None:
         """`List` aborts with `StateNotConstructed` until somebody has
@@ -324,7 +340,9 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         """
         polls = 0
         while True:
-            context = self.rbt.create_external_context(name=self.id())
+            context = self.rbt.create_external_context(
+                name=self.id(), app_internal=True
+            )
             # A reference binds to the first context that uses it, so
             # each context needs its own.
             presence = Presence.ref(PRESENCE_ID)
@@ -359,7 +377,9 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         renders whatever the application's state contains. Reading
         files is covered by `api_reader_tests` and `api_watcher_tests`.
         """
-        context = self.rbt.create_external_context(name=self.id())
+        context = self.rbt.create_external_context(
+            name=self.id(), app_internal=True
+        )
         await Dashboard.ref(DASHBOARD_ID).UpdateApi(
             context,
             api_directory='api',
@@ -375,7 +395,9 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         await self._record_state_types()
         at = Timestamp()
         at.GetCurrentTime()
-        context = self.rbt.create_external_context(name=self.id())
+        context = self.rbt.create_external_context(
+            name=self.id(), app_internal=True
+        )
         await Dashboard.ref(DASHBOARD_ID).UpdateFeatures(
             context,
             features={_FEATURE_FILENAME: _FEATURE},
@@ -471,7 +493,9 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             )
             return driver.page_source
 
-        context = self.rbt.create_external_context(name=self.id())
+        context = self.rbt.create_external_context(
+            name=self.id(), app_internal=True
+        )
         await Dashboard.ref(DASHBOARD_ID).UpdateApi(
             context,
             api_directory='api',
@@ -528,7 +552,9 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         """Returns once the preference reads `expected`: the notice's
         write is what the page sends after the click, so seeing it is
         how the test knows the choice reached the application."""
-        context = self.rbt.create_external_context(name=self.id())
+        context = self.rbt.create_external_context(
+            name=self.id(), app_internal=True
+        )
         async for response, aborted in Preferences.ref(
             PREFERENCES_ID
         ).reactively().Get(context):
@@ -696,7 +722,9 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
                 'url_after_click': driver.current_url,
             }
 
-        context = self.rbt.create_external_context(name=self.id())
+        context = self.rbt.create_external_context(
+            name=self.id(), app_internal=True
+        )
         await Dashboard.ref(DASHBOARD_ID).UpdateApi(
             context,
             api_directory='api',
@@ -946,7 +974,9 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
                 driver.find_elements(By.CSS_SELECTOR, '.react-flow__edge')
             )
 
-        context = self.rbt.create_external_context(name=self.id())
+        context = self.rbt.create_external_context(
+            name=self.id(), app_internal=True
+        )
         await Dashboard.ref(DASHBOARD_ID).UpdateApi(
             context,
             api_directory='api',

@@ -117,6 +117,16 @@ succeeds before calling it up. It stays running for the life of the
 session — leave it alone afterwards; it never needs a restart when
 code changes.
 
+It also opens a Cloudflare quick tunnel to itself and prints the
+address to add as an MCP connector, so that Claude or ChatGPT can
+show the dashboard as an MCP App; that is Step 6, at the end. The
+tunnel runs `cloudflared`, which this plugin installs; without one,
+or offline, `rbt dashboard` prints why and serves to this machine
+alone. Anyone with the address can reach the dashboard, so it is not
+to be shared. A tunnel that stops is opened again with a new address,
+which `rbt dashboard` prints; a connector added with the old one
+must be added again.
+
 If it fails to come up (for example the local Envoy check fails
 because neither Docker nor an `envoy` executable is available), warn
 the user in one sentence and continue the build without it.
@@ -134,3 +144,19 @@ http://127.0.0.1:9871/" — and get on with the build.
 
 If the developer expected a window and none appeared, give them the
 URL; that always works.
+
+## Step 6 — When the build is done, hand over the connector
+
+Last, once the app is built: do not interrupt the build for this.
+The user has to act on it, so relay it. Read the line `rbt dashboard`
+printed to its shell:
+
+```
+To show your dashboard in Claude or ChatGPT, add this MCP connector: https://<name>.trycloudflare.com/mcp/
+```
+
+Give the user that address and tell them to add it as a custom MCP
+connector in Claude or ChatGPT; signing in completes by itself.
+Remind them the address reaches their dashboard from anywhere, so
+not to share it. If `rbt dashboard` printed that no tunnel could be
+opened, say so instead: the dashboard still works in the browser.

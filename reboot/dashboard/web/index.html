@@ -1,8 +1,8 @@
 <!-- The dashboard's page. Vite serves this directly in
-     development, loading `./src/main.tsx` below; the Bazel build
-     rewrites that entry point to the `esbuild` bundle it builds
-     beside this file. See `dashboard_dist` in the `BUILD.bazel` one
-     directory up. -->
+     development, loading `./src/main.tsx` below, which imports the
+     stylesheets; the Bazel build rewrites that entry point to the
+     `esbuild` bundle and its stylesheet, built beside this file. See
+     `dashboard_dist` in the `BUILD.bazel` one directory up. -->
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -10,13 +10,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Reboot dashboard</title>
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-    <!-- React Flow's own stylesheet, `@xyflow/react/dist/style.css`
-         in its package, which the Bazel build copies beside this
-         file. Flat, and under the package's name, because the wheel
-         maps each directory here to a Python package name.
-         `dashboard.css` comes after it and overrides. -->
-    <link rel="stylesheet" href="./xyflow-react.css" />
-    <link rel="stylesheet" href="./dashboard.css" />
   </head>
   <body>
     <div id="root"></div>
