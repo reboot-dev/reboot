@@ -49,6 +49,7 @@ import type { Timestamp } from "@bufbuild/protobuf";
 import type {
   FeatureEntry,
   Features,
+  Known,
   Printed,
   Span,
   StepLinks,
@@ -58,9 +59,11 @@ import {
   hueKeyOfSpan,
   hueKeyOfVariable,
   huesOfScenario,
+  knownOfSteps,
   linkOfCodeSpan,
   linkOfMethod,
   printBuiltInSyntax,
+  printedWithKnownVariables,
   recordingUrl,
   type FeatureFilter,
   BLOCKED_TAG,
@@ -78,6 +81,7 @@ import {
   webAppScenarioCount,
   spansOfPrinted,
   spansOfText,
+  withKnownVariables,
   stepLinks,
 } from "./feature_files";
 import type {
@@ -1935,9 +1939,10 @@ const TypesPane: FC<{
 // to it in the types pane, and each `<variable>` set in its hue.
 const CustomStep: FC<{
   text: string;
+  known: Known;
   links: StepLinks;
   related: Related;
-}> = ({ text, links, related }) => {
+}> = ({ text, known, links, related }) => {
   const parts = text.split("`");
   return (
     <>
@@ -1958,17 +1963,18 @@ const CustomStep: FC<{
         }
         return (
           <Fragment key={index}>
-            {spansOfText(unclosed ? "`" + part : part, "text").map(
-              (span, spanIndex) => (
-                <SpanText
-                  span={span}
-                  stateType={undefined}
-                  links={links}
-                  related={related}
-                  key={spanIndex}
-                />
-              )
-            )}
+            {withKnownVariables(
+              spansOfText(unclosed ? "`" + part : part, "text"),
+              known
+            ).map((span, spanIndex) => (
+              <SpanText
+                span={span}
+                stateType={undefined}
+                links={links}
+                related={related}
+                key={spanIndex}
+              />
+            ))}
           </Fragment>
         );
       })}
@@ -2114,10 +2120,14 @@ const Spans: FC<{
 // means.
 const BuiltInStep: FC<{
   syntax: grammar_pb.BuiltInSyntax;
+  known: Known;
   links: StepLinks;
   related: Related;
-}> = ({ syntax, links, related }) => {
-  const printed: Printed = printBuiltInSyntax(syntax);
+}> = ({ syntax, known, links, related }) => {
+  const printed: Printed = printedWithKnownVariables(
+    printBuiltInSyntax(syntax),
+    known
+  );
   // A call names its state after its clauses, in the tail; a read
   // names it in the head.
   const stateType = spansOfPrinted(printed).find(
@@ -2163,10 +2173,11 @@ const BuiltInStep: FC<{
 // when shown as part of the scenario they run before.
 const StepRow: FC<{
   step: feature_pb.Step;
+  known: Known;
   links: StepLinks;
   related: Related;
   background?: boolean;
-}> = ({ step, links, related, background }) => {
+}> = ({ step, known, links, related, background }) => {
   const continuation = step.keyword === "And" || step.keyword === "But";
   return (
     <div className={background ? "step step-background" : "step"}>
@@ -2190,9 +2201,19 @@ const StepRow: FC<{
           </a>
         )}
         {step.builtIn !== undefined ? (
-          <BuiltInStep syntax={step.builtIn} links={links} related={related} />
+          <BuiltInStep
+            syntax={step.builtIn}
+            known={known}
+            links={links}
+            related={related}
+          />
         ) : (
-          <CustomStep text={step.text} links={links} related={related} />
+          <CustomStep
+            text={step.text}
+            known={known}
+            links={links}
+            related={related}
+          />
         )}
         {step.docString !== undefined && (
           <pre className="type-block">
@@ -2307,13 +2328,24 @@ const ScenarioRow: FC<{
   const targeted = id !== undefined && target === id;
   const [expanded, setExpanded] = useState(targeted);
   const [relatedKey, setRelatedKey] = useState<string | null>(null);
+  const backgroundSteps = useMemo(
+    () => backgrounds.flatMap((background) => background.steps),
+    [backgrounds]
+  );
   const hues = useMemo(
     () =>
       huesOfScenario(columnsOfExamples(examples), [
-        ...backgrounds.flatMap((background) => background.steps),
+        ...backgroundSteps,
         ...steps,
       ]),
-    [backgrounds, steps, examples]
+    [backgroundSteps, steps, examples]
+  );
+  // What each step may say as `<name>`, its backgrounds' steps first:
+  // any other `<...>` it says is text.
+  const known = useMemo(
+    () =>
+      knownOfSteps(columnsOfExamples(examples), [...backgroundSteps, ...steps]),
+    [backgroundSteps, steps, examples]
   );
   const related: Related = {
     hues,
@@ -2503,20 +2535,20 @@ const ScenarioRow: FC<{
             <Description className="method-description" text={description} />
           )}
           <div className="steps">
-            {backgrounds.flatMap((background, backgroundIndex) =>
-              background.steps.map((step, index) => (
-                <StepRow
-                  step={step}
-                  links={links}
-                  related={related}
-                  background={true}
-                  key={`background-${backgroundIndex}-${index}`}
-                />
-              ))
-            )}
+            {backgroundSteps.map((step, index) => (
+              <StepRow
+                step={step}
+                known={known[index]}
+                links={links}
+                related={related}
+                background={true}
+                key={`background-${index}`}
+              />
+            ))}
             {steps.map((step, index) => (
               <StepRow
                 step={step}
+                known={known[backgroundSteps.length + index]}
                 links={links}
                 related={related}
                 key={index}
