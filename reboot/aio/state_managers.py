@@ -127,6 +127,39 @@ def _restart_detected(exception: BaseException) -> bool:
     )
 
 
+_T = TypeVar('_T')
+
+
+async def _finish_even_if_cancelled(awaitable: Awaitable[_T]) -> _T:
+    """Awaits `awaitable` until it finishes even if the caller is
+    cancelled meanwhile and returns its result, with the cancellation
+    delivered again at the caller's next suspension point.
+
+    A request the client stops waiting on is still handled by the
+    database, on its own thread, in whatever order it gets to it. A
+    caller that holds a lock across the request thus keeps holding it
+    until the database has handled the request, so anything the lock
+    orders after the request (e.g., an abort) also reaches the
+    database after it, and the synchronous bookkeeping the caller does
+    with the result (e.g., marking a transaction prepared) records
+    what the database did.
+    """
+    task = asyncio.ensure_future(awaitable)
+    cancelled = False
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            if task.cancelled():
+                raise
+            cancelled = True
+    if cancelled:
+        current_task = asyncio.current_task()
+        assert current_task is not None
+        current_task.cancel()
+    return task.result()
+
+
 def check_idempotency_key_not_expired(idempotency_key: uuid.UUID) -> None:
     """Check if the idempotency key is an expired UUIDv7.
 
@@ -3880,24 +3913,35 @@ class SidecarStateManager(
 
             # NOTE: we _must_ store the data in the database _before_
             # updating in memory state in case the store fails.
-            timestamp = await self._database_client.store(
-                actor_upserts,
-                task_upserts,
-                colocated_upserts,
-                ensure_state_types_created,
-                database_pb2.Transaction(
-                    state_type=state_type,
-                    state_ref=state_ref.to_str(),
-                    transaction_ids=[
-                        transaction_id.bytes
-                        for transaction_id in transaction.ids
-                    ],
-                    coordinator_state_type=transaction.coordinator_state_type,
-                    coordinator_state_ref=transaction.coordinator_state_ref.
-                    to_str(),
-                ) if transaction is not None else None,
-                idempotent_mutation,
-                sync=sync,
+            #
+            # The store runs to completion even if we are cancelled so
+            # that the in-memory state below follows what the database
+            # did and, within a transaction, so that an abort, which
+            # `transaction.lock` orders after us, reaches the database
+            # only after the store that begins the transaction there.
+            timestamp = await _finish_even_if_cancelled(
+                self._database_client.store(
+                    actor_upserts,
+                    task_upserts,
+                    colocated_upserts,
+                    ensure_state_types_created,
+                    database_pb2.Transaction(
+                        state_type=state_type,
+                        state_ref=state_ref.to_str(),
+                        transaction_ids=[
+                            transaction_id.bytes
+                            for transaction_id in transaction.ids
+                        ],
+                        coordinator_state_type=(
+                            transaction.coordinator_state_type
+                        ),
+                        coordinator_state_ref=(
+                            transaction.coordinator_state_ref.to_str()
+                        ),
+                    ) if transaction is not None else None,
+                    idempotent_mutation,
+                    sync=sync,
+                )
             )
 
             # Update latest timestamp from piggybacked response.
@@ -6451,7 +6495,7 @@ class SidecarStateManager(
                 # intermediate `_store()` calls, so we just need to
                 # call prepare on the existing transaction.
                 if transaction.using_restart_detection:
-                    timestamp = await self._database_client.transaction_participant_prepare(
+                    prepare = self._database_client.transaction_participant_prepare(
                         state_type,
                         state_ref,
                         transaction=(
@@ -6490,9 +6534,23 @@ class SidecarStateManager(
                         ),
                     )
                 else:
-                    timestamp = await self._database_client.transaction_participant_prepare(
+                    prepare = self._database_client.transaction_participant_prepare(
                         state_type, state_ref
                     )
+
+                # The prepare runs to completion even if the `Prepare`
+                # RPC is cancelled (which happens when the coordinator
+                # is cancelled while preparing). The coordinator then
+                # aborts, and `transaction.lock` orders that abort after
+                # us, so it reaches the database only after the prepare
+                # has been handled there. When using restart detection
+                # the database begins the transaction at prepare, so a
+                # prepare handled after the abort would otherwise leave
+                # behind a transaction nothing ever finishes, refusing
+                # every later write to this state. Completing also lets
+                # `transaction.prepare()` below record a prepare the
+                # database did.
+                timestamp = await _finish_even_if_cancelled(prepare)
 
                 self._update_latest_timestamp(timestamp)
                 transaction.prepare()
@@ -6510,8 +6568,16 @@ class SidecarStateManager(
         async with transaction.lock:
             if not transaction.finished():
                 # TODO(benh): add test case for sidecar failure!
-                timestamp = await self._database_client.transaction_participant_commit(
-                    state_type, state_ref
+                #
+                # The commit runs to completion even if we are
+                # cancelled so that `transaction.commit()` below
+                # records a commit the database did; a retry would
+                # otherwise find the transaction missing from the
+                # database and never finish.
+                timestamp = await _finish_even_if_cancelled(
+                    self._database_client.transaction_participant_commit(
+                        state_type, state_ref
+                    )
                 )
                 self._update_latest_timestamp(timestamp)
 
