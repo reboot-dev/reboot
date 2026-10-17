@@ -153,7 +153,7 @@ the app in one scenario.
   `link`, `tab`, `checkbox`, `radio`, `menuitem`, `option`, `row`,
   `table`. The name is the element's accessible name, matched
   exactly.
-- **What the app shows or is told is a JSON string or a variable**: `sees "$1000" in the "Your Accounts" table`, or `sees <alice account id> in the "Your Accounts" table` for a saved value, said bare since its JSON text, quotes included, takes its place.
+- **What the app shows or is told is a JSON string or a variable**: `sees "$1000" in the "Your Accounts" table`, or `sees <alice account id> in the "Your Accounts" table` for a saved value, said bare since its JSON text, quotes included, takes its place. `sees` matches text that contains the value, so to check that the page shows `Signed in as uuid-1`, say `sees <alice user id> in the web app`; there is no way to build the surrounding text into the step, since a variable inside quotes is its JSON text, quotes and all.
 - `eventually sees` takes `within`; `sees` looks now and takes
   none. A backend change the page shows after a reactive read is
   always `eventually`.

@@ -21,8 +21,7 @@ In every `.feature` file under `tests/`, drop the quotes around each
 - `"<user id>" is an authenticated user` -> `<user id> is an authenticated user`
 
 A property value said bare, `amount=<balance>` or `id=<account id>`,
-is unchanged. A variable inside longer quoted text, `"Signed in as <user id>"`, has no spelling yet; say the text the app shows without
-the variable, or assert the variable alone.
+is unchanged. A variable inside longer quoted text, `"Signed in as <user id>"`, has no spelling: there is no string interpolation or concatenation. Assert the variable alone, `sees <user id> in the web app` or `has `url`containing`<account id>``, both of which match text that contains the value.
 
 ```sh
 grep -rn '"<[^>]*>"' tests/

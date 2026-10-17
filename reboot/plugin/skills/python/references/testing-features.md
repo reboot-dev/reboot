@@ -227,6 +227,17 @@ And the resulting `account_id` is saved as "alice account id"
   is saved under stays as written, so `body="<p>hi</p>"` is that
   text; a bare one, `id=<acount id>`, fails as not JSON. A string column of an `Examples` table is written with
   its quotes in the table, `| "uuid-1" |`, and said bare too.
+- **There is no string interpolation or concatenation.** A variable
+  inside a quoted string is still replaced by its JSON text, so a
+  saved number, boolean or `null` can be written into one
+  (`label="Order <count>"` is `Order 5`), but a saved string, object
+  or list cannot: `url="/accounts/<account id>"` reads
+  `"/accounts/"uuid-1""` and fails as not JSON. Assert `containing`
+  instead of equality to check that a string holds a saved value,
+  `has `url`containing`<account id>``, and in the web app say `sees <account id> in the web app`, which matches text that
+  contains the value. Where the whole string must be compared, have
+  the application return the parts separately, or compute the
+  expected string in a custom step.
 - **Values are JSON** with JSON5's leniencies: `owner={name: "Frank", tags: ["vip"]}`. A dotted path nests when calling,
   `owner.name="Frank"`, and reaches into the response when
   asserting, `balances[0].account_id=<ann account id>` or
