@@ -220,6 +220,7 @@ py_library(
         "//reboot/aio/auth:oauth_py",
         "//reboot/aio/backoff:python",
         "//reboot/bdd:recordings_py",
+        "//reboot/crypto:root_keys_py",
         requirement("starlette"),
     ],
 )
@@ -245,6 +246,7 @@ py_binary(
         "//reboot/aio/auth:oauth_py",
         "//reboot/aio/backoff:python",
         "//reboot/bdd:recordings_py",
+        "//reboot/crypto:root_keys_py",
         requirement("starlette"),
     ],
 )

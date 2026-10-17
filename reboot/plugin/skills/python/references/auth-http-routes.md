@@ -52,13 +52,25 @@ browser sends the session cookie with them. They stream, cache and
 download the way the browser does, which a fetch cannot match for a
 video.
 
-**Cross-origin: the bearer is the only way.** An MCP UI runs in the
-host's sandbox, and a web app on another origin never had this
-application's cookie. The page's only credential is the client's
-bearer, and an `<img src>`, `<video src>` or `<a href>` cannot carry a
-header, so fetch with the bearer and show an object URL, revoking it
-when the element unmounts. Never put the token in a query string: it
-is written to logs and sent as a referrer.
+**Cross-origin media: obtain a signed URL with the bearer.** MCP hosts
+can block both `blob:` and `data:` media sources. Fetch data with the
+bearer as usual, but give `<img>` and `<video>` a short-lived HTTPS URL
+on an origin declared in `resourceDomains`. An authenticated signing
+route must authorize access to the specific file before issuing its
+URL. The media route verifies a signature binding that file and its
+expiry, using a dedicated derived key, and retains file-path restrictions.
+The URL grants anyone holding it access until expiry; avoid logging it.
+Never put the application's access token in the URL.
+
+The dashboard uses `/recordings/sign?path=...`, returning `{url, expires}`
+with a one-hour lifetime. Resolve its relative URL against `client.url`,
+not the sandbox origin. Request it when opening a recording; after an
+hour, reopen to renew it if loading or seeking fails. Media can then use
+range requests without first downloading the entire file into a Blob.
+
+The following retry rules apply to the authenticated signing request;
+a 401 from the media route instead means its signed URL is invalid or
+expired and needs to be obtained again.
 
 A fetch can fail three ways, and the status tells them apart:
 
@@ -95,10 +107,10 @@ const pause = () => new Promise((resolve) => setTimeout(resolve, RETRY_MS));
 const fetchRecording = async (
   token: string | undefined,
   refreshed = false
-): Promise<Blob> => {
+): Promise<{ url: string; expires: number }> => {
   let response: Response;
   try {
-    response = await fetch(new URL(path, client.url).toString(), {
+    response = await fetch(new URL(`/recordings/sign?${new URLSearchParams({ path })}`, client.url).toString(), {
       headers: token === undefined ? {} : { Authorization: `Bearer ${token}` },
     });
   } catch {
@@ -122,8 +134,9 @@ const fetchRecording = async (
     return fetchRecording(token, refreshed);
   }
   if (!response.ok) throw new Error(`${response.status} for ${path}`);
-  return response.blob();
+  return response.json();
 };
 
-const url = URL.createObjectURL(await fetchRecording(client.bearerToken)); // Revoke when done.
+const signed = await fetchRecording(client.bearerToken);
+const url = new URL(signed.url, client.url).toString(); // <video src={url}>
 ```

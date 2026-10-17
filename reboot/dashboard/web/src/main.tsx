@@ -73,7 +73,6 @@ import {
   linkOfCodeSpan,
   linkOfMethod,
   printBuiltInSyntax,
-  recordingPath,
   type FeatureFilter,
   BLOCKED_TAG,
   WIP_TAG,
@@ -677,23 +676,17 @@ const Checks: FC<{
 
 const RECORDING_RETRY_MS = 2_000;
 
-// A recording's object URL, `undefined` until it arrives. The page
-// fetches it instead of setting `<img src>`, because the route needs
-// the token and only a header can carry it. A 401 gets one retry with a
-// fresh token; any other failure retries after a pause.
+// An authenticated request obtains a short-lived URL on the backend.
+// Media elements load it directly: MCP hosts may block blob: sources.
+// Opening the lightbox mounts this hook and obtains a fresh URL.
 const useRecording = (path: string): string | undefined => {
   const client = useRebootClient();
   const refreshBearerToken = useRefreshBearerToken();
   const bearerToken = useRef(client.bearerToken);
   bearerToken.current = client.bearerToken;
   const [url, setUrl] = useState<string | undefined>(undefined);
-  const shown = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (shown.current !== undefined) {
-      URL.revokeObjectURL(shown.current);
-      shown.current = undefined;
-      setUrl(undefined);
-    }
+    setUrl(undefined);
     let cancelled = false;
     let retry: ReturnType<typeof setTimeout> | undefined;
     const later = (attempt: () => Promise<void>): void => {
@@ -703,7 +696,10 @@ const useRecording = (path: string): string | undefined => {
       let response: Response;
       try {
         response = await fetch(
-          new URL(recordingPath(path), client.url).toString(),
+          new URL(
+            `/recordings/sign?${new URLSearchParams({ path })}`,
+            client.url
+          ).toString(),
           {
             headers:
               bearerToken.current === undefined
@@ -750,27 +746,16 @@ const useRecording = (path: string): string | undefined => {
         console.warn(`Recording ${path}: ${response.status}`);
         return;
       }
-      let blob: Blob;
       try {
-        blob = await response.blob();
+        const signed: { url: string; expires: number } = await response.json();
+        if (!cancelled) {
+          setUrl(new URL(signed.url, client.url).toString());
+        }
       } catch {
-        // `fetch` resolved on the headers; the connection dropped
-        // during the download.
         if (!cancelled) {
           later(() => fetchRecording(refreshed));
         }
-        return;
       }
-      const next = URL.createObjectURL(blob);
-      if (cancelled) {
-        URL.revokeObjectURL(next);
-        return;
-      }
-      if (shown.current !== undefined) {
-        URL.revokeObjectURL(shown.current);
-      }
-      shown.current = next;
-      setUrl(next);
     };
     void fetchRecording(false);
     return () => {
@@ -780,14 +765,6 @@ const useRecording = (path: string): string | undefined => {
       }
     };
   }, [client.url, path, refreshBearerToken]);
-  useEffect(
-    () => () => {
-      if (shown.current !== undefined) {
-        URL.revokeObjectURL(shown.current);
-      }
-    },
-    []
-  );
   return url;
 };
 
@@ -843,8 +820,7 @@ const RecordingLightbox: FC<{
 };
 
 // A lightbox that fetches its recording only while shown: a video is
-// not fetched until opened, and `useRecording` releases its object URL
-// once the lightbox closes.
+// not requested until opened, giving each viewing a fresh signed URL.
 const FetchedRecordingLightbox: FC<{
   path: string;
   video: boolean;
@@ -858,7 +834,7 @@ const FetchedRecordingLightbox: FC<{
 // A thumbnail or link that opens the recording over the page rather
 // than in a new tab, which an MCP host's frame cannot open. With
 // `url`, the recording is already fetched, as a thumbnail's is; with
-// `path`, it is fetched when opened and released when closed, so a
+// `path`, it is requested when opened, so a
 // feature with many videos does not pull them all through the tunnel.
 const RecordingButton: FC<{
   className: string;
