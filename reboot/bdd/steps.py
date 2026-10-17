@@ -61,7 +61,7 @@ steps can say <account_id>.
 A call runs as a task instead by saying '"alice" spawns a `method`
 on ...', with the next line saving 'the resulting task id is saved
 as "name"'; the task then awaits as '"alice" awaits the `method`
-task "<name>" on `Account` within 10 seconds', recording its
+task <name> on `Account` within 10 seconds', recording its
 response as the result. A task ID a response carries saves and
 awaits the same way.
 
@@ -103,7 +103,7 @@ saved under stays as written. A save may not use a column's name:
       `owner.name` saved as "owner_name"
     And the resulting `updated_balance` is saved as "balance"
     And "alice" does a `deposit` with `amount=1` on `Account` of
-      "<owner_name>"
+      <owner_name>
 """
 
 # The step functions below take the `rbt` and `world`
@@ -175,6 +175,7 @@ from reboot.bdd.grammar import (
     SAVE_PATTERN,
     SEPARATOR,
     SHARED_CONTEXT,
+    VALUE,
     VARIABLE,
 )
 from reboot.bdd.registry import client_types_by_name
@@ -254,21 +255,6 @@ class OfLength:
     length: int
 
 
-# What one clause of an asserting list parses to.
-Assertion = Union[Equals, Containing, OfLength]
-
-
-def _saved_value(world: World, name: str) -> JsonValue:
-    """The saved value going by the given name; raises if there is
-    none."""
-    if name not in world.saved:
-        raise ValueError(
-            f'Nothing saved as "{name}"; saved: ' +
-            (', '.join(f'"{n}"' for n in sorted(world.saved)) or "nothing")
-        )
-    return world.saved[name]
-
-
 def _almost_variable_message(text: str) -> Optional[str]:
     """The 'Almost' error for a text that is a lexical near-miss of
     the variable <name>, and `None` for a text that is not."""
@@ -277,23 +263,6 @@ def _almost_variable_message(text: str) -> Optional[str]:
     if re.fullmatch(r'\$\w+', text):
         return f"Almost: say a saved value as <{text[1:]}>, not {text}"
     return None
-
-
-def _maybe_saved(world: World, text: str) -> str:
-    """The saved value the text names when it is of the form
-    '<name>', which must be a string, otherwise the text itself."""
-    almost = _almost_variable_message(text)
-    if almost is not None:
-        raise ValueError(almost)
-    if not re.fullmatch(r'<[^<>]+>', text):
-        return text
-    value = _saved_value(world, text[1:-1])
-    if not isinstance(value, str):
-        raise ValueError(
-            f'Expecting the value saved as "{text[1:-1]}" to be a '
-            f"string, but it is {value!r}"
-        )
-    return value
 
 
 def _almost_property_message(clause: str) -> str:
@@ -341,6 +310,10 @@ def _almost_length_message(clause: str) -> str:
         "Expected a length clause of the form `path` of length `2`, "
         f"but got: {clause}"
     )
+
+
+# What one clause of an asserting list parses to.
+Assertion = Union[Equals, Containing, OfLength]
 
 
 def _json_text(value: JsonValue) -> str:
@@ -392,6 +365,18 @@ def _parsed_value(
                 'is said bare, <name>, not "<name>"'
             )
         raise ValueError(message) from error
+
+
+def _string(world: World, text: str, *, error_prefix: str) -> str:
+    """The string the text says, where the step needs one: a state's
+    id, a user, a bearer token, or what the web app shows or is
+    told."""
+    value = _parsed_value(world, text, error_prefix=error_prefix)
+    if not isinstance(value, str):
+        raise ValueError(
+            f"{error_prefix} must be a string, but {text} is {_json_text(value)}"
+        )
+    return value
 
 
 def _almost_within_message(within: str) -> str:
@@ -895,7 +880,7 @@ async def _is_an_authenticated_user(world: World, user_id: str) -> None:
             "The application is not up; start the scenario with "
             "'Given the application is up'"
         )
-    user_id = _maybe_saved(world, user_id)
+    user_id = _string(world, user_id, error_prefix='The user')
     world.declare_user(
         user_id,
         await world.rbt.make_valid_oauth_access_token(user_id=user_id),
@@ -906,20 +891,20 @@ async def _is_an_authenticated_user(world: World, user_id: str) -> None:
 @when(parsers.re(HAS_BEARER_TOKEN))
 def _has_bearer_token(world: World, user_id: str, bearer_token: str) -> None:
     world.declare_user(
-        _maybe_saved(world, user_id),
-        _maybe_saved(world, bearer_token),
+        _string(world, user_id, error_prefix='The user'),
+        _string(world, bearer_token, error_prefix='The bearer token'),
     )
 
 
 @given(parsers.re(IS_AN_UNAUTHENTICATED_USER))
 @when(parsers.re(IS_AN_UNAUTHENTICATED_USER))
 def _is_an_unauthenticated_user(world: World, user_id: str) -> None:
-    world.declare_user(_maybe_saved(world, user_id), None)
+    world.declare_user(_string(world, user_id, error_prefix='The user'), None)
 
 
 @given(parsers.re(SHARED_CONTEXT))
 def _a_shared_context(world: World, user: str) -> None:
-    world.share_context(user)
+    world.share_context(_string(world, user, error_prefix='The user'))
 
 
 @given(parsers.re(CREATES_VIA))
@@ -934,11 +919,14 @@ async def _creates_via(
 ) -> None:
     """Creates the state via the factory, with the id the step gives
     or, without one, an id the factory makes up."""
+    user = _string(world, user, error_prefix='The user')
+    if state_id is not None:
+        state_id = _string(world, state_id, error_prefix='The state id')
     factory = world.factory(state_type=state_type, method=method)
     assignments = _parse_assignments(world, clauses)
     arguments: list[Any] = [world.context(user)]
     if state_id is not None:
-        arguments.append(_maybe_saved(world, state_id))
+        arguments.append(state_id)
     if assignments:
         arguments.append(
             world.request(
@@ -967,10 +955,12 @@ async def _does(
     method: str,
     clauses: Optional[str],
 ) -> None:
+    user = _string(world, user, error_prefix='The user')
+    state_id = _string(world, state_id, error_prefix='The state id')
     if verb == 'spawns':
         handle = await world.spawn(
             state_type=state_type,
-            state_id=_maybe_saved(world, state_id),
+            state_id=state_id,
             method=method,
             assignments=_parse_assignments(world, clauses),
             user=user,
@@ -986,7 +976,7 @@ async def _does(
     try:
         world.response = await world.call(
             state_type=state_type,
-            state_id=_maybe_saved(world, state_id),
+            state_id=state_id,
             method=method,
             assignments=_parse_assignments(world, clauses),
             user=user,
@@ -1009,6 +999,8 @@ async def _attempts(
     method: str,
     clauses: Optional[str],
 ) -> None:
+    user = _string(world, user, error_prefix='The user')
+    state_id = _string(world, state_id, error_prefix='The state id')
     if world.is_reader(state_type=state_type, method=method):
         raise ValueError(
             f"`{method}` is a reader; assert its abort with "
@@ -1018,7 +1010,7 @@ async def _attempts(
     try:
         world.response = await world.call(
             state_type=state_type,
-            state_id=_maybe_saved(world, state_id),
+            state_id=state_id,
             method=method,
             assignments=_parse_assignments(world, clauses),
             user=user,
@@ -1038,12 +1030,13 @@ async def _awaits_task(
     state_type: str,
     within: str,
 ) -> None:
+    user = _string(world, user, error_prefix='The user')
     seconds = _parsed_seconds(within)
-    saved = _saved_value(world, name)
+    saved = _parsed_value(world, name, error_prefix='The task id')
     if not isinstance(saved, dict):
         raise ValueError(
-            f'The value saved as "{name}" must be a task ID, but it '
-            f"is {saved!r}"
+            f"The task id must be a saved task id, but {name} is "
+            f"{_json_text(saved)}"
         )
     task_type = world.task_type(state_type=state_type, method=method)
     if task_type is None:
@@ -1056,8 +1049,8 @@ async def _awaits_task(
         world.response = await asyncio.wait_for(task, timeout=seconds)
     except asyncio.TimeoutError:
         raise AssertionError(
-            f"Waited {within} for the `{method}` task saved as "
-            f"`{name}` to complete"
+            f"Waited {within} for the `{method}` task {name} to "
+            "complete"
         ) from None
 
 
@@ -1101,6 +1094,8 @@ async def _read(
     """Calls the named reader on the named state as the given user,
     with the request the argument clauses describe, recording and
     returning its response; raises if the method is not a reader."""
+    user = _string(world, user, error_prefix='The user')
+    state_id = _string(world, state_id, error_prefix='The state id')
     if not world.is_reader(state_type=state_type, method=method):
         raise ValueError(
             f"`{method}` is not a reader; call it with '\"...\" does a "
@@ -1109,7 +1104,7 @@ async def _read(
     try:
         world.response = await world.call(
             state_type=state_type,
-            state_id=_maybe_saved(world, state_id),
+            state_id=state_id,
             method=method,
             assignments=_parse_assignments(world, arguments),
             user=user,
@@ -1149,6 +1144,8 @@ async def _eventually_has(
     clauses: str,
     within: str,
 ) -> None:
+    user = _string(world, user, error_prefix='The user')
+    state_id = _string(world, state_id, error_prefix='The state id')
     seconds = _parsed_seconds(within)
     assertions = _parse_assertions(world, clauses)
     if not world.is_reader(state_type=state_type, method=method):
@@ -1156,9 +1153,7 @@ async def _eventually_has(
             f"`{method}` is not a reader; 'eventually has' holds a "
             "reactive read open, which only readers serve"
         )
-    reference = world.client_type(state_type).ref(
-        _maybe_saved(world, state_id)
-    )
+    reference = world.client_type(state_type).ref(state_id)
     assignments = _parse_assignments(world, arguments)
     read = getattr(reference.reactively(), method)
     responses = (
@@ -1250,6 +1245,8 @@ async def _aborts_with(
     error_type: str,
     clauses: Optional[str],
 ) -> None:
+    user = _string(world, user, error_prefix='The user')
+    state_id = _string(world, state_id, error_prefix='The state id')
     if not world.is_reader(state_type=state_type, method=method):
         raise ValueError(
             f"`{method}` is not a reader; assert its abort with "
@@ -1259,7 +1256,7 @@ async def _aborts_with(
     try:
         await world.call(
             state_type=state_type,
-            state_id=_maybe_saved(world, state_id),
+            state_id=state_id,
             method=method,
             assignments=_parse_assignments(world, arguments),
             user=user,
@@ -1331,8 +1328,8 @@ def _the_resulting_property_is_saved_as(
 # step's tail never matches one of these.
 
 
-@when(parsers.re(r'"[^"]*" awaits the `\w+` task "<[^<>"]+>" on `[\w.]+`$'))
-@then(parsers.re(r'"[^"]*" awaits the `\w+` task "<[^<>"]+>" on `[\w.]+`$'))
+@when(parsers.re(rf'{VALUE} awaits the `\w+` task {VALUE} on `[\w.]+`$'))
+@then(parsers.re(rf'{VALUE} awaits the `\w+` task {VALUE} on `[\w.]+`$'))
 def _almost_awaits_needs_within() -> None:
     raise ValueError(
         "Almost: say how long to wait for the task, e.g. within 10 "
@@ -1424,7 +1421,7 @@ def _almost_anonymous() -> None:
 
 
 # A calling step written with its caller but no comma after them.
-_CALLER_WITHOUT_COMMA = r'as "[^"]*" .+'
+_CALLER_WITHOUT_COMMA = rf'as {VALUE} .+'
 
 
 @given(parsers.re(_CALLER_WITHOUT_COMMA))
@@ -1440,10 +1437,10 @@ def _almost_caller_without_comma() -> None:
 # A call in its former spelling, the state first and the caller, if
 # any, before it: 'the `Account` for "alice" gets a `deposit`'.
 _CALL_STATE_FIRST = (
-    r'(?:as "[^"]*", )?(?:'
-    r'(?:a|an) `[\w.]+` for "[^"]*" gets created via|'
-    r'the `[\w.]+` for "[^"]*" (?:gets|attempts) (?:a|an) `|'
-    r'the `\w+` task with id "<\w+>" of the `'
+    rf'(?:as {VALUE}, )?(?:'
+    rf'(?:a|an) `[\w.]+` for {VALUE} gets created via|'
+    rf'the `[\w.]+` for {VALUE} (?:gets|attempts) (?:a|an) `|'
+    rf'the `\w+` task with id {VALUE} of the `'
     r').*'
 )
 
@@ -1456,7 +1453,7 @@ def _almost_call_state_first() -> None:
         "Almost: a call starts with who calls: '\"...\" does a `method` on "
         "`Type` of \"id\" with ...', '\"...\" creates a `Type` of \"id\" via "
         "`method`', '\"...\" attempts a `method` on `Type` of \"id\"', or "
-        "'\"...\" awaits the `method` task \"<name>\" on `Type` within ...'"
+        "'\"...\" awaits the `method` task <name> on `Type` within ...'"
     )
 
 
@@ -1487,8 +1484,8 @@ def _almost_call_without_user() -> None:
 
 # A read, or a shared context, written without saying who reads.
 _READ_WITHOUT_USER = (
-    r'(?!as ")(?:'
-    r'`\w+` on the `[\w.]+` for "[^"]*" (?:has|eventually has|aborts with)|'
+    rf'(?!as (?:"|<))(?:'
+    rf'`\w+` on the `[\w.]+` for {VALUE} (?:has|eventually has|aborts with)|'
     r'a shared context$'
     r')'
 )

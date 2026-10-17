@@ -35,9 +35,9 @@ Feature: Customers can withdraw from an account
   Scenario: Withdrawing part of the balance leaves the rest
     Given "anonymous" creates an `Account` via `open`
     And the resulting state id is saved as "account id"
-    When "anonymous" does a `deposit` with `amount=100.0` on `Account` of "<account id>"
-    And "anonymous" does a `withdraw` with `amount=40.0` on `Account` of "<account id>"
-    Then as "anonymous", `balance` on the `Account` for "<account id>" has `amount=60.0`
+    When "anonymous" does a `deposit` with `amount=100.0` on `Account` of <account id>
+    And "anonymous" does a `withdraw` with `amount=40.0` on `Account` of <account id>
+    Then as "anonymous", `balance` on the `Account` for <account id> has `amount=60.0`
 
   Rule: Overdrafts are refused
     An account never goes below zero: a withdrawal for more than the
@@ -46,8 +46,8 @@ Feature: Customers can withdraw from an account
     Scenario Outline: Withdrawing more than the balance aborts with the shortfall
       Given "anonymous" creates an `Account` via `open`
       And the resulting state id is saved as "account id"
-      When "anonymous" does a `deposit` with `amount=<deposit>` on `Account` of "<account id>"
-      And "anonymous" attempts a `withdraw` with `amount=<withdrawal>` on `Account` of "<account id>"
+      When "anonymous" does a `deposit` with `amount=<deposit>` on `Account` of <account id>
+      And "anonymous" attempts a `withdraw` with `amount=<withdrawal>` on `Account` of <account id>
       Then the attempt aborts with `OverdraftError` with `amount=<shortfall>`
 
       Examples:
@@ -169,10 +169,10 @@ Scenario: Opening an account with a deposit
   Given "anonymous" is an unauthenticated user
   And "anonymous" creates a `Bank` via `create`
   And the resulting state id is saved as "bank id"
-  And "anonymous" does a `sign_up` with `customer_id="ann@example.com"` on `Bank` of "<bank id>"
+  And "anonymous" does a `sign_up` with `customer_id="ann@example.com"` on `Bank` of <bank id>
   When "anonymous" does an `open_account` with `initial_deposit=100.0` on `Customer` of "ann@example.com"
   And the resulting `account_id` is saved as "account id"
-  Then as "anonymous", `balance` on the `Account` for "<account id>" has `amount=100.0`
+  Then as "anonymous", `balance` on the `Account` for <account id> has `amount=100.0`
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
@@ -193,8 +193,8 @@ Scenario: Opening an account with a deposit
   leniencies), and a dotted path nests:
 
   ```gherkin
-  When "alice" does a `set_owner` with `owner={name: "Frank", tags: ["vip"]}` on `Account` of "<account id>"
-  And "alice" does a `set_owner` with `owner.name="Frankie"` and `owner.tags=["pro"]` on `Account` of "<account id>"
+  When "alice" does a `set_owner` with `owner={name: "Frank", tags: ["vip"]}` on `Account` of <account id>
+  And "alice" does a `set_owner` with `owner.name="Frankie"` and `owner.tags=["pro"]` on `Account` of <account id>
   ```
 
 - **A call does one thing; its result is saved on the next line:**
@@ -208,8 +208,8 @@ Scenario: Opening an account with a deposit
 
   ```gherkin
   Then as "alice", `balances` on the `Customer` for "ann@example.com" has `balances` of length `1` and `balances[0].balance=25.0`
-  And as "anonymous", `all_customer_ids` on the `Bank` for "<bank id>" has `customer_ids` containing `"alice"`
-  And as "alice", `has_at_least` with `amount=50` on the `Account` for "<account id>" has `enough=true`
+  And as "anonymous", `all_customer_ids` on the `Bank` for <bank id> has `customer_ids` containing `"alice"`
+  And as "alice", `has_at_least` with `amount=50` on the `Account` for <account id> has `enough=true`
   ```
 
 - **`the result has`** asserts on the last call's response:
@@ -225,7 +225,7 @@ call, a workflow, read reactively with a bound. Never sleep:
 Scenario: A new account earns its first period's interest
   Given "anonymous" creates an `Account` via `open`
   And the resulting state id is saved as "account id"
-  Then as "anonymous", `balance` on the `Account` for "<account id>" eventually has `amount=1.0` within 10 seconds
+  Then as "anonymous", `balance` on the `Account` for <account id> eventually has `amount=1.0` within 10 seconds
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
@@ -243,8 +243,8 @@ Rule: Overdrafts are refused
   Scenario Outline: Withdrawing more than the balance aborts with the shortfall
     Given "anonymous" creates an `Account` via `open`
     And the resulting state id is saved as "account id"
-    When "anonymous" does a `deposit` with `amount=<deposit>` on `Account` of "<account id>"
-    And "anonymous" attempts a `withdraw` with `amount=<withdrawal>` on `Account` of "<account id>"
+    When "anonymous" does a `deposit` with `amount=<deposit>` on `Account` of <account id>
+    And "anonymous" attempts a `withdraw` with `amount=<withdrawal>` on `Account` of <account id>
     Then the attempt aborts with `OverdraftError` with `amount=<shortfall>`
 
     Examples:
@@ -271,9 +271,9 @@ task's id, and `awaits` waits for it, after which `the result has`
 asserts on its response:
 
 ```gherkin
-When "anonymous" spawns a `deposit` with `amount=15` on `Account` of "<account id>"
+When "anonymous" spawns a `deposit` with `amount=15` on `Account` of <account id>
 And the resulting task id is saved as "first"
-Then "anonymous" awaits the `deposit` task "<first>" on `Account` within 30 seconds
+Then "anonymous" awaits the `deposit` task <first> on `Account` within 30 seconds
 And the result has `updated_balance=15`
 ```
 
@@ -293,10 +293,10 @@ Rule: A user signs up once
     factory aborts with `StateAlreadyConstructed`, which the bank
     lets surface as `Unknown`. This waits for a declared error.
 
-    Given "anonymous" does a `sign_up` with `customer_id="ann@example.com"` on `Bank` of "<bank id>"
-    When "anonymous" attempts a `sign_up` with `customer_id="ann@example.com"` on `Bank` of "<bank id>"
+    Given "anonymous" does a `sign_up` with `customer_id="ann@example.com"` on `Bank` of <bank id>
+    When "anonymous" attempts a `sign_up` with `customer_id="ann@example.com"` on `Bank` of <bank id>
     Then the attempt aborts with `AlreadySignedUp`
-    And as "anonymous", `all_customer_ids` on the `Bank` for "<bank id>" has `customer_ids` of length `1`
+    And as "anonymous", `all_customer_ids` on the `Bank` for <bank id> has `customer_ids` of length `1`
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
@@ -329,7 +329,7 @@ Scenario: Opening a first account in the web app
   And "alice" clicks the "Open Account" button in the web app
   Then "alice" eventually sees "$1000" in the "Your Accounts" table in the web app within 10 seconds
   When "alice" saves the text of the "account-id" element in the web app as "account id"
-  Then as "alice", `balance` on the `Account` for "<account id>" has `amount=1000.0`
+  Then as "alice", `balance` on the `Account` for <account id> has `amount=1000.0`
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
@@ -363,11 +363,11 @@ Scenario: Signing in and out with the Development picker
   When "ben" fills "Initial Deposit ($)" in the web app with `500`
   And "ben" clicks the "Open Account" button in the web app
   Then "ben" eventually sees "$500" in the "Your Accounts" table in the web app within 10 seconds
-  And as "ben", `balances` on the `User` for "<ben user id>" eventually has `balances` of length `1` and `balances[0].balance=500.0` within 10 seconds
+  And as "ben", `balances` on the `User` for <ben user id> eventually has `balances` of length `1` and `balances[0].balance=500.0` within 10 seconds
   When "ben" clicks the "Sign out" button in the web app
   Then "ben" is signed out of the web app
   And "ben" sees the "Sign in" button in the web app is enabled
-  And as "ben", `balances` on the `User` for "<ben user id>" aborts with `Unauthenticated`
+  And as "ben", `balances` on the `User` for <ben user id> aborts with `Unauthenticated`
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
@@ -462,7 +462,7 @@ call the generated clients:
 @when(
     parsers.parse(
         '"{user}" does {count:d} deposits of {amount:d} on `Account` of '
-        '"<{name}>"'
+        '<{name}>'
     )
 )
 async def _makes_deposits(

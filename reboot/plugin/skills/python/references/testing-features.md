@@ -108,15 +108,15 @@ Feature: Customers can transfer money between accounts
       Given "anonymous" is an unauthenticated user
       And "anonymous" creates a `Bank` via `create`
       And the resulting state id is saved as "bank id"
-      When "anonymous" does a `sign_up` with `customer_id="test@reboot.dev"` on `Bank` of "<bank id>"
+      When "anonymous" does a `sign_up` with `customer_id="test@reboot.dev"` on `Bank` of <bank id>
       And "anonymous" does an `open_account` with `initial_deposit=1000.0` on `Customer` of "test@reboot.dev"
       And the resulting `account_id` is saved as "first account id"
-      And "anonymous" does a `sign_up` with `customer_id="test2@reboot.dev"` on `Bank` of "<bank id>"
+      And "anonymous" does a `sign_up` with `customer_id="test2@reboot.dev"` on `Bank` of <bank id>
       And "anonymous" does an `open_account` with `initial_deposit=0.0` on `Customer` of "test2@reboot.dev"
       And the resulting `account_id` is saved as "second account id"
-      And "anonymous" does a `transfer` with `from_account_id=<first account id>` and `to_account_id=<second account id>` and `amount=250.0` on `Bank` of "<bank id>"
-      Then as "anonymous", `balance` on the `Account` for "<first account id>" has `amount=750.0`
-      And as "anonymous", `balance` on the `Account` for "<second account id>" has `amount=250.0`
+      And "anonymous" does a `transfer` with `from_account_id=<first account id>` and `to_account_id=<second account id>` and `amount=250.0` on `Bank` of <bank id>
+      Then as "anonymous", `balance` on the `Account` for <first account id> has `amount=750.0`
+      And as "anonymous", `balance` on the `Account` for <second account id> has `amount=250.0`
 
   Rule: A transfer that would overdraw the source leaves both accounts unchanged
     A transfer is one transaction: when the withdrawal from the source
@@ -198,7 +198,7 @@ call must then name the same user.
 ```gherkin
 Given "alice" creates an `Account` via `open` with `initial_balance=100`
 And the resulting state id is saved as "account id"
-When "alice" does a `deposit` with `amount=50` on `Account` of "<account id>"
+When "alice" does a `deposit` with `amount=50` on `Account` of <account id>
 Then the result has `updated_balance=150`
 And the resulting `account_id` is saved as "alice account id"
 ```
@@ -214,7 +214,7 @@ And the resulting `account_id` is saved as "alice account id"
   save what `creates` and `spawns` produced. `the result has ...`
   asserts on the last response.
 - **A saved name is a quoted string** and may have spaces, `"first account id"`, and is said back as `<first account id>`: in a
-  state id (`of "<account id>"`), a user id, a bearer token, or a
+  state id (`of <account id>`), a user id, a bearer token, or a
   property value (`amount=<balance>`). A `<name>` inside a JSON
   string stays literal. A `Scenario Outline`'s columns are said the
   same way, so a save may not reuse a column's name.
@@ -226,10 +226,10 @@ And the resulting `account_id` is saved as "alice account id"
 ## Reads and Assertions
 
 ```gherkin
-Then as "alice", `balance` on the `Account` for "<account id>" has `amount=100.0`
+Then as "alice", `balance` on the `Account` for <account id> has `amount=100.0`
 And as "alice", `balances` on the `Customer` for "ann" has `balances` of length `1` and `balances[0].balance=25.0`
-And as "anonymous", `all_customer_ids` on the `Bank` for "<bank id>" has `customer_ids` containing `"alice"`
-And as "alice", `has_at_least` with `amount=50` on the `Account` for "<account id>" has `enough=true`
+And as "anonymous", `all_customer_ids` on the `Bank` for <bank id> has `customer_ids` containing `"alice"`
+And as "alice", `has_at_least` with `amount=50` on the `Account` for <account id> has `enough=true`
 ```
 
 - A `Then ... has` asserts; clauses are `path=value`, `path`
@@ -246,15 +246,15 @@ And as "alice", `has_at_least` with `amount=50` on the `Account` for "<account i
 reactive read with a bound, never a sleep:
 
 ```gherkin
-Then as "anonymous", `balance` on the `Account` for "<account id>" eventually has `amount=1.0` within 10 seconds
+Then as "anonymous", `balance` on the `Account` for <account id> eventually has `amount=1.0` within 10 seconds
 ```
 
 ## Attempts, Aborts, and Tasks
 
 ```gherkin
-When "alice" attempts a `withdraw` with `amount=50` on `Account` of "<account id>"
+When "alice" attempts a `withdraw` with `amount=50` on `Account` of <account id>
 Then the attempt aborts with `OverdraftError` with `amount=20`
-And as "alice", `balance` on the `Account` for "<account id>" has `balance=30`
+And as "alice", `balance` on the `Account` for <account id> has `balance=30`
 
 Then as "anonymous", `balance` on the `Account` for "ghost" aborts with `StateNotConstructed`
 ```
@@ -269,9 +269,9 @@ Then as "anonymous", `balance` on the `Account` for "ghost" aborts with `StateNo
   an error and assert on that.
 
 ```gherkin
-When "anonymous" spawns a `deposit` with `amount=15` on `Account` of "<account id>"
+When "anonymous" spawns a `deposit` with `amount=15` on `Account` of <account id>
 And the resulting task id is saved as "first"
-Then "anonymous" awaits the `deposit` task "<first>" on `Account` within 30 seconds
+Then "anonymous" awaits the `deposit` task <first> on `Account` within 30 seconds
 And the result has `updated_balance=15`
 ```
 
@@ -327,7 +327,7 @@ from reboot.bdd.fixtures import World
 @when(
     parsers.parse(
         '"{user}" does {count:d} deposits of {amount:d} on `Account` of '
-        '"<{name}>"'
+        '<{name}>'
     )
 )
 async def _makes_deposits(
