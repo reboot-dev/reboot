@@ -5,11 +5,13 @@ directory, so these tests run the dashboard in a temporary working
 directory of their own.
 """
 import asyncio
+import json
 import os
 import shutil
 import tempfile
 import unittest
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_rbt import Dashboard
@@ -263,12 +265,19 @@ class FeaturesWatcherTest(unittest.IsolatedAsyncioTestCase):
         token = await self.rbt.make_valid_oauth_access_token()
 
         def fetch() -> Optional[bytes]:
+            query = urllib.parse.urlencode(
+                {'path': path.removeprefix('/recordings/')}
+            )
             request = urllib.request.Request(
-                self.rbt.url(path),
+                self.rbt.url('/recordings/sign?' + query),
                 headers={'Authorization': f'Bearer {token}'},
             )
             try:
                 with urllib.request.urlopen(request) as response:
+                    signed = json.loads(response.read())
+                with urllib.request.urlopen(
+                    self.rbt.url(signed["url"])
+                ) as response:
                     return response.read()
             except urllib.error.HTTPError as error:
                 if error.code == 404:

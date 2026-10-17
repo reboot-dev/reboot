@@ -8,6 +8,10 @@ own process, with its own state store, alongside the application
 being developed.
 """
 import asyncio
+import hashlib
+import hmac
+import json
+import time
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_rbt import Dashboard, Preferences
 from rbt.std.collections.ordered_map.v1.ordered_map_rbt import OrderedMap
@@ -25,6 +29,7 @@ from reboot.aio.auth.oauth_providers import (
 )
 from reboot.aio.external import InitializeContext
 from reboot.bdd import recordings
+from reboot.crypto import root_keys
 from reboot.dashboard.backend.constants import (
     CHANGELOG_ID,
     DASHBOARD_ID,
@@ -40,7 +45,8 @@ from reboot.std.collections.ordered_map.v1.ordered_map import (
 )
 from reboot.std.presence.v1.presence import presence_library
 from starlette.exceptions import HTTPException
-from starlette.responses import FileResponse
+from starlette.responses import FileResponse, JSONResponse
+from urllib.parse import quote, urlencode
 
 # Where the page fetches a scenario's recordings from, followed by the
 # recording's path relative to the working directory, the path the
@@ -68,6 +74,21 @@ def _recording(directory: Path, relative: str) -> Path:
     ):
         raise HTTPException(status_code=404)
     return path
+
+
+_RECORDING_URL_SECONDS = 60 * 60
+
+
+def _recording_signature(directory: Path, relative: str, expires: int) -> str:
+    # A separate purpose from OAuth, scoped to this project even when
+    # several dashboards share the same managed root keys.
+    key = root_keys.derive_key(
+        info=b'reboot.dashboard.recordings', version=root_keys.active_version()
+    )
+    message = json.dumps(
+        [str(directory.resolve()), relative, expires], ensure_ascii=True
+    ).encode()
+    return hmac.new(key, message, hashlib.sha256).hexdigest()
 
 
 def application() -> Application:
@@ -122,15 +143,50 @@ def application() -> Application:
         initialize=initialize,
     )
 
-    # Recordings are the developer's own screenshots and videos, and
-    # the tunnel reaches this path.
-    @application.http.get(
-        RECORDINGS_PATH + '/{relative:path}', require_oauth_token=True
-    )
-    async def recording(relative: str) -> FileResponse:
-        """A scenario's video or a step's screenshot, from beside the
-        feature file under the working directory."""
-        return FileResponse(_recording(Path.cwd(), relative))
+    # Sign only after authenticating the developer. Keep this route
+    # before the catch-all; the element itself cannot send a bearer header.
+    @application.http.get(RECORDINGS_PATH + '/sign', require_oauth_token=True)
+    async def sign_recording(path: str) -> JSONResponse:
+        directory = Path.cwd()
+        _recording(directory, path)
+        expires = int(time.time()) + _RECORDING_URL_SECONDS
+        query = urlencode(
+            {
+                'expires': expires,
+                'sig': _recording_signature(directory, path, expires),
+            }
+        )
+        return JSONResponse(
+            {
+                'url': f'{RECORDINGS_PATH}/{quote(path, safe="/")}?{query}',
+                'expires': expires
+            },
+            headers={'Cache-Control': 'no-store'},
+        )
+
+    @application.http.get(RECORDINGS_PATH + '/{relative:path}')
+    async def recording(
+        relative: str, expires: str = '', sig: str = ''
+    ) -> FileResponse:
+        directory = Path.cwd()
+        # Reject malformed credentials without leaking file existence.
+        if (
+            not expires.isascii() or not expires.isdecimal() or
+            len(expires) > 12
+        ):
+            raise HTTPException(status_code=401)
+        expiry = int(expires)
+        if (
+            expiry <= int(time.time()) or not hmac.compare_digest(
+                _recording_signature(directory, relative, expiry).encode(),
+                sig.encode(),
+            )
+        ):
+            raise HTTPException(status_code=401)
+        return FileResponse(
+            _recording(directory, relative),
+            headers={'Cache-Control': 'private, no-store'},
+        )
 
     # The page itself is served at `/` by the web framework, from
     # `DASHBOARD_DIRECTORY`, which the CLI names in this application's
