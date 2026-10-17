@@ -146,7 +146,7 @@ class FeaturesWatcherTest(unittest.IsolatedAsyncioTestCase):
         built_in = scenario.steps[0].built_in
         self.assertEqual(built_in.WhichOneof('step'), 'does')
         self.assertEqual(built_in.does.state.type, 'Account')
-        self.assertEqual(built_in.does.state.id, 'alice')
+        self.assertEqual(built_in.does.state.id, '"alice"')
         self.assertEqual(built_in.does.method, 'deposit')
         self.assertEqual(len(built_in.does.assignments), 1)
         self.assertEqual(len(feature.rules), 1)

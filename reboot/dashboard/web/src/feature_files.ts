@@ -465,18 +465,33 @@ export const spansOfText = (words: string, role: Role): Span[] => {
 const spansOfValue = (value: grammar_pb.Value | undefined): Span[] =>
   spansOfText(value?.json ?? "", "value");
 
-const spansOfStateId = (id: string): Span[] => spansOfText(id, "state-id");
+// A value the grammar itself delimits, a state id, a user, or what
+// the web app shows or is told, as the step writes it: a JSON string,
+// printed without its quotes since the page sets it apart by its
+// role, or a variable, `<name>`, printed as one.
+const spansOfToken = (token: string, role: Role): Span[] => {
+  if (token.startsWith('"')) {
+    try {
+      return [{ text: JSON.parse(token), role }];
+    } catch {
+      // Not a JSON string after all: printed as written.
+    }
+  }
+  return spansOfText(token, role);
+};
+
+const spansOfStateId = (id: string): Span[] => spansOfToken(id, "state-id");
 
 // A user the scenario names, without the quotes the step writes
 // them in, since the page sets a user apart by their role, the way it
 // does a state id; a user named by a saved value is a variable.
-const spansOfUser = (user: string): Span[] => spansOfText(user, "user");
+const spansOfUser = (user: string): Span[] => spansOfToken(user, "user");
 
 // An element of the web app, by what it says and what it is: 'the
-// "Open Account" button'. A <name> in what it says is a variable.
+// "Open Account" button'. Its name may be a variable.
 const spansOfElement = (element: grammar_pb.Element | undefined): Span[] => [
   text("the "),
-  ...spansOfText(element?.name ?? "", "element-name"),
+  ...spansOfToken(element?.name ?? "", "element-name"),
   text(" "),
   {
     text: Element_Role[
@@ -486,10 +501,7 @@ const spansOfElement = (element: grammar_pb.Element | undefined): Span[] => [
   },
 ];
 
-const spanOfLabel = (label: string): Span => ({
-  text: label,
-  role: "label",
-});
+const spansOfLabel = (label: string): Span[] => spansOfToken(label, "label");
 
 // The 'as "alice",' a calling step starts with, the comma setting the
 // caller off from the call.
@@ -629,7 +641,7 @@ export const printBuiltInSyntax = (
         head: [
           ...spansOfUser(step.value.userId),
           text(" has the bearer token "),
-          { text: `"${step.value.bearerToken}"`, role: "value" },
+          ...spansOfText(step.value.bearerToken, "value"),
         ],
         clauses: [],
         tail: [],
@@ -709,7 +721,7 @@ export const printBuiltInSyntax = (
           text(" awaits the "),
           { text: step.value.method, role: "method" },
           text(" task "),
-          { text: step.value.taskIdSavedAs, role: "variable" },
+          ...spansOfToken(step.value.taskIdSavedAs, "value"),
           text(" on "),
           { text: step.value.stateType, role: "state-type" },
           text(" within "),
@@ -802,7 +814,7 @@ export const printBuiltInSyntax = (
       const at: Span[] =
         step.value.path === undefined
           ? []
-          : [text(" at "), { text: step.value.path, role: "path" }];
+          : [text(" at "), ...spansOfToken(step.value.path, "path")];
       return {
         head: [
           ...spansOfUser(step.value.user),
@@ -838,7 +850,7 @@ export const printBuiltInSyntax = (
         head: [
           ...spansOfUser(step.value.user),
           text(" fills "),
-          spanOfLabel(step.value.label),
+          ...spansOfLabel(step.value.label),
           text(" in the web app with "),
           ...spansOfValue(step.value.value),
         ],
@@ -850,9 +862,9 @@ export const printBuiltInSyntax = (
         head: [
           ...spansOfUser(step.value.user),
           text(" selects "),
-          ...spansOfText(step.value.option, "element-name"),
+          ...spansOfToken(step.value.option, "element-name"),
           text(" in "),
-          spanOfLabel(step.value.label),
+          ...spansOfLabel(step.value.label),
           text(" in the web app"),
         ],
         clauses: [],
@@ -863,7 +875,7 @@ export const printBuiltInSyntax = (
         head: [
           ...spansOfUser(step.value.user),
           text(step.value.checked ? " checks " : " unchecks "),
-          spanOfLabel(step.value.label),
+          ...spansOfLabel(step.value.label),
           text(" in the web app"),
         ],
         clauses: [],
@@ -874,7 +886,7 @@ export const printBuiltInSyntax = (
         head: [
           ...spansOfUser(step.value.user),
           text(" presses "),
-          { text: step.value.key, role: "key" },
+          ...spansOfToken(step.value.key, "key"),
           text(" in the web app"),
         ],
         clauses: [],
@@ -891,7 +903,7 @@ export const printBuiltInSyntax = (
               ? " sees "
               : " eventually sees "
           ),
-          ...spansOfText(step.value.text, "page-text"),
+          ...spansOfToken(step.value.text, "page-text"),
           ...(step.value.within === undefined
             ? []
             : [text(" in "), ...spansOfElement(step.value.within)]),
@@ -921,7 +933,7 @@ export const printBuiltInSyntax = (
         head: [
           ...spansOfUser(step.value.user),
           text(" sees the web app at "),
-          ...spansOfText(step.value.path, "path"),
+          ...spansOfToken(step.value.path, "path"),
         ],
         clauses: [],
         tail: [],
@@ -958,7 +970,7 @@ export const printBuiltInSyntax = (
         head: [
           ...spansOfUser(step.value.user),
           text(" saves the text of the "),
-          { text: step.value.testId, role: "element-name" },
+          ...spansOfToken(step.value.testId, "element-name"),
           text(" element in the web app as "),
           { text: step.value.name, role: "saved-name" },
         ],

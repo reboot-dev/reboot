@@ -65,6 +65,16 @@ PATH = r'\w+(?:\.\w+|\[\d+\]|\["[^"]*"\])*'
 # substitutes a column.
 VARIABLE = r'<[^<>]+>'
 
+# A JSON string as a step writes one, with its quotes.
+STRING = r'"(?:[^"\\]|\\.)*"'
+
+# A value in a step's text outside backticks, where the grammar
+# itself delimits it: a state's id, a user, a bearer token, a task id,
+# or what the web app shows or is told. A JSON string, or a variable
+# whose JSON text is the value; a step parses it as JSON once the
+# variable is substituted.
+VALUE = rf'(?:{STRING}|{VARIABLE})'
+
 # One 'path=value' property clause: the property's path and value
 # in backticks, the value being anything up to the closing backtick.
 # The groupless form embeds in step patterns and deliberately also
@@ -142,15 +152,15 @@ MIXED_CLAUSES = (
 
 # The 'the `Account` for "alice"' phrase naming the state a read is
 # of, and the 'on `Account` of "alice"' phrase naming the state a call
-# is on.
-STATE = r'the `(?P<state_type>[\w.]+)` for "(?P<state_id>[^"]*)"'
-ON_STATE = r'on `(?P<state_type>[\w.]+)` of "(?P<state_id>[^"]*)"'
+# is on; the id is a value, so a saved one is said as <account id>.
+STATE = rf'the `(?P<state_type>[\w.]+)` for (?P<state_id>{VALUE})'
+ON_STATE = rf'on `(?P<state_type>[\w.]+)` of (?P<state_id>{VALUE})'
 
 # Who a step calls as, a user the scenario declared authenticated or
 # not: a call starts with the user, '"alice" does ...', and a read
 # with 'as "alice", ', the comma setting the reader off from the read.
-AS = r'as "(?P<user>[^"]*)", '
-USER = r'"(?P<user>[^"]*)"'
+AS = rf'as (?P<user>{VALUE}), '
+USER = rf'(?P<user>{VALUE})'
 
 # A call's optional property list, the request, said right after the
 # method: '"alice" does a `deposit` with `amount=50` on `Account` of
@@ -166,17 +176,19 @@ ARGUMENTS = rf'(?: with (?P<arguments>{PROPERTY_CLAUSES}))?'
 # with pytest-bdd, and what `read` reads a step by. Named for the
 # phrase that distinguishes the step.
 APPLICATION_IS_UP = r'the (?:"(?P<name>[^"]*)" )?application is up$'
-IS_AN_AUTHENTICATED_USER = r'"(?P<user_id>[^"]*)" is an authenticated user$'
+IS_AN_AUTHENTICATED_USER = (rf'(?P<user_id>{VALUE}) is an authenticated user$')
 HAS_BEARER_TOKEN = (
-    r'"(?P<user_id>[^"]*)" has the bearer token "(?P<bearer_token>[^"]*)"$'
+    rf'(?P<user_id>{VALUE}) has the bearer token (?P<bearer_token>{VALUE})$'
 )
-IS_AN_UNAUTHENTICATED_USER = r'"(?P<user_id>[^"]*)" is an unauthenticated user$'
+IS_AN_UNAUTHENTICATED_USER = (
+    rf'(?P<user_id>{VALUE}) is an unauthenticated user$'
+)
 SHARED_CONTEXT = rf'{AS}a shared context$'
 # The state's id is given, 'of "alice"', or left for the factory to
 # make up.
 CREATES_VIA = (
     rf'{USER} creates (?:a|an) `(?P<state_type>[\w.]+)`'
-    rf'(?: of "(?P<state_id>[^"]*)")? via `(?P<method>\w+)`{PROPERTIES}$'
+    rf'(?: of (?P<state_id>{VALUE}))? via `(?P<method>\w+)`{PROPERTIES}$'
 )
 # 'does' calls and 'spawns' runs the call as a task.
 DOES = (
@@ -187,7 +199,7 @@ ATTEMPTS = (
     rf'{USER} attempts (?:a|an) `(?P<method>\w+)`{PROPERTIES} {ON_STATE}$'
 )
 AWAITS_TASK = (
-    rf'{USER} awaits the `(?P<method>\w+)` task "<(?P<name>[^<>"]+)>" on '
+    rf'{USER} awaits the `(?P<method>\w+)` task (?P<name>{VALUE}) on '
     r'`(?P<state_type>[\w.]+)` within (?P<within>.+)$'
 )
 ATTEMPT_ABORTS_WITH = (
@@ -220,7 +232,7 @@ ROLES = tuple(
     for name, number in Element.Role.items()
     if number != Element.Role.ROLE_UNSPECIFIED
 )
-ELEMENT = rf'the "(?P<name>[^"]*)" (?P<role>{"|".join(ROLES)})'
+ELEMENT = rf'the (?P<name>{VALUE}) (?P<role>{"|".join(ROLES)})'
 WEB_APP = 'in the web app'
 # What color scheme a step may open the web app in: each of
 # `OpensWebApp.ColorScheme` in lower case, so that the proto is the
@@ -231,31 +243,31 @@ COLOR_SCHEMES = tuple(
     if number != OpensWebApp.ColorScheme.COLOR_SCHEME_UNSPECIFIED
 )
 OPENS_WEB_APP = (
-    rf'{USER} opens the web app(?: at "(?P<path>[^"]*)")? '
+    rf'{USER} opens the web app(?: at (?P<path>{VALUE}))? '
     rf'in (?P<color_scheme>{"|".join(COLOR_SCHEMES)}) mode$'
 )
 CLICKS_IN_WEB_APP = rf'{USER} clicks {ELEMENT} {WEB_APP}$'
 FILLS_IN_WEB_APP = (
-    rf'{USER} fills "(?P<label>[^"]*)" {WEB_APP} with `(?P<value>[^`]*)`$'
+    rf'{USER} fills (?P<label>{VALUE}) {WEB_APP} with `(?P<value>[^`]*)`$'
 )
 SELECTS_IN_WEB_APP = (
-    rf'{USER} selects "(?P<option>[^"]*)" in "(?P<label>[^"]*)" {WEB_APP}$'
+    rf'{USER} selects (?P<option>{VALUE}) in (?P<label>{VALUE}) {WEB_APP}$'
 )
 CHECKS_IN_WEB_APP = (
-    rf'{USER} (?P<action>checks|unchecks) "(?P<label>[^"]*)" {WEB_APP}$'
+    rf'{USER} (?P<action>checks|unchecks) (?P<label>{VALUE}) {WEB_APP}$'
 )
-PRESSES_IN_WEB_APP = rf'{USER} presses "(?P<key>[^"]*)" {WEB_APP}$'
+PRESSES_IN_WEB_APP = rf'{USER} presses (?P<key>{VALUE}) {WEB_APP}$'
 SEES_IN_WEB_APP = (
     rf'{USER} (?:(?P<eventually>eventually )?sees|(?P<negated>does not see)) '
-    rf'"(?P<text>[^"]*)"(?: in {ELEMENT})? {WEB_APP}'
+    rf'(?P<text>{VALUE})(?: in {ELEMENT})? {WEB_APP}'
     r'(?: within (?P<within>.+))?$'
 )
 SEES_ENABLED_IN_WEB_APP = (
     rf'{USER} sees {ELEMENT} {WEB_APP} is (?P<state>enabled|disabled)$'
 )
-SEES_WEB_APP_AT = rf'{USER} sees the web app at "(?P<path>[^"]*)"$'
+SEES_WEB_APP_AT = rf'{USER} sees the web app at (?P<path>{VALUE})$'
 SAVES_TEXT_IN_WEB_APP_AS = (
-    rf'{USER} saves the text of the "(?P<test_id>[^"]*)" element {WEB_APP} '
+    rf'{USER} saves the text of the (?P<test_id>{VALUE}) element {WEB_APP} '
     r'as "(?P<name>[^"]*)"$'
 )
 IS_SIGNED_IN_TO_WEB_APP = (

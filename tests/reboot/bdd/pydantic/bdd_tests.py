@@ -34,7 +34,7 @@ from tests.reboot.bdd.pydantic.account_api_rbt import Account
 @when(
     parsers.parse(
         '"{user}" does {count:d} deposits of {amount:d} on `Account` of '
-        '"<{name}>"'
+        '<{name}>'
     )
 )
 async def _makes_deposits(
