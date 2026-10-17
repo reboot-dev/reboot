@@ -1,0 +1,151 @@
+syntax = "proto3";
+
+package rbt.cloud.v1alpha1.custom_domain;
+
+import "google/protobuf/timestamp.proto";
+
+import "rbt/v1alpha1/options.proto";
+
+//////////////////////////////////////////////////////////////////////
+
+// One custom hostname, e.g. `api.example.com`. The state ID is the
+// hostname itself, which is what makes a hostname unique across all
+// applications: a second application claiming the same hostname finds
+// the state already claimed. No method is a constructor, so `Claim`
+// constructs the state for a hostname nobody has registered before.
+message CustomDomain {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  // The lifecycle of a custom domain registered for an application.
+  enum Status {
+    UNKNOWN = 0;
+    // Registered; waiting for the user's CNAME to point at the
+    // application's CNAME target.
+    WAITING_FOR_DNS = 1;
+    // The CNAME resolves correctly; a certificate is being obtained.
+    ISSUING_CERTIFICATE = 2;
+    // The hostname serves the application.
+    ACTIVE = 3;
+    // Registration gave up: the DNS record never appeared, or the
+    // certificate could not be issued. See `failure_reason`.
+    FAILED = 4;
+    // The hostname was removed from its application.
+    REMOVED = 5;
+  }
+
+  // The qualified name of the application this hostname belongs to;
+  // empty once the hostname has been removed.
+  string qualified_application_name = 1;
+
+  // The ID of that application, which is what the gateway routes on.
+  string application_id = 2;
+
+  Status status = 3;
+
+  // The hostname the user must point a CNAME record at.
+  string cname_target = 4;
+
+  // What the last DNS check saw, in words the user can act on.
+  string dns_observation = 5;
+
+  // Set when `status` is `CUSTOM_DOMAIN_FAILED`.
+  string failure_reason = 6;
+
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp activated_at = 8;
+
+  // The `task_uuid` of the workflow driving this hostname to
+  // `ACTIVE`, so a workflow can tell that it has been superseded.
+  bytes workflow_task_uuid = 9;
+}
+
+//////////////////////////////////////////////////////////////////////
+
+// Every method is called by the Cloud backend on behalf of an
+// `Application`; none is called by users directly.
+service CustomDomainMethods {
+  // Reserve this hostname for an application. Fails with
+  // `AlreadyClaimedError` when another application holds it;
+  // succeeds without change when the same application holds it.
+  rpc Claim(ClaimRequest) returns (ClaimResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: { exclusive: {} },
+      errors: [ "AlreadyClaimedError" ],
+    };
+  }
+
+  // Release this hostname from its application, so it can be claimed
+  // again. Succeeds without change when the hostname is not held by
+  // the given application.
+  rpc Release(ReleaseRequest) returns (ReleaseResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: { exclusive: {} },
+    };
+  }
+
+  // Record progress made by the workflow.
+  rpc SetStatus(SetStatusRequest) returns (SetStatusResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+
+  rpc Get(GetRequest) returns (GetResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+}
+
+//////////////////////////////////////////////////////////////////////
+
+message ClaimRequest {
+  string qualified_application_name = 1;
+  string application_id = 2;
+  string cname_target = 3;
+  // The workflow that will drive this hostname to `ACTIVE`.
+  bytes workflow_task_uuid = 4;
+}
+
+message ClaimResponse {}
+
+//////////////////////////////////////////////////////////////////////
+
+message ReleaseRequest {
+  string qualified_application_name = 1;
+}
+
+message ReleaseResponse {}
+
+//////////////////////////////////////////////////////////////////////
+
+message SetStatusRequest {
+  CustomDomain.Status status = 1;
+  optional string dns_observation = 2;
+  optional string failure_reason = 3;
+  // Only the workflow named by the state's `workflow_task_uuid` may
+  // update it; a superseded workflow's update is ignored.
+  bytes workflow_task_uuid = 4;
+}
+
+message SetStatusResponse {
+  // Whether the update was applied, i.e. the caller is still the
+  // hostname's current workflow.
+  bool applied = 1;
+}
+
+//////////////////////////////////////////////////////////////////////
+
+message GetRequest {}
+
+message GetResponse {
+  CustomDomain custom_domain = 1;
+}
+
+//////////////////////////////////////////////////////////////////////
+
+message AlreadyClaimedError {
+  // The qualified name of the application that holds the hostname.
+  string qualified_application_name = 1;
+}

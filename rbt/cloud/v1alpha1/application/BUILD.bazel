@@ -7,6 +7,7 @@ proto_library(
     visibility = ["//visibility:public"],
     deps = [
         "//rbt/cloud/v1alpha1/auth:auth_proto",
+        "//rbt/cloud/v1alpha1/custom_domain:custom_domain_proto",
         "//rbt/cloud/v1alpha1/logs:logs_proto",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_proto",
@@ -26,6 +27,7 @@ js_proto_library(
     proto_deps = [
         ":application_proto",
         "//rbt/cloud/v1alpha1/auth:auth_proto",
+        "//rbt/cloud/v1alpha1/custom_domain:custom_domain_proto",
         "//rbt/cloud/v1alpha1/logs:logs_proto",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_proto",
@@ -44,6 +46,7 @@ py_reboot_library(
     proto = "application.proto",
     proto_library = ":application_proto",
     py_deps = [
+        "//rbt/cloud/v1alpha1/custom_domain:custom_domain_py_reboot",
         "//rbt/cloud/v1alpha1/logs:logs_py_reboot",
     ],
     visibility = ["//visibility:public"],

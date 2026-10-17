@@ -23,3 +23,14 @@ commandTests:
     # Expected output is an echo of the request, into which Envoy should have
     # added a server ID header.
     expectedOutput: ["x-reboot-server-id: server_2345"] # (Takes a regex.)
+
+  - name: "application ID from a registered custom hostname"
+    command: "/reboot/one_envoy_request.sh"
+    args: [-H, "Host: api.example.com:8080"]
+    expectedOutput: ["x-reboot-server-id: server_2345"] # (Takes a regex.)
+
+  - name: "a registered custom hostname overrides the application ID header"
+    command: "/reboot/one_envoy_request.sh"
+    args:
+      [-H, "Host: api.example.com", -H, "x-reboot-application-id: application1"]
+    expectedOutput: ["x-reboot-server-id: server_2345"] # (Takes a regex.)
