@@ -86,14 +86,17 @@ PROPERTY_CLAUSE = rf'`{PATH}\s*[:=]\s*[^`]*`'
 PROPERTY_PATTERN = re.compile(rf'`(?P<path>{PATH})=(?P<value>\S[^`]*)`')
 
 # One saving clause: the (possibly dotted) property path in
-# backticks, saved under a quoted name, which may have spaces or
-# dashes the way an Examples table's column may. The groupless form
-# embeds in step patterns and deliberately also matches lexical
-# near-misses ('saved to', a backticked, bare or '$'-prefixed name)
-# so that those route to a step whose parser raises the fix; the
-# compiled form is the strict shape, for extraction.
-SAVE_CLAUSE = rf'`{PATH}`\s+saved\s+(?:as|to)\s+(?:"[^"]*"|`[^`]*`|\$?\w+)'
-SAVE_PATTERN = re.compile(rf'`(?P<path>{PATH})` saved as "(?P<saved>[^"]*)"')
+# backticks, saved as the variable later steps say it by, `<name>`,
+# which may have spaces or dashes the way an Examples table's column
+# may. The groupless form embeds in step patterns and deliberately
+# also matches lexical near-misses ('saved to', a quoted, backticked,
+# bare or '$'-prefixed name) so that those route to a step whose
+# parser raises the fix; the compiled form is the strict shape, for
+# extraction.
+SAVE_CLAUSE = (
+    rf'`{PATH}`\s+saved\s+(?:as|to)\s+(?:<[^<>]*>|"[^"]*"|`[^`]*`|\$?\w+)'
+)
+SAVE_PATTERN = re.compile(rf'`(?P<path>{PATH})` saved as <(?P<saved>[^<>]+)>')
 
 # One containing clause: asserts a substring of a string, an element
 # of a list, or a key of a map; the argument is a backticked JSON
@@ -268,21 +271,21 @@ SEES_ENABLED_IN_WEB_APP = (
 SEES_WEB_APP_AT = rf'{USER} sees the web app at (?P<path>{VALUE})$'
 SAVES_TEXT_IN_WEB_APP_AS = (
     rf'{USER} saves the text of the (?P<test_id>{VALUE}) element {WEB_APP} '
-    r'as "(?P<name>[^"]*)"$'
+    r'as <(?P<name>[^<>]+)>$'
 )
 IS_SIGNED_IN_TO_WEB_APP = (
     rf'{USER} is signed in to the web app'
-    r'(?: with their user id saved as "(?P<saved_as>[^"]*)")?$'
+    r'(?: with their user id saved as <(?P<saved_as>[^<>]+)>)?$'
 )
 IS_SIGNED_OUT_OF_WEB_APP = rf'{USER} is signed out of the web app$'
 RESULTING_STATE_ID_IS_SAVED_AS = (
-    r'the resulting state id is saved as "(?P<name>[^"]*)"$'
+    r'the resulting state id is saved as <(?P<name>[^<>]+)>$'
 )
 RESULTING_TASK_ID_IS_SAVED_AS = (
-    r'the resulting task id is saved as "(?P<name>[^"]*)"$'
+    r'the resulting task id is saved as <(?P<name>[^<>]+)>$'
 )
 RESULTING_IS_SAVED_AS = (
-    rf'the resulting `(?P<property_name>{PATH})` is saved as "(?P<name>[^"]*)"$'
+    rf'the resulting `(?P<property_name>{PATH})` is saved as <(?P<name>[^<>]+)>$'
 )
 
 # The seconds a wait bound says, e.g. '30 seconds'.

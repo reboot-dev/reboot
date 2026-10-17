@@ -34,7 +34,7 @@ Feature: Customers can withdraw from an account
 
   Scenario: Withdrawing part of the balance leaves the rest
     Given "anonymous" creates an `Account` via `open`
-    And the resulting state id is saved as "account id"
+    And the resulting state id is saved as <account id>
     When "anonymous" does a `deposit` with `amount=100.0` on `Account` of <account id>
     And "anonymous" does a `withdraw` with `amount=40.0` on `Account` of <account id>
     Then as "anonymous", `balance` on the `Account` for <account id> has `amount=60.0`
@@ -45,7 +45,7 @@ Feature: Customers can withdraw from an account
 
     Scenario Outline: Withdrawing more than the balance aborts with the shortfall
       Given "anonymous" creates an `Account` via `open`
-      And the resulting state id is saved as "account id"
+      And the resulting state id is saved as <account id>
       When "anonymous" does a `deposit` with `amount=<deposit>` on `Account` of <account id>
       And "anonymous" attempts a `withdraw` with `amount=<withdrawal>` on `Account` of <account id>
       Then the attempt aborts with `OverdraftError` with `amount=<shortfall>`
@@ -168,10 +168,10 @@ unauthenticated caller names them `"anonymous"`.
 Scenario: Opening an account with a deposit
   Given "anonymous" is an unauthenticated user
   And "anonymous" creates a `Bank` via `create`
-  And the resulting state id is saved as "bank id"
+  And the resulting state id is saved as <bank id>
   And "anonymous" does a `sign_up` with `customer_id="ann@example.com"` on `Bank` of <bank id>
   When "anonymous" does an `open_account` with `initial_deposit=100.0` on `Customer` of "ann@example.com"
-  And the resulting `account_id` is saved as "account id"
+  And the resulting `account_id` is saved as <account id>
   Then as "anonymous", `balance` on the `Account` for <account id> has `amount=100.0`
 ```
 
@@ -179,7 +179,7 @@ Scenario: Opening an account with a deposit
 
 - **`creates`** calls a factory. Leave the id out and the factory
   makes one up; save it on the next line with
-  `the resulting state id is saved as "bank id"`, and say
+  `the resulting state id is saved as <bank id>`, and say
   `<bank id>` from then on. Give an id only when it means something
   to the application:
 
@@ -198,10 +198,10 @@ Scenario: Opening an account with a deposit
   ```
 
 - **A call does one thing; its result is saved on the next line:**
-  `` the resulting `account_id` is saved as "account id" ``. A saved
-  name is a quoted string and may have spaces, and later steps say
-  it as the variable `<account id>`, the way a `Scenario Outline`
-  says a column. A variable is replaced by its JSON text before the
+  `` the resulting `account_id` is saved as <account id> ``. A value
+  is saved as the variable later steps say it by, `<account id>`,
+  which may have spaces, the way a `Scenario Outline` says a column.
+  A save may not use a column's name. A variable is replaced by its JSON text before the
   step runs: a saved string arrives with its double quotes
   (`"uuid-1"`), a number bare, an object as JSON. So a saved string
   is said bare, `` of <account id> `` or `` `id=<account id>` ``,
@@ -244,7 +244,7 @@ call, a workflow, read reactively with a bound. Never sleep:
 ```gherkin
 Scenario: A new account earns its first period's interest
   Given "anonymous" creates an `Account` via `open`
-  And the resulting state id is saved as "account id"
+  And the resulting state id is saved as <account id>
   Then as "anonymous", `balance` on the `Account` for <account id> eventually has `amount=1.0` within 10 seconds
 ```
 
@@ -262,7 +262,7 @@ Rule: Overdrafts are refused
 
   Scenario Outline: Withdrawing more than the balance aborts with the shortfall
     Given "anonymous" creates an `Account` via `open`
-    And the resulting state id is saved as "account id"
+    And the resulting state id is saved as <account id>
     When "anonymous" does a `deposit` with `amount=<deposit>` on `Account` of <account id>
     And "anonymous" attempts a `withdraw` with `amount=<withdrawal>` on `Account` of <account id>
     Then the attempt aborts with `OverdraftError` with `amount=<shortfall>`
@@ -292,7 +292,7 @@ asserts on its response:
 
 ```gherkin
 When "anonymous" spawns a `deposit` with `amount=15` on `Account` of <account id>
-And the resulting task id is saved as "first"
+And the resulting task id is saved as <first>
 Then "anonymous" awaits the `deposit` task <first> on `Account` within 30 seconds
 And the result has `updated_balance=15`
 ```
@@ -348,7 +348,7 @@ Scenario: Opening a first account in the web app
   When "alice" fills "Initial Deposit ($)" in the web app with `1000`
   And "alice" clicks the "Open Account" button in the web app
   Then "alice" eventually sees "$1000" in the "Your Accounts" table in the web app within 10 seconds
-  When "alice" saves the text of the "account-id" element in the web app as "account id"
+  When "alice" saves the text of the "account-id" element in the web app as <account id>
   Then as "alice", `balance` on the `Account` for <account id> has `amount=1000.0`
 ```
 
@@ -379,7 +379,7 @@ Scenario: Signing in and out with the Development picker
   When "ben" opens the web app in light mode
   And "ben" clicks the "Sign in" button in the web app
   And "ben" clicks the "Ben" link in the web app
-  Then "ben" is signed in to the web app with their user id saved as "ben user id"
+  Then "ben" is signed in to the web app with their user id saved as <ben user id>
   When "ben" fills "Initial Deposit ($)" in the web app with `500`
   And "ben" clicks the "Open Account" button in the web app
   Then "ben" eventually sees "$500" in the "Your Accounts" table in the web app within 10 seconds

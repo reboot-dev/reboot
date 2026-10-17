@@ -20,6 +20,17 @@ In every `.feature` file under `tests/`, drop the quotes around each
 - `sees "<account id>" in the web app` -> `sees <account id> in the web app`
 - `"<user id>" is an authenticated user` -> `<user id> is an authenticated user`
 
+A save names the variable the same way, so drop the quotes there too:
+
+- `the resulting state id is saved as "account id"` -> `the resulting state id is saved as <account id>`
+- `has `balance` saved as "balance"` -> `has `balance` saved as <balance>`
+- `saves the text of the "account-id" element in the web app as "account id"` -> `... as <account id>`
+- `with their user id saved as "user id"` -> `with their user id saved as <user id>`
+
+```sh
+grep -rn 'saved as "\|web app as "' tests/
+```
+
 A property value said bare, `amount=<balance>` or `id=<account id>`,
 is unchanged. A variable inside longer quoted text, `"Signed in as <user id>"`, has no spelling: there is no string interpolation or concatenation. Assert the variable alone, `sees <user id> in the web app` or `has `url`containing`<account id>``, both of which match text that contains the value.
 

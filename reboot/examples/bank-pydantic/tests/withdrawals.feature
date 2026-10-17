@@ -8,7 +8,7 @@ Feature: Customers can withdraw from an account
 
   Scenario: Withdrawing part of the balance leaves the rest
     Given "anonymous" creates an `Account` via `open`
-    And the resulting state id is saved as "account id"
+    And the resulting state id is saved as <account id>
     When "anonymous" does a `deposit` with `amount=100.0` on `Account` of <account id>
     And "anonymous" does a `withdraw` with `amount=40.0` on `Account` of <account id>
     Then as "anonymous", `balance` on the `Account` for <account id> has `amount=60.0`
@@ -19,7 +19,7 @@ Feature: Customers can withdraw from an account
 
     Scenario Outline: Withdrawing more than the balance aborts with the shortfall
       Given "anonymous" creates an `Account` via `open`
-      And the resulting state id is saved as "account id"
+      And the resulting state id is saved as <account id>
       When "anonymous" does a `deposit` with `amount=<deposit>` on `Account` of <account id>
       And "anonymous" attempts a `withdraw` with `amount=<withdrawal>` on `Account` of <account id>
       Then the attempt aborts with `OverdraftError` with `amount=<shortfall>`
