@@ -51,7 +51,7 @@ function addExtensionlessToNodeOptions() {
 }
 
 async function main() {
-  ensurePythonVenv();
+  await ensurePythonVenv();
   await ensureSupportedYarn();
 
   // Set env var to indicate that `rbt` is being invoked from Node.js.

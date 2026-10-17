@@ -1758,7 +1758,7 @@ const callback = (...args) => {
   console.log(new Date(), ...args);
 };
 
-ensurePythonVenv();
+await ensurePythonVenv();
 
 reboot_native.initialize(callback, launchSubprocessServer);
 
