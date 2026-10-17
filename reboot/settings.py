@@ -210,10 +210,22 @@ ENVVAR_REBOOT_NODEJS_EXTENSIONS = 'REBOOT_NODEJS_EXTENSIONS'
 # Kubernetes.
 ENVVAR_KUBERNETES_SERVICE_HOST = 'KUBERNETES_SERVICE_HOST'
 
-# When we set up servers we often need to listen on every addressable
-# interface on the local machine. This is especially important in some
-# circumstances where networks may be rather convoluted, e.g., when we
-# have local Docker containers.
+# Where a server listens depends on where its connections come from:
+# `EVERY_LOCAL_NETWORK_ADDRESS` when connections from other machines
+# (or containers) are expected, `ONLY_LOCALHOST_NETWORK_ADDRESS` when
+# only connections from this machine are expected.
+#
+# IMPORTANT: a gRPC server that asks for any port (port 0) and only
+# expects connections from this machine MUST use
+# `ONLY_LOCALHOST_NETWORK_ADDRESS`; do not switch it to
+# `EVERY_LOCAL_NETWORK_ADDRESS`. On macOS, gRPC turns
+# `EVERY_LOCAL_NETWORK_ADDRESS` (`0.0.0.0`) into a dual-stack IPv6
+# socket, and XNU's IPv6 ephemeral-port allocator does not check ports
+# that IPv4 sockets hold, so the server can be handed the port of,
+# e.g., an orphaned Envoy, which then receives connections meant for
+# the server. On `ONLY_LOCALHOST_NETWORK_ADDRESS` (`127.0.0.1`) the
+# port comes from the IPv4 allocator, which does not hand out held
+# ports. See https://github.com/reboot-dev/reboot/pull/234.
 EVERY_LOCAL_NETWORK_ADDRESS = '0.0.0.0'
 ONLY_LOCALHOST_NETWORK_ADDRESS = '127.0.0.1'
 

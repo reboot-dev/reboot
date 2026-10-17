@@ -8,6 +8,7 @@ from reboot.aio.caller_id import CallerID
 from reboot.aio.external import ExternalContext
 from reboot.aio.internals.channel_manager import _ChannelManager
 from reboot.aio.types import ApplicationId, ServerId
+from reboot.settings import ONLY_LOCALHOST_NETWORK_ADDRESS
 from reboot.wait_for_tasks import wait_for_tasks
 from starlette.requests import Request  # type: ignore[import]
 from starlette.types import Receive, Scope, Send  # type: ignore[import]
@@ -312,7 +313,9 @@ class PythonWebFramework(WebFramework):
 
         config = uvicorn.Config(
             fastapi,
-            host="0.0.0.0",
+            # Only connections from the local Envoy are expected, so we
+            # use only the loopback.
+            host=ONLY_LOCALHOST_NETWORK_ADDRESS,
             port=port or 0,
             log_level="warning",
             reload=False,  # This is handled by Reboot.

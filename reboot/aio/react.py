@@ -24,7 +24,7 @@ from reboot.aio.types import (
     state_type_tag_for_name,
 )
 from reboot.nodejs.python import should_print_stacktrace
-from reboot.settings import EVERY_LOCAL_NETWORK_ADDRESS
+from reboot.settings import ONLY_LOCALHOST_NETWORK_ADDRESS
 from reboot.wait_for_tasks import wait_for_tasks
 from typing import AsyncIterable, Optional
 
@@ -99,7 +99,9 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
 
             async with websockets.serve(
                 self.serve,
-                EVERY_LOCAL_NETWORK_ADDRESS,
+                # Only connections from the local Envoy are expected, so
+                # we use only the loopback.
+                ONLY_LOCALHOST_NETWORK_ADDRESS,
                 websocket_port,
                 logger=logger,
             ) as server:

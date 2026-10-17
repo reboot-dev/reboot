@@ -49,6 +49,7 @@ from reboot.settings import (
     ENVOY_PER_CONNECTION_BUFFER_LIMIT_BYTES,
     ENVVAR_RBT_DEV,
     ENVVAR_RBT_FRONTEND_HOST,
+    EVERY_LOCAL_NETWORK_ADDRESS,
     LocalEnvoyMode,
 )
 from typing import Optional
@@ -910,10 +911,12 @@ def listeners(
 
     listeners = [
         # The public listener takes traffic from anywhere (which may
-        # be TLS-encrypted) on the port specified by the user.
+        # be TLS-encrypted) on the port specified by the user, so
+        # connections from other machines are expected and it listens
+        # on every interface.
         ListenerConfig(
             name="public",
-            host="0.0.0.0",
+            host=EVERY_LOCAL_NETWORK_ADDRESS,
             port=public_port,
             use_tls=use_tls,
             # On the Reboot Cloud, proxies ensure that the caller ID is

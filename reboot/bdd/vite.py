@@ -22,6 +22,7 @@ from pathlib import Path
 from reboot.bdd.frontend import Frontend
 from reboot.bdd.loop import run
 from reboot.mcp.ui import find_project_root_from
+from reboot.settings import ONLY_LOCALHOST_NETWORK_ADDRESS
 from typing import Iterator, Optional, Union
 
 
@@ -38,7 +39,9 @@ def _reserve_port() -> socket.socket:
     the port is free for something else to take."""
     reservation = socket.socket()
     reservation.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    reservation.bind(('127.0.0.1', 0))
+    # Only connections from this machine are expected to the Vite
+    # server that takes over this port, so the loopback is enough.
+    reservation.bind((ONLY_LOCALHOST_NETWORK_ADDRESS, 0))
     return reservation
 
 

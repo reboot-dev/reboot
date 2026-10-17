@@ -5,6 +5,7 @@ import reboot.aio.signals as signals
 import reboot.aio.tracing
 import signal
 import subprocess
+import sys
 import tempfile
 import traceback
 from google.protobuf.descriptor_pb2 import FileDescriptorSet
@@ -21,6 +22,7 @@ from reboot.settings import (
     ENVOY_PROXY_IMAGE,
     ENVVAR_LOCAL_ENVOY_DEBUG,
     EVERY_LOCAL_NETWORK_ADDRESS,
+    ONLY_LOCALHOST_NETWORK_ADDRESS,
     REBOOT_DISCORD_URL,
     REBOOT_GITHUB_ISSUES_URL,
     LocalEnvoyMode,
@@ -60,6 +62,13 @@ class DockerLocalEnvoy(LocalEnvoy):
         self._container_id: Optional[str] = None
         self._debug_mode = debug_mode
 
+        # Our servers listen on this machine's loopback. Docker Desktop
+        # (macOS) forwards `host.docker.internal` to that loopback, but
+        # on Linux it is the Docker bridge's gateway, so there the
+        # container instead shares this machine's network (and with it,
+        # this machine's ports).
+        self._host_network = sys.platform == 'linux'
+
         # Generate envoy config and write it to temporary files that get
         # cleaned up on .stop(). We copy all files without their metadata
         # to ensure that they are readable by the envoy user.
@@ -74,23 +83,51 @@ class DockerLocalEnvoy(LocalEnvoy):
         self._public_port = DEFAULT_SECURE_PORT if self._use_tls else DEFAULT_INSECURE_PORT
         self._trusted_port = DEFAULT_TRUSTED_PORT
 
+        if self._host_network:
+            # Nothing is published, so Envoy listens directly on the port
+            # the user asked for (if any).
+            self._public_port = public_port or self._public_port
+            self._published_public_port = self._public_port
+
         super().__init__(
-            # The admin port is available from anywhere when debugging.
-            # Otherwise, limit it to the container itself.
-            admin_listen_host='0.0.0.0' if self._debug_mode else '127.0.0.1',
+            # The admin port is available from anywhere when debugging, so
+            # connections from outside the container are expected and we
+            # use every interface. Otherwise only connections from inside
+            # the container (or, on Linux, this machine) are expected, so
+            # we use only the loopback.
+            admin_listen_host=(
+                EVERY_LOCAL_NETWORK_ADDRESS
+                if self._debug_mode else ONLY_LOCALHOST_NETWORK_ADDRESS
+            ),
             # Since this Envoy will have the Docker container all to itself, we
             # can pick a static port for the admin interface.
             admin_port=ENVOY_ADMIN_PORT,
-            # The xDS server will run outside the Docker container, so it must
-            # accept connections from the Docker container.
-            xds_listen_host='0.0.0.0',
+            # The xDS server runs on this machine, outside the Docker
+            # container. Only connections from the local Envoy are expected,
+            # and it reaches this machine's loopback through
+            # `host.docker.internal` (see `self._host_network`), so we use only
+            # the loopback, and we couldn't use `EVERY_LOCAL_NETWORK_ADDRESS`
+            # anyway on macOS because gRPC binds IPv6 as well (one dual-stack
+            # socket) and macOS has a bug where its IPv6 ephemeral-port
+            # allocator doesn't check ports held by IPv4 sockets, so the server
+            # can be handed a port that an IPv4 listener (e.g., an orphaned
+            # Envoy) already holds and connections to
+            # `ONLY_LOCALHOST_NETWORK_ADDRESS` (`127.0.0.1`) reach that
+            # listener instead; see
+            # https://github.com/reboot-dev/reboot/pull/234.
+            xds_listen_host=ONLY_LOCALHOST_NETWORK_ADDRESS,
             xds_connect_host='host.docker.internal',
-            # The trusted port will be accessed by the application
-            # running outside the Docker container, so it must accept
-            # traffic from outside its container. The port forwarding
-            # logic in `docker run` will ensure that traffic to the
-            # trusted port can only come from the host.
-            trusted_host='0.0.0.0',
+            # Connections to the trusted port come from the application,
+            # outside the Docker container. On a bridge network that is
+            # outside the container's loopback, so we use every interface
+            # (the port forwarding in `docker run` ensures they can only
+            # come from this machine). With host networking the
+            # container's loopback is this machine's, so we use only the
+            # loopback.
+            trusted_host=(
+                ONLY_LOCALHOST_NETWORK_ADDRESS
+                if self._host_network else EVERY_LOCAL_NETWORK_ADDRESS
+            ),
             # The Envoy will have the container all to itself, so we can
             # pick a static port for its trusted port as seen internal
             # to the container.
@@ -137,9 +174,12 @@ class DockerLocalEnvoy(LocalEnvoy):
         for server in servers:
             if (
                 server.address.host == 'localhost' or
-                # The '0.0.0.0' address is also interpreted as
-                # "localhost" when used as a target.
-                server.address.host == EVERY_LOCAL_NETWORK_ADDRESS
+                # The `EVERY_LOCAL_NETWORK_ADDRESS` (`0.0.0.0`) address is
+                # also interpreted as "localhost" when used as a target.
+                server.address.host == EVERY_LOCAL_NETWORK_ADDRESS or
+                # Where our servers listen, since only connections from
+                # the local Envoy are expected.
+                server.address.host == ONLY_LOCALHOST_NETWORK_ADDRESS
             ):
                 server.address.host = 'host.docker.internal'
 
@@ -382,15 +422,22 @@ class DockerLocalEnvoy(LocalEnvoy):
                 '\n'
             )
 
-        local_envoy_run_command += [
-            '-p'
-            # IMPORTANT: the "127.0.0.1" prefix ensures that traffic to
-            # the trusted port can only come from the (trusted) host
-            # machine.
-            f'127.0.0.1:{self._published_trusted_port}:{self._trusted_port}',
-        ]
+        if not self._host_network:
+            local_envoy_run_command += [
+                '-p'
+                # IMPORTANT: the `ONLY_LOCALHOST_NETWORK_ADDRESS`
+                # (`127.0.0.1`) prefix ensures that traffic to the trusted
+                # port can only come from the (trusted) host machine.
+                f'{ONLY_LOCALHOST_NETWORK_ADDRESS}:{self._published_trusted_port}:{self._trusted_port}',
+            ]
 
-        if self._published_public_port != 0:
+        if self._host_network:
+            # The container's ports are this machine's ports, so there is
+            # nothing to publish.
+            local_envoy_run_command += [
+                '--network=host',
+            ]
+        elif self._published_public_port != 0:
             local_envoy_run_command += [
                 '-p'
                 f'{self._published_public_port}:{self._public_port}',
@@ -408,7 +455,7 @@ class DockerLocalEnvoy(LocalEnvoy):
                 '--publish-all',
             ]
 
-        if self._debug_mode:
+        if self._debug_mode and not self._host_network:
             # Make the admin port available outside the container. Use a
             # Docker-picked port so that even when there's multiple Envoys
             # running side-by-side they don't clash.
@@ -419,7 +466,13 @@ class DockerLocalEnvoy(LocalEnvoy):
             ]
 
         local_envoy_run_command += [
-            '--add-host=host.docker.internal:host-gateway',
+            # How the container reaches this machine's loopback, where our
+            # servers listen (see `self._host_network`).
+            (
+                f'--add-host=host.docker.internal:{ONLY_LOCALHOST_NETWORK_ADDRESS}'
+                if self._host_network else
+                '--add-host=host.docker.internal:host-gateway'
+            ),
             f'--volume={self._tmp_envoy_dir.name}:{DOCKERIZED_ENVOY_DIR}:ro',
             # Envoy must have its configuration directory as its working dir to
             # let our Lua code find the libraries that we've copied into that
@@ -468,10 +521,13 @@ class DockerLocalEnvoy(LocalEnvoy):
                 self._public_port,
             )
 
-        self._published_trusted_port = await self._get_forwarded_local_port_from_docker(
-            self._container_id,
-            self._trusted_port,
-        )
+        if self._host_network:
+            self._published_trusted_port = self._trusted_port
+        else:
+            self._published_trusted_port = await self._get_forwarded_local_port_from_docker(
+                self._container_id,
+                self._trusted_port,
+            )
 
         assert self._published_public_port != 0
         assert self._published_trusted_port != 0

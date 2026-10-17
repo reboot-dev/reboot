@@ -98,6 +98,7 @@ py_library(
         ":frontend_py",
         ":loop_py",
         requirement("aiohttp"),
+        "//reboot:settings_py",
         "//reboot/mcp:ui_py",
     ],
 )
