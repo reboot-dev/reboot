@@ -1106,7 +1106,7 @@ export const spansOfStep = (step: feature_pb.Step, known: Known): Span[] =>
   );
 
 // The names a step saves, e.g. "account id" for 'the resulting state
-// id is saved as "account id"'.
+// id is saved as <account id>'.
 const savesOfStep = (step: feature_pb.Step): string[] =>
   step.builtIn === undefined
     ? []

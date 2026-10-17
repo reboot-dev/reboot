@@ -19,7 +19,7 @@ Feature: Users can sign in
       When "ben" opens the web app in light mode
       And "ben" clicks the "Sign in" button in the web app
       And "ben" clicks the "Ben" link in the web app
-      Then "ben" is signed in to the web app with their user id saved as "ben user id"
+      Then "ben" is signed in to the web app with their user id saved as <ben user id>
       When "ben" fills "Initial Deposit ($)" in the web app with `500`
       And "ben" clicks the "Open Account" button in the web app
       Then "ben" eventually sees "$500" in the "Your Accounts" table in the web app within 10 seconds
@@ -38,9 +38,9 @@ Feature: Users can sign in
       Given "alice" is an authenticated user
       And "carol" is an authenticated user
       And "alice" does an `open_account` with `initial_deposit=100.0` on `User` of "alice"
-      And the resulting `account_id` is saved as "alice account id"
+      And the resulting `account_id` is saved as <alice account id>
       And "carol" does an `open_account` with `initial_deposit=200.0` on `User` of "carol"
-      And the resulting `account_id` is saved as "carol account id"
+      And the resulting `account_id` is saved as <carol account id>
       When "alice" opens the web app in light mode
       And "carol" opens the web app in light mode
       Then "alice" sees <alice account id> in the "Your Accounts" table in the web app

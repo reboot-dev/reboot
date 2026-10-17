@@ -27,7 +27,7 @@ Scenario: Opening a first account in the web app
   When "alice" fills "Initial Deposit ($)" in the web app with `1000`
   And "alice" clicks the "Open Account" button in the web app
   Then "alice" eventually sees "$1000" in the "Your Accounts" table in the web app within 10 seconds
-  When "alice" saves the text of the "account-id" element in the web app as "account id"
+  When "alice" saves the text of the "account-id" element in the web app as <account id>
   Then as "alice", `balance` on the `Account` for <account id> has `amount=1000.0`
 ```
 
@@ -145,8 +145,8 @@ the app in one scenario.
 | `"alice" does not see <carol account id> in the web app`                      | Asserts the text is absent                                                                                                         |
 | `"alice" sees the "Sign in" button in the web app is enabled` / `is disabled` | Asserts the element's state                                                                                                        |
 | `"alice" sees the web app at "/accounts"`                                     | Asserts the page's path                                                                                                            |
-| `"alice" saves the text of the "account-id" element in the web app as "id"`   | Reads an element by test id into a saved value                                                                                     |
-| `"bob" is signed in to the web app with their user id saved as "bob id"`      | Binds bob's browser session to bob (below)                                                                                         |
+| `"alice" saves the text of the "account-id" element in the web app as <id>`   | Reads an element by test id into a saved value                                                                                     |
+| `"bob" is signed in to the web app with their user id saved as <bob id>`      | Binds bob's browser session to bob (below)                                                                                         |
 | `"bob" is signed out of the web app`                                          | Waits for bob's session to end (below)                                                                                             |
 
 - The **roles** a step may name are a closed list: `button`,
@@ -171,7 +171,7 @@ Scenario: Signing in and out with the Development picker
   When "ben" opens the web app in light mode
   And "ben" clicks the "Sign in" button in the web app
   And "ben" clicks the "Ben" link in the web app
-  Then "ben" is signed in to the web app with their user id saved as "ben user id"
+  Then "ben" is signed in to the web app with their user id saved as <ben user id>
   When "ben" fills "Initial Deposit ($)" in the web app with `500`
   And "ben" clicks the "Open Account" button in the web app
   Then "ben" eventually sees "$500" in the "Your Accounts" table in the web app within 10 seconds
