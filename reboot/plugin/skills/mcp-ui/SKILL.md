@@ -717,7 +717,10 @@ a worked set are in
    `.mypy.ini` — see
    [`references/project-shell.md`](references/project-shell.md);
    the `.mypy.ini` template lives in
-   `python/references/lifecycle-project-setup.md`.
+   `python/references/lifecycle-project-setup.md`. Then give the
+   project its `AGENTS.md` and `CLAUDE.md` with the
+   [`agents-md` skill](../agents-md/SKILL.md), naming the API and
+   servicer files the design settled on.
 2. `uv sync`.
 3. Start the developer dashboard — load the
    [`dashboard` skill](../dashboard/SKILL.md) and follow it — so
@@ -792,7 +795,7 @@ a worked set are in
 
 When modifying an existing app:
 
-1. Read `.rbtrc`, API definition, servicer, `main.py`.
+1. Read `AGENTS.md`, `.rbtrc`, API definition, servicer, `main.py`.
 2. Assess state model changes. If the app has persisted state or
    has been deployed, read
    `python/references/api-schema-evolution.md` to understand the
@@ -812,6 +815,9 @@ When modifying an existing app:
    restart needed. Editing `.env` likewise triggers a restart, so
    a new or changed secret is re-read by `--env-file` without a
    manual relaunch.
+9. If the change moved a file, added a state type or a UI, changed
+   a command, or taught a rule, update `AGENTS.md` in the same
+   change ([`agents-md` skill](../agents-md/SKILL.md)).
 
 Specific patterns and file shapes live in the references above —
 read them on demand based on what's changing.

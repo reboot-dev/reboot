@@ -32,6 +32,11 @@ Work in the directory the user named, or the current directory. The project root
 `.rbtrc`. If there is no `.rbtrc` anywhere obvious, ask the user
 where the app is. Every command below runs from the project root.
 
+If the project has no `AGENTS.md`, or its `CLAUDE.md` is not just
+`@AGENTS.md`, give it both with the
+[`agents-md` skill](../agents-md/SKILL.md) before starting anything,
+so the next session in this project starts with its map.
+
 ## Step 2 — Detect the app type
 
 A Reboot project is one of two kinds. Decide using these signals,

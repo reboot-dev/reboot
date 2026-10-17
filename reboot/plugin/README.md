@@ -5,17 +5,18 @@ agent. The same skills work in both **Claude Code** and **Codex**.
 
 ## Included Skills
 
-| Skill                        | Description                                                                                                                               |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| [`app`](skills/app/)         | Build a Reboot app from a description — routes to `mcp-ui` or `web-app`                                                                   |
-| [`feature`](skills/feature/) | Specify a feature in plain English, write it down as a `@wip` feature file, then iterate on its scenarios with the user                   |
-| [`mcp-ui`](skills/mcp-ui/)   | Build MCP UIs for ChatGPT, Claude, VSCode, Goose, and others — layers on top of `python`                                                  |
-| [`web-app`](skills/web-app/) | Build standalone Reboot Web Apps — a Reboot backend behind a browser-facing React frontend — layers on top of `python`                    |
-| [`run`](skills/run/)         | Run an existing Reboot app — detects MCP UI vs. Web App and starts every process it needs                                                 |
-| [`deploy`](skills/deploy/)   | Deploy a Reboot app to production — backend on Reboot Cloud, web frontend on a static host under the user's own custom domain             |
-| [`inspect`](skills/inspect/) | Inspect a running Reboot app's persisted state from the CLI with `rbt inspect` — list state types, list state IDs, dump one actor as JSON |
-| [`python`](skills/python/)   | Reboot Python framework reference: proto- or pydantic-defined APIs, Servicers, contexts, refs, scheduling, and testing                    |
-| [`upgrade`](skills/upgrade/) | Upgrade an existing Reboot app to this plugin's Reboot version — applies migration steps, bumps pins, regenerates                         |
+| Skill                            | Description                                                                                                                               |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| [`app`](skills/app/)             | Build a Reboot app from a description — routes to `mcp-ui` or `web-app`                                                                   |
+| [`feature`](skills/feature/)     | Specify a feature in plain English, write it down as a `@wip` feature file, then iterate on its scenarios with the user                   |
+| [`mcp-ui`](skills/mcp-ui/)       | Build MCP UIs for ChatGPT, Claude, VSCode, Goose, and others — layers on top of `python`                                                  |
+| [`web-app`](skills/web-app/)     | Build standalone Reboot Web Apps — a Reboot backend behind a browser-facing React frontend — layers on top of `python`                    |
+| [`run`](skills/run/)             | Run an existing Reboot app — detects MCP UI vs. Web App and starts every process it needs                                                 |
+| [`agents-md`](skills/agents-md/) | Give a Reboot app an `AGENTS.md` for coding agents and a one-line `CLAUDE.md` that imports it; kept current as the app changes            |
+| [`deploy`](skills/deploy/)       | Deploy a Reboot app to production — backend on Reboot Cloud, web frontend on a static host under the user's own custom domain             |
+| [`inspect`](skills/inspect/)     | Inspect a running Reboot app's persisted state from the CLI with `rbt inspect` — list state types, list state IDs, dump one actor as JSON |
+| [`python`](skills/python/)       | Reboot Python framework reference: proto- or pydantic-defined APIs, Servicers, contexts, refs, scheduling, and testing                    |
+| [`upgrade`](skills/upgrade/)     | Upgrade an existing Reboot app to this plugin's Reboot version — applies migration steps, bumps pins, regenerates                         |
 
 The skill files are tool-agnostic. Claude Code invokes skills by
 plugin-namespaced name (e.g. `/reboot:mcp-ui`); Codex selects a

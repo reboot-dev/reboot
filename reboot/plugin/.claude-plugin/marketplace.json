@@ -20,6 +20,7 @@
         "./skills/mcp-ui",
         "./skills/web-app",
         "./skills/run",
+        "./skills/agents-md",
         "./skills/dashboard",
         "./skills/deploy",
         "./skills/inspect",
