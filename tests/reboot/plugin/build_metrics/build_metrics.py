@@ -23,8 +23,10 @@ they read is counted apart (`sub_agent_words`), since it never enters
 the main conversation.
 
 Times are active seconds: from the first event, less the time spent
-waiting for the person to answer a question. A build is not slower for
-waiting on a person. -1 means the moment never came.
+waiting for the person to answer a question, and less the time from
+the build ending its turn (the Claude app's `wrap_up`) to the person's
+next prompt. A build is not slower for waiting on a person. -1 means
+the moment never came.
 
 What each moment is taken to be:
 
@@ -421,6 +423,11 @@ def measure(stream: Iterable[Event], agent: str = "") -> Metrics:
     metrics = Metrics(agent=agent)
     clock: _Clock | None = None
     asked: dict[str, datetime] = {}
+    # When the build ended its turn (the Claude app's `wrap_up`), until
+    # its next word or call: time the build wasn't running. The person's
+    # prompt itself isn't the mark, since the app adds user records of
+    # its own (a working-directory notice) seconds after the turn ends.
+    turn_ended: datetime | None = None
     design_written = False
     # The design's three readings, best first (the module's docstring).
     go_ahead_s = heading_s = long_s = -1
@@ -432,6 +439,12 @@ def measure(stream: Iterable[Event], agent: str = "") -> Metrics:
             metrics.sub_agent_words += len(event.text.split())
         if event.sub and event.kind == "say":
             continue  # a sub-agent's words go to the build, not the person
+        if not event.sub and event.kind in ("say", "call"):
+            if turn_ended is not None:
+                clock.waits.append((turn_ended, event.at))
+                turn_ended = None
+            if event.kind == "call" and event.name.endswith("wrap_up"):
+                turn_ended = event.at
         if event.kind == "say":
             if long_s < 0 and len(event.text.split()) >= DESIGN_WORDS:
                 long_s = clock.active(event.at)

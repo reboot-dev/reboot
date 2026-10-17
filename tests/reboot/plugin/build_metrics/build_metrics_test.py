@@ -1,6 +1,6 @@
 """Tests for reading a build's numbers from its transcript.
 
-`testdata/` holds six small transcripts written for these tests:
+`testdata/` holds seven small transcripts written for these tests:
 
 * `baseline.jsonl`: one question answered after a 60 s wait, the design
   shown at 90 s, the API file written at 160 s, 3 scenarios passing at
@@ -21,7 +21,10 @@
 * `codex.jsonl`: a Codex session in the shapes Codex records: its skill
   roots, an `AGENTS.md` taken in, code-mode scripts (one with
   JavaScript arrows, one reading a file, one writing a patch), then
-  shell calls with a traceback and a passing run.
+  shell calls with a traceback and a passing run;
+* `turn_end.jsonl`: the build ends its turn with the Claude app's
+  `wrap_up` at 10 s, the person prompts again at 600 s, and the API
+  file is written at 620 s.
 """
 
 import os
@@ -50,6 +53,11 @@ class Moments(unittest.TestCase):
         self.assertEqual(m.questions, 1)
         self.assertEqual((m.design_s, m.api_s, m.green_s), (30, 100, 200))
         self.assertEqual(m.passed, 3)
+
+    def test_time_after_the_build_ended_its_turn_does_not_count(self) -> None:
+        # The turn ended at 10 s and the build spoke again at 620 s: the
+        # API file written then is 10 s of the build's own time.
+        self.assertEqual(read("turn_end.jsonl").api_s, 10)
 
     def test_the_api_file_can_be_written_from_a_shell(self) -> None:
         self.assertEqual(read("messy.jsonl").api_s, 20)
