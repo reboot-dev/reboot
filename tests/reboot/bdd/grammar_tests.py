@@ -137,7 +137,7 @@ class ReadTest(unittest.TestCase):
         awaits_task = syntax.awaits_task
         self.assertEqual(awaits_task.user, '"u"')
         self.assertEqual(awaits_task.method, 'deposit')
-        self.assertEqual(awaits_task.task_id_saved_as, '<deposit_task_id>')
+        self.assertEqual(awaits_task.task_id, '<deposit_task_id>')
         self.assertEqual(awaits_task.state_type, 'Account')
         self.assertEqual(awaits_task.seconds, 30.0)
 

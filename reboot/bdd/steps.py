@@ -1026,16 +1026,16 @@ async def _awaits_task(
     world: World,
     user: str,
     method: str,
-    name: str,
+    task_id: str,
     state_type: str,
     within: str,
 ) -> None:
     user = _string(world, user, error_prefix='The user')
     seconds = _parsed_seconds(within)
-    saved = _parsed_value(world, name, error_prefix='The task id')
+    saved = _parsed_value(world, task_id, error_prefix='The task id')
     if not isinstance(saved, dict):
         raise ValueError(
-            f"The task id must be a saved task id, but {name} is "
+            f"The task id must be a saved task id, but {task_id} is "
             f"{_json_text(saved)}"
         )
     task_type = world.task_type(state_type=state_type, method=method)
@@ -1049,7 +1049,7 @@ async def _awaits_task(
         world.response = await asyncio.wait_for(task, timeout=seconds)
     except asyncio.TimeoutError:
         raise AssertionError(
-            f"Waited {within} for the `{method}` task {name} to "
+            f"Waited {within} for the `{method}` task {task_id} to "
             "complete"
         ) from None
 
