@@ -23,6 +23,10 @@ runNodeJs({
     const resBytes = execSync("protoc-gen-es", {
       encoding: "buffer",
       input: request.toBinary(),
+      // Node's default `maxBuffer` is 1 MiB, which large applications'
+      // generated code easily exceeds, causing `ENOBUFS`. `run()` must
+      // be synchronous so we can't stream; don't cap the buffer instead.
+      maxBuffer: Infinity,
     });
     const response = CodeGeneratorResponse.fromBinary(resBytes);
     for (const file of response.file) {
