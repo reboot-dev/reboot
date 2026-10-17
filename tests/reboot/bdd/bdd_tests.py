@@ -41,10 +41,10 @@ from reboot.bdd.steps import (
     _assert_aborted,
     _assert_properties,
     _has_bearer_token,
-    _maybe_saved,
     _parse_assertions,
     _parse_assignments,
     _parse_saves,
+    _string,
 )
 from tests.reboot.bdd.account_pb2 import (
     BalanceResponse,
@@ -73,7 +73,7 @@ def two_accounts_application() -> Application:
 @when(
     parsers.parse(
         '"{user}" does {count:d} deposits of {amount:d} on `Account` of '
-        '"<{name}>"'
+        '<{name}>'
     )
 )
 async def _makes_deposits(
@@ -108,10 +108,10 @@ def test_is_reader() -> None:
 
 def test_has_bearer_token() -> None:
     world = World()
-    _has_bearer_token(world, 'admin', 'admin-key')
+    _has_bearer_token(world, '"admin"', '"admin-key"')
     assert world.token('admin') == 'admin-key'
     world.saved['token'] = 'saved-key'
-    _has_bearer_token(world, 'other', '<token>')
+    _has_bearer_token(world, '"other"', '<token>')
     assert world.token('other') == 'saved-key'
 
 
@@ -196,16 +196,6 @@ def test_almost_clause_messages() -> None:
         _parse_assignments(world, '`amount=$amount`')
 
 
-def test_a_recall_where_a_string_is_needed_must_be_a_string() -> None:
-    """A recall in a state id, user id or bearer token position must
-    name a saved string, and the error names what was saved."""
-    world = World()
-    world.save('account_id', {'task_id': 'abc'})
-    with pytest.raises(ValueError) as raised:
-        _maybe_saved(world, '<account_id>')
-    assert 'Expecting the value saved as "account_id"' in str(raised.value)
-
-
 def test_a_variable_is_replaced_by_its_json_text() -> None:
     """Wherever a step says a variable, <name>, the saved value's JSON
     text takes its place before the step parses the value, the way
@@ -223,6 +213,12 @@ def test_a_variable_is_replaced_by_its_json_text() -> None:
     assert assignment.value == {'name': 'Frank', 'tags': ['vip']}
     [assignment] = _parse_assignments(world, '`ids=[<account id>, "x"]`')
     assert assignment.value == ['uuid-1', 'x']
+    assert _string(
+        world,
+        '<account id>',
+        error_prefix='The state id',
+    ) == 'uuid-1'
+    assert _string(world, '"alice"', error_prefix='The state id') == 'alice'
 
 
 def test_a_quoted_variable_doubles_the_quotes() -> None:
@@ -237,6 +233,8 @@ def test_a_quoted_variable_doubles_the_quotes() -> None:
     assert 'but got: "<account id>"' in message
     assert 'that is: ""uuid-1""' in message
     assert 'said bare, <name>, not "<name>"' in message
+    with pytest.raises(ValueError, match='that is: ""uuid-1""'):
+        _string(world, '"<account id>"', error_prefix='The state id')
 
 
 def test_a_variable_nothing_is_saved_under_stays_as_written() -> None:
@@ -247,10 +245,25 @@ def test_a_variable_nothing_is_saved_under_stays_as_written() -> None:
     world.save('account id', 'uuid-1')
     [assignment] = _parse_assignments(world, '`body="<p>hi</p>"`')
     assert assignment.value == '<p>hi</p>'
-    [assignment] = _parse_assignments(world, '`to="Alice <alice@x.com>"`')
-    assert assignment.value == 'Alice <alice@x.com>'
+    assert _string(
+        world,
+        '"Alice <alice@x.com>"',
+        error_prefix='The text',
+    ) == ('Alice <alice@x.com>')
     with pytest.raises(ValueError, match='but got: <acount id>'):
         _parse_assignments(world, '`id=<acount id>`')
+
+
+def test_a_string_slot_needs_a_string() -> None:
+    """A state id, user or bearer token must be a string, and the error
+    names what the variable is."""
+    world = World()
+    world.save('count', 5)
+    world.save('task', {'task_id': 'abc'})
+    with pytest.raises(ValueError, match='must be a string, but <count> is 5'):
+        _string(world, '<count>', error_prefix='The state id')
+    with pytest.raises(ValueError, match=r'<task> is \{"task_id": "abc"\}'):
+        _string(world, '<task>', error_prefix='The user')
 
 
 def test_a_save_may_not_use_an_examples_column() -> None:
