@@ -6,11 +6,11 @@ Feature: Users can sign up with the bank
     Given the application is up
     And "anonymous" is an unauthenticated user
     And "anonymous" creates a `Bank` via `create`
-    And the resulting state id is saved as "bank id"
+    And the resulting state id is saved as <bank id>
 
   Scenario: Signing up makes a new customer with no accounts
-    When "anonymous" does a `sign_up` with `customer_id="ann@example.com"` on `Bank` of "<bank id>"
-    Then as "anonymous", `all_customer_ids` on the `Bank` for "<bank id>" has `customer_ids=["ann@example.com"]`
+    When "anonymous" does a `sign_up` with `customer_id="ann@example.com"` on `Bank` of <bank id>
+    Then as "anonymous", `all_customer_ids` on the `Bank` for <bank id> has `customer_ids=["ann@example.com"]`
     And as "anonymous", `balances` on the `Customer` for "ann@example.com" has `balances=[]`
 
   Rule: A user signs up once
@@ -23,7 +23,7 @@ Feature: Users can sign up with the bank
       factory aborts with `StateAlreadyConstructed`, which the bank
       lets surface as `Unknown`. This waits for a declared error.
 
-      Given "anonymous" does a `sign_up` with `customer_id="ann@example.com"` on `Bank` of "<bank id>"
-      When "anonymous" attempts a `sign_up` with `customer_id="ann@example.com"` on `Bank` of "<bank id>"
+      Given "anonymous" does a `sign_up` with `customer_id="ann@example.com"` on `Bank` of <bank id>
+      When "anonymous" attempts a `sign_up` with `customer_id="ann@example.com"` on `Bank` of <bank id>
       Then the attempt aborts with `AlreadySignedUp`
-      And as "anonymous", `all_customer_ids` on the `Bank` for "<bank id>" has `customer_ids` of length `1`
+      And as "anonymous", `all_customer_ids` on the `Bank` for <bank id> has `customer_ids` of length `1`

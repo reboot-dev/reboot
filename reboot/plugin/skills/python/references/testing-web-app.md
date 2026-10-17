@@ -27,8 +27,8 @@ Scenario: Opening a first account in the web app
   When "alice" fills "Initial Deposit ($)" in the web app with `1000`
   And "alice" clicks the "Open Account" button in the web app
   Then "alice" eventually sees "$1000" in the "Your Accounts" table in the web app within 10 seconds
-  When "alice" saves the text of the "account-id" element in the web app as "account id"
-  Then as "alice", `balance` on the `Account` for "<account id>" has `amount=1000.0`
+  When "alice" saves the text of the "account-id" element in the web app as <account id>
+  Then as "alice", `balance` on the `Account` for <account id> has `amount=1000.0`
 ```
 
 `testing-features.md` covers the backend steps and the shape of a
@@ -136,24 +136,24 @@ the app in one scenario.
 | `"alice" opens the web app in light mode`                                     | Opens the app's origin in alice's browser, in that color scheme (`light` or `dark`; `at "/path"` before the mode for another page) |
 | `"alice" clicks the "Open Account" button in the web app`                     | Clicks the element of that role and accessible name                                                                                |
 | `"alice" fills "Amount ($)" in the web app with `250``                        | Fills the field with that label                                                                                                    |
-| `"alice" selects "<first account id>" in "From Account" in the web app`       | Picks an option in the select with that label                                                                                      |
+| `"alice" selects <first account id> in "From Account" in the web app`         | Picks an option in the select with that label                                                                                      |
 | `"alice" checks "Remember me" in the web app` / `unchecks`                    | Sets the checkbox with that label                                                                                                  |
 | `"alice" presses "Enter" in the web app`                                      | Presses a key in the focused element                                                                                               |
 | `"alice" sees "$1000" in the web app`                                         | Asserts the text is visible now                                                                                                    |
 | `"alice" sees "$1000" in the "Your Accounts" table in the web app`            | Asserts the text within that element                                                                                               |
 | `"alice" eventually sees "$1000" in the web app within 10 seconds`            | Waits for the text, at most that long                                                                                              |
-| `"alice" does not see "<carol account id>" in the web app`                    | Asserts the text is absent                                                                                                         |
+| `"alice" does not see <carol account id> in the web app`                      | Asserts the text is absent                                                                                                         |
 | `"alice" sees the "Sign in" button in the web app is enabled` / `is disabled` | Asserts the element's state                                                                                                        |
 | `"alice" sees the web app at "/accounts"`                                     | Asserts the page's path                                                                                                            |
-| `"alice" saves the text of the "account-id" element in the web app as "id"`   | Reads an element by test id into a saved value                                                                                     |
-| `"bob" is signed in to the web app with their user id saved as "bob id"`      | Binds bob's browser session to bob (below)                                                                                         |
+| `"alice" saves the text of the "account-id" element in the web app as <id>`   | Reads an element by test id into a saved value                                                                                     |
+| `"bob" is signed in to the web app with their user id saved as <bob id>`      | Binds bob's browser session to bob (below)                                                                                         |
 | `"bob" is signed out of the web app`                                          | Waits for bob's session to end (below)                                                                                             |
 
 - The **roles** a step may name are a closed list: `button`,
   `link`, `tab`, `checkbox`, `radio`, `menuitem`, `option`, `row`,
   `table`. The name is the element's accessible name, matched
   exactly.
-- **Quoted text may say `<name>`** for a saved value: `sees "<alice account id>" in the "Your Accounts" table`.
+- **What the app shows or is told is a JSON string or a variable**: `sees "$1000" in the "Your Accounts" table`, or `sees <alice account id> in the "Your Accounts" table` for a saved value, said bare since its JSON text, quotes included, takes its place. `sees` matches text that contains the value, so to check that the page shows `Signed in as uuid-1`, say `sees <alice user id> in the web app`; there is no way to build the surrounding text into the step, since a variable inside quotes is its JSON text, quotes and all.
 - `eventually sees` takes `within`; `sees` looks now and takes
   none. A backend change the page shows after a reactive read is
   always `eventually`.
@@ -171,14 +171,14 @@ Scenario: Signing in and out with the Development picker
   When "ben" opens the web app in light mode
   And "ben" clicks the "Sign in" button in the web app
   And "ben" clicks the "Ben" link in the web app
-  Then "ben" is signed in to the web app with their user id saved as "ben user id"
+  Then "ben" is signed in to the web app with their user id saved as <ben user id>
   When "ben" fills "Initial Deposit ($)" in the web app with `500`
   And "ben" clicks the "Open Account" button in the web app
   Then "ben" eventually sees "$500" in the "Your Accounts" table in the web app within 10 seconds
-  And as "ben", `balances` on the `User` for "<ben user id>" eventually has `balances` of length `1` and `balances[0].balance=500.0` within 10 seconds
+  And as "ben", `balances` on the `User` for <ben user id> eventually has `balances` of length `1` and `balances[0].balance=500.0` within 10 seconds
   When "ben" clicks the "Sign out" button in the web app
   Then "ben" is signed out of the web app
-  And as "ben", `balances` on the `User` for "<ben user id>" aborts with `Unauthenticated`
+  And as "ben", `balances` on the `User` for <ben user id> aborts with `Unauthenticated`
 ```
 
 - The Development picker lists its accounts as links named by

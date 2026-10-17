@@ -107,16 +107,16 @@ Feature: Customers can transfer money between accounts
     Scenario: A transfer between two customers' accounts
       Given "anonymous" is an unauthenticated user
       And "anonymous" creates a `Bank` via `create`
-      And the resulting state id is saved as "bank id"
-      When "anonymous" does a `sign_up` with `customer_id="test@reboot.dev"` on `Bank` of "<bank id>"
+      And the resulting state id is saved as <bank id>
+      When "anonymous" does a `sign_up` with `customer_id="test@reboot.dev"` on `Bank` of <bank id>
       And "anonymous" does an `open_account` with `initial_deposit=1000.0` on `Customer` of "test@reboot.dev"
-      And the resulting `account_id` is saved as "first account id"
-      And "anonymous" does a `sign_up` with `customer_id="test2@reboot.dev"` on `Bank` of "<bank id>"
+      And the resulting `account_id` is saved as <first account id>
+      And "anonymous" does a `sign_up` with `customer_id="test2@reboot.dev"` on `Bank` of <bank id>
       And "anonymous" does an `open_account` with `initial_deposit=0.0` on `Customer` of "test2@reboot.dev"
-      And the resulting `account_id` is saved as "second account id"
-      And "anonymous" does a `transfer` with `from_account_id=<first account id>` and `to_account_id=<second account id>` and `amount=250.0` on `Bank` of "<bank id>"
-      Then as "anonymous", `balance` on the `Account` for "<first account id>" has `amount=750.0`
-      And as "anonymous", `balance` on the `Account` for "<second account id>" has `amount=250.0`
+      And the resulting `account_id` is saved as <second account id>
+      And "anonymous" does a `transfer` with `from_account_id=<first account id>` and `to_account_id=<second account id>` and `amount=250.0` on `Bank` of <bank id>
+      Then as "anonymous", `balance` on the `Account` for <first account id> has `amount=750.0`
+      And as "anonymous", `balance` on the `Account` for <second account id> has `amount=250.0`
 
   Rule: A transfer that would overdraw the source leaves both accounts unchanged
     A transfer is one transaction: when the withdrawal from the source
@@ -197,27 +197,47 @@ call must then name the same user.
 
 ```gherkin
 Given "alice" creates an `Account` via `open` with `initial_balance=100`
-And the resulting state id is saved as "account id"
-When "alice" does a `deposit` with `amount=50` on `Account` of "<account id>"
+And the resulting state id is saved as <account id>
+When "alice" does a `deposit` with `amount=50` on `Account` of <account id>
 Then the result has `updated_balance=150`
-And the resulting `account_id` is saved as "alice account id"
+And the resulting `account_id` is saved as <alice account id>
 ```
 
 - **`creates`** calls a factory. Leave the id out and the factory
-  makes one up, then save it on the next line with `the resulting state id is saved as "..."`. Give an id, `creates an `Account`of "alice" via`open``, only when the id means something to the application: a user id, a singleton the code itself refers to (`"coupon-book"`), a natural key. A scenario never invents an id
+  makes one up, then save it on the next line with `the resulting state id is saved as <...>`. Give an id, `creates an `Account`of "alice" via`open``, only when the id means something to the application: a user id, a singleton the code itself refers to (`"coupon-book"`), a natural key. A scenario never invents an id
   a factory would otherwise choose.
 - **`does`** calls a writer, transaction, or workflow; the article
   follows English (`does an `open_account`` ). The properties of the request come right after the method: `with `a=1` and `b="x" ``.
 - **A call does one thing; its result is saved on the next line.**
-  `the resulting `account_id` is saved as "..."` saves a response
+  `the resulting `account_id` is saved as <...>` saves a response
   property; `the resulting state id` and `the resulting task id`
   save what `creates` and `spawns` produced. `the result has ...`
   asserts on the last response.
-- **A saved name is a quoted string** and may have spaces, `"first account id"`, and is said back as `<first account id>`: in a
-  state id (`of "<account id>"`), a user id, a bearer token, or a
-  property value (`amount=<balance>`). A `<name>` inside a JSON
-  string stays literal. A `Scenario Outline`'s columns are said the
-  same way, so a save may not reuse a column's name.
+- **A value is saved as the variable later steps say it by**, `saved as <first account id>`, which may have spaces, and is said back the same way: in a
+  state id (`of <account id>`), a user id, a bearer token, or a
+  property value (`amount=<balance>`). A `Scenario Outline`'s columns
+  are said the same way, so a save may not use a column's name.
+- **A variable is replaced by its JSON text** before the step runs,
+  the way pytest-bdd substitutes a column: a saved string arrives
+  with its double quotes (`"uuid-1"`), a number or boolean bare, an
+  object or list as JSON with double-quoted keys and strings. So a
+  saved string is said bare, never in quotes: `of <account id>`, not
+  `of "<account id>"`, which would read `of ""uuid-1""` and fail as
+  not JSON (the error says what the text became). A `<name>` nothing
+  is saved under stays as written, so `body="<p>hi</p>"` is that
+  text; a bare one, `id=<acount id>`, fails as not JSON. A string column of an `Examples` table is written with
+  its quotes in the table, `| "uuid-1" |`, and said bare too.
+- **There is no string interpolation or concatenation.** A variable
+  inside a quoted string is still replaced by its JSON text, so a
+  saved number, boolean or `null` can be written into one
+  (`label="Order <count>"` is `Order 5`), but a saved string, object
+  or list cannot: `url="/accounts/<account id>"` reads
+  `"/accounts/"uuid-1""` and fails as not JSON. Assert `containing`
+  instead of equality to check that a string holds a saved value,
+  `has `url`containing`<account id>``, and in the web app say `sees <account id> in the web app`, which matches text that
+  contains the value. Where the whole string must be compared, have
+  the application return the parts separately, or compute the
+  expected string in a custom step.
 - **Values are JSON** with JSON5's leniencies: `owner={name: "Frank", tags: ["vip"]}`. A dotted path nests when calling,
   `owner.name="Frank"`, and reaches into the response when
   asserting, `balances[0].account_id=<ann account id>` or
@@ -226,10 +246,10 @@ And the resulting `account_id` is saved as "alice account id"
 ## Reads and Assertions
 
 ```gherkin
-Then as "alice", `balance` on the `Account` for "<account id>" has `amount=100.0`
+Then as "alice", `balance` on the `Account` for <account id> has `amount=100.0`
 And as "alice", `balances` on the `Customer` for "ann" has `balances` of length `1` and `balances[0].balance=25.0`
-And as "anonymous", `all_customer_ids` on the `Bank` for "<bank id>" has `customer_ids` containing `"alice"`
-And as "alice", `has_at_least` with `amount=50` on the `Account` for "<account id>" has `enough=true`
+And as "anonymous", `all_customer_ids` on the `Bank` for <bank id> has `customer_ids` containing `"alice"`
+And as "alice", `has_at_least` with `amount=50` on the `Account` for <account id> has `enough=true`
 ```
 
 - A `Then ... has` asserts; clauses are `path=value`, `path`
@@ -240,21 +260,21 @@ And as "alice", `has_at_least` with `amount=50` on the `Account` for "<account i
   `Account` for ...`.
 - Readers are only read this way: `does` and `attempts` refuse a
   reader, and `has` refuses a writer.
-- A `Given` or `When ... has` saves instead of asserting: `has `owner.name` saved as "owner name"`.
+- A `Given` or `When ... has` saves instead of asserting: `has `owner.name` saved as <owner name>`.
 
 **Waiting** for a task, a schedule, or a workflow to land is a
 reactive read with a bound, never a sleep:
 
 ```gherkin
-Then as "anonymous", `balance` on the `Account` for "<account id>" eventually has `amount=1.0` within 10 seconds
+Then as "anonymous", `balance` on the `Account` for <account id> eventually has `amount=1.0` within 10 seconds
 ```
 
 ## Attempts, Aborts, and Tasks
 
 ```gherkin
-When "alice" attempts a `withdraw` with `amount=50` on `Account` of "<account id>"
+When "alice" attempts a `withdraw` with `amount=50` on `Account` of <account id>
 Then the attempt aborts with `OverdraftError` with `amount=20`
-And as "alice", `balance` on the `Account` for "<account id>" has `balance=30`
+And as "alice", `balance` on the `Account` for <account id> has `balance=30`
 
 Then as "anonymous", `balance` on the `Account` for "ghost" aborts with `StateNotConstructed`
 ```
@@ -269,9 +289,9 @@ Then as "anonymous", `balance` on the `Account` for "ghost" aborts with `StateNo
   an error and assert on that.
 
 ```gherkin
-When "anonymous" spawns a `deposit` with `amount=15` on `Account` of "<account id>"
-And the resulting task id is saved as "first"
-Then "anonymous" awaits the `deposit` task "<first>" on `Account` within 30 seconds
+When "anonymous" spawns a `deposit` with `amount=15` on `Account` of <account id>
+And the resulting task id is saved as <first>
+Then "anonymous" awaits the `deposit` task <first> on `Account` within 30 seconds
 And the result has `updated_balance=15`
 ```
 
@@ -327,7 +347,7 @@ from reboot.bdd.fixtures import World
 @when(
     parsers.parse(
         '"{user}" does {count:d} deposits of {amount:d} on `Account` of '
-        '"<{name}>"'
+        '<{name}>'
     )
 )
 async def _makes_deposits(

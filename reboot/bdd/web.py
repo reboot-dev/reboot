@@ -47,29 +47,9 @@ from reboot.bdd.grammar import (
 )
 from reboot.bdd.loop import run
 from reboot.bdd.recording import VIDEO_SIZE, Recording
-from reboot.bdd.steps import _parsed_seconds, _parsed_value, _saved_value
+from reboot.bdd.steps import _parsed_seconds, _parsed_value, _string
 from typing import Any, Iterator, Literal, Optional, cast
 from urllib.parse import urlparse
-
-# Where a saved value is named inside quoted text: 'Signed in as
-# <user_id>'.
-_VARIABLE = re.compile(r'<(?P<name>[^<>]+)>')
-
-
-def _with_saved(world: World, text: str) -> str:
-    """The quoted text with each '<name>' replaced by the string saved
-    under that name."""
-
-    def replacement(match: re.Match[str]) -> str:
-        value = _saved_value(world, match['name'])
-        if not isinstance(value, str):
-            raise ValueError(
-                f"Expecting the value saved as \"{match['name']}\" to be a "
-                f"string, but it is {value!r}"
-            )
-        return value
-
-    return _VARIABLE.sub(replacement, text)
 
 
 @dataclass
@@ -274,14 +254,16 @@ def _timeout(within: Optional[str]) -> Optional[float]:
 
 @when(parsers.re(OPENS_WEB_APP))
 def _opens_web_app(
+    world: World,
     web_app: WebApp,
     user: str,
     path: Optional[str],
     color_scheme: Literal['light', 'dark'],
 ) -> None:
     web_app.open(
-        user=user,
-        path='/' if path is None else path,
+        user=_string(world, user, error_prefix='The user'),
+        path='/'
+        if path is None else _string(world, path, error_prefix='The path'),
         color_scheme=color_scheme,
     )
 
@@ -294,7 +276,12 @@ def _clicks_in_web_app(
     name: str,
     role: str,
 ) -> None:
-    _element(web_app.page(user=user), role, _with_saved(world, name)).click()
+    user = _string(world, user, error_prefix='The user')
+    _element(
+        web_app.page(user=user),
+        role,
+        _string(world, name, error_prefix="The element's name"),
+    ).click()
 
 
 @when(parsers.re(FILLS_IN_WEB_APP))
@@ -305,7 +292,13 @@ def _fills_in_web_app(
     label: str,
     value: str,
 ) -> None:
-    filled: Any = _parsed_value(world, f'"{label}"', value)
+    user = _string(world, user, error_prefix='The user')
+    label = _string(world, label, error_prefix='The label')
+    filled: Any = _parsed_value(
+        world,
+        value,
+        error_prefix=f'The value of "{label}"',
+    )
     web_app.page(user=user).get_by_label(label, exact=True).fill(str(filled))
 
 
@@ -317,18 +310,23 @@ def _selects_in_web_app(
     option: str,
     label: str,
 ) -> None:
+    user = _string(world, user, error_prefix='The user')
+    label = _string(world, label, error_prefix='The label')
     web_app.page(user=user).get_by_label(label, exact=True).select_option(
-        label=_with_saved(world, option),
+        label=_string(world, option, error_prefix='The option'),
     )
 
 
 @when(parsers.re(CHECKS_IN_WEB_APP))
 def _checks_in_web_app(
+    world: World,
     web_app: WebApp,
     user: str,
     action: str,
     label: str,
 ) -> None:
+    user = _string(world, user, error_prefix='The user')
+    label = _string(world, label, error_prefix='The label')
     box = web_app.page(user=user).get_by_label(label, exact=True)
     if action == 'checks':
         box.check()
@@ -337,8 +335,15 @@ def _checks_in_web_app(
 
 
 @when(parsers.re(PRESSES_IN_WEB_APP))
-def _presses_in_web_app(web_app: WebApp, user: str, key: str) -> None:
-    web_app.page(user=user).keyboard.press(key)
+def _presses_in_web_app(
+    world: World,
+    web_app: WebApp,
+    user: str,
+    key: str,
+) -> None:
+    user = _string(world, user, error_prefix='The user')
+    web_app.page(user=user
+                ).keyboard.press(_string(world, key, error_prefix='The key'))
 
 
 @then(parsers.re(SEES_IN_WEB_APP))
@@ -363,11 +368,16 @@ def _sees_in_web_app(
             "Almost: 'eventually sees' takes a bound, e.g. 'within 10 "
             "seconds'"
         )
+    user = _string(world, user, error_prefix='The user')
     page = web_app.page(user=user)
-    text = _with_saved(world, text)
+    text = _string(world, text, error_prefix='The text')
     timeout = _timeout(within)
     if name is not None and role is not None:
-        element = _element(page, role, _with_saved(world, name))
+        element = _element(
+            page,
+            role,
+            _string(world, name, error_prefix="The element's name"),
+        )
         if negated is not None:
             expect(element).not_to_contain_text(text, timeout=timeout)
         else:
@@ -391,7 +401,12 @@ def _sees_enabled_in_web_app(
     role: str,
     state: str,
 ) -> None:
-    element = _element(web_app.page(user=user), role, _with_saved(world, name))
+    user = _string(world, user, error_prefix='The user')
+    element = _element(
+        web_app.page(user=user),
+        role,
+        _string(world, name, error_prefix="The element's name"),
+    )
     if state == 'enabled':
         expect(element).to_be_enabled()
     else:
@@ -406,9 +421,11 @@ def _sees_web_app_at(
     user: str,
     path: str,
 ) -> None:
+    user = _string(world, user, error_prefix='The user')
     assert web_app.frontend.origin is not None
     expect(web_app.page(user=user)).to_have_url(
-        web_app.frontend.origin + _with_saved(world, path),
+        web_app.frontend.origin +
+        _string(world, path, error_prefix='The path'),
     )
 
 
@@ -431,6 +448,7 @@ def _is_signed_in_to_web_app(
     after the sign-in the scenario clicked through: the backend
     answers their session with a user, whom the user calls as from
     here on, and whose id is saved under the given name, if any."""
+    user = _string(world, user, error_prefix='The user')
     page = web_app.page(user=user)
     origin = web_app.frontend.origin
     assert origin is not None
@@ -462,6 +480,7 @@ def _is_signed_out_of_web_app(
     """The user's browser session is nobody's, after the sign-out
     the scenario clicked, which the app reports to the backend in
     its own time; the user calls with no token from here on."""
+    user = _string(world, user, error_prefix='The user')
     page = web_app.page(user=user)
     deadline = time.monotonic() + _SESSION_CHANGE_TIMEOUT_MILLISECONDS / 1000
     while web_app.whoami(user=user).get('authenticated'):
@@ -482,6 +501,8 @@ def _saves_text_in_web_app_as(
     test_id: str,
     name: str,
 ) -> None:
+    user = _string(world, user, error_prefix='The user')
+    test_id = _string(world, test_id, error_prefix='The test id')
     world.save(
         name,
         web_app.page(user=user).get_by_test_id(test_id).inner_text()

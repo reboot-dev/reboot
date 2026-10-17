@@ -8,9 +8,9 @@ Feature: Customers can open an account
   Scenario: The bank opens an account for a customer
     Given "anonymous" is an unauthenticated user
     And "anonymous" creates a `Bank` via `create`
-    And the resulting state id is saved as "bank id"
-    And "anonymous" does a `sign_up` with `customer_id="ann@example.com"` on `Bank` of "<bank id>"
-    When "anonymous" does an `open_customer_account` with `customer_id="ann@example.com"` and `initial_deposit=25.0` on `Bank` of "<bank id>"
+    And the resulting state id is saved as <bank id>
+    And "anonymous" does a `sign_up` with `customer_id="ann@example.com"` on `Bank` of <bank id>
+    When "anonymous" does an `open_customer_account` with `customer_id="ann@example.com"` and `initial_deposit=25.0` on `Bank` of <bank id>
     Then as "anonymous", `balances` on the `Customer` for "ann@example.com" has `balances` of length `1` and `balances[0].balance=25.0`
 
   Rule: A new account holds exactly its initial deposit
@@ -18,11 +18,11 @@ Feature: Customers can open an account
     Scenario: Opening an account with a deposit
       Given "anonymous" is an unauthenticated user
       And "anonymous" creates a `Bank` via `create`
-      And the resulting state id is saved as "bank id"
-      And "anonymous" does a `sign_up` with `customer_id="ann@example.com"` on `Bank` of "<bank id>"
+      And the resulting state id is saved as <bank id>
+      And "anonymous" does a `sign_up` with `customer_id="ann@example.com"` on `Bank` of <bank id>
       When "anonymous" does an `open_account` with `initial_deposit=100.0` on `Customer` of "ann@example.com"
-      And the resulting `account_id` is saved as "account id"
-      Then as "anonymous", `balance` on the `Account` for "<account id>" has `amount=100.0`
+      And the resulting `account_id` is saved as <account id>
+      Then as "anonymous", `balance` on the `Account` for <account id> has `amount=100.0`
 
     Scenario: Opening a first account in the web app
       Given "alice" is an authenticated user
@@ -31,8 +31,8 @@ Feature: Customers can open an account
       When "alice" fills "Initial Deposit ($)" in the web app with `1000`
       And "alice" clicks the "Open Account" button in the web app
       Then "alice" eventually sees "$1000" in the "Your Accounts" table in the web app within 10 seconds
-      When "alice" saves the text of the "account-id" element in the web app as "account id"
-      Then as "alice", `balance` on the `Account` for "<account id>" has `amount=1000.0`
+      When "alice" saves the text of the "account-id" element in the web app as <account id>
+      Then as "alice", `balance` on the `Account` for <account id> has `amount=1000.0`
       And as "alice", `balances` on the `User` for "alice" has `balances` of length `1` and `balances[0].balance=1000.0`
 
   Rule: An account belongs to the customer who opened it
@@ -40,12 +40,12 @@ Feature: Customers can open an account
     Scenario: Two customers open an account each
       Given "anonymous" is an unauthenticated user
       And "anonymous" creates a `Bank` via `create`
-      And the resulting state id is saved as "bank id"
-      And "anonymous" does a `sign_up` with `customer_id="ann@example.com"` on `Bank` of "<bank id>"
-      And "anonymous" does a `sign_up` with `customer_id="bob@example.com"` on `Bank` of "<bank id>"
+      And the resulting state id is saved as <bank id>
+      And "anonymous" does a `sign_up` with `customer_id="ann@example.com"` on `Bank` of <bank id>
+      And "anonymous" does a `sign_up` with `customer_id="bob@example.com"` on `Bank` of <bank id>
       When "anonymous" does an `open_account` with `initial_deposit=10.0` on `Customer` of "ann@example.com"
-      And the resulting `account_id` is saved as "ann account id"
+      And the resulting `account_id` is saved as <ann account id>
       And "anonymous" does an `open_account` with `initial_deposit=20.0` on `Customer` of "bob@example.com"
-      And the resulting `account_id` is saved as "bob account id"
+      And the resulting `account_id` is saved as <bob account id>
       Then as "anonymous", `balances` on the `Customer` for "ann@example.com" has `balances` of length `1` and `balances[0].account_id=<ann account id>`
       And as "anonymous", `balances` on the `Customer` for "bob@example.com" has `balances` of length `1` and `balances[0].account_id=<bob account id>`

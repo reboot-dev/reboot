@@ -12,5 +12,5 @@ Feature: Accounts earn interest
 
     Scenario: A new account earns its first period's interest
       Given "anonymous" creates an `Account` via `open`
-      And the resulting state id is saved as "account id"
-      Then as "anonymous", `balance` on the `Account` for "<account id>" eventually has `amount=1.0` within 10 seconds
+      And the resulting state id is saved as <account id>
+      Then as "anonymous", `balance` on the `Account` for <account id> eventually has `amount=1.0` within 10 seconds

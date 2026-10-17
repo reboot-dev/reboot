@@ -6,11 +6,11 @@ Feature: Ingesting transcripts through the librarian
 
   Scenario: Adding a transcript wakes the librarian
     Given "alice" does a `create_wiki` with `name="notes"` and `description="knowledge base"` on `User` of "alice"
-    And the resulting `wiki_id` is saved as "wiki_id"
-    When "alice" does a `add_transcript` with `messages=[{role: "user", content: "Tell me about X."}, {role: "assistant", content: "X is a thing that does Y."}]` on `Wiki` of "<wiki_id>"
-    Then as "alice", `get` on the `Wiki` for "<wiki_id>" eventually has `content` containing `"[Test Page](Page:"` within 30 seconds
+    And the resulting `wiki_id` is saved as <wiki_id>
+    When "alice" does a `add_transcript` with `messages=[{role: "user", content: "Tell me about X."}, {role: "assistant", content: "X is a thing that does Y."}]` on `Wiki` of <wiki_id>
+    Then as "alice", `get` on the `Wiki` for <wiki_id> eventually has `content` containing `"[Test Page](Page:"` within 30 seconds
     # The scripted librarian saves <page_id> the moment its
     # `create_page` tool returns, which is before the wiki's content
     # updates, so once the line above passes the save exists.
-    And as "alice", `get` on the `Wiki` for "<wiki_id>" has `content` containing `<page_id>`
-    And as "alice", `get` on the `Page` for "<page_id>" has `title="Test Page"` and `content="Distilled transcript content."`
+    And as "alice", `get` on the `Wiki` for <wiki_id> has `content` containing `<page_id>`
+    And as "alice", `get` on the `Page` for <page_id> has `title="Test Page"` and `content="Distilled transcript content."`

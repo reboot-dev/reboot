@@ -7,10 +7,17 @@ package rbt.v1alpha1.bdd;
 // A value as a step writes it: JSON (JSON5, so keys need no quotes),
 // parsed against the property it is set on or asserted against when
 // the scenario runs, since what `1` means depends on that property's
-// type. May hold a variable, `<name>`, whose value is spliced in
-// first: a column of a Scenario Outline's Examples table, or a value
-// a step before it saved; a value that is only a variable is the
-// saved value itself.
+// type. May hold a variable, `<name>`, whose JSON text takes its
+// place before the step runs: a column of a Scenario Outline's
+// Examples table, as the table writes it, or a value a step before
+// it saved, as JSON, so a saved string arrives with its quotes and
+// is said bare, `amount=<balance>` or `id=<account id>`.
+//
+// Every value a step takes is one of these, in backticks after a
+// property's `=` and, where the grammar itself delimits it (a state's
+// id, a user, what the web app shows), as a JSON string or a bare
+// variable: 'the `Account` for "alice"', 'the `Account` for <account
+// id>'.
 message Value {
   string json = 1;
 }
@@ -21,8 +28,9 @@ message State {
   // step may qualify with its package.
   string type = 1;
 
-  // The id as written, without its quotes; may be a variable,
-  // `<name>`, whose value is the id.
+  // The id as written, a JSON string with its quotes, `"alice"`, or a
+  // variable, `<account id>`, whose JSON text is the id; empty for a
+  // state whose id a factory makes up.
   string id = 2;
 }
 
@@ -67,7 +75,7 @@ message Assertion {
   }
 }
 
-// A `path` saved as "name" clause: the property read and the name it
+// A `path` saved as <name> clause: the property read and the name it
 // is saved under.
 message Save {
   string path = 1;
@@ -153,13 +161,14 @@ message Attempts {
   string user = 4;
 }
 
-// '"alice" awaits the `deposit` task "<name>" on `Account` within 30
+// '"alice" awaits the `deposit` task <name> on `Account` within 30
 // seconds'.
 message AwaitsTask {
   string method = 1;
 
-  // The name the task's id was saved under.
-  string task_id_saved_as = 2;
+  // The task's id as written: a variable, `<name>`, naming the
+  // saved id.
+  string task_id = 2;
 
   string state_type = 3;
 
@@ -212,7 +221,7 @@ message EventuallyHas {
   repeated Assignment arguments = 6;
 }
 
-// '`get` on the `Account` for "alice" has `owner` saved as "o"': a
+// '`get` on the `Account` for "alice" has `owner` saved as <o>': a
 // reader, whose response is saved from.
 message HasSavedAs {
   string method = 1;
@@ -255,7 +264,7 @@ message ResultHas {
 
 // An element of the web app a step names by what it is and what it
 // says: 'the "Open Account" button'. The name is the element's
-// accessible name as written, which may hold a <name> variable.
+// accessible name as written, a JSON string or a variable.
 message Element {
   // What an element may be: the ARIA roles a step may name, each
   // written in a step as its name in lower case.
@@ -313,7 +322,7 @@ message FillsInWebApp {
   Value value = 3;
 }
 
-// '"alice" selects "<id>" in "From Account" in the web app': the
+// '"alice" selects <id> in "From Account" in the web app': the
 // option, by its text, of the select named by its label.
 message SelectsInWebApp {
   string user = 1;
@@ -385,7 +394,7 @@ message SavesTextInWebAppAs {
 }
 
 // '"alice" is signed in to the web app', optionally 'with their user
-// id saved as "alice_user_id"': the browser's session is a signed-in
+// id saved as <alice_user_id>': the browser's session is a signed-in
 // user, whom "alice" calls as from here on.
 message IsSignedInToWebApp {
   string user = 1;
@@ -400,18 +409,18 @@ message IsSignedOutOfWebApp {
   string user = 1;
 }
 
-// 'the resulting `account_id` is saved as "alice_account_id"'.
+// 'the resulting `account_id` is saved as <alice_account_id>'.
 message ResultingIsSavedAs {
   Save save = 1;
 }
 
-// 'the resulting state id is saved as "account_id"': the id of the
+// 'the resulting state id is saved as <account_id>': the id of the
 // state the latest 'creates' step created.
 message ResultingStateIdIsSavedAs {
   string name = 1;
 }
 
-// 'the resulting task id is saved as "deposit_task_id"': the id of
+// 'the resulting task id is saved as <deposit_task_id>': the id of
 // the task the latest 'spawns' step spawned.
 message ResultingTaskIdIsSavedAs {
   string name = 1;

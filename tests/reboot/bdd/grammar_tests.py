@@ -31,9 +31,9 @@ class ReadTest(unittest.TestCase):
         self.assertEqual(syntax.WhichOneof('step'), 'does')
         does = syntax.does
         self.assertTrue(does.spawned)
-        self.assertEqual(does.user, 'u')
+        self.assertEqual(does.user, '"u"')
         self.assertEqual(does.state.type, 'Bank')
-        self.assertEqual(does.state.id, 'test-bank')
+        self.assertEqual(does.state.id, '"test-bank"')
         self.assertEqual(does.method, 'transfer')
         self.assertEqual(
             [
@@ -45,7 +45,7 @@ class ReadTest(unittest.TestCase):
                 ('amount', '250.0'),
             ],
         )
-        syntax = parse('the resulting task id is saved as "transfer_task_id"')
+        syntax = parse('the resulting task id is saved as <transfer_task_id>')
         assert syntax is not None
         self.assertEqual(
             syntax.resulting_task_id_is_saved_as.name, 'transfer_task_id'
@@ -54,8 +54,8 @@ class ReadTest(unittest.TestCase):
         syntax = parse('"u" creates an `Account` of "alice" via `open`')
         assert syntax is not None
         self.assertEqual(syntax.WhichOneof('step'), 'creates_via')
-        self.assertEqual(syntax.creates_via.user, 'u')
-        self.assertEqual(syntax.creates_via.state.id, 'alice')
+        self.assertEqual(syntax.creates_via.user, '"u"')
+        self.assertEqual(syntax.creates_via.state.id, '"alice"')
         self.assertEqual(syntax.creates_via.method, 'open')
         self.assertEqual(len(syntax.creates_via.assignments), 0)
 
@@ -66,7 +66,7 @@ class ReadTest(unittest.TestCase):
         assert syntax is not None
         self.assertEqual(syntax.creates_via.state.type, 'Account')
         self.assertEqual(syntax.creates_via.state.id, '')
-        syntax = parse('the resulting state id is saved as "account_id"')
+        syntax = parse('the resulting state id is saved as <account_id>')
         assert syntax is not None
         self.assertEqual(
             syntax.resulting_state_id_is_saved_as.name, 'account_id'
@@ -85,7 +85,7 @@ class ReadTest(unittest.TestCase):
         syntax = parse('"u" attempts an `overdraw` on `Account` of "a"')
         assert syntax is not None
         self.assertEqual(syntax.attempts.method, 'overdraw')
-        self.assertEqual(syntax.attempts.user, 'u')
+        self.assertEqual(syntax.attempts.user, '"u"')
 
     def test_predicates_and_saves(self) -> None:
         syntax = parse(
@@ -107,7 +107,7 @@ class ReadTest(unittest.TestCase):
         )
 
         syntax = parse(
-            'as "u", `get` on the `Account` for "a" has `owner` saved as "o"'
+            'as "u", `get` on the `Account` for "a" has `owner` saved as <o>'
         )
         assert syntax is not None
         self.assertEqual(syntax.WhichOneof('step'), 'has_saved_as')
@@ -117,8 +117,11 @@ class ReadTest(unittest.TestCase):
         )
 
     def test_a_state_id_can_be_a_variable(self) -> None:
+        """A state id, like any value the grammar delimits, is a JSON
+        string as written, with its quotes, or a variable, kept as
+        written for the step to substitute."""
         syntax = parse(
-            'as "u", `balance` on the `Account` for "<first_account_id>" has '
+            'as "u", `balance` on the `Account` for <first_account_id> has '
             '`amount=750.0`'
         )
         assert syntax is not None
@@ -126,22 +129,22 @@ class ReadTest(unittest.TestCase):
 
     def test_a_task_completing_recalls_its_id(self) -> None:
         syntax = parse(
-            '"u" awaits the `deposit` task "<deposit_task_id>" on `Account` '
+            '"u" awaits the `deposit` task <deposit_task_id> on `Account` '
             'within 30 seconds'
         )
         assert syntax is not None
         self.assertEqual(syntax.WhichOneof('step'), 'awaits_task')
         awaits_task = syntax.awaits_task
-        self.assertEqual(awaits_task.user, 'u')
+        self.assertEqual(awaits_task.user, '"u"')
         self.assertEqual(awaits_task.method, 'deposit')
-        self.assertEqual(awaits_task.task_id_saved_as, 'deposit_task_id')
+        self.assertEqual(awaits_task.task_id, '<deposit_task_id>')
         self.assertEqual(awaits_task.state_type, 'Account')
         self.assertEqual(awaits_task.seconds, 30.0)
 
         # A wait bound not of the grammar's form is not a syntax.
         self.assertIsNone(
             parse(
-                '"u" awaits the `deposit` task "<deposit_task_id>" on '
+                '"u" awaits the `deposit` task <deposit_task_id> on '
                 '`Account` within 30s'
             )
         )
@@ -179,7 +182,7 @@ class ReadTest(unittest.TestCase):
 
         syntax = parse(
             'as "u", `has_at_least` with `amount=50` on the `Account` for '
-            '"alice" has `enough` saved as "covered"'
+            '"alice" has `enough` saved as <covered>'
         )
         assert syntax is not None
         self.assertEqual(syntax.WhichOneof('step'), 'has_saved_as')
@@ -220,7 +223,7 @@ class ReadTest(unittest.TestCase):
         self.assertEqual(syntax.WhichOneof('step'), 'result_has')
 
         syntax = parse(
-            'the resulting `account_id` is saved as "alice_account_id"'
+            'the resulting `account_id` is saved as <alice_account_id>'
         )
         assert syntax is not None
         self.assertEqual(syntax.WhichOneof('step'), 'resulting_is_saved_as')
@@ -241,23 +244,23 @@ class ReadTest(unittest.TestCase):
 
         syntax = parse('"alice" is an authenticated user')
         assert syntax is not None
-        self.assertEqual(syntax.is_an_authenticated_user.user_id, 'alice')
+        self.assertEqual(syntax.is_an_authenticated_user.user_id, '"alice"')
 
         syntax = parse('"admin" has the bearer token "S3CR3T!"')
         assert syntax is not None
-        self.assertEqual(syntax.has_bearer_token.user_id, 'admin')
-        self.assertEqual(syntax.has_bearer_token.bearer_token, 'S3CR3T!')
+        self.assertEqual(syntax.has_bearer_token.user_id, '"admin"')
+        self.assertEqual(syntax.has_bearer_token.bearer_token, '"S3CR3T!"')
 
         syntax = parse('"bob" is an unauthenticated user')
         assert syntax is not None
-        self.assertEqual(syntax.is_an_unauthenticated_user.user_id, 'bob')
+        self.assertEqual(syntax.is_an_unauthenticated_user.user_id, '"bob"')
 
         # A shared context, like every call, says who.
         self.assertIsNone(parse('a shared context'))
         syntax = parse('as "alice", a shared context')
         assert syntax is not None
         self.assertEqual(syntax.WhichOneof('step'), 'shared_context')
-        self.assertEqual(syntax.shared_context.user, 'alice')
+        self.assertEqual(syntax.shared_context.user, '"alice"')
 
     def test_a_step_names_who_calls(self) -> None:
         """A call starts with the user it calls as and a read with
@@ -266,8 +269,8 @@ class ReadTest(unittest.TestCase):
             '"alice" does a `deposit` with `amount=1` on `Account` of "a"'
         )
         assert syntax is not None
-        self.assertEqual(syntax.does.user, 'alice')
-        self.assertEqual(syntax.does.state.id, 'a')
+        self.assertEqual(syntax.does.user, '"alice"')
+        self.assertEqual(syntax.does.state.id, '"a"')
 
         self.assertIsNone(
             parse('does a `deposit` with `amount=1` on `Account` of "a"')
@@ -280,7 +283,7 @@ class ReadTest(unittest.TestCase):
             'as "bob", `balance` on the `Account` for "a" has `balance=1`'
         )
         assert syntax is not None
-        self.assertEqual(syntax.has.user, 'bob')
+        self.assertEqual(syntax.has.user, '"bob"')
         self.assertIsNone(
             parse('`balance` on the `Account` for "a" has `balance=1`')
         )
@@ -290,16 +293,16 @@ class ReadTest(unittest.TestCase):
             '`PermissionDenied`'
         )
         assert syntax is not None
-        self.assertEqual(syntax.aborts_with.user, 'bob')
+        self.assertEqual(syntax.aborts_with.user, '"bob"')
 
         syntax = parse('"bob" creates an `Account` of "a" via `open`')
         assert syntax is not None
-        self.assertEqual(syntax.creates_via.user, 'bob')
+        self.assertEqual(syntax.creates_via.user, '"bob"')
 
     def test_web_app_steps(self) -> None:
         syntax = parse('"alice" opens the web app in light mode')
         assert syntax is not None
-        self.assertEqual(syntax.opens_web_app.user, 'alice')
+        self.assertEqual(syntax.opens_web_app.user, '"alice"')
         self.assertFalse(syntax.opens_web_app.HasField('path'))
         self.assertEqual(
             syntax.opens_web_app.color_scheme, OpensWebApp.ColorScheme.LIGHT
@@ -307,7 +310,7 @@ class ReadTest(unittest.TestCase):
 
         syntax = parse('"alice" opens the web app at "/accounts" in dark mode')
         assert syntax is not None
-        self.assertEqual(syntax.opens_web_app.path, '/accounts')
+        self.assertEqual(syntax.opens_web_app.path, '"/accounts"')
         self.assertEqual(
             syntax.opens_web_app.color_scheme, OpensWebApp.ColorScheme.DARK
         )
@@ -319,11 +322,14 @@ class ReadTest(unittest.TestCase):
             '"alice" clicks the "Open Account" button in the web app'
         )
         assert syntax is not None
-        self.assertEqual(syntax.clicks_in_web_app.user, 'alice')
+        self.assertEqual(syntax.clicks_in_web_app.user, '"alice"')
         self.assertEqual(
             syntax.clicks_in_web_app.element.role, Element.Role.BUTTON
         )
-        self.assertEqual(syntax.clicks_in_web_app.element.name, 'Open Account')
+        self.assertEqual(
+            syntax.clicks_in_web_app.element.name,
+            '"Open Account"',
+        )
         # A role outside the closed list is no step of the grammar.
         self.assertIsNone(
             parse('"alice" clicks the "Open Account" widget in the web app')
@@ -333,18 +339,21 @@ class ReadTest(unittest.TestCase):
             '"alice" fills "Initial Deposit ($)" in the web app with `1000`'
         )
         assert syntax is not None
-        self.assertEqual(syntax.fills_in_web_app.label, 'Initial Deposit ($)')
+        self.assertEqual(
+            syntax.fills_in_web_app.label,
+            '"Initial Deposit ($)"',
+        )
         self.assertEqual(syntax.fills_in_web_app.value.json, '1000')
 
         syntax = parse(
-            '"alice" selects "<first_account_id>" in "From Account" in the '
+            '"alice" selects <first_account_id> in "From Account" in the '
             'web app'
         )
         assert syntax is not None
         self.assertEqual(
             syntax.selects_in_web_app.option, '<first_account_id>'
         )
-        self.assertEqual(syntax.selects_in_web_app.label, 'From Account')
+        self.assertEqual(syntax.selects_in_web_app.label, '"From Account"')
 
         syntax = parse('"alice" unchecks "Remember me" in the web app')
         assert syntax is not None
@@ -352,11 +361,11 @@ class ReadTest(unittest.TestCase):
 
         syntax = parse('"alice" presses "Enter" in the web app')
         assert syntax is not None
-        self.assertEqual(syntax.presses_in_web_app.key, 'Enter')
+        self.assertEqual(syntax.presses_in_web_app.key, '"Enter"')
 
         syntax = parse('"alice" sees "Signed in as alice" in the web app')
         assert syntax is not None
-        self.assertEqual(syntax.sees_in_web_app.text, 'Signed in as alice')
+        self.assertEqual(syntax.sees_in_web_app.text, '"Signed in as alice"')
         self.assertFalse(syntax.sees_in_web_app.HasField('within'))
         self.assertFalse(syntax.sees_in_web_app.negated)
         self.assertFalse(syntax.sees_in_web_app.HasField('seconds'))
@@ -369,7 +378,7 @@ class ReadTest(unittest.TestCase):
         self.assertEqual(
             syntax.sees_in_web_app.within.role, Element.Role.TABLE
         )
-        self.assertEqual(syntax.sees_in_web_app.within.name, 'Your Accounts')
+        self.assertEqual(syntax.sees_in_web_app.within.name, '"Your Accounts"')
         self.assertEqual(syntax.sees_in_web_app.seconds, 10)
 
         syntax = parse('"alice" does not see "pending" in the web app')
@@ -383,19 +392,26 @@ class ReadTest(unittest.TestCase):
         assert syntax is not None
         self.assertFalse(syntax.sees_enabled_in_web_app.enabled)
         self.assertEqual(
-            syntax.sees_enabled_in_web_app.element.name, 'Transfer Funds'
+            syntax.sees_enabled_in_web_app.element.name,
+            '"Transfer Funds"',
         )
 
         syntax = parse('"alice" sees the web app at "/accounts/<account_id>"')
         assert syntax is not None
-        self.assertEqual(syntax.sees_web_app_at.path, '/accounts/<account_id>')
+        self.assertEqual(
+            syntax.sees_web_app_at.path,
+            '"/accounts/<account_id>"',
+        )
 
         syntax = parse(
             '"alice" saves the text of the "account-id" element in the web '
-            'app as "account_id"'
+            'app as <account_id>'
         )
         assert syntax is not None
-        self.assertEqual(syntax.saves_text_in_web_app_as.test_id, 'account-id')
+        self.assertEqual(
+            syntax.saves_text_in_web_app_as.test_id,
+            '"account-id"',
+        )
         self.assertEqual(syntax.saves_text_in_web_app_as.name, 'account_id')
 
     def test_signing_in_and_out(self) -> None:
@@ -404,12 +420,12 @@ class ReadTest(unittest.TestCase):
         syntax = parse('"alice" is signed in to the web app')
         assert syntax is not None
         self.assertEqual(syntax.WhichOneof('step'), 'is_signed_in_to_web_app')
-        self.assertEqual(syntax.is_signed_in_to_web_app.user, 'alice')
+        self.assertEqual(syntax.is_signed_in_to_web_app.user, '"alice"')
         self.assertFalse(syntax.is_signed_in_to_web_app.HasField('saved_as'))
 
         syntax = parse(
             '"alice" is signed in to the web app with their user id saved '
-            'as "alice_user_id"'
+            'as <alice_user_id>'
         )
         assert syntax is not None
         self.assertEqual(
@@ -418,7 +434,7 @@ class ReadTest(unittest.TestCase):
 
         syntax = parse('"alice" is signed out of the web app')
         assert syntax is not None
-        self.assertEqual(syntax.is_signed_out_of_web_app.user, 'alice')
+        self.assertEqual(syntax.is_signed_out_of_web_app.user, '"alice"')
 
         # Signing in is clicked through the app, so no step does it.
         self.assertIsNone(parse('"alice" signs in as "Alice"'))
