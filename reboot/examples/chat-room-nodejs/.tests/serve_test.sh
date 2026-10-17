@@ -13,7 +13,9 @@ ls -l api/ backend/src/ 2> /dev/null > /dev/null || {
 
 stop_container_and_restore_package_json() {
   if [ -n "$container_id" ]; then
-    docker stop "$container_id"
+    # Not `--rm`'d at `docker run`, so that a container that dies
+    # keeps its logs for us to print; remove it here instead.
+    docker rm --force "$container_id"
   fi
 
   # Restore the original package.json file on exit is it was not restored
@@ -98,7 +100,6 @@ if command -v docker &> /dev/null; then
   # tests on Reboot's GitHub Actions it is already in use by the devcontainer.
   container_id=$( \
     docker run \
-      --rm \
       --env=PORT=8787 \
       --env=RBT_STATE_DIRECTORY=/app/state/ \
       --env=RBT_SERVERS=2 \
@@ -114,6 +115,13 @@ if command -v docker &> /dev/null; then
   # wait for the server to be ready.
   retries=0
   while ! perform_curl "chat-room-nodejs" "Messages" "$actual_output_file"; do
+    # A container that has exited is never going to answer; say why.
+    if [ "$(docker inspect --format '{{.State.Status}}' "$container_id")" == "exited" ]; then
+      echo "###### Container exited with code $(docker inspect --format '{{.State.ExitCode}}' "$container_id"); its logs: ######"
+      docker logs "$container_id"
+      echo "###### End Docker logs ######"
+      exit 1
+    fi
     if [ "$retries" -ge 30 ]; then
       # This is taking an unusually long time. Print the Docker logs to aid in
       # debugging.
