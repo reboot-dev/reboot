@@ -4157,28 +4157,11 @@ export function useGreeter({ id: providedId } = {}) {
             retry = options.retry;
         }
         const request = GreeterGreetRequestToProtobuf(partialRequest);
-        // The age of the transaction this call started, once an error has
-        // told us: the root transaction id of its first attempt. A retry
-        // carries it so that the retried transaction is as old as its first
-        // attempt rather than younger than every transaction started since.
-        let transactionRetryAge;
-        // Fetch with retry, using a backoff, i.e., if we get disconnected
-        // or the server asks us to try again.
+        // Fetch with retry, using a backoff, i.e., if we get disconnected.
         const { response, aborted } = await (async () => {
             var _a;
             const backoff = new reboot_api.Backoff();
-            // A `TransactionShouldRetry` may ask us to retry immediately, but
-            // we elide the backoff only once: a transaction that keeps being
-            // asked to start over should still back off.
-            let backoffElided = false;
             while (true) {
-                let retryWithoutBackoff = false;
-                // Copied per attempt so that a retry age set for this call does
-                // not outlive it on the hook's shared headers.
-                const attemptHeaders = new Headers(headers);
-                if (transactionRetryAge !== undefined) {
-                    attemptHeaders.set("x-reboot-transaction-retry-age", transactionRetryAge);
-                }
                 try {
                     // Invariant here is that we use the '/package.service.method' path and
                     // HTTP 'POST' method (we need 'POST' because we send an HTTP body).
@@ -4187,14 +4170,13 @@ export function useGreeter({ id: providedId } = {}) {
                     const response = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/Greet`, {
                         ...options,
                         method: "POST",
-                        headers: attemptHeaders,
+                        headers,
                         body: request.toJsonString()
                     });
                     // A 'fetch' does not throw on these, so check the status and
                     // retry the same way a failed 'fetch' is retried:
                     // - 502 (Bad Gateway): the proxy can not reach the backend.
-                    // - 503 (Unavailable): the server is temporarily unavailable,
-                    //   or is asking for the transaction to be started over.
+                    // - 503 (Unavailable): the server is temporarily unavailable.
                     // - 499 (Cancelled): the request was cancelled, often because
                     //   the server is shutting down.
                     if (response.status === 502 ||
@@ -4202,18 +4184,6 @@ export function useGreeter({ id: providedId } = {}) {
                         response.status === 499) {
                         if (response.headers.get("content-type") === "application/json") {
                             const status = reboot_api.Status.fromJson(await response.json());
-                            const shouldRetry = reboot_api.errorFromGoogleRpcStatusDetails(status, [reboot_api.errors_pb.TransactionShouldRetry]);
-                            if (shouldRetry !== undefined) {
-                                retryWithoutBackoff =
-                                    reboot_api.TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF.has(shouldRetry.reason);
-                                if (transactionRetryAge === undefined && shouldRetry.retryAge !== "") {
-                                    transactionRetryAge = shouldRetry.retryAge;
-                                }
-                                if (shouldRetry.reason ===
-                                    reboot_api.errors_pb.TransactionShouldRetry_Reason.PRESUMED_DEADLOCK) {
-                                    console.warn(`[Reboot] Retrying call to \`tests.reboot.GreeterMethods.Greet\` because its transaction is presumed deadlocked: ${status.message}`);
-                                }
-                            }
                             // Handled in the 'catch' block below.
                             throw GreeterGreetAborted.fromStatus(status);
                         }
@@ -4241,10 +4211,6 @@ export function useGreeter({ id: providedId } = {}) {
                     else {
                         console.error(`[Reboot] Unknown error: ${JSON.stringify(e)}`);
                     }
-                }
-                if (retryWithoutBackoff && !backoffElided) {
-                    backoffElided = true;
-                    continue;
                 }
                 await backoff.wait(`[Reboot] Retrying call to \`tests.reboot.GreeterMethods.Greet\` with backoff...`);
             }
@@ -4588,28 +4554,11 @@ export function useGreeter({ id: providedId } = {}) {
             retry = options.retry;
         }
         const request = GreeterTryToConstructContextRequestToProtobuf(partialRequest);
-        // The age of the transaction this call started, once an error has
-        // told us: the root transaction id of its first attempt. A retry
-        // carries it so that the retried transaction is as old as its first
-        // attempt rather than younger than every transaction started since.
-        let transactionRetryAge;
-        // Fetch with retry, using a backoff, i.e., if we get disconnected
-        // or the server asks us to try again.
+        // Fetch with retry, using a backoff, i.e., if we get disconnected.
         const { response, aborted } = await (async () => {
             var _a;
             const backoff = new reboot_api.Backoff();
-            // A `TransactionShouldRetry` may ask us to retry immediately, but
-            // we elide the backoff only once: a transaction that keeps being
-            // asked to start over should still back off.
-            let backoffElided = false;
             while (true) {
-                let retryWithoutBackoff = false;
-                // Copied per attempt so that a retry age set for this call does
-                // not outlive it on the hook's shared headers.
-                const attemptHeaders = new Headers(headers);
-                if (transactionRetryAge !== undefined) {
-                    attemptHeaders.set("x-reboot-transaction-retry-age", transactionRetryAge);
-                }
                 try {
                     // Invariant here is that we use the '/package.service.method' path and
                     // HTTP 'POST' method (we need 'POST' because we send an HTTP body).
@@ -4618,14 +4567,13 @@ export function useGreeter({ id: providedId } = {}) {
                     const response = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TryToConstructContext`, {
                         ...options,
                         method: "POST",
-                        headers: attemptHeaders,
+                        headers,
                         body: request.toJsonString()
                     });
                     // A 'fetch' does not throw on these, so check the status and
                     // retry the same way a failed 'fetch' is retried:
                     // - 502 (Bad Gateway): the proxy can not reach the backend.
-                    // - 503 (Unavailable): the server is temporarily unavailable,
-                    //   or is asking for the transaction to be started over.
+                    // - 503 (Unavailable): the server is temporarily unavailable.
                     // - 499 (Cancelled): the request was cancelled, often because
                     //   the server is shutting down.
                     if (response.status === 502 ||
@@ -4633,18 +4581,6 @@ export function useGreeter({ id: providedId } = {}) {
                         response.status === 499) {
                         if (response.headers.get("content-type") === "application/json") {
                             const status = reboot_api.Status.fromJson(await response.json());
-                            const shouldRetry = reboot_api.errorFromGoogleRpcStatusDetails(status, [reboot_api.errors_pb.TransactionShouldRetry]);
-                            if (shouldRetry !== undefined) {
-                                retryWithoutBackoff =
-                                    reboot_api.TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF.has(shouldRetry.reason);
-                                if (transactionRetryAge === undefined && shouldRetry.retryAge !== "") {
-                                    transactionRetryAge = shouldRetry.retryAge;
-                                }
-                                if (shouldRetry.reason ===
-                                    reboot_api.errors_pb.TransactionShouldRetry_Reason.PRESUMED_DEADLOCK) {
-                                    console.warn(`[Reboot] Retrying call to \`tests.reboot.GreeterMethods.TryToConstructContext\` because its transaction is presumed deadlocked: ${status.message}`);
-                                }
-                            }
                             // Handled in the 'catch' block below.
                             throw GreeterTryToConstructContextAborted.fromStatus(status);
                         }
@@ -4672,10 +4608,6 @@ export function useGreeter({ id: providedId } = {}) {
                     else {
                         console.error(`[Reboot] Unknown error: ${JSON.stringify(e)}`);
                     }
-                }
-                if (retryWithoutBackoff && !backoffElided) {
-                    backoffElided = true;
-                    continue;
                 }
                 await backoff.wait(`[Reboot] Retrying call to \`tests.reboot.GreeterMethods.TryToConstructContext\` with backoff...`);
             }
@@ -4929,28 +4861,11 @@ export function useGreeter({ id: providedId } = {}) {
             retry = options.retry;
         }
         const request = GreeterTryToConstructExternalContextRequestToProtobuf(partialRequest);
-        // The age of the transaction this call started, once an error has
-        // told us: the root transaction id of its first attempt. A retry
-        // carries it so that the retried transaction is as old as its first
-        // attempt rather than younger than every transaction started since.
-        let transactionRetryAge;
-        // Fetch with retry, using a backoff, i.e., if we get disconnected
-        // or the server asks us to try again.
+        // Fetch with retry, using a backoff, i.e., if we get disconnected.
         const { response, aborted } = await (async () => {
             var _a;
             const backoff = new reboot_api.Backoff();
-            // A `TransactionShouldRetry` may ask us to retry immediately, but
-            // we elide the backoff only once: a transaction that keeps being
-            // asked to start over should still back off.
-            let backoffElided = false;
             while (true) {
-                let retryWithoutBackoff = false;
-                // Copied per attempt so that a retry age set for this call does
-                // not outlive it on the hook's shared headers.
-                const attemptHeaders = new Headers(headers);
-                if (transactionRetryAge !== undefined) {
-                    attemptHeaders.set("x-reboot-transaction-retry-age", transactionRetryAge);
-                }
                 try {
                     // Invariant here is that we use the '/package.service.method' path and
                     // HTTP 'POST' method (we need 'POST' because we send an HTTP body).
@@ -4959,14 +4874,13 @@ export function useGreeter({ id: providedId } = {}) {
                     const response = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TryToConstructExternalContext`, {
                         ...options,
                         method: "POST",
-                        headers: attemptHeaders,
+                        headers,
                         body: request.toJsonString()
                     });
                     // A 'fetch' does not throw on these, so check the status and
                     // retry the same way a failed 'fetch' is retried:
                     // - 502 (Bad Gateway): the proxy can not reach the backend.
-                    // - 503 (Unavailable): the server is temporarily unavailable,
-                    //   or is asking for the transaction to be started over.
+                    // - 503 (Unavailable): the server is temporarily unavailable.
                     // - 499 (Cancelled): the request was cancelled, often because
                     //   the server is shutting down.
                     if (response.status === 502 ||
@@ -4974,18 +4888,6 @@ export function useGreeter({ id: providedId } = {}) {
                         response.status === 499) {
                         if (response.headers.get("content-type") === "application/json") {
                             const status = reboot_api.Status.fromJson(await response.json());
-                            const shouldRetry = reboot_api.errorFromGoogleRpcStatusDetails(status, [reboot_api.errors_pb.TransactionShouldRetry]);
-                            if (shouldRetry !== undefined) {
-                                retryWithoutBackoff =
-                                    reboot_api.TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF.has(shouldRetry.reason);
-                                if (transactionRetryAge === undefined && shouldRetry.retryAge !== "") {
-                                    transactionRetryAge = shouldRetry.retryAge;
-                                }
-                                if (shouldRetry.reason ===
-                                    reboot_api.errors_pb.TransactionShouldRetry_Reason.PRESUMED_DEADLOCK) {
-                                    console.warn(`[Reboot] Retrying call to \`tests.reboot.GreeterMethods.TryToConstructExternalContext\` because its transaction is presumed deadlocked: ${status.message}`);
-                                }
-                            }
                             // Handled in the 'catch' block below.
                             throw GreeterTryToConstructExternalContextAborted.fromStatus(status);
                         }
@@ -5013,10 +4915,6 @@ export function useGreeter({ id: providedId } = {}) {
                     else {
                         console.error(`[Reboot] Unknown error: ${JSON.stringify(e)}`);
                     }
-                }
-                if (retryWithoutBackoff && !backoffElided) {
-                    backoffElided = true;
-                    continue;
                 }
                 await backoff.wait(`[Reboot] Retrying call to \`tests.reboot.GreeterMethods.TryToConstructExternalContext\` with backoff...`);
             }
@@ -5270,28 +5168,11 @@ export function useGreeter({ id: providedId } = {}) {
             retry = options.retry;
         }
         const request = GreeterTestLongRunningFetchRequestToProtobuf(partialRequest);
-        // The age of the transaction this call started, once an error has
-        // told us: the root transaction id of its first attempt. A retry
-        // carries it so that the retried transaction is as old as its first
-        // attempt rather than younger than every transaction started since.
-        let transactionRetryAge;
-        // Fetch with retry, using a backoff, i.e., if we get disconnected
-        // or the server asks us to try again.
+        // Fetch with retry, using a backoff, i.e., if we get disconnected.
         const { response, aborted } = await (async () => {
             var _a;
             const backoff = new reboot_api.Backoff();
-            // A `TransactionShouldRetry` may ask us to retry immediately, but
-            // we elide the backoff only once: a transaction that keeps being
-            // asked to start over should still back off.
-            let backoffElided = false;
             while (true) {
-                let retryWithoutBackoff = false;
-                // Copied per attempt so that a retry age set for this call does
-                // not outlive it on the hook's shared headers.
-                const attemptHeaders = new Headers(headers);
-                if (transactionRetryAge !== undefined) {
-                    attemptHeaders.set("x-reboot-transaction-retry-age", transactionRetryAge);
-                }
                 try {
                     // Invariant here is that we use the '/package.service.method' path and
                     // HTTP 'POST' method (we need 'POST' because we send an HTTP body).
@@ -5300,14 +5181,13 @@ export function useGreeter({ id: providedId } = {}) {
                     const response = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TestLongRunningFetch`, {
                         ...options,
                         method: "POST",
-                        headers: attemptHeaders,
+                        headers,
                         body: request.toJsonString()
                     });
                     // A 'fetch' does not throw on these, so check the status and
                     // retry the same way a failed 'fetch' is retried:
                     // - 502 (Bad Gateway): the proxy can not reach the backend.
-                    // - 503 (Unavailable): the server is temporarily unavailable,
-                    //   or is asking for the transaction to be started over.
+                    // - 503 (Unavailable): the server is temporarily unavailable.
                     // - 499 (Cancelled): the request was cancelled, often because
                     //   the server is shutting down.
                     if (response.status === 502 ||
@@ -5315,18 +5195,6 @@ export function useGreeter({ id: providedId } = {}) {
                         response.status === 499) {
                         if (response.headers.get("content-type") === "application/json") {
                             const status = reboot_api.Status.fromJson(await response.json());
-                            const shouldRetry = reboot_api.errorFromGoogleRpcStatusDetails(status, [reboot_api.errors_pb.TransactionShouldRetry]);
-                            if (shouldRetry !== undefined) {
-                                retryWithoutBackoff =
-                                    reboot_api.TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF.has(shouldRetry.reason);
-                                if (transactionRetryAge === undefined && shouldRetry.retryAge !== "") {
-                                    transactionRetryAge = shouldRetry.retryAge;
-                                }
-                                if (shouldRetry.reason ===
-                                    reboot_api.errors_pb.TransactionShouldRetry_Reason.PRESUMED_DEADLOCK) {
-                                    console.warn(`[Reboot] Retrying call to \`tests.reboot.GreeterMethods.TestLongRunningFetch\` because its transaction is presumed deadlocked: ${status.message}`);
-                                }
-                            }
                             // Handled in the 'catch' block below.
                             throw GreeterTestLongRunningFetchAborted.fromStatus(status);
                         }
@@ -5354,10 +5222,6 @@ export function useGreeter({ id: providedId } = {}) {
                     else {
                         console.error(`[Reboot] Unknown error: ${JSON.stringify(e)}`);
                     }
-                }
-                if (retryWithoutBackoff && !backoffElided) {
-                    backoffElided = true;
-                    continue;
                 }
                 await backoff.wait(`[Reboot] Retrying call to \`tests.reboot.GreeterMethods.TestLongRunningFetch\` with backoff...`);
             }
@@ -5656,28 +5520,11 @@ export function useGreeter({ id: providedId } = {}) {
             retry = options.retry;
         }
         const request = GreeterGetWholeStateRequestToProtobuf(partialRequest);
-        // The age of the transaction this call started, once an error has
-        // told us: the root transaction id of its first attempt. A retry
-        // carries it so that the retried transaction is as old as its first
-        // attempt rather than younger than every transaction started since.
-        let transactionRetryAge;
-        // Fetch with retry, using a backoff, i.e., if we get disconnected
-        // or the server asks us to try again.
+        // Fetch with retry, using a backoff, i.e., if we get disconnected.
         const { response, aborted } = await (async () => {
             var _a;
             const backoff = new reboot_api.Backoff();
-            // A `TransactionShouldRetry` may ask us to retry immediately, but
-            // we elide the backoff only once: a transaction that keeps being
-            // asked to start over should still back off.
-            let backoffElided = false;
             while (true) {
-                let retryWithoutBackoff = false;
-                // Copied per attempt so that a retry age set for this call does
-                // not outlive it on the hook's shared headers.
-                const attemptHeaders = new Headers(headers);
-                if (transactionRetryAge !== undefined) {
-                    attemptHeaders.set("x-reboot-transaction-retry-age", transactionRetryAge);
-                }
                 try {
                     // Invariant here is that we use the '/package.service.method' path and
                     // HTTP 'POST' method (we need 'POST' because we send an HTTP body).
@@ -5686,14 +5533,13 @@ export function useGreeter({ id: providedId } = {}) {
                     const response = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/GetWholeState`, {
                         ...options,
                         method: "POST",
-                        headers: attemptHeaders,
+                        headers,
                         body: request.toJsonString()
                     });
                     // A 'fetch' does not throw on these, so check the status and
                     // retry the same way a failed 'fetch' is retried:
                     // - 502 (Bad Gateway): the proxy can not reach the backend.
-                    // - 503 (Unavailable): the server is temporarily unavailable,
-                    //   or is asking for the transaction to be started over.
+                    // - 503 (Unavailable): the server is temporarily unavailable.
                     // - 499 (Cancelled): the request was cancelled, often because
                     //   the server is shutting down.
                     if (response.status === 502 ||
@@ -5701,18 +5547,6 @@ export function useGreeter({ id: providedId } = {}) {
                         response.status === 499) {
                         if (response.headers.get("content-type") === "application/json") {
                             const status = reboot_api.Status.fromJson(await response.json());
-                            const shouldRetry = reboot_api.errorFromGoogleRpcStatusDetails(status, [reboot_api.errors_pb.TransactionShouldRetry]);
-                            if (shouldRetry !== undefined) {
-                                retryWithoutBackoff =
-                                    reboot_api.TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF.has(shouldRetry.reason);
-                                if (transactionRetryAge === undefined && shouldRetry.retryAge !== "") {
-                                    transactionRetryAge = shouldRetry.retryAge;
-                                }
-                                if (shouldRetry.reason ===
-                                    reboot_api.errors_pb.TransactionShouldRetry_Reason.PRESUMED_DEADLOCK) {
-                                    console.warn(`[Reboot] Retrying call to \`tests.reboot.GreeterMethods.GetWholeState\` because its transaction is presumed deadlocked: ${status.message}`);
-                                }
-                            }
                             // Handled in the 'catch' block below.
                             throw GreeterGetWholeStateAborted.fromStatus(status);
                         }
@@ -5740,10 +5574,6 @@ export function useGreeter({ id: providedId } = {}) {
                     else {
                         console.error(`[Reboot] Unknown error: ${JSON.stringify(e)}`);
                     }
-                }
-                if (retryWithoutBackoff && !backoffElided) {
-                    backoffElided = true;
-                    continue;
                 }
                 await backoff.wait(`[Reboot] Retrying call to \`tests.reboot.GreeterMethods.GetWholeState\` with backoff...`);
             }
@@ -5997,28 +5827,11 @@ export function useGreeter({ id: providedId } = {}) {
             retry = options.retry;
         }
         const request = GreeterFailWithExceptionRequestToProtobuf(partialRequest);
-        // The age of the transaction this call started, once an error has
-        // told us: the root transaction id of its first attempt. A retry
-        // carries it so that the retried transaction is as old as its first
-        // attempt rather than younger than every transaction started since.
-        let transactionRetryAge;
-        // Fetch with retry, using a backoff, i.e., if we get disconnected
-        // or the server asks us to try again.
+        // Fetch with retry, using a backoff, i.e., if we get disconnected.
         const { response, aborted } = await (async () => {
             var _a;
             const backoff = new reboot_api.Backoff();
-            // A `TransactionShouldRetry` may ask us to retry immediately, but
-            // we elide the backoff only once: a transaction that keeps being
-            // asked to start over should still back off.
-            let backoffElided = false;
             while (true) {
-                let retryWithoutBackoff = false;
-                // Copied per attempt so that a retry age set for this call does
-                // not outlive it on the hook's shared headers.
-                const attemptHeaders = new Headers(headers);
-                if (transactionRetryAge !== undefined) {
-                    attemptHeaders.set("x-reboot-transaction-retry-age", transactionRetryAge);
-                }
                 try {
                     // Invariant here is that we use the '/package.service.method' path and
                     // HTTP 'POST' method (we need 'POST' because we send an HTTP body).
@@ -6027,14 +5840,13 @@ export function useGreeter({ id: providedId } = {}) {
                     const response = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/FailWithException`, {
                         ...options,
                         method: "POST",
-                        headers: attemptHeaders,
+                        headers,
                         body: request.toJsonString()
                     });
                     // A 'fetch' does not throw on these, so check the status and
                     // retry the same way a failed 'fetch' is retried:
                     // - 502 (Bad Gateway): the proxy can not reach the backend.
-                    // - 503 (Unavailable): the server is temporarily unavailable,
-                    //   or is asking for the transaction to be started over.
+                    // - 503 (Unavailable): the server is temporarily unavailable.
                     // - 499 (Cancelled): the request was cancelled, often because
                     //   the server is shutting down.
                     if (response.status === 502 ||
@@ -6042,18 +5854,6 @@ export function useGreeter({ id: providedId } = {}) {
                         response.status === 499) {
                         if (response.headers.get("content-type") === "application/json") {
                             const status = reboot_api.Status.fromJson(await response.json());
-                            const shouldRetry = reboot_api.errorFromGoogleRpcStatusDetails(status, [reboot_api.errors_pb.TransactionShouldRetry]);
-                            if (shouldRetry !== undefined) {
-                                retryWithoutBackoff =
-                                    reboot_api.TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF.has(shouldRetry.reason);
-                                if (transactionRetryAge === undefined && shouldRetry.retryAge !== "") {
-                                    transactionRetryAge = shouldRetry.retryAge;
-                                }
-                                if (shouldRetry.reason ===
-                                    reboot_api.errors_pb.TransactionShouldRetry_Reason.PRESUMED_DEADLOCK) {
-                                    console.warn(`[Reboot] Retrying call to \`tests.reboot.GreeterMethods.FailWithException\` because its transaction is presumed deadlocked: ${status.message}`);
-                                }
-                            }
                             // Handled in the 'catch' block below.
                             throw GreeterFailWithExceptionAborted.fromStatus(status);
                         }
@@ -6081,10 +5881,6 @@ export function useGreeter({ id: providedId } = {}) {
                     else {
                         console.error(`[Reboot] Unknown error: ${JSON.stringify(e)}`);
                     }
-                }
-                if (retryWithoutBackoff && !backoffElided) {
-                    backoffElided = true;
-                    continue;
                 }
                 await backoff.wait(`[Reboot] Retrying call to \`tests.reboot.GreeterMethods.FailWithException\` with backoff...`);
             }
@@ -6338,28 +6134,11 @@ export function useGreeter({ id: providedId } = {}) {
             retry = options.retry;
         }
         const request = GreeterFailWithAbortedRequestToProtobuf(partialRequest);
-        // The age of the transaction this call started, once an error has
-        // told us: the root transaction id of its first attempt. A retry
-        // carries it so that the retried transaction is as old as its first
-        // attempt rather than younger than every transaction started since.
-        let transactionRetryAge;
-        // Fetch with retry, using a backoff, i.e., if we get disconnected
-        // or the server asks us to try again.
+        // Fetch with retry, using a backoff, i.e., if we get disconnected.
         const { response, aborted } = await (async () => {
             var _a;
             const backoff = new reboot_api.Backoff();
-            // A `TransactionShouldRetry` may ask us to retry immediately, but
-            // we elide the backoff only once: a transaction that keeps being
-            // asked to start over should still back off.
-            let backoffElided = false;
             while (true) {
-                let retryWithoutBackoff = false;
-                // Copied per attempt so that a retry age set for this call does
-                // not outlive it on the hook's shared headers.
-                const attemptHeaders = new Headers(headers);
-                if (transactionRetryAge !== undefined) {
-                    attemptHeaders.set("x-reboot-transaction-retry-age", transactionRetryAge);
-                }
                 try {
                     // Invariant here is that we use the '/package.service.method' path and
                     // HTTP 'POST' method (we need 'POST' because we send an HTTP body).
@@ -6368,14 +6147,13 @@ export function useGreeter({ id: providedId } = {}) {
                     const response = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/FailWithAborted`, {
                         ...options,
                         method: "POST",
-                        headers: attemptHeaders,
+                        headers,
                         body: request.toJsonString()
                     });
                     // A 'fetch' does not throw on these, so check the status and
                     // retry the same way a failed 'fetch' is retried:
                     // - 502 (Bad Gateway): the proxy can not reach the backend.
-                    // - 503 (Unavailable): the server is temporarily unavailable,
-                    //   or is asking for the transaction to be started over.
+                    // - 503 (Unavailable): the server is temporarily unavailable.
                     // - 499 (Cancelled): the request was cancelled, often because
                     //   the server is shutting down.
                     if (response.status === 502 ||
@@ -6383,18 +6161,6 @@ export function useGreeter({ id: providedId } = {}) {
                         response.status === 499) {
                         if (response.headers.get("content-type") === "application/json") {
                             const status = reboot_api.Status.fromJson(await response.json());
-                            const shouldRetry = reboot_api.errorFromGoogleRpcStatusDetails(status, [reboot_api.errors_pb.TransactionShouldRetry]);
-                            if (shouldRetry !== undefined) {
-                                retryWithoutBackoff =
-                                    reboot_api.TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF.has(shouldRetry.reason);
-                                if (transactionRetryAge === undefined && shouldRetry.retryAge !== "") {
-                                    transactionRetryAge = shouldRetry.retryAge;
-                                }
-                                if (shouldRetry.reason ===
-                                    reboot_api.errors_pb.TransactionShouldRetry_Reason.PRESUMED_DEADLOCK) {
-                                    console.warn(`[Reboot] Retrying call to \`tests.reboot.GreeterMethods.FailWithAborted\` because its transaction is presumed deadlocked: ${status.message}`);
-                                }
-                            }
                             // Handled in the 'catch' block below.
                             throw GreeterFailWithAbortedAborted.fromStatus(status);
                         }
@@ -6422,10 +6188,6 @@ export function useGreeter({ id: providedId } = {}) {
                     else {
                         console.error(`[Reboot] Unknown error: ${JSON.stringify(e)}`);
                     }
-                }
-                if (retryWithoutBackoff && !backoffElided) {
-                    backoffElided = true;
-                    continue;
                 }
                 await backoff.wait(`[Reboot] Retrying call to \`tests.reboot.GreeterMethods.FailWithAborted\` with backoff...`);
             }
@@ -6769,28 +6531,11 @@ export function useGreeter({ id: providedId } = {}) {
             retry = options.retry;
         }
         const request = GreeterReadRecursiveMessageRequestToProtobuf(partialRequest);
-        // The age of the transaction this call started, once an error has
-        // told us: the root transaction id of its first attempt. A retry
-        // carries it so that the retried transaction is as old as its first
-        // attempt rather than younger than every transaction started since.
-        let transactionRetryAge;
-        // Fetch with retry, using a backoff, i.e., if we get disconnected
-        // or the server asks us to try again.
+        // Fetch with retry, using a backoff, i.e., if we get disconnected.
         const { response, aborted } = await (async () => {
             var _a;
             const backoff = new reboot_api.Backoff();
-            // A `TransactionShouldRetry` may ask us to retry immediately, but
-            // we elide the backoff only once: a transaction that keeps being
-            // asked to start over should still back off.
-            let backoffElided = false;
             while (true) {
-                let retryWithoutBackoff = false;
-                // Copied per attempt so that a retry age set for this call does
-                // not outlive it on the hook's shared headers.
-                const attemptHeaders = new Headers(headers);
-                if (transactionRetryAge !== undefined) {
-                    attemptHeaders.set("x-reboot-transaction-retry-age", transactionRetryAge);
-                }
                 try {
                     // Invariant here is that we use the '/package.service.method' path and
                     // HTTP 'POST' method (we need 'POST' because we send an HTTP body).
@@ -6799,14 +6544,13 @@ export function useGreeter({ id: providedId } = {}) {
                     const response = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/ReadRecursiveMessage`, {
                         ...options,
                         method: "POST",
-                        headers: attemptHeaders,
+                        headers,
                         body: request.toJsonString()
                     });
                     // A 'fetch' does not throw on these, so check the status and
                     // retry the same way a failed 'fetch' is retried:
                     // - 502 (Bad Gateway): the proxy can not reach the backend.
-                    // - 503 (Unavailable): the server is temporarily unavailable,
-                    //   or is asking for the transaction to be started over.
+                    // - 503 (Unavailable): the server is temporarily unavailable.
                     // - 499 (Cancelled): the request was cancelled, often because
                     //   the server is shutting down.
                     if (response.status === 502 ||
@@ -6814,18 +6558,6 @@ export function useGreeter({ id: providedId } = {}) {
                         response.status === 499) {
                         if (response.headers.get("content-type") === "application/json") {
                             const status = reboot_api.Status.fromJson(await response.json());
-                            const shouldRetry = reboot_api.errorFromGoogleRpcStatusDetails(status, [reboot_api.errors_pb.TransactionShouldRetry]);
-                            if (shouldRetry !== undefined) {
-                                retryWithoutBackoff =
-                                    reboot_api.TRANSACTION_SHOULD_RETRY_REASONS_WITHOUT_BACKOFF.has(shouldRetry.reason);
-                                if (transactionRetryAge === undefined && shouldRetry.retryAge !== "") {
-                                    transactionRetryAge = shouldRetry.retryAge;
-                                }
-                                if (shouldRetry.reason ===
-                                    reboot_api.errors_pb.TransactionShouldRetry_Reason.PRESUMED_DEADLOCK) {
-                                    console.warn(`[Reboot] Retrying call to \`tests.reboot.GreeterMethods.ReadRecursiveMessage\` because its transaction is presumed deadlocked: ${status.message}`);
-                                }
-                            }
                             // Handled in the 'catch' block below.
                             throw GreeterReadRecursiveMessageAborted.fromStatus(status);
                         }
@@ -6853,10 +6585,6 @@ export function useGreeter({ id: providedId } = {}) {
                     else {
                         console.error(`[Reboot] Unknown error: ${JSON.stringify(e)}`);
                     }
-                }
-                if (retryWithoutBackoff && !backoffElided) {
-                    backoffElided = true;
-                    continue;
                 }
                 await backoff.wait(`[Reboot] Retrying call to \`tests.reboot.GreeterMethods.ReadRecursiveMessage\` with backoff...`);
             }
