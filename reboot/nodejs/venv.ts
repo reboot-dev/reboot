@@ -1,3 +1,4 @@
+import { Backoff } from "@reboot-dev/reboot-api";
 import { execSync, spawnSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
@@ -20,6 +21,13 @@ const PYTHONPATH = path.join(
 );
 const PACKAGE_TO_INSTALL = `reboot==${REBOOT_VERSION}`;
 
+// How many times to try `pip install` before giving up. pip retries a
+// connection failure or a 5xx on its own, but not an index page it
+// rejects, which PyPI occasionally serves (e.g., with an empty
+// `Content-Type`); that fails the whole resolve with "No matching
+// distribution found", so we retry the install.
+const PIP_INSTALL_ATTEMPTS = 3;
+
 // Ensure that the virtualenv at VENV_PATH has been created, and return the
 // PYTHONHOME value to use.
 function ensureVirtualEnvCreated() {
@@ -30,7 +38,7 @@ function ensureVirtualEnvCreated() {
   return path.resolve(python3Path, "..", "..");
 }
 
-function pipInstallReboot() {
+async function pipInstallReboot() {
   const show = spawnSync(
     `. ${path.join(
       VENV_EXEC_PATH,
@@ -54,28 +62,45 @@ function pipInstallReboot() {
       `Installing dependencies for Reboot, this may take a minute ...`
     );
 
-    const install = spawnSync(
-      `(. ${path.join(VENV_EXEC_PATH, "activate")} && pip install ${
-        (forceReinstall && "--force-reinstall") || ""
-      } ${packageToInstall}) 2>&1`,
-      {
-        shell: true,
-        stdio: ["ignore", "pipe", "ignore"],
-      }
-    );
+    const backoff = new Backoff({
+      initialBackoffSeconds: 4,
+      maxBackoffSeconds: 16,
+    });
 
-    if (install.status !== 0) {
-      console.log(
-        `\nFailed to install dependencies for Reboot:\n` +
-          `\n` +
-          `${install.stdout}\n`
+    for (let attempt = 1; ; attempt++) {
+      const install = spawnSync(
+        `(. ${path.join(VENV_EXEC_PATH, "activate")} && pip install ${
+          (forceReinstall && "--force-reinstall") || ""
+        } ${packageToInstall}) 2>&1`,
+        {
+          shell: true,
+          stdio: ["ignore", "pipe", "ignore"],
+        }
       );
-      process.exit(-1);
+
+      if (install.status === 0) {
+        break;
+      }
+
+      if (attempt === PIP_INSTALL_ATTEMPTS) {
+        console.log(
+          `\nFailed to install dependencies for Reboot:\n` +
+            `\n` +
+            `${install.stdout}\n`
+        );
+        process.exit(-1);
+      }
+
+      console.log(
+        `Installing dependencies for Reboot failed ` +
+          `(attempt ${attempt} of ${PIP_INSTALL_ATTEMPTS}), retrying ...`
+      );
+      await backoff.wait();
     }
   }
 }
 
-export function ensurePythonVenv() {
+export async function ensurePythonVenv() {
   // If the virtual environment is already activated, do not attempt to
   // re-create it.
   if (process.env.VIRTUAL_ENV === VENV_PATH) {
@@ -97,7 +122,7 @@ export function ensurePythonVenv() {
     }
   }
   const pythonhome = ensureVirtualEnvCreated();
-  pipInstallReboot();
+  await pipInstallReboot();
 
   process.env.VIRTUAL_ENV = VENV_PATH;
   process.env.PYTHONHOME = pythonhome;
