@@ -682,8 +682,9 @@ const RECORDING_RETRY_MS = 2_000;
 
 // An authenticated request obtains a short-lived URL on the backend.
 // Media elements load it directly: MCP hosts may block blob: sources.
-// Opening the lightbox mounts this hook and obtains a fresh URL.
-const useRecording = (path: string): string | undefined => {
+// Opening the lightbox mounts this hook and obtains a fresh URL; a
+// change of `attempt` obtains another.
+const useRecording = (path: string, attempt = 0): string | undefined => {
   const client = useRebootClient();
   const refreshBearerToken = useRefreshBearerToken();
   const bearerToken = useRef(client.bearerToken);
@@ -768,7 +769,7 @@ const useRecording = (path: string): string | undefined => {
         clearTimeout(retry);
       }
     };
-  }, [client.url, path, refreshBearerToken]);
+  }, [client.url, path, refreshBearerToken, attempt]);
   return url;
 };
 
@@ -787,7 +788,8 @@ const RecordingLightbox: FC<{
   video: boolean;
   title: string;
   onClose: () => void;
-}> = ({ url, video, title, onClose }) => {
+  onError?: () => void;
+}> = ({ url, video, title, onClose, onError }) => {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === "Escape") {
@@ -814,10 +816,11 @@ const RecordingLightbox: FC<{
           src={url}
           controls
           autoPlay
+          onError={onError}
           onClick={(event) => event.stopPropagation()}
         />
       ) : (
-        <img src={url} alt={title} />
+        <img src={url} alt={title} onError={onError} />
       )}
     </div>
   );
@@ -825,14 +828,27 @@ const RecordingLightbox: FC<{
 
 // A lightbox that fetches its recording only while shown: a video is
 // not requested until opened, giving each viewing a fresh signed URL.
+// A URL that fails to load, as one does once it has expired, is
+// requested once more; a recording that fails twice stays blank.
 const FetchedRecordingLightbox: FC<{
   path: string;
   video: boolean;
   title: string;
   onClose: () => void;
 }> = ({ path, ...rest }) => {
-  const url = useRecording(path);
-  return <RecordingLightbox url={url} {...rest} />;
+  const [attempt, setAttempt] = useState(0);
+  const url = useRecording(path, attempt);
+  return (
+    <RecordingLightbox
+      url={url}
+      onError={() => {
+        if (url !== undefined && attempt === 0) {
+          setAttempt(1);
+        }
+      }}
+      {...rest}
+    />
+  );
 };
 
 // A thumbnail or link that opens the recording over the page rather
@@ -2529,7 +2545,7 @@ const StepRow: FC<{
             {(url) => (
               <RecordingButton
                 className="step-screenshot"
-                recording={{ url }}
+                recording={{ path: step.screenshot }}
                 title="The browser after this step, in the scenario's last run"
               >
                 <img src={url} alt="" />

@@ -64,8 +64,9 @@ Never put the application's access token in the URL.
 
 The dashboard uses `/recordings/sign?path=...`, returning `{url, expires}`
 with a one-hour lifetime. Resolve its relative URL against `client.url`,
-not the sandbox origin. Request it when opening a recording; after an
-hour, reopen to renew it if loading or seeking fails. Media can then use
+not the sandbox origin. Request it when opening a recording, and once
+more when the element reports a load error, which an expired URL
+causes; a recording that fails twice stays blank. Media can then use
 range requests without first downloading the entire file into a Blob.
 
 The following retry rules apply to the authenticated signing request;
@@ -110,9 +111,16 @@ const fetchRecording = async (
 ): Promise<{ url: string; expires: number }> => {
   let response: Response;
   try {
-    response = await fetch(new URL(`/recordings/sign?${new URLSearchParams({ path })}`, client.url).toString(), {
-      headers: token === undefined ? {} : { Authorization: `Bearer ${token}` },
-    });
+    response = await fetch(
+      new URL(
+        `/recordings/sign?${new URLSearchParams({ path })}`,
+        client.url
+      ).toString(),
+      {
+        headers:
+          token === undefined ? {} : { Authorization: `Bearer ${token}` },
+      }
+    );
   } catch {
     await pause(); // Unreachable: the same token, again.
     return fetchRecording(token, refreshed);

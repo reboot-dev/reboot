@@ -176,8 +176,9 @@ def application() -> Application:
         ):
             raise HTTPException(status_code=401)
         expiry = int(expires)
+        now = int(time.time())
         if (
-            expiry <= int(time.time()) or not hmac.compare_digest(
+            expiry <= now or not hmac.compare_digest(
                 _recording_signature(directory, relative, expiry).encode(),
                 sig.encode(),
             )
@@ -185,7 +186,9 @@ def application() -> Application:
             raise HTTPException(status_code=401)
         return FileResponse(
             _recording(directory, relative),
-            headers={'Cache-Control': 'private, no-store'},
+            # This browser may keep the file for as long as the URL is
+            # valid, so a thumbnail is not fetched again on every render.
+            headers={'Cache-Control': f'private, max-age={expiry - now}'},
         )
 
     # The page itself is served at `/` by the web framework, from
