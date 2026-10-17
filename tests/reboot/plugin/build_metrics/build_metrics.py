@@ -59,7 +59,7 @@ DESIGN_FILE = re.compile(r"(?:^|/)design/design\.md$")
 DESIGN_HEADING = "the proposed design"
 # The question that asks for the go-ahead on a shown design, in either
 # of the skills' wordings.
-GO_AHEAD = ("Ready to build?", "How should it be built?")
+GO_AHEAD = ("Ready to build?", "How should it be built?", "Build on this design?")
 FEATURE_FILE = re.compile(r"\.feature$")
 SERVICER_FILE = re.compile(r"(?:^|/)servicers/\S+\.py$")
 PAGE_FILE = re.compile(r"(?:^|/)frontend/\S+\.tsx$")
