@@ -28,14 +28,14 @@ export interface ScaffoldResult {
   webRootDir: string;
   createdShared: string[];
   createdUis: string[];
-  /** UIs whose paths don't match the web root. */
-  skipped: UiEntryWithPackage[];
 }
 
 /**
  * Scaffold shared web root files and per-UI files for
- * unimplemented UIs. All UIs must live under the web
- * root derived from `--react=` in `.rbtrc`.
+ * unimplemented UIs. Each UI lives at `<web root>/mcp/<path>`, its
+ * `UI(path=...)` under the `mcpAppPath: "mcp"` the scaffolded
+ * `vite.config.ts` names; the web root is derived from `--react=`
+ * in `.rbtrc`.
  */
 export function scaffold(
   projectRoot: string,
@@ -46,11 +46,6 @@ export function scaffold(
   const root = webRoot(reactDir);
   const webDir = path.join(projectRoot, root);
   const name = projectName(projectRoot);
-
-  const skipped = unimplemented.filter((ui) => ui.path.split("/")[0] !== root);
-  const toScaffold = unimplemented.filter(
-    (ui) => ui.path.split("/")[0] === root
-  );
 
   const createdShared: string[] = [];
   const createdUis: string[] = [];
@@ -73,8 +68,8 @@ export function scaffold(
   }
 
   // Per-UI files.
-  for (const ui of toScaffold) {
-    const uiDir = path.join(projectRoot, ui.path);
+  for (const ui of unimplemented) {
+    const uiDir = path.join(webDir, "mcp", ui.path);
     const files: Array<[string, string]> = [
       ["index.html", templates.indexHtml(ui)],
       ["main.tsx", templates.mainTsx(ui)],
@@ -95,6 +90,5 @@ export function scaffold(
     webRootDir: root,
     createdShared,
     createdUis,
-    skipped,
   };
 }

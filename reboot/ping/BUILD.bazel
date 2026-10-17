@@ -83,8 +83,9 @@ py_oci_image(
 #
 # - `clicker_dist` must output to
 #   `frontend/dist/mcp/clicker/index.html` relative to this
-#   package, because the MCP framework's `ui_html()`
-#   discovers that file by walking up from `ping.py` (see
+#   package, because the MCP framework's `ui_html()` reads
+#   `<--mcp-app-dist-path>/<UI path>/index.html` under the
+#   project root it finds by walking up from `ping.py` (see
 #   `reboot/mcp/ui.py`). A Bazel `genrule` can
 #   only write outputs within its own package directory.
 
@@ -181,21 +182,21 @@ _PING_RUN_ENV = {
     "REBOOT_LOCAL_ENVOY_USE_TLS": "False",
 }
 
-# Run target: serves both the MCP UIs and the `web/` SPA from the
+# Run target: serves both the MCP Apps and the `web/` SPA from the
 # esbuild-built static content on disk (`frontend/dist/...`).
 # `:clicker_dist`, `:pinger_dist`, and `:web_dist` (carried in
-# `ping_py`'s runfiles) supply that content; the framework serves it
-# over `/__/frontend/` via a small static-file server. Run:
+# `ping_py`'s runfiles) supply that content; the framework serves the
+# MCP Apps over `/__/frontend/mcp/` and the web app at `/`. Run:
 #   bazel run //reboot/ping:ping_py_bin
-# Then open the web app at e.g.:
-#   http://localhost:9991/__/frontend/web/
+# Then open the web app at:
+#   http://localhost:9991/
 py_binary(
     name = "ping_py_bin",
     srcs = ["ping.py"],
     env = dict(
         _PING_RUN_ENV,
-        RBT_FRONTEND_DIST_PATH = "frontend/dist",
-        RBT_FRONTEND_ROOT_PATH = "frontend",
+        RBT_MCP_APP_DIST_PATH = "frontend/dist/mcp",
+        RBT_WEB_APP_DIST_PATH = "frontend/dist/web",
     ),
     main = "ping.py",
     visibility = ["//visibility:public"],

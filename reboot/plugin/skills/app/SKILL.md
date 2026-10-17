@@ -1,6 +1,6 @@
 ---
 name: app
-description: Build a Reboot application from a user description. Routes to the `mcp-ui` skill (MCP UIs for ChatGPT, Claude, VSCode, Goose), the web-app skill (standalone web apps with a browser frontend), or BOTH (dual-frontend apps sharing one backend and one User per identity via `oauth=...`). Commits to a route only when the prompt verbatim names the front-door (MCP/Claude/ChatGPT for MCP UI; a URL/SPA/"website" for web-app; explicit conjunction for both); otherwise asks the user. Does NOT infer the front-door from the app's domain (CRM, todo, dashboard, blog, …) — those describe what the app does, not where it lives.
+description: Build a Reboot application from a user description. Routes to the `mcp-app` skill (MCP Apps for ChatGPT, Claude, VSCode, Goose), the web-app skill (standalone web apps with a browser frontend), or BOTH (dual-frontend apps sharing one backend and one User per identity via `oauth=...`). Commits to a route only when the prompt verbatim names the front-door (MCP/Claude/ChatGPT for MCP App; a URL/SPA/"website" for web-app; explicit conjunction for both); otherwise asks the user. Does NOT infer the front-door from the app's domain (CRM, todo, dashboard, blog, …) — those describe what the app does, not where it lives.
 argument-hint: [<app-description>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 ---
@@ -22,9 +22,9 @@ defer to the matching skill.
 
 ### The two destinations
 
-- **`mcp-ui`** — an MCP UI: the app is exposed through an
+- **`mcp-app`** — an MCP App: the app is exposed through an
   MCP host (ChatGPT, Claude, VSCode, Goose, etc.) via MCP tools, and
-  any visual UI is embedded into the host through MCP UI artifacts.
+  any visual UI is embedded into the host through MCP App artifacts.
 - **`web-app`** — a standalone web app: the app is served at a URL
   and used in a normal browser, with the Reboot backend behind a
   React (or similar) frontend.
@@ -35,15 +35,15 @@ Commit immediately **only** when the user's prompt contains one of
 the explicit phrases below. No inference, no synonyms, no "well
 they probably mean…":
 
-**Commit to `mcp-ui` if the prompt contains any of:**
+**Commit to `mcp-app` if the prompt contains any of:**
 
-- `MCP`, `MCP host`, `MCP server`, `MCP app`, `MCP tool`, `mcp=Tool`,
+- `MCP`, `MCP host`, `MCP server`, `MCP App`, `MCP tool`, `mcp=Tool`,
   `UI()` (as a Reboot method type).
 - `ChatGPT`, `Claude`, `VSCode`, `Goose`, `Cursor`, or
   "Anthropic / OpenAI" **named as the runtime** — e.g. "I want to
   use this from Claude", "expose it as a tool to ChatGPT". Just
   mentioning the company (e.g. "like ChatGPT") doesn't count.
-- "MCP UI", "AI tool", "tool for an LLM/agent", "expose to an
+- "MCP App", "AI tool", "tool for an LLM/agent", "expose to an
   LLM/agent".
 
 **Commit to `web-app` if the prompt contains any of:**
@@ -56,7 +56,7 @@ they probably mean…":
 - A standard browser-auth phrase: "log in via email", "OAuth login",
   "cookie session", "sign up form".
 
-**Commit to BOTH (load mcp-ui + web-app together) only if the
+**Commit to BOTH (load mcp-app + web-app together) only if the
 prompt contains an explicit conjunction:** e.g. "and also a
 website", "MCP server **plus** a dashboard", "expose it to Claude
 **and** host it on the web". Dual-frontend apps share one backend,
@@ -78,7 +78,7 @@ the prompt offers, **ask**:
 - Mentions of CRUD-like operations, fields, schemas, relationships
   between entities, search, history, timelines, …
 - Mentions of "frontend" or "UI" without "browser" / "website" /
-  "URL" — MCP UIs also have a UI (rendered in the MCP host).
+  "URL" — MCP Apps also have a UI (rendered in the MCP host).
 - An overall vibe of "this sounds like a SaaS / CRM / dashboard."
 
 If the only signal you have is "this sounds web-y" or "this sounds
@@ -86,9 +86,9 @@ chat-y", **ask**.
 
 ### Decision flow
 
-1. **Verbatim MCP UI trigger present** → say one sentence
-   ("Building this as a Reboot MCP UI."), then load the
-   [`mcp-ui` skill](../mcp-ui/SKILL.md) and follow it from the
+1. **Verbatim MCP App trigger present** → say one sentence
+   ("Building this as a Reboot MCP App."), then load the
+   [`mcp-app` skill](../mcp-app/SKILL.md) and follow it from the
    top, with the user's description as input.
 2. **Verbatim web-app trigger present** → say one sentence
    ("Building this as a Reboot Web App."), then load the
@@ -97,7 +97,7 @@ chat-y", **ask**.
 3. **Both triggers present, or explicit "I want both"** → say one
    sentence ("Building this as a dual-frontend Reboot app — both
    MCP and standalone web."), then load the
-   [`mcp-ui` skill](../mcp-ui/SKILL.md) _and_ the
+   [`mcp-app` skill](../mcp-app/SKILL.md) _and_ the
    [`web-app` skill](../web-app/SKILL.md), and follow them
    together. The backend `Application(oauth=...)` is configured
    once and serves both frontends; a single `User` actor per
@@ -111,7 +111,7 @@ chat-y", **ask**.
    Question: "Before I scaffold — which kind of app are you building?"
    Header:   "App type"
    Options:
-     - "MCP UI" — exposed through an MCP host (ChatGPT, Claude,
+     - "MCP App" — exposed through an MCP host (ChatGPT, Claude,
        VSCode, Goose, …) via MCP tools; optional embedded UI.
      - "Web App"  — a standalone website / SPA users open in a
        normal browser.
@@ -121,7 +121,7 @@ chat-y", **ask**.
    ```
 
    Then route on the answer per steps 1–3. **"Both" loads both
-   skills**: `mcp-ui` for the MCP-specific additions and
+   skills**: `mcp-app` for the MCP-specific additions and
    `web-app` for the standalone browser frontend, layered on the
    shared `oauth=...` configured in the backend.
 
@@ -141,7 +141,7 @@ chat-y", **ask**.
    >    auto-mode preference; the user asked to build an app knowing
    >    it would route, so asking once is in-scope work.
    > 3. The user has not waived their right to choose between
-   >    `mcp-ui` and `web-app`. Silence on the topic is silence,
+   >    `mcp-app` and `web-app`. Silence on the topic is silence,
    >    not a delegation.
    >
    > Do **not** skip this step because:
@@ -171,9 +171,9 @@ chat-y", **ask**.
 | "a CRM for my personal relationships, with notes and a timeline"         | **ASK**                 | CRM is a domain word, not a front-door. No verbatim trigger. |
 | "a todo list app"                                                        | **ASK**                 | "app" alone is not a trigger.                                |
 | "a dashboard for our team's metrics, served at metrics.example.com"      | `web-app`               | Explicit URL.                                                |
-| "a tool I can use from Claude to track my reading list"                  | `mcp-ui`                | "from Claude" names the runtime; "tool" + LLM context.       |
+| "a tool I can use from Claude to track my reading list"                  | `mcp-app`               | "from Claude" names the runtime; "tool" + LLM context.       |
 | "a website where users can sign up and create journals"                  | `web-app`               | "website" is a verbatim trigger.                             |
-| "a kanban board with login"                                              | **ASK**                 | "login" alone is not enough — MCP UIs also have auth.        |
+| "a kanban board with login"                                              | **ASK**                 | "login" alone is not enough — MCP Apps also have auth.       |
 | "expose a CRM as an MCP server, and also a dashboard at crm.example.com" | Both — load both skills | Explicit conjunction; dual-frontend app.                     |
 
 ## Note
@@ -183,7 +183,7 @@ English and written down as a `@wip` feature file before its API
 exists, per the [`feature` skill](../feature/SKILL.md); the build
 flows of both routes start there.
 
-Both `mcp-ui` and `web-app` layer on top of the [`python`
+Both `mcp-app` and `web-app` layer on top of the [`python`
 skill](../python/SKILL.md) for Reboot backend mechanics. You don't need
 to load `python` here — those skills load it themselves. A
 dual-frontend app loads both, but they share a single `python`

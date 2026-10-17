@@ -16,13 +16,15 @@ tags: dockerfile, deploy, rbt-cloud, base-image, codegen, dockerignore
 > (2) `CMD ["rbt", "serve", "run"]` — never `rbt dev run` in a Cloud
 > image. All production flags live in `.rbtrc`'s `serve run` lines
 > (see [`lifecycle-rbtrc.md`](lifecycle-rbtrc.md)).
-> (3) Layer order is load-bearing: deps → schema + `.rbtrc` →
-> `rbt generate` → (optional) web build → `backend/src/` → `CMD`.
+> (3) Layer order is load-bearing: deps → schema + `.rbtrc` (+
+> `frontend/`) → `rbt generate` → frontend build → `backend/src/` →
+> `CMD`.
 
 ## Canonical Backend-Only Dockerfile
 
-For a Reboot Python app that does not bundle a web frontend (the
-backend is the API server; any UI is deployed separately). Matches
+For a Reboot Python app with no `frontend/` at all (the backend is
+only an API or MCP server). An app with a frontend adds the layers in
+the next section. Matches
 [the `reboot-hello` example](https://github.com/reboot-dev/reboot-hello/blob/main/Dockerfile)
 verbatim:
 
@@ -56,11 +58,12 @@ Four blocks: install deps from the lockfile, copy schemas + config and
 run `rbt generate`, copy backend source, then run `rbt serve run` —
 which reads everything else it needs from `.rbtrc`.
 
-## Adding a Bundled Web Frontend (MCP UIs)
+## Adding the Frontend (MCP Apps and the Web App)
 
-For an MCP or chat-style app where the Reboot backend is also the
-static web server for an embedded UI artifact, add two layers between
-`rbt generate` and the final `COPY backend/src/`:
+The backend serves the app's built frontend from the image: the MCP
+UIs under `/__/frontend/` and the web app at `/`. For any app with a
+`frontend/`, add two layers between `rbt generate` and the final
+`COPY backend/src/`:
 
 ```dockerfile
 # After `COPY .rbtrc`, before `RUN rbt generate`:
@@ -69,9 +72,9 @@ COPY frontend/ frontend/
 # Standard rbt codegen — generates `backend/api/` AND `frontend/api/`.
 RUN rbt generate
 
-# Build the React UIs into `frontend/dist/`. For MCP apps the Reboot app
-# itself is also the static web server, so it needs these static
-# assets.
+# Build the frontend into `frontend/dist/`: the MCP Apps under
+# `frontend/dist/mcp/` and the web app under `frontend/dist/web/`. The
+# Reboot app serves them itself, so they are in the image.
 RUN cd frontend && npm ci && npm run build
 
 # Then the existing `COPY backend/src/ backend/src/` and `CMD ...`.
@@ -89,10 +92,10 @@ layers least- to most-frequently-changing:
 
 1. `COPY requirements.lock requirements.txt` + `RUN pip install` —
    rebuilt only when dependencies change.
-2. `COPY api/` + `COPY .rbtrc` + (for MCP) `COPY frontend/` — rebuilt when
-   the API schema or `.rbtrc` (or web sources) change.
+2. `COPY api/` + `COPY .rbtrc` + `COPY frontend/` — rebuilt when
+   the API schema or `.rbtrc` (or frontend sources) change.
 3. `RUN rbt generate` — runs whenever the previous layer changes.
-4. (For MCP) `RUN cd frontend && npm ci && npm run build` — frontend build.
+4. `RUN cd frontend && npm ci && npm run build` — frontend build.
 5. `COPY backend/src/` — rebuilt on every backend edit.
 6. `CMD ["rbt", "serve", "run"]` — never invalidated.
 
@@ -111,9 +114,13 @@ production lines that need to be in `.rbtrc` for a Cloud deploy:
 # Tell `rbt serve` this is a Python application.
 serve run --python
 
-# If the app bundles a frontend (built to `frontend/dist/`), serve it
-# at `/__/frontend/` from the built-in HTTP server.
-serve run --frontend-dist-path=frontend/dist --frontend-root-path=frontend
+# If the app has MCP Apps (built to `frontend/dist/mcp/`), serve them
+# at `/__/frontend/mcp/` from the built-in HTTP server.
+serve run --mcp-app-dist-path=frontend/dist/mcp
+
+# If the app has a web app (built to `frontend/dist/web/`), serve it
+# at `/`, same-origin with the API.
+serve run --web-app-dist-path=frontend/dist/web
 
 # Entry point.
 serve run --application=backend/src/main.py
@@ -134,7 +141,7 @@ Keep the build context small and the image clean. Two variants
 matching the two Dockerfile patterns above; both derived from
 [the `reboot-agent-wiki` example's `.dockerignore`](https://github.com/reboot-dev/reboot-agent-wiki/blob/main/.dockerignore).
 
-**Backend-only** (no `frontend/` content makes it into the image):
+**Backend-only** (the app has no `frontend/`):
 
 ```gitignore
 # Python runtime caches and venv — rebuilt inside the image.
@@ -150,9 +157,6 @@ __pycache__/
 # Generated code — regenerated inside the image by `rbt generate`.
 backend/api/
 
-# The frontend, hosted outside this image.
-frontend/
-
 # VCS.
 .git/
 .gitignore
@@ -167,7 +171,7 @@ frontend/
 README.md
 ```
 
-**Bundled-web (MCP UI)** — keep `frontend/` sources the in-image
+**With a frontend** — keep the `frontend/` sources the in-image
 `npm ci && npm run build` needs, drop everything else under `frontend/`:
 
 ```gitignore
@@ -211,8 +215,8 @@ README.md
 - Base image version drifts from the `reboot==` pin. The base image
   bakes in a specific `rbt` CLI and runtime — a mismatch surfaces as
   obscure protocol or codegen errors on first deploy.
-- Running `rbt generate` **before** `COPY frontend/` (for the bundled-web
-  variant). The fresh `frontend/api/` bindings get clobbered by the stale
+- Running `rbt generate` **before** `COPY frontend/`. The fresh
+  `frontend/api/` bindings get clobbered by the stale
   local copy when `frontend/` is finally copied in. Follow the example's
   order.
 - Putting production flags on the `CMD` line instead of in `.rbtrc`'s

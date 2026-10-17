@@ -111,7 +111,7 @@ BankMethods = Methods(
     ),
     show_accounts=UI(
         request=None,
-        path="frontend/mcp/accounts",
+        path="accounts",
         title="Bank Accounts",
         description="Show a live table of every customer's "
         "accounts and balances.",

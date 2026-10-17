@@ -19,7 +19,6 @@ from reboot.bdd import recordings
 from reboot.dashboard.backend.constants import (
     CHANGELOG_ID,
     DASHBOARD_ID,
-    DASHBOARD_PATH,
     PREFERENCES_ID,
     PRESENCE_ID,
 )
@@ -33,15 +32,6 @@ from reboot.std.collections.ordered_map.v1.ordered_map import (
 from reboot.std.presence.v1 import presence
 from starlette.exceptions import HTTPException
 from starlette.responses import FileResponse
-from starlette.staticfiles import StaticFiles
-
-# The built page, beside this module, which is the same arrangement
-# `InspectServicer` uses for its own assets. Mounting it directly
-# avoids `RBT_FRONTEND_DIST_PATH`, which resolves against a project
-# root discovered by walking up from a servicer's file; the servicers
-# here come from `reboot.std.presence`, so no such root exists above
-# them.
-_DASHBOARD_DIRECTORY = Path(__file__).parent / 'dashboard'
 
 # Where the page fetches a scenario's recordings from, followed by the
 # recording's path relative to the working directory, the path the
@@ -95,9 +85,6 @@ def application() -> Application:
             ),
         ],
         initialize=initialize,
-        # The dashboard is the only page this application has, so `/`
-        # forwards to it rather than showing Reboot's root page.
-        root=DASHBOARD_PATH + '/',
     )
 
     @application.http.get(RECORDINGS_PATH + '/{relative:path}')
@@ -106,21 +93,9 @@ def application() -> Application:
         feature file under the working directory."""
         return FileResponse(_recording(Path.cwd(), relative))
 
-    application.http.mount(
-        DASHBOARD_PATH,
-        app=StaticFiles(
-            directory=str(_DASHBOARD_DIRECTORY),
-            # `html=True` so the directory URL serves `index.html`.
-            # `check_dir=False` so a not-yet-built page doesn't stop
-            # the application starting. `follow_symlink=True` because
-            # under Bazel runfiles the built page is a symlink into
-            # `bazel-out`, which Starlette's default `realpath` check
-            # rejects as escaping the served directory.
-            html=True,
-            check_dir=False,
-            follow_symlink=True,
-        ),
-    )
+    # The page itself is served at `/` by the web framework, from
+    # `DASHBOARD_DIRECTORY`, which the CLI names in this application's
+    # environment the way `--web-app-dist-path` would.
 
     return application
 

@@ -135,7 +135,7 @@ generate --react=frontend/api
 This flag specifies where to put the generated React code. The
 examples generate into `frontend/api/`, a sibling of the app in
 `frontend/web/`, so that every frontend of an application (web,
-mobile, MCP UIs) shares one generated client. Some React frameworks
+mobile, MCP Apps) shares one generated client. Some React frameworks
 [prevent referencing files outside the app's root directory](https://stackoverflow.com/questions/44114436/the-create-react-app-imports-restriction-outside-of-src-directory)
 by default; for Vite, allow it with `server.fs.allow: [".."]` in
 `vite.config.ts`.
@@ -143,9 +143,11 @@ by default; for Vite, allow it with `server.fs.allow: [".."]` in
 ## Setup
 
 All calls to Reboot generated code must occur within a Reboot context. This
-context is provided by a `RebootClientProvider`. It takes a
-`url` prop that defines the endpoint the
-generated React code will use to connect to the Reboot backend.
+context is provided by a `RebootClientProvider`. It takes a `url` prop,
+the endpoint the generated React code connects to. Without one, the
+client uses the page's own origin, which is the backend whenever the
+backend serves the web app: in development behind `rbt dev run
+--web-app`, and in production from the container (`--web-app-dist-path`).
 
 <!-- MARKDOWN-AUTO-DOCS:START
 (CODE:src=../../../reboot/examples/counter/frontend/web-vite/src/main.tsx&&lines=8-10) -->
@@ -170,16 +172,23 @@ only around 200 of those per page (255 in Chrome). See
 for local certificates.
 :::
 
-In practice, it is best to use an environment variable for your API endpoint.
-
-For example:
+A web app served from another origin — its own dev server opened
+directly, or a CDN or static host in production — has to be told the
+backend's origin. Take it from an environment variable rather than
+writing it into the code, so that one build runs against any backend:
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/examples/chat-room/frontend/web/src/index.tsx&&lines=11-12) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/chat-room/frontend/web/src/index.tsx -->
+(CODE:src=../../../reboot/examples/bank-pydantic/frontend/web/src/main.tsx&&lines=13-19) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/bank-pydantic/frontend/web/src/main.tsx -->
 
 ```tsx
-(import.meta.env.VITE_REBOOT_URL as string) || "http://localhost:9991";
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <RebootClientProvider url={import.meta.env.VITE_REBOOT_URL}>
+      <Root />
+    </RebootClientProvider>
+  </StrictMode>
+);
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
@@ -212,10 +221,10 @@ if (user === undefined) return <button onClick={() => signIn()}>Sign in</button>
 See [Web apps](/frontends/web#signing-in) for the browser flow, and
 [React Native apps](/frontends/react_native) for the native one.
 
-## In MCP UIs
+## In MCP Apps
 
 The same generated hooks work unchanged inside an
-[MCP client](/frontends/mcp_ui), where a
+[MCP client](/frontends/mcp_app), where a
 [`UI` method](/frontends/ui_methods) renders your component. A few
 things differ:
 
@@ -224,8 +233,8 @@ things differ:
   You do not pass a `url`:
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/examples/mcp-ui-counter/frontend/mcp/clicker/main.tsx&lines=9-11) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/mcp-ui-counter/frontend/mcp/clicker/main.tsx -->
+(CODE:src=../../../reboot/examples/mcp-app-counter/frontend/mcp/clicker/main.tsx&lines=9-11) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/mcp-app-counter/frontend/mcp/clicker/main.tsx -->
 
 ```tsx
 <RebootClientProvider>
@@ -246,8 +255,8 @@ things differ:
   component):
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/examples/mcp-ui-counter/frontend/mcp/clicker/App.tsx&lines=10-31) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/mcp-ui-counter/frontend/mcp/clicker/App.tsx -->
+(CODE:src=../../../reboot/examples/mcp-app-counter/frontend/mcp/clicker/App.tsx&lines=10-31) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/mcp-app-counter/frontend/mcp/clicker/App.tsx -->
 
 ```tsx
 export const ClickerApp: FC = () => {
@@ -285,8 +294,8 @@ const Clicker: FC<{ counter: UseCounterApi }> = ({ counter }) => {
   as props:
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/examples/mcp-ui-counter-dashboard/frontend/mcp/dashboard/App.tsx&lines=20-21) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/mcp-ui-counter-dashboard/frontend/mcp/dashboard/App.tsx -->
+(CODE:src=../../../reboot/examples/mcp-app-counter-dashboard/frontend/mcp/dashboard/App.tsx&lines=20-21) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/mcp-app-counter-dashboard/frontend/mcp/dashboard/App.tsx -->
 
 ```tsx
 export const DashboardApp: FC<DashboardConfig> = ({ personalizedMessage }) => {

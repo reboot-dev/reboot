@@ -399,7 +399,7 @@ with "unknown actor type."
   `Workflow`**. Also the **user-provided API-key path** for services
   without OAuth (`Ciphertext`-encrypted, the ciphertext id kept in
   state; the developer's own service keys are env-var secrets instead).
-  Host-agnostic (MCP UIs and web apps). Pairs with
+  Host-agnostic (MCP Apps and web apps). Pairs with
   `stdlib-oauth-tokens.md` (the `OAuthTokenManager` type).
 
 ### Testing
@@ -476,6 +476,9 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/lifecycle-secrets.md`
 - `references/lifecycle-dockerfile.md`
 - `references/lifecycle-reboot-cloud.md`
+- `references/lifecycle-signals.md` — usually nothing to do on
+  `SIGTERM`/`SIGINT`; when something is, `install_cleanup()`, never a
+  signal handler of your own
 
 **API** (`api-`):
 
@@ -553,7 +556,7 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/testing-external-context.md`
 - `references/testing-failure-recovery.md`
 
-**Frontend** (shared by `web-app` and `mcp-ui`):
+**Frontend** (shared by `web-app` and `mcp-app`):
 
 - `references/react-generated-client.md` — what
   `rbt generate --react=` emits: hook overloads, `Use<Type>Api`,

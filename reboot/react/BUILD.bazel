@@ -74,6 +74,8 @@ ts_project(
         ":internal/index.ts",
         ":internal/useAppSafe.ts",
         ":native/index.ts",
+        ":vite/build.ts",
+        ":vite/index.ts",
     ],
     declaration = True,
     tsconfig = ":tsconfig",
@@ -87,5 +89,7 @@ ts_project(
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//:node_modules/tslib",
+        "//:node_modules/vite",
+        "//:node_modules/vite-plugin-singlefile",
     ],
 )

@@ -415,17 +415,17 @@ py_test(
 # the tested `main.py` entrypoint snippet in
 # `documentation/docs/ai_chat_apps/get_started.mdx`.
 py_library(
-    name = "mcp_ui_counter_py",
-    srcs = ["mcp_ui_counter.py"],
+    name = "mcp_app_counter_py",
+    srcs = ["mcp_app_counter.py"],
     deps = ["//reboot:api_py"],
 )
 
 # Generates the `_rbt` code from the API definition at build time, so
 # the servicer is checked against real generated code.
 py_reboot_library_from_pydantic(
-    name = "mcp_ui_counter_py_reboot",
-    py_deps = [":mcp_ui_counter_py"],
-    pydantic = ":mcp_ui_counter.py",
+    name = "mcp_app_counter_py_reboot",
+    py_deps = [":mcp_app_counter_py"],
+    pydantic = ":mcp_app_counter.py",
 )
 
 # The tutorial's servicer, importable as `servicers.counter` so the
@@ -435,15 +435,15 @@ py_reboot_library_from_pydantic(
 # `_rbt` code imports by its full path) out of the root, so `mypy`
 # names each source consistently.
 py_library(
-    name = "mcp_ui_counter_servicer_py",
+    name = "mcp_app_counter_servicer_py",
     srcs = [
         "backend/src/servicers/__init__.py",
         "backend/src/servicers/counter.py",
     ],
     imports = ["backend/src"],
     deps = [
-        ":mcp_ui_counter_py",
-        ":mcp_ui_counter_py_reboot",
+        ":mcp_app_counter_py",
+        ":mcp_app_counter_py_reboot",
     ],
 )
 
@@ -453,19 +453,19 @@ py_library(
     name = "get_started_main_py",
     srcs = ["backend/src/main.py"],
     imports = ["backend/src"],
-    deps = [":mcp_ui_counter_servicer_py"],
+    deps = [":mcp_app_counter_servicer_py"],
 )
 
 # Exercises the tutorial's `User` and `Counter` servicers, and checks
 # the `main.py` snippet is real, importable code.
 py_test(
-    name = "test_mcp_ui_counter_py",
-    srcs = ["test_mcp_ui_counter.py"],
+    name = "test_mcp_app_counter_py",
+    srcs = ["test_mcp_app_counter.py"],
     imports = ["backend/src"],
-    main = "test_mcp_ui_counter.py",
+    main = "test_mcp_app_counter.py",
     deps = [
         ":get_started_main_py",
-        ":mcp_ui_counter_servicer_py",
+        ":mcp_app_counter_servicer_py",
         "//reboot/aio:applications_py",
         "//reboot/aio:tests_py",
     ],
@@ -473,7 +473,7 @@ py_test(
 
 # The todo-list example the users docs pull from: a `User` that is the
 # person (profile plus the lists they own), and the `TodoList` they
-# create. Same layout as the `mcp_ui_counter` example above.
+# create. Same layout as the `mcp_app_counter` example above.
 py_library(
     name = "todos_py",
     srcs = ["todos.py"],
@@ -563,9 +563,9 @@ ts_project(
 )
 
 js_reboot_react_library_from_pydantic(
-    name = "mcp_ui_counter_js_reboot_react",
+    name = "mcp_app_counter_js_reboot_react",
     package_json = ":package.json",
-    pydantic = ":mcp_ui_counter.py",
+    pydantic = ":mcp_app_counter.py",
 )
 
 # Type-checks the `get_started` React entrypoint (`main.tsx`) and the
@@ -593,8 +593,8 @@ ts_project(
             "module": "esnext",
             "moduleResolution": "bundler",
             "paths": {
-                "@api/mcp_ui_counter/v1/counter_rbt_react": [
-                    "./mcp_ui_counter_zod_rbt_react",
+                "@api/mcp_app_counter/v1/counter_rbt_react": [
+                    "./mcp_app_counter_zod_rbt_react",
                 ],
             },
             "skipLibCheck": True,
@@ -603,7 +603,7 @@ ts_project(
         },
     },
     deps = [
-        ":mcp_ui_counter_js_reboot_react",
+        ":mcp_app_counter_js_reboot_react",
         "//:node_modules/@reboot-dev/reboot-react",
         "//:node_modules/@reboot-dev/reboot-web",
         "//:node_modules/@types/react",

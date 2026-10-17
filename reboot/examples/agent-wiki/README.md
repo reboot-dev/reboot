@@ -1,6 +1,6 @@
 # Agent Wiki
 
-An MCP UI built with Reboot that provides a shared
+An MCP App built with Reboot that provides a shared
 knowledge base humans and AIs can both read from and write to.
 Users hand in raw conversation `Transcript`s; a background
 "librarian" agent progressively distills those transcripts into
@@ -110,14 +110,25 @@ Then run the app (each command in its own terminal, from the
 project directory):
 
 ```bash
-# Terminal 1: start the Reboot backend.
+# Terminal 1: start the Reboot backend, as https://agent-wiki.localhost.
 uv run rbt dev run
 
-# Terminal 2: start the Vite dev server for Hot Module Replacement.
+# Terminal 2: start the Vite dev server for Hot Module Replacement,
+# as https://frontend.agent-wiki.localhost, which the backend serves the
+# MCP Apps from.
 cd frontend && npm run dev
 ```
 
-Then open <http://localhost:9991> and follow the setup wizard to
+Both run under [portless](https://github.com/vercel-labs/portless),
+which gives them names instead of ports: `npm run dev` is
+`portless frontend.agent-wiki vite`, portless being a dev dependency, and
+`rbt dev run` needs the `portless` CLI too: install it once with
+`npm install -g portless` and start its proxy with
+`portless proxy start`. (For plain ports instead, run
+`uv run rbt dev run --config=ports` and `cd frontend && npm run dev:ports`,
+and read `http://localhost:9991` below.)
+
+Then open <https://agent-wiki.localhost> and follow the setup wizard to
 connect a chat host (such as Claude or ChatGPT) to the app.
 
 State persists between restarts under the name `agent-wiki`

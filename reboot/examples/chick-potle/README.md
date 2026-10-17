@@ -1,6 +1,6 @@
 # Chick-potle
 
-An MCP UI built with Reboot that demonstrates a small
+An MCP App built with Reboot that demonstrates a small
 food-ordering flow driven from inside an MCP client.
 The AI calls tools to start an order, browse the menu, and
 add or remove items; humans see two embedded React UIs — a
@@ -53,14 +53,24 @@ Then run the app (each command in its own terminal, from the
 project directory):
 
 ```bash
-# Terminal 1: start the Reboot backend.
+# Terminal 1: start the Reboot backend, as https://chick-potle.localhost.
 uv run rbt dev run
 
-# Terminal 2: start the Vite dev server for Hot Module Replacement.
+# Terminal 2: start the Vite dev server for Hot Module Replacement,
+# as https://frontend.chick-potle.localhost.
 cd frontend && npm run dev
 ```
 
-Then open <http://localhost:9991> and follow the setup wizard to
+Both run under [portless](https://github.com/vercel-labs/portless),
+which gives them names instead of ports: `npm run dev` is
+`portless frontend.chick-potle vite`, portless being a dev dependency, and
+`rbt dev run` needs the `portless` CLI too: install it once with
+`npm install -g portless` and start its proxy with
+`portless proxy start`. (For plain ports instead, run
+`uv run rbt dev run --config=ports` and `cd frontend && npm run dev:ports`,
+and read `http://localhost:9991` below.)
+
+Then open <https://chick-potle.localhost> and follow the setup wizard to
 connect a chat host (such as Claude or ChatGPT) to the app.
 
 State persists between restarts under the name `chick-potle`
@@ -103,7 +113,7 @@ capability:
 
 ```
 chick-potle/
-├── api/mcp_ui_food/v1/food.py   # State models + method declarations.
+├── api/mcp_app_food/v1/food.py   # State models + method declarations.
 ├── backend/
 │   ├── api/                      # Generated Python bindings.
 │   └── src/

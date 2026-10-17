@@ -12,7 +12,7 @@ For the impatient:
 The [Reboot '.proto' definitions](https://docs.reboot.dev/learn_more/define/overview#code-generation)
 can be found in the `api/` directory, grouped into
 subdirectories by proto package, while backend specific code can be
-found in {{ backend_locations }}{% if has_frontend %} and front end specific code in `frontend/web/`{% endif %}{% if has_mcp %} and MCP UIs in `frontend/mcp/`{% endif %}{% if has_mobile %} and a React Native (Expo) mobile front end in `frontend/mobile/`{% endif %}
+found in {{ backend_locations }}{% if has_frontend %} and front end specific code in `frontend/web/`{% endif %}{% if has_mcp %} and MCP Apps in `frontend/mcp/`{% endif %}{% if has_mobile %} and a React Native (Expo) mobile front end in `frontend/mobile/`{% endif %}
 {% if has_non_react_frontend %} and non-React front end in `frontend/reboot-non-react-web/`{% endif %}.
 
 _For more information on all of the Reboot examples, please [see the docs](https://docs.reboot.dev/full_stack_apps/examples)._
@@ -104,7 +104,13 @@ npx rbt dev run
 
 Running `rbt dev run` will watch for file modifications and restart the
 application if necessary. See the `.rbtrc` file for flags and
-arguments that get expanded when running `rbt dev run`.
+arguments that get expanded when running `rbt dev run`.{% if has_mcp %} By default it
+serves the app under a name, `https://{{ application_name }}.localhost`, through
+[portless](https://github.com/vercel-labs/portless): install it once
+with `npm install -g portless` and start its proxy with
+`portless proxy start`. To use plain ports instead, run
+`rbt dev run --config=ports`.{% endif %}
+
 
 {% if has_frontend %}
 ### Front end
@@ -118,8 +124,15 @@ npm run dev
 ```
 
 That starts a single Vite dev server that serves both the web app and
-the MCP UIs. Visit [http://localhost:4444](http://localhost:4444) — it
-redirects to the web app.
+the MCP Apps, as `https://frontend.{{ application_name }}.localhost`, which the backend
+serves them from (the name matches the backend's `{{ application_name }}.localhost`,
+which is how the two trust each other): `npm run dev` is
+`portless frontend.{{ application_name }} vite`, portless being a dev dependency,
+mirroring the `.rbtrc`. Visit
+[https://{{ application_name }}.localhost](https://{{ application_name }}.localhost) for the web app.
+Without portless (`rbt dev run --config=ports`), run
+`npm run dev:ports` instead and visit
+[http://localhost:9991](http://localhost:9991).
 
 {% if web_sign_in_notes %}
 {{ web_sign_in_notes }}
@@ -130,11 +143,13 @@ The application is also an MCP server: an MCP client can call
 its tools and render its UIs (the `frontend/mcp/` directories) right
 in the chat. The easiest way to get connected is the setup wizard
 that the backend serves at
-[http://localhost:9991](http://localhost:9991): it walks you through
-connecting the chat client of your choice (Claude, ChatGPT, ...) —
-including the public tunnel those clients need to reach your machine
-— and suggests example prompts to try. The MCP endpoint itself is
-[http://localhost:9991/mcp](http://localhost:9991/mcp).
+[https://{{ application_name }}.localhost](https://{{ application_name }}.localhost) (or
+[http://localhost:9991](http://localhost:9991) without portless): it
+walks you through connecting the chat client of your choice (Claude,
+ChatGPT, ...) — including the public tunnel those clients need to
+reach your machine — and suggests example prompts to try. The MCP
+endpoint itself is
+[https://{{ application_name }}.localhost/mcp](https://{{ application_name }}.localhost/mcp).
 {% elif backend_language == "python" %}
 Similar to the backend, the front end has dependencies that need to be installed before running it. Open a separate terminal/shell and do:
 ```shell
@@ -151,7 +166,7 @@ npm run dev:web
 {% if not has_mcp %}
 
 If using VSCode, the page will load automatically.
-If not using VSCode, visit [http://127.0.0.1:3000](http://127.0.0.1:3000).
+If not using VSCode, visit [{{ web_app_url }}]({{ web_app_url }}).
 {% endif %}
 {% endif %}
 {% if has_tests %}
@@ -217,17 +232,13 @@ in the output of `rbt cloud up`:
 ```
 
 {% if has_frontend %}
-Tell the front end to talk to it by updating the `VITE_REBOOT_URL` value in
-`frontend/web/.env`:
-
-```tsx
-VITE_REBOOT_URL=YOUR_URL
-```
-
-Then, in the `frontend/` directory, run `npm run build`.
-
-Once built, this front end can be deployed to any static hosting provider like
-S3, Vercel, Cloudflare or Firebase hosting.
+The web app is there too: the `Dockerfile` builds it into the image, and
+`serve run --web-app-dist-path=frontend/dist/web` in `.rbtrc` has the application
+serve it at `YOUR_URL/`, same-origin with the API, so nothing has to be
+configured on the frontend. (The built `frontend/dist/web/` is a plain SPA, so
+it can instead go to a static host of your own, but then the app and the API
+are different sites, and a signed-in session only persists in Chrome until
+Reboot Cloud's custom domains feature puts the API on your domain.)
 {% endif %}
 
 {% endif %}

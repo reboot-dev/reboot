@@ -220,7 +220,7 @@ api = API(
         methods=Methods(
             browse_store=UI(
                 request=BrowseStoreRequest,
-                path="frontend/mcp/store",
+                path="store",
                 title="Reboot Store",
                 description="Open a visual storefront for "
                 "the Reboot swag store. To honor a user "
@@ -292,7 +292,7 @@ api = API(
             ),
             show_cart=UI(
                 request=None,
-                path="frontend/mcp/cart",
+                path="cart",
                 title="Shopping Cart",
                 description="View the shopping cart with "
                 "items, totals, and checkout form.",
@@ -366,7 +366,7 @@ api = API(
             ),
             show_confirmation=UI(
                 request=None,
-                path="frontend/mcp/confirmation",
+                path="confirmation",
                 title="Order Confirmation",
                 description="View the order confirmation "
                 "with details and receipt.",

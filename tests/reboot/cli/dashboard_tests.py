@@ -1,4 +1,5 @@
 import os
+import reboot.portless
 import tempfile
 import unittest
 from reboot.cli.commands import dashboard
@@ -7,13 +8,20 @@ from reboot.cli.common.directories import dot_rbt_directory
 from reboot.cli.common.rc import ArgumentParser
 from reboot.dashboard.backend.constants import DEFAULT_DASHBOARD_PORT
 from tests.reboot.cli.mock_exit import mock_raise_instead_of_exit
+from typing import Optional
 from unittest.mock import patch
 
 
 @patch('argparse.ArgumentParser.exit', mock_raise_instead_of_exit)
 class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
 
-    def _parse(self, state_directory: str, *, rbtrc: str = 'generate api/'):
+    def _parse(
+        self,
+        state_directory: str,
+        *,
+        rbtrc: str = 'generate api/',
+        config: Optional[str] = None,
+    ):
         rc_file = os.path.join(state_directory, '.rbtrc')
         with open(rc_file, 'w') as file:
             file.write(rbtrc + '\n')
@@ -24,7 +32,7 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
                 'rbt',
                 f'--state-directory={state_directory}',
                 'dashboard',
-            ],
+            ] + ([f'--config={config}'] if config is not None else []),
         )
         args, _ = parser.parse_args()
         return args, parser
@@ -43,7 +51,7 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
                     'generate --react=frontend/api\n'
                     '\n'
                     'dev run --application=backend/src/main.py\n'
-                    'dev run:hmr --frontend-host=http://localhost:4444'
+                    'dev run:ports --frontend-url=http://localhost:5173'
                 ),
             )
 
@@ -70,6 +78,68 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
             )
 
             self.assertEqual(env['RBT_APPLICATION'], 'backend/src/main.py')
+
+    async def test_portless_takes_the_name_from_dev_run(self) -> None:
+        """`https://dashboard.<name>.localhost` beside `rbt dev run
+        --portless`'s `https://<name>.localhost`: one name, read
+        where `rbt dev run` already needs it."""
+        with tempfile.TemporaryDirectory() as state_directory:
+            _, parser = self._parse(
+                state_directory,
+                rbtrc=(
+                    'generate api/\n'
+                    'dev run --application-name=bank\n'
+                    'dev run --application=backend/src/main.py\n'
+                    'dashboard --default-config=portless\n'
+                    'dashboard:portless --portless\n'
+                    'dashboard:ports --no-portless'
+                ),
+            )
+
+            self.assertEqual(dashboard._application_name(parser), 'bank')
+            self.assertEqual(
+                reboot.portless.dashboard_name('bank'), 'dashboard.bank'
+            )
+
+    async def test_the_configs_are_named_like_dev_runs(self) -> None:
+        """`rbt dashboard --config=ports` goes with `rbt dev run
+        --config=ports`: the default config is portless, and the
+        config named for plain ports turns it off."""
+        rbtrc = (
+            'generate api/\n'
+            'dev run --application-name=bank\n'
+            'dev run --application=backend/src/main.py\n'
+            'dashboard --default-config=portless\n'
+            'dashboard:portless --portless\n'
+            'dashboard:ports --no-portless'
+        )
+        with tempfile.TemporaryDirectory() as state_directory:
+            args, _ = self._parse(state_directory, rbtrc=rbtrc)
+            self.assertTrue(args.portless)
+
+            args, _ = self._parse(
+                state_directory,
+                rbtrc=rbtrc,
+                config='portless',
+            )
+            self.assertTrue(args.portless)
+
+            args, _ = self._parse(state_directory, rbtrc=rbtrc, config='ports')
+            self.assertFalse(args.portless)
+
+    async def test_no_application_name_without_one(self) -> None:
+        """Nothing is guessed; `--portless`, which needs the name for
+        the hostname, fails without one."""
+        with tempfile.TemporaryDirectory() as state_directory:
+            _, parser = self._parse(
+                state_directory,
+                rbtrc=(
+                    'generate api/\n'
+                    'dev run --application=backend/src/main.py'
+                ),
+            )
+
+            self.assertIsNone(dashboard._application_name(parser))
 
     async def test_an_rbtrc_that_names_no_application(self) -> None:
         """Somebody who names none gets a dashboard that looks for no

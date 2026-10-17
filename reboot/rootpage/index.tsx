@@ -63,6 +63,7 @@ const WizardConnected = ({ applicationId }: { applicationId: string }) => {
       title={title}
       description={response.description}
       titleReady
+      tunnelUrl={response.tunnelUrl}
       ngrokDetectedUrl={response.ngrokPublicUrl}
       cloudflaredDetectedUrl={response.cloudflaredPublicUrl}
       connections={response.connections ?? []}
@@ -77,7 +78,7 @@ const WizardConnected = ({ applicationId }: { applicationId: string }) => {
 };
 
 // `applicationId` is the singleton `Application` state ID, templated
-// into `index.html` by `RootPageServicer` (keyed on `RBT_NAME`); the
+// into `index.html` by the backend (keyed on `RBT_NAME`); the
 // wizard subscribes to that state via `useApplication({ id })`.
 export const render = (url: string, applicationId: string) => {
   const root = ReactDOM.createRoot(document.getElementById("root")!);

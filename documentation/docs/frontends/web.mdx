@@ -25,7 +25,7 @@ generate --react=frontend/api
 ```
 
 Generating into `frontend/api/` — a sibling of the app itself — means
-every frontend of your application (web, mobile, MCP UIs) shares one
+every frontend of your application (web, mobile, MCP Apps) shares one
 client. Keep your bundler's root at `frontend/` so that directory is
 inside it; if your app root is `frontend/web/` instead, Vite needs
 `server.fs.allow: [".."]` to read a sibling.
@@ -47,15 +47,15 @@ createRoot(document.getElementById("root")!).render(
 );
 ```
 
-Read the URL from the environment rather than hard-coding it. A web
-app is served from its own origin — a CDN or static host — almost
-never the same origin as the backend, so a real deployment *must* set
-it:
-
-```
-# frontend/web/.env.development
-VITE_REBOOT_URL="http://localhost:9991"
-```
+Read the URL from the environment rather than hard-coding it. When
+`url` is `undefined` the client uses the page's own origin, which is
+right whenever the backend serves the web app: in development with
+`--web-app` (Envoy sends `/` to the Vite dev server, see
+[Develop locally](/develop_locally#named-local-urls-with---portless)),
+or built with `--web-app-dist-path`. A web app served from anywhere
+else — a CDN or static host in production, or Vite's own URL opened
+directly — is on a different origin from the backend, so it *must*
+set it:
 
 ```
 # frontend/web/.env.production
@@ -185,28 +185,66 @@ cd frontend && npm run dev
 ```
 
 `rbt dev run` generates the React client before it starts, so the dev
-server always has an up-to-date `frontend/api/`.
+server always has an up-to-date `frontend/api/`. The frontend's
+`package.json` mirrors the `.rbtrc` configs below: `npm run dev` is
+the default, `dev:portless` (`portless frontend.<app> vite`, with `portless` as
+a dev dependency), and `dev:ports` is plain `vite`; see
+[Named local URLs](/develop_locally#named-local-urls-with---portless).
 
 If you want Reboot to serve the frontend too — so both are on one
-origin, and so `UI` methods work — point it at your frontend root in
-`.rbtrc`:
+origin, and so `UI` methods work — tell it where the frontend is in
+`.rbtrc`, and what to serve from it:
 
 ```
-# The frontend root, shared by the `:hmr` and `:dist` configs below.
-dev run --frontend-root-path=frontend
+# Named URLs via portless: Vite, run as the frontend's `npm run dev:portless`
+# (`portless frontend.<app> vite`), is at https://frontend.<app>.localhost; Envoy
+# proxies `/__/frontend/**` there, and `/` too, where it serves the web app.
+dev run --default-config=portless
 
-# HMR: proxy `/__/frontend/**` to the Vite dev server.
-dev run:hmr --frontend-host=http://localhost:4444
-dev run --default-config=hmr
+dev run:portless --portless
+dev run:portless --frontend-url=https://frontend.<app>.localhost
+dev run:portless --mcp-app
+dev run:portless --web-app
 
-# Dist: serve pre-built assets instead. `rbt dev run --config=dist`.
-dev run:dist --frontend-dist-path=frontend/dist
+# Plain ports: `rbt dev run --config=ports`, Vite from `npm run dev:ports`.
+dev run:ports --frontend-url=http://localhost:5173
+dev run:ports --mcp-app
+dev run:ports --web-app
+
+# Dist: serve the built MCP Apps and web app instead. `rbt dev run --config=dist`.
+dev run:dist --mcp-app-dist-path=frontend/dist/mcp
+dev run:dist --web-app-dist-path=frontend/dist/web
+
+# The developer dashboard too: https://dashboard.<app>.localhost.
+dashboard --default-config=portless
+dashboard:portless --portless
+dashboard:ports --no-portless
 ```
 
 See [Develop locally](/develop_locally#frontend-flags) for what each
 flag does.
 
 ## Going to production
+
+The built SPA can be served by the backend itself, at `/`, or by a
+static host on its own origin.
+
+**Served by the backend.** Build the frontend (`npm run build`) and
+tell `rbt serve` where the builds landed, the MCP Apps and the SPA;
+the backend serves the SPA at `/`, with its `index.html` answering
+any path the app has no route or file for, so the SPA's own routing
+works on reload:
+
+```
+serve run --mcp-app-dist-path=frontend/dist/mcp
+serve run --web-app-dist-path=frontend/dist/web
+```
+
+The SPA is same-origin with the backend, so it needs no
+`VITE_REBOOT_URL` and no `allowed_origins` entry. To try the same
+thing locally, `rbt dev run --config=dist` with the same flags.
+
+**Served by a static host.**
 
 1. Build the SPA (`npm run build`) and publish it to any static host.
 2. Set `VITE_REBOOT_URL` to the backend's public origin at build time.

@@ -745,7 +745,7 @@ class ArgumentParser(_Parser):
         and nothing at all when there is no such file.
 
         Only the lines that always apply: one written for a config,
-        such as `dev run:hmr --frontend-host=...`, is left out, because
+        such as `dev run:ports --frontend-url=...`, is left out, because
         whether that config was asked for is not known here.
         """
         if self.dot_rc is None:

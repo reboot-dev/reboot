@@ -8,7 +8,7 @@ project, not a snippet.
 ### `bank-pydantic`
 
 [`reboot-dev/reboot-bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic)
-— _Python backend; React web app, Expo mobile app, and MCP UIs_
+— _Python backend; React web app, Expo mobile app, and MCP Apps_
 
 The most complete example, and the one that shows what "general
 purpose" means in practice: **one backend, one `User` per person, and
@@ -24,7 +24,7 @@ It demonstrates:
 * A [React Native app](/frontends/react_native) under
   `frontend/mobile/`, signing in with `expoAuth(...)` against the same
   OAuth server — same hooks, same user.
-* [MCP UIs](/frontends/mcp_ui) under `frontend/mcp/`, so a chat
+* [MCP Apps](/frontends/mcp_app) under `frontend/mcp/`, so a chat
   client can open accounts and read balances too.
 * A debit/credit [transaction](/define/methods#kinds) that atomically
   moves funds between accounts.
@@ -120,15 +120,15 @@ Of particular note:
 
 Start with `hello`, `counter`, or `bank` before this one.
 
-## MCP UIs
+## MCP Apps
 
-### `mcp-ui-counter`
+### `mcp-app-counter`
 
-[`reboot-dev/reboot/…/mcp-ui-counter`](https://github.com/reboot-dev/reboot/tree/main/reboot/examples/mcp-ui-counter)
-— _Python backend, React MCP UIs and a web app_
+[`reboot-dev/reboot/…/mcp-app-counter`](https://github.com/reboot-dev/reboot/tree/main/reboot/examples/mcp-app-counter)
+— _Python backend, React MCP Apps and a web app_
 
 A counter with visual UIs that run inside ChatGPT, Claude, VS Code, or
-Goose — plus a standalone browser SPA that the MCP UI deep-links to.
+Goose — plus a standalone browser SPA that the MCP App deep-links to.
 
 It demonstrates:
 
@@ -137,7 +137,7 @@ It demonstrates:
 * The [`User` type](/users/overview) as an entry point that creates
   other state types.
 * Generated React hooks (`useCounter()`) working unchanged in both the
-  MCP UI and the browser.
+  MCP App and the browser.
 
 Ask [Claude Code](/get_started/claude_code) or
 [Codex](/get_started/codex) to build something like it.
@@ -145,7 +145,7 @@ Ask [Claude Code](/get_started/claude_code) or
 ### `chick-potle`
 
 [`reboot-dev/reboot-chick-potle`](https://github.com/reboot-dev/reboot-chick-potle)
-— _Python backend, React MCP UIs_
+— _Python backend, React MCP Apps_
 
 A small food-ordering app. The AI calls tools to start an order,
 browse the menu, and change the cart; the human sees a menu grid and a
@@ -162,7 +162,7 @@ It demonstrates:
 ### `agent-wiki`
 
 [`reboot-dev/reboot-agent-wiki`](https://github.com/reboot-dev/reboot-agent-wiki)
-— _Python backend, React MCP UIs_
+— _Python backend, React MCP Apps_
 
 A shared knowledge base that humans and AIs both read and write. Users
 hand in raw conversation transcripts; a background "librarian"

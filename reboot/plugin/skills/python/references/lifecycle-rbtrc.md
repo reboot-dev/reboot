@@ -120,6 +120,11 @@ serve run --python
 serve run --application=backend/src/main.py
 serve run --application-name=<app>
 serve run --tls=external
+
+# The built MCP Apps, which the backend serves from the image.
+serve run --mcp-app-dist-path=frontend/dist/mcp
+# A dual-frontend app also serves its built web app at `/`:
+# serve run --web-app-dist-path=frontend/dist/web
 ```
 
 Same `--application-name` value as the `dev run` lines — that name
@@ -140,15 +145,47 @@ A `<subcommand>:<config>` line only applies when `--config=<config>` is on
 the command line:
 
 ```sh
-# Default config (HMR / Vite).
-dev run --default-config=hmr
-dev run --frontend-root-path=frontend
+# Default config: named URLs via portless (https://github.com/vercel-labs/portless).
+# The app is https://<app>.localhost; Vite, run as the frontend's
+# `npm run dev:portless` (`portless frontend.<app> vite`), is
+# https://frontend.<app>.localhost, which the MCP Apps and the web app
+# are served from.
+dev run --default-config=portless
 
-dev run:hmr --frontend-host=http://localhost:4444
+dev run:portless --portless
+dev run:portless --frontend-url=https://frontend.<app>.localhost
+dev run:portless --mcp-app
+# A dual-frontend app also serves its web app from the dev server, at `/`:
+# dev run:portless --web-app
 
-# Dist mode (no Vite).
-dev run:dist --frontend-dist-path=frontend/dist
+# Plain ports, no portless: `rbt dev run --config=ports`, Vite from
+# `npm run dev:ports`.
+dev run:ports --frontend-url=http://localhost:5173
+dev run:ports --mcp-app
+# dev run:ports --web-app
+
+# Dist mode (no Vite): the built MCP Apps.
+dev run:dist --mcp-app-dist-path=frontend/dist/mcp
+# A dual-frontend app also serves its built web app at `/`:
+# dev run:dist --web-app-dist-path=frontend/dist/web
+
+# The developer dashboard (`rbt dashboard`) too: https://dashboard.<app>.localhost
+# by default, or the plain port with `rbt dashboard --config=ports`.
+dashboard --default-config=portless
+dashboard:portless --portless
+dashboard:ports --no-portless
 ```
 
-Run with `rbt dev run` (uses `--default-config=hmr`) or
-`rbt dev run --config=dist` to switch.
+Run with `rbt dev run` (uses `--default-config=portless`), or
+`rbt dev run --config=ports` or `--config=dist` to switch. `--portless`
+requires `--application-name` (the name is the hostname), the
+`portless` CLI, and its proxy running (`portless proxy start`).
+`dashboard:portless --portless` has `rbt dashboard` serve as
+`https://dashboard.<app>.localhost`, on a free port the proxy
+routes to, so the dashboards of several applications run at once;
+its configs are named like `rbt dev run`'s, so
+`rbt dashboard --config=ports` is the plain `http://127.0.0.1:9871/`.
+The frontend's `package.json` mirrors these configs as scripts:
+`dev` is the default, `dev:portless`, which runs
+`portless frontend.<app> vite` with `portless` as a dev dependency, and
+`dev:ports` is plain `vite`.

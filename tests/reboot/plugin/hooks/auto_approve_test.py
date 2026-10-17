@@ -157,10 +157,10 @@ CASES: list[tuple[str, str, dict, Decision]] = [
         Decision.APPROVE,
     ),
     (
-        "Skill: reboot:mcp-ui is approved",
+        "Skill: reboot:mcp-app is approved",
         "Skill",
         {
-            "skill": "reboot:mcp-ui"
+            "skill": "reboot:mcp-app"
         },
         Decision.APPROVE,
     ),
@@ -274,7 +274,7 @@ CASES: list[tuple[str, str, dict, Decision]] = [
         "Grep",
         {
             "pattern": "foo",
-            "path": f"{PLUGIN_ROOT}/skills/mcp-ui/references",
+            "path": f"{PLUGIN_ROOT}/skills/mcp-app/references",
         },
         Decision.APPROVE,
     ),
@@ -292,7 +292,7 @@ CASES: list[tuple[str, str, dict, Decision]] = [
         "Bash: ls -la with flags",
         "Bash",
         {
-            "command": f"ls -la {PLUGIN_ROOT}/skills/mcp-ui/references/"
+            "command": f"ls -la {PLUGIN_ROOT}/skills/mcp-app/references/"
         },
         Decision.APPROVE,
     ),
@@ -323,7 +323,7 @@ CASES: list[tuple[str, str, dict, Decision]] = [
         {
             "command":
                 f"ls {PLUGIN_ROOT}/skills/python/ && "
-                f"ls {PLUGIN_ROOT}/skills/mcp-ui/"
+                f"ls {PLUGIN_ROOT}/skills/mcp-app/"
         },
         Decision.APPROVE,
     ),
@@ -333,7 +333,7 @@ CASES: list[tuple[str, str, dict, Decision]] = [
         {
             "command":
                 f"ls {PLUGIN_ROOT}/skills/python/ ; "
-                f"ls {PLUGIN_ROOT}/skills/mcp-ui/"
+                f"ls {PLUGIN_ROOT}/skills/mcp-app/"
         },
         Decision.APPROVE,
     ),
@@ -739,6 +739,123 @@ REBOOT_DEV_CASES: list[tuple[str, str, Where, Decision]] = [
         "--url http://localhost:12345",
         Where.PROJECT,
         Decision.APPROVE,
+    ),
+    (
+        # Under portless the tunnel reaches the backend by name
+        # through the proxy: the name as Host and SNI, portless's
+        # CA trusted for the hop.
+        "dev: cloudflared tunnel by name under portless",
+        "cloudflared tunnel --metrics localhost:4040 "
+        "--url https://127.0.0.1:443 "
+        "--http-host-header bank.localhost "
+        "--origin-server-name bank.localhost "
+        "--origin-ca-pool ~/.portless/ca.pem",
+        Where.PROJECT,
+        Decision.APPROVE,
+    ),
+    (
+        # Host and SNI naming different apps is a slip, not a tunnel
+        # the skill asks for.
+        "dev: cloudflared tunnel whose Host and SNI disagree",
+        "cloudflared tunnel --metrics localhost:4040 "
+        "--url https://127.0.0.1:443 "
+        "--http-host-header bank.localhost "
+        "--origin-server-name other.localhost "
+        "--origin-ca-pool ~/.portless/ca.pem",
+        Where.PROJECT,
+        Decision.REJECT,
+    ),
+    (
+        # Trusting any certificate is never what the skill asks for.
+        "dev: cloudflared tunnel without TLS verification",
+        "cloudflared tunnel --metrics localhost:4040 "
+        "--url https://127.0.0.1:443 "
+        "--http-host-header bank.localhost "
+        "--origin-server-name bank.localhost "
+        "--no-tls-verify",
+        Where.PROJECT,
+        Decision.REJECT,
+    ),
+    (
+        # A plain-port tunnel has no business rewriting Host.
+        "dev: cloudflared tunnel at a plain port with a Host rewrite",
+        "cloudflared tunnel --metrics localhost:4040 "
+        "--url http://localhost:9991 "
+        "--http-host-header bank.localhost",
+        Where.PROJECT,
+        Decision.REJECT,
+    ),
+    (
+        # `run` skill looks for a tunnel already up before starting
+        # one; the command lines say which app each one is for.
+        "dev: pgrep for cloudflared",
+        "pgrep -af cloudflared",
+        Where.PROJECT,
+        Decision.APPROVE,
+    ),
+    (
+        # `run` skill checks on the portless proxy before deciding
+        # whether to start it.
+        "dev: portless doctor",
+        "portless doctor",
+        Where.PROJECT,
+        Decision.APPROVE,
+    ),
+    (
+        # ...and starts it; portless asks for `sudo` itself, in a
+        # terminal, so this fails harmlessly from the agent's shell.
+        "dev: portless proxy start",
+        "portless proxy start",
+        Where.PROJECT,
+        Decision.APPROVE,
+    ),
+    (
+        # `run` skill starts the frontend dev server under portless
+        # through the frontend's `dev:portless` script, which runs
+        # `portless frontend.<name> vite` (portless is a dev dependency).
+        "dev: npm run dev:portless",
+        "npm run dev:portless",
+        Where.PROJECT,
+        Decision.APPROVE,
+    ),
+    (
+        "dev: npm run dev:ports",
+        "npm run dev:ports",
+        Where.PROJECT,
+        Decision.APPROVE,
+    ),
+    (
+        # A script name that isn't one: anything but letters, digits
+        # and dashes (the metacharacter screen would catch most, but
+        # a leading dash is a flag).
+        "dev: npm run dev:<not a script name>",
+        "npm run dev:--help",
+        Where.PROJECT,
+        Decision.REJECT,
+    ),
+    (
+        # Running portless by hand rather than through the script is
+        # like its other subcommands below: not the skill's.
+        "dev: portless <name> npm run dev",
+        "portless bank-pydantic npm run dev",
+        Where.PROJECT,
+        Decision.REJECT,
+    ),
+    (
+        # Other portless subcommands (aliasing, cleaning) change the
+        # machine and are the user's or `rbt`'s to run; `portless
+        # trust`, which the skill may run, changes the OS trust store
+        # and is asked about each time.
+        "dev: portless alias",
+        "portless alias bank 9991",
+        Where.PROJECT,
+        Decision.REJECT,
+    ),
+    (
+        "dev: portless doctor outside a Reboot project",
+        "portless doctor",
+        Where.NON_PROJECT,
+        Decision.REJECT,
     ),
     (
         # Outside a Reboot project the tunnel command defers, like

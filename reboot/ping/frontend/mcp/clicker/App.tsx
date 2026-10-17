@@ -68,19 +68,18 @@ const Clicker: FC<ShowClickerProps & { counter: UseCounterApi }> = ({
   };
 
   const handlePopOut = async () => {
-    // The standalone web app is served at `/__/frontend/web/` on the
-    // Reboot origin (Envoy proxies that prefix to the static-file
-    // server in dist mode, or to Vite in HMR mode). Prefer the
-    // server-injected `window.REBOOT_URL` (set for inline/remote MCP
-    // hosts, where `window.location.origin` is the sandbox or "null"),
-    // falling back to our own origin when loaded in the iframe.
-    // (ping serves its web app same-origin, so the origin is
-    // the web app's URL — no separate `VITE_WEB_APP_URL` needed.)
+    // The standalone web app is served at `/` on the Reboot origin
+    // (`--web-app-dist-path`). Prefer the server-injected
+    // `window.REBOOT_URL` (set for inline/remote MCP hosts, where
+    // `window.location.origin` is the sandbox or "null"), falling
+    // back to our own origin when loaded in the iframe. (ping serves
+    // its web app same-origin, so the origin is the web app's URL —
+    // no separate `VITE_WEB_APP_URL` needed.)
     const url =
       (window.REBOOT_URL ?? window.location.origin) +
-      "/__/frontend/web/?counter=" +
+      "/?counter=" +
       encodeURIComponent(counterId);
-    // The sandboxed MCP UI iframe blocks `window.open` unless the
+    // The sandboxed MCP App iframe blocks `window.open` unless the
     // host grants `allow-popups`, so ask the host to open the link
     // via the MCP Apps `ui/open-link` request. Fall back to
     // `window.open` when not under an MCP host (or it declines).

@@ -1,0 +1,79 @@
+# .rbtrc
+# Find API definitions in 'api/'.
+generate api/
+
+# Generate Python code.
+generate --python=backend/api/
+
+# Generate React hooks.
+generate --react=frontend/api
+
+# Watch for source changes.
+dev run --watch=backend/**/*.py
+dev run --watch=frontend/dist/**/*.html
+
+# Python application.
+dev run --python
+
+# Save state between restarts.
+dev run --application-name=mcp-app-counter
+
+# Entrypoint.
+dev run --application=backend/src/main.py
+
+# Default to named URLs via portless (https://github.com/vercel-labs/portless)
+# when no --config is specified: the app is https://mcp-app-counter.localhost, serving
+# the web app and the MCP Apps from Vite, which runs as `cd frontend && npm run dev`
+# (`portless frontend.mcp-app-counter vite`) at https://frontend.mcp-app-counter.localhost. Needs the
+# `portless` CLI and its proxy (`portless proxy start`).
+dev run --default-config=portless
+
+# Hot Module Replacement (HMR): the MCP Apps are proxied from the Vite dev
+# server through Envoy, in either config.
+
+dev run:portless --portless
+dev run:portless --frontend-url=https://frontend.mcp-app-counter.localhost
+dev run:portless --mcp-app
+dev run:portless --web-app
+
+# Plain ports instead: `rbt dev run --config=ports`, with Vite run as
+# `cd frontend && npm run dev:ports`.
+dev run:ports --frontend-url=http://localhost:5173
+dev run:ports --mcp-app
+dev run:ports --web-app
+
+# Dist mode: serve the built MCP Apps from "frontend/dist/mcp/" and the
+# built web app at `/` (no Vite HMR).
+# Usage: `uv run rbt dev run --config=dist`
+# Requires: `cd frontend && npm run build`
+dev run:dist --mcp-app-dist-path=frontend/dist/mcp
+dev run:dist --web-app-dist-path=frontend/dist/web
+
+# The developer dashboard (`rbt dashboard`) too: it is
+# https://dashboard.mcp-app-counter.localhost by default, or on the plain port
+# http://127.0.0.1:9871 with `rbt dashboard --config=ports`.
+dashboard --default-config=portless
+dashboard:portless --portless
+dashboard:ports --no-portless
+
+# When expunging, expunge that state we've saved.
+dev expunge --application-name=mcp-app-counter
+
+# Production: tell `rbt serve` this is a Python application and where the
+# entrypoint lives. The Dockerfile's `CMD ["rbt", "serve", "run"]` picks
+# these up.
+serve run --python
+serve run --mcp-app-dist-path=frontend/dist/mcp
+serve run --web-app-dist-path=frontend/dist/web
+serve run --application=backend/src/main.py
+
+# Reboot Cloud terminates TLS at the external load balancer, so the app
+# itself only exposes a non-TLS port.
+serve run --tls=external
+
+# Application name, used by `rbt cloud {up,down,logs}` and `rbt serve run`
+# to identify this app.
+serve run --application-name=mcp-app-counter
+cloud up --application-name=mcp-app-counter
+cloud down --application-name=mcp-app-counter --expunge
+cloud logs --application-name=mcp-app-counter

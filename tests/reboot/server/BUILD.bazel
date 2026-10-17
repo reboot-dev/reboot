@@ -12,6 +12,17 @@ proto_library(
     ],
 )
 
+py_test(
+    name = "frontend_cluster_test_py",
+    size = "small",
+    srcs = ["frontend_cluster_test.py"],
+    main = "frontend_cluster_test.py",
+    deps = [
+        "//reboot:settings_py",
+        "//reboot/routing:envoy_config_py",
+    ],
+)
+
 py_library(
     name = "local_envoy_test_lib",
     srcs = ["local_envoy_test.py"],

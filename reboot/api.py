@@ -912,15 +912,46 @@ class UI(pydantic.BaseModel):
     an MCP resource that serves the UI's HTML. Unlike
     Reader/Writer, UI methods have no backend servicer.
 
+    `path` is the UI's URL path under Reboot's `/__/frontend/mcp/`,
+    such as `"clicker"` or `"shop/cart"`: in development the
+    frontend's dev server (`--frontend-url`) serves it at
+    `/__/frontend/mcp/clicker/`, and built it is
+    `<--mcp-app-dist-path>/clicker/index.html`. It is not a
+    directory in the project; the method name is the UI's identity.
+
     The `request` type defines the React component's
     props. There is no `response` -- the tool triggers
     UI display and the React component handles rendering.
     """
     request: Optional[typing.Type[Model]]
     path: str
-    artifact_path: Optional[str] = None
     title: Optional[str] = None
     description: Optional[str] = None
+
+    @pydantic.field_validator('path')
+    @classmethod
+    def _validate_path(cls, path: str) -> str:
+        segments = path.split('/')
+        # The form `path` used to take, a directory relative to the
+        # project root (`frontend/mcp/clicker`), or that directory
+        # with just the frontend stripped off (`mcp/clicker`).
+        if len(segments) > 1 and segments[0] in ('frontend', 'mcp'):
+            raise ValueError(
+                f"'{path}' is not a valid `UI(path=...)`: it is the UI's "
+                "URL path under `/__/frontend/mcp/`, such as "
+                f"`path=\"{segments[-1]}\"`, not a directory in the "
+                "project. The frontend's dev server serves the UI there, "
+                "and its build is at "
+                "`<--mcp-app-dist-path>/<path>/index.html`."
+            )
+        if any(segment in ('', '.', '..') for segment in segments):
+            raise ValueError(
+                f"'{path}' is not a valid `UI(path=...)`: give the UI's "
+                "URL path under `/__/frontend/mcp/`, with no leading or "
+                "trailing slash, e.g. `path=\"clicker\"` or "
+                "`path=\"shop/cart\"`."
+            )
+        return path
 
 
 class MethodModel(pydantic.BaseModel):
@@ -938,7 +969,7 @@ class MethodModel(pydantic.BaseModel):
     mcp: Optional[Tool]
 
     # TODO(rjh): we need more experience with resources
-    #            in the context of MCP UIs before
+    #            in the context of MCP Apps before
     #            officially supporting them in Reboot. It
     #            seems that many (most? all?) LLMs do not
     #            use available resources in responses to

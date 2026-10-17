@@ -2933,20 +2933,11 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% endfor %}
 {% if state.proto.uis | length > 0 %}
 
-        # Map UI method names to web app paths.
+        # Map UI method names to their URL paths under
+        # `/__/frontend/mcp/` (`UI(path=...)`).
         _ui_app_paths: dict[str, str] = {
 {% for ui in state.proto.uis %}
             "{{ ui.name }}": "{{ ui.path }}",
-{% endfor %}
-        }
-
-        # Optional artifact path overrides (only populated
-        # when `artifact_path` is explicitly set).
-        _ui_artifact_paths: dict[str, str] = {
-{% for ui in state.proto.uis %}
-{% if ui.artifact_path %}
-            "{{ ui.name }}": "{{ ui.artifact_path }}",
-{% endif %}
 {% endfor %}
         }
 
@@ -2966,7 +2957,6 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             IMPORT_reboot_mcp_ui.compute_ui_cache_busts(
                 __file__,
                 _ui_app_paths,
-                _ui_artifact_paths,
             )
         )
 
@@ -2984,7 +2974,6 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             caller_file=__file__,
             ui_path=_ui_app_paths["{{ ui.name }}"],
             ui_name="{{ ui.name }}",
-            artifact_path=_ui_artifact_paths.get("{{ ui.name }}"),
             uri_prefix=(
                 "ui://{{ state.proto.name | to_snake }}/"
                 "{{ ui.name }}/"
@@ -3174,7 +3163,6 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 _ui_app_paths[ui],
                 reboot_url,
                 ui_name=ui,
-                artifact_path=_ui_artifact_paths.get(ui),
                 cache_bust=cache_bust,
             )
 

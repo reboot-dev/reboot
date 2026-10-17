@@ -4,13 +4,12 @@ import { createRoot } from "react-dom/client";
 import { Root } from "./Root.tsx";
 import "./index.css";
 
-// Point the Reboot client at the backend via `VITE_REBOOT_URL`. A web
-// app is served from its own origin — a CDN or static host — almost
-// never same-origin with the Reboot backend, so a real deploy MUST set
-// `VITE_REBOOT_URL` to the backend's origin. `web/.env.development`
-// sets it for local dev (to the Envoy endpoint), so this SPA runs on
-// the Vite dev server cross-origin to the backend — the same shape as
-// production.
+// The Reboot client uses the page's own origin, which is the backend:
+// in development Envoy serves this SPA from the Vite dev server at
+// the backend's origin (`--web-app`), and built, the backend serves it
+// itself (`--web-app-dist-path`). Only a web app served from another
+// origin — a CDN or static host in production — MUST set
+// `VITE_REBOOT_URL` to the backend's origin (`web/.env.production`).
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <RebootClientProvider url={import.meta.env.VITE_REBOOT_URL}>

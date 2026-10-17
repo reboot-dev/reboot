@@ -209,21 +209,25 @@ When your application has a React frontend — a
 generate --react=frontend/api
 
 # Proxy the frontend through Vite for hot module replacement.
-dev run --frontend-root-path=frontend
+dev run:ports --frontend-url=http://localhost:5173
+dev run:ports --mcp-app
+dev run:ports --web-app
 
-dev run:hmr --frontend-host=http://localhost:4444
-
-# Default to HMR mode when --config is not specified.
-dev run --default-config=hmr
+# Use the `ports` config when --config is not specified.
+dev run --default-config=ports
 ```
 
 | Flag | Description |
 | --- | --- |
-| `dev run --frontend-root-path=<dir>` | Names the frontend root (e.g. `frontend`). Set once on the base `dev run` line so the `:hmr` and `:dist` configs inherit it. |
-| `dev run --frontend-host=<url>` | HMR: point at the Vite dev server URL (e.g. `http://localhost:4444`); Envoy proxies `/__/frontend/**` to it. |
-| `dev run --frontend-dist-path=<dir>` | Dist: serve pre-built frontend assets from `<dir>` (e.g. `frontend/dist`) on disk; mutually exclusive with `--frontend-host`. |
+| `dev run --frontend-url=<url>` | The frontend's dev server (e.g. Vite at `http://localhost:5173`): Envoy proxies `/__/frontend/**` to it, with Hot Module Replacement. Says only where the frontend is; alone it is an error. |
+| `dev run --mcp-app` | Serve the application's MCP Apps (its `UI(...)` methods) from `--frontend-url`, which it requires. An application with `UI(...)` methods needs this or `--mcp-app-dist-path`; one without refuses both. |
+| `dev run --web-app` | Serve the application's web app from `--frontend-url`, which it requires: Envoy sends `/`, and every path the application doesn't answer, to the dev server, which serves the web app at its `/`. Mutually exclusive with `--web-app-dist-path`. Python applications only. |
+| `dev run --mcp-app-dist-path=<dir>` | Dist: serve the built MCP Apps from `<dir>` (e.g. `frontend/dist/mcp`) on disk under `/__/frontend/mcp/`, each `UI(path=...)` from `<dir>/<path>/index.html`; mutually exclusive with `--frontend-url` and `--mcp-app`. |
+| `dev run --web-app-dist-path=<dir>` | Serve the built web app from `<dir>` (e.g. `frontend/dist/web`) at `/`, with its `index.html` answering any path the app has no route or file for. Without it, `/` is Reboot's page. Python applications only: with `--nodejs` it is an error. |
+| `dev run --portless` | Serve under a named URL via [portless](https://github.com/vercel-labs/portless): the backend becomes `https://<app>.localhost`, on a free port unless `--port` is given, serving the web app at `/` and the MCP Apps from the frontend dev server, which runs under portless as `https://frontend.<app>.localhost` (its `npm run dev:portless`) and is trusted as a browser origin too. See [Named local URLs](#named-local-urls-with---portless). |
+| `dev run --tunnel-url=<url>` | The public URL this application is reachable at through a tunnel (e.g. `https://<name>.trycloudflare.com`). The setup wizard shows and verifies it; without it, the wizard asks ngrok and cloudflared, through their local APIs on their default ports, for a tunnel of their own. |
 | `dev run --default-config=<name>` | Sets the default configuration profile when `--config` is not specified. |
-| `dev run:hmr` / `dev run:dist` | Named configurations. Flags prefixed with `dev run:<name>` only apply when `--config=<name>` is used. |
+| `dev run:ports` / `dev run:dist` | Named configurations. Flags prefixed with `dev run:<name>` only apply when `--config=<name>` is used. |
 
 <!-- ## Boilerplate code
 
@@ -267,12 +271,85 @@ $ npx rbt dev run
 ...
 ```
 
+### Named local URLs with `--portless`
+
+[portless](https://github.com/vercel-labs/portless) gives local
+servers names instead of ports. Install it once with
+`npm install -g portless` and start its proxy with
+`portless proxy start` (it asks for `sudo` to bind port 443 and
+installs a local certificate authority so the `https://` URLs are
+trusted). Then:
+
+```console
+$ rbt dev run --portless --application-name=bank
+...
+  Your API is available at:      https://bank.localhost
+```
+
+`rbt dev run` registers the backend with the proxy as
+`https://<app>.localhost`. The name is the address, so the port
+behind the proxy is a free one unless `--port` says otherwise, and
+several applications run at once without colliding on `9991`. It
+expects the frontend's dev server at `https://frontend.<app>.localhost`,
+which is what running it under portless with that name gives you.
+The frontend's `package.json` carries that as scripts mirroring the
+`.rbtrc` configs below, with `portless` as a dev dependency:
+
+```json
+"dev": "npm run dev:portless",
+"dev:portless": "portless frontend.bank vite",
+"dev:ports": "vite"
+```
+
+```console
+$ cd frontend && npm run dev
+```
+
+Envoy serves the MCP Apps and the web app at `/` from that dev
+server, so the whole app is at `https://<app>.localhost`, one origin,
+and no `VITE_REBOOT_URL` is needed. The backend also trusts exactly
+the dev server's origin for credentialed requests (a frontend
+registered under any other name is refused, so the two names cannot
+drift apart), so the web app opened at `https://frontend.<app>.localhost`
+works as well, cross-origin. Point `--frontend-url` at the named dev
+server, typically as a config that `.rbtrc` makes the default:
+
+```shell
+dev run --application-name=bank
+dev run --default-config=portless
+
+dev run:portless --portless
+dev run:portless --frontend-url=https://frontend.bank.localhost
+dev run:portless --mcp-app
+dev run:portless --web-app
+
+dashboard --default-config=portless
+dashboard:portless --portless
+dashboard:ports --no-portless
+```
+
+`rbt dashboard --portless` serves the developer dashboard the same
+way, as `https://dashboard.<app>.localhost` on a free port the proxy
+routes to (the name is the `.rbtrc`'s `dev run --application-name`).
+The dashboard's configs are named like `rbt dev run`'s, so
+`rbt dashboard --config=ports` goes with `rbt dev run --config=ports`:
+the plain port, `http://127.0.0.1:9871`.
+
+A [Cloudflare quick tunnel](/call/from_mcp_client#cloudflared) in
+front of the backend reaches it by name too, with `--url` at the
+proxy and `<app>.localhost` as `--http-host-header` and
+`--origin-server-name`, so it needs no port and one tunnel serves
+every `rbt dev run` of a session. cloudflared passes the public
+hostname on as `X-Forwarded-Host`, which the OAuth and MCP endpoints
+use for the URLs they hand a client.
+
 ### Inspecting state
 
 While doing local development you can inspect your application state
 by pointing your browser at
 `http://localhost:9991/__/inspect` (assuming you aren't using TLS and haven't
-changed the default port from `9991`).
+changed the default port from `9991`), or at
+`https://<app>.localhost/__/inspect` under `--portless`.
 
 ### Persisting state during development
 

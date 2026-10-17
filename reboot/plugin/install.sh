@@ -107,7 +107,7 @@ plugin_checkout_dir() {
 prewarm() {
     local bindir="$1"
     [ -d "$bindir" ] || return 0
-    for tool in uv uvx node npm envoy cloudflared rbt; do
+    for tool in uv uvx node npm envoy cloudflared portless rbt; do
         sh "$bindir/$tool" --version >/dev/null 2>&1 \
             || log "Could not pre-install $tool; it loads on first use."
     done
@@ -460,7 +460,7 @@ main() {
         ok "Installed for: $(IFS=', '; echo "${INSTALLED_FOR[*]}")."
     fi
     printf >&2 "\nStart a new agent session, then ask to build a Reboot app"
-    printf >&2 " — e.g. ${BOLD}build a todo-list MCP UI${RESET}.\n"
+    printf >&2 " — e.g. ${BOLD}build a todo-list MCP App${RESET}.\n"
 }
 
 # Run the install when this file is executed, directly or via

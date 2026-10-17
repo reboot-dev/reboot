@@ -7,18 +7,18 @@ agent. The same skills work in both **Claude Code** and **Codex**.
 
 | Skill                        | Description                                                                                                                               |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| [`app`](skills/app/)         | Build a Reboot app from a description — routes to `mcp-ui` or `web-app`                                                                   |
+| [`app`](skills/app/)         | Build a Reboot app from a description — routes to `mcp-app` or `web-app`                                                                  |
 | [`feature`](skills/feature/) | Specify a feature in plain English, write it down as a `@wip` feature file, then iterate on its scenarios with the user                   |
-| [`mcp-ui`](skills/mcp-ui/)   | Build MCP UIs for ChatGPT, Claude, VSCode, Goose, and others — layers on top of `python`                                                  |
+| [`mcp-app`](skills/mcp-app/) | Build MCP Apps for ChatGPT, Claude, VSCode, Goose, and others — layers on top of `python`                                                 |
 | [`web-app`](skills/web-app/) | Build standalone Reboot Web Apps — a Reboot backend behind a browser-facing React frontend — layers on top of `python`                    |
-| [`run`](skills/run/)         | Run an existing Reboot app — detects MCP UI vs. Web App and starts every process it needs                                                 |
-| [`deploy`](skills/deploy/)   | Deploy a Reboot app to production — backend on Reboot Cloud, web frontend on a static host under the user's own custom domain             |
+| [`run`](skills/run/)         | Run an existing Reboot app — detects MCP App vs. Web App and starts every process it needs                                                |
+| [`deploy`](skills/deploy/)   | Deploy a Reboot app to production — one container on Reboot Cloud that runs the backend and serves the built MCP Apps and web app         |
 | [`inspect`](skills/inspect/) | Inspect a running Reboot app's persisted state from the CLI with `rbt inspect` — list state types, list state IDs, dump one actor as JSON |
 | [`python`](skills/python/)   | Reboot Python framework reference: proto- or pydantic-defined APIs, Servicers, contexts, refs, scheduling, and testing                    |
 | [`upgrade`](skills/upgrade/) | Upgrade an existing Reboot app to this plugin's Reboot version — applies migration steps, bumps pins, regenerates                         |
 
 The skill files are tool-agnostic. Claude Code invokes skills by
-plugin-namespaced name (e.g. `/reboot:mcp-ui`); Codex selects a
+plugin-namespaced name (e.g. `/reboot:mcp-app`); Codex selects a
 skill automatically from its `description`. Both read the same
 `SKILL.md` files and `references/`.
 
@@ -148,11 +148,11 @@ differ because of Codex limitations:
 Once installed, just describe what you want to build:
 
 ```
-Build a todo list MCP UI with drag-to-reorder
+Build a todo list MCP App with drag-to-reorder
 ```
 
 In Claude Code you can also invoke a skill directly, e.g.
-`/reboot:mcp-ui Build a todo list app` — plugin skills are
+`/reboot:mcp-app Build a todo list app` — plugin skills are
 namespaced by the plugin's name. Either way the builder skills
 settle the design first — they analyze your description and state the
 state model and method map they are about to build, so you can redirect
@@ -186,7 +186,7 @@ plugin/
 ├── README.md
 ├── install.sh                # installs for Claude Code and/or Codex
 ├── bin/                      # pinned tool shims (uv, node, rbt,
-│                             # cloudflared, …)
+│                             # cloudflared, portless, …)
 ├── lib/                      # shim install scripts
 ├── hooks/
 │   ├── hooks.json            # hook registrations (Claude Code + Codex)

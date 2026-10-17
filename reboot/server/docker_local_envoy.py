@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import traceback
+from envoy.config.route.v3 import route_components_pb2
 from google.protobuf.descriptor_pb2 import FileDescriptorSet
 from log.log import get_logger
 from pathlib import Path
@@ -56,6 +57,7 @@ class DockerLocalEnvoy(LocalEnvoy):
         key: Optional[Path],
         debug_mode: bool,
         allowed_origins: Optional[list[str]],
+        route_matches: list[route_components_pb2.RouteMatch],
     ):
         self._published_public_port = public_port
         self._published_trusted_port = 0
@@ -138,6 +140,7 @@ class DockerLocalEnvoy(LocalEnvoy):
             file_descriptor_set=file_descriptor_set,
             use_tls=self._use_tls,
             allowed_origins=allowed_origins,
+            route_matches=route_matches,
         )
 
         self._envoy_config_observed_path = self._write_envoy_dir(

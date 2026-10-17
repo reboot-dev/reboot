@@ -172,11 +172,6 @@ async def generate_from_schema(
                             "description: "
                             f'"{ui["description"]}"'
                         )
-                    if ui.get("artifact_path"):
-                        ui_fields.append(
-                            f'artifact_path: '
-                            f'"{ui["artifact_path"]}"'
-                        )
                     await proto.write(
                         f"    uis: "
                         f"{{ {', '.join(ui_fields)} }}\n"
@@ -606,9 +601,6 @@ async def generate_from_api(
                     'request_message':
                         schemas[ui.request.name].name
                         if ui.HasField('request') else None,
-                    'artifact_path':
-                        ui.artifact_path
-                        if ui.HasField('artifact_path') else None,
                 }
             )
 

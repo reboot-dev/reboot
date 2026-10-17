@@ -1,5 +1,6 @@
 name: Bank (Pydantic)
 repo_name: reboot-bank-pydantic
+application_name: bank
 overview: |
   This repository contains an example bank ("Rebank") written using
   Reboot, with its API defined using Pydantic models.

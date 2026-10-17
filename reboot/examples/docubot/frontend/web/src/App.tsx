@@ -2,8 +2,8 @@ import { DOCUBOT_ASSISTANT_ID } from "../../../constants";
 import { Docubot } from "../lib/main";
 
 const App = () => {
-  if (import.meta.env.VITE_REBOOT_APP_ENDPOINT == undefined) {
-    return <>Please set 'VITE_REBOOT_APP_ENDPOINT' in the '.env' file</>;
+  if (import.meta.env.VITE_REBOOT_URL == undefined) {
+    return <>Please set 'VITE_REBOOT_URL' in the '.env' file</>;
   }
 
   return (
@@ -15,7 +15,7 @@ const App = () => {
         className="w-screen h-screen"
       />
       <Docubot
-        clientApiEndpoint={import.meta.env.VITE_REBOOT_APP_ENDPOINT}
+        clientApiEndpoint={import.meta.env.VITE_REBOOT_URL}
         assistantId={DOCUBOT_ASSISTANT_ID}
       />
     </>

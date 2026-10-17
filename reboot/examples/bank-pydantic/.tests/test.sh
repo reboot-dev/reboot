@@ -55,7 +55,8 @@ pytest --ignore=tests/web_test.py
 if [ -n "$EXPECTED_RBT_DEV_OUTPUT_FILE" ]; then
   actual_output_file=$(mktemp)
 
-  rbt $RBT_FLAGS dev run --terminate-after-health-check > "$actual_output_file"
+  # No portless proxy here: run on plain ports.
+  rbt $RBT_FLAGS dev run --config=ports --terminate-after-health-check > "$actual_output_file"
 
   check_lines_in_file "${SANDBOX_ROOT}$EXPECTED_RBT_DEV_OUTPUT_FILE" "$actual_output_file"
 

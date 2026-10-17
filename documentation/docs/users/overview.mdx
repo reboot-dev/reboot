@@ -356,7 +356,7 @@ On every frontend, the client side of all of this is two hooks:
   sign-in flow: a redirect in a [browser](/frontends/web#signing-in),
   a system-browser round trip in a
   [React Native app](/frontends/react_native). An
-  [MCP client](/frontends/mcp_ui) signs the person in when they
+  [MCP client](/frontends/mcp_app) signs the person in when they
   connect your app, before any `UI` loads, so there is nothing to
   call.
 - **`useUser()`**, generated from your `User` type, resolves the
@@ -414,7 +414,7 @@ button.)
 | --- | --- |
 | [Web](/frontends/web) | `useSignIn()` sends the browser through your identity provider and back. |
 | [React Native](/frontends/react_native) | `useSignIn()` opens a system browser for your identity provider; the app passes `nativeAuth({...})` to its provider once, and everything else is the same. |
-| [MCP UI](/frontends/mcp_ui) | The MCP client runs the flow itself when the person connects your app. |
+| [MCP App](/frontends/mcp_app) | The MCP client runs the flow itself when the person connects your app. |
 
 Because identity is established by the backend, a person who signs in
 on the web is the *same* `User`, with the same state, in your mobile

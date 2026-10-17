@@ -2,6 +2,7 @@ import enum
 import math
 import os
 import rbt.v1alpha1.database_pb2 as database_pb2
+import reboot.portless
 from dataclasses import dataclass
 from envoy.config.cluster.v3 import circuit_breaker_pb2, cluster_pb2
 from envoy.config.core.v3 import address_pb2, base_pb2, protocol_pb2
@@ -20,7 +21,7 @@ from envoy.extensions.filters.network.http_connection_manager.v3 import (
 from envoy.extensions.transport_sockets.tls.v3 import common_pb2, tls_pb2
 from envoy.extensions.upstreams.http.v3 import http_protocol_options_pb2
 from envoy.type.matcher.v3 import regex_pb2, string_pb2
-from google.protobuf import any_pb2
+from google.protobuf import any_pb2, struct_pb2
 from google.protobuf.descriptor_pb2 import FileDescriptorSet
 from google.protobuf.duration_pb2 import Duration
 from google.protobuf.message import Message
@@ -30,6 +31,7 @@ from reboot.aio.auth.allowed_origins import DEV_ORIGIN_REGEXES
 from reboot.aio.headers import CALLER_ID_HEADER, SERVER_ID_HEADER
 from reboot.aio.types import ApplicationId, ServerId
 from reboot.helpers import get_path_prefixes_from_file_descriptor_set
+from reboot.portless import proxy_port
 from reboot.routing.cors_settings import (
     CORS_ALLOW_HEADERS,
     CORS_ALLOW_METHODS,
@@ -48,7 +50,8 @@ from reboot.run_environments import is_in_test, on_cloud, running_rbt_dev
 from reboot.settings import (
     ENVOY_PER_CONNECTION_BUFFER_LIMIT_BYTES,
     ENVVAR_RBT_DEV,
-    ENVVAR_RBT_FRONTEND_HOST,
+    ENVVAR_RBT_FRONTEND_URL,
+    ENVVAR_RBT_WEB_APP,
     EVERY_LOCAL_NETWORK_ADDRESS,
     LocalEnvoyMode,
 )
@@ -92,35 +95,49 @@ class FrontendConfig:
     host: str
     port: int
     original_url: str
+    # Whether the dev server also serves the web app (`--web-app`):
+    # `/`, and every path the application doesn't answer, goes to it.
+    web_app: bool
+    # Whether to reach it over TLS (an `https://` host), which is how
+    # a dev server behind the portless proxy, `https://<name>.localhost`,
+    # is reached.
+    tls: bool
 
 
 def _get_frontend_config() -> FrontendConfig | None:
     """Get frontend host configuration from environment.
 
-    Parses `RBT_FRONTEND_HOST` env var (e.g., "http://localhost:4444")
-    to extract port for Envoy routing to web dev server.
+    Parses `RBT_FRONTEND_URL` (e.g., "http://localhost:5173", or
+    "https://frontend.<name>.localhost" under `--portless`): the dev server
+    serving the MCP Apps, the web app, or both, which Envoy routes
+    `/__/frontend/**` to.
 
     Returns None if not configured or not in dev mode.
     """
     if os.environ.get(ENVVAR_RBT_DEV) != "true":
         return None
-    frontend_url = os.environ.get(ENVVAR_RBT_FRONTEND_HOST)
+    frontend_url = os.environ.get(ENVVAR_RBT_FRONTEND_URL)
     if not frontend_url:
         return None
 
     parsed = urlparse(frontend_url)
-    if not parsed.port:
+    if parsed.scheme not in ("http", "https"):
         raise ValueError(
-            f"RBT_FRONTEND_HOST must include a port; got '{frontend_url}'"
+            "The frontend dev server must be an http:// or https:// "
+            f"URL; got '{frontend_url}'"
         )
     if not parsed.hostname:
         raise ValueError(
-            f"RBT_FRONTEND_HOST must include a hostname; got '{frontend_url}'"
+            f"RBT_FRONTEND_URL must include a hostname; got '{frontend_url}'"
         )
+    tls = parsed.scheme == "https"
+    default_port = (proxy_port() if tls else 80)
     return FrontendConfig(
         host=parsed.hostname,
-        port=parsed.port,
+        port=parsed.port or default_port,
         original_url=frontend_url,
+        web_app=os.environ.get(ENVVAR_RBT_WEB_APP) == "true",
+        tls=tls,
     )
 
 
@@ -445,12 +462,26 @@ def _http_filter_router() -> http_connection_manager_pb2.HttpFilter:
     )
 
 
+def _for_server(
+    route_match: route_components_pb2.RouteMatch,
+    server_header_matcher: route_components_pb2.HeaderMatcher,
+) -> route_components_pb2.RouteMatch:
+    """The web framework's route match, for this server: as given,
+    plus the header that picks the server."""
+    match = route_components_pb2.RouteMatch()
+    match.CopyFrom(route_match)
+    match.headers.append(server_header_matcher)
+    return match
+
+
 def _routes_for_server(
     application_id: ApplicationId,
     server: ServerInfo,
     kind: ClusterKind,
     file_descriptor_set: FileDescriptorSet,
     trust_caller_id: bool,
+    route_matches: list[route_components_pb2.RouteMatch],
+    catch_all: bool = True,
 ) -> list[route_components_pb2.Route]:
     # Every server gets routes to the websocket port, the gRPC
     # port, and the HTTP "catchall" port as described below.
@@ -502,27 +533,6 @@ def _routes_for_server(
                     [CALLER_ID_HEADER] if not trust_caller_id else []
                 ),
             ),
-            # This route sends traffic with the 'x-reboot-server-id'
-            # header and an exact path of '/' to the gRPC port,
-            # because that is what currently serves '/' (the
-            # `RootPage` servicer).
-            #
-            # This route deliberately does NOT require gRPC
-            # `content-type` (no `GrpcRouteMatchOptions`): a browser
-            # `GET /` arrives as plain HTTP and must match a route on
-            # which the gRPC-JSON transcoder is still enabled, so the
-            # transcoder can turn it into a `RootPage` gRPC call.
-            route_components_pb2.Route(
-                match=route_components_pb2.RouteMatch(
-                    path="/",
-                    headers=[server_header_matcher],
-                ),
-                route=route_components_pb2.RouteAction(
-                    cluster=cluster_name,
-                    max_stream_duration=route_components_pb2.RouteAction.
-                    MaxStreamDuration(grpc_timeout_header_max=ZERO_SECONDS)
-                ),
-            ),
         ] + [
             # These routes send all traffic with the
             # 'x-reboot-server-id' header and a prefix path from
@@ -541,20 +551,15 @@ def _routes_for_server(
             ) for prefix in get_path_prefixes_from_file_descriptor_set(
                 file_descriptor_set,
             )
-            # We skip over the path '/' because we cover it above as
-            # an exact path not a prefix here otherwise it would catch
-            # everything which we don't want because we want
-            # everything else to be caught below for the HTTP port.
-            if prefix != "/"
         ]
 
     elif kind == ClusterKind.HTTP:
-        return [
-            route_components_pb2.Route(
-                match=route_components_pb2.RouteMatch(
-                    prefix="/",
-                    headers=[server_header_matcher],
-                ),
+
+        def http_route(
+            match: route_components_pb2.RouteMatch,
+        ) -> route_components_pb2.Route:
+            return route_components_pb2.Route(
+                match=match,
                 route=route_components_pb2.RouteAction(
                     cluster=cluster_name,
                     # Set `max_stream_duration` to 0 to disable the timeout for this route.
@@ -566,7 +571,25 @@ def _routes_for_server(
                         EMPTY_GRPC_JSON_TRANSCODER_CONFIG,
                 },
             )
-        ]
+
+        return [
+            # The paths the web framework answers (the application's
+            # routes and mounts, and Reboot's), each its own route,
+            # ahead of the catch-all below: today both go to the same
+            # place, but something else may come to answer `/`.
+            http_route(_for_server(route_match, server_header_matcher))
+            for route_match in route_matches
+        ] + (
+            [
+                # The catch-all: everything else goes to the HTTP port too.
+                http_route(
+                    route_components_pb2.RouteMatch(
+                        prefix="/",
+                        headers=[server_header_matcher],
+                    )
+                ),
+            ] if catch_all else []
+        )
 
     assert kind == ClusterKind.WEBSOCKET
 
@@ -598,13 +621,50 @@ def _routes_for_server(
     ]
 
 
+# Marks a route to the frontend's dev server, so that the error page
+# filter (`_frontend_error_filters`) knows a 503 came from there.
+_FRONTEND_ROUTE_METADATA = base_pb2.Metadata(
+    filter_metadata={
+        "envoy.filters.http.lua":
+            struct_pb2.Struct(
+                fields={"frontend": struct_pb2.Value(string_value="1")},
+            ),
+    },
+)
+
+
+def _frontend_route(
+    config: FrontendConfig,
+    match: route_components_pb2.RouteMatch,
+) -> route_components_pb2.Route:
+    """A route to the frontend's dev server. Envoy handles WebSocket
+    upgrades (for Hot Module Replacement) transparently."""
+    return route_components_pb2.Route(
+        match=match,
+        route=route_components_pb2.RouteAction(
+            cluster=FRONTEND_CLUSTER_NAME,
+            # Under portless the dev server is behind the portless
+            # proxy, which routes by name, so it must be asked for by
+            # its name, not by the name the browser asked us for, which
+            # is ours and would loop back here.
+            host_rewrite_literal=(
+                config.host if reboot.portless.enabled() else ""
+            ),
+        ),
+        typed_per_filter_config={
+            GRPC_JSON_TRANSCODER_HTTP_FILTER_NAME:
+                EMPTY_GRPC_JSON_TRANSCODER_CONFIG,
+        },
+        metadata=_FRONTEND_ROUTE_METADATA,
+    )
+
+
 def _frontend_routes() -> list[route_components_pb2.Route]:
     """Routes for web dev server assets ("/__/frontend/**").
 
     MCP Apps use a double iframe: the outer `srcdoc` contains an inner
-    `<iframe src="/__/frontend/ui/...">`. This route proxies those requests
-    to the web dev server. Envoy handles WebSocket upgrades (for Hot Module Replacement)
-    transparently.
+    `<iframe src="/__/frontend/mcp/...">`. This route proxies those
+    requests to the web dev server.
 
     Returns empty list if the frontend is not configured.
     """
@@ -614,20 +674,29 @@ def _frontend_routes() -> list[route_components_pb2.Route]:
 
     # Route for web dev server assets: "/__/frontend/**".
     # Dev server is configured with `base: "/__/frontend/"` so paths match directly.
-    web_route = route_components_pb2.Route(
-        match=route_components_pb2.RouteMatch(
-            prefix="/__/frontend/",
-        ),
-        route=route_components_pb2.RouteAction(
-            cluster=FRONTEND_CLUSTER_NAME,
-        ),
-        typed_per_filter_config={
-            GRPC_JSON_TRANSCODER_HTTP_FILTER_NAME:
-                EMPTY_GRPC_JSON_TRANSCODER_CONFIG,
-        },
-    )
+    return [
+        _frontend_route(
+            config,
+            route_components_pb2.RouteMatch(prefix="/__/frontend/"),
+        )
+    ]
 
-    return [web_route]
+
+def _frontend_catch_all_routes() -> list[route_components_pb2.Route]:
+    """With `--web-app`, the dev server serves the web app at `/`, so
+    it gets `/` and every path nothing else claimed: this comes last,
+    after the application's own paths and the MCP, OAuth and Reboot
+    paths the web framework answers (`route_matches`).
+
+    Returns empty list if the frontend is not configured or isn't
+    serving the web app.
+    """
+    config = _get_frontend_config()
+    if config is None or not config.web_app:
+        return []
+    return [
+        _frontend_route(config, route_components_pb2.RouteMatch(prefix="/"))
+    ]
 
 
 def _frontend_cluster(
@@ -645,12 +714,47 @@ def _frontend_cluster(
     # on the mode in which Envoy runs. Envoy in a Docker container
     # needs `host.docker.internal` to reach the host machine; Envoy
     # running as a stand-alone executable can use `localhost` directly.
+    # Under portless the dev server's name is the proxy's on loopback,
+    # reached at the loopback address with the name carried as SNI and
+    # as the `Host` header.
     host = config.host
-    if host in ("localhost", "127.0.0.1", "0.0.0.0"):
+    if (
+        host in ("localhost", "127.0.0.1", "0.0.0.0") or
+        reboot.portless.enabled()
+    ):
         if local_envoy_mode is LocalEnvoyMode.DOCKER:
             host = "host.docker.internal"
         else:
             host = "localhost"
+
+    transport_socket: Optional[base_pb2.TransportSocket] = None
+    if config.tls:
+        # Under portless the dev server is the portless proxy, whose
+        # certificates chain to its own locally generated CA: trust that
+        # where portless keeps it. Otherwise there is nothing to
+        # validate against: a dev server of the developer's own, often
+        # with a self-signed certificate, or portless's CA out of reach
+        # of Envoy in Docker, where the home directory isn't mounted.
+        # Then any certificate is accepted, which is a developer's own
+        # machine talking to its own dev server.
+        common_tls_context = tls_pb2.CommonTlsContext()
+        if (
+            reboot.portless.enabled() and
+            local_envoy_mode is not LocalEnvoyMode.DOCKER and
+            reboot.portless.CA_PATH.is_file()
+        ):
+            common_tls_context.validation_context.trusted_ca.filename = (
+                str(reboot.portless.CA_PATH)
+            )
+        transport_socket = base_pb2.TransportSocket(
+            name="envoy.transport_sockets.tls",
+            typed_config=any_pack(
+                tls_pb2.UpstreamTlsContext(
+                    sni=config.host,
+                    common_tls_context=common_tls_context,
+                )
+            ),
+        )
 
     return cluster_pb2.Cluster(
         name=FRONTEND_CLUSTER_NAME,
@@ -659,6 +763,7 @@ def _frontend_cluster(
         common_http_protocol_options=protocol_pb2.HttpProtocolOptions(
             idle_timeout=ZERO_SECONDS,
         ),
+        transport_socket=transport_socket,
         dns_lookup_family=cluster_pb2.Cluster.V4_ONLY,
         # Frontend is HTTP/1.1 (WebSockets not compatible with HTTP/2).
         load_assignment=endpoint_pb2.ClusterLoadAssignment(
@@ -729,23 +834,12 @@ def _frontend_error_filters() -> list[http_connection_manager_pb2.HttpFilter]:
         '</body></html>'
     ).replace('__FRONTEND_URL__', config.original_url)
 
-    # Lua filter: tag `/__/frontend/` requests in `envoy_on_request`
-    # via dynamic metadata, then intercept 503 responses and
-    # replace the body.
+    # Lua filter: a 503 on a route to the dev server (marked by
+    # `_FRONTEND_ROUTE_METADATA`, which `metadata()` reads from the
+    # matched route) gets the page in place of Envoy's raw body.
     lua_source = (
-        'function envoy_on_request(request_handle)\n'
-        '  local p = request_handle:headers():get(":path")'
-        ' or ""\n'
-        '  if string.sub(p, 1, 13) == "/__/frontend/" then\n'
-        '    request_handle:streamInfo():dynamicMetadata()'
-        ':set("reboot", "frontend_request", "1")\n'
-        '  end\n'
-        'end\n'
-        '\n'
         'function envoy_on_response(response_handle)\n'
-        '  local md = response_handle:streamInfo()'
-        ':dynamicMetadata():get("reboot")\n'
-        '  if md and md["frontend_request"] == "1" and\n'
+        '  if response_handle:metadata():get("frontend") == "1" and\n'
         '     response_handle:headers():get(":status")'
         ' == "503" then\n'
         '    response_handle:headers():replace(\n'
@@ -770,7 +864,13 @@ def _filter_http_connection_manager(
     file_descriptor_set: FileDescriptorSet,
     trust_caller_id: bool,
     allowed_origins: Optional[list[str]],
+    route_matches: list[route_components_pb2.RouteMatch],
 ) -> listener_components_pb2.Filter:
+    # With `--web-app` the frontend's dev server, not the HTTP port,
+    # answers whatever is left; see `_frontend_catch_all_routes`.
+    frontend = _get_frontend_config()
+    web_app = frontend is not None and frontend.web_app
+
     http_connection_manager = http_connection_manager_pb2.HttpConnectionManager(
         stat_prefix="grpc_json",
         stream_idle_timeout=ZERO_SECONDS,
@@ -817,8 +917,10 @@ def _filter_http_connection_manager(
                                 kind=kind,
                                 file_descriptor_set=file_descriptor_set,
                                 trust_caller_id=trust_caller_id,
+                                route_matches=route_matches,
+                                catch_all=not web_app,
                             )
-                        ]
+                        ] + _frontend_catch_all_routes()
                     ),
                 ),
             ],
@@ -899,6 +1001,7 @@ def listeners(
     certificate_path: Path,
     key_path: Path,
     allowed_origins: Optional[list[str]],
+    route_matches: list[route_components_pb2.RouteMatch],
 ) -> list[listener_pb2.Listener]:
 
     @dataclass
@@ -953,6 +1056,7 @@ def listeners(
                             file_descriptor_set=file_descriptor_set,
                             trust_caller_id=listener.trust_caller_id,
                             allowed_origins=allowed_origins,
+                            route_matches=route_matches,
                         ),
                     ],
                     transport_socket=_tls_socket(certificate_path, key_path)

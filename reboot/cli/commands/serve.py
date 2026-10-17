@@ -18,7 +18,10 @@ from reboot.cli.common.directories import (
     add_working_directory_options,
     use_working_directory,
 )
-from reboot.cli.common.frontend import add_common_frontend_args
+from reboot.cli.common.frontend import (
+    add_common_frontend_args,
+    add_common_web_args,
+)
 from reboot.cli.common.rc import (
     ArgumentParser,
     ArgumentParserFactory,
@@ -36,13 +39,13 @@ from reboot.run_environments import on_cloud
 from reboot.settings import (
     ENVVAR_LOCAL_ENVOY_USE_TLS,
     ENVVAR_RBT_EFFECT_VALIDATION,
-    ENVVAR_RBT_FRONTEND_DIST_PATH,
-    ENVVAR_RBT_FRONTEND_ROOT_PATH,
+    ENVVAR_RBT_MCP_APP_DIST_PATH,
     ENVVAR_RBT_NAME,
     ENVVAR_RBT_NODEJS,
     ENVVAR_RBT_SERVE,
     ENVVAR_RBT_SERVERS,
     ENVVAR_RBT_STATE_DIRECTORY,
+    ENVVAR_RBT_WEB_APP_DIST_PATH,
     ENVVAR_REBOOT_EXPECTED_VERSION,
     ENVVAR_REBOOT_LOCAL_ENVOY,
     ENVVAR_REBOOT_LOCAL_ENVOY_PORT,
@@ -214,6 +217,7 @@ def register_serve(parser: ArgumentParser):
     )
 
     add_common_frontend_args(parser.subcommand('serve run'))
+    add_common_web_args(parser.subcommand('serve run'))
 
 
 def servers_from_cores() -> int:
@@ -264,18 +268,11 @@ async def serve_run(
         if args.state_directory is not None:
             env[ENVVAR_RBT_STATE_DIRECTORY] = args.state_directory
 
-        if args.frontend_dist_path is not None:
-            if args.frontend_root_path is None:
-                terminal.fail(
-                    "`--frontend-dist-path` requires `--frontend-root-path`."
-                )
-            env[ENVVAR_RBT_FRONTEND_DIST_PATH] = args.frontend_dist_path
-            env[ENVVAR_RBT_FRONTEND_ROOT_PATH] = args.frontend_root_path
-        elif args.frontend_root_path is not None:
-            terminal.fail(
-                "`--frontend-root-path` is only valid alongside "
-                "`--frontend-dist-path`."
-            )
+        if args.mcp_app_dist_path is not None:
+            env[ENVVAR_RBT_MCP_APP_DIST_PATH] = args.mcp_app_dist_path
+
+        if args.web_app_dist_path is not None:
+            env[ENVVAR_RBT_WEB_APP_DIST_PATH] = args.web_app_dist_path
 
         # Pick the mode we'll run Envoy in (either as a stand-alone
         # program or inside a Docker container) and check that the

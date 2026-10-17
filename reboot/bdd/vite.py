@@ -51,6 +51,23 @@ def _reserve_port() -> socket.socket:
 SERVING_DEADLINE_SECONDS = 60
 
 
+# TODO: serve the frontend through the scenario's Envoy, the way
+# `rbt dev run --frontend-url=... --web-app` does, instead of having
+# the browser open the dev server directly: the test harness's Envoy
+# would route `/` and `/__/frontend/**` to the dev server (a
+# `frontend_url`/`web_app` on `Reboot.up()`, not the `RBT_DEV`-gated
+# environment variables), the browser would open the backend's own
+# origin, and the app would find the backend by the page's origin.
+# That is how an app is run in development and deployed (same
+# origin), so it is what to test; `VITE_REBOOT_URL`, `serve()`'s
+# `backend_url` and `Frontend.origin` go, and with them a project's
+# `allowed_origins=[frontend.origin]` fixture. It also makes MCP App
+# scenarios simple: an MCP App is at `/__/frontend/mcp/<path>/` on
+# that same origin, served from the same dev server by the same
+# route, so a step that opens one needs no second server and no
+# second origin. The cross-origin (static host) deployment stays
+# covered by the ping SPA test, which drives the built app on
+# `localhost` against the API on `127.0.0.1` with `?rebootUrl`.
 class ViteFrontend(Frontend):
     """A web app a Vite dev server serves from the given directory on
     a port reserved when the frontend is made, started with
@@ -99,8 +116,9 @@ class ViteFrontend(Frontend):
         assert self._server is not None and self._output is not None, (
             'not serving; `serve()` first'
         )
-        # The app is at the root, in a dual-surface layout by way of
-        # the dev server's redirect to `/__/frontend/web/`.
+        # The app is at the root; in a dual-surface layout the dev
+        # server serves it there itself (see `serveWebAppAtRoot` in
+        # Reboot's Vite plugin).
         url = f'{self.origin}/'
         deadline = time.monotonic() + SERVING_DEADLINE_SECONDS
         last: Optional[str] = None

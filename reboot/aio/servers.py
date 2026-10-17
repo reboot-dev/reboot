@@ -16,7 +16,6 @@ from opentelemetry.instrumentation.grpc import filters
 from rbt.v1alpha1 import application_config_pb2, react_pb2, tasks_pb2
 from rbt.v1alpha1.admin import export_import_pb2
 from rbt.v1alpha1.inspect import inspect_pb2
-from rbt.v1alpha1.rootpage import rootpage_pb2
 from reboot.admin.export_import_converters import ExportImportItemConverters
 from reboot.admin.export_import_servicer import ExportImportServicer
 from reboot.aio.auth.token_verifiers import TokenVerifier
@@ -69,7 +68,6 @@ from reboot.controller.settings import (
 )
 from reboot.inspect.servicer import InspectServicer
 from reboot.nodejs.python import should_print_stacktrace
-from reboot.rootpage.servicer import RootPageServicer
 from reboot.settings import EVERY_LOCAL_NETWORK_ADDRESS, GRPC_SERVER_OPTIONS
 from typing import Awaitable, Callable, Optional
 
@@ -319,21 +317,6 @@ class ServiceServer(Server):
         def file_descriptor(self) -> FileDescriptor:
             return inspect_pb2.DESCRIPTOR.services_by_name['Inspect'].file
 
-    class RootPageRoutable(Routable):
-        """Helper "routable" that can be provided to gRPC to route to the
-        `RootPageServicer` system service that we run manually."""
-
-        def service_names(self) -> list[ServiceName]:
-            # TODO(benh): get from rootpage_pb2.DESCRIPTOR.
-            return [ServiceName('rbt.v1alpha1.rootpage.RootPage')]
-
-        def state_type_name(self) -> None:
-            # This service acts as a legacy gRPC service.
-            return None
-
-        def file_descriptor(self) -> FileDescriptor:
-            return rootpage_pb2.DESCRIPTOR.services_by_name['RootPage'].file
-
     class ExportImportRoutable(Routable):
         """Helper "routable" that can be provided to gRPC to route to the
         `ExportImportServicer` system service that we run manually."""
@@ -384,7 +367,6 @@ class ServiceServer(Server):
     ROUTABLES: list[Routable] = [
         ReactRoutable(),
         InspectRoutable(),
-        RootPageRoutable(),
         ExportImportRoutable(),
         TasksRoutable(),
         HealthRoutable(),
@@ -407,7 +389,6 @@ class ServiceServer(Server):
         websocket_port: Optional[int] = None,
         http_port: Optional[int] = None,
         token_verifier: Optional[TokenVerifier],
-        root: Optional[str],
         state_manager: StateManager,
         placement_client: PlacementClient,
         actor_resolver: ActorResolver,
@@ -519,10 +500,6 @@ class ServiceServer(Server):
             self._middleware_by_state_type_name,
         )
         self._inspect_servicer.add_to_server(self._grpc_server)
-
-        # Construct 'RootPage' system service.
-        self._rootpage_servicer = RootPageServicer(root=root)
-        self._rootpage_servicer.add_to_server(self._grpc_server)
 
         # Construct 'ExportImport' system service for the Reboot servicers.
         self._export_import_servicer = ExportImportServicer(

@@ -42,6 +42,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":iframe_py",
+        "//reboot:portless_py",
         "//reboot:settings_py",
     ],
 )
@@ -54,6 +55,7 @@ py_library(
     deps = [
         ":context_py",
         ":request_state_py",
+        "//reboot/aio/auth:oauth_providers_py",
         "@com_github_reboot_dev_reboot//log:log_py",
         requirement("mcp"),
         requirement("anyio"),

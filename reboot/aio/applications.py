@@ -14,6 +14,7 @@ from log.log import get_logger
 from mcp.server.fastmcp import FastMCP
 from pathlib import Path
 from rbt.v1alpha1.application.application_pb2 import ExamplePrompt
+from reboot.aio.auth.allowed_origins import frontend_dev_origin
 from reboot.aio.auth.oauth import OAuth
 from reboot.aio.auth.oauth_server import OAuthServer
 from reboot.aio.auth.token_verifiers import (
@@ -37,7 +38,7 @@ from reboot.controller.server_managers import (
 )
 from reboot.controller.settings import ENVVAR_REBOOT_MODE, REBOOT_MODE_CONFIG
 from reboot.mcp.factories import create_mcp_factory
-from reboot.mcp.ui import find_project_root_from
+from reboot.mcp.ui import find_project_root_from, has_registered_ui_tools
 from reboot.nodejs.python import should_print_stacktrace
 from reboot.run_environments import (
     InvalidRunEnvironment,
@@ -45,17 +46,21 @@ from reboot.run_environments import (
     application_name,
     detect_run_environment,
     running_rbt_dev,
+    running_rbt_serve,
     within_nodejs_server,
     within_python_server,
 )
 from reboot.server.service_descriptor_validator import ProtoValidationError
 from reboot.settings import (
     DEFAULT_SECURE_PORT,
-    ENVVAR_RBT_FRONTEND_DIST_PATH,
-    ENVVAR_RBT_FRONTEND_HOST,
+    ENVVAR_RBT_FRONTEND_URL,
+    ENVVAR_RBT_MCP_APP,
+    ENVVAR_RBT_MCP_APP_DIST_PATH,
     ENVVAR_RBT_NAME,
     ENVVAR_RBT_SERVERS,
     ENVVAR_RBT_STATE_DIRECTORY,
+    ENVVAR_RBT_WEB_APP,
+    ENVVAR_RBT_WEB_APP_DIST_PATH,
     ENVVAR_REBOOT_CLOUD_DATABASE_ADDRESS,
     ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
     ENVVAR_REBOOT_EXPECTED_VERSION,
@@ -252,7 +257,6 @@ class Application:
         title: Optional[str] = None,
         description: Optional[str] = None,
         example_prompts: Optional[list[ExamplePrompt]] = None,
-        root: Optional[str] = None,
     ):
         """
         :param servicers: the types of Reboot-powered servicers that
@@ -299,9 +303,6 @@ class Application:
             application.
         :param example_prompts: a list of `ExamplePrompt` instances
             for using this application in a chat client.
-        :param root: a path on this application, e.g. `/dashboard/`,
-            that the root page `/` forwards a browser to instead of
-            showing Reboot's own page.
 
         TODO(benh): update the initialize function to be run in a
         transaction and ensure that the transaction has finished before
@@ -466,21 +467,20 @@ class Application:
         self._skip_consent_for_redirect_uris: list[str] = []
         if oauth is not None:
             self._allowed_origins = list(oauth.allowed_origins or [])
+            # Under `rbt dev run`, the frontend dev server's origin too:
+            # Envoy's CORS and the OAuth server both read this list.
+            frontend_origin = frontend_dev_origin()
+            if (
+                frontend_origin is not None and
+                frontend_origin not in self._allowed_origins
+            ):
+                self._allowed_origins.append(frontend_origin)
             self._skip_consent_for_redirect_uris = list(
                 oauth.skip_consent_for_redirect_uris
             )
         self._title = title or application_name()
         self._description = description
         self._example_prompts = example_prompts or []
-
-        if root is not None and (
-            not root.startswith('/') or root.startswith('//')
-        ):
-            raise ValueError(
-                f"`root` must be a path on this application, starting "
-                f"with a single '/', not '{root}'"
-            )
-        self._root = root
 
         # Validate MCP configuration eagerly at construction time so
         # errors are raised consistently regardless of run environment.
@@ -587,10 +587,6 @@ class Application:
         return self._token_verifier
 
     @property
-    def root(self) -> Optional[str]:
-        return self._root
-
-    @property
     def initialize(
         self,
     ) -> Optional[Callable[[InitializeContext], Awaitable[None]]]:
@@ -693,6 +689,7 @@ class Application:
             self._servicers or [],
             auto_construct_state_type_full_names,
         )
+        self._mount_web_app()
 
     def _mount_oauth(
         self,
@@ -887,6 +884,35 @@ class Application:
         for servicer_cls in servicers:
             servicer_cls._add_mcp(server, auto_construct_state_type_full_names)
 
+        # What the application declares and what `rbt` was told to
+        # serve must agree: `--mcp-app` or `--mcp-app-dist-path` for
+        # an application with `UI(...)` methods, neither for one
+        # without. Only under `rbt`, which is what sets those; a test
+        # harness runs the servicers with neither and serves no UI.
+        if running_rbt_dev() or running_rbt_serve():
+            mcp_app = (
+                os.environ.get(ENVVAR_RBT_MCP_APP) == "true" or
+                bool(os.environ.get(ENVVAR_RBT_MCP_APP_DIST_PATH))
+            )
+            if mcp_app and not has_registered_ui_tools():
+                raise InputError(
+                    reason=(
+                        "`--mcp-app` or `--mcp-app-dist-path` was passed, "
+                        "but the application declares no `UI(...)` "
+                        "method to serve."
+                    )
+                )
+            if has_registered_ui_tools() and not mcp_app:
+                raise InputError(
+                    reason=(
+                        "The application declares `UI(...)` methods, but "
+                        "`rbt` was not told how to serve them: pass "
+                        "`--mcp-app` with `--frontend-url` (the "
+                        "frontend's dev server) or `--mcp-app-dist-path` "
+                        "(their builds)."
+                    )
+                )
+
         # The OAuth server (if any) was mounted earlier by
         # `_mount_oauth`; reach into it for the MCP-SDK token
         # verifier so expired tokens produce a clean 401 with
@@ -910,31 +936,32 @@ class Application:
             ),
         )
 
-        # In dist mode (a built frontend, no Vite dev server) serve the
-        # `--frontend-dist-path` directory over `/__/frontend/` from this
-        # same HTTP server, alongside `/mcp`. Envoy has no frontend route
-        # in this mode, so a browser's `/__/frontend/...` request falls
-        # through to the app's HTTP cluster and lands here. Starlette
-        # strips the mount prefix, so `StaticFiles(directory=dist_dir)`
-        # resolves `/__/frontend/web/index.html` to
-        # `dist_dir/web/index.html`. The mount must be present in every
+        # In dist mode (built MCP Apps, no frontend dev server) serve the
+        # `--mcp-app-dist-path` directory over `/__/frontend/mcp/` from
+        # this same HTTP server, alongside `/mcp`. Envoy has no frontend
+        # route in this mode, so a browser's `/__/frontend/...` request
+        # falls through to the app's HTTP cluster and lands here.
+        # Starlette strips the mount prefix, so
+        # `StaticFiles(directory=dist_dir)` resolves
+        # `/__/frontend/mcp/<path>/index.html` to
+        # `dist_dir/<path>/index.html`, each `UI(path=...)` being a
+        # directory of the dist. The mount must be present in every
         # serving server subprocess, so it is established here at serve
-        # time. In HMR mode `ENVVAR_RBT_FRONTEND_HOST` points at the
-        # Vite dev server and Envoy routes `/__/frontend/` there
+        # time. With `--frontend-url`, `ENVVAR_RBT_FRONTEND_URL` points at
+        # the frontend dev server and Envoy routes `/__/frontend/` there
         # instead, so skip the mount.
-        frontend_dist_path = os.environ.get(ENVVAR_RBT_FRONTEND_DIST_PATH)
-        if frontend_dist_path and not os.environ.get(ENVVAR_RBT_FRONTEND_HOST):
+        mcp_app_dist_path = os.environ.get(ENVVAR_RBT_MCP_APP_DIST_PATH)
+        if mcp_app_dist_path and not os.environ.get(ENVVAR_RBT_FRONTEND_URL):
             project_root = self._frontend_project_root()
             self.http.mount(
-                "/__/frontend",
+                "/__/frontend/mcp",
                 app=StaticFiles(
-                    directory=str(project_root / frontend_dist_path),
-                    # `html=True` so directory URLs like
-                    # `/__/frontend/web/` (the web app's pop-out target)
-                    # serve `index.html`. `check_dir=False` so a
+                    directory=str(project_root / mcp_app_dist_path),
+                    # `html=True` so a directory URL serves its
+                    # `index.html`. `check_dir=False` so a
                     # not-yet-built dist doesn't crash startup: `ui.py`
                     # still serves its "build not found" placeholder for
-                    # MCP UIs, and the web app 404s until it's built.
+                    # MCP Apps until it's built.
                     # `follow_symlink=True` so a dist whose files are
                     # symlinks pointing outside the served tree still
                     # resolves — notably under Bazel runfiles, where the
@@ -947,9 +974,45 @@ class Application:
                 ),
             )
 
+    def _mount_web_app(self) -> None:
+        """Have the web framework serve the built web app named by
+        `--web-app-dist-path` at `/`, when there is one.
+
+        Only noted here; the web framework mounts it when it starts,
+        after every route, since a mount at `/` claims every path
+        nothing else does (see `WebApp`).
+
+        With `--web-app` it is Envoy, not the web framework, that
+        gives `/` to the web app (the frontend's dev server serves
+        it); what is checked here is the same either way.
+        """
+        web_app_dist_path = os.environ.get(ENVVAR_RBT_WEB_APP_DIST_PATH)
+        web_app = os.environ.get(ENVVAR_RBT_WEB_APP) == "true"
+        if not web_app_dist_path and not web_app:
+            return
+        # An application that mounts or routes `/` itself has said
+        # what `/` is; serving the web app there too would silently
+        # lose to it.
+        if any(mount.path.rstrip("/") == "" for mount in self.http._mounts
+              ) or any(route.path == "/" for route in self.http._api_routes):
+            flag = "`--web-app`" if web_app else "`--web-app-dist-path`"
+            raise InputError(
+                reason=(
+                    f"{flag} was set, but this application mounts `/` "
+                    "itself (via `application.http`), so both say what "
+                    "`/` is. Pass one or the other."
+                )
+            )
+        if not web_app_dist_path:
+            return
+        directory = Path(web_app_dist_path)
+        if not directory.is_absolute():
+            directory = self._frontend_project_root() / directory
+        self.http._web_app_directory = directory
+
     def _frontend_project_root(self) -> Path:
         """The project root (the directory containing `.rbtrc`) that
-        `--frontend-dist-path` is relative to.
+        `--mcp-app-dist-path` and `--web-app-dist-path` are relative to.
 
         `self.servicers` mixes the user's servicers with
         framework-provided ones (libraries, `memoize`,
@@ -967,11 +1030,12 @@ class Application:
                 continue
         raise InputError(
             reason=(
-                "`--frontend-dist-path` was set, but no project root (a "
-                "directory containing `.rbtrc`) was found above any of "
-                "this application's servicers, so the built frontend "
-                "can't be located. Make sure your deployment includes "
-                "your project's `.rbtrc` alongside its code."
+                "A built frontend was named (`--mcp-app-dist-path` or "
+                "`--web-app-dist-path`), but no project root (a directory "
+                "containing `.rbtrc`) was found above any of this "
+                "application's servicers, so it can't be located. Make "
+                "sure your deployment includes your project's `.rbtrc` "
+                "alongside its code."
             )
         )
 
@@ -1061,7 +1125,6 @@ class Application:
             legacy_grpc_servicers=self.legacy_grpc_servicers,
             web_framework=self.web_framework,
             token_verifier=self.token_verifier,
-            root=self.root,
             initialize=initialize,
             initialize_bearer_token=self._initialize_bearer_token,
             local_envoy=local_envoy,
@@ -1127,7 +1190,7 @@ class Application:
         # everything we started gets stopped, rather than terminating
         # us right after the cleanup handlers; once we have exited it
         # terminates us.
-        async with reboot.aio.signals.cancel_on_signal_and_raise_system_exit(
+        async with reboot.aio.signals.cancel_on_signal_then_reraise_after_cancellation(
             reboot.aio.signals.TERMINATING_SIGNALS_FOR_SERVERS
         ):
             await self._run()
@@ -1156,7 +1219,6 @@ class Application:
                     serviceables=self._get_serviceables(),
                     web_framework=self._web_framework,
                     token_verifier=self._token_verifier,
-                    root=self._root,
                 )
             except Exception as e:
                 logger.error(f"Unexpected error while starting: {e}")
@@ -1316,6 +1378,11 @@ class NodeApplication(Application):
         # MCP is not supported for Node.js applications.
         pass
 
+    def _mount_web_app(self) -> None:
+        # The Python web framework serves the web app; a Node.js
+        # application's own web framework owns `/`.
+        pass
+
     @property
     def http(self) -> NoReturn:
         raise RuntimeError(
@@ -1350,7 +1417,6 @@ class NodeApplication(Application):
                 serviceables=self._get_serviceables(),
                 web_framework=self._web_framework,
                 token_verifier=self._token_verifier,
-                root=self._root,
             )
         except Exception as e:
             logger.error(f"Unexpected error while starting: {e}")

@@ -1,5 +1,6 @@
 import os
 import shutil
+from envoy.config.route.v3 import route_components_pb2
 from pathlib import Path
 from reboot.aio.servicers import Routable
 from reboot.aio.types import ApplicationId
@@ -72,6 +73,7 @@ class LocalEnvoyFactory:
         application_id: ApplicationId,
         routables: list[Routable],
         allowed_origins: Optional[list[str]],
+        route_matches: list[route_components_pb2.RouteMatch],
     ) -> LocalEnvoy:
         file_descriptor_set = generate_proto_descriptor_set(routables)
 
@@ -99,6 +101,7 @@ class LocalEnvoyFactory:
                 key=key,
                 debug_mode=REBOOT_LOCAL_ENVOY_DEBUG,
                 allowed_origins=allowed_origins,
+                route_matches=route_matches,
             )
 
         assert mode is LocalEnvoyMode.EXECUTABLE
@@ -111,4 +114,5 @@ class LocalEnvoyFactory:
             key=key,
             debug_mode=REBOOT_LOCAL_ENVOY_DEBUG,
             allowed_origins=allowed_origins,
+            route_matches=route_matches,
         )

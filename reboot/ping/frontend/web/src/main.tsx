@@ -30,8 +30,8 @@ const Root = () => {
 };
 
 // This SPA is served same-origin behind the app's built-in HTTP server
-// at `/__/frontend/web/`, so the provider auto-detects the backend URL
-// from `window.location.origin` — no explicit `url` needed.
+// at `/` (`--web-app-dist-path`), so the provider auto-detects the backend
+// URL from `window.location.origin` — no explicit `url` needed.
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <RebootClientProvider>

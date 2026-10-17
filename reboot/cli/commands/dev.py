@@ -6,6 +6,7 @@ import grpc
 import os
 import random
 import reboot.aio.tracing
+import reboot.portless
 import secrets
 import shutil
 import signal
@@ -29,14 +30,17 @@ from reboot.aio.exceptions import InputError
 from reboot.cli.commands.generate import generate_direct
 # We import the whole `terminal` module (as opposed to the methods it contains)
 # to allow us to mock these methods out in tests.
-from reboot.cli.common import terminal
+from reboot.cli.common import portless, terminal
 from reboot.cli.common.dev_extra import dev_extra_installed, missing_dev_extra
 from reboot.cli.common.directories import (
     add_working_directory_options,
     dot_rbt_dev_directory,
     use_working_directory,
 )
-from reboot.cli.common.frontend import add_common_frontend_args
+from reboot.cli.common.frontend import (
+    add_common_frontend_args,
+    add_common_web_args,
+)
 from reboot.cli.common.monkeys import monkeys, no_chaos_monkeys
 # We won't mock the classes in `rc`, so it's safe to import those directly.
 from reboot.cli.common.rc import (
@@ -71,13 +75,17 @@ from reboot.settings import (
     ENVVAR_LOCAL_ENVOY_USE_TLS,
     ENVVAR_RBT_DEV,
     ENVVAR_RBT_EFFECT_VALIDATION,
-    ENVVAR_RBT_FRONTEND_DIST_PATH,
-    ENVVAR_RBT_FRONTEND_HOST,
-    ENVVAR_RBT_FRONTEND_ROOT_PATH,
+    ENVVAR_RBT_FRONTEND_URL,
+    ENVVAR_RBT_MCP_APP,
+    ENVVAR_RBT_MCP_APP_DIST_PATH,
     ENVVAR_RBT_NAME,
     ENVVAR_RBT_NODEJS,
+    ENVVAR_RBT_PORTLESS_NAME,
     ENVVAR_RBT_SERVERS,
     ENVVAR_RBT_STATE_DIRECTORY,
+    ENVVAR_RBT_TUNNEL_URL,
+    ENVVAR_RBT_WEB_APP,
+    ENVVAR_RBT_WEB_APP_DIST_PATH,
     ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
     ENVVAR_REBOOT_EXPECTED_VERSION,
     ENVVAR_REBOOT_LOCAL_ENVOY,
@@ -90,6 +98,7 @@ from reboot.settings import (
 )
 from reboot.version import REBOOT_VERSION
 from typing import Any, Awaitable, Callable, Optional, TextIO, TypeVar
+from urllib.parse import urlparse
 
 TLS_CERTIFICATE_BEGINNING = "-----BEGIN CERTIFICATE-----"
 TLS_PRIVATE_KEY_BEGINNING = "-----BEGIN PRIVATE KEY-----"
@@ -210,19 +219,71 @@ def _register_dev_run(parser: ArgumentParser):
     )
 
     parser.subcommand('dev run').add_argument(
-        '--frontend-host',
+        '--frontend-url',
         type=str,
         help=(
-            'URL of the frontend dev server '
-            '(e.g., http://localhost:4444). When set, '
-            'Envoy routes `/__/frontend/**` paths to this '
-            'host for Hot Module Replacement. Requires '
-            '`--frontend-root-path`; mutually exclusive '
-            'with `--frontend-dist-path`.'
+            'URL of the frontend\'s dev server (e.g., Vite at '
+            'http://localhost:5173): Envoy proxies '
+            '`/__/frontend/**` to it, with Hot Module '
+            'Replacement. It only says where the frontend is; '
+            '`--mcp-app` says to serve the application\'s MCP '
+            'Apps from it, and without that it is an error. '
+            'Mutually exclusive with `--mcp-app-dist-path`.'
+        ),
+    )
+    parser.subcommand('dev run').add_renamed_flag(
+        '--frontend-host',
+        '--frontend-url',
+    )
+    parser.subcommand('dev run').add_argument(
+        '--mcp-app',
+        type=bool,
+        default=False,
+        help=(
+            'serve the application\'s MCP Apps (its `UI(...)` '
+            'methods) from the frontend\'s dev server, '
+            '`--frontend-url`, which it requires. Their builds '
+            'are served with `--mcp-app-dist-path` instead, so '
+            'the two are mutually exclusive. An application '
+            'with `UI(...)` methods needs one of the two, and '
+            'one without refuses both.'
+        ),
+    )
+    parser.subcommand('dev run').add_argument(
+        '--web-app',
+        type=bool,
+        default=False,
+        help=(
+            'serve the application\'s web app from the frontend\'s '
+            'dev server, `--frontend-url`, which it requires: Envoy '
+            'sends `/`, and every path the application doesn\'t '
+            'answer, to that dev server, which serves the web app '
+            'at its `/`. Its build is served with '
+            '`--web-app-dist-path` instead, so the two are mutually '
+            'exclusive. Python applications only.'
         ),
     )
 
     add_common_frontend_args(parser.subcommand('dev run'))
+    add_common_web_args(parser.subcommand('dev run'))
+
+    parser.subcommand('dev run').add_argument(
+        '--portless',
+        type=bool,
+        default=False,
+        help=(
+            'serve under a named `.localhost` URL via portless '
+            '(https://github.com/vercel-labs/portless): registers '
+            'this application with the running portless proxy as '
+            '`https://<application-name>.localhost`, and trusts '
+            '`https://frontend.<application-name>.localhost`, where the '
+            'frontend dev server is expected (`portless '
+            'frontend.<application-name> vite`, the frontend\'s `npm run '
+            'dev:portless`), as a browser origin. '
+            'Requires `--application-name`, and the `portless` CLI on '
+            'PATH with its proxy started (`portless proxy start`).'
+        ),
+    )
 
     parser.subcommand('dev run').add_argument(
         '--servers',
@@ -238,7 +299,18 @@ def _register_dev_run(parser: ArgumentParser):
         '--port',
         type=int,
         help='port on which the Reboot app will serve traffic; defaults to '
-        f'{DEFAULT_LOCAL_ENVOY_PORT}',
+        f'{DEFAULT_LOCAL_ENVOY_PORT}, or under `--portless`, where the name '
+        'is the address, to a free port',
+    )
+
+    parser.subcommand('dev run').add_argument(
+        '--tunnel-url',
+        type=str,
+        help='the public URL this application is reachable at through '
+        'a tunnel (e.g., https://<name>.trycloudflare.com), which the '
+        'setup wizard shows and verifies; without it the wizard asks '
+        'ngrok and cloudflared, through their local APIs on their '
+        'default ports, for a tunnel of their own',
     )
 
     parser.subcommand('dev run').add_argument(
@@ -562,21 +634,32 @@ async def check_local_envoy_mode(subprocesses: Subprocesses) -> None:
 
 async def _check_local_envoy_status(
     *,
-    port: int,
+    port: Optional[int],
     terminate_after_health_check: bool,
     application_started_event: asyncio.Event,
     tls_certificate: Optional[str],
     root_certificate: Optional[str],
     tracing: Tracing,
     nodejs: bool,
+    portless_name: Optional[str],
+    web_app: bool,
 ) -> None:
-    """Checks if the application is up and running.
+    """Checks if the application is up and running, by the gRPC health
+    check on its port. Under `--portless` the port is the application's
+    to pick and the proxy's to tell: whenever the health check is not
+    passing, the proxy is asked which port the name routes to, which
+    the application registers once it is serving, and the health check
+    then goes to that port directly, so the steady state costs no more
+    than on a plain port.
     Optionally exits as soon as the health check has passed.
     """
     # Wait until application is running with starting health check.
     await application_started_event.wait()
 
-    address = f'127.0.0.1:{port}'
+    assert (port is None) == (portless_name is not None)
+    # The host to check; the port is `port`, or under `--portless` the
+    # application's to pick and learned from the proxy below.
+    host = '127.0.0.1'
 
     if tls_certificate is not None:
         assert root_certificate is not None
@@ -609,12 +692,12 @@ async def _check_local_envoy_status(
                 f"('{san_list[0]}') will be used as the address for the "
                 "health check."
             )
-            address = f"{san_list[0]}:{port}"
+            host = san_list[0]
         else:
             # We can use 'localhost' as the address for the health check, which
             # is great since it doesn't require any `/etc/hosts` entries or
             # similar.
-            address = f'localhost:{port}'
+            host = 'localhost'
 
     protocol = "https" if tls_certificate else "http"
 
@@ -646,7 +729,16 @@ async def _check_local_envoy_status(
         async with aiofiles.open(root_certificate, 'rb') as f:
             binary_root_certificate = await f.read()
 
+    is_application_serving = False
+
     while True:
+        # Asked again whenever the last check did not pass, since a
+        # restart binds a new port.
+        if portless_name is not None and not is_application_serving:
+            port = await portless.wait_for_port(portless_name)
+
+        address = f'{host}:{port}'
+
         try:
             async with create_channel(
                 address,
@@ -674,15 +766,26 @@ async def _check_local_envoy_status(
 
             if is_application_serving:
                 terminal.info("Application is serving traffic ...\n")
+                # Under `--portless` the application's address is its
+                # name; the port behind the proxy is nobody's business.
+                if portless_name is not None:
+                    url = 'https://' + reboot.portless.hostname(portless_name)
+                else:
+                    url = f"{protocol}://{address}"
                 # MCP server and endpoint is not supported for Nodejs currently.
                 mcp_line = (
                     "" if nodejs else
-                    f"  MCP clients can connect at:    {protocol}://{address}/mcp\n"
+                    f"  MCP clients can connect at:    {url}/mcp\n"
+                )
+                web_line = (
+                    f"  Your web app is at:            {url}/\n"
+                    if web_app else ""
                 )
                 terminal.info(
-                    f"  Your API is available at:      {protocol}://{address}\n"
+                    f"  Your API is available at:      {url}\n"
                     f"{mcp_line}"
-                    f"  You can inspect your state at: {protocol}://{address}/__/inspect\n",
+                    f"{web_line}"
+                    f"  You can inspect your state at: {url}/__/inspect\n",
                     color=Fore.WHITE,
                 )
                 if tracing == Tracing.JAEGER:
@@ -912,6 +1015,20 @@ def _check_common_args(args):
     elif not args.python and not args.nodejs:
         terminal.fail("One of '--python' or '--nodejs' must be specified.")
 
+    # `--web-app-dist-path` is the Python web framework's doing; a Node.js
+    # application's own serves `/`.
+    if args.nodejs and args.web_app_dist_path:
+        terminal.fail(
+            "`--web-app-dist-path` is not supported with `--nodejs`: a "
+            "Node.js application's own web framework serves `/`."
+        )
+    if args.nodejs and args.web_app:
+        terminal.fail(
+            "`--web-app` is not supported with `--nodejs`: a Node.js "
+            "application's own web framework serves `/`, and Reboot "
+            "can't tell which paths are its to route around."
+        )
+
 
 async def _check_file_first_line_equals(file_path, expected_first_line):
     async with aiofiles.open(file_path) as f:
@@ -1042,6 +1159,14 @@ async def dev_run(
     """Implementation of the 'dev run' subcommand."""
 
     _check_common_args(args)
+
+    # `--port=0` is any free port, which only makes sense where the
+    # name is the address.
+    if args.port == 0 and not args.portless:
+        terminal.fail(
+            '`--port=0` (any free port) needs `--portless`: without a '
+            'name, the port is the address.'
+        )
 
     # A development environment installs the `reboot[dev]` extra. The
     # application runs without it, so this only says so.
@@ -1403,32 +1528,70 @@ async def __dev_run(
             dot_rbt_dev_directory(args, parser) / args.application_name
         )
 
-    # The frontend is served one of two mutually-exclusive ways: a live
-    # dev server (`--frontend-host`, for HMR) or built assets on disk
-    # (`--frontend-dist-path`). `--frontend-root-path` names the frontend
-    # root and is required alongside whichever of the two is chosen.
-    if args.frontend_host and args.frontend_dist_path:
+    # The MCP Apps are served one of two mutually-exclusive ways: from
+    # the frontend's dev server (`--frontend-url`, which `--mcp-app`
+    # says to serve them from) or from their builds on disk
+    # (`--mcp-app-dist-path`); the web app likewise, from the dev
+    # server (`--web-app`) or its build (`--web-app-dist-path`). A dev
+    # server nothing is served from is a slip, so `--frontend-url`
+    # alone is refused.
+    if args.frontend_url and args.mcp_app_dist_path:
         terminal.fail(
-            "`--frontend-host` and `--frontend-dist-path` are mutually "
+            "`--frontend-url` and `--mcp-app-dist-path` are mutually "
             "exclusive; pass one or the other."
         )
-    if args.frontend_host:
-        if not args.frontend_root_path:
-            terminal.fail("`--frontend-host` requires `--frontend-root-path`.")
-        env[ENVVAR_RBT_FRONTEND_HOST] = args.frontend_host
-        env[ENVVAR_RBT_FRONTEND_ROOT_PATH] = args.frontend_root_path
-    elif args.frontend_dist_path:
-        if not args.frontend_root_path:
-            terminal.fail(
-                "`--frontend-dist-path` requires `--frontend-root-path`."
-            )
-        env[ENVVAR_RBT_FRONTEND_DIST_PATH] = args.frontend_dist_path
-        env[ENVVAR_RBT_FRONTEND_ROOT_PATH] = args.frontend_root_path
-    elif args.frontend_root_path:
+    if args.mcp_app and args.mcp_app_dist_path:
         terminal.fail(
-            "`--frontend-root-path` is only valid alongside "
-            "`--frontend-host` or `--frontend-dist-path`."
+            "`--mcp-app` and `--mcp-app-dist-path` are mutually "
+            "exclusive: the first serves the MCP Apps from the "
+            "frontend's dev server, the second from their builds."
         )
+    if args.web_app and args.web_app_dist_path:
+        terminal.fail(
+            "`--web-app` and `--web-app-dist-path` are mutually "
+            "exclusive: the first serves the web app from the "
+            "frontend's dev server, the second from its build."
+        )
+    if args.frontend_url and not (args.mcp_app or args.web_app):
+        terminal.fail(
+            "`--frontend-url` names the frontend's dev server but "
+            "nothing to serve from it; add `--mcp-app` to serve the "
+            "application's MCP Apps from it, `--web-app` to serve its "
+            "web app, or both."
+        )
+    if args.mcp_app and not args.frontend_url:
+        terminal.fail(
+            "`--mcp-app` serves the MCP Apps from the frontend's dev "
+            "server, which `--frontend-url` names; pass it too (or "
+            "`--mcp-app-dist-path` to serve their builds instead)."
+        )
+    if args.web_app and not args.frontend_url:
+        terminal.fail(
+            "`--web-app` serves the web app from the frontend's dev "
+            "server, which `--frontend-url` names; pass it too (or "
+            "`--web-app-dist-path` to serve its build instead)."
+        )
+    if args.frontend_url:
+        env[ENVVAR_RBT_FRONTEND_URL] = args.frontend_url
+        if args.mcp_app:
+            env[ENVVAR_RBT_MCP_APP] = 'true'
+        if args.web_app:
+            env[ENVVAR_RBT_WEB_APP] = 'true'
+    elif args.mcp_app_dist_path:
+        env[ENVVAR_RBT_MCP_APP_DIST_PATH] = args.mcp_app_dist_path
+
+    # The web app, when Reboot serves it, is its own thing: a built
+    # web app at `/`, independent of how the MCP Apps are served.
+    if args.web_app_dist_path:
+        env[ENVVAR_RBT_WEB_APP_DIST_PATH] = args.web_app_dist_path
+    if args.tunnel_url:
+        parsed = urlparse(args.tunnel_url)
+        if parsed.scheme not in ('http', 'https') or not parsed.hostname:
+            terminal.fail(
+                f"`--tunnel-url={args.tunnel_url}` must be an http:// or "
+                "https:// URL."
+            )
+        env[ENVVAR_RBT_TUNNEL_URL] = args.tunnel_url.rstrip('/')
 
     health_check_task: Optional[asyncio.Task] = None
 
@@ -1439,9 +1602,27 @@ async def __dev_run(
     await check_local_envoy_mode(subprocesses)
     env[ENVVAR_REBOOT_LOCAL_ENVOY] = 'true'
 
+    # Under `--portless` the name is the address, so unless `--port`
+    # says otherwise the port behind the proxy is any free one (0), and
+    # several applications run at once; the application registers the
+    # name once it is serving.
+    if args.portless:
+        if args.application_name is None:
+            terminal.fail(
+                '`--portless` needs `--application-name`: the name is the '
+                'hostname, `https://<application-name>.localhost`.'
+            )
+        # Before the application is started, so that a missing CLI or
+        # proxy says so rather than leaving it unreachable.
+        await portless.check('--portless')
+        env[ENVVAR_RBT_PORTLESS_NAME] = args.application_name
+        port = args.port if args.port is not None else 0
+    else:
+        port = args.port if args.port is not None else DEFAULT_LOCAL_ENVOY_PORT
+
     health_check_task = asyncio.create_task(
         _check_local_envoy_status(
-            port=args.port or DEFAULT_LOCAL_ENVOY_PORT,
+            port=None if args.portless else port,
             terminate_after_health_check=args.terminate_after_health_check or
             False,
             application_started_event=application_started_event,
@@ -1449,14 +1630,14 @@ async def __dev_run(
             root_certificate=args.tls_root_certificate,
             tracing=tracing,
             nodejs=bool(args.nodejs),
+            portless_name=(args.application_name if args.portless else None),
+            web_app=bool(args.web_app or args.web_app_dist_path),
         ),
         name=f'_check_local_envoy_status(...) in {__name__}',
     )
     background_command_tasks.append(health_check_task)
 
-    env[ENVVAR_REBOOT_LOCAL_ENVOY_PORT] = str(
-        args.port or DEFAULT_LOCAL_ENVOY_PORT
-    )
+    env[ENVVAR_REBOOT_LOCAL_ENVOY_PORT] = str(port)
 
     try:
         validate_num_servers(args.servers, "servers")
