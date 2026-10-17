@@ -2,7 +2,7 @@
 which shows the whole dashboard page, built to call back on the
 address the request arrived at, the tunnel's. And its sign-in:
 whoever reaches the endpoint signs in with no sign-in page, and the
-application serves nothing without the access token; `application()`
+application issues recording URLs only with the access token; `application()`
 in `reboot/dashboard/backend/main.py` sets both up.
 """
 import aiohttp
@@ -12,6 +12,7 @@ import httpx
 import json
 import os
 import tempfile
+import time
 import unittest
 from contextlib import AsyncExitStack
 from mcp.client.session import ClientSession
@@ -25,6 +26,8 @@ from reboot.cli.commands.dashboard import (
     _viewers,
 )
 from reboot.dashboard.backend.main import application
+from unittest.mock import patch
+from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
 TUNNEL_URL = 'https://dashboard.example.com'
 
@@ -124,18 +127,99 @@ class McpTest(unittest.IsolatedAsyncioTestCase):
                 [TUNNEL_URL, 'wss://' + TUNNEL_URL.removeprefix('https://')],
             )
 
-    async def test_recordings_need_the_token(self) -> None:
-        # `require_oauth_token_test` covers this route's CORS, which an
-        # App in a host's sandbox needs.
-        url = self.url + '/recordings/' + self.recording
-        async with self.client.get(url) as response:
+    async def test_signed_recordings(self) -> None:
+        signing = self.url + '/recordings/sign'
+        async with self.client.get(
+            signing, params={'path': self.recording}
+        ) as response:
             self.assertEqual(response.status, 401)
         token = await self.rbt.make_valid_oauth_access_token()
-        async with self.client.get(
-            url, headers={'Authorization': f'Bearer {token}'}
-        ) as response:
+        headers = {'Authorization': f'Bearer {token}'}
+
+        async def sign(path: str) -> str:
+            async with self.client.get(
+                signing, params={'path': path}, headers=headers
+            ) as response:
+                self.assertEqual(response.status, 200)
+                signed = await response.json()
+                self.assertGreater(signed['expires'], time.time())
+                return self.url + signed['url']
+
+        url = await sign(self.recording)
+        async with self.client.get(url) as response:
             self.assertEqual(response.status, 200)
             self.assertEqual(await response.read(), b'png')
+        async with self.client.get(
+            url, headers={'Range': 'bytes=1-2'}
+        ) as response:
+            self.assertEqual(response.status, 206)
+            self.assertEqual(response.headers['Content-Range'], 'bytes 1-2/3')
+            self.assertEqual(await response.read(), b'ng')
+
+        parts = urlsplit(url)
+        query = parse_qs(parts.query)
+        invalid = [
+            self.url + '/recordings/' + self.recording,
+            url + '0',
+        ]
+        for expiry in ['bad', '0', str(int(time.time()) + 7200)]:
+            invalid.append(
+                urlunsplit(
+                    parts._replace(
+                        query=urlencode(
+                            {
+                                'expires': expiry,
+                                'sig': query['sig'][0],
+                            }
+                        )
+                    )
+                )
+            )
+        invalid.append(
+            urlunsplit(
+                parts._replace(
+                    query=urlencode({
+                        'expires': query['expires'][0],
+                    })
+                )
+            )
+        )
+        other = self.recording.replace('shot.png', 'other.png')
+        Path(other).write_bytes(b'other')
+        invalid.append(url.replace('shot.png', 'other.png'))
+        for candidate in invalid:
+            async with self.client.get(candidate) as response:
+                self.assertEqual(response.status, 401, candidate)
+
+        # A correctly signed URL expires too, not only a tampered expiry.
+        with patch('reboot.dashboard.backend.main._RECORDING_URL_SECONDS', -1):
+            async with self.client.get(
+                signing, params={'path': self.recording}, headers=headers
+            ) as response:
+                expired = await response.json()
+        async with self.client.get(self.url + expired['url']) as response:
+            self.assertEqual(response.status, 401)
+
+        encoded = self.recording.replace('shot.png', 'a space 雪 #?.png')
+        Path(encoded).write_bytes(b'encoded')
+        async with self.client.get(await sign(encoded)) as response:
+            self.assertEqual(response.status, 200)
+            self.assertEqual(await response.read(), b'encoded')
+
+        video = self.recording.replace('shot.png', 'video.webm')
+        Path(video).write_bytes(b'webm')
+        async with self.client.get(
+            await sign(video), headers={'Range': 'bytes=1-3'}
+        ) as response:
+            self.assertEqual(response.status, 206)
+            self.assertEqual(response.headers['Content-Type'], 'video/webm')
+            self.assertEqual(await response.read(), b'ebm')
+
+        for path in ['../outside.png', '/etc/passwd', 'ordinary.png']:
+            async with self.client.get(
+                signing, params={'path': path}, headers=headers
+            ) as response:
+                self.assertEqual(response.status, 404)
 
 
 if __name__ == '__main__':
