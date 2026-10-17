@@ -721,7 +721,7 @@ export const printBuiltInSyntax = (
           text(" awaits the "),
           { text: step.value.method, role: "method" },
           text(" task "),
-          ...spansOfToken(step.value.taskIdSavedAs, "value"),
+          ...spansOfToken(step.value.taskId, "value"),
           text(" on "),
           { text: step.value.stateType, role: "state-type" },
           text(" within "),
