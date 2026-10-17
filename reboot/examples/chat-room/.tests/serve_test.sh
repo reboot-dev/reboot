@@ -56,7 +56,9 @@ fi
 
 stop_container() {
   if [ -n "$container_id" ]; then
-    docker stop "$container_id"
+    # Not `--rm`'d at `docker run`, so that a container that dies
+    # keeps its logs for us to print; remove it here instead.
+    docker rm --force "$container_id"
   fi
 }
 
@@ -125,6 +127,13 @@ if command -v docker &> /dev/null; then
   # wait for the server to be ready.
   retries=0
   while ! perform_curl "reboot-chat-room" "Messages" "$actual_output_file"; do
+    # A container that has exited is never going to answer; say why.
+    if [ "$(docker inspect --format '{{.State.Status}}' "$container_id")" == "exited" ]; then
+      echo "###### Container exited with code $(docker inspect --format '{{.State.ExitCode}}' "$container_id"); its logs: ######"
+      docker logs "$container_id"
+      echo "###### End Docker logs ######"
+      exit 1
+    fi
     if [ "$retries" -ge 30 ]; then
       # This is taking an unusually long time. Print the Docker logs to aid in
       # debugging.
