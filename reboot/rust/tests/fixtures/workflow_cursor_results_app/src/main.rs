@@ -383,6 +383,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if mode == "inspect" {
         return inspect().await;
     }
+    if mode == "health" {
+        let channel = tonic::transport::Endpoint::from_shared(std::env::var("RBT_RUST_URL")?)?
+            .connect()
+            .await?;
+        let response = tonic_health::pb::health_client::HealthClient::new(channel)
+            .check(tonic_health::pb::HealthCheckRequest {
+                service: String::new(),
+            })
+            .await?
+            .into_inner();
+        if response.status != tonic_health::pb::health_check_response::ServingStatus::Serving as i32 {
+            return Err("not ready".into());
+        }
+        println!("SERVING");
+        return Ok(());
+    }
     let channel = tonic::transport::Endpoint::from_shared(arg(2))?
         .connect()
         .await?;
