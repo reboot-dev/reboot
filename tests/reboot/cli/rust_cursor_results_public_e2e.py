@@ -275,14 +275,19 @@ def expect_started_failure():
     status = process.wait(timeout=max(1, deadline - time.monotonic()))
     log.close()
     text = log_path.read_text(errors="replace")
+    host_log = Path(record["rocksdb"]).parent / "host.log"
+    host_text = host_log.read_text(errors="replace")
+    record["host_log"] = str(host_log)
+    record["host_failure"] = host_text
     record.update(
         exit=status,
         children_absent=all(process_start(pid) != starttime for pid, starttime in record["child_starttimes"].items()),
     )
     # This is the fixture's deliberate at-most-once recovery diagnostic.
     assert status != 0 and record["children_absent"], record
-    assert "FailedPrecondition" in text, text
-    assert "at-most-once block Started without Stored; callback will not run again" in text, text
+    diagnostic = text + host_text
+    assert "FailedPrecondition" in diagnostic, diagnostic
+    assert "at-most-once block Started without Stored; callback will not run again" in diagnostic, diagnostic
     write_evidence()
     return record
 
