@@ -210,6 +210,14 @@ fn counter_cargo_build_helper_executes_durable_adapters_in_a_downstream_fixture(
         include_str!("fixtures/generated_constructor_child.rs"),
     ).unwrap();
     std::fs::write(
+        fixture.join("src/external_constructor_route.rs"),
+        include_str!("fixtures/generated_external_constructor_route.rs"),
+    ).unwrap();
+    std::fs::write(
+        fixture.join("src/external_constructor_tasks.rs"),
+        include_str!("fixtures/generated_external_constructor_tasks.rs"),
+    ).unwrap();
+    std::fs::write(
         fixture.join("src/lib.rs"),
         r#"// Generated Tonic APIs intentionally return tonic::Status (including rich details).
 // Match the SDK's result_large_err policy without changing the wire/API contract
@@ -298,7 +306,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 mod shared_root_slots { include!("shared_root_slots.rs"); }
-pub(crate) mod constructor_child { include!("constructor_child.rs"); }
+pub(crate) mod constructor_child { include!("constructor_child.rs"); include!("external_constructor_route.rs"); include!("external_constructor_tasks.rs"); }
 
 struct Counter;
 
@@ -1892,7 +1900,10 @@ impl reboot::durable_coordinator::CoordinatorSidecar for TicketCoordinatorSideca
         let error = result.unwrap_err();
         if mode < 8 { assert_eq!(error.message(), "parent probe complete"); }
     }
-    assert_eq!(allocations.load(Ordering::SeqCst), usize::from(!matches!(mode, 9 | 11 | 12) && !(writer && mode == 8)));
+    assert_eq!(
+        allocations.load(Ordering::SeqCst),
+        usize::from(!(matches!(mode, 9 | 11 | 12) || writer && mode == 8))
+    );
     if matches!(mode, 13..=15) {
         assert!(database.participant_prepare_requests().is_empty());
         assert!(database.participant_commit_requests().is_empty());
