@@ -965,6 +965,25 @@ qualification or overall SDK parity. The reboot-examples remote HEAD was
 rechecked and remains `5c332a2910122d6035799bfaf2a314bf1de830b8`; this
 new-feature fixture is not claimed as corresponding examples parity.
 
+## Atomic workflow-cursor advancement (2026-10-18)
+
+PR216 commit `e36bbd38` adds a narrow named/versioned Database capability,
+`reboot.workflow-cursor-advance.v1`: atomically persist the exact successor
+cursor task while reclaiming only the completed iteration's matching workflow
+checkpoints. It is not generic deletion, arbitrary historical replay, or a
+claim of distributed exactly-once semantics. Rust negotiates the capability
+before cursor bindings or user-body execution and fails closed on old sidecars.
+
+Qualification: `CARGO_INCREMENTAL=0 cargo test --lib` passed **756** tests (7
+ignored). The approved non-root Docker native target
+`//tests/reboot/server:database_tests` passed **81** tests, including direct
+service acceptance for successor/reclamation, byte-identical lost-ACK retry,
+active transaction refusal (`FAILED_PRECONDITION`) without task advancement,
+and malformed checkpoint bytes in the actual actor column family (`DATA_LOSS`)
+without advancement. The narrow raw actor-column-family test helper is
+explicitly test-only. This closes the bounded retention/cursor protocol slice;
+public cursor/results qualification and broader parity remain separate.
+
 ## Cursor/results fixture source checkpoint (2026-10-15)
 
 The [fixture](tests/fixtures/workflow_cursor_results_app/HANDOFF.md) is now
