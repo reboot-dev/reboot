@@ -1,8 +1,10 @@
 pub mod proto {
+    #![allow(clippy::result_large_err)]
     tonic::include_proto!("{{ name }}.v1");
 }
 
 pub mod generated {
+    #![allow(clippy::result_large_err)]
     include!(concat!(
         env!("OUT_DIR"),
         "/{{ name }}/v1/hello_world.reboot.rs"
@@ -12,6 +14,7 @@ pub mod generated {
 {% if example == "secured-user" %}pub mod user_transactions;
 pub mod user_workflows;
 pub mod workflow_generated {
+    #![allow(clippy::result_large_err)]
     include!(concat!(
         env!("OUT_DIR"),
         "/{{ name }}/v1/user_workflows.reboot.rs"

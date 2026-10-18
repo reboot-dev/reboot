@@ -4,12 +4,15 @@ use reboot::{
 };
 use std::sync::Arc;
 pub mod proto {
+    #![allow(clippy::result_large_err)]
     tonic::include_proto!("{{ name }}.v1");
 }
 pub mod generated {
+    #![allow(clippy::result_large_err)]
     include!(concat!(env!("OUT_DIR"), "/{{ name }}/v1/batch.reboot.rs"));
 }
 pub mod generated_map {
+    #![allow(clippy::result_large_err)]
     include!(concat!(
         env!("OUT_DIR"),
         "/rbt/std/collections/v1/sorted_map.reboot.rs"

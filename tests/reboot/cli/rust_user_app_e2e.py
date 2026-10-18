@@ -149,8 +149,8 @@ class Session:
             raise
         self.log.close()
         self.data.update(exit=status,children_absent=all(not Path(f'/proc/{p}').exists() for p in self.children))
-        # Launcher cancellation deliberately returns 128 + received signal.
-        assert status==128+signal.SIGTERM and self.data['children_absent'],self.data
+        # Python reports a signal exit as negative; shell wrappers conventionally use 128 + signal.
+        assert status in (-signal.SIGTERM, 128 + signal.SIGTERM) and self.data['children_absent'],self.data
 
 
 class HttpSession:

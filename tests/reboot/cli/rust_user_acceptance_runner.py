@@ -1,4 +1,4 @@
-import pathlib, json, hashlib, time, subprocess, os, fcntl, shutil
+import pathlib, json, hashlib, time, subprocess, os, fcntl, shutil, re
 import sys
 targeted = '--targeted-user-batch' in sys.argv
 probe = len(sys.argv) > 1 and sys.argv[1] == "--ownership-failure-probe"
@@ -49,8 +49,21 @@ try:
             native_database = executable_identity(os.environ['REBOOT_NATIVE2PC_CXX_DATABASE'], 'REBOOT_NATIVE2PC_CXX_DATABASE')
             if native_database['path'] != str(database):
                 raise ValueError('Native and public gates must select the same Database executable')
-        paths += [database,root/'rbt/v1alpha1/database.proto',root/'rbt/v1alpha1/tasks.proto']
-        paths += [pathlib.Path(__file__).resolve()]
+        proto_files=[]
+        pending=[
+            root/'rbt/v1alpha1/database.proto',
+            root/'rbt/v1alpha1/tasks.proto',
+            root/'rbt/v1alpha1/options.proto',
+        ]
+        while pending:
+            proto=pending.pop()
+            if proto in proto_files: continue
+            proto_files.append(proto)
+            for imported in re.findall(r'^import\s+"([^"]+)";',proto.read_text(),re.MULTILINE):
+                dependency=root/imported
+                if dependency.is_file(): pending.append(dependency)
+        proto_files.sort()
+        paths += [database,*proto_files,pathlib.Path(__file__).resolve()]
         manifest={str(p):hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
         (stage/'frozen-source.json').write_text(json.dumps(manifest,indent=2))
         (stage/'owner.json').write_text(json.dumps({'runner_pid':os.getpid(),'runner_start':identity(os.getpid())[1]}))
@@ -63,7 +76,7 @@ try:
             (overlay/package).mkdir(exist_ok=True)
             (overlay/package/'__init__.py').write_text('from pkgutil import extend_path\n__path__ = extend_path(__path__, __name__)\n')
         grpc_include=subprocess.check_output([python,'-c','from pathlib import Path; import grpc_tools; print(Path(grpc_tools.__file__).parent / "_proto")'],text=True).strip()
-        subprocess.run([python,'-m','grpc_tools.protoc','-I'+str(root),'-I'+grpc_include,'--python_out='+str(overlay),'--grpc_python_out='+str(overlay),str(root/'rbt/v1alpha1/database.proto'),str(root/'rbt/v1alpha1/tasks.proto')],check=True)
+        subprocess.run([python,'-m','grpc_tools.protoc','-I'+str(root),'-I'+grpc_include,'--python_out='+str(overlay),'--grpc_python_out='+str(overlay),*[str(proto) for proto in proto_files]],check=True)
         env=dict(os.environ,CARGO_TARGET_DIR=str(target),CARGO_BUILD_JOBS='2',CARGO_INCREMENTAL='0',CARGO_PROFILE_DEV_DEBUG='0',CARGO_PROFILE_TEST_DEBUG='0',PYTHONPATH=str(overlay),REBOOT_NATIVE2PC_CXX_DATABASE=str(database),RBT_RUST_DATABASE_BINARY=str(database))
         env.update(RUST_DX_STAGE=str(stage/'greeting'),RUST_DX_TARGET=str(target),RUST_DX_DATABASE_BINARY=str(database),RUST_DX_RBT=os.environ.get('RUST_DX_RBT','/tmp/reboot-rust-app-dx-loop2-venv310/bin/rbt'),RUST_DX_PORT=os.environ.get('RUST_DX_PORT','12991'))
         commands=[
