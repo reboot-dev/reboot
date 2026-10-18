@@ -854,8 +854,8 @@ const FetchedRecordingLightbox: FC<{
 // A thumbnail or link that opens the recording over the page rather
 // than in a new tab, which an MCP host's frame cannot open. With
 // `url`, the recording is already fetched, as a thumbnail's is; with
-// `path`, it is requested when opened, so a
-// feature with many videos does not pull them all through the tunnel.
+// `path`, it is requested when opened, so a feature with many videos
+// does not fetch them all.
 const RecordingButton: FC<{
   className: string;
   recording: { url: string } | { path: string };

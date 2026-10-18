@@ -126,15 +126,9 @@ until the probe from Step 3 succeeds before calling it up. It stays running for 
 session — leave it alone afterwards; it never needs a restart when
 code changes.
 
-It also opens a Cloudflare quick tunnel to itself and prints the
-address to add as an MCP connector, so that Claude or ChatGPT can
-show the dashboard as an MCP App; that is Step 6, at the end. The
-tunnel runs `cloudflared`, which this plugin installs; without one,
-or offline, `rbt dashboard` prints why and serves to this machine
-alone. Anyone with the address can reach the dashboard, so it is not
-to be shared. A tunnel that stops is opened again with a new address,
-which `rbt dashboard` prints; a connector added with the old one
-must be added again.
+It also serves the dashboard as an MCP App at `/mcp/`, which Claude
+or ChatGPT can show once they can reach it; that is Step 6, at the
+end, and only if the user asks for it.
 
 If it fails to come up (for example the local Envoy check fails
 because neither Docker nor an `envoy` executable is available, or
@@ -156,18 +150,19 @@ https://dashboard.<app>.localhost/" — and get on with the build.
 If the developer expected a window and none appeared, give them the
 URL; that always works.
 
-## Step 6 — When the build is done, hand over the connector
+## Step 6 — If the user wants the dashboard in Claude or ChatGPT
 
-Last, once the app is built: do not interrupt the build for this.
-The user has to act on it, so relay it. Read the line `rbt dashboard`
-printed to its shell:
+Only when the user asks for it. `rbt dashboard` serves this machine
+alone, so an MCP host in the cloud reaches it through a tunnel the
+user runs themselves, in their own shell; do not start one for them.
+Tell them:
 
-```
-To show your dashboard in Claude or ChatGPT, add this MCP connector: https://<name>.trycloudflare.com/mcp/
-```
+1. Run a tunnel to the dashboard's port, for example
+   `cloudflared tunnel --url http://127.0.0.1:9871`, and read the
+   `https://<name>.trycloudflare.com` address it prints.
+2. Add `https://<name>.trycloudflare.com/mcp/` as a custom MCP
+   connector in Claude or ChatGPT; signing in completes by itself.
 
-Give the user that address and tell them to add it as a custom MCP
-connector in Claude or ChatGPT; signing in completes by itself.
-Remind them the address reaches their dashboard from anywhere, so
-not to share it. If `rbt dashboard` printed that no tunnel could be
-opened, say so instead: the dashboard still works in the browser.
+Remind them that whoever has the address reaches their dashboard as
+them, so not to share it, and that a quick tunnel gets a new address
+each time it starts, so the connector must then be added again.

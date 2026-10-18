@@ -15,16 +15,22 @@ export) is authorized by `require_oauth_token=True`:
 from starlette.responses import FileResponse
 
 # In `main()`, after constructing `application`:
-@application.http.get("/exports/{name}", require_oauth_token=True)
+@application.http.get("/exports", require_oauth_token=True)
 async def export(name: str) -> FileResponse:
     return FileResponse(_export_path(name))
 ```
 
+A request is matched to the route by its exact path, so the path
+cannot be a template (`/exports/{name}` is refused at registration);
+take the name as a query parameter, `/exports?name=report.csv`.
+
 The route then serves only a request signed in as a user of the
 application: one carrying the access JWT the built-in OAuth server
-minted as `Authorization: Bearer`, or, from a page the application
-serves itself, the `rbt_session` cookie the browser sends on its own.
-Anything else gets a 401. It needs `Application(oauth=...)`; an
+minted as `Authorization: Bearer`. Anything else gets a 401. The
+session cookie never reaches the route: it is scoped to `/__/oauth/`,
+and a `Cookie` header is removed from every other path, and a
+`Set-Cookie` header from every other response. It needs
+`Application(oauth=...)`; an
 application without one refuses to start with such a route.
 
 The route is callable from any origin, the way `/mcp` is: Envoy's
@@ -39,20 +45,16 @@ authorizer.
 
 To act as the signed-in user inside the handler, call Reboot methods
 with `external_context(request)` (from `reboot.aio.http`): it carries
-the token the route accepted, from the header or from the cookie, and
-the methods' authorizers see `context.auth.user_id`.
+the token the route accepted, and the methods' authorizers see
+`context.auth.user_id`.
 
 ## The Page Side
 
-**Same origin: use the cookie.** A page the application serves
-itself, a web app at the application's own address, needs no code:
-`<img src="/exports/chart.png">`, `<video src="...">` and
-`<a href="/exports/report.csv">` work as they are, because the
-browser sends the session cookie with them. They stream, cache and
-download the way the browser does, which a fetch cannot match for a
-video.
+**No `<img src>` straight at the route.** An `<img>`, `<video>` or
+`<a href>` sends no bearer, and the session cookie does not reach the
+route, so this holds for a page the application serves itself too.
 
-**Cross-origin media: obtain a signed URL with the bearer.** MCP hosts
+**Media: obtain a signed URL with the bearer.** MCP hosts
 can block both `blob:` and `data:` media sources. Fetch data with the
 bearer as usual, but give `<img>` and `<video>` a short-lived HTTPS URL
 on an origin declared in `resourceDomains`. An authenticated signing

@@ -157,6 +157,24 @@ class EnvoyCorsTest(unittest.TestCase):
                 CORS_HTTP_FILTER_NAME, route.typed_per_filter_config
             )
 
+    def test_only_oauth_routes_see_cookies(self):
+        """Every route but the OAuth server's removes `Cookie` from the
+        request and `Set-Cookie` from the response, whatever a client
+        sends; the session cookie is scoped to `OAUTH_PATH_PREFIX`."""
+        for allowed_origins in (None, [], [_TRUSTED_ORIGIN]):
+            with self.subTest(allowed_origins=allowed_origins):
+                _, routes = _routes(allowed_origins)
+                for route in routes:
+                    oauth = route.match.prefix == OAUTH_PATH_PREFIX
+                    self.assertEqual(
+                        "cookie" in route.request_headers_to_remove,
+                        not oauth,
+                    )
+                    self.assertEqual(
+                        "set-cookie" in route.response_headers_to_remove,
+                        not oauth,
+                    )
+
 
 if __name__ == "__main__":
     unittest.main()

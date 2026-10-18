@@ -8,7 +8,6 @@ import secrets
 import shutil
 import sys
 import webbrowser
-from contextlib import suppress
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_rbt import Preferences
 from rbt.std.presence.v1.presence_rbt import Presence
@@ -36,7 +35,6 @@ from reboot.dashboard.backend.constants import (
     PREFERENCES_ID,
     PRESENCE_ID,
 )
-from reboot.dashboard.tunnel import TunnelError, cloudflared_tunnel
 from reboot.settings import (
     ENVVAR_LOCAL_ENVOY_USE_TLS,
     ENVVAR_RBT_DEV,
@@ -235,9 +233,10 @@ def _dashboard_env(
         # serving (see `reboot.portless.alias`).
         composed[ENVVAR_RBT_PORTLESS_NAME] = portless_name
 
-    # Plain HTTP: the tunnel terminates TLS. Set rather than popped,
-    # so that a developer's export for their own application does not
-    # reach this one.
+    # Plain HTTP: the dashboard serves this machine, and a tunnel the
+    # developer runs in front of it terminates TLS. Set rather than
+    # popped, so that a developer's export for their own application
+    # does not reach this one.
     composed[ENVVAR_LOCAL_ENVOY_USE_TLS] = 'false'
 
     # A single server, so that a subscriber's `Connect` and
@@ -337,40 +336,6 @@ async def _run_dashboard(
                     'still trying.'
                 )
 
-        await backoff()
-
-
-async def _tunnel(*, port: int, subprocesses: Subprocesses) -> None:
-    """Keeps a tunnel to the dashboard on `port` open and prints each
-    tunnel's address for the developer to add as an MCP connector: a
-    connector added with a stopped tunnel's address reaches nothing.
-    A tunnel that cannot be opened is a warning, and the dashboard
-    serves this machine alone.
-    """
-    backoff = Backoff()
-    while True:
-        try:
-            async with cloudflared_tunnel(
-                port=port, subprocesses=subprocesses
-            ) as tunnel:
-                backoff.clear()
-                terminal.info(
-                    'To show your dashboard in Claude or ChatGPT, add this '
-                    f'MCP connector: {tunnel.url}/mcp/\n'
-                )
-                try:
-                    await tunnel.task
-                except TunnelError as error:
-                    terminal.warn(f'{error}\n')
-        except TunnelError as error:
-            # Could not be opened at all: offline, blocked, or no
-            # `cloudflared`. Trying again would fail the same way.
-            terminal.warn(
-                f'{error}\n\n'
-                'Without a tunnel an MCP host cannot show your dashboard; '
-                f'it still serves at http://127.0.0.1:{port}/\n'
-            )
-            return
         await backoff()
 
 
@@ -593,12 +558,7 @@ async def dashboard(
             _open_when_serving(origin=origin, portless_name=portless_name),
             name=f'_open_when_serving(...) in {__name__}',
         )
-        # A separate task, so a tunnel failure (every tunnel fails
-        # offline) leaves the dashboard serving this machine.
-        tunnel = asyncio.create_task(
-            _tunnel(port=port, subprocesses=subprocesses),
-            name=f'_tunnel(...) in {__name__}',
-        )
+
         try:
             await _run_dashboard(
                 env=env,
@@ -607,8 +567,6 @@ async def dashboard(
             )
         finally:
             open_task.cancel()
-            tunnel.cancel()
-            await asyncio.gather(tunnel, return_exceptions=True)
 
     return 0
 

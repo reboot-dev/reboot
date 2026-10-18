@@ -540,6 +540,22 @@ def _oauth_route(
     )
 
 
+def _without_cookies(
+    routes: list[route_components_pb2.Route],
+) -> list[route_components_pb2.Route]:
+    """`routes`, with every one but the OAuth server's removing `Cookie`
+    from the request and `Set-Cookie` from the response. The session
+    cookie is scoped to `OAUTH_PATH_PREFIX`, so a browser sends it to
+    no other path; this makes that hold for any client, and keeps a
+    route from setting a cookie of its own.
+    """
+    for route in routes:
+        if route.match.prefix != OAUTH_PATH_PREFIX:
+            route.request_headers_to_remove.append("cookie")
+            route.response_headers_to_remove.append("set-cookie")
+    return routes
+
+
 def _routes_for_server(
     application_id: ApplicationId,
     server: ServerInfo,
@@ -978,7 +994,7 @@ def _filter_http_connection_manager(
                     #            `envoy.filters.http.cors` filter in the filter
                     #            chain.
                     cors=_permissive_cors_policy(),
-                    routes=(
+                    routes=_without_cookies(
                         # Frontend routes (if configured) must come
                         # first since they match specific prefixes.
                         _frontend_routes() + [

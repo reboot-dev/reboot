@@ -109,7 +109,7 @@ class WebApp:
                         'name': SESSION_COOKIE_NAME,
                         'value': token,
                         'domain': host,
-                        'path': '/',
+                        'path': '/__/oauth/',
                         'httpOnly': True,
                         'secure': True,
                         'sameSite': 'None',
