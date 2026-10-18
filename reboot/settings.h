@@ -19,6 +19,13 @@ constexpr size_t kBatchFlushBytes = kMaxDatabaseMessageTransportBytes / 2;
 
 ////////////////////////////////////////////////////////////////////////
 
+// See `EVERY_LOCAL_NETWORK_ADDRESS` and `ONLY_LOCALHOST_NETWORK_ADDRESS`
+// in `reboot/settings.py` for when to use which.
+constexpr const char* kEveryLocalNetworkAddress = "0.0.0.0";
+constexpr const char* kOnlyLocalhostNetworkAddress = "127.0.0.1";
+
+////////////////////////////////////////////////////////////////////////
+
 }  // namespace rbt
 
 ////////////////////////////////////////////////////////////////////////

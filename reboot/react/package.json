@@ -16,6 +16,10 @@
     "./native": {
       "types": "./native/index.d.ts",
       "import": "./native/index.js"
+    },
+    "./vite": {
+      "types": "./vite/index.d.ts",
+      "import": "./vite/index.js"
     }
   },
   "scripts": {
@@ -37,11 +41,21 @@
   },
   "license": "Apache-2.0",
   "devDependencies": {
-    "@types/node": "^22.7.4"
+    "@types/node": "^26.6.4"
   },
   "peerDependencies": {
     "react": ">=18.0.0",
     "react-dom": ">=18.0.0",
-    "@bufbuild/protobuf": "1.10.1"
+    "@bufbuild/protobuf": "1.10.1",
+    "vite": ">=5.4.12",
+    "vite-plugin-singlefile": ">=2.0.0"
+  },
+  "peerDependenciesMeta": {
+    "vite": {
+      "optional": true
+    },
+    "vite-plugin-singlefile": {
+      "optional": true
+    }
   }
 }

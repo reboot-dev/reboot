@@ -30,6 +30,7 @@ from reboot.controller.application_config_trackers import (
 from reboot.controller.placement_planner import PlacementPlanner
 from reboot.controller.server_managers import FakeServerManager
 from reboot.controller.servers import ServerSpec
+from reboot.settings import ONLY_LOCALHOST_NETWORK_ADDRESS
 from tests.reboot.settings import REBOOT_VERSION_BEFORE_SHARDED_DATABASE
 from tests.reboot.test_helpers import get_descriptor_set
 
@@ -310,7 +311,17 @@ class TestPlacementPlanner(unittest.IsolatedAsyncioTestCase):
         self.placement_planner = PlacementPlanner(
             self.application_config_tracker,
             self.server_manager,
-            '0.0.0.0:0',
+            # Only connections from this test are expected, so we use only the
+            # loopback, and we couldn't use `EVERY_LOCAL_NETWORK_ADDRESS`
+            # anyway on macOS because gRPC binds IPv6 as well (one dual-stack
+            # socket) and macOS has a bug where its IPv6 ephemeral-port
+            # allocator doesn't check ports held by IPv4 sockets, so the server
+            # can be handed a port that an IPv4 listener (e.g., an orphaned
+            # Envoy) already holds and connections to
+            # `ONLY_LOCALHOST_NETWORK_ADDRESS` (`127.0.0.1`) reach that
+            # listener instead; see
+            # https://github.com/reboot-dev/reboot/pull/234.
+            f'{ONLY_LOCALHOST_NETWORK_ADDRESS}:0',
         )
         await self.placement_planner.start()
 

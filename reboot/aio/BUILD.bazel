@@ -30,6 +30,7 @@ py_library(
         ":memoize_py",
         ":reboot_py",
         ":servicers_py",
+        ":signals_py",
         ":tracing_py",
         ":workflows_py",
         "//rbt/v1alpha1/application:application_py_reboot",
@@ -75,6 +76,7 @@ py_library(
     deps = [
         ":types_py",
         "//reboot:naming_py",
+        "//reboot/aio/auth:__init___py",
     ],
 )
 
@@ -111,6 +113,7 @@ py_library(
         requirement("grpcio"),
         ":aborted_py",
         ":caller_id_py",
+        ":external_py",
         ":headers_py",
         ":idempotency_py",
         ":tasks_py",
@@ -156,7 +159,6 @@ py_library(
     deps = [
         requirement("grpcio"),
         ":caller_id_py",
-        ":contexts_py",
         ":idempotency_py",
         ":resolvers_py",
         "//reboot/aio/internals:channel_manager_py",
@@ -202,13 +204,17 @@ py_library(
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
+        "//envoy/config/route/v3:routev3_py_proto",
+        "//envoy/type/matcher/v3:matcherv3_py_proto",
         requirement("fastapi"),
         requirement("uvicorn"),
         ":caller_id_py",
         ":external_py",
         ":types_py",
+        "//reboot:settings_py",
         "//reboot:wait_for_tasks_py",
         "//reboot/aio/internals:channel_manager_py",
+        "//reboot/rootpage:page_py",
     ],
 )
 
@@ -274,6 +280,7 @@ py_library(
     deps = [
         requirement("grpcio"),
         "//reboot:settings_py",
+        "//reboot:wait_for_tasks_py",
         "@com_github_reboot_dev_reboot//log:log_py",
     ],
 )
@@ -340,9 +347,11 @@ py_library(
         ":monitoring_py",
         ":resolvers_py",
         ":servicers_py",
+        ":signals_py",
         ":state_managers_py",
         ":tracing_py",
         "//reboot:naming_py",
+        "//reboot:portless_py",
         "//reboot:run_environments_py",
         "//reboot:wait_for_tasks_py",
         "//reboot/aio:servers_py",
@@ -410,7 +419,6 @@ py_library(
         "//reboot/controller:settings_py",
         "//reboot/inspect:servicer_py",
         "//reboot/nodejs:python_py",
-        "//reboot/rootpage:servicer_py",
         "//reboot/server:database_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:application_config_py_proto",
     ],
@@ -436,7 +444,6 @@ py_library(
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
-        ":once_py",
         "//reboot:settings_py",
     ],
 )

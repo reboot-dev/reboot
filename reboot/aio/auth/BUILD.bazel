@@ -56,7 +56,9 @@ py_library(
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
+        "//reboot:portless_py",
         "//reboot:run_environments_py",
+        "//reboot:settings_py",
     ],
 )
 

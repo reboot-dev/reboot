@@ -108,13 +108,13 @@ with a `User` type must configure
 
 `User` plus an application type, with a
 [`UI` method](/frontends/ui_methods) and methods marked `mcp=Tool()`
-so an [MCP client](/frontends/mcp_ui) can call them:
+so an [MCP client](/frontends/mcp_app) can call them:
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/mcp-ui-counter/api/mcp_ui_counter/v1/counter.py&syntax=python) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/mcp-ui-counter/api/mcp_ui_counter/v1/counter.py -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/mcp-app-counter/api/mcp_app_counter/v1/counter.py&syntax=python) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/mcp-app-counter/api/mcp_app_counter/v1/counter.py -->
 
 ```python
-# api/mcp_ui_counter/v1/counter.py
+# api/mcp_app_counter/v1/counter.py
 from reboot.api import (
     API,
     UI,
@@ -209,7 +209,7 @@ api = API(
         methods=Methods(
             show_clicker=UI(
                 request=None,
-                path="frontend/mcp/clicker",
+                path="clicker",
                 title="Counter Clicker",
                 description="Interactive clicker UI "
                 "for the counter.",

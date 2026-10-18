@@ -178,9 +178,18 @@ asserting on aborts.
 Omit `oauth=` in a test's `Application(...)`, whatever the app type:
 `up()` always backs the application under test with a test OAuth
 provider, so `await rbt.create_external_context_as(name, user_id)`
-works with no identity wiring at all. That provider rejects the
-browser sign-in flow itself — tests impersonate instead of signing
-in.
+works with no identity wiring at all, and an auto-constructed `User`
+type is constructed as it is under `oauth=`. That provider rejects
+the browser sign-in flow itself — tests impersonate instead of
+signing in.
+
+- **Scenarios that open the web app** need a real sign-in flow, so
+  they pass `oauth=` with `Development()` for both arms of
+  `OAuthProviderByEnvironment` (a test is neither `rbt dev run` nor
+  `rbt serve`) and `allowed_origins=[frontend.origin]`; see
+  `testing-web-app.md`. Outside `rbt dev run`, an `oauth=` without
+  `allowed_origins` refuses to start, which is why a test does not
+  reuse the `Application(...)` of `main.py`.
 
 - **App with a production `token_verifier=`** (e.g. a web app
   verifying an external IdP's tokens): keep the `token_verifier=`
@@ -268,7 +277,7 @@ The harness exercises the full RPC path — not Servicer instances
 directly. That means the same context-type rules, error semantics,
 and serialization apply. If a test passes, the wiring is correct.
 This is exactly why "write tests for each user story before
-handing the app off" is in the `mcp-ui` and `web-app` build
+handing the app off" is in the `mcp-app` and `web-app` build
 flows: the tests catch contract bugs that a manual click-through
 won't surface for several minutes.
 

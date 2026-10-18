@@ -6,9 +6,8 @@ import "./index.css";
 import { Loading } from "./loading";
 import { ConnectionState, Wizard } from "./wizard";
 
-// Default port if we can't recover the explicit one from
-// `window.location` (e.g. served behind a tunnel that hides the
-// origin port).
+// Default port if the browser-visible origin has no explicit port
+// (for example, a reverse proxy listening on standard HTTPS).
 const DEFAULT_REBOOT_PORT = 9991;
 
 // Fallback title used both for the in-page hero and the browser
@@ -64,6 +63,7 @@ const WizardConnected = ({ applicationId }: { applicationId: string }) => {
       title={title}
       description={response.description}
       titleReady
+      tunnelUrl={response.tunnelUrl}
       ngrokDetectedUrl={response.ngrokPublicUrl}
       cloudflaredDetectedUrl={response.cloudflaredPublicUrl}
       connections={response.connections ?? []}
@@ -71,13 +71,14 @@ const WizardConnected = ({ applicationId }: { applicationId: string }) => {
       hasMcpTools={response.mcp ?? false}
       devMode={response.dev ?? false}
       appPort={detectPort()}
+      appUrl={window.location.origin}
       connectionState={connectionState}
     />
   );
 };
 
 // `applicationId` is the singleton `Application` state ID, templated
-// into `index.html` by `RootPageServicer` (keyed on `RBT_NAME`); the
+// into `index.html` by the backend (keyed on `RBT_NAME`); the
 // wizard subscribes to that state via `useApplication({ id })`.
 export const render = (url: string, applicationId: string) => {
   const root = ReactDOM.createRoot(document.getElementById("root")!);

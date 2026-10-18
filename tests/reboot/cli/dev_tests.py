@@ -119,22 +119,6 @@ class RbtDevTestCase(unittest.IsolatedAsyncioTestCase):
             [['E1', 'V1'], ['E2', 'V2'], ['E3', 'V3']],
         )
 
-    async def test_open_dashboard_requires_a_reachable_dashboard(self) -> None:
-        # `rbt dev run --open-dashboard` refuses to start when nothing
-        # is serving on the dashboard's port, telling the developer to
-        # run `rbt dashboard`.
-        server = await asyncio.start_server(
-            lambda reader, writer: writer.close(), '127.0.0.1', 0
-        )
-        port = server.sockets[0].getsockname()[1]
-
-        self.assertTrue(await dev._dashboard_reachable(port))
-
-        server.close()
-        await server.wait_closed()
-
-        self.assertFalse(await dev._dashboard_reachable(port))
-
     async def test_dev_expunge_requires_name(self) -> None:
         parser: ArgumentParser = cli.create_parser(
             argv=[
@@ -152,6 +136,26 @@ class RbtDevTestCase(unittest.IsolatedAsyncioTestCase):
             "rbt dev expunge: error: the following arguments are required: "
             "--application-name\n"
         )
+
+    async def test_read_line_does_not_block_event_loop(self) -> None:
+        # Create a pipe to emulate stdin.
+        reader_fd, writer_fd = os.pipe()
+        with os.fdopen(reader_fd, 'r') as reader:
+            async with aiofiles.open(writer_fd, 'w') as writer:
+                read_line_task = asyncio.create_task(dev._read_line(reader))
+
+                # The event loop keeps running while there is no line to
+                # read, which is what lets a signal cancel the read.
+                await asyncio.sleep(0.1)
+                assert not read_line_task.done()
+
+                await writer.write("yes\n")
+                await writer.flush()
+
+                self.assertEqual(await read_line_task, "yes\n")
+
+            # The input is closed.
+            self.assertEqual(await dev._read_line(reader), "")
 
     async def test_dev_run_await_maybe_expunge(self) -> None:
         parser: ArgumentParser = cli.create_parser(

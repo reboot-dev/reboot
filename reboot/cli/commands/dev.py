@@ -6,13 +6,13 @@ import grpc
 import os
 import random
 import reboot.aio.tracing
+import reboot.portless
 import secrets
 import shutil
 import signal
 import sys
 import termios
 import tty
-import webbrowser
 from colorama import Fore
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
@@ -24,23 +24,23 @@ from opentelemetry.sdk.environment_variables import (
     OTEL_EXPORTER_OTLP_TRACES_INSECURE,
 )
 from pathlib import Path
-from rbt.dashboard.v1.dashboard_rbt import Preferences
-from rbt.std.presence.v1.presence_rbt import Presence
 from reboot.aio.backoff import Backoff
 from reboot.aio.contexts import EffectValidation
 from reboot.aio.exceptions import InputError
-from reboot.aio.external import ExternalContext
 from reboot.cli.commands.generate import generate_direct
 # We import the whole `terminal` module (as opposed to the methods it contains)
 # to allow us to mock these methods out in tests.
-from reboot.cli.common import terminal
+from reboot.cli.common import portless, terminal
 from reboot.cli.common.dev_extra import dev_extra_installed, missing_dev_extra
 from reboot.cli.common.directories import (
     add_working_directory_options,
     dot_rbt_dev_directory,
     use_working_directory,
 )
-from reboot.cli.common.frontend import add_common_frontend_args
+from reboot.cli.common.frontend import (
+    add_common_frontend_args,
+    add_common_web_args,
+)
 from reboot.cli.common.monkeys import monkeys, no_chaos_monkeys
 # We won't mock the classes in `rc`, so it's safe to import those directly.
 from reboot.cli.common.rc import (
@@ -55,14 +55,14 @@ from reboot.cli.common.transpile import (
     auto_transpile,
     ensure_can_auto_transpile,
 )
+from reboot.cli.common.type_check import (
+    check_mypy_installed,
+    missing_mypy,
+    mypy_installed,
+    type_check,
+)
 from reboot.cli.common.watch import FileWatcher, file_watcher
 from reboot.controller.plan_makers import validate_num_servers
-from reboot.dashboard.backend.constants import (
-    DASHBOARD_PATH,
-    DEFAULT_DASHBOARD_PORT,
-    PREFERENCES_ID,
-    PRESENCE_ID,
-)
 from reboot.server.local_envoy_factory import LocalEnvoyFactory
 from reboot.settings import (
     DEFAULT_SECURE_PORT,
@@ -75,24 +75,30 @@ from reboot.settings import (
     ENVVAR_LOCAL_ENVOY_USE_TLS,
     ENVVAR_RBT_DEV,
     ENVVAR_RBT_EFFECT_VALIDATION,
-    ENVVAR_RBT_FRONTEND_DIST_PATH,
-    ENVVAR_RBT_FRONTEND_HOST,
-    ENVVAR_RBT_FRONTEND_ROOT_PATH,
+    ENVVAR_RBT_FRONTEND_URL,
+    ENVVAR_RBT_MCP_APP,
+    ENVVAR_RBT_MCP_APP_DIST_PATH,
     ENVVAR_RBT_NAME,
     ENVVAR_RBT_NODEJS,
+    ENVVAR_RBT_PORTLESS_NAME,
     ENVVAR_RBT_SERVERS,
     ENVVAR_RBT_STATE_DIRECTORY,
+    ENVVAR_RBT_TUNNEL_URL,
+    ENVVAR_RBT_WEB_APP,
+    ENVVAR_RBT_WEB_APP_DIST_PATH,
     ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
     ENVVAR_REBOOT_EXPECTED_VERSION,
     ENVVAR_REBOOT_LOCAL_ENVOY,
     ENVVAR_REBOOT_LOCAL_ENVOY_PORT,
     ENVVAR_REBOOT_OAUTH_SIGNING_SECRET,
     ENVVAR_REBOOT_USE_TTY,
+    EVERY_LOCAL_NETWORK_ADDRESS,
     RBT_APPLICATION_EXIT_CODE_BACKWARDS_INCOMPATIBILITY,
     LocalEnvoyMode,
 )
 from reboot.version import REBOOT_VERSION
 from typing import Any, Awaitable, Callable, Optional, TextIO, TypeVar
+from urllib.parse import urlparse
 
 TLS_CERTIFICATE_BEGINNING = "-----BEGIN CERTIFICATE-----"
 TLS_PRIVATE_KEY_BEGINNING = "-----BEGIN PRIVATE KEY-----"
@@ -221,19 +227,71 @@ def _register_dev_run(parser: ArgumentParser):
     )
 
     parser.subcommand('dev run').add_argument(
-        '--frontend-host',
+        '--frontend-url',
         type=str,
         help=(
-            'URL of the frontend dev server '
-            '(e.g., http://localhost:4444). When set, '
-            'Envoy routes `/__/frontend/**` paths to this '
-            'host for Hot Module Replacement. Requires '
-            '`--frontend-root-path`; mutually exclusive '
-            'with `--frontend-dist-path`.'
+            'URL of the frontend\'s dev server (e.g., Vite at '
+            'http://localhost:5173): Envoy proxies '
+            '`/__/frontend/**` to it, with Hot Module '
+            'Replacement. It only says where the frontend is; '
+            '`--mcp-app` says to serve the application\'s MCP '
+            'Apps from it, and without that it is an error. '
+            'Mutually exclusive with `--mcp-app-dist-path`.'
+        ),
+    )
+    parser.subcommand('dev run').add_renamed_flag(
+        '--frontend-host',
+        '--frontend-url',
+    )
+    parser.subcommand('dev run').add_argument(
+        '--mcp-app',
+        type=bool,
+        default=False,
+        help=(
+            'serve the application\'s MCP Apps (its `UI(...)` '
+            'methods) from the frontend\'s dev server, '
+            '`--frontend-url`, which it requires. Their builds '
+            'are served with `--mcp-app-dist-path` instead, so '
+            'the two are mutually exclusive. An application '
+            'with `UI(...)` methods needs one of the two, and '
+            'one without refuses both.'
+        ),
+    )
+    parser.subcommand('dev run').add_argument(
+        '--web-app',
+        type=bool,
+        default=False,
+        help=(
+            'serve the application\'s web app from the frontend\'s '
+            'dev server, `--frontend-url`, which it requires: Envoy '
+            'sends `/`, and every path the application doesn\'t '
+            'answer, to that dev server, which serves the web app '
+            'at its `/`. Its build is served with '
+            '`--web-app-dist-path` instead, so the two are mutually '
+            'exclusive. Python applications only.'
         ),
     )
 
     add_common_frontend_args(parser.subcommand('dev run'))
+    add_common_web_args(parser.subcommand('dev run'))
+
+    parser.subcommand('dev run').add_argument(
+        '--portless',
+        type=bool,
+        default=False,
+        help=(
+            'serve under a named `.localhost` URL via portless '
+            '(https://github.com/vercel-labs/portless): registers '
+            'this application with the running portless proxy as '
+            '`https://<application-name>.localhost`, and trusts '
+            '`https://frontend.<application-name>.localhost`, where the '
+            'frontend dev server is expected (`portless '
+            'frontend.<application-name> vite`, the frontend\'s `npm run '
+            'dev:portless`), as a browser origin. '
+            'Requires `--application-name`, and the `portless` CLI on '
+            'PATH with its proxy started (`portless proxy start`).'
+        ),
+    )
 
     parser.subcommand('dev run').add_argument(
         '--servers',
@@ -249,29 +307,18 @@ def _register_dev_run(parser: ArgumentParser):
         '--port',
         type=int,
         help='port on which the Reboot app will serve traffic; defaults to '
-        f'{DEFAULT_LOCAL_ENVOY_PORT}',
+        f'{DEFAULT_LOCAL_ENVOY_PORT}, or under `--portless`, where the name '
+        'is the address, to a free port',
     )
 
     parser.subcommand('dev run').add_argument(
-        '--open-dashboard',
-        type=bool,
-        # Three states, two of which currently agree:
-        # '--open-dashboard' opens one; unset and
-        # '--no-open-dashboard' both leave the browser alone while
-        # `_AUTO_OPEN_DASHBOARD` is off. Unset regains a meaning of
-        # its own once that is turned on: open one unless somebody
-        # is already looking at one, or the banner said not to.
-        default=None,
-        help='open a dashboard in your browser once your application '
-        'is serving',
-    )
-
-    parser.subcommand('dev run').add_argument(
-        '--dashboard-port',
-        type=int,
-        help='port on which the developer dashboard, started separately '
-        f'with `rbt dashboard`, is serving; defaults to '
-        f'{DEFAULT_DASHBOARD_PORT}',
+        '--tunnel-url',
+        type=str,
+        help='the public URL this application is reachable at through '
+        'a tunnel (e.g., https://<name>.trycloudflare.com), which the '
+        'setup wizard shows and verifies; without it the wizard asks '
+        'ngrok and cloudflared, through their local APIs on their '
+        'default ports, for a tunnel of their own',
     )
 
     parser.subcommand('dev run').add_argument(
@@ -330,6 +377,21 @@ def _register_dev_run(parser: ArgumentParser):
         "TypeScript files, e.g., 'npx tsc'",
         default=None,
         non_empty_string=True,
+    )
+
+    parser.subcommand('dev run').add_argument(
+        '--type-check',
+        type=bool,
+        # Three states: '--type-check' needs a Python application and
+        # mypy, and fails without them; unset type-checks a Python
+        # application when mypy is installed; '--no-type-check' never
+        # does.
+        default=None,
+        help="whether or not to type-check a '--python' application, and "
+        "the code of yours that it imports, with mypy before every "
+        "(re)start, and start it only once mypy reports no errors; unset, "
+        "a '--python' application is type-checked when mypy is installed "
+        "alongside it",
     )
 
     parser.subcommand('dev run').add_argument(
@@ -461,158 +523,6 @@ async def _run(
     application_started_event.clear()
 
 
-async def _viewers(dashboard_url: str) -> list[str]:
-    """The subscriber ids of everyone looking at a dashboard.
-
-    The dashboard constructs the `Presence` instance, empty, when it
-    initializes, so there is an answer from the moment it is up.
-    """
-    context = ExternalContext(name="dev-run-open-dashboard", url=dashboard_url)
-    response = await Presence.ref(PRESENCE_ID).List(context)
-    return list(response.subscriber_ids)
-
-
-async def _open_on_restart(dashboard_url: str) -> bool:
-    """Whether the developer still wants a dashboard opened for them.
-
-    The dashboard's banner writes this when they click it, and it
-    outlives the `rbt dev run` they clicked it in. The dashboard
-    writes the default when it initializes, so nobody ever clicking
-    means a dashboard opens.
-    """
-    context = ExternalContext(name="dev-run-open-dashboard", url=dashboard_url)
-    response = await Preferences.ref(PREFERENCES_ID).Get(context)
-    return not response.suppress_open_on_restart
-
-
-# Whether `rbt dev run` may open a dashboard nobody asked it for.
-#
-# False while the dashboard is still being built, so that the only way
-# to see one is `--open-dashboard`. Everything that decides when to
-# open one by itself, the `Presence` subscribers and the banner's
-# choice, is covered by `open_dashboard_tests`; turning auto-open on
-# is this constant and nothing else.
-_AUTO_OPEN_DASHBOARD = False
-
-
-async def _open_dashboard_once(
-    *,
-    dashboard_url: str,
-    forced: bool,
-) -> None:
-    """Opens a dashboard, unless the developer would rather it didn't.
-
-    They would rather it didn't in two cases. One is that somebody is
-    already looking at one: the page subscribes to `Presence` for as
-    long as it is open, so a tab left up from an earlier run keeps a
-    second one from appearing, and a tab they closed is replaced. The
-    other is that they clicked the dashboard's "Don't reopen this
-    dashboard on restart" banner, which is remembered until they click
-    the banner that undoes it.
-
-    `Presence` learns that a viewer has gone from the cancellation of
-    the page's `Connect` RPC, and nothing else. A proxy that holds its
-    server-side socket open after the browser goes away therefore
-    leaves a viewer listed who is not there, and the effect is that no
-    dashboard opens, which `--open-dashboard` overrides, as it
-    overrides the banner.
-    """
-    if not forced:
-        if not await _open_on_restart(dashboard_url):
-            terminal.info(
-                'You asked for this dashboard not to be reopened; run '
-                'with `--open-dashboard` to see it anyway, or visit '
-                f'{dashboard_url}/'
-            )
-            return
-
-        if len(await _viewers(dashboard_url)) > 0:
-            # Say why nothing opened, since a run that opens nothing
-            # and explains nothing is indistinguishable from a broken
-            # one, particularly when the tab being counted is behind
-            # another window, or on another screen.
-            terminal.info(
-                'A dashboard is already open for this application; run '
-                'with `--open-dashboard` for another, or visit '
-                f'{dashboard_url}/'
-            )
-            return
-
-    # `webbrowser` honors `$BROWSER`, which is what makes this work in
-    # Codespaces and devcontainers, and returns `False` rather than
-    # raising when there is no browser to open. An unforced open
-    # tells the page it was automatic, so it can offer not to be.
-    page_url = f'{dashboard_url}/'
-    opened_url = (
-        page_url if forced else automatically_opened_url(dashboard_url)
-    )
-
-    if not await asyncio.to_thread(webbrowser.open, opened_url):
-        terminal.warn(
-            f"Could not open a browser; your dashboard is at {page_url}"
-        )
-
-
-def automatically_opened_url(dashboard_url: str) -> str:
-    """The URL a dashboard is opened at when nobody asked for it, which
-    tells the page so, letting it offer not to be opened again.
-
-    Everything else sends people to the root, which forwards to the
-    page wherever it is served, but this passes the page's whole path:
-    the root is served by the `RootPage` servicer through Envoy's
-    gRPC-JSON transcoder, which fails a request carrying a query
-    parameter the method has no field for (with `grpc-status: 2`, "Bad
-    method header", and an empty body), so `/?opened=automatically`
-    would never reach the page. The query only ever comes from here, so
-    nobody is told to type it.
-    """
-    return f'{dashboard_url}{DASHBOARD_PATH}/?opened=automatically'
-
-
-async def _dashboard_reachable(port: int) -> bool:
-    """Whether something is accepting connections on the dashboard's
-    port."""
-    try:
-        _, writer = await asyncio.wait_for(
-            asyncio.open_connection('127.0.0.1', port),
-            timeout=2.0,
-        )
-    except (OSError, asyncio.TimeoutError):
-        return False
-    writer.close()
-    try:
-        await writer.wait_closed()
-    except OSError:
-        pass
-    return True
-
-
-async def _open_dashboard(
-    *,
-    dashboard_url: str,
-    forced: bool,
-    application_serving_event: asyncio.Event,
-) -> None:
-    """Opens a dashboard once the developer's application is serving
-    traffic, so that nothing the developer waits on is ever waiting on
-    this."""
-    await application_serving_event.wait()
-
-    try:
-        await _open_dashboard_once(
-            dashboard_url=dashboard_url,
-            forced=forced,
-        )
-    except Exception as e:
-        # Never let this take down `rbt dev run`; the developer's
-        # application is unaffected and the dashboard is still
-        # reachable by hand.
-        terminal.warn(
-            f"Could not open a dashboard ({e}); it is at "
-            f"{dashboard_url}/"
-        )
-
-
 def try_and_become_child_subreaper_on_linux():
     if sys.platform == 'linux':
         # The 'pyprctl' module is available on Linux only.
@@ -732,22 +642,32 @@ async def check_local_envoy_mode(subprocesses: Subprocesses) -> None:
 
 async def _check_local_envoy_status(
     *,
-    port: int,
+    port: Optional[int],
     terminate_after_health_check: bool,
     application_started_event: asyncio.Event,
-    application_serving_event: Optional[asyncio.Event],
     tls_certificate: Optional[str],
     root_certificate: Optional[str],
     tracing: Tracing,
     nodejs: bool,
+    portless_name: Optional[str],
+    web_app: bool,
 ) -> None:
-    """Checks if the application is up and running.
+    """Checks if the application is up and running, by the gRPC health
+    check on its port. Under `--portless` the port is the application's
+    to pick and the proxy's to tell: whenever the health check is not
+    passing, the proxy is asked which port the name routes to, which
+    the application registers once it is serving, and the health check
+    then goes to that port directly, so the steady state costs no more
+    than on a plain port.
     Optionally exits as soon as the health check has passed.
     """
     # Wait until application is running with starting health check.
     await application_started_event.wait()
 
-    address = f'127.0.0.1:{port}'
+    assert (port is None) == (portless_name is not None)
+    # The host to check; the port is `port`, or under `--portless` the
+    # application's to pick and learned from the proxy below.
+    host = '127.0.0.1'
 
     if tls_certificate is not None:
         assert root_certificate is not None
@@ -780,12 +700,12 @@ async def _check_local_envoy_status(
                 f"('{san_list[0]}') will be used as the address for the "
                 "health check."
             )
-            address = f"{san_list[0]}:{port}"
+            host = san_list[0]
         else:
             # We can use 'localhost' as the address for the health check, which
             # is great since it doesn't require any `/etc/hosts` entries or
             # similar.
-            address = f'localhost:{port}'
+            host = 'localhost'
 
     protocol = "https" if tls_certificate else "http"
 
@@ -817,7 +737,16 @@ async def _check_local_envoy_status(
         async with aiofiles.open(root_certificate, 'rb') as f:
             binary_root_certificate = await f.read()
 
+    is_application_serving = False
+
     while True:
+        # Asked again whenever the last check did not pass, since a
+        # restart binds a new port.
+        if portless_name is not None and not is_application_serving:
+            port = await portless.wait_for_port(portless_name)
+
+        address = f'{host}:{port}'
+
         try:
             async with create_channel(
                 address,
@@ -844,19 +773,27 @@ async def _check_local_envoy_status(
             was_application_serving = is_application_serving
 
             if is_application_serving:
-                if application_serving_event is not None:
-                    application_serving_event.set()
-
                 terminal.info("Application is serving traffic ...\n")
+                # Under `--portless` the application's address is its
+                # name; the port behind the proxy is nobody's business.
+                if portless_name is not None:
+                    url = 'https://' + reboot.portless.hostname(portless_name)
+                else:
+                    url = f"{protocol}://{address}"
                 # MCP server and endpoint is not supported for Nodejs currently.
                 mcp_line = (
                     "" if nodejs else
-                    f"  MCP clients can connect at:    {protocol}://{address}/mcp\n"
+                    f"  MCP clients can connect at:    {url}/mcp\n"
+                )
+                web_line = (
+                    f"  Your web app is at:            {url}/\n"
+                    if web_app else ""
                 )
                 terminal.info(
-                    f"  Your API is available at:      {protocol}://{address}\n"
+                    f"  Your API is available at:      {url}\n"
                     f"{mcp_line}"
-                    f"  You can inspect your state at: {protocol}://{address}/__/inspect\n",
+                    f"{web_line}"
+                    f"  You can inspect your state at: {url}/__/inspect\n",
                     color=Fore.WHITE,
                 )
                 if tracing == Tracing.JAEGER:
@@ -905,10 +842,13 @@ async def _run_jaeger():
         '-p',
         '4318:4318',
         f'jaegertracing/jaeger:{JAEGER_VERSION}',
+        # Inside the container, connections from outside it (this
+        # machine, through the ports published above) are expected, so
+        # Jaeger's receivers listen on every interface.
         '--set',
-        'receivers.otlp.protocols.http.endpoint=0.0.0.0:4318',
+        f'receivers.otlp.protocols.http.endpoint={EVERY_LOCAL_NETWORK_ADDRESS}:4318',
         '--set',
-        'receivers.otlp.protocols.grpc.endpoint=0.0.0.0:4317',
+        f'receivers.otlp.protocols.grpc.endpoint={EVERY_LOCAL_NETWORK_ADDRESS}:4317',
         # Disable clock skew adjustments, this is all running on the
         # same host so even though it is across processes we shouldn't
         # expect any clock skew and without this Jaeger adjusts some
@@ -1025,6 +965,36 @@ async def _read_until(
         loop.remove_reader(fd)
 
 
+async def _read_line(file_handle: TextIO) -> str:
+    """Reads a line from the given file handle, newline included, without
+    blocking the event loop while waiting for it, so that a signal can
+    still cancel us. Returns an empty string once the input is closed.
+    """
+    loop = asyncio.get_running_loop()
+    line: asyncio.Future[str] = loop.create_future()
+
+    def read() -> None:
+        loop.remove_reader(fd)
+        try:
+            line.set_result(file_handle.readline())
+        except (OSError, ValueError) as error:
+            line.set_exception(error)
+
+    # The file handle may be unpollable: e.g., redirected from a regular
+    # file (Linux `epoll` rejects those with `PermissionError`), which
+    # never blocks, so we can just read it.
+    try:
+        fd = file_handle.fileno()
+        loop.add_reader(fd, read)
+    except (OSError, ValueError):
+        return file_handle.readline()
+
+    try:
+        return await line
+    finally:
+        loop.remove_reader(fd)
+
+
 async def induce_chaos() -> Optional[int]:
     """Helper that allows inducing chaos via pressing keys 0-9."""
 
@@ -1052,6 +1022,14 @@ def _check_common_args(args):
         )
     elif not args.python and not args.nodejs:
         terminal.fail("One of '--python' or '--nodejs' must be specified.")
+
+    # `--web-app-dist-path` is the Python web framework's doing; a Node.js
+    # application's own serves `/`.
+    if args.nodejs and args.web_app_dist_path:
+        terminal.fail(
+            "`--web-app-dist-path` is not supported with `--nodejs`: a "
+            "Node.js application's own web framework serves `/`."
+        )
 
 
 async def _check_file_first_line_equals(file_path, expected_first_line):
@@ -1216,6 +1194,14 @@ async def dev_run(
 
     _check_common_args(args)
 
+    # `--port=0` is any free port, which only makes sense where the
+    # name is the address.
+    if args.port == 0 and not args.portless:
+        terminal.fail(
+            '`--port=0` (any free port) needs `--portless`: without a '
+            'name, the port is the address.'
+        )
+
     # A development environment installs the `reboot[dev]` extra. The
     # application runs without it, so this only says so.
     if not dev_extra_installed():
@@ -1224,6 +1210,22 @@ async def dev_run(
                 '`rbt dashboard` and tests written with `reboot.bdd` need it'
             )
         )
+
+    # '--type-check' asks for a type-check, which needs a Python
+    # application and mypy. Unset, a Python application is type-checked
+    # when mypy is installed; it runs without mypy, so missing mypy
+    # then only says that it starts without a type-check.
+    if args.type_check and not args.python:
+        terminal.fail(
+            "'--type-check' was specified, which is currently only "
+            "supported for Python applications"
+        )
+    elif args.type_check:
+        check_mypy_installed()
+    elif args.type_check is None:
+        args.type_check = args.python and mypy_installed()
+        if args.python and not args.type_check:
+            terminal.warn(missing_mypy())
 
     tls_args = [args.tls_certificate, args.tls_key, args.tls_root_certificate]
 
@@ -1560,32 +1562,78 @@ async def __dev_run(
             dot_rbt_dev_directory(args, parser) / args.application_name
         )
 
-    # The frontend is served one of two mutually-exclusive ways: a live
-    # dev server (`--frontend-host`, for HMR) or built assets on disk
-    # (`--frontend-dist-path`). `--frontend-root-path` names the frontend
-    # root and is required alongside whichever of the two is chosen.
-    if args.frontend_host and args.frontend_dist_path:
+    # The MCP Apps are served one of two mutually-exclusive ways: from
+    # the frontend's dev server (`--frontend-url`, which `--mcp-app`
+    # says to serve them from) or from their builds on disk
+    # (`--mcp-app-dist-path`); the web app likewise, from the dev
+    # server (`--web-app`) or its build (`--web-app-dist-path`). A dev
+    # server nothing is served from is a slip, so `--frontend-url`
+    # alone is refused.
+    if args.frontend_url and args.mcp_app_dist_path:
         terminal.fail(
-            "`--frontend-host` and `--frontend-dist-path` are mutually "
+            "`--frontend-url` and `--mcp-app-dist-path` are mutually "
             "exclusive; pass one or the other."
         )
-    if args.frontend_host:
-        if not args.frontend_root_path:
-            terminal.fail("`--frontend-host` requires `--frontend-root-path`.")
-        env[ENVVAR_RBT_FRONTEND_HOST] = args.frontend_host
-        env[ENVVAR_RBT_FRONTEND_ROOT_PATH] = args.frontend_root_path
-    elif args.frontend_dist_path:
-        if not args.frontend_root_path:
-            terminal.fail(
-                "`--frontend-dist-path` requires `--frontend-root-path`."
-            )
-        env[ENVVAR_RBT_FRONTEND_DIST_PATH] = args.frontend_dist_path
-        env[ENVVAR_RBT_FRONTEND_ROOT_PATH] = args.frontend_root_path
-    elif args.frontend_root_path:
+    if args.mcp_app and args.mcp_app_dist_path:
         terminal.fail(
-            "`--frontend-root-path` is only valid alongside "
-            "`--frontend-host` or `--frontend-dist-path`."
+            "`--mcp-app` and `--mcp-app-dist-path` are mutually "
+            "exclusive: the first serves the MCP Apps from the "
+            "frontend's dev server, the second from their builds."
         )
+    # `--web-app` is `dev run`'s alone (it isn't on `serve run`'s
+    # parser), so it is checked here rather than in `_check_common_args`.
+    if args.nodejs and args.web_app:
+        terminal.fail(
+            "`--web-app` is not supported with `--nodejs`: a Node.js "
+            "application's own web framework serves `/`, and Reboot "
+            "can't tell which paths are its to route around."
+        )
+    if args.web_app and args.web_app_dist_path:
+        terminal.fail(
+            "`--web-app` and `--web-app-dist-path` are mutually "
+            "exclusive: the first serves the web app from the "
+            "frontend's dev server, the second from its build."
+        )
+    if args.frontend_url and not (args.mcp_app or args.web_app):
+        terminal.fail(
+            "`--frontend-url` names the frontend's dev server but "
+            "nothing to serve from it; add `--mcp-app` to serve the "
+            "application's MCP Apps from it, `--web-app` to serve its "
+            "web app, or both."
+        )
+    if args.mcp_app and not args.frontend_url:
+        terminal.fail(
+            "`--mcp-app` serves the MCP Apps from the frontend's dev "
+            "server, which `--frontend-url` names; pass it too (or "
+            "`--mcp-app-dist-path` to serve their builds instead)."
+        )
+    if args.web_app and not args.frontend_url:
+        terminal.fail(
+            "`--web-app` serves the web app from the frontend's dev "
+            "server, which `--frontend-url` names; pass it too (or "
+            "`--web-app-dist-path` to serve its build instead)."
+        )
+    if args.frontend_url:
+        env[ENVVAR_RBT_FRONTEND_URL] = args.frontend_url
+        if args.mcp_app:
+            env[ENVVAR_RBT_MCP_APP] = 'true'
+        if args.web_app:
+            env[ENVVAR_RBT_WEB_APP] = 'true'
+    elif args.mcp_app_dist_path:
+        env[ENVVAR_RBT_MCP_APP_DIST_PATH] = args.mcp_app_dist_path
+
+    # The web app, when Reboot serves it, is its own thing: a built
+    # web app at `/`, independent of how the MCP Apps are served.
+    if args.web_app_dist_path:
+        env[ENVVAR_RBT_WEB_APP_DIST_PATH] = args.web_app_dist_path
+    if args.tunnel_url:
+        parsed = urlparse(args.tunnel_url)
+        if parsed.scheme not in ('http', 'https') or not parsed.hostname:
+            terminal.fail(
+                f"`--tunnel-url={args.tunnel_url}` must be an http:// or "
+                "https:// URL."
+            )
+        env[ENVVAR_RBT_TUNNEL_URL] = args.tunnel_url.rstrip('/')
 
     health_check_task: Optional[asyncio.Task] = None
 
@@ -1596,44 +1644,42 @@ async def __dev_run(
     await check_local_envoy_mode(subprocesses)
     env[ENVVAR_REBOOT_LOCAL_ENVOY] = 'true'
 
-    # The developer dashboard runs separately, started by
-    # `rbt dashboard`; this run only decides whether to open a window
-    # on it.
-    dashboard_port = args.dashboard_port or DEFAULT_DASHBOARD_PORT
-
-    open_dashboard = (
-        args.open_dashboard is True or
-        (_AUTO_OPEN_DASHBOARD and args.open_dashboard is not False)
-    )
-
-    if open_dashboard and not await _dashboard_reachable(dashboard_port):
-        terminal.fail(
-            'You asked for a dashboard, but no developer dashboard is '
-            f'serving on port {dashboard_port}. Start one with '
-            '`rbt dashboard`, then run this again.'
-        )
-
-    application_serving_event = (asyncio.Event() if open_dashboard else None)
+    # Under `--portless` the name is the address, so unless `--port`
+    # says otherwise the port behind the proxy is any free one (0), and
+    # several applications run at once; the application registers the
+    # name once it is serving.
+    if args.portless:
+        if args.application_name is None:
+            terminal.fail(
+                '`--portless` needs `--application-name`: the name is the '
+                'hostname, `https://<application-name>.localhost`.'
+            )
+        # Before the application is started, so that a missing CLI or
+        # proxy says so rather than leaving it unreachable.
+        await portless.check('--portless')
+        env[ENVVAR_RBT_PORTLESS_NAME] = args.application_name
+        port = args.port if args.port is not None else 0
+    else:
+        port = args.port if args.port is not None else DEFAULT_LOCAL_ENVOY_PORT
 
     health_check_task = asyncio.create_task(
         _check_local_envoy_status(
-            port=args.port or DEFAULT_LOCAL_ENVOY_PORT,
+            port=None if args.portless else port,
             terminate_after_health_check=args.terminate_after_health_check or
             False,
             application_started_event=application_started_event,
-            application_serving_event=application_serving_event,
             tls_certificate=args.tls_certificate,
             root_certificate=args.tls_root_certificate,
             tracing=tracing,
             nodejs=bool(args.nodejs),
+            portless_name=(args.application_name if args.portless else None),
+            web_app=bool(args.web_app or args.web_app_dist_path),
         ),
         name=f'_check_local_envoy_status(...) in {__name__}',
     )
     background_command_tasks.append(health_check_task)
 
-    env[ENVVAR_REBOOT_LOCAL_ENVOY_PORT] = str(
-        args.port or DEFAULT_LOCAL_ENVOY_PORT
-    )
+    env[ENVVAR_REBOOT_LOCAL_ENVOY_PORT] = str(port)
 
     try:
         validate_num_servers(args.servers, "servers")
@@ -1694,19 +1740,6 @@ async def __dev_run(
         root_keys_path.parent.mkdir(parents=True, exist_ok=True)
         root_keys_path.write_text(root_keys)
         return root_keys
-
-    if open_dashboard:
-        assert application_serving_event is not None
-        background_command_tasks.append(
-            asyncio.create_task(
-                _open_dashboard(
-                    dashboard_url=f'http://127.0.0.1:{dashboard_port}',
-                    forced=args.open_dashboard is True,
-                    application_serving_event=application_serving_event,
-                ),
-                name=f'_open_dashboard(...) in {__name__}',
-            )
-        )
 
     if tracing == Tracing.JAEGER:
         # TODO: dynamic port. See comment in `_run_jaeger()`.
@@ -1886,47 +1919,50 @@ async def __dev_run(
                             continue
 
                 if auto_transpilation:
-                    bundle = await auto_transpile(
-                        subprocesses,
-                        application,
-                        args.application_name or "anonymous",
-                        ts_input_paths,
-                    )
-
-                    if bundle is None:
-                        if len(ts_input_paths) == 0:
-                            # Exit because we don't know what to watch
-                            # for modification!
-                            terminal.fail(
-                                '\n'
-                                'Transpilation failed, please fix the errors above and re-run `rbt dev`'
-                            )
-
-                        # Wait for file modification.
-                        #
-                        # TODO: are there corner cases here where,
-                        # e.g., a new file in a new directory is the
-                        # only file with a transpilation error but
-                        # since it wasn't part of the previous
-                        # `ts_input_paths` we won't watch it and thus
-                        # wait forever? Is `watcher.watch()`
-                        # sophisticated enough to look for all sub
-                        # directories or do we need to explicitly add
-                        # '**' style globs in this case (and only this
-                        # case to reduce load on the OS) to make sure
-                        # we see all modifications?
-                        terminal.warn(
-                            '\n'
-                            'Transpilation failed ... waiting for modification\n'
-                            '\n'
+                    # Watch the inputs of the previous transpilation,
+                    # which are all the files we know of that might
+                    # have the transpilation issue, before transpiling
+                    # again, so that a modification made while
+                    # `rbt-esbuild` runs ends the wait below instead
+                    # of going unseen.
+                    async with watcher.watch(
+                        ts_input_paths
+                    ) as application_event_task:
+                        bundle = await auto_transpile(
+                            subprocesses,
+                            application,
+                            args.application_name or "anonymous",
+                            ts_input_paths,
                         )
 
-                        # Watch all previously watched files for
-                        # changes as we don't know which file
-                        # might have add the transpilation issue.
-                        async with watcher.watch(
-                            ts_input_paths
-                        ) as application_event_task:
+                        if bundle is None:
+                            if len(ts_input_paths) == 0:
+                                # Exit because we don't know what to
+                                # watch for modification!
+                                terminal.fail(
+                                    '\n'
+                                    'Transpilation failed, please fix the errors above and re-run `rbt dev`'
+                                )
+
+                            # Wait for file modification.
+                            #
+                            # TODO: are there corner cases here where,
+                            # e.g., a new file in a new directory is
+                            # the only file with a transpilation error
+                            # but since it wasn't part of the previous
+                            # `ts_input_paths` we won't watch it and
+                            # thus wait forever? Is `watcher.watch()`
+                            # sophisticated enough to look for all sub
+                            # directories or do we need to explicitly
+                            # add '**' style globs in this case (and
+                            # only this case to reduce load on the OS)
+                            # to make sure we see all modifications?
+                            terminal.warn(
+                                '\n'
+                                'Transpilation failed ... waiting for modification\n'
+                                '\n'
+                            )
+
                             completed = await _wait_for_first_completed(
                                 application_event_task,
                                 watch_event_task,
@@ -2002,6 +2038,56 @@ async def __dev_run(
 
                 if not await aiofiles.os.path.isfile(application):
                     terminal.fail(f"Missing application at '{application}'")
+
+                # Type-check a Python application, and start it only
+                # once mypy reports no errors.
+                if args.type_check:
+                    assert args.python and mypy_installed()
+
+                    # Watch `application`, which `--watch` need not
+                    # cover, before type-checking it, so that a
+                    # modification made while mypy runs, e.g. by an
+                    # agent that is already fixing the errors, ends
+                    # the wait below instead of going unseen. The
+                    # other watches above started before this one.
+                    async with watcher.watch(
+                        [application]
+                    ) as application_event_task:
+                        if not await type_check(
+                            subprocesses,
+                            application,
+                            # What `compose_env()` puts on the
+                            # application's `PYTHONPATH`, so that mypy
+                            # finds the generated code it imports.
+                            search_path=[
+                                generate_python_directory,
+                                *(generate_proto_directories or []),
+                            ] if generate_python_directory is not None else [],
+                        ):
+                            if args.terminate_after_health_check:
+                                terminal.fail('Type-check failed')
+                            terminal.warn(
+                                '\n'
+                                'Type-check failed ... waiting for modification'
+                                '\n'
+                            )
+                            completed = await _wait_for_first_completed(
+                                application_event_task,
+                                watch_event_task,
+                                env_file_event_task,
+                                protos_event_task,
+                                rc_file_event_task,
+                            )
+                            if rc_file_event_task in completed:
+                                return None
+                            if protos_event_task in completed:
+                                needs_proto_compile = True
+                            terminal.info(
+                                '\n'
+                                'Application modified; restarting ... '
+                                '\n'
+                            )
+                            continue
 
                 launcher: Optional[str] = None
                 if args.python:
@@ -2129,12 +2215,16 @@ async def _expunge(
     parser: ArgumentParser,
     *,
     confirm: bool,
+    stdin: TextIO = sys.stdin,
 ) -> None:
 
-    def ask_for_confirmation(question: str) -> bool:
+    async def ask_for_confirmation(question: str) -> bool:
         yes_answers = ['y', 'yes']
         terminal.info(question)
-        answer = input()
+        # NOTE: not `input()`, which blocks the event loop, and with it
+        # everything that a signal does: Ctrl-C at this prompt would do
+        # nothing at all.
+        answer = (await _read_line(stdin)).strip()
         return answer.lower() in yes_answers
 
     dot_rbt_dev = dot_rbt_dev_directory(args, parser)
@@ -2142,7 +2232,7 @@ async def _expunge(
         terminal.info(
             f"About to expunge '{args.application_name}' from '{dot_rbt_dev}'"
         )
-        if not ask_for_confirmation(
+        if not await ask_for_confirmation(
             "Do you want to continue? [y/n] (Tip: Use the --yes flag to skip this prompt):"
         ):
             terminal.fail("Expunge cancelled")

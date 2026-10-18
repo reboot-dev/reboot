@@ -3,12 +3,14 @@ import json
 import logging
 import tempfile
 import urllib.request
+from envoy.config.route.v3 import route_components_pb2
 from google.protobuf.descriptor_pb2 import FileDescriptorSet
 from log.log import get_logger
 from pathlib import Path
 from reboot.aio.types import ApplicationId
+from reboot.server.envoy_nanny import envoy_nanny_command
 from reboot.server.local_envoy import LocalEnvoy
-from reboot.settings import LocalEnvoyMode
+from reboot.settings import ONLY_LOCALHOST_NETWORK_ADDRESS, LocalEnvoyMode
 from typing import Optional
 
 logger = get_logger(__name__)
@@ -28,6 +30,7 @@ class ExecutableLocalEnvoy(LocalEnvoy):
         key: Optional[Path],
         debug_mode: bool,
         allowed_origins: Optional[list[str]],
+        route_matches: list[route_components_pb2.RouteMatch],
     ):
         self._requested_public_port = public_port
         self._public_port = 0
@@ -50,16 +53,28 @@ class ExecutableLocalEnvoy(LocalEnvoy):
         self._envoy_dir_path = Path(self._tmp_envoy_dir.name)
 
         super().__init__(
-            # The admin port is for debugging, so limit it to localhost.
-            admin_listen_host='127.0.0.1',
+            # The admin port is for debugging, so only connections from
+            # this machine are expected and we limit it to localhost.
+            admin_listen_host=ONLY_LOCALHOST_NETWORK_ADDRESS,
             # Since there may be multiple Envoys running on this same host, we
             # must pick the admin port dynamically to avoid conflicts.
             admin_port=0,
-            # Envoy will run on the same host as this code, so the xDS server
-            # only needs to listen on localhost.
-            xds_listen_host='127.0.0.1',
-            xds_connect_host='127.0.0.1',
-            trusted_host='127.0.0.1',
+            # Envoy runs on this machine, so only connections from the local
+            # Envoy are expected and the xDS server listens on localhost (where
+            # Envoy connects to it), and we couldn't use
+            # `EVERY_LOCAL_NETWORK_ADDRESS` anyway on macOS because gRPC binds
+            # IPv6 as well (one dual-stack socket) and macOS has a bug where
+            # its IPv6 ephemeral-port allocator doesn't check ports held by
+            # IPv4 sockets, so the server can be handed a port that an IPv4
+            # listener (e.g., an orphaned Envoy) already holds and connections
+            # to `ONLY_LOCALHOST_NETWORK_ADDRESS` (`127.0.0.1`) reach that
+            # listener instead; see
+            # https://github.com/reboot-dev/reboot/pull/234.
+            xds_listen_host=ONLY_LOCALHOST_NETWORK_ADDRESS,
+            xds_connect_host=ONLY_LOCALHOST_NETWORK_ADDRESS,
+            # Only connections from the application, on this machine, are
+            # expected, so the trusted port only needs localhost.
+            trusted_host=ONLY_LOCALHOST_NETWORK_ADDRESS,
             trusted_port=0,  # Pick dynamically to avoid collisions.
             # The port we run Envoy on is the port the user has requested to
             # send traffic to.
@@ -69,6 +84,7 @@ class ExecutableLocalEnvoy(LocalEnvoy):
             use_tls=use_tls,
             observed_dir=Path(self._tmp_envoy_dir.name),
             allowed_origins=allowed_origins,
+            route_matches=route_matches,
         )
 
         self._envoy_config_path = self._write_envoy_dir(
@@ -80,6 +96,7 @@ class ExecutableLocalEnvoy(LocalEnvoy):
         )
 
         self._process: Optional[asyncio.subprocess.Process] = None
+        self._nanny_process: Optional[asyncio.subprocess.Process] = None
 
     @property
     def _mode(self) -> LocalEnvoyMode:
@@ -190,6 +207,13 @@ class ExecutableLocalEnvoy(LocalEnvoy):
             # let our Lua code find the libraries that we've copied into that
             # directory.
             cwd=self._tmp_envoy_dir.name,
+        )
+
+        self._nanny_process = await asyncio.create_subprocess_exec(
+            *envoy_nanny_command(self._process.pid),
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
         )
 
         # We must now determine the admin port that Envoy has come up on
@@ -330,3 +354,11 @@ class ExecutableLocalEnvoy(LocalEnvoy):
         except ProcessLookupError:
             # The process already exited. That's fine.
             pass
+
+        if self._nanny_process is not None:
+            try:
+                self._nanny_process.kill()
+            except ProcessLookupError:
+                # The nanny already exited.
+                pass
+            await self._nanny_process.wait()

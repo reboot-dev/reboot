@@ -191,7 +191,7 @@ const BreadcrumbDisclosure: FC<{ children: ReactNode }> = ({ children }) => {
 };
 
 // Bordered, full-width container for an autoplaying walkthrough
-// video served from the rootpage servicer. `preload="none"` keeps
+// video served beside the page. `preload="none"` keeps
 // the browser from fetching the file until autoplay actually
 // starts, and modern browsers defer autoplay on off-screen
 // `<video>` elements — so the asset isn't downloaded until the

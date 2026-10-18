@@ -12,6 +12,7 @@ from mcp.server.auth.middleware.bearer_auth import BearerAuthBackend
 from mcp.server.fastmcp import FastMCP
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.streamable_http import StreamableHTTPServerTransport
+from reboot.aio.auth.oauth_providers import origin_from_request
 from reboot.aio.external import ExternalContext
 from reboot.mcp.context import (
     _REBOOT_CONTEXT_KEY,
@@ -134,7 +135,6 @@ async def _list_tools_with_fresh_cache_busts(
                 project_root,
                 info["ui_path"],
                 info["ui_name"],
-                info.get("artifact_path"),
             )
         except Exception:
             # Keep the existing URI baked in at registration.
@@ -206,9 +206,7 @@ async def _serve_ui_asset(
 
     # Dist directory = parent of the `index.html` path that
     # `_resolve_dist_path` returns.
-    dist_index = _resolve_dist_path(
-        project_root, info["ui_path"], info.get("artifact_path")
-    )
+    dist_index = _resolve_dist_path(project_root, info["ui_path"])
     if dist_index is None:
         await reject("frontend dist path not configured")
         return
@@ -355,8 +353,11 @@ def create_mcp_factory(
                     # code defined by RFC 6750 Section 3.1 for expired,
                     # revoked, or malformed tokens. Per RFC 9728,
                     # include `resource_metadata` so clients can
-                    # discover where to authenticate.
-                    base = str(request.base_url).rstrip("/")
+                    # discover where to authenticate. The origin is
+                    # the public one (`X-Forwarded-Host`, when a
+                    # tunnel or proxy rewrote `Host`), as in the
+                    # metadata document itself.
+                    base = origin_from_request(request)
                     resource_metadata_url = (
                         f"{base}/.well-known/oauth-protected-resource"
                     )

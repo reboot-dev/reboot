@@ -19,7 +19,7 @@ from reboot.aio.contexts import (
 )
 from reboot.protobuf import pack
 from reboot.std.index.v1.index import Index
-from uuid7 import create as uuid7
+from reboot.uuidv7 import uuid7
 
 
 class MessageServicer(Message.Servicer):

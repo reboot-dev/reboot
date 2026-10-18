@@ -19,3 +19,7 @@ dev run --application=backend/src/main.py
 
 # When expunging, expunge that state we've saved.
 dev expunge --application-name=chat
+
+# Serve the web app at `/` from Vite, on its default port.
+dev run --frontend-url=http://localhost:5173
+dev run --web-app

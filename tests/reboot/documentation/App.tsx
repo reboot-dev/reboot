@@ -3,7 +3,7 @@ import {
   type UseCounterApi,
   type UseUserApi,
   useCounter,
-} from "@api/mcp_ui_counter/v1/counter_rbt_react";
+} from "@api/mcp_app_counter/v1/counter_rbt_react";
 import { useState, type FC } from "react";
 
 interface AppProps {

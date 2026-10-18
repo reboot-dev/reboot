@@ -6,9 +6,9 @@ features:
 
 - To validate behavior of a local Reboot application (with live-reload
   on any framework change!), by using `ibazel run //reboot/ping:ping_py_bin`.
-  This serves both the MCP UIs and the `web/` SPA from the esbuild-built
-  static content on disk, behind Envoy under `/__/frontend/` — the web
-  app lands at `http://localhost:9991/__/frontend/web/`.
+  This serves both the MCP Apps (under `/__/frontend/`) and the `web/`
+  SPA (at `/`) from the esbuild-built static content on disk, behind
+  Envoy — the web app lands at `http://localhost:9991/`.
 - To validate behavior of a local cluster
   (`bazel run //infrastructure/clusters/local:cluster up`), since it is
   installed on those by default.
@@ -61,8 +61,7 @@ npx @mcpjam/inspector@2.18.1 --url http://localhost:9991/mcp --oauth
 ## Using as a standalone web app
 
 The same backend serves the standalone browser SPA in
-[`frontend/web/`](frontend/web/) at `__/frontend/web/`, backed
-by the unified
+[`frontend/web/`](frontend/web/) at `/`, backed by the unified
 `oauth=...` flow. Sign in here and you're also signed in on the
 MCP frontend (and vice versa) via shared `rbt_session` cookies.
 
@@ -70,7 +69,7 @@ MCP frontend (and vice versa) via shared `rbt_session` cookies.
 ibazel run //reboot/ping:ping_py_bin
 ```
 
-Open <http://localhost:9991/__/frontend/web/>, click sign-in, pick
+Open <http://localhost:9991/>, click sign-in, pick
 a `Development` identity. The SPA reads `User.whoami` and
 `User.list_counters`, and flips counters via `Counter.increment` —
 all authenticated by the backend's OAuth.

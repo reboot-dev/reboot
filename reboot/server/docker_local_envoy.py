@@ -1,20 +1,20 @@
 import asyncio
 import json
 import logging
-import os
 import reboot.aio.signals as signals
 import reboot.aio.tracing
 import signal
-import socket
 import subprocess
+import sys
 import tempfile
-import threading
 import traceback
+from envoy.config.route.v3 import route_components_pb2
 from google.protobuf.descriptor_pb2 import FileDescriptorSet
 from log.log import get_logger
 from pathlib import Path
 from reboot.aio.types import ApplicationId
 from reboot.routing.envoy_config import ServerInfo
+from reboot.server.envoy_nanny import envoy_nanny_command
 from reboot.server.local_envoy import LocalEnvoy
 from reboot.settings import (
     DEFAULT_INSECURE_PORT,
@@ -23,6 +23,7 @@ from reboot.settings import (
     ENVOY_PROXY_IMAGE,
     ENVVAR_LOCAL_ENVOY_DEBUG,
     EVERY_LOCAL_NETWORK_ADDRESS,
+    ONLY_LOCALHOST_NETWORK_ADDRESS,
     REBOOT_DISCORD_URL,
     REBOOT_GITHUB_ISSUES_URL,
     LocalEnvoyMode,
@@ -56,20 +57,19 @@ class DockerLocalEnvoy(LocalEnvoy):
         key: Optional[Path],
         debug_mode: bool,
         allowed_origins: Optional[list[str]],
+        route_matches: list[route_components_pb2.RouteMatch],
     ):
-        local_envoy_nanny_path = self._envoy_nanny_path()
-
-        # Not using 'aiofiles' here because we're not in an async context yet.
-        if not os.path.isfile(local_envoy_nanny_path):
-            raise FileNotFoundError(
-                "Expecting 'local_envoy_nanny' executable at path "
-                f"'{local_envoy_nanny_path}'"
-            )
-
         self._published_public_port = public_port
         self._published_trusted_port = 0
         self._container_id: Optional[str] = None
         self._debug_mode = debug_mode
+
+        # Our servers listen on this machine's loopback. Docker Desktop
+        # (macOS) forwards `host.docker.internal` to that loopback, but
+        # on Linux it is the Docker bridge's gateway, so there the
+        # container instead shares this machine's network (and with it,
+        # this machine's ports).
+        self._host_network = sys.platform == 'linux'
 
         # Generate envoy config and write it to temporary files that get
         # cleaned up on .stop(). We copy all files without their metadata
@@ -85,23 +85,51 @@ class DockerLocalEnvoy(LocalEnvoy):
         self._public_port = DEFAULT_SECURE_PORT if self._use_tls else DEFAULT_INSECURE_PORT
         self._trusted_port = DEFAULT_TRUSTED_PORT
 
+        if self._host_network:
+            # Nothing is published, so Envoy listens directly on the port
+            # the user asked for (if any).
+            self._public_port = public_port or self._public_port
+            self._published_public_port = self._public_port
+
         super().__init__(
-            # The admin port is available from anywhere when debugging.
-            # Otherwise, limit it to the container itself.
-            admin_listen_host='0.0.0.0' if self._debug_mode else '127.0.0.1',
+            # The admin port is available from anywhere when debugging, so
+            # connections from outside the container are expected and we
+            # use every interface. Otherwise only connections from inside
+            # the container (or, on Linux, this machine) are expected, so
+            # we use only the loopback.
+            admin_listen_host=(
+                EVERY_LOCAL_NETWORK_ADDRESS
+                if self._debug_mode else ONLY_LOCALHOST_NETWORK_ADDRESS
+            ),
             # Since this Envoy will have the Docker container all to itself, we
             # can pick a static port for the admin interface.
             admin_port=ENVOY_ADMIN_PORT,
-            # The xDS server will run outside the Docker container, so it must
-            # accept connections from the Docker container.
-            xds_listen_host='0.0.0.0',
+            # The xDS server runs on this machine, outside the Docker
+            # container. Only connections from the local Envoy are expected,
+            # and it reaches this machine's loopback through
+            # `host.docker.internal` (see `self._host_network`), so we use only
+            # the loopback, and we couldn't use `EVERY_LOCAL_NETWORK_ADDRESS`
+            # anyway on macOS because gRPC binds IPv6 as well (one dual-stack
+            # socket) and macOS has a bug where its IPv6 ephemeral-port
+            # allocator doesn't check ports held by IPv4 sockets, so the server
+            # can be handed a port that an IPv4 listener (e.g., an orphaned
+            # Envoy) already holds and connections to
+            # `ONLY_LOCALHOST_NETWORK_ADDRESS` (`127.0.0.1`) reach that
+            # listener instead; see
+            # https://github.com/reboot-dev/reboot/pull/234.
+            xds_listen_host=ONLY_LOCALHOST_NETWORK_ADDRESS,
             xds_connect_host='host.docker.internal',
-            # The trusted port will be accessed by the application
-            # running outside the Docker container, so it must accept
-            # traffic from outside its container. The port forwarding
-            # logic in `docker run` will ensure that traffic to the
-            # trusted port can only come from the host.
-            trusted_host='0.0.0.0',
+            # Connections to the trusted port come from the application,
+            # outside the Docker container. On a bridge network that is
+            # outside the container's loopback, so we use every interface
+            # (the port forwarding in `docker run` ensures they can only
+            # come from this machine). With host networking the
+            # container's loopback is this machine's, so we use only the
+            # loopback.
+            trusted_host=(
+                ONLY_LOCALHOST_NETWORK_ADDRESS
+                if self._host_network else EVERY_LOCAL_NETWORK_ADDRESS
+            ),
             # The Envoy will have the container all to itself, so we can
             # pick a static port for its trusted port as seen internal
             # to the container.
@@ -112,6 +140,7 @@ class DockerLocalEnvoy(LocalEnvoy):
             file_descriptor_set=file_descriptor_set,
             use_tls=self._use_tls,
             allowed_origins=allowed_origins,
+            route_matches=route_matches,
         )
 
         self._envoy_config_observed_path = self._write_envoy_dir(
@@ -122,17 +151,9 @@ class DockerLocalEnvoy(LocalEnvoy):
 
         self._using_localhost_direct = self._use_tls and certificate is None
 
-        # Indicator of whether or not we are stopping. Used at the
-        # least by the nanny server thread to avoid spamming stderr
-        # with exceptions when the server socket gets closed.
+        # Indicator of whether or not we are stopping, which tells the
+        # nanny's watchdog a deliberate stop apart from a failure.
         self._stopping = False
-
-        # Open a server socket that listens for connections from the
-        # 'local_envoy_nanny' so that in the event our process is
-        # killed abruptly the nanny will get an EOF (or error) and
-        # send a SIGTERM to envoy which should stop the container.
-        self._nanny_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._nanny_socket.bind((EVERY_LOCAL_NETWORK_ADDRESS, 0))
 
         # A background task that follows the logs of the Envoy container,
         # possibly forwarding them to the `self._unprocessed_log_lines`, and
@@ -149,9 +170,6 @@ class DockerLocalEnvoy(LocalEnvoy):
         self._unprocessed_log_lines: Optional[asyncio.Queue[str]
                                              ] = asyncio.Queue()
 
-    def _envoy_nanny_path(self):
-        return os.path.join(os.path.dirname(__file__), 'local_envoy_nanny')
-
     async def set_servers(self, servers: list[ServerInfo]):
         # When callers say "localhost", they mean "on the same host". But
         # unbeknownst to them, Docker containers don't have access to the host
@@ -159,9 +177,12 @@ class DockerLocalEnvoy(LocalEnvoy):
         for server in servers:
             if (
                 server.address.host == 'localhost' or
-                # The '0.0.0.0' address is also interpreted as
-                # "localhost" when used as a target.
-                server.address.host == EVERY_LOCAL_NETWORK_ADDRESS
+                # The `EVERY_LOCAL_NETWORK_ADDRESS` (`0.0.0.0`) address is
+                # also interpreted as "localhost" when used as a target.
+                server.address.host == EVERY_LOCAL_NETWORK_ADDRESS or
+                # Where our servers listen, since only connections from
+                # the local Envoy are expected.
+                server.address.host == ONLY_LOCALHOST_NETWORK_ADDRESS
             ):
                 server.address.host = 'host.docker.internal'
 
@@ -219,7 +240,7 @@ class DockerLocalEnvoy(LocalEnvoy):
                     stderr=subprocess.DEVNULL,
                 )
 
-        with signals.cleanup_on_raise(
+        with signals.cleanup_on_signal(
             [signal.SIGTERM, signal.SIGQUIT],
             handler=stop_on_sigterm_sigquit_exception,
         ):
@@ -291,7 +312,6 @@ class DockerLocalEnvoy(LocalEnvoy):
                     )
 
             self._tmp_envoy_dir.cleanup()
-            self._nanny_socket.close()
 
     @reboot.aio.tracing.function_span()
     async def _docker_run_envoy(self) -> None:
@@ -405,15 +425,22 @@ class DockerLocalEnvoy(LocalEnvoy):
                 '\n'
             )
 
-        local_envoy_run_command += [
-            '-p'
-            # IMPORTANT: the "127.0.0.1" prefix ensures that traffic to
-            # the trusted port can only come from the (trusted) host
-            # machine.
-            f'127.0.0.1:{self._published_trusted_port}:{self._trusted_port}',
-        ]
+        if not self._host_network:
+            local_envoy_run_command += [
+                '-p'
+                # IMPORTANT: the `ONLY_LOCALHOST_NETWORK_ADDRESS`
+                # (`127.0.0.1`) prefix ensures that traffic to the trusted
+                # port can only come from the (trusted) host machine.
+                f'{ONLY_LOCALHOST_NETWORK_ADDRESS}:{self._published_trusted_port}:{self._trusted_port}',
+            ]
 
-        if self._published_public_port != 0:
+        if self._host_network:
+            # The container's ports are this machine's ports, so there is
+            # nothing to publish.
+            local_envoy_run_command += [
+                '--network=host',
+            ]
+        elif self._published_public_port != 0:
             local_envoy_run_command += [
                 '-p'
                 f'{self._published_public_port}:{self._public_port}',
@@ -431,7 +458,7 @@ class DockerLocalEnvoy(LocalEnvoy):
                 '--publish-all',
             ]
 
-        if self._debug_mode:
+        if self._debug_mode and not self._host_network:
             # Make the admin port available outside the container. Use a
             # Docker-picked port so that even when there's multiple Envoys
             # running side-by-side they don't clash.
@@ -442,17 +469,22 @@ class DockerLocalEnvoy(LocalEnvoy):
             ]
 
         local_envoy_run_command += [
-            '--add-host=host.docker.internal:host-gateway',
+            # How the container reaches this machine's loopback, where our
+            # servers listen (see `self._host_network`).
+            (
+                f'--add-host=host.docker.internal:{ONLY_LOCALHOST_NETWORK_ADDRESS}'
+                if self._host_network else
+                '--add-host=host.docker.internal:host-gateway'
+            ),
             f'--volume={self._tmp_envoy_dir.name}:{DOCKERIZED_ENVOY_DIR}:ro',
-            f'--volume={self._envoy_nanny_path()}:/local_envoy_nanny:ro',
             # Envoy must have its configuration directory as its working dir to
             # let our Lua code find the libraries that we've copied into that
             # directory.
             f'--workdir={DOCKERIZED_ENVOY_DIR}',
             # NOTE: invariant here that the default entry point of the
             # container will run envoy at PID 1 because that is what
-            # the 'local_envoy_nanny' will send a SIGTERM to in the
-            # event of orphaning.
+            # the nanny will send a SIGTERM to in the event of
+            # orphaning.
             ENVOY_PROXY_IMAGE,
             '-c',
             str(self._envoy_config_observed_path),
@@ -492,10 +524,13 @@ class DockerLocalEnvoy(LocalEnvoy):
                 self._public_port,
             )
 
-        self._published_trusted_port = await self._get_forwarded_local_port_from_docker(
-            self._container_id,
-            self._trusted_port,
-        )
+        if self._host_network:
+            self._published_trusted_port = self._trusted_port
+        else:
+            self._published_trusted_port = await self._get_forwarded_local_port_from_docker(
+                self._container_id,
+                self._trusted_port,
+            )
 
         assert self._published_public_port != 0
         assert self._published_trusted_port != 0
@@ -563,43 +598,20 @@ class DockerLocalEnvoy(LocalEnvoy):
 
     @reboot.aio.tracing.function_span()
     async def _exec_local_envoy_nanny(self):
-        # Start listening for the 'local_envoy_nanny' to connect. We
-        # use a daemon thread which ignores any errors after we've
-        # stopped so that we don't spam stderr with an exception.
-        self._nanny_socket.listen(1)
-
-        def accept():
-            clients: list[socket.socket] = []
-            try:
-                while True:
-                    client, address = self._nanny_socket.accept()
-                    clients.append(client)
-            except Exception as e:
-                if not self._stopping:
-                    raise RuntimeError(
-                        'Failed to accept on "nanny socket; '
-                        '*** ENVOY MAY BECOME AN ORPHANED CONTAINER ***'
-                    ) from e
-
-        threading.Thread(target=accept, daemon=True).start()
-
-        _, port = self._nanny_socket.getsockname()
-
-        # Run the nanny which will connect back to our server socket!
+        # Run the nanny inside the Envoy container, with a pipe as its
+        # standard input whose write end only we hold, so that it
+        # terminates Envoy (PID 1 in the container) once we have exited.
         #
-        # We do this by forking of a process that starts `local_envoy_nanny` in
-        # the docker container of the envoy we just started.
-        # We then create an `asyncio` task that watches the local_envoy_nanny
-        # process and waits for it to terminate. Should it terminate early with
-        # a non-zero exit code we'll raise an error and stop the container.
+        # We watch the `docker exec` from an `asyncio` task: should it
+        # exit early with a non-zero exit code we raise an error and
+        # stop the container.
         local_envoy_nanny_launcher = await asyncio.create_subprocess_exec(
             'docker',
             'exec',
+            '--interactive',
             f'{self._container_id}',
-            '/local_envoy_nanny',
-            'host.docker.internal',
-            f'{port}',
-            stdin=asyncio.subprocess.DEVNULL,
+            *envoy_nanny_command(1),
+            stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )
@@ -630,10 +642,10 @@ class DockerLocalEnvoy(LocalEnvoy):
                 ) != '' else '<empty>'
 
                 if not self._stopping:
-                    log('Output from local_envoy_nanny: %s', output)
+                    log('Output from the Envoy nanny: %s', output)
 
                 error = RuntimeError(
-                    f"Failed to run 'local_envoy_nanny': {output}; "
+                    f"Failed to run the Envoy nanny: {output}; "
                     '*** ENVOY MAY BECOME AN ORPHANED CONTAINER ***'
                 )
 

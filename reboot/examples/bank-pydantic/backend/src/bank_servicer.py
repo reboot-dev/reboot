@@ -9,7 +9,7 @@ from rbt.std.collections.ordered_map.v1.ordered_map_rbt import OrderedMap
 from reboot.aio.auth.authorizers import allow
 from reboot.aio.contexts import ReaderContext, TransactionContext
 from reboot.std.item.v1.item import Item
-from uuid7 import create as uuid7
+from reboot.uuidv7 import uuid7
 
 
 class BankServicer(Bank.Servicer):

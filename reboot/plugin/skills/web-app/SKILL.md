@@ -21,7 +21,7 @@ backend behind a standalone React frontend served at a normal URL.
 > the `.rbtrc` shape, or pydantic API defaults belongs in
 > `python` — load those references for those concerns. This
 > skill covers what's _specific_ to standalone Web
-> Apps: a plain React SPA at `web/`, the generated TypeScript hooks
+> Apps: a React SPA at `frontend/web/`, the generated TypeScript hooks
 > from `rbt generate --react=...`, regular auth flows (login form /
 > cookies / OAuth), and the cross-cutting rules unique to that
 > layer.
@@ -31,7 +31,7 @@ backend behind a standalone React frontend served at a normal URL.
 > backend — they share `oauth=...`, the same `User` actor per
 > upstream identity, and the same servicer code. If your app needs
 > both frontends, also load the
-> [`mcp-ui` skill](../mcp-ui/SKILL.md) for the MCP-specific
+> [`mcp-app` skill](../mcp-app/SKILL.md) for the MCP-specific
 > additions (`mcp=Tool()`, `UI()`, MCPJam).
 > This skill alone covers the web side.
 
@@ -44,21 +44,21 @@ backend behind a standalone React frontend served at a normal URL.
   session: load the [`run` skill](../run/SKILL.md), which detects
   the app type and starts the backend and frontend.
 - Putting a finished Web App in production — load the
-  [`deploy` skill](../deploy/SKILL.md): backend on Reboot Cloud,
-  frontend on a static host under the user's own custom domain.
+  [`deploy` skill](../deploy/SKILL.md): one container on Reboot
+  Cloud that runs the backend and serves the built web app from it.
 
-## How a Web App Differs From an MCP UI
+## How a Web App Differs From an MCP App
 
 The Reboot backend is identical. The deltas are all on the frontend:
 
-| Concern      | MCP UI (`mcp-ui`)                                        | Web App (this skill)                                                                      |
-| ------------ | -------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Front door   | MCP host (ChatGPT, Claude, …) creates a `User` per user. | Browser user signs in via `Application(oauth=...)`; same `User` per upstream identity.    |
-| API exposure | `mcp=Tool()` on writer/transaction methods.              | Methods exposed only through the generated React client.                                  |
-| UI shape     | `UI()` methods → artifacts embedded in the MCP host.     | A normal SPA at `web/` opened at a URL.                                                   |
-| Vite config  | Special — nested `dist/<ui-path>/index.html` for MCP.    | Stock single-page Vite output.                                                            |
-| Test surface | MCPJam inspector.                                        | Scenarios that drive the app through Playwright (`python/references/testing-web-app.md`). |
-| `User` type  | Required — the MCP entry point.                          | Optional — only if your app needs per-user state.                                         |
+| Concern      | MCP App (`mcp-app`)                                                                              | Web App (this skill)                                                                      |
+| ------------ | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| Front door   | MCP host (ChatGPT, Claude, …) creates a `User` per user.                                         | Browser user signs in via `Application(oauth=...)`; same `User` per upstream identity.    |
+| API exposure | `mcp=Tool()` on writer/transaction methods.                                                      | Methods exposed only through the generated React client.                                  |
+| UI shape     | `UI()` methods → artifacts embedded in the MCP host.                                             | An SPA at `frontend/web/` opened at a URL.                                                |
+| Vite config  | The `mcp-app` scaffolding's: one-file `dist/mcp/<name>/index.html` per UI, served through Envoy. | A stock Vite SPA config rooted at `web/`, built to `dist/web/` at `base: "/"`.            |
+| Test surface | MCPJam inspector.                                                                                | Scenarios that drive the app through Playwright (`python/references/testing-web-app.md`). |
+| `User` type  | Required — the MCP entry point.                                                                  | Optional — only if your app needs per-user state.                                         |
 
 Backend mechanics (state, methods, Servicers, workflows, refs,
 scheduling, stdlib actors, errors, auth predicates, testing) are
@@ -68,7 +68,7 @@ scheduling, stdlib actors, errors, auth predicates, testing) are
 
 Web apps wire identity via
 `Application(oauth=OAuth(provider=OAuthProviderByEnvironment(dev=Development(), prod=Google(...))))`
-— the same parameter MCP UIs use. Reboot mounts its
+— the same parameter MCP Apps use. Reboot mounts its
 built-in OAuth Authorization Server at `/__/oauth/*` and brokers
 sign-in against the configured upstream IdP. Browser sessions
 are carried in an HttpOnly `rbt_session` cookie set by
@@ -105,20 +105,20 @@ Recommended sequence:
    `Development()` is a built-in fake account picker that lets
    you sign in as any identity at `/__/oauth/start`; `prod=None`
    fails fast at startup if you accidentally `rbt serve` without
-   choosing a real provider. **Omit `authorizer()`** on
-   Servicers; `rbt dev` allows the calls and logs a 60-second
-   warning naming every unauthorized method — that warning is
-   your TODO list. Do **not** paper this over with `allow()`;
-   `allow()` means "public, unauthenticated internet endpoint"
-   and survives into production.
+   choosing a real provider. Because every caller already has a
+   verified `context.auth.user_id` under `Development()`, **write
+   `authorizer()` on every Servicer from day one**, with
+   `allow_if(...)` rules that run in dev exactly as in production
+   (see `python/references/servicer-authorizer.md`,
+   `python/references/auth-allow-if.md`, and
+   `python/references/auth-built-in-predicates.md`). Do **not**
+   paper over a missing rule with `allow()`; `allow()` means
+   "public, unauthenticated internet endpoint" and survives into
+   production.
 2. **Before `rbt serve` / Reboot Cloud:** set `prod=Google(...)`
    (or `GitHub(...)`, `Auth0(...)`, your own `OAuthProvider`
-   subclass), then add `allow_if(...)` rules to every Servicer
-   that should be externally reachable. See
-   `python/references/servicer-authorizer.md`,
-   `python/references/auth-allow-if.md`, and
-   `python/references/auth-built-in-predicates.md`. The
-   The providers and what each needs:
+   subclass). The authorizers need no second pass. The providers
+   and what each needs:
 
    All arguments are keyword-only.
 
@@ -142,14 +142,19 @@ Recommended sequence:
    before real users exist**: `context.auth.user_id` is namespaced
    per provider, so switching providers after launch strands every
    existing user's state. Only reach for
-   [mcp-ui/references/auth-oauth-providers.md](../mcp-ui/references/auth-oauth-providers.md)
+   [mcp-app/references/auth-oauth-providers.md](../mcp-app/references/auth-oauth-providers.md)
    if you need to write a custom provider or debug a specific
-   provider's flow. In unit tests, keep
-   `token_verifier=<your IdP verifier>` exactly as in production —
-   the test harness's OAuth server verifies the impersonation token
-   minted by `await rbt.create_external_context_as(name, user_id)`,
-   and a custom bearer a test constructs by hand still hits your IdP
-   verifier; the authorizer rules run for real either way.
+   provider's flow.
+
+   Tests build their own `Application(...)` rather than running
+   `main.py`'s, whose `prod=None` arm and missing `allowed_origins`
+   refuse to start anywhere but `rbt dev run`. List the same
+   servicers, with the same authorizers, and wire identity per
+   `python/references/testing-harness.md` ("Identity Wiring in
+   Tests"): omit `oauth=` for backend scenarios, and for scenarios
+   that open the web app use `Development()` for both arms plus
+   `allowed_origins=[frontend.origin]`, as
+   `python/references/testing-web-app.md` shows.
 
 3. **Public, unauthenticated endpoints** (health checks, public
    sign-up, public catalog reads): mark these explicitly with
@@ -202,15 +207,19 @@ it** — not all of them up front — and read each one **once**. The
 groups below are in build order, and each reference appears in
 exactly one of them — the step that needs it.
 
-> **Never read `mcp-ui/references/*` for a web app.** They cover
-> the MCP frontend — `UI()` artifacts, the MCPJam inspector, the
-> nested `frontend/mcp/<name>/` Vite output, `mcp=Tool()` markers,
-> popping a widget out into a web app. Reaching into them costs
-> context and produces MCP-UI-shaped code (`mcp=None` on every
-> method of an app with no MCP frontend). The web equivalents are
+> **Never read `mcp-app/references/*` for a web app.** They cover
+> the MCP frontend — `UI()` artifacts, the MCPJam inspector,
+> `mcp/<name>/index.html` entries, one-file MCP App bundles,
+> `mcp=Tool()` markers, popping a widget out into a web app. (The
+> `frontend/` shell itself — `vite.config.ts` with `reboot()` — is
+> the same for both, and
+> `references/react-client.md` has it.) Reaching into them
+> costs context and produces MCP App-shaped code (`mcp=Tool()`
+> markers and `UI()` methods in an app with no MCP frontend). The
+> web equivalents are
 > [`references/react-client.md`](references/react-client.md) and the
 > `python` references named below. The single exception is
-> [mcp-ui/references/auth-oauth-providers.md](../mcp-ui/references/auth-oauth-providers.md),
+> [mcp-app/references/auth-oauth-providers.md](../mcp-app/references/auth-oauth-providers.md),
 > which is frontend-neutral: read it when you pick a real provider.
 
 **Before the API definition:**
@@ -261,9 +270,9 @@ exactly one of them — the step that needs it.
 above for the dev-vs-prod sequence):
 
 - `python/references/servicer-authorizer.md` — **start here**.
-  Explains `oauth=` (the default) vs. `token_verifier=` (the
-  escape hatch for custom IdPs) and when to defer writing
-  `authorizer()` vs. write rules from day one.
+  Explains `oauth=` (the default, with rules from day one) vs.
+  `token_verifier=` (the escape hatch for custom IdPs, where rules
+  may wait until the verifier is wired).
 - `python/references/auth-allow-if.md`,
   `python/references/auth-built-in-predicates.md`,
   `python/references/auth-custom-predicates.md` — the predicate
@@ -281,10 +290,11 @@ above for the dev-vs-prod sequence):
 **Before the frontend:**
 
 - [`references/react-client.md`](references/react-client.md) — the
-  `web/` shell (Vite config, including the `server.host` the browser
-  needs), the backend URL (`VITE_REBOOT_URL` — the default detection
-  resolves to Vite's origin, not the backend's), sign-in/sign-out,
-  and how a typed backend error becomes a message the user sees.
+  `frontend/` shell (the stock Vite config rooted at `web/`,
+  including the `server.host` the browser needs), the backend URL
+  (`VITE_REBOOT_URL` — the default detection resolves to Vite's
+  origin, not the backend's), sign-in/sign-out, and how a typed
+  backend error becomes a message the user sees.
 - `python/references/react-generated-client.md` — what
   `rbt generate --react=` emits: the `use<Type>()` overloads, the
   three-field reader return, why mutations resolve to
@@ -438,7 +448,7 @@ Before writing code, analyze the user's request:
    `python/references/state-collections.md` Step 1 for the full
    decomposition signal list.
 2. **Per-user state?** If yes, declare a `User` type and route
-   creation through it the same way `mcp-ui` does — the
+   creation through it the same way `mcp-app` does — the
    `User`-front-door pattern is independent of MCP. If the app is
    anonymous or all users share state, skip `User`.
 3. **Container shape for each collection.** Once an entity is its
@@ -476,6 +486,10 @@ Before writing code, analyze the user's request:
 
 ## Project Layout
 
+The layout is the one every Reboot app has, `frontend/` included
+(`python/references/lifecycle-project-setup.md`); a web app fills
+`frontend/web/` and has no `frontend/mcp/`:
+
 ```
 <project-root>/
 ├── .python-version
@@ -495,31 +509,46 @@ Before writing code, analyze the user's request:
 │   ├── <capability>.feature  # One feature per capability
 │   ├── <name>_test.py       # `application` fixture + `scenarios(...)`
 │   └── web_test.py          # The scenarios that open the app
-└── web/
-    ├── .env.development     # VITE_REBOOT_URL=http://localhost:9991
+└── frontend/
     ├── package.json
     ├── tsconfig.json
     ├── tsconfig.app.json
     ├── tsconfig.node.json
-    ├── vite.config.ts       # Stock Vite SPA config
-    ├── index.html
-    └── src/
-        ├── main.tsx         # RebootClientProvider entry
-        ├── App.tsx          # Routes + top-level component
-        ├── pages/
-        │   └── <page>.tsx
-        └── api/             # Generated TypeScript client
-                             # (output of `rbt generate --react=`)
+    ├── vite.config.ts       # The stock Vite file plus `reboot({ webAppPath: "web", ... })`
+    ├── api/                 # Generated TypeScript client
+    │                        # (output of `rbt generate --react=`)
+    └── web/
+        ├── .env.production  # VITE_REBOOT_URL=<the deployed backend>
+        ├── index.html       # The single SPA entry
+        ├── public/
+        └── src/
+            ├── main.tsx     # RebootClientProvider entry
+            ├── App.tsx      # Routes + top-level component
+            ├── vite-env.d.ts
+            └── pages/
+                └── <page>.tsx
 ```
 
-Key differences from a `mcp-ui` layout:
-
-- `web/index.html` lives at the top of `web/` (single SPA entry),
-  **not** under `frontend/mcp/<name>/index.html`.
-- `vite.config.ts` is the **stock** Vite config — no nested-output
-  override, no `viteSingleFile` plugin. There's no MCP host
-  resolving artifacts by path.
-- No MCPJam inspector.
+In development Envoy serves the SPA at the backend's origin from
+the Vite dev server (`--web-app`): `https://<app>.localhost/` under
+portless (`cd frontend && npm run dev`, whose default is the
+`dev:portless` script, beside `rbt dev run --portless`), or
+`http://localhost:9991/` from `npm run dev:ports`, same-origin either
+way, so the Reboot client needs no URL. Open it there, not at the
+dev server's own origin (`https://frontend.<app>.localhost` or
+`http://localhost:5173/`), where the client would take Vite's origin
+for the backend. Built,
+it lands in `frontend/dist/web/` with `base: "/"`, which a static
+host can serve at `/`, or the backend can with
+`--web-app-dist-path=frontend/dist/web` on `rbt serve run` (and on a
+`dev run:dist` config); in development `dev run:ports --web-app` beside
+`--frontend-url` has Envoy send `/` to the Vite dev server instead,
+so the SPA is on the backend's origin with HMR; see
+`python/references/lifecycle-rbtrc.md`.
+An app that later adds an MCP frontend keeps this tree and this
+config: it adds `frontend/mcp/<name>/` beside `web/` and
+`mcpAppPath: "mcp"` to `reboot()`, and the same dev server and
+`npm run build` serve and build both.
 
 ## Step-by-Step Build Flow
 
@@ -528,10 +557,9 @@ Key differences from a `mcp-ui` layout:
 1. Create `.python-version`, `pyproject.toml`, `.rbtrc`, and
    `.mypy.ini` — same shape as in
    `python/references/lifecycle-{project-setup,rbtrc}.md`. In
-   `.rbtrc`, point the React codegen at `web/src/api`:
+   `.rbtrc`, point the React codegen at `frontend/api`:
    ```sh
-   generate --react=web/src/api
-   generate --web=web/src/api
+   generate --react=frontend/api
    ```
 2. `uv sync`.
 3. Start the developer dashboard — load the
@@ -542,23 +570,26 @@ Key differences from a `mcp-ui` layout:
 4. Write the API definition (`api/<pkg>/v1/<name>.py`). Pydantic
    rules live in `python/references/api-pydantic.md`; method
    marker → context-type rules in
-   `python/references/api-methods.md`. Do **not** add `mcp=Tool()`
-   or `UI()` — those are MCP-UI only.
+   `python/references/api-methods.md`. Every `Reader`, `Writer`,
+   `Transaction` and `Workflow` still requires the `mcp=` argument:
+   write `mcp=None` on each one. Do **not** add `mcp=Tool()` or
+   `UI()`; those are MCP App only.
 5. `uv run rbt generate`. Don't read what it wrote: the signature
    your servicer must match is in `python/references/api-methods.md`
    ("The Servicer Signature Each Declaration Obliges").
 6. Write the servicer (`backend/src/servicers/<name>.py`) —
    context-type patterns in `python/references/servicer-*.md`.
 7. Write `main.py` — `python/references/lifecycle-application-entry.md`.
-8. Initialize the React app at `web/` with your preferred tool
-   (e.g. `npm create vite@latest web -- --template react-ts`) or
-   a Reboot-provided template if one exists for plain web apps.
-   Read [`references/react-client.md`](references/react-client.md)
-   now — it has the `package.json` dependency set, the `dedupe`
-   entry the Vite config needs, and `web/.env.development` with
-   `VITE_REBOOT_URL`.
-9. `cd web && npm install` and add the Reboot React client
-   package(s) per your project's `package.json`.
+8. Scaffold the frontend at `frontend/`
+   (`npm create vite@latest frontend -- --template react-ts`) and
+   shape it as [`references/react-client.md`](references/react-client.md)
+   shows: the SPA's `index.html`, `src/`, and `public/` under
+   `frontend/web/`, the config rooted there with the `dedupe` and
+   `server.host` entries, and the Reboot packages in `package.json`.
+   No `VITE_REBOOT_URL` in development: the web app is served at the
+   backend's origin (`--web-app`); `.env.production` sets it for a
+   deploy elsewhere.
+9. `cd frontend && npm install`.
 10. `uv run rbt generate` again — the React bindings need
     `node_modules` to resolve types correctly.
 11. Build the frontend from
@@ -566,9 +597,9 @@ Key differences from a `mcp-ui` layout:
     provider and its `url`, the generated hook/mutator/error
     declarations, sign-in, and typed errors are all written out
     there. Write the calls from that reference and do **not** open
-    `web/src/api/**/*_rbt_react.ts` to check them — it is tens of
+    `frontend/api/**/*_rbt_react.ts` to check them — it is tens of
     thousands of lines that then ride along on every later turn.
-12. `cd web && npm run build` (sanity check the bundle).
+12. `cd frontend && npm run build` (sanity check the bundle).
 13. **Write and run the scenarios of every feature before handing
     the app off.** Each feature file from the design phase gets its
     scenarios now: every action the user should be able to _do_ in
@@ -611,7 +642,7 @@ Key differences from a `mcp-ui` layout:
 When modifying an existing app:
 
 1. Read `.rbtrc`, the API definition, servicer, `main.py`, and
-   `web/src/App.tsx`.
+   `frontend/web/src/App.tsx`.
 2. Assess state model changes. If the app has persisted state or
    has been deployed, read
    `python/references/api-schema-evolution.md` to understand the

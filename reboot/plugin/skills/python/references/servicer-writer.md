@@ -29,8 +29,12 @@ across actors run independently.
 
 The runtime may re-execute a writer's body — both on transient
 retries and, in development, as part of **effect validation**, which
-re-runs the body and asserts the state mutations match. So a
-writer body must be safe to run more than once: confine it to
+runs the body twice, discarding the first run's state mutations and
+keeping the second's. Only one run's mutations are ever kept and the
+runs are not compared, so a value that differs between runs (a
+`uuid4()` or `uuid7()` id, the current time) is fine to store. What
+is not fine is an effect outside Reboot state, which every run
+repeats. So a writer body must be safe to run more than once: confine it to
 `self.state` mutations and in-system calls (including readers on
 other actors), and push any external work to a `Workflow` — the
 workflow picks the right primitive per

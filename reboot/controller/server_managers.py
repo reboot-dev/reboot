@@ -46,7 +46,7 @@ from reboot.settings import (
     ENVVAR_PYTHON_SERVER_BASE64_ARGS,
     ENVVAR_RBT_EFFECT_VALIDATION,
     ENVVAR_RBT_NODEJS,
-    EVERY_LOCAL_NETWORK_ADDRESS,
+    ONLY_LOCALHOST_NETWORK_ADDRESS,
 )
 from typing import Awaitable, Callable, Optional, Sequence
 
@@ -159,7 +159,6 @@ async def _run_server_process(
     placement_planner_address: RoutableAddress,
     envoy_trusted_address: Optional[str],
     token_verifier: Optional[TokenVerifier],
-    root: Optional[str],
     fifo: Path,
     effect_validation: EffectValidation,
 ):
@@ -200,7 +199,6 @@ async def _run_server_process(
             web_framework=web_framework,
             listen_address=address,
             token_verifier=token_verifier,
-            root=root,
             state_manager=state_manager,
             placement_client=placement_client,
             actor_resolver=resolver,
@@ -294,7 +292,6 @@ async def run_nodejs_server_process(
     serviceables: list[Serviceable],
     web_framework: WebFramework,
     token_verifier: Optional[TokenVerifier],
-    root: Optional[str],
 ):
     """Entry point for a nodejs based server subprocess.
 
@@ -328,7 +325,6 @@ async def run_nodejs_server_process(
         serviceables=serviceables,
         web_framework=web_framework,
         token_verifier=token_verifier,
-        root=root,
         **args,
     )
 
@@ -338,7 +334,6 @@ async def run_python_server_process(
     serviceables: list[Serviceable],
     web_framework: WebFramework,
     token_verifier: Optional[TokenVerifier],
-    root: Optional[str],
 ):
     """Entry point for a Python based server subprocess.
 
@@ -366,7 +361,6 @@ async def run_python_server_process(
         serviceables=serviceables,
         web_framework=web_framework,
         token_verifier=token_verifier,
-        root=root,
         **args,
     )
 
@@ -426,8 +420,6 @@ class RegisteredRevision:
     # and the access JWT surfaced by `/__/oauth/whoami`.
     allowed_origins: Optional[list[str]]
     token_verifier: Optional[TokenVerifier]
-    # The path the root page forwards to, if the application gave one.
-    root: Optional[str]
     effect_validation: Optional[EffectValidation]
 
 
@@ -632,7 +624,6 @@ class LocalServerManager(ServerManager):
         serviceables: list[Serviceable],
         web_framework: WebFramework,
         token_verifier: Optional[TokenVerifier],
-        root: Optional[str],
         in_process: bool,
         local_envoy: bool,
         local_envoy_port: int,
@@ -651,7 +642,6 @@ class LocalServerManager(ServerManager):
             local_envoy_use_tls=local_envoy_use_tls,
             allowed_origins=allowed_origins,
             token_verifier=token_verifier,
-            root=root,
             effect_validation=effect_validation,
         )
 
@@ -794,7 +784,17 @@ class LocalServerManager(ServerManager):
         async def launch():
             assert self._revision is not None
 
-            host = EVERY_LOCAL_NETWORK_ADDRESS
+            # Only connections from the local Envoy are expected, so we use
+            # only the loopback, and we couldn't use
+            # `EVERY_LOCAL_NETWORK_ADDRESS` anyway on macOS because gRPC binds
+            # IPv6 as well (one dual-stack socket) and macOS has a bug where
+            # its IPv6 ephemeral-port allocator doesn't check ports held by
+            # IPv4 sockets, so the server can be handed a port that an IPv4
+            # listener (e.g., an orphaned Envoy) already holds and connections
+            # to `ONLY_LOCALHOST_NETWORK_ADDRESS` (`127.0.0.1`) reach that
+            # listener instead; see
+            # https://github.com/reboot-dev/reboot/pull/234.
+            host = ONLY_LOCALHOST_NETWORK_ADDRESS
 
             if not self._revision.in_process:
                 return await self._launch_subprocess_server(
@@ -812,7 +812,6 @@ class LocalServerManager(ServerManager):
                     self._revision.serviceables,
                     self._revision.web_framework,
                     self._revision.token_verifier,
-                    self._revision.root,
                     effect_validation,
                 )
 
@@ -856,7 +855,6 @@ class LocalServerManager(ServerManager):
         serviceables: list[Serviceable],
         web_framework: WebFramework,
         token_verifier: Optional[TokenVerifier],
-        root: Optional[str],
         effect_validation: EffectValidation,
     ) -> LaunchedServer:
         assert self._placement_planner_address is not None
@@ -886,7 +884,6 @@ class LocalServerManager(ServerManager):
             web_framework=web_framework,
             listen_address=f'{host}:0',
             token_verifier=token_verifier,
-            root=root,
             state_manager=state_manager,
             placement_client=placement_client,
             actor_resolver=resolver,
@@ -1241,6 +1238,9 @@ class LocalServerManager(ServerManager):
             # (i.e., system services).
             routables=user_serviceables + ServiceServer.ROUTABLES,
             allowed_origins=self._revision.allowed_origins,
+            # The paths the web framework answers, which Envoy routes
+            # to it ahead of its catch-all.
+            route_matches=self._revision.web_framework.route_matches(),
         )
 
         await self._local_envoy.start()

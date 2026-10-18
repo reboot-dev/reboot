@@ -497,16 +497,12 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
         `resources/read` response. This tells ext-apps hosts
         which origins to allow in the sandbox iframe's CSP.
         """
-        # Point the frontend paths at the built dist the way
-        # `rbt serve` does (see `ping_py_bin`'s env) so the clicker
-        # UI resolves to the real `frontend/dist/mcp/clicker/
-        # index.html` rather than the "build not found" placeholder.
-        # Without this the UI resolves to a non-existent source path
-        # and the test would silently exercise the placeholder.
-        os.environ["RBT_FRONTEND_DIST_PATH"] = "frontend/dist"
-        os.environ["RBT_FRONTEND_ROOT_PATH"] = "frontend"
-        self.addCleanup(os.environ.pop, "RBT_FRONTEND_DIST_PATH", None)
-        self.addCleanup(os.environ.pop, "RBT_FRONTEND_ROOT_PATH", None)
+        # Point the MCP App dist at the built one the way `rbt serve`
+        # does (see `ping_py_bin`'s env) so the clicker UI resolves to
+        # the real `frontend/dist/mcp/clicker/index.html` rather than
+        # the "build not found" placeholder.
+        os.environ["RBT_MCP_APP_DIST_PATH"] = "frontend/dist/mcp"
+        self.addCleanup(os.environ.pop, "RBT_MCP_APP_DIST_PATH", None)
 
         await self.rbt.up(
             Application(

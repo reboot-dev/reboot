@@ -4,7 +4,9 @@ import os
 import sys
 import uuid
 from cffi import FFI
+from contextlib import contextmanager
 from google.protobuf.timestamp_pb2 import Timestamp
+from log.log import get_logger
 from rbt.v1alpha1 import (
     application_metadata_pb2,
     database_pb2,
@@ -17,8 +19,25 @@ from reboot.aio.types import StateRef, StateTypeName
 # TODO(benh): move this into a top-level 'grpc' module to be shared by
 # both 'respect' and 'reboot'.
 from reboot.grpc.options import make_retry_channel_options
-from reboot.settings import MAX_DATABASE_GRPC_MESSAGE_LENGTH_BYTES
-from typing import AsyncIterator, Mapping, Optional, cast, overload
+from reboot.settings import (
+    MAX_DATABASE_GRPC_MESSAGE_LENGTH_BYTES,
+    ONLY_LOCALHOST_NETWORK_ADDRESS,
+)
+from typing import AsyncIterator, Iterator, Mapping, Optional, cast, overload
+
+# Deadline for reading and writing the application metadata. These
+# two are the only calls we make to the database before the process
+# starts serving: nothing is waiting on them, nothing retries them,
+# and a database that never answers leaves the process idle forever
+# rather than failing anything, so we bound them and let the process
+# exit and be restarted instead. Both calls only read or write one
+# small file, so a call that takes anywhere near this long is never
+# going to answer. The calls made while serving stay unbounded: a
+# deadline on a mutating one would leave the caller unable to tell
+# whether its write landed.
+APPLICATION_METADATA_DEADLINE_SECONDS = 30
+
+logger = get_logger(__name__)
 
 _ffi = FFI()
 _ffi.cdef(
@@ -32,6 +51,7 @@ _ffi.cdef(
     const char* state_directory,
     const char* server_info_proto,
     size_t server_info_length,
+    const char* host,
     int port
   );
 
@@ -82,6 +102,16 @@ class DatabaseServer:
         self,
         state_directory: str,
         server_info: database_pb2.ServerInfo,
+        # Only connections from the application's servers, on this machine, are
+        # expected, so we use only the loopback, and we couldn't use
+        # `EVERY_LOCAL_NETWORK_ADDRESS` anyway on macOS because gRPC binds IPv6
+        # as well (one dual-stack socket) and macOS has a bug where its IPv6
+        # ephemeral-port allocator doesn't check ports held by IPv4 sockets, so
+        # the server can be handed a port that an IPv4 listener (e.g., an
+        # orphaned Envoy) already holds and connections to
+        # `ONLY_LOCALHOST_NETWORK_ADDRESS` (`127.0.0.1`) reach that listener
+        # instead; see https://github.com/reboot-dev/reboot/pull/234.
+        host: str = ONLY_LOCALHOST_NETWORK_ADDRESS,
         port: int = 0,
     ):
         assert len(server_info.shard_infos
@@ -94,7 +124,11 @@ class DatabaseServer:
         # explicitly to avoid truncation when CFFI treats it as a C
         # string.
         self._ptr = _lib.database_server_create(
-            state_directory.encode(), serialized, len(serialized), port
+            state_directory.encode(),
+            serialized,
+            len(serialized),
+            host.encode(),
+            port,
         )
         if self._ptr == _ffi.NULL:
             raise DatabaseServerFailed("Failed to create DatabaseServer")
@@ -681,14 +715,33 @@ class DatabaseClient:
             for item in batch.items:
                 yield item
 
+    @contextmanager
+    def _report_deadline_exceeded(self, call: str) -> Iterator[None]:
+        """Logs which call to which database exceeded its deadline, as a
+        `DEADLINE_EXCEEDED` `grpc.aio.AioRpcError` names neither, and
+        re-raises so that the process still exits and gets restarted.
+        """
+        try:
+            yield
+        except grpc.aio.AioRpcError as error:
+            if error.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
+                logger.warning(
+                    f"The database at '{self._target}' did not answer "
+                    f"`{call}` within "
+                    f"{APPLICATION_METADATA_DEADLINE_SECONDS} seconds"
+                )
+            raise
+
     async def get_application_metadata(
         self,
     ) -> Optional[application_metadata_pb2.ApplicationMetadata]:
         """Get application metadata from persistent storage."""
         stub = await self._get_database_stub()
-        response = await stub.GetApplicationMetadata(
-            database_pb2.GetApplicationMetadataRequest()
-        )
+        with self._report_deadline_exceeded('GetApplicationMetadata'):
+            response = await stub.GetApplicationMetadata(
+                database_pb2.GetApplicationMetadataRequest(),
+                timeout=APPLICATION_METADATA_DEADLINE_SECONDS,
+            )
         return response.metadata if response.HasField('metadata') else None
 
     async def store_application_metadata(
@@ -697,9 +750,13 @@ class DatabaseClient:
     ) -> None:
         """Store application metadata to persistent storage."""
         stub = await self._get_database_stub()
-        await stub.StoreApplicationMetadata(
-            database_pb2.StoreApplicationMetadataRequest(metadata=metadata)
-        )
+        with self._report_deadline_exceeded('StoreApplicationMetadata'):
+            await stub.StoreApplicationMetadata(
+                database_pb2.StoreApplicationMetadataRequest(
+                    metadata=metadata
+                ),
+                timeout=APPLICATION_METADATA_DEADLINE_SECONDS,
+            )
 
     async def refresh_timestamp(self) -> Timestamp:
         """Get the current timestamp from the database's clock."""

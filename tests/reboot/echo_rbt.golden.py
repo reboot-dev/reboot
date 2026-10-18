@@ -39,7 +39,7 @@ import traceback as IMPORT_traceback
 import uuid as IMPORT_uuid
 import pickle as IMPORT_pickle
 import reboot as IMPORT_reboot
-import log.log as IMPORT_log_log   # type: ignore[import]
+import log.log as IMPORT_log_log
 import typing as IMPORT_typing
 import reboot.aio.backoff as IMPORT_reboot_aio_backoff
 import functools as IMPORT_functools
@@ -878,6 +878,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         )
 
         self._servicer = servicer
+        # An instance of the servicer's derived class for each state it
+        # has served; see `EchoServicer._instance()`.
+        self._instances: dict[str, EchoServicer] = {}
         self._state_manager = state_manager
         self.tasks_dispatcher = IMPORT_reboot_aio_internals_tasks_dispatcher.TasksDispatcher(
             application_id=application_id,
@@ -1041,8 +1044,8 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     headers=headers, method='Replay'
                 )
 
-                request = tests.reboot.echo_pb2.ReplayRequest()
-                request.ParseFromString(request_bytes)
+                replay_request = tests.reboot.echo_pb2.ReplayRequest()
+                replay_request.ParseFromString(request_bytes)
 
                 async with self._state_manager.reactively(
                     context,
@@ -1051,7 +1054,7 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         method_name='tests.reboot.EchoMethods.Replay',
                         headers=headers,
                         auth=context.auth,
-                        request=request,
+                        request=replay_request,
                     ),
                 ) as states:
                     async for (state, idempotency_keys) in states:
@@ -1065,7 +1068,7 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                             return await self.__Replay(
                                 context,
                                 state,
-                                request,
+                                replay_request,
                                 validating_effects=validating_effects,
                             )
 
@@ -1372,8 +1375,8 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         """Returns the response of calling 'method' given a message
         deserialized from the provided 'request_bytes'."""
         if method == 'Reply':
-            request = tests.reboot.echo_pb2.ReplyRequest()
-            request.ParseFromString(request_bytes)
+            reply_request = tests.reboot.echo_pb2.ReplyRequest()
+            reply_request.ParseFromString(request_bytes)
 
             # NOTE: we automatically retry mutations that come through
             # React when we get a `IMPORT_grpc.StatusCode.UNAVAILABLE` to
@@ -1406,7 +1409,7 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     )
                 )
                 call = stub.Reply(
-                    request=request,
+                    request=reply_request,
                     metadata=headers.to_grpc_metadata(),
                 )
                 try:
@@ -1530,8 +1533,8 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 message=f"Method '{method}' is invalid"
             )
         elif method == 'SearchAndReplace':
-            request = tests.reboot.echo_pb2.SearchAndReplaceRequest()
-            request.ParseFromString(request_bytes)
+            search_and_replace_request = tests.reboot.echo_pb2.SearchAndReplaceRequest()
+            search_and_replace_request.ParseFromString(request_bytes)
 
             # NOTE: we automatically retry mutations that come through
             # React when we get a `IMPORT_grpc.StatusCode.UNAVAILABLE` to
@@ -1564,7 +1567,7 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     )
                 )
                 call = stub.SearchAndReplace(
-                    request=request,
+                    request=search_and_replace_request,
                     metadata=headers.to_grpc_metadata(),
                 )
                 try:
@@ -1624,8 +1627,8 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                      ) from None
 
         elif method == 'FailOnceShouldBeRetried':
-            request = tests.reboot.echo_pb2.FailOnceShouldBeRetriedRequest()
-            request.ParseFromString(request_bytes)
+            fail_once_should_be_retried_request = tests.reboot.echo_pb2.FailOnceShouldBeRetriedRequest()
+            fail_once_should_be_retried_request.ParseFromString(request_bytes)
 
             # NOTE: we automatically retry mutations that come through
             # React when we get a `IMPORT_grpc.StatusCode.UNAVAILABLE` to
@@ -1658,7 +1661,7 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     )
                 )
                 call = stub.FailOnceShouldBeRetried(
-                    request=request,
+                    request=fail_once_should_be_retried_request,
                     metadata=headers.to_grpc_metadata(),
                 )
                 try:
@@ -1724,8 +1727,8 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 f"Method 'FailOnceShouldBeRetriedWorkflow' can not be called via React (for now)"
             )
         elif method == 'TooManyTasks':
-            request = tests.reboot.echo_pb2.TooManyTasksRequest()
-            request.ParseFromString(request_bytes)
+            too_many_tasks_request = tests.reboot.echo_pb2.TooManyTasksRequest()
+            too_many_tasks_request.ParseFromString(request_bytes)
 
             # NOTE: we automatically retry mutations that come through
             # React when we get a `IMPORT_grpc.StatusCode.UNAVAILABLE` to
@@ -1758,7 +1761,7 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     )
                 )
                 call = stub.TooManyTasks(
-                    request=request,
+                    request=too_many_tasks_request,
                     metadata=headers.to_grpc_metadata(),
                 )
                 try:
@@ -1848,8 +1851,8 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 f"Method 'WorkflowCallingWorkflow' can not be called via React (for now)"
             )
         elif method == 'RaiseValueError':
-            request = tests.reboot.echo_pb2.RaiseValueErrorRequest()
-            request.ParseFromString(request_bytes)
+            raise_value_error_request = tests.reboot.echo_pb2.RaiseValueErrorRequest()
+            raise_value_error_request.ParseFromString(request_bytes)
 
             # NOTE: we automatically retry mutations that come through
             # React when we get a `IMPORT_grpc.StatusCode.UNAVAILABLE` to
@@ -1882,7 +1885,7 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     )
                 )
                 call = stub.RaiseValueError(
-                    request=request,
+                    request=raise_value_error_request,
                     metadata=headers.to_grpc_metadata(),
                 )
                 try:
@@ -1942,8 +1945,8 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                      ) from None
 
         elif method == 'RaiseSpecifiedError':
-            request = tests.reboot.echo_pb2.RaiseSpecifiedErrorRequest()
-            request.ParseFromString(request_bytes)
+            raise_specified_error_request = tests.reboot.echo_pb2.RaiseSpecifiedErrorRequest()
+            raise_specified_error_request.ParseFromString(request_bytes)
 
             # NOTE: we automatically retry mutations that come through
             # React when we get a `IMPORT_grpc.StatusCode.UNAVAILABLE` to
@@ -1976,7 +1979,7 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     )
                 )
                 call = stub.RaiseSpecifiedError(
-                    request=request,
+                    request=raise_specified_error_request,
                     metadata=headers.to_grpc_metadata(),
                 )
                 try:
@@ -3600,32 +3603,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Echo.Reply') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -3778,10 +3755,7 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
 
                 await writer.complete(effects)
 
-                # TODO: We need a single `Effects` superclass for all methods, so we
-                # would need to make it "partially" generic (with per-method subclasses
-                # filling out the rest of the generic parameters) in order to fix this.
-                return effects.response  # type: ignore[return-value]
+                return effects.response
 
     async def _schedule_Reply(
         self,
@@ -4108,32 +4082,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Echo.Replay') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -4588,32 +4536,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Echo.WaitFor') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -5053,32 +4975,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Echo.Stream') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -5382,32 +5278,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Echo.RegexStream') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -5733,32 +5603,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Echo.SearchAndReplace') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -5911,10 +5755,7 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
 
                 await writer.complete(effects)
 
-                # TODO: We need a single `Effects` superclass for all methods, so we
-                # would need to make it "partially" generic (with per-method subclasses
-                # filling out the rest of the generic parameters) in order to fix this.
-                return effects.response  # type: ignore[return-value]
+                return effects.response
 
     async def _schedule_SearchAndReplace(
         self,
@@ -6246,32 +6087,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Echo.FailOnceShouldBeRetried') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -6424,10 +6239,7 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
 
                 await writer.complete(effects)
 
-                # TODO: We need a single `Effects` superclass for all methods, so we
-                # would need to make it "partially" generic (with per-method subclasses
-                # filling out the rest of the generic parameters) in order to fix this.
-                return effects.response  # type: ignore[return-value]
+                return effects.response
 
     async def _schedule_FailOnceShouldBeRetried(
         self,
@@ -6754,32 +6566,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Echo.FailOnceShouldBeRetriedWorkflow') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -7168,32 +6954,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Echo.TooManyTasks') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -7346,10 +7106,7 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
 
                 await writer.complete(effects)
 
-                # TODO: We need a single `Effects` superclass for all methods, so we
-                # would need to make it "partially" generic (with per-method subclasses
-                # filling out the rest of the generic parameters) in order to fix this.
-                return effects.response  # type: ignore[return-value]
+                return effects.response
 
     async def _schedule_TooManyTasks(
         self,
@@ -7676,32 +7433,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Echo.Hanging') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -8085,32 +7816,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Echo.ReactiveWorkflow') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -8494,32 +8199,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Echo.ControlLoop') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -8903,32 +8582,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Echo.AtMostOnceWorkflow') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -9312,32 +8965,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Echo.WorkflowCallingWorkflow') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -9726,32 +9353,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Echo.RaiseValueError') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -9904,10 +9505,7 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
 
                 await writer.complete(effects)
 
-                # TODO: We need a single `Effects` superclass for all methods, so we
-                # would need to make it "partially" generic (with per-method subclasses
-                # filling out the rest of the generic parameters) in order to fix this.
-                return effects.response  # type: ignore[return-value]
+                return effects.response
 
     async def _schedule_RaiseValueError(
         self,
@@ -10417,10 +10015,7 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
 
                 await writer.complete(effects)
 
-                # TODO: We need a single `Effects` superclass for all methods, so we
-                # would need to make it "partially" generic (with per-method subclasses
-                # filling out the rest of the generic parameters) in order to fix this.
-                return effects.response  # type: ignore[return-value]
+                return effects.response
 
     async def _schedule_RaiseSpecifiedError(
         self,
@@ -11173,10 +10768,12 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         headers: IMPORT_reboot_aio_headers.Headers,
         method: str,
     ) -> IMPORT_typing.Optional[IMPORT_reboot_aio_auth.Auth]:
-        """Verify the bearer token and if a token verifier is present.
+        """Verify the bearer token if a token verifier is present.
 
-        Returns the (optional) `reboot.aio.auth.Auth` object
-        produced by the token verifier if the token can be verified.
+        Returns the `reboot.aio.auth.Auth` produced by the token
+        verifier if the token can be verified, else the `Auth` that an
+        app-internal caller passed on in its caller ID, if any, else
+        `None`.
         """
         if self._token_verifier is not None:
             if headers.bearer_token == __internal_magic_token__:
@@ -11200,7 +10797,21 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         result,
                         message=result.message or None,
                     )
-                return result
+                if result is not None:
+                    return result
+
+        # Otherwise, on an app-internal call, use the `Auth` the caller
+        # carried on behalf of whoever called it, if it carried one at
+        # all (see `CallerID.auth`).
+        caller_id = headers.caller_id
+        if (
+            headers.bearer_token is None and caller_id is not None and
+            caller_id.auth is not None and
+            IMPORT_reboot_aio_contexts.Context.is_app_internal(
+                headers, self.application_id
+            )
+        ):
+            return caller_id.auth
 
         return None
 
@@ -11226,6 +10837,15 @@ class _EchoStub(IMPORT_reboot_aio_stubs.Stub):
         # have security implications - we cannot simply trust any service we are calling with
         # the user's credentials. Instead, the developer can rely on the default app-internal
         # auth, or override that and set an explicit bearer token.
+        #
+        # What we do pass on, in our caller ID, is the caller's `context.auth`, i.e., who the
+        # call is made on behalf of. That is safe because an `Auth` is not a credential, it
+        # only says who the caller is, and the callee only honors it on an app-internal call,
+        # i.e., when it arrives with our own (trusted) caller ID, so it can't be used anywhere
+        # else. If there is no `context.auth` then nothing is passed on. Setting an explicit
+        # bearer token overrides it: the callee then verifies that token instead and gets no
+        # `context.auth` from us. The caller ID itself is still sent, so the call is still
+        # app-internal.
         #
         # In the case of `ExternalContext`, however, its `bearer_token` was set specifically
         # by the developer for the purpose of making these calls.
@@ -12321,9 +11941,9 @@ class EchoTasksStub(_EchoStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Echo'),
@@ -12374,9 +11994,9 @@ class EchoTasksStub(_EchoStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Echo'),
@@ -12427,9 +12047,9 @@ class EchoTasksStub(_EchoStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Echo'),
@@ -12480,9 +12100,9 @@ class EchoTasksStub(_EchoStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Echo'),
@@ -12533,9 +12153,9 @@ class EchoTasksStub(_EchoStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Echo'),
@@ -12586,9 +12206,9 @@ class EchoTasksStub(_EchoStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Echo'),
@@ -12639,9 +12259,9 @@ class EchoTasksStub(_EchoStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Echo'),
@@ -12692,9 +12312,9 @@ class EchoTasksStub(_EchoStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Echo'),
@@ -12745,9 +12365,9 @@ class EchoTasksStub(_EchoStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Echo'),
@@ -12798,9 +12418,9 @@ class EchoTasksStub(_EchoStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Echo'),
@@ -12851,9 +12471,9 @@ class EchoTasksStub(_EchoStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Echo'),
@@ -12904,9 +12524,9 @@ class EchoTasksStub(_EchoStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Echo'),
@@ -12957,9 +12577,9 @@ class EchoTasksStub(_EchoStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Echo'),
@@ -13010,9 +12630,9 @@ class EchoTasksStub(_EchoStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Echo'),
@@ -13063,9 +12683,9 @@ class EchoTasksStub(_EchoStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Echo'),
@@ -14289,6 +13909,8 @@ class EchoBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
     # For 'tests.reboot.EchoMethods.Reply'.
     class ReplyEffects(Effects):
+        response: tests.reboot.echo_pb2.ReplyResponse
+
         def __init__(
             self,
             *,
@@ -14309,6 +13931,8 @@ class EchoBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
     # For 'tests.reboot.EchoMethods.SearchAndReplace'.
     class SearchAndReplaceEffects(Effects):
+        response: tests.reboot.echo_pb2.SearchAndReplaceResponse
+
         def __init__(
             self,
             *,
@@ -14325,6 +13949,8 @@ class EchoBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
     # For 'tests.reboot.EchoMethods.FailOnceShouldBeRetried'.
     class FailOnceShouldBeRetriedEffects(Effects):
+        response: tests.reboot.echo_pb2.FailOnceShouldBeRetriedResponse
+
         def __init__(
             self,
             *,
@@ -14342,6 +13968,8 @@ class EchoBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
     # For 'tests.reboot.EchoMethods.TooManyTasks'.
     class TooManyTasksEffects(Effects):
+        response: tests.reboot.echo_pb2.TooManyTasksResponse
+
         def __init__(
             self,
             *,
@@ -14363,6 +13991,8 @@ class EchoBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
     # For 'tests.reboot.EchoMethods.RaiseValueError'.
     class RaiseValueErrorEffects(Effects):
+        response: tests.reboot.echo_pb2.RaiseValueErrorResponse
+
         def __init__(
             self,
             *,
@@ -14379,6 +14009,8 @@ class EchoBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
     # For 'tests.reboot.EchoMethods.RaiseSpecifiedError'.
     class RaiseSpecifiedErrorEffects(Effects):
+        response: tests.reboot.echo_pb2.RaiseSpecifiedErrorResponse
+
         def __init__(
             self,
             *,
@@ -16019,16 +15651,19 @@ class EchoServicer(EchoBaseServicer):
         default=None,
     )
 
-    # An instance of the derived class for each state.
-    _instances: dict[str, EchoServicer] = {}
-
     def _instance(self, state_id: str):
-        instances = EchoServicer._instances
+        # An instance of the derived class for each state. The
+        # middleware keeps them, so that they live as long as the server
+        # it serves and not as long as the process: another server in
+        # the same process (a later `Reboot` in a test, say) may serve
+        # the same state id with another servicer class.
+        assert self._middleware is not None
+        instances = self._middleware._instances
         instance = instances.get(state_id)
         if instance is None:
             instance = self.__class__()
             instance._middleware = self._middleware
-        instances[state_id] = instance
+            instances[state_id] = instance
         return instance
 
     @property
@@ -17162,7 +16797,7 @@ class Echo:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.ReplyResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.echo_pb2.ReplyResponse:
+            async def wait_for_task() -> Echo.ReplyResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -17250,36 +16885,36 @@ class Echo:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -17347,7 +16982,10 @@ class Echo:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class ReplayTask:
@@ -17391,7 +17029,7 @@ class Echo:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.ReplayResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.echo_pb2.ReplayResponse:
+            async def wait_for_task() -> Echo.ReplayResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -17478,36 +17116,36 @@ class Echo:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -17575,7 +17213,10 @@ class Echo:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class WaitForTask:
@@ -17619,7 +17260,7 @@ class Echo:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.WaitForResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.echo_pb2.WaitForResponse:
+            async def wait_for_task() -> Echo.WaitForResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -17706,36 +17347,36 @@ class Echo:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -17803,7 +17444,10 @@ class Echo:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class StreamTask:
@@ -17847,7 +17491,7 @@ class Echo:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.StreamResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.echo_pb2.StreamResponse:
+            async def wait_for_task() -> Echo.StreamResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -17934,36 +17578,36 @@ class Echo:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -18031,7 +17675,10 @@ class Echo:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class RegexStreamTask:
@@ -18075,7 +17722,7 @@ class Echo:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.RegexStreamResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.echo_pb2.RegexStreamResponse:
+            async def wait_for_task() -> Echo.RegexStreamResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -18162,36 +17809,36 @@ class Echo:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -18259,7 +17906,10 @@ class Echo:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class SearchAndReplaceTask:
@@ -18303,7 +17953,7 @@ class Echo:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.SearchAndReplaceResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.echo_pb2.SearchAndReplaceResponse:
+            async def wait_for_task() -> Echo.SearchAndReplaceResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -18391,36 +18041,36 @@ class Echo:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -18488,7 +18138,10 @@ class Echo:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class FailOnceShouldBeRetriedTask:
@@ -18532,7 +18185,7 @@ class Echo:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.FailOnceShouldBeRetriedResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.echo_pb2.FailOnceShouldBeRetriedResponse:
+            async def wait_for_task() -> Echo.FailOnceShouldBeRetriedResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -18620,36 +18273,36 @@ class Echo:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -18717,7 +18370,10 @@ class Echo:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class FailOnceShouldBeRetriedWorkflowTask:
@@ -18761,7 +18417,7 @@ class Echo:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.FailOnceShouldBeRetriedWorkflowResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.echo_pb2.FailOnceShouldBeRetriedWorkflowResponse:
+            async def wait_for_task() -> Echo.FailOnceShouldBeRetriedWorkflowResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -18848,36 +18504,36 @@ class Echo:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -18945,7 +18601,10 @@ class Echo:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class TooManyTasksTask:
@@ -18989,7 +18648,7 @@ class Echo:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.TooManyTasksResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.echo_pb2.TooManyTasksResponse:
+            async def wait_for_task() -> Echo.TooManyTasksResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -19077,36 +18736,36 @@ class Echo:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -19174,7 +18833,10 @@ class Echo:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class HangingTask:
@@ -19218,7 +18880,7 @@ class Echo:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.HangingResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.echo_pb2.HangingResponse:
+            async def wait_for_task() -> Echo.HangingResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -19305,36 +18967,36 @@ class Echo:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -19402,7 +19064,10 @@ class Echo:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class ReactiveWorkflowTask:
@@ -19446,7 +19111,7 @@ class Echo:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.ReactiveWorkflowResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.echo_pb2.ReactiveWorkflowResponse:
+            async def wait_for_task() -> Echo.ReactiveWorkflowResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -19533,36 +19198,36 @@ class Echo:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -19630,7 +19295,10 @@ class Echo:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class ControlLoopTask:
@@ -19674,7 +19342,7 @@ class Echo:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.ControlLoopResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.echo_pb2.ControlLoopResponse:
+            async def wait_for_task() -> Echo.ControlLoopResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -19761,36 +19429,36 @@ class Echo:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -19858,7 +19526,10 @@ class Echo:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class AtMostOnceWorkflowTask:
@@ -19902,7 +19573,7 @@ class Echo:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.AtMostOnceWorkflowResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.echo_pb2.AtMostOnceWorkflowResponse:
+            async def wait_for_task() -> Echo.AtMostOnceWorkflowResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -19989,36 +19660,36 @@ class Echo:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -20086,7 +19757,10 @@ class Echo:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class WorkflowCallingWorkflowTask:
@@ -20130,7 +19804,7 @@ class Echo:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.WorkflowCallingWorkflowResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.echo_pb2.WorkflowCallingWorkflowResponse:
+            async def wait_for_task() -> Echo.WorkflowCallingWorkflowResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -20217,36 +19891,36 @@ class Echo:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -20314,7 +19988,10 @@ class Echo:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class RaiseValueErrorTask:
@@ -20358,7 +20035,7 @@ class Echo:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.RaiseValueErrorResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.echo_pb2.RaiseValueErrorResponse:
+            async def wait_for_task() -> Echo.RaiseValueErrorResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -20446,36 +20123,36 @@ class Echo:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -20543,7 +20220,10 @@ class Echo:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class RaiseSpecifiedErrorTask:
@@ -20587,7 +20267,7 @@ class Echo:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.RaiseSpecifiedErrorResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.echo_pb2.RaiseSpecifiedErrorResponse:
+            async def wait_for_task() -> Echo.RaiseSpecifiedErrorResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -20679,17 +20359,7 @@ class Echo:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-            tests.reboot.echo_pb2.SpecifiedError        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             tests.reboot.echo_pb2.SpecifiedError,
             IMPORT_reboot.aio.aborted.GrpcError,
@@ -20697,19 +20367,29 @@ class Echo:
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            tests.reboot.echo_pb2.SpecifiedError        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error: MethodError |  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodError | MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -20777,7 +20457,12 @@ class Echo:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> IMPORT_typing.TypeGuard[MethodError]:
+            if isinstance(error, IMPORT_reboot.api.Model):
+                return False
             if error.DESCRIPTOR.full_name == 'tests.reboot.SpecifiedError':
                 return True
             return False
@@ -20823,7 +20508,7 @@ class Echo:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.FailingWorkflowResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.echo_pb2.FailingWorkflowResponse:
+            async def wait_for_task() -> Echo.FailingWorkflowResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -20914,17 +20599,7 @@ class Echo:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-            tests.reboot.echo_pb2.SpecifiedError        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             tests.reboot.echo_pb2.SpecifiedError,
             IMPORT_reboot.aio.aborted.GrpcError,
@@ -20932,19 +20607,29 @@ class Echo:
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            tests.reboot.echo_pb2.SpecifiedError        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error: MethodError |  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodError | MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -21012,7 +20697,12 @@ class Echo:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> IMPORT_typing.TypeGuard[MethodError]:
+            if isinstance(error, IMPORT_reboot.api.Model):
+                return False
             if error.DESCRIPTOR.full_name == 'tests.reboot.SpecifiedError':
                 return True
             return False
@@ -21046,7 +20736,7 @@ class Echo:
         def state_id(self) -> IMPORT_reboot_aio_types.StateId:
             return self._state_ref.id
 
-        def _reader(
+        def _get_reader_stub(
             self,
             context: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
         ) -> EchoReaderStub:
@@ -21069,7 +20759,7 @@ class Echo:
                 )
             return self._reader_stub
 
-        def _writer(
+        def _get_writer_stub(
             self,
             context: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
         ) -> EchoWriterStub:
@@ -21092,7 +20782,7 @@ class Echo:
                 )
             return self._writer_stub
 
-        def _workflow(
+        def _get_workflow_stub(
             self,
             context: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
         ) -> EchoWorkflowStub:
@@ -21152,7 +20842,7 @@ class Echo:
                 self._bearer_token = bearer_token
 
             @IMPORT_typing.overload
-            async def Replay(
+            def Replay(
                 __this__,
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: Echo.ReplayRequest,
@@ -21161,14 +20851,14 @@ class Echo:
                 ...
 
             @IMPORT_typing.overload
-            async def Replay(
+            def Replay(
                 __this__,
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_typing.AsyncIterator[tuple[Echo.ReplayResponse, None] | tuple[None, Echo.ReplayAborted]]:
                 ...
 
-            async def Replay( # type: ignore[misc]
+            async def Replay(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -21184,7 +20874,12 @@ class Echo:
                 __request_or_options__: IMPORT_typing.Optional[Echo.ReplayRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_typing.AsyncIterator[tuple[Echo.ReplayResponse, None] | tuple[None, Echo.ReplayAborted]]:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='reactively',
+                    method='replay',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.ReplayRequest)
@@ -21235,6 +20930,7 @@ class Echo:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.Context):
                     __caller_id__ = IMPORT_reboot_aio_caller_id.CallerID(
                         application_id=__context__.application_id,
+                        auth=__context__.auth,
                     )
                     if __this__._application_id is None:
                         # Given our context type (inside a Reboot application) we can default to
@@ -21340,7 +21036,7 @@ class Echo:
             # the new code.
             replay = Replay
             @IMPORT_typing.overload
-            async def WaitFor(
+            def WaitFor(
                 __this__,
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: Echo.WaitForRequest,
@@ -21349,7 +21045,7 @@ class Echo:
                 ...
 
             @IMPORT_typing.overload
-            async def WaitFor(
+            def WaitFor(
                 __this__,
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -21358,7 +21054,7 @@ class Echo:
             ) -> IMPORT_typing.AsyncIterator[tuple[Echo.WaitForResponse, None] | tuple[None, Echo.WaitForAborted]]:
                 ...
 
-            async def WaitFor( # type: ignore[misc]
+            async def WaitFor(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -21376,7 +21072,12 @@ class Echo:
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> IMPORT_typing.AsyncIterator[tuple[Echo.WaitForResponse, None] | tuple[None, Echo.WaitForAborted]]:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='reactively',
+                    method='wait_for',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.WaitForRequest)
@@ -21429,6 +21130,7 @@ class Echo:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.Context):
                     __caller_id__ = IMPORT_reboot_aio_caller_id.CallerID(
                         application_id=__context__.application_id,
+                        auth=__context__.auth,
                     )
                     if __this__._application_id is None:
                         # Given our context type (inside a Reboot application) we can default to
@@ -21645,7 +21347,7 @@ class Echo:
             ) -> Echo.ReplyResponse:
                 ...
 
-            async def Reply( # type: ignore[misc]
+            async def Reply(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -21712,7 +21414,7 @@ class Echo:
             ) -> Echo.ReplayResponse:
                 ...
 
-            async def Replay( # type: ignore[misc]
+            async def Replay(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -21777,7 +21479,7 @@ class Echo:
             ) -> Echo.WaitForResponse:
                 ...
 
-            async def WaitFor( # type: ignore[misc]
+            async def WaitFor(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -21847,7 +21549,7 @@ class Echo:
             ) -> Echo.SearchAndReplaceResponse:
                 ...
 
-            async def SearchAndReplace( # type: ignore[misc]
+            async def SearchAndReplace(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -21919,7 +21621,7 @@ class Echo:
             ) -> Echo.FailOnceShouldBeRetriedResponse:
                 ...
 
-            async def FailOnceShouldBeRetried( # type: ignore[misc]
+            async def FailOnceShouldBeRetried(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -21988,7 +21690,7 @@ class Echo:
             ) -> Echo.FailOnceShouldBeRetriedWorkflowResponse:
                 ...
 
-            async def FailOnceShouldBeRetriedWorkflow( # type: ignore[misc]
+            async def FailOnceShouldBeRetriedWorkflow(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -22072,7 +21774,7 @@ class Echo:
             ) -> Echo.TooManyTasksResponse:
                 ...
 
-            async def TooManyTasks( # type: ignore[misc]
+            async def TooManyTasks(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -22135,7 +21837,7 @@ class Echo:
             ) -> Echo.HangingResponse:
                 ...
 
-            async def Hanging( # type: ignore[misc]
+            async def Hanging(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -22215,7 +21917,7 @@ class Echo:
             ) -> Echo.ReactiveWorkflowResponse:
                 ...
 
-            async def ReactiveWorkflow( # type: ignore[misc]
+            async def ReactiveWorkflow(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -22295,7 +21997,7 @@ class Echo:
             ) -> Echo.ControlLoopResponse:
                 ...
 
-            async def ControlLoop( # type: ignore[misc]
+            async def ControlLoop(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -22375,7 +22077,7 @@ class Echo:
             ) -> Echo.AtMostOnceWorkflowResponse:
                 ...
 
-            async def AtMostOnceWorkflow( # type: ignore[misc]
+            async def AtMostOnceWorkflow(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -22457,7 +22159,7 @@ class Echo:
             ) -> Echo.WorkflowCallingWorkflowResponse:
                 ...
 
-            async def WorkflowCallingWorkflow( # type: ignore[misc]
+            async def WorkflowCallingWorkflow(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -22541,7 +22243,7 @@ class Echo:
             ) -> Echo.RaiseValueErrorResponse:
                 ...
 
-            async def RaiseValueError( # type: ignore[misc]
+            async def RaiseValueError(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -22604,7 +22306,7 @@ class Echo:
             ) -> Echo.RaiseSpecifiedErrorResponse:
                 ...
 
-            async def RaiseSpecifiedError( # type: ignore[misc]
+            async def RaiseSpecifiedError(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -22669,7 +22371,7 @@ class Echo:
             ) -> Echo.FailingWorkflowResponse:
                 ...
 
-            async def FailingWorkflow( # type: ignore[misc]
+            async def FailingWorkflow(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -22853,9 +22555,11 @@ class Echo:
                 self,
                 context: IMPORT_reboot_aio_contexts.WorkflowContext,
             ) -> Echo.WeakReference._UntilChangesSatisfies[Echo.State]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     context,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='read',
                 )
 
                 async def callable():
@@ -22869,7 +22573,7 @@ class Echo:
                 )
 
             @IMPORT_typing.overload
-            async def Replay(
+            def Replay(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: Echo.ReplayRequest,
@@ -22878,14 +22582,14 @@ class Echo:
                 ...
 
             @IMPORT_typing.overload
-            async def Replay(
+            def Replay(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Echo.WeakReference._UntilChangesSatisfies[Echo.ReplayResponse]:
                 ...
 
-            def Replay( # type: ignore[misc]
+            def Replay(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -22898,9 +22602,11 @@ class Echo:
                 __request_or_options__: IMPORT_typing.Optional[Echo.ReplayRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Echo.WeakReference._UntilChangesSatisfies[Echo.ReplayResponse]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     __context__,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='replay',
                 )
 
                 __request__: IMPORT_typing.Optional[Echo.ReplayRequest] = None
@@ -22938,7 +22644,7 @@ class Echo:
             # the new code.
             replay = Replay
             @IMPORT_typing.overload
-            async def WaitFor(
+            def WaitFor(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: Echo.WaitForRequest,
@@ -22947,7 +22653,7 @@ class Echo:
                 ...
 
             @IMPORT_typing.overload
-            async def WaitFor(
+            def WaitFor(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -22956,7 +22662,7 @@ class Echo:
             ) -> Echo.WeakReference._UntilChangesSatisfies[Echo.WaitForResponse]:
                 ...
 
-            def WaitFor( # type: ignore[misc]
+            def WaitFor(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -22971,9 +22677,11 @@ class Echo:
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> Echo.WeakReference._UntilChangesSatisfies[Echo.WaitForResponse]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     __context__,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='wait_for',
                 )
 
                 __request__: IMPORT_typing.Optional[Echo.WaitForRequest] = None
@@ -23061,7 +22769,7 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def Reply( # type: ignore[misc]
+            async def Reply(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.ReplyRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -23069,7 +22777,14 @@ class Echo:
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='reply',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.ReplyRequest)
@@ -23145,13 +22860,20 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def Replay( # type: ignore[misc]
+            async def Replay(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.ReplayRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='replay',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.ReplayRequest)
@@ -23227,7 +22949,7 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def WaitFor( # type: ignore[misc]
+            async def WaitFor(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.WaitForRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -23235,7 +22957,14 @@ class Echo:
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='wait_for',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.WaitForRequest)
@@ -23314,7 +23043,7 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def SearchAndReplace( # type: ignore[misc]
+            async def SearchAndReplace(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.SearchAndReplaceRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -23323,7 +23052,14 @@ class Echo:
                 search: IMPORT_typing.Optional[str] | Unset = UNSET,
                 replace: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='search_and_replace',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.SearchAndReplaceRequest)
@@ -23403,7 +23139,7 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def FailOnceShouldBeRetried( # type: ignore[misc]
+            async def FailOnceShouldBeRetried(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.FailOnceShouldBeRetriedRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -23411,7 +23147,14 @@ class Echo:
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='fail_once_should_be_retried',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.FailOnceShouldBeRetriedRequest)
@@ -23489,7 +23232,7 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def FailOnceShouldBeRetriedWorkflow( # type: ignore[misc]
+            async def FailOnceShouldBeRetriedWorkflow(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.FailOnceShouldBeRetriedWorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -23497,7 +23240,14 @@ class Echo:
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='fail_once_should_be_retried_workflow',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.FailOnceShouldBeRetriedWorkflowRequest)
@@ -23573,13 +23323,20 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def TooManyTasks( # type: ignore[misc]
+            async def TooManyTasks(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.TooManyTasksRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='too_many_tasks',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.TooManyTasksRequest)
@@ -23653,13 +23410,20 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def Hanging( # type: ignore[misc]
+            async def Hanging(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.HangingRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='hanging',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.HangingRequest)
@@ -23733,13 +23497,20 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def ReactiveWorkflow( # type: ignore[misc]
+            async def ReactiveWorkflow(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.ReactiveWorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='reactive_workflow',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.ReactiveWorkflowRequest)
@@ -23813,13 +23584,20 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def ControlLoop( # type: ignore[misc]
+            async def ControlLoop(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.ControlLoopRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='control_loop',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.ControlLoopRequest)
@@ -23893,13 +23671,20 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def AtMostOnceWorkflow( # type: ignore[misc]
+            async def AtMostOnceWorkflow(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.AtMostOnceWorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='at_most_once_workflow',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.AtMostOnceWorkflowRequest)
@@ -23975,7 +23760,7 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def WorkflowCallingWorkflow( # type: ignore[misc]
+            async def WorkflowCallingWorkflow(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.WorkflowCallingWorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -23983,7 +23768,14 @@ class Echo:
                 *,
                 call_workflow: IMPORT_typing.Optional[bool] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='workflow_calling_workflow',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.WorkflowCallingWorkflowRequest)
@@ -24059,13 +23851,20 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def RaiseValueError( # type: ignore[misc]
+            async def RaiseValueError(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.RaiseValueErrorRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='raise_value_error',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.RaiseValueErrorRequest)
@@ -24139,13 +23938,20 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def RaiseSpecifiedError( # type: ignore[misc]
+            async def RaiseSpecifiedError(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.RaiseSpecifiedErrorRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='raise_specified_error',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.RaiseSpecifiedErrorRequest)
@@ -24221,7 +24027,7 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def FailingWorkflow( # type: ignore[misc]
+            async def FailingWorkflow(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.FailingWorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -24229,7 +24035,14 @@ class Echo:
                 *,
                 failure_message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='failing_workflow',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.FailingWorkflowRequest)
@@ -24330,7 +24143,7 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def Reply( # type: ignore[misc]
+            async def Reply(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.ReplyRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -24338,9 +24151,14 @@ class Echo:
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='reply',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -24424,15 +24242,20 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def Replay( # type: ignore[misc]
+            async def Replay(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.ReplayRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='replay',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -24516,7 +24339,7 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def WaitFor( # type: ignore[misc]
+            async def WaitFor(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.WaitForRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -24524,9 +24347,14 @@ class Echo:
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='wait_for',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -24613,7 +24441,7 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def SearchAndReplace( # type: ignore[misc]
+            async def SearchAndReplace(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.SearchAndReplaceRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -24622,9 +24450,14 @@ class Echo:
                 search: IMPORT_typing.Optional[str] | Unset = UNSET,
                 replace: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='search_and_replace',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -24712,7 +24545,7 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def FailOnceShouldBeRetried( # type: ignore[misc]
+            async def FailOnceShouldBeRetried(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.FailOnceShouldBeRetriedRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -24720,9 +24553,14 @@ class Echo:
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='fail_once_should_be_retried',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -24808,7 +24646,7 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def FailOnceShouldBeRetriedWorkflow( # type: ignore[misc]
+            async def FailOnceShouldBeRetriedWorkflow(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.FailOnceShouldBeRetriedWorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -24816,9 +24654,14 @@ class Echo:
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='fail_once_should_be_retried_workflow',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -24902,15 +24745,20 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def TooManyTasks( # type: ignore[misc]
+            async def TooManyTasks(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.TooManyTasksRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='too_many_tasks',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -24992,15 +24840,20 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def Hanging( # type: ignore[misc]
+            async def Hanging(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.HangingRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='hanging',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -25082,15 +24935,20 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def ReactiveWorkflow( # type: ignore[misc]
+            async def ReactiveWorkflow(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.ReactiveWorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='reactive_workflow',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -25172,15 +25030,20 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def ControlLoop( # type: ignore[misc]
+            async def ControlLoop(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.ControlLoopRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='control_loop',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -25262,15 +25125,20 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def AtMostOnceWorkflow( # type: ignore[misc]
+            async def AtMostOnceWorkflow(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.AtMostOnceWorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='at_most_once_workflow',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -25354,7 +25222,7 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def WorkflowCallingWorkflow( # type: ignore[misc]
+            async def WorkflowCallingWorkflow(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.WorkflowCallingWorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -25362,9 +25230,14 @@ class Echo:
                 *,
                 call_workflow: IMPORT_typing.Optional[bool] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='workflow_calling_workflow',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -25448,15 +25321,20 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def RaiseValueError( # type: ignore[misc]
+            async def RaiseValueError(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.RaiseValueErrorRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='raise_value_error',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -25538,15 +25416,20 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def RaiseSpecifiedError( # type: ignore[misc]
+            async def RaiseSpecifiedError(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.RaiseSpecifiedErrorRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='raise_specified_error',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -25630,7 +25513,7 @@ class Echo:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def FailingWorkflow( # type: ignore[misc]
+            async def FailingWorkflow(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.FailingWorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -25638,9 +25521,14 @@ class Echo:
                 *,
                 failure_message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='failing_workflow',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -25766,7 +25654,7 @@ class Echo:
             ) -> Echo.ReplyTask:
                 ...
 
-            async def Reply( # type: ignore[misc]
+            async def Reply(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.ReplyRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -25774,7 +25662,14 @@ class Echo:
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> Echo.ReplyTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='reply',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.ReplyRequest)
@@ -25853,13 +25748,20 @@ class Echo:
             ) -> Echo.ReplayTask:
                 ...
 
-            async def Replay( # type: ignore[misc]
+            async def Replay(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.ReplayRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Echo.ReplayTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='replay',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.ReplayRequest)
@@ -25938,7 +25840,7 @@ class Echo:
             ) -> Echo.WaitForTask:
                 ...
 
-            async def WaitFor( # type: ignore[misc]
+            async def WaitFor(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.WaitForRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -25946,7 +25848,14 @@ class Echo:
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> Echo.WaitForTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='wait_for',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.WaitForRequest)
@@ -26028,7 +25937,7 @@ class Echo:
             ) -> Echo.SearchAndReplaceTask:
                 ...
 
-            async def SearchAndReplace( # type: ignore[misc]
+            async def SearchAndReplace(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.SearchAndReplaceRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -26037,7 +25946,14 @@ class Echo:
                 search: IMPORT_typing.Optional[str] | Unset = UNSET,
                 replace: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> Echo.SearchAndReplaceTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='search_and_replace',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.SearchAndReplaceRequest)
@@ -26120,7 +26036,7 @@ class Echo:
             ) -> Echo.FailOnceShouldBeRetriedTask:
                 ...
 
-            async def FailOnceShouldBeRetried( # type: ignore[misc]
+            async def FailOnceShouldBeRetried(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.FailOnceShouldBeRetriedRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -26128,7 +26044,14 @@ class Echo:
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> Echo.FailOnceShouldBeRetriedTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='fail_once_should_be_retried',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.FailOnceShouldBeRetriedRequest)
@@ -26209,7 +26132,7 @@ class Echo:
             ) -> Echo.FailOnceShouldBeRetriedWorkflowTask:
                 ...
 
-            async def FailOnceShouldBeRetriedWorkflow( # type: ignore[misc]
+            async def FailOnceShouldBeRetriedWorkflow(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.FailOnceShouldBeRetriedWorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -26217,7 +26140,14 @@ class Echo:
                 *,
                 message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> Echo.FailOnceShouldBeRetriedWorkflowTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='fail_once_should_be_retried_workflow',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.FailOnceShouldBeRetriedWorkflowRequest)
@@ -26296,13 +26226,20 @@ class Echo:
             ) -> Echo.TooManyTasksTask:
                 ...
 
-            async def TooManyTasks( # type: ignore[misc]
+            async def TooManyTasks(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.TooManyTasksRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Echo.TooManyTasksTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='too_many_tasks',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.TooManyTasksRequest)
@@ -26379,13 +26316,20 @@ class Echo:
             ) -> Echo.HangingTask:
                 ...
 
-            async def Hanging( # type: ignore[misc]
+            async def Hanging(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.HangingRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Echo.HangingTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='hanging',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.HangingRequest)
@@ -26462,13 +26406,20 @@ class Echo:
             ) -> Echo.ReactiveWorkflowTask:
                 ...
 
-            async def ReactiveWorkflow( # type: ignore[misc]
+            async def ReactiveWorkflow(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.ReactiveWorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Echo.ReactiveWorkflowTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='reactive_workflow',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.ReactiveWorkflowRequest)
@@ -26545,13 +26496,20 @@ class Echo:
             ) -> Echo.ControlLoopTask:
                 ...
 
-            async def ControlLoop( # type: ignore[misc]
+            async def ControlLoop(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.ControlLoopRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Echo.ControlLoopTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='control_loop',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.ControlLoopRequest)
@@ -26628,13 +26586,20 @@ class Echo:
             ) -> Echo.AtMostOnceWorkflowTask:
                 ...
 
-            async def AtMostOnceWorkflow( # type: ignore[misc]
+            async def AtMostOnceWorkflow(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.AtMostOnceWorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Echo.AtMostOnceWorkflowTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='at_most_once_workflow',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.AtMostOnceWorkflowRequest)
@@ -26713,7 +26678,7 @@ class Echo:
             ) -> Echo.WorkflowCallingWorkflowTask:
                 ...
 
-            async def WorkflowCallingWorkflow( # type: ignore[misc]
+            async def WorkflowCallingWorkflow(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.WorkflowCallingWorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -26721,7 +26686,14 @@ class Echo:
                 *,
                 call_workflow: IMPORT_typing.Optional[bool] | Unset = UNSET,
             ) -> Echo.WorkflowCallingWorkflowTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='workflow_calling_workflow',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.WorkflowCallingWorkflowRequest)
@@ -26800,13 +26772,20 @@ class Echo:
             ) -> Echo.RaiseValueErrorTask:
                 ...
 
-            async def RaiseValueError( # type: ignore[misc]
+            async def RaiseValueError(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.RaiseValueErrorRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Echo.RaiseValueErrorTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='raise_value_error',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.RaiseValueErrorRequest)
@@ -26883,13 +26862,20 @@ class Echo:
             ) -> Echo.RaiseSpecifiedErrorTask:
                 ...
 
-            async def RaiseSpecifiedError( # type: ignore[misc]
+            async def RaiseSpecifiedError(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.RaiseSpecifiedErrorRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Echo.RaiseSpecifiedErrorTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='raise_specified_error',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.RaiseSpecifiedErrorRequest)
@@ -26968,7 +26954,7 @@ class Echo:
             ) -> Echo.FailingWorkflowTask:
                 ...
 
-            async def FailingWorkflow( # type: ignore[misc]
+            async def FailingWorkflow(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Echo.FailingWorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -26976,7 +26962,14 @@ class Echo:
                 *,
                 failure_message: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> Echo.FailingWorkflowTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='failing_workflow',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Echo.FailingWorkflowRequest)
@@ -27100,7 +27093,7 @@ class Echo:
         ) -> Echo.ReplyResponse:
             ...
 
-        async def Reply( # type: ignore[misc]
+        async def Reply(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Echo.ReplyRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -27162,7 +27155,7 @@ class Echo:
                     __bearer_token__ = __options__.bearer_token
 
             return EchoReplyResponseFromProto(
-                await __this__._writer(__context__).Reply(
+                await __this__._get_writer_stub(__context__).Reply(
                     __request__,
                     idempotency=__idempotency__,
                     metadata=__metadata__,
@@ -27195,7 +27188,7 @@ class Echo:
         ) -> Echo.ReplayResponse:
             ...
 
-        async def Replay( # type: ignore[misc]
+        async def Replay(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Echo.ReplayRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -27260,7 +27253,7 @@ class Echo:
                 if __options__.bearer_token is not None:
                     __bearer_token__ = __options__.bearer_token
             return EchoReplayResponseFromProto(
-                await __this__._reader(__context__).Replay(
+                await __this__._get_reader_stub(__context__).Replay(
                     __request__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
@@ -27293,7 +27286,7 @@ class Echo:
         ) -> Echo.WaitForResponse:
             ...
 
-        async def WaitFor( # type: ignore[misc]
+        async def WaitFor(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Echo.WaitForRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -27361,7 +27354,7 @@ class Echo:
                 if __options__.bearer_token is not None:
                     __bearer_token__ = __options__.bearer_token
             return EchoWaitForResponseFromProto(
-                await __this__._reader(__context__).WaitFor(
+                await __this__._get_reader_stub(__context__).WaitFor(
                     __request__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
@@ -27393,7 +27386,7 @@ class Echo:
         ) -> IMPORT_typing.AsyncIterable[Echo.StreamResponse]:
             ...
 
-        async def Stream( # type: ignore[misc]
+        async def Stream(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Echo.StreamRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -27431,7 +27424,7 @@ class Echo:
                     __metadata__ = __options__.metadata
                 if __options__.bearer_token is not None:
                     __bearer_token__ = __options__.bearer_token
-            __call__ = __this__._reader(__context__).Stream(
+            __call__ = __this__._get_reader_stub(__context__).Stream(
                 __request__,
                 metadata=__metadata__,
             )
@@ -27463,7 +27456,7 @@ class Echo:
         ) -> IMPORT_typing.AsyncIterable[Echo.RegexStreamResponse]:
             ...
 
-        async def RegexStream( # type: ignore[misc]
+        async def RegexStream(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Echo.RegexStreamRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -27491,7 +27484,7 @@ class Echo:
                     __metadata__ = __options__.metadata
                 if __options__.bearer_token is not None:
                     __bearer_token__ = __options__.bearer_token
-            __call__ = __this__._reader(__context__).RegexStream(
+            __call__ = __this__._get_reader_stub(__context__).RegexStream(
                 __requests__,
                 metadata=__metadata__,
             )
@@ -27524,7 +27517,7 @@ class Echo:
         ) -> Echo.SearchAndReplaceResponse:
             ...
 
-        async def SearchAndReplace( # type: ignore[misc]
+        async def SearchAndReplace(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Echo.SearchAndReplaceRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -27589,7 +27582,7 @@ class Echo:
                     __bearer_token__ = __options__.bearer_token
 
             return EchoSearchAndReplaceResponseFromProto(
-                await __this__._writer(__context__).SearchAndReplace(
+                await __this__._get_writer_stub(__context__).SearchAndReplace(
                     __request__,
                     idempotency=__idempotency__,
                     metadata=__metadata__,
@@ -27623,7 +27616,7 @@ class Echo:
         ) -> Echo.FailOnceShouldBeRetriedResponse:
             ...
 
-        async def FailOnceShouldBeRetried( # type: ignore[misc]
+        async def FailOnceShouldBeRetried(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Echo.FailOnceShouldBeRetriedRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -27685,7 +27678,7 @@ class Echo:
                     __bearer_token__ = __options__.bearer_token
 
             return EchoFailOnceShouldBeRetriedResponseFromProto(
-                await __this__._writer(__context__).FailOnceShouldBeRetried(
+                await __this__._get_writer_stub(__context__).FailOnceShouldBeRetried(
                     __request__,
                     idempotency=__idempotency__,
                     metadata=__metadata__,
@@ -27716,7 +27709,7 @@ class Echo:
         ) -> Echo.FailOnceShouldBeRetriedWorkflowResponse:
             ...
 
-        async def FailOnceShouldBeRetriedWorkflow( # type: ignore[misc]
+        async def FailOnceShouldBeRetriedWorkflow(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -27802,7 +27795,7 @@ class Echo:
         ) -> Echo.TooManyTasksResponse:
             ...
 
-        async def TooManyTasks( # type: ignore[misc]
+        async def TooManyTasks(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Echo.TooManyTasksRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -27861,7 +27854,7 @@ class Echo:
                     __bearer_token__ = __options__.bearer_token
 
             return EchoTooManyTasksResponseFromProto(
-                await __this__._writer(__context__).TooManyTasks(
+                await __this__._get_writer_stub(__context__).TooManyTasks(
                     __request__,
                     idempotency=__idempotency__,
                     metadata=__metadata__,
@@ -27890,7 +27883,7 @@ class Echo:
         ) -> Echo.HangingResponse:
             ...
 
-        async def Hanging( # type: ignore[misc]
+        async def Hanging(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -27968,7 +27961,7 @@ class Echo:
         ) -> Echo.ReactiveWorkflowResponse:
             ...
 
-        async def ReactiveWorkflow( # type: ignore[misc]
+        async def ReactiveWorkflow(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -28046,7 +28039,7 @@ class Echo:
         ) -> Echo.ControlLoopResponse:
             ...
 
-        async def ControlLoop( # type: ignore[misc]
+        async def ControlLoop(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -28124,7 +28117,7 @@ class Echo:
         ) -> Echo.AtMostOnceWorkflowResponse:
             ...
 
-        async def AtMostOnceWorkflow( # type: ignore[misc]
+        async def AtMostOnceWorkflow(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -28204,7 +28197,7 @@ class Echo:
         ) -> Echo.WorkflowCallingWorkflowResponse:
             ...
 
-        async def WorkflowCallingWorkflow( # type: ignore[misc]
+        async def WorkflowCallingWorkflow(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -28290,7 +28283,7 @@ class Echo:
         ) -> Echo.RaiseValueErrorResponse:
             ...
 
-        async def RaiseValueError( # type: ignore[misc]
+        async def RaiseValueError(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Echo.RaiseValueErrorRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -28349,7 +28342,7 @@ class Echo:
                     __bearer_token__ = __options__.bearer_token
 
             return EchoRaiseValueErrorResponseFromProto(
-                await __this__._writer(__context__).RaiseValueError(
+                await __this__._get_writer_stub(__context__).RaiseValueError(
                     __request__,
                     idempotency=__idempotency__,
                     metadata=__metadata__,
@@ -28382,7 +28375,7 @@ class Echo:
         ) -> Echo.RaiseSpecifiedErrorResponse:
             ...
 
-        async def RaiseSpecifiedError( # type: ignore[misc]
+        async def RaiseSpecifiedError(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Echo.RaiseSpecifiedErrorRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -28441,7 +28434,7 @@ class Echo:
                     __bearer_token__ = __options__.bearer_token
 
             return EchoRaiseSpecifiedErrorResponseFromProto(
-                await __this__._writer(__context__).RaiseSpecifiedError(
+                await __this__._get_writer_stub(__context__).RaiseSpecifiedError(
                     __request__,
                     idempotency=__idempotency__,
                     metadata=__metadata__,
@@ -28472,7 +28465,7 @@ class Echo:
         ) -> Echo.FailingWorkflowResponse:
             ...
 
-        async def FailingWorkflow( # type: ignore[misc]
+        async def FailingWorkflow(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -28597,7 +28590,7 @@ class Echo:
         ) -> list[Echo.ReplyResponse]:
             ...
 
-        async def Reply( # type: ignore[misc]
+        async def Reply(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -28670,7 +28663,7 @@ class Echo:
         ) -> list[Echo.ReplayResponse]:
             ...
 
-        async def Replay( # type: ignore[misc]
+        async def Replay(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -28741,7 +28734,7 @@ class Echo:
         ) -> list[Echo.WaitForResponse]:
             ...
 
-        async def WaitFor( # type: ignore[misc]
+        async def WaitFor(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -28817,7 +28810,7 @@ class Echo:
         ) -> list[Echo.SearchAndReplaceResponse]:
             ...
 
-        async def SearchAndReplace( # type: ignore[misc]
+        async def SearchAndReplace(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -28895,7 +28888,7 @@ class Echo:
         ) -> list[Echo.FailOnceShouldBeRetriedResponse]:
             ...
 
-        async def FailOnceShouldBeRetried( # type: ignore[misc]
+        async def FailOnceShouldBeRetried(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -28968,7 +28961,7 @@ class Echo:
         ) -> list[Echo.TooManyTasksResponse]:
             ...
 
-        async def TooManyTasks( # type: ignore[misc]
+        async def TooManyTasks(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -29037,7 +29030,7 @@ class Echo:
         ) -> list[Echo.RaiseValueErrorResponse]:
             ...
 
-        async def RaiseValueError( # type: ignore[misc]
+        async def RaiseValueError(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -29106,7 +29099,7 @@ class Echo:
         ) -> list[Echo.RaiseSpecifiedErrorResponse]:
             ...
 
-        async def RaiseSpecifiedError( # type: ignore[misc]
+        async def RaiseSpecifiedError(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -29279,6 +29272,24 @@ class Echo:
 
 class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
 
+    # `reboot_native` sets these on the subclass it creates for each
+    # Node.js servicer.
+    _construct_js_servicer: IMPORT_typing.Callable[[], IMPORT_typing.Any]
+    _construct_authorizer: IMPORT_typing.Callable[
+        [IMPORT_typing.Any],
+        IMPORT_typing.Optional[IMPORT_reboot_aio_auth_authorizers.Authorizer],
+    ]
+    _trampoline: IMPORT_typing.Callable[
+        [
+            IMPORT_typing.Any,
+            IMPORT_reboot_aio_contexts.Context,
+            IMPORT_asyncio.Future[None],
+            bytes,
+        ],
+        IMPORT_asyncio.Future[bytes],
+    ]
+    _js_servicer_reference: IMPORT_typing.Any
+
     @classmethod
     async def _wait_for_cancelled(
         cls,
@@ -29312,10 +29323,10 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
         await future
 
     def __init__(self):
-        self._js_servicer_reference = self._construct_js_servicer()  # type: ignore[attr-defined]
+        self._js_servicer_reference = self._construct_js_servicer()
 
     def authorizer(self) -> IMPORT_typing.Optional[IMPORT_reboot_aio_auth_authorizers.Authorizer]:
-        return self._construct_authorizer(self._js_servicer_reference)  # type: ignore[attr-defined]
+        return self._construct_authorizer(self._js_servicer_reference)
 
     async def _read(
         self,
@@ -29461,7 +29472,7 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
 
             cancelled: IMPORT_asyncio.Future[None] = IMPORT_asyncio.Future()
 
-            bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+            bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
             try:
                 with IMPORT_reboot_aio_tracing.span(
@@ -29471,7 +29482,7 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                     python_specific=True,
                     level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                 ):
-                    bytes_result_future = self._trampoline(  # type: ignore[attr-defined]
+                    bytes_result_future = self._trampoline(
                         self._js_servicer_reference,
                         context,
                         cancelled,
@@ -29586,10 +29597,10 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
 
         cancelled: IMPORT_asyncio.Future[None] = IMPORT_asyncio.Future()
 
-        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
         try:
-            bytes_result_future = self._trampoline(  # type: ignore[attr-defined]
+            bytes_result_future = self._trampoline(
                 self._js_servicer_reference,
                 context,
                 cancelled,
@@ -29726,7 +29737,7 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
 
             cancelled: IMPORT_asyncio.Future[None] = IMPORT_asyncio.Future()
 
-            bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+            bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
             try:
                 with IMPORT_reboot_aio_tracing.span(
@@ -29736,7 +29747,7 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                     python_specific=True,
                     level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                 ):
-                    bytes_result_future = self._trampoline(  # type: ignore[attr-defined]
+                    bytes_result_future = self._trampoline(
                         self._js_servicer_reference,
                         context,
                         cancelled,
@@ -29865,7 +29876,7 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
 
             cancelled: IMPORT_asyncio.Future[None] = IMPORT_asyncio.Future()
 
-            bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+            bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
             try:
                 with IMPORT_reboot_aio_tracing.span(
@@ -29875,7 +29886,7 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                     python_specific=True,
                     level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                 ):
-                    bytes_result_future = self._trampoline(  # type: ignore[attr-defined]
+                    bytes_result_future = self._trampoline(
                         self._js_servicer_reference,
                         context,
                         cancelled,
@@ -29994,13 +30005,13 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
         # propagate `CancelledError` back through Node.js.
         context._cancelled = cancelled
 
-        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
         servicer = cls.__servicer__.get()
-        assert servicer is not None
+        assert isinstance(servicer, EchoServicerNodeAdaptor), type(servicer)
 
         try:
-            bytes_result_future = servicer._trampoline(  # type: ignore[attr-defined]
+            bytes_result_future = servicer._trampoline(
                 servicer._js_servicer_reference,
                 context,
                 cancelled,
@@ -30107,7 +30118,7 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
 
             cancelled: IMPORT_asyncio.Future[None] = IMPORT_asyncio.Future()
 
-            bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+            bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
             try:
                 with IMPORT_reboot_aio_tracing.span(
@@ -30117,7 +30128,7 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                     python_specific=True,
                     level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                 ):
-                    bytes_result_future = self._trampoline(  # type: ignore[attr-defined]
+                    bytes_result_future = self._trampoline(
                         self._js_servicer_reference,
                         context,
                         cancelled,
@@ -30236,13 +30247,13 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
         # propagate `CancelledError` back through Node.js.
         context._cancelled = cancelled
 
-        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
         servicer = cls.__servicer__.get()
-        assert servicer is not None
+        assert isinstance(servicer, EchoServicerNodeAdaptor), type(servicer)
 
         try:
-            bytes_result_future = servicer._trampoline(  # type: ignore[attr-defined]
+            bytes_result_future = servicer._trampoline(
                 servicer._js_servicer_reference,
                 context,
                 cancelled,
@@ -30339,13 +30350,13 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
         # propagate `CancelledError` back through Node.js.
         context._cancelled = cancelled
 
-        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
         servicer = cls.__servicer__.get()
-        assert servicer is not None
+        assert isinstance(servicer, EchoServicerNodeAdaptor), type(servicer)
 
         try:
-            bytes_result_future = servicer._trampoline(  # type: ignore[attr-defined]
+            bytes_result_future = servicer._trampoline(
                 servicer._js_servicer_reference,
                 context,
                 cancelled,
@@ -30442,13 +30453,13 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
         # propagate `CancelledError` back through Node.js.
         context._cancelled = cancelled
 
-        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
         servicer = cls.__servicer__.get()
-        assert servicer is not None
+        assert isinstance(servicer, EchoServicerNodeAdaptor), type(servicer)
 
         try:
-            bytes_result_future = servicer._trampoline(  # type: ignore[attr-defined]
+            bytes_result_future = servicer._trampoline(
                 servicer._js_servicer_reference,
                 context,
                 cancelled,
@@ -30545,13 +30556,13 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
         # propagate `CancelledError` back through Node.js.
         context._cancelled = cancelled
 
-        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
         servicer = cls.__servicer__.get()
-        assert servicer is not None
+        assert isinstance(servicer, EchoServicerNodeAdaptor), type(servicer)
 
         try:
-            bytes_result_future = servicer._trampoline(  # type: ignore[attr-defined]
+            bytes_result_future = servicer._trampoline(
                 servicer._js_servicer_reference,
                 context,
                 cancelled,
@@ -30648,13 +30659,13 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
         # propagate `CancelledError` back through Node.js.
         context._cancelled = cancelled
 
-        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
         servicer = cls.__servicer__.get()
-        assert servicer is not None
+        assert isinstance(servicer, EchoServicerNodeAdaptor), type(servicer)
 
         try:
-            bytes_result_future = servicer._trampoline(  # type: ignore[attr-defined]
+            bytes_result_future = servicer._trampoline(
                 servicer._js_servicer_reference,
                 context,
                 cancelled,
@@ -30761,7 +30772,7 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
 
             cancelled: IMPORT_asyncio.Future[None] = IMPORT_asyncio.Future()
 
-            bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+            bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
             try:
                 with IMPORT_reboot_aio_tracing.span(
@@ -30771,7 +30782,7 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                     python_specific=True,
                     level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                 ):
-                    bytes_result_future = self._trampoline(  # type: ignore[attr-defined]
+                    bytes_result_future = self._trampoline(
                         self._js_servicer_reference,
                         context,
                         cancelled,
@@ -30900,7 +30911,7 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
 
             cancelled: IMPORT_asyncio.Future[None] = IMPORT_asyncio.Future()
 
-            bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+            bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
             try:
                 with IMPORT_reboot_aio_tracing.span(
@@ -30910,7 +30921,7 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                     python_specific=True,
                     level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                 ):
-                    bytes_result_future = self._trampoline(  # type: ignore[attr-defined]
+                    bytes_result_future = self._trampoline(
                         self._js_servicer_reference,
                         context,
                         cancelled,
@@ -31029,13 +31040,13 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
         # propagate `CancelledError` back through Node.js.
         context._cancelled = cancelled
 
-        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
         servicer = cls.__servicer__.get()
-        assert servicer is not None
+        assert isinstance(servicer, EchoServicerNodeAdaptor), type(servicer)
 
         try:
-            bytes_result_future = servicer._trampoline(  # type: ignore[attr-defined]
+            bytes_result_future = servicer._trampoline(
                 servicer._js_servicer_reference,
                 context,
                 cancelled,
@@ -31102,7 +31113,7 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
 
 class EchoWeakReferenceNodeAdaptor(Echo.WeakReference):
 
-    async def _call(  # type: ignore[override]
+    async def _call(
         self,
         *,
         callable: IMPORT_typing.Callable[[IMPORT_google_protobuf_message.Message], IMPORT_typing.Awaitable],
@@ -31149,7 +31160,7 @@ class EchoWeakReferenceNodeAdaptor(Echo.WeakReference):
                 }
             )
 
-    async def _schedule(  # type: ignore[override]
+    async def _schedule(
         self,
         *,
         method: str,
@@ -31197,7 +31208,7 @@ class EchoWeakReferenceNodeAdaptor(Echo.WeakReference):
             }
         )
 
-    async def _reader(  # type: ignore[override]
+    async def _reader(
         self,
         method: str,
         context: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
@@ -31223,7 +31234,7 @@ class EchoWeakReferenceNodeAdaptor(Echo.WeakReference):
             )
 
         method_handle = IMPORT_functools.partial(
-            getattr(super()._reader(context), method),
+            getattr(super()._get_reader_stub(context), method),
             bearer_token=options.get("bearerToken"),
             idempotency=idempotency,
         )
@@ -31236,7 +31247,7 @@ class EchoWeakReferenceNodeAdaptor(Echo.WeakReference):
             json_request=json_request,
         )
 
-    async def _writer(  # type: ignore[override]
+    async def _writer(
         self,
         method: str,
         context: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
@@ -31274,7 +31285,7 @@ class EchoWeakReferenceNodeAdaptor(Echo.WeakReference):
             )
 
         method_handle = IMPORT_functools.partial(
-            getattr(super()._writer(context), method),
+            getattr(super()._get_writer_stub(context), method),
             idempotency=idempotency,
             bearer_token=options.get("bearerToken"),
         )
@@ -31287,7 +31298,7 @@ class EchoWeakReferenceNodeAdaptor(Echo.WeakReference):
             json_request=json_request,
         )
 
-    async def _transaction(  # type: ignore[override]
+    async def _transaction(
         self,
         method: str,
         context: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
@@ -31325,7 +31336,7 @@ class EchoWeakReferenceNodeAdaptor(Echo.WeakReference):
             )
 
         method_handle = IMPORT_functools.partial(
-            getattr(super()._workflow(context), method),
+            getattr(super()._get_workflow_stub(context), method),
             idempotency=idempotency,
             bearer_token=options.get("bearerToken"),
         )
@@ -31338,7 +31349,7 @@ class EchoWeakReferenceNodeAdaptor(Echo.WeakReference):
             json_request=json_request,
         )
 
-    async def _workflow(  # type: ignore[override]
+    async def _workflow(
         self,
         method: str,
         context: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,

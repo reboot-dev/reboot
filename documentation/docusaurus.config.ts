@@ -47,8 +47,9 @@ const config: Config = {
         // READMEs, error messages — links to some of these, as do
         // third parties, so they keep resolving.
         redirects: [
-          { from: "/ai_chat_apps/what_is", to: "/frontends/mcp_ui" },
-          { from: "/learn_more/mcp_apps", to: "/frontends/mcp_ui" },
+          { from: "/ai_chat_apps/what_is", to: "/frontends/mcp_app" },
+          { from: "/learn_more/mcp_apps", to: "/frontends/mcp_app" },
+          { from: "/frontends/mcp_ui", to: "/frontends/mcp_app" },
           {
             from: "/learn_more/implement/ui_methods",
             to: "/frontends/ui_methods",
@@ -148,6 +149,9 @@ const config: Config = {
         gtag: {
           trackingID: "G-T7HDGQM7JJ",
           anonymizeIP: true,
+        },
+        googleTagManager: {
+          containerId: "GTM-PQKF62M9",
         },
         docs: {
           routeBasePath: "/",

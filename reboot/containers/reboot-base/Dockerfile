@@ -55,7 +55,7 @@ ENV REBOOT_BASE_IMAGE_VERSION=${REBOOT_VERSION}
 # We obtain Node via the Node Version Manager, following these instructions:
 #   https://github.com/nvm-sh/nvm#installing-and-updating
 ARG NVM_VERSION=0.39.5
-ARG NODE_VERSION=20.19.0
+ARG NODE_VERSION=26.11.1
 ARG NVM_DIR=/usr/local/nvm
 
 RUN mkdir $NVM_DIR && \

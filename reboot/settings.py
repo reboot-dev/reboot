@@ -137,12 +137,38 @@ ENVVAR_RBT_STATE_DIRECTORY = 'RBT_STATE_DIRECTORY'
 ENVVAR_RBT_NODEJS = 'RBT_NODEJS'
 ENVVAR_RBT_SERVERS = 'RBT_SERVERS'
 
-# URL of the frontend dev server (web + MCP) for HMR support.
-# Format: "http://host:port" (e.g., "http://localhost:4444").
-# When set, Envoy routes "/__/frontend/**" to this server.
-ENVVAR_RBT_FRONTEND_HOST = 'RBT_FRONTEND_HOST'
-ENVVAR_RBT_FRONTEND_ROOT_PATH = 'RBT_FRONTEND_ROOT_PATH'
-ENVVAR_RBT_FRONTEND_DIST_PATH = 'RBT_FRONTEND_DIST_PATH'
+# URL of the frontend's dev server (e.g., Vite at
+# "http://localhost:5173"), which Envoy proxies "/__/frontend/**" to
+# (`rbt dev run --frontend-url`), and whose origin, since a browser may
+# open the web app there too, is trusted as a browser origin.
+ENVVAR_RBT_FRONTEND_URL = 'RBT_FRONTEND_URL'
+# "true" when the application's MCP Apps are served from that dev
+# server (`rbt dev run --mcp-app`); their builds are served from
+# `RBT_MCP_APP_DIST_PATH` instead.
+ENVVAR_RBT_MCP_APP = 'RBT_MCP_APP'
+# "true" when the application's web app is served from that dev server
+# (`rbt dev run --web-app`): Envoy sends `/`, and every path the
+# application doesn't answer, to it. Its build is served from
+# `RBT_WEB_APP_DIST_PATH` instead.
+ENVVAR_RBT_WEB_APP = 'RBT_WEB_APP'
+# Project-relative directory holding the built MCP Apps, e.g.
+# "frontend/dist/mcp", one directory per `UI(path=...)`, served under
+# "/__/frontend/mcp/".
+ENVVAR_RBT_MCP_APP_DIST_PATH = 'RBT_MCP_APP_DIST_PATH'
+# Project-relative directory holding the built web app, e.g.
+# "frontend/dist/web", served at "/".
+ENVVAR_RBT_WEB_APP_DIST_PATH = 'RBT_WEB_APP_DIST_PATH'
+# The name to register with the portless proxy once the application is
+# serving (see `reboot.portless`), so that it is served as
+# `https://<RBT_PORTLESS_NAME>.localhost`: the `--application-name`
+# under `rbt dev run --portless`, and `dashboard.<application-name>`
+# for `rbt dashboard --portless`. Unset when not under portless.
+ENVVAR_RBT_PORTLESS_NAME = 'RBT_PORTLESS_NAME'
+# The public URL this application is reachable at through a tunnel
+# (e.g., "https://<name>.trycloudflare.com"), which the setup wizard
+# shows and verifies instead of asking ngrok or cloudflared for one
+# (`rbt dev run --tunnel-url`).
+ENVVAR_RBT_TUNNEL_URL = 'RBT_TUNNEL_URL'
 
 # Environment variable indicating that `rbt` is being invoked from
 # Node.js.
@@ -210,10 +236,22 @@ ENVVAR_REBOOT_NODEJS_EXTENSIONS = 'REBOOT_NODEJS_EXTENSIONS'
 # Kubernetes.
 ENVVAR_KUBERNETES_SERVICE_HOST = 'KUBERNETES_SERVICE_HOST'
 
-# When we set up servers we often need to listen on every addressable
-# interface on the local machine. This is especially important in some
-# circumstances where networks may be rather convoluted, e.g., when we
-# have local Docker containers.
+# Where a server listens depends on where its connections come from:
+# `EVERY_LOCAL_NETWORK_ADDRESS` when connections from other machines
+# (or containers) are expected, `ONLY_LOCALHOST_NETWORK_ADDRESS` when
+# only connections from this machine are expected.
+#
+# IMPORTANT: a gRPC server that asks for any port (port 0) and only
+# expects connections from this machine MUST use
+# `ONLY_LOCALHOST_NETWORK_ADDRESS`; do not switch it to
+# `EVERY_LOCAL_NETWORK_ADDRESS`. On macOS, gRPC turns
+# `EVERY_LOCAL_NETWORK_ADDRESS` (`0.0.0.0`) into a dual-stack IPv6
+# socket, and XNU's IPv6 ephemeral-port allocator does not check ports
+# that IPv4 sockets hold, so the server can be handed the port of,
+# e.g., an orphaned Envoy, which then receives connections meant for
+# the server. On `ONLY_LOCALHOST_NETWORK_ADDRESS` (`127.0.0.1`) the
+# port comes from the IPv4 allocator, which does not hand out held
+# ports. See https://github.com/reboot-dev/reboot/pull/234.
 EVERY_LOCAL_NETWORK_ADDRESS = '0.0.0.0'
 ONLY_LOCALHOST_NETWORK_ADDRESS = '127.0.0.1'
 

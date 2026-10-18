@@ -26,6 +26,11 @@ from typing import Any, Mapping, Optional, Sequence
 # How long a server gets to shut down when asked, before it is killed.
 SHUTDOWN_SECONDS = 5
 
+# The heap the Node server may grow to. Node's default, about 4 GB, is
+# too small for a mid-sized application's analysis. A limit, not an
+# allocation: an analysis that needs little uses little.
+HEAP_MEGABYTES = 12288
+
 
 @dataclass(frozen=True, kw_only=True)
 class Location:
@@ -86,7 +91,13 @@ class Pyright:
         self._process: Optional[asyncio.subprocess.Process] = None
         self._ids = itertools.count(1)
         self._responses: dict[int, asyncio.Future[Any]] = {}
-        self._reader: Optional[asyncio.Task[None]] = None
+        # Reads the server's messages from its stdout; see `_read`.
+        self._stdout_reader: Optional[asyncio.Task[None]] = None
+        # Reads everything the server writes to its stderr, as it is
+        # written, so that it never blocks on a full pipe, and keeps
+        # it to say why the server exited if it does. A server that
+        # runs fine writes nothing there.
+        self._stderr_reader: Optional[asyncio.Task[bytes]] = None
         # For each file that we `sync` to Pyright we keep around a
         # version number (required by Pyright) and a digest (to skip
         # syncing the file if its text has not changed). Keyed by the
@@ -115,6 +126,10 @@ class Pyright:
         # holding our pipes, rather than becoming it. In a session of
         # its own, the entry point and the Node server form a process
         # group that `stop` can kill as one.
+        #
+        # The Node server's heap is set through `NODE_OPTIONS`, which
+        # the entry point passes on to it, so that the developer need
+        # not know that Node is involved to give it enough.
         self._process = await asyncio.create_subprocess_exec(
             sys.executable,
             '-m',
@@ -122,11 +137,25 @@ class Pyright:
             '--stdio',
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
             start_new_session=True,
+            env={
+                **os.environ,
+                'NODE_OPTIONS':
+                    ' '.join(
+                        [
+                            # First, so that a limit the developer set in
+                            # their own `NODE_OPTIONS` comes later and wins.
+                            f'--max-old-space-size={HEAP_MEGABYTES}',
+                            os.environ.get('NODE_OPTIONS', ''),
+                        ]
+                    ),
+            },
         )
 
-        self._reader = asyncio.create_task(self._read())
+        self._stdout_reader = asyncio.create_task(self._read())
+        assert self._process.stderr is not None
+        self._stderr_reader = asyncio.create_task(self._process.stderr.read())
 
         response = await self._request(
             'initialize',
@@ -216,8 +245,10 @@ class Pyright:
                 except ProcessLookupError:
                     pass
                 await self._process.wait()
-        if self._reader is not None:
-            self._reader.cancel()
+        if self._stdout_reader is not None:
+            self._stdout_reader.cancel()
+        if self._stderr_reader is not None:
+            self._stderr_reader.cancel()
 
     async def sync(
         self,
@@ -561,10 +592,37 @@ class Pyright:
                     break
             if ended:
                 # The server died. Whoever is waiting on it finds
-                # out now rather than waiting forever.
+                # out now rather than waiting forever, and why, with
+                # everything it wrote to its stderr, such as Node's
+                # own "JavaScript heap out of memory".
+                #
+                # What it wrote as it died may still be arriving, so
+                # its stderr is read to the end, but not waited on
+                # forever: a Node server orphaned by the entry point
+                # could hold it open.
+                assert self._stderr_reader is not None
+                await asyncio.wait(
+                    [self._stderr_reader],
+                    timeout=SHUTDOWN_SECONDS,
+                )
+                message = 'pyright exited'
+                if (
+                    self._stderr_reader.done() and
+                    not self._stderr_reader.cancelled() and
+                    self._stderr_reader.exception() is None
+                ):
+                    stderr = self._stderr_reader.result().decode(
+                        # Decoded with `errors='replace'` so that bytes
+                        # that aren't UTF-8 can't raise here, which would
+                        # end this task before the pending requests below
+                        # are failed, leaving them waiting forever.
+                        errors='replace',
+                    ).strip()
+                    if stderr != '':
+                        message += f': {stderr}'
                 for future in self._responses.values():
                     if not future.done():
-                        future.set_exception(RuntimeError('pyright exited'))
+                        future.set_exception(RuntimeError(message))
                 self._responses.clear()
                 return
             body = json.loads(await self._process.stdout.readexactly(length))

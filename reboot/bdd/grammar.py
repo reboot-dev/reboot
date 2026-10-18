@@ -214,7 +214,18 @@ ROLES = tuple(
 )
 ELEMENT = rf'the "(?P<name>[^"]*)" (?P<role>{"|".join(ROLES)})'
 WEB_APP = 'in the web app'
-OPENS_WEB_APP = rf'{USER} opens the web app(?: at "(?P<path>[^"]*)")?$'
+# What color scheme a step may open the web app in: each of
+# `OpensWebApp.ColorScheme` in lower case, so that the proto is the
+# one list.
+COLOR_SCHEMES = tuple(
+    name.lower()
+    for name, number in OpensWebApp.ColorScheme.items()
+    if number != OpensWebApp.ColorScheme.COLOR_SCHEME_UNSPECIFIED
+)
+OPENS_WEB_APP = (
+    rf'{USER} opens the web app(?: at "(?P<path>[^"]*)")? '
+    rf'in (?P<color_scheme>{"|".join(COLOR_SCHEMES)}) mode$'
+)
 CLICKS_IN_WEB_APP = rf'{USER} clicks {ELEMENT} {WEB_APP}$'
 FILLS_IN_WEB_APP = (
     rf'{USER} fills "(?P<label>[^"]*)" {WEB_APP} with `(?P<value>[^`]*)`$'
@@ -502,8 +513,15 @@ def parse(text: str) -> Optional[BuiltInSyntax]:
         )
     match = re.match(OPENS_WEB_APP, text)
     if match is not None:
+        color_scheme = OpensWebApp.ColorScheme.Value(
+            match['color_scheme'].upper()
+        )
         return BuiltInSyntax(
-            opens_web_app=OpensWebApp(user=match['user'], path=match['path'])
+            opens_web_app=OpensWebApp(
+                user=match['user'],
+                path=match['path'],
+                color_scheme=color_scheme,
+            )
         )
     match = re.match(CLICKS_IN_WEB_APP, text)
     if match is not None:

@@ -185,7 +185,7 @@ from reboot.std.collections.ordered_map.v1.ordered_map import (
     OrderedMap, ordered_map_library,
 )
 from uuid import uuid4
-from uuid7 import create as uuid7
+from reboot.uuidv7 import uuid7
 
 
 class UserState(Model):
@@ -196,13 +196,17 @@ class UserState(Model):
 
 class UserServicer(User.Servicer):
 
-    async def create(self, context: WriterContext) -> None:
-        if context.constructor:
-            # Just allocate the ID — the OrderedMap is constructed
-            # implicitly on the first `insert`. Until then, reading it
-            # aborts with `StateNotConstructed`; see
-            # `stdlib-ordered-map.md`.
-            self.state.people_index_id = str(uuid4())
+    # The auto-constructed `User`'s constructor, a `Transaction`
+    # Reboot adds to the API and calls when the user first signs in.
+    # A constructor never runs on an existing state, so the body
+    # needs no `context.constructor` check; see gotcha 22 in
+    # `patterns-common-gotchas.md`.
+    async def create(self, context: TransactionContext) -> None:
+        # Just allocate the ID — the OrderedMap is constructed
+        # implicitly on the first `insert`. Until then, reading it
+        # aborts with `StateNotConstructed`; see
+        # `stdlib-ordered-map.md`.
+        self.state.people_index_id = str(uuid4())
 
     async def add_person(
         self,
@@ -270,11 +274,10 @@ class UserState(Model):
 
 class UserServicer(User.Servicer):
 
-    async def create(self, context: WriterContext) -> None:
-        if context.constructor:
-            self.state.profile_id = str(uuid4())
-            self.state.drafts_index_id = str(uuid4())
-            self.state.inbox_queue_id = str(uuid4())
+    async def create(self, context: TransactionContext) -> None:
+        self.state.profile_id = str(uuid4())
+        self.state.drafts_index_id = str(uuid4())
+        self.state.inbox_queue_id = str(uuid4())
 
     async def add_draft(
         self, context: TransactionContext, request: User.AddDraftRequest,
@@ -322,6 +325,17 @@ form runs:
    constructor marks "this actor now owns that one." The inline
    convention has no such moment; the related actor springs into
    existence on whichever method happens to touch it first.
+
+### Deleting a State
+
+Reboot has no call that deletes a state. "Deleting" a todo, a
+document, or a person means removing its id from every collection
+that references it (`OrderedMap.remove`, or dropping it from a
+`list[str]`), in the same `Transaction` that decides to delete it.
+The state itself stays behind, unreachable through the app. If its
+contents must actually go (personal data, a secret), also call a
+writer on it that clears its fields, and have its readers treat the
+cleared state as gone.
 
 ### Decision Flow (Summary)
 
@@ -383,6 +397,6 @@ form runs:
   collection items.
 - `stdlib-ordered-map.md` — concrete API for Shape C, library
   registration, pagination details.
-- `mcp-ui/references/api-state-shapes.md` (`mcp-ui` skill) — the
-  MCP-UI-specific corollary: `list[Item]` is for sub-records,
+- `mcp-app/references/api-state-shapes.md` (`mcp-app` skill) — the
+  MCP App-specific corollary: `list[Item]` is for sub-records,
   not for application-type instances.

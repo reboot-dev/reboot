@@ -39,7 +39,7 @@ import traceback as IMPORT_traceback
 import uuid as IMPORT_uuid
 import pickle as IMPORT_pickle
 import reboot as IMPORT_reboot
-import log.log as IMPORT_log_log   # type: ignore[import]
+import log.log as IMPORT_log_log
 import typing as IMPORT_typing
 import reboot.aio.backoff as IMPORT_reboot_aio_backoff
 import functools as IMPORT_functools
@@ -1089,6 +1089,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
         )
 
         self._servicer = servicer
+        # An instance of the servicer's derived class for each state it
+        # has served; see `GreeterServicer._instance()`.
+        self._instances: dict[str, GreeterServicer] = {}
         self._state_manager = state_manager
         self.tasks_dispatcher = IMPORT_reboot_aio_internals_tasks_dispatcher.TasksDispatcher(
             application_id=application_id,
@@ -1251,8 +1254,8 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     headers=headers, method='Greet'
                 )
 
-                request = tests.reboot.greeter_pb2.GreetRequest()
-                request.ParseFromString(request_bytes)
+                greet_request = tests.reboot.greeter_pb2.GreetRequest()
+                greet_request.ParseFromString(request_bytes)
 
                 async with self._state_manager.reactively(
                     context,
@@ -1261,7 +1264,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                         method_name='tests.reboot.GreeterMethods.Greet',
                         headers=headers,
                         auth=context.auth,
-                        request=request,
+                        request=greet_request,
                     ),
                 ) as states:
                     async for (state, idempotency_keys) in states:
@@ -1275,7 +1278,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                             return await self.__Greet(
                                 context,
                                 state,
-                                request,
+                                greet_request,
                                 validating_effects=validating_effects,
                             )
 
@@ -1344,8 +1347,8 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     headers=headers, method='TryToConstructContext'
                 )
 
-                request = google.protobuf.empty_pb2.Empty()
-                request.ParseFromString(request_bytes)
+                try_to_construct_context_request = google.protobuf.empty_pb2.Empty()
+                try_to_construct_context_request.ParseFromString(request_bytes)
 
                 async with self._state_manager.reactively(
                     context,
@@ -1354,7 +1357,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                         method_name='tests.reboot.GreeterMethods.TryToConstructContext',
                         headers=headers,
                         auth=context.auth,
-                        request=request,
+                        request=try_to_construct_context_request,
                     ),
                 ) as states:
                     async for (state, idempotency_keys) in states:
@@ -1368,7 +1371,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                             return await self.__TryToConstructContext(
                                 context,
                                 state,
-                                request,
+                                try_to_construct_context_request,
                                 validating_effects=validating_effects,
                             )
 
@@ -1401,8 +1404,8 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     headers=headers, method='TryToConstructExternalContext'
                 )
 
-                request = google.protobuf.empty_pb2.Empty()
-                request.ParseFromString(request_bytes)
+                try_to_construct_external_context_request = google.protobuf.empty_pb2.Empty()
+                try_to_construct_external_context_request.ParseFromString(request_bytes)
 
                 async with self._state_manager.reactively(
                     context,
@@ -1411,7 +1414,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                         method_name='tests.reboot.GreeterMethods.TryToConstructExternalContext',
                         headers=headers,
                         auth=context.auth,
-                        request=request,
+                        request=try_to_construct_external_context_request,
                     ),
                 ) as states:
                     async for (state, idempotency_keys) in states:
@@ -1425,7 +1428,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                             return await self.__TryToConstructExternalContext(
                                 context,
                                 state,
-                                request,
+                                try_to_construct_external_context_request,
                                 validating_effects=validating_effects,
                             )
 
@@ -1458,8 +1461,8 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     headers=headers, method='TestLongRunningFetch'
                 )
 
-                request = tests.reboot.greeter_pb2.TestLongRunningFetchRequest()
-                request.ParseFromString(request_bytes)
+                test_long_running_fetch_request = tests.reboot.greeter_pb2.TestLongRunningFetchRequest()
+                test_long_running_fetch_request.ParseFromString(request_bytes)
 
                 async with self._state_manager.reactively(
                     context,
@@ -1468,7 +1471,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                         method_name='tests.reboot.GreeterMethods.TestLongRunningFetch',
                         headers=headers,
                         auth=context.auth,
-                        request=request,
+                        request=test_long_running_fetch_request,
                     ),
                 ) as states:
                     async for (state, idempotency_keys) in states:
@@ -1482,7 +1485,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                             return await self.__TestLongRunningFetch(
                                 context,
                                 state,
-                                request,
+                                test_long_running_fetch_request,
                                 validating_effects=validating_effects,
                             )
 
@@ -1533,8 +1536,8 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     headers=headers, method='GetWholeState'
                 )
 
-                request = tests.reboot.greeter_pb2.GetWholeStateRequest()
-                request.ParseFromString(request_bytes)
+                get_whole_state_request = tests.reboot.greeter_pb2.GetWholeStateRequest()
+                get_whole_state_request.ParseFromString(request_bytes)
 
                 async with self._state_manager.reactively(
                     context,
@@ -1543,7 +1546,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                         method_name='tests.reboot.GreeterMethods.GetWholeState',
                         headers=headers,
                         auth=context.auth,
-                        request=request,
+                        request=get_whole_state_request,
                     ),
                 ) as states:
                     async for (state, idempotency_keys) in states:
@@ -1557,7 +1560,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                             return await self.__GetWholeState(
                                 context,
                                 state,
-                                request,
+                                get_whole_state_request,
                                 validating_effects=validating_effects,
                             )
 
@@ -1590,8 +1593,8 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     headers=headers, method='FailWithException'
                 )
 
-                request = google.protobuf.empty_pb2.Empty()
-                request.ParseFromString(request_bytes)
+                fail_with_exception_request = google.protobuf.empty_pb2.Empty()
+                fail_with_exception_request.ParseFromString(request_bytes)
 
                 async with self._state_manager.reactively(
                     context,
@@ -1600,7 +1603,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                         method_name='tests.reboot.GreeterMethods.FailWithException',
                         headers=headers,
                         auth=context.auth,
-                        request=request,
+                        request=fail_with_exception_request,
                     ),
                 ) as states:
                     async for (state, idempotency_keys) in states:
@@ -1614,7 +1617,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                             return await self.__FailWithException(
                                 context,
                                 state,
-                                request,
+                                fail_with_exception_request,
                                 validating_effects=validating_effects,
                             )
 
@@ -1647,8 +1650,8 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     headers=headers, method='FailWithAborted'
                 )
 
-                request = google.protobuf.empty_pb2.Empty()
-                request.ParseFromString(request_bytes)
+                fail_with_aborted_request = google.protobuf.empty_pb2.Empty()
+                fail_with_aborted_request.ParseFromString(request_bytes)
 
                 async with self._state_manager.reactively(
                     context,
@@ -1657,7 +1660,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                         method_name='tests.reboot.GreeterMethods.FailWithAborted',
                         headers=headers,
                         auth=context.auth,
-                        request=request,
+                        request=fail_with_aborted_request,
                     ),
                 ) as states:
                     async for (state, idempotency_keys) in states:
@@ -1671,7 +1674,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                             return await self.__FailWithAborted(
                                 context,
                                 state,
-                                request,
+                                fail_with_aborted_request,
                                 validating_effects=validating_effects,
                             )
 
@@ -1758,8 +1761,8 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     headers=headers, method='ReadRecursiveMessage'
                 )
 
-                request = tests.reboot.greeter_pb2.ReadRecursiveMessageRequest()
-                request.ParseFromString(request_bytes)
+                read_recursive_message_request = tests.reboot.greeter_pb2.ReadRecursiveMessageRequest()
+                read_recursive_message_request.ParseFromString(request_bytes)
 
                 async with self._state_manager.reactively(
                     context,
@@ -1768,7 +1771,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                         method_name='tests.reboot.GreeterMethods.ReadRecursiveMessage',
                         headers=headers,
                         auth=context.auth,
-                        request=request,
+                        request=read_recursive_message_request,
                     ),
                 ) as states:
                     async for (state, idempotency_keys) in states:
@@ -1782,7 +1785,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                             return await self.__ReadRecursiveMessage(
                                 context,
                                 state,
-                                request,
+                                read_recursive_message_request,
                                 validating_effects=validating_effects,
                             )
 
@@ -1837,8 +1840,8 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
         """Returns the response of calling 'method' given a message
         deserialized from the provided 'request_bytes'."""
         if method == 'Create':
-            request = tests.reboot.greeter_pb2.CreateRequest()
-            request.ParseFromString(request_bytes)
+            create_request = tests.reboot.greeter_pb2.CreateRequest()
+            create_request.ParseFromString(request_bytes)
 
             # NOTE: we automatically retry mutations that come through
             # React when we get a `IMPORT_grpc.StatusCode.UNAVAILABLE` to
@@ -1871,7 +1874,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     )
                 )
                 call = stub.Create(
-                    request=request,
+                    request=create_request,
                     metadata=headers.to_grpc_metadata(),
                 )
                 try:
@@ -1947,8 +1950,8 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 message=f"Method '{method}' is invalid"
             )
         elif method == 'SetAdjective':
-            request = tests.reboot.greeter_pb2.SetAdjectiveRequest()
-            request.ParseFromString(request_bytes)
+            set_adjective_request = tests.reboot.greeter_pb2.SetAdjectiveRequest()
+            set_adjective_request.ParseFromString(request_bytes)
 
             # NOTE: we automatically retry mutations that come through
             # React when we get a `IMPORT_grpc.StatusCode.UNAVAILABLE` to
@@ -1981,7 +1984,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     )
                 )
                 call = stub.SetAdjective(
-                    request=request,
+                    request=set_adjective_request,
                     metadata=headers.to_grpc_metadata(),
                 )
                 try:
@@ -2041,8 +2044,8 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                      ) from None
 
         elif method == 'TransactionSetAdjective':
-            request = tests.reboot.greeter_pb2.SetAdjectiveRequest()
-            request.ParseFromString(request_bytes)
+            transaction_set_adjective_request = tests.reboot.greeter_pb2.SetAdjectiveRequest()
+            transaction_set_adjective_request.ParseFromString(request_bytes)
 
             # NOTE: we automatically retry mutations that come through
             # React when we get a `IMPORT_grpc.StatusCode.UNAVAILABLE` to
@@ -2075,7 +2078,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     )
                 )
                 call = stub.TransactionSetAdjective(
-                    request=request,
+                    request=transaction_set_adjective_request,
                     metadata=headers.to_grpc_metadata(),
                 )
                 try:
@@ -2183,8 +2186,8 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 message=f"Method '{method}' is invalid"
             )
         elif method == 'TestLongRunningWriter':
-            request = google.protobuf.empty_pb2.Empty()
-            request.ParseFromString(request_bytes)
+            test_long_running_writer_request = google.protobuf.empty_pb2.Empty()
+            test_long_running_writer_request.ParseFromString(request_bytes)
 
             # NOTE: we automatically retry mutations that come through
             # React when we get a `IMPORT_grpc.StatusCode.UNAVAILABLE` to
@@ -2217,7 +2220,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     )
                 )
                 call = stub.TestLongRunningWriter(
-                    request=request,
+                    request=test_long_running_writer_request,
                     metadata=headers.to_grpc_metadata(),
                 )
                 try:
@@ -2331,8 +2334,8 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 f"Method 'Workflow' can not be called via React (for now)"
             )
         elif method == 'DangerousFields':
-            request = tests.reboot.greeter_pb2.DangerousFieldsRequest()
-            request.ParseFromString(request_bytes)
+            dangerous_fields_request = tests.reboot.greeter_pb2.DangerousFieldsRequest()
+            dangerous_fields_request.ParseFromString(request_bytes)
 
             # NOTE: we automatically retry mutations that come through
             # React when we get a `IMPORT_grpc.StatusCode.UNAVAILABLE` to
@@ -2365,7 +2368,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     )
                 )
                 call = stub.DangerousFields(
-                    request=request,
+                    request=dangerous_fields_request,
                     metadata=headers.to_grpc_metadata(),
                 )
                 try:
@@ -2425,8 +2428,8 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                      ) from None
 
         elif method == 'StoreRecursiveMessage':
-            request = tests.reboot.greeter_pb2.StoreRecursiveMessageRequest()
-            request.ParseFromString(request_bytes)
+            store_recursive_message_request = tests.reboot.greeter_pb2.StoreRecursiveMessageRequest()
+            store_recursive_message_request.ParseFromString(request_bytes)
 
             # NOTE: we automatically retry mutations that come through
             # React when we get a `IMPORT_grpc.StatusCode.UNAVAILABLE` to
@@ -2459,7 +2462,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     )
                 )
                 call = stub.StoreRecursiveMessage(
-                    request=request,
+                    request=store_recursive_message_request,
                     metadata=headers.to_grpc_metadata(),
                 )
                 try:
@@ -2535,8 +2538,8 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 message=f"Method '{method}' is invalid"
             )
         elif method == 'ConstructAndStoreRecursiveMessage':
-            request = tests.reboot.greeter_pb2.ConstructAndStoreRecursiveMessageRequest()
-            request.ParseFromString(request_bytes)
+            construct_and_store_recursive_message_request = tests.reboot.greeter_pb2.ConstructAndStoreRecursiveMessageRequest()
+            construct_and_store_recursive_message_request.ParseFromString(request_bytes)
 
             # NOTE: we automatically retry mutations that come through
             # React when we get a `IMPORT_grpc.StatusCode.UNAVAILABLE` to
@@ -2569,7 +2572,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     )
                 )
                 call = stub.ConstructAndStoreRecursiveMessage(
-                    request=request,
+                    request=construct_and_store_recursive_message_request,
                     metadata=headers.to_grpc_metadata(),
                 )
                 try:
@@ -3989,32 +3992,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Greeter.Create') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -4167,10 +4144,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
 
                 await writer.complete(effects)
 
-                # TODO: We need a single `Effects` superclass for all methods, so we
-                # would need to make it "partially" generic (with per-method subclasses
-                # filling out the rest of the generic parameters) in order to fix this.
-                return effects.response  # type: ignore[return-value]
+                return effects.response
 
     async def _schedule_Create(
         self,
@@ -4497,32 +4471,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Greeter.Greet') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -4985,32 +4933,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Greeter.SetAdjective') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -5163,10 +5085,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
 
                 await writer.complete(effects)
 
-                # TODO: We need a single `Effects` superclass for all methods, so we
-                # would need to make it "partially" generic (with per-method subclasses
-                # filling out the rest of the generic parameters) in order to fix this.
-                return effects.response  # type: ignore[return-value]
+                return effects.response
 
     async def _schedule_SetAdjective(
         self,
@@ -5493,32 +5412,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Greeter.TransactionSetAdjective') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -6003,32 +5896,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Greeter.TryToConstructContext') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -6486,32 +6353,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Greeter.TryToConstructExternalContext') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -6969,32 +6810,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Greeter.TestLongRunningFetch') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -7457,32 +7272,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Greeter.TestLongRunningWriter') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -7635,10 +7424,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
 
                 await writer.complete(effects)
 
-                # TODO: We need a single `Effects` superclass for all methods, so we
-                # would need to make it "partially" generic (with per-method subclasses
-                # filling out the rest of the generic parameters) in order to fix this.
-                return effects.response  # type: ignore[return-value]
+                return effects.response
 
     async def _schedule_TestLongRunningWriter(
         self,
@@ -7965,32 +7751,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Greeter.GetWholeState') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -8448,32 +8208,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Greeter.FailWithException') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -9828,32 +9562,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Greeter.DangerousFields') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -10006,10 +9714,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
 
                 await writer.complete(effects)
 
-                # TODO: We need a single `Effects` superclass for all methods, so we
-                # would need to make it "partially" generic (with per-method subclasses
-                # filling out the rest of the generic parameters) in order to fix this.
-                return effects.response  # type: ignore[return-value]
+                return effects.response
 
     async def _schedule_DangerousFields(
         self,
@@ -10341,32 +10046,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Greeter.StoreRecursiveMessage') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -10519,10 +10198,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
 
                 await writer.complete(effects)
 
-                # TODO: We need a single `Effects` superclass for all methods, so we
-                # would need to make it "partially" generic (with per-method subclasses
-                # filling out the rest of the generic parameters) in order to fix this.
-                return effects.response  # type: ignore[return-value]
+                return effects.response
 
     async def _schedule_StoreRecursiveMessage(
         self,
@@ -10849,32 +10525,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Greeter.ReadRecursiveMessage') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -11332,32 +10982,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             else:
                 if (
-                    aborted_type is not None and
-                    not isinstance(aborted, aborted_type) and
-                    aborted_type.is_declared_error(aborted.error)
-                ):
-                    # We propagate declared errors that might have
-                    # come from another call, i.e., we might have an
-                    # `Aborted` but not for this method but the
-                    # `Aborted` that we have has an error that this
-                    # method declared. This allows a developer to
-                    # simply add the declared error to their `.proto`
-                    # file rather than having to catch and re-raise
-                    # the error with their own aborted type.
-                    if context.task is None:
-                        logger.warning(
-                            f"Propagating unhandled but declared error (in 'tests.reboot.Greeter.ConstructAndStoreRecursiveMessage') {aborted}"
-                        )
-                    # Raised as this method's own aborted so that the
-                    # error travels the wire the way this method
-                    # declares it, which for a pydantic API is inside
-                    # a message of this method's own; the caller's
-                    # client only decodes that.
-                    raise aborted_type(
-                        aborted.error,
-                        message=aborted.message,
-                    ) from aborted
-                elif (
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -11859,10 +11483,12 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
         headers: IMPORT_reboot_aio_headers.Headers,
         method: str,
     ) -> IMPORT_typing.Optional[IMPORT_reboot_aio_auth.Auth]:
-        """Verify the bearer token and if a token verifier is present.
+        """Verify the bearer token if a token verifier is present.
 
-        Returns the (optional) `reboot.aio.auth.Auth` object
-        produced by the token verifier if the token can be verified.
+        Returns the `reboot.aio.auth.Auth` produced by the token
+        verifier if the token can be verified, else the `Auth` that an
+        app-internal caller passed on in its caller ID, if any, else
+        `None`.
         """
         if self._token_verifier is not None:
             if headers.bearer_token == __internal_magic_token__:
@@ -11886,7 +11512,21 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                         result,
                         message=result.message or None,
                     )
-                return result
+                if result is not None:
+                    return result
+
+        # Otherwise, on an app-internal call, use the `Auth` the caller
+        # carried on behalf of whoever called it, if it carried one at
+        # all (see `CallerID.auth`).
+        caller_id = headers.caller_id
+        if (
+            headers.bearer_token is None and caller_id is not None and
+            caller_id.auth is not None and
+            IMPORT_reboot_aio_contexts.Context.is_app_internal(
+                headers, self.application_id
+            )
+        ):
+            return caller_id.auth
 
         return None
 
@@ -11912,6 +11552,15 @@ class _GreeterStub(IMPORT_reboot_aio_stubs.Stub):
         # have security implications - we cannot simply trust any service we are calling with
         # the user's credentials. Instead, the developer can rely on the default app-internal
         # auth, or override that and set an explicit bearer token.
+        #
+        # What we do pass on, in our caller ID, is the caller's `context.auth`, i.e., who the
+        # call is made on behalf of. That is safe because an `Auth` is not a credential, it
+        # only says who the caller is, and the callee only honors it on an app-internal call,
+        # i.e., when it arrives with our own (trusted) caller ID, so it can't be used anywhere
+        # else. If there is no `context.auth` then nothing is passed on. Setting an explicit
+        # bearer token overrides it: the callee then verifies that token instead and gets no
+        # `context.auth` from us. The caller ID itself is still sent, so the call is still
+        # app-internal.
         #
         # In the case of `ExternalContext`, however, its `bearer_token` was set specifically
         # by the developer for the purpose of making these calls.
@@ -13567,9 +13216,9 @@ class GreeterTasksStub(_GreeterStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Greeter'),
@@ -13620,9 +13269,9 @@ class GreeterTasksStub(_GreeterStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Greeter'),
@@ -13673,9 +13322,9 @@ class GreeterTasksStub(_GreeterStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Greeter'),
@@ -13726,9 +13375,9 @@ class GreeterTasksStub(_GreeterStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Greeter'),
@@ -13779,9 +13428,9 @@ class GreeterTasksStub(_GreeterStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Greeter'),
@@ -13832,9 +13481,9 @@ class GreeterTasksStub(_GreeterStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Greeter'),
@@ -13885,9 +13534,9 @@ class GreeterTasksStub(_GreeterStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Greeter'),
@@ -13938,9 +13587,9 @@ class GreeterTasksStub(_GreeterStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Greeter'),
@@ -13991,9 +13640,9 @@ class GreeterTasksStub(_GreeterStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Greeter'),
@@ -14044,9 +13693,9 @@ class GreeterTasksStub(_GreeterStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Greeter'),
@@ -14097,9 +13746,9 @@ class GreeterTasksStub(_GreeterStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Greeter'),
@@ -14150,9 +13799,9 @@ class GreeterTasksStub(_GreeterStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Greeter'),
@@ -14203,9 +13852,9 @@ class GreeterTasksStub(_GreeterStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Greeter'),
@@ -14256,9 +13905,9 @@ class GreeterTasksStub(_GreeterStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Greeter'),
@@ -14309,9 +13958,9 @@ class GreeterTasksStub(_GreeterStub):
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Greeter'),
@@ -15465,6 +15114,8 @@ class GreeterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
     # For 'tests.reboot.GreeterMethods.Create'.
     class CreateEffects(Effects):
+        response: tests.reboot.greeter_pb2.CreateResponse
+
         def __init__(
             self,
             *,
@@ -15482,6 +15133,8 @@ class GreeterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
     # For 'tests.reboot.GreeterMethods.SetAdjective'.
     class SetAdjectiveEffects(Effects):
+        response: tests.reboot.greeter_pb2.SetAdjectiveResponse
+
         def __init__(
             self,
             *,
@@ -15502,6 +15155,8 @@ class GreeterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
     # For 'tests.reboot.GreeterMethods.TestLongRunningWriter'.
     class TestLongRunningWriterEffects(Effects):
+        response: google.protobuf.empty_pb2.Empty
+
         def __init__(
             self,
             *,
@@ -15522,6 +15177,8 @@ class GreeterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
     # For 'tests.reboot.GreeterMethods.DangerousFields'.
     class DangerousFieldsEffects(Effects):
+        response: google.protobuf.empty_pb2.Empty
+
         def __init__(
             self,
             *,
@@ -15538,6 +15195,8 @@ class GreeterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
     # For 'tests.reboot.GreeterMethods.StoreRecursiveMessage'.
     class StoreRecursiveMessageEffects(Effects):
+        response: tests.reboot.greeter_pb2.StoreRecursiveMessageResponse
+
         def __init__(
             self,
             *,
@@ -17130,16 +16789,19 @@ class GreeterServicer(GreeterBaseServicer):
         default=None,
     )
 
-    # An instance of the derived class for each state.
-    _instances: dict[str, GreeterServicer] = {}
-
     def _instance(self, state_id: str):
-        instances = GreeterServicer._instances
+        # An instance of the derived class for each state. The
+        # middleware keeps them, so that they live as long as the server
+        # it serves and not as long as the process: another server in
+        # the same process (a later `Reboot` in a test, say) may serve
+        # the same state id with another servicer class.
+        assert self._middleware is not None
+        instances = self._middleware._instances
         instance = instances.get(state_id)
         if instance is None:
             instance = self.__class__()
             instance._middleware = self._middleware
-        instances[state_id] = instance
+            instances[state_id] = instance
         return instance
 
     @property
@@ -18309,7 +17971,7 @@ class Greeter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.CreateResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.greeter_pb2.CreateResponse:
+            async def wait_for_task() -> Greeter.CreateResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -18397,36 +18059,36 @@ class Greeter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -18494,7 +18156,10 @@ class Greeter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class GreetTask:
@@ -18538,7 +18203,7 @@ class Greeter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.GreetResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.greeter_pb2.GreetResponse:
+            async def wait_for_task() -> Greeter.GreetResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -18625,36 +18290,36 @@ class Greeter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -18722,7 +18387,10 @@ class Greeter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class SetAdjectiveTask:
@@ -18766,7 +18434,7 @@ class Greeter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.SetAdjectiveResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.greeter_pb2.SetAdjectiveResponse:
+            async def wait_for_task() -> Greeter.SetAdjectiveResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -18854,36 +18522,36 @@ class Greeter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -18951,7 +18619,10 @@ class Greeter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class TransactionSetAdjectiveTask:
@@ -18995,7 +18666,7 @@ class Greeter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.TransactionSetAdjectiveResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.greeter_pb2.SetAdjectiveResponse:
+            async def wait_for_task() -> Greeter.TransactionSetAdjectiveResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -19082,36 +18753,36 @@ class Greeter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -19179,7 +18850,10 @@ class Greeter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class TryToConstructContextTask:
@@ -19223,7 +18897,7 @@ class Greeter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.TryToConstructContextResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> google.protobuf.empty_pb2.Empty:
+            async def wait_for_task() -> Greeter.TryToConstructContextResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -19310,36 +18984,36 @@ class Greeter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -19407,7 +19081,10 @@ class Greeter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class TryToConstructExternalContextTask:
@@ -19451,7 +19128,7 @@ class Greeter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.TryToConstructExternalContextResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> google.protobuf.empty_pb2.Empty:
+            async def wait_for_task() -> Greeter.TryToConstructExternalContextResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -19538,36 +19215,36 @@ class Greeter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -19635,7 +19312,10 @@ class Greeter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class TestLongRunningFetchTask:
@@ -19679,7 +19359,7 @@ class Greeter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.TestLongRunningFetchResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> google.protobuf.empty_pb2.Empty:
+            async def wait_for_task() -> Greeter.TestLongRunningFetchResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -19766,36 +19446,36 @@ class Greeter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -19863,7 +19543,10 @@ class Greeter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class TestLongRunningWriterTask:
@@ -19907,7 +19590,7 @@ class Greeter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.TestLongRunningWriterResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> google.protobuf.empty_pb2.Empty:
+            async def wait_for_task() -> Greeter.TestLongRunningWriterResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -19995,36 +19678,36 @@ class Greeter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -20092,7 +19775,10 @@ class Greeter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class GetWholeStateTask:
@@ -20136,7 +19822,7 @@ class Greeter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.GetWholeStateResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.greeter_pb2.Greeter:
+            async def wait_for_task() -> Greeter.GetWholeStateResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -20223,36 +19909,36 @@ class Greeter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -20320,7 +20006,10 @@ class Greeter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class FailWithExceptionTask:
@@ -20364,7 +20053,7 @@ class Greeter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.FailWithExceptionResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> google.protobuf.empty_pb2.Empty:
+            async def wait_for_task() -> Greeter.FailWithExceptionResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -20451,36 +20140,36 @@ class Greeter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -20548,7 +20237,10 @@ class Greeter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class FailWithAbortedTask:
@@ -20592,7 +20284,7 @@ class Greeter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.FailWithAbortedResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> google.protobuf.empty_pb2.Empty:
+            async def wait_for_task() -> Greeter.FailWithAbortedResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -20683,17 +20375,7 @@ class Greeter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-            tests.reboot.greeter_pb2.ErrorWithValue        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             tests.reboot.greeter_pb2.ErrorWithValue,
             IMPORT_reboot.aio.aborted.GrpcError,
@@ -20701,19 +20383,29 @@ class Greeter:
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            tests.reboot.greeter_pb2.ErrorWithValue        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error: MethodError |  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodError | MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -20781,7 +20473,12 @@ class Greeter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> IMPORT_typing.TypeGuard[MethodError]:
+            if isinstance(error, IMPORT_reboot.api.Model):
+                return False
             if error.DESCRIPTOR.full_name == 'tests.reboot.ErrorWithValue':
                 return True
             return False
@@ -20827,7 +20524,7 @@ class Greeter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.WorkflowResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.greeter_pb2.WorkflowResponse:
+            async def wait_for_task() -> Greeter.WorkflowResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -20918,17 +20615,7 @@ class Greeter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-            tests.reboot.greeter_pb2.ErrorWithValue        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             tests.reboot.greeter_pb2.ErrorWithValue,
             IMPORT_reboot.aio.aborted.GrpcError,
@@ -20936,19 +20623,29 @@ class Greeter:
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            tests.reboot.greeter_pb2.ErrorWithValue        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error: MethodError |  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodError | MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -21016,7 +20713,12 @@ class Greeter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> IMPORT_typing.TypeGuard[MethodError]:
+            if isinstance(error, IMPORT_reboot.api.Model):
+                return False
             if error.DESCRIPTOR.full_name == 'tests.reboot.ErrorWithValue':
                 return True
             return False
@@ -21062,7 +20764,7 @@ class Greeter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.DangerousFieldsResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> google.protobuf.empty_pb2.Empty:
+            async def wait_for_task() -> Greeter.DangerousFieldsResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -21150,36 +20852,36 @@ class Greeter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -21247,7 +20949,10 @@ class Greeter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class StoreRecursiveMessageTask:
@@ -21291,7 +20996,7 @@ class Greeter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.StoreRecursiveMessageResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.greeter_pb2.StoreRecursiveMessageResponse:
+            async def wait_for_task() -> Greeter.StoreRecursiveMessageResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -21379,36 +21084,36 @@ class Greeter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -21476,7 +21181,10 @@ class Greeter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class ReadRecursiveMessageTask:
@@ -21520,7 +21228,7 @@ class Greeter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.ReadRecursiveMessageResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.greeter_pb2.ReadRecursiveMessageResponse:
+            async def wait_for_task() -> Greeter.ReadRecursiveMessageResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -21607,36 +21315,36 @@ class Greeter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -21704,7 +21412,10 @@ class Greeter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
     class ConstructAndStoreRecursiveMessageTask:
@@ -21748,7 +21459,7 @@ class Greeter:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.ConstructAndStoreRecursiveMessageResponse]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> tests.reboot.greeter_pb2.ConstructAndStoreRecursiveMessageResponse:
+            async def wait_for_task() -> Greeter.ConstructAndStoreRecursiveMessageResponse:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -21835,36 +21546,36 @@ class Greeter:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
         _error: Error
-
         MethodProtobufError = IMPORT_typing.Union[
             IMPORT_reboot.aio.aborted.GrpcError,
             IMPORT_reboot.aio.aborted.RebootError,
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            error: MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -21932,7 +21643,10 @@ class Greeter:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> bool:
             return False
 
 
@@ -21964,7 +21678,7 @@ class Greeter:
         def state_id(self) -> IMPORT_reboot_aio_types.StateId:
             return self._state_ref.id
 
-        def _reader(
+        def _get_reader_stub(
             self,
             context: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
         ) -> GreeterReaderStub:
@@ -21987,7 +21701,7 @@ class Greeter:
                 )
             return self._reader_stub
 
-        def _writer(
+        def _get_writer_stub(
             self,
             context: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
         ) -> GreeterWriterStub:
@@ -22010,7 +21724,7 @@ class Greeter:
                 )
             return self._writer_stub
 
-        def _workflow(
+        def _get_workflow_stub(
             self,
             context: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
         ) -> GreeterWorkflowStub:
@@ -22070,7 +21784,7 @@ class Greeter:
                 self._bearer_token = bearer_token
 
             @IMPORT_typing.overload
-            async def Greet(
+            def Greet(
                 __this__,
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: Greeter.GreetRequest,
@@ -22079,7 +21793,7 @@ class Greeter:
                 ...
 
             @IMPORT_typing.overload
-            async def Greet(
+            def Greet(
                 __this__,
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -22089,7 +21803,7 @@ class Greeter:
             ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.GreetResponse, None] | tuple[None, Greeter.GreetAborted]]:
                 ...
 
-            async def Greet( # type: ignore[misc]
+            async def Greet(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -22108,7 +21822,12 @@ class Greeter:
                 name: IMPORT_typing.Optional[str] | Unset = UNSET,
                 metadata: IMPORT_typing.Optional[dict[str, str]] | Unset = UNSET,
             ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.GreetResponse, None] | tuple[None, Greeter.GreetAborted]]:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='reactively',
+                    method='greet',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.GreetRequest)
@@ -22163,6 +21882,7 @@ class Greeter:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.Context):
                     __caller_id__ = IMPORT_reboot_aio_caller_id.CallerID(
                         application_id=__context__.application_id,
+                        auth=__context__.auth,
                     )
                     if __this__._application_id is None:
                         # Given our context type (inside a Reboot application) we can default to
@@ -22268,7 +21988,7 @@ class Greeter:
             # the new code.
             greet = Greet
             @IMPORT_typing.overload
-            async def TryToConstructContext(
+            def TryToConstructContext(
                 __this__,
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: Greeter.TryToConstructContextRequest,
@@ -22277,14 +21997,14 @@ class Greeter:
                 ...
 
             @IMPORT_typing.overload
-            async def TryToConstructContext(
+            def TryToConstructContext(
                 __this__,
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.TryToConstructContextResponse, None] | tuple[None, Greeter.TryToConstructContextAborted]]:
                 ...
 
-            async def TryToConstructContext( # type: ignore[misc]
+            async def TryToConstructContext(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -22300,7 +22020,12 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TryToConstructContextRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.TryToConstructContextResponse, None] | tuple[None, Greeter.TryToConstructContextAborted]]:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='reactively',
+                    method='try_to_construct_context',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.TryToConstructContextRequest)
@@ -22351,6 +22076,7 @@ class Greeter:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.Context):
                     __caller_id__ = IMPORT_reboot_aio_caller_id.CallerID(
                         application_id=__context__.application_id,
+                        auth=__context__.auth,
                     )
                     if __this__._application_id is None:
                         # Given our context type (inside a Reboot application) we can default to
@@ -22456,7 +22182,7 @@ class Greeter:
             # the new code.
             try_to_construct_context = TryToConstructContext
             @IMPORT_typing.overload
-            async def TryToConstructExternalContext(
+            def TryToConstructExternalContext(
                 __this__,
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: Greeter.TryToConstructExternalContextRequest,
@@ -22465,14 +22191,14 @@ class Greeter:
                 ...
 
             @IMPORT_typing.overload
-            async def TryToConstructExternalContext(
+            def TryToConstructExternalContext(
                 __this__,
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.TryToConstructExternalContextResponse, None] | tuple[None, Greeter.TryToConstructExternalContextAborted]]:
                 ...
 
-            async def TryToConstructExternalContext( # type: ignore[misc]
+            async def TryToConstructExternalContext(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -22488,7 +22214,12 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TryToConstructExternalContextRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.TryToConstructExternalContextResponse, None] | tuple[None, Greeter.TryToConstructExternalContextAborted]]:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='reactively',
+                    method='try_to_construct_external_context',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.TryToConstructExternalContextRequest)
@@ -22539,6 +22270,7 @@ class Greeter:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.Context):
                     __caller_id__ = IMPORT_reboot_aio_caller_id.CallerID(
                         application_id=__context__.application_id,
+                        auth=__context__.auth,
                     )
                     if __this__._application_id is None:
                         # Given our context type (inside a Reboot application) we can default to
@@ -22644,7 +22376,7 @@ class Greeter:
             # the new code.
             try_to_construct_external_context = TryToConstructExternalContext
             @IMPORT_typing.overload
-            async def TestLongRunningFetch(
+            def TestLongRunningFetch(
                 __this__,
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: Greeter.TestLongRunningFetchRequest,
@@ -22653,7 +22385,7 @@ class Greeter:
                 ...
 
             @IMPORT_typing.overload
-            async def TestLongRunningFetch(
+            def TestLongRunningFetch(
                 __this__,
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -22662,7 +22394,7 @@ class Greeter:
             ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.TestLongRunningFetchResponse, None] | tuple[None, Greeter.TestLongRunningFetchAborted]]:
                 ...
 
-            async def TestLongRunningFetch( # type: ignore[misc]
+            async def TestLongRunningFetch(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -22680,7 +22412,12 @@ class Greeter:
                 *,
                 sleep_time_seconds: IMPORT_typing.Optional[int] | Unset = UNSET,
             ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.TestLongRunningFetchResponse, None] | tuple[None, Greeter.TestLongRunningFetchAborted]]:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='reactively',
+                    method='test_long_running_fetch',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.TestLongRunningFetchRequest)
@@ -22733,6 +22470,7 @@ class Greeter:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.Context):
                     __caller_id__ = IMPORT_reboot_aio_caller_id.CallerID(
                         application_id=__context__.application_id,
+                        auth=__context__.auth,
                     )
                     if __this__._application_id is None:
                         # Given our context type (inside a Reboot application) we can default to
@@ -22838,7 +22576,7 @@ class Greeter:
             # the new code.
             test_long_running_fetch = TestLongRunningFetch
             @IMPORT_typing.overload
-            async def GetWholeState(
+            def GetWholeState(
                 __this__,
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: Greeter.GetWholeStateRequest,
@@ -22847,14 +22585,14 @@ class Greeter:
                 ...
 
             @IMPORT_typing.overload
-            async def GetWholeState(
+            def GetWholeState(
                 __this__,
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.GetWholeStateResponse, None] | tuple[None, Greeter.GetWholeStateAborted]]:
                 ...
 
-            async def GetWholeState( # type: ignore[misc]
+            async def GetWholeState(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -22870,7 +22608,12 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.GetWholeStateRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.GetWholeStateResponse, None] | tuple[None, Greeter.GetWholeStateAborted]]:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='reactively',
+                    method='get_whole_state',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.GetWholeStateRequest)
@@ -22921,6 +22664,7 @@ class Greeter:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.Context):
                     __caller_id__ = IMPORT_reboot_aio_caller_id.CallerID(
                         application_id=__context__.application_id,
+                        auth=__context__.auth,
                     )
                     if __this__._application_id is None:
                         # Given our context type (inside a Reboot application) we can default to
@@ -23026,7 +22770,7 @@ class Greeter:
             # the new code.
             get_whole_state = GetWholeState
             @IMPORT_typing.overload
-            async def FailWithException(
+            def FailWithException(
                 __this__,
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: Greeter.FailWithExceptionRequest,
@@ -23035,14 +22779,14 @@ class Greeter:
                 ...
 
             @IMPORT_typing.overload
-            async def FailWithException(
+            def FailWithException(
                 __this__,
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.FailWithExceptionResponse, None] | tuple[None, Greeter.FailWithExceptionAborted]]:
                 ...
 
-            async def FailWithException( # type: ignore[misc]
+            async def FailWithException(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -23058,7 +22802,12 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.FailWithExceptionRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.FailWithExceptionResponse, None] | tuple[None, Greeter.FailWithExceptionAborted]]:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='reactively',
+                    method='fail_with_exception',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.FailWithExceptionRequest)
@@ -23109,6 +22858,7 @@ class Greeter:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.Context):
                     __caller_id__ = IMPORT_reboot_aio_caller_id.CallerID(
                         application_id=__context__.application_id,
+                        auth=__context__.auth,
                     )
                     if __this__._application_id is None:
                         # Given our context type (inside a Reboot application) we can default to
@@ -23214,7 +22964,7 @@ class Greeter:
             # the new code.
             fail_with_exception = FailWithException
             @IMPORT_typing.overload
-            async def FailWithAborted(
+            def FailWithAborted(
                 __this__,
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: Greeter.FailWithAbortedRequest,
@@ -23223,14 +22973,14 @@ class Greeter:
                 ...
 
             @IMPORT_typing.overload
-            async def FailWithAborted(
+            def FailWithAborted(
                 __this__,
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.FailWithAbortedResponse, None] | tuple[None, Greeter.FailWithAbortedAborted]]:
                 ...
 
-            async def FailWithAborted( # type: ignore[misc]
+            async def FailWithAborted(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -23246,7 +22996,12 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.FailWithAbortedRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.FailWithAbortedResponse, None] | tuple[None, Greeter.FailWithAbortedAborted]]:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='reactively',
+                    method='fail_with_aborted',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.FailWithAbortedRequest)
@@ -23297,6 +23052,7 @@ class Greeter:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.Context):
                     __caller_id__ = IMPORT_reboot_aio_caller_id.CallerID(
                         application_id=__context__.application_id,
+                        auth=__context__.auth,
                     )
                     if __this__._application_id is None:
                         # Given our context type (inside a Reboot application) we can default to
@@ -23402,7 +23158,7 @@ class Greeter:
             # the new code.
             fail_with_aborted = FailWithAborted
             @IMPORT_typing.overload
-            async def ReadRecursiveMessage(
+            def ReadRecursiveMessage(
                 __this__,
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: Greeter.ReadRecursiveMessageRequest,
@@ -23411,14 +23167,14 @@ class Greeter:
                 ...
 
             @IMPORT_typing.overload
-            async def ReadRecursiveMessage(
+            def ReadRecursiveMessage(
                 __this__,
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.ReadRecursiveMessageResponse, None] | tuple[None, Greeter.ReadRecursiveMessageAborted]]:
                 ...
 
-            async def ReadRecursiveMessage( # type: ignore[misc]
+            async def ReadRecursiveMessage(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -23434,7 +23190,12 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.ReadRecursiveMessageRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_typing.AsyncIterator[tuple[Greeter.ReadRecursiveMessageResponse, None] | tuple[None, Greeter.ReadRecursiveMessageAborted]]:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='reactively',
+                    method='read_recursive_message',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.ReadRecursiveMessageRequest)
@@ -23485,6 +23246,7 @@ class Greeter:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.Context):
                     __caller_id__ = IMPORT_reboot_aio_caller_id.CallerID(
                         application_id=__context__.application_id,
+                        auth=__context__.auth,
                     )
                     if __this__._application_id is None:
                         # Given our context type (inside a Reboot application) we can default to
@@ -23702,7 +23464,7 @@ class Greeter:
             ) -> Greeter.GreetResponse:
                 ...
 
-            async def Greet( # type: ignore[misc]
+            async def Greet(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -23776,7 +23538,7 @@ class Greeter:
             ) -> Greeter.SetAdjectiveResponse:
                 ...
 
-            async def SetAdjective( # type: ignore[misc]
+            async def SetAdjective(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -23853,7 +23615,7 @@ class Greeter:
             ) -> Greeter.TransactionSetAdjectiveResponse:
                 ...
 
-            async def TransactionSetAdjective( # type: ignore[misc]
+            async def TransactionSetAdjective(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -23926,7 +23688,7 @@ class Greeter:
             ) -> Greeter.TryToConstructContextResponse:
                 ...
 
-            async def TryToConstructContext( # type: ignore[misc]
+            async def TryToConstructContext(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -23989,7 +23751,7 @@ class Greeter:
             ) -> Greeter.TryToConstructExternalContextResponse:
                 ...
 
-            async def TryToConstructExternalContext( # type: ignore[misc]
+            async def TryToConstructExternalContext(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -24054,7 +23816,7 @@ class Greeter:
             ) -> Greeter.TestLongRunningFetchResponse:
                 ...
 
-            async def TestLongRunningFetch( # type: ignore[misc]
+            async def TestLongRunningFetch(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -24121,7 +23883,7 @@ class Greeter:
             ) -> Greeter.TestLongRunningWriterResponse:
                 ...
 
-            async def TestLongRunningWriter( # type: ignore[misc]
+            async def TestLongRunningWriter(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -24184,7 +23946,7 @@ class Greeter:
             ) -> Greeter.GetWholeStateResponse:
                 ...
 
-            async def GetWholeState( # type: ignore[misc]
+            async def GetWholeState(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -24247,7 +24009,7 @@ class Greeter:
             ) -> Greeter.FailWithExceptionResponse:
                 ...
 
-            async def FailWithException( # type: ignore[misc]
+            async def FailWithException(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -24310,7 +24072,7 @@ class Greeter:
             ) -> Greeter.FailWithAbortedResponse:
                 ...
 
-            async def FailWithAborted( # type: ignore[misc]
+            async def FailWithAborted(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -24373,7 +24135,7 @@ class Greeter:
             ) -> Greeter.WorkflowResponse:
                 ...
 
-            async def Workflow( # type: ignore[misc]
+            async def Workflow(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -24465,7 +24227,7 @@ class Greeter:
             ) -> Greeter.DangerousFieldsResponse:
                 ...
 
-            async def DangerousFields( # type: ignore[misc]
+            async def DangerousFields(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -24564,7 +24326,7 @@ class Greeter:
             ) -> Greeter.StoreRecursiveMessageResponse:
                 ...
 
-            async def StoreRecursiveMessage( # type: ignore[misc]
+            async def StoreRecursiveMessage(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -24631,7 +24393,7 @@ class Greeter:
             ) -> Greeter.ReadRecursiveMessageResponse:
                 ...
 
-            async def ReadRecursiveMessage( # type: ignore[misc]
+            async def ReadRecursiveMessage(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -24696,7 +24458,7 @@ class Greeter:
             ) -> Greeter.ConstructAndStoreRecursiveMessageResponse:
                 ...
 
-            async def ConstructAndStoreRecursiveMessage( # type: ignore[misc]
+            async def ConstructAndStoreRecursiveMessage(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -24863,9 +24625,11 @@ class Greeter:
                 self,
                 context: IMPORT_reboot_aio_contexts.WorkflowContext,
             ) -> Greeter.WeakReference._UntilChangesSatisfies[Greeter.State]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     context,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='read',
                 )
 
                 async def callable():
@@ -24879,7 +24643,7 @@ class Greeter:
                 )
 
             @IMPORT_typing.overload
-            async def Greet(
+            def Greet(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: Greeter.GreetRequest,
@@ -24888,7 +24652,7 @@ class Greeter:
                 ...
 
             @IMPORT_typing.overload
-            async def Greet(
+            def Greet(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -24898,7 +24662,7 @@ class Greeter:
             ) -> Greeter.WeakReference._UntilChangesSatisfies[Greeter.GreetResponse]:
                 ...
 
-            def Greet( # type: ignore[misc]
+            def Greet(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -24914,9 +24678,11 @@ class Greeter:
                 name: IMPORT_typing.Optional[str] | Unset = UNSET,
                 metadata: IMPORT_typing.Optional[dict[str, str]] | Unset = UNSET,
             ) -> Greeter.WeakReference._UntilChangesSatisfies[Greeter.GreetResponse]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     __context__,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='greet',
                 )
 
                 __request__: IMPORT_typing.Optional[Greeter.GreetRequest] = None
@@ -24958,7 +24724,7 @@ class Greeter:
             # the new code.
             greet = Greet
             @IMPORT_typing.overload
-            async def TryToConstructContext(
+            def TryToConstructContext(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: Greeter.TryToConstructContextRequest,
@@ -24967,14 +24733,14 @@ class Greeter:
                 ...
 
             @IMPORT_typing.overload
-            async def TryToConstructContext(
+            def TryToConstructContext(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.WeakReference._UntilChangesSatisfies[Greeter.TryToConstructContextResponse]:
                 ...
 
-            def TryToConstructContext( # type: ignore[misc]
+            def TryToConstructContext(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -24987,9 +24753,11 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TryToConstructContextRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.WeakReference._UntilChangesSatisfies[Greeter.TryToConstructContextResponse]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     __context__,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='try_to_construct_context',
                 )
 
                 __request__: IMPORT_typing.Optional[Greeter.TryToConstructContextRequest] = None
@@ -25027,7 +24795,7 @@ class Greeter:
             # the new code.
             try_to_construct_context = TryToConstructContext
             @IMPORT_typing.overload
-            async def TryToConstructExternalContext(
+            def TryToConstructExternalContext(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: Greeter.TryToConstructExternalContextRequest,
@@ -25036,14 +24804,14 @@ class Greeter:
                 ...
 
             @IMPORT_typing.overload
-            async def TryToConstructExternalContext(
+            def TryToConstructExternalContext(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.WeakReference._UntilChangesSatisfies[Greeter.TryToConstructExternalContextResponse]:
                 ...
 
-            def TryToConstructExternalContext( # type: ignore[misc]
+            def TryToConstructExternalContext(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -25056,9 +24824,11 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TryToConstructExternalContextRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.WeakReference._UntilChangesSatisfies[Greeter.TryToConstructExternalContextResponse]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     __context__,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='try_to_construct_external_context',
                 )
 
                 __request__: IMPORT_typing.Optional[Greeter.TryToConstructExternalContextRequest] = None
@@ -25096,7 +24866,7 @@ class Greeter:
             # the new code.
             try_to_construct_external_context = TryToConstructExternalContext
             @IMPORT_typing.overload
-            async def TestLongRunningFetch(
+            def TestLongRunningFetch(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: Greeter.TestLongRunningFetchRequest,
@@ -25105,7 +24875,7 @@ class Greeter:
                 ...
 
             @IMPORT_typing.overload
-            async def TestLongRunningFetch(
+            def TestLongRunningFetch(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -25114,7 +24884,7 @@ class Greeter:
             ) -> Greeter.WeakReference._UntilChangesSatisfies[Greeter.TestLongRunningFetchResponse]:
                 ...
 
-            def TestLongRunningFetch( # type: ignore[misc]
+            def TestLongRunningFetch(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -25129,9 +24899,11 @@ class Greeter:
                 *,
                 sleep_time_seconds: IMPORT_typing.Optional[int] | Unset = UNSET,
             ) -> Greeter.WeakReference._UntilChangesSatisfies[Greeter.TestLongRunningFetchResponse]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     __context__,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='test_long_running_fetch',
                 )
 
                 __request__: IMPORT_typing.Optional[Greeter.TestLongRunningFetchRequest] = None
@@ -25171,7 +24943,7 @@ class Greeter:
             # the new code.
             test_long_running_fetch = TestLongRunningFetch
             @IMPORT_typing.overload
-            async def GetWholeState(
+            def GetWholeState(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: Greeter.GetWholeStateRequest,
@@ -25180,14 +24952,14 @@ class Greeter:
                 ...
 
             @IMPORT_typing.overload
-            async def GetWholeState(
+            def GetWholeState(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.WeakReference._UntilChangesSatisfies[Greeter.GetWholeStateResponse]:
                 ...
 
-            def GetWholeState( # type: ignore[misc]
+            def GetWholeState(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -25200,9 +24972,11 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.GetWholeStateRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.WeakReference._UntilChangesSatisfies[Greeter.GetWholeStateResponse]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     __context__,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='get_whole_state',
                 )
 
                 __request__: IMPORT_typing.Optional[Greeter.GetWholeStateRequest] = None
@@ -25240,7 +25014,7 @@ class Greeter:
             # the new code.
             get_whole_state = GetWholeState
             @IMPORT_typing.overload
-            async def FailWithException(
+            def FailWithException(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: Greeter.FailWithExceptionRequest,
@@ -25249,14 +25023,14 @@ class Greeter:
                 ...
 
             @IMPORT_typing.overload
-            async def FailWithException(
+            def FailWithException(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.WeakReference._UntilChangesSatisfies[Greeter.FailWithExceptionResponse]:
                 ...
 
-            def FailWithException( # type: ignore[misc]
+            def FailWithException(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -25269,9 +25043,11 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.FailWithExceptionRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.WeakReference._UntilChangesSatisfies[Greeter.FailWithExceptionResponse]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     __context__,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='fail_with_exception',
                 )
 
                 __request__: IMPORT_typing.Optional[Greeter.FailWithExceptionRequest] = None
@@ -25309,7 +25085,7 @@ class Greeter:
             # the new code.
             fail_with_exception = FailWithException
             @IMPORT_typing.overload
-            async def FailWithAborted(
+            def FailWithAborted(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: Greeter.FailWithAbortedRequest,
@@ -25318,14 +25094,14 @@ class Greeter:
                 ...
 
             @IMPORT_typing.overload
-            async def FailWithAborted(
+            def FailWithAborted(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.WeakReference._UntilChangesSatisfies[Greeter.FailWithAbortedResponse]:
                 ...
 
-            def FailWithAborted( # type: ignore[misc]
+            def FailWithAborted(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -25338,9 +25114,11 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.FailWithAbortedRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.WeakReference._UntilChangesSatisfies[Greeter.FailWithAbortedResponse]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     __context__,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='fail_with_aborted',
                 )
 
                 __request__: IMPORT_typing.Optional[Greeter.FailWithAbortedRequest] = None
@@ -25378,7 +25156,7 @@ class Greeter:
             # the new code.
             fail_with_aborted = FailWithAborted
             @IMPORT_typing.overload
-            async def ReadRecursiveMessage(
+            def ReadRecursiveMessage(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: Greeter.ReadRecursiveMessageRequest,
@@ -25387,14 +25165,14 @@ class Greeter:
                 ...
 
             @IMPORT_typing.overload
-            async def ReadRecursiveMessage(
+            def ReadRecursiveMessage(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.WeakReference._UntilChangesSatisfies[Greeter.ReadRecursiveMessageResponse]:
                 ...
 
-            def ReadRecursiveMessage( # type: ignore[misc]
+            def ReadRecursiveMessage(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -25407,9 +25185,11 @@ class Greeter:
                 __request_or_options__: IMPORT_typing.Optional[Greeter.ReadRecursiveMessageRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.WeakReference._UntilChangesSatisfies[Greeter.ReadRecursiveMessageResponse]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     __context__,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='read_recursive_message',
                 )
 
                 __request__: IMPORT_typing.Optional[Greeter.ReadRecursiveMessageRequest] = None
@@ -25496,7 +25276,7 @@ class Greeter:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def Greet( # type: ignore[misc]
+            async def Greet(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.GreetRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -25505,7 +25285,14 @@ class Greeter:
                 name: IMPORT_typing.Optional[str] | Unset = UNSET,
                 metadata: IMPORT_typing.Optional[dict[str, str]] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='greet',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.GreetRequest)
@@ -25587,7 +25374,7 @@ class Greeter:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def SetAdjective( # type: ignore[misc]
+            async def SetAdjective(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.SetAdjectiveRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -25597,7 +25384,14 @@ class Greeter:
                 arbitrary_message: IMPORT_typing.Optional[tests.reboot.greeter_pb2.SetAdjectiveRequest.NestedMessage] | Unset = UNSET,
                 revert_after_1_second: IMPORT_typing.Optional[bool] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='set_adjective',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.SetAdjectiveRequest)
@@ -25681,7 +25475,7 @@ class Greeter:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def TransactionSetAdjective( # type: ignore[misc]
+            async def TransactionSetAdjective(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TransactionSetAdjectiveRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -25691,7 +25485,14 @@ class Greeter:
                 arbitrary_message: IMPORT_typing.Optional[tests.reboot.greeter_pb2.SetAdjectiveRequest.NestedMessage] | Unset = UNSET,
                 revert_after_1_second: IMPORT_typing.Optional[bool] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='transaction_set_adjective',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.TransactionSetAdjectiveRequest)
@@ -25771,13 +25572,20 @@ class Greeter:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def TryToConstructContext( # type: ignore[misc]
+            async def TryToConstructContext(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TryToConstructContextRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='try_to_construct_context',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.TryToConstructContextRequest)
@@ -25851,13 +25659,20 @@ class Greeter:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def TryToConstructExternalContext( # type: ignore[misc]
+            async def TryToConstructExternalContext(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TryToConstructExternalContextRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='try_to_construct_external_context',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.TryToConstructExternalContextRequest)
@@ -25933,7 +25748,7 @@ class Greeter:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def TestLongRunningFetch( # type: ignore[misc]
+            async def TestLongRunningFetch(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TestLongRunningFetchRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -25941,7 +25756,14 @@ class Greeter:
                 *,
                 sleep_time_seconds: IMPORT_typing.Optional[int] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='test_long_running_fetch',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.TestLongRunningFetchRequest)
@@ -26017,13 +25839,20 @@ class Greeter:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def TestLongRunningWriter( # type: ignore[misc]
+            async def TestLongRunningWriter(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TestLongRunningWriterRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='test_long_running_writer',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.TestLongRunningWriterRequest)
@@ -26097,13 +25926,20 @@ class Greeter:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def GetWholeState( # type: ignore[misc]
+            async def GetWholeState(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.GetWholeStateRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='get_whole_state',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.GetWholeStateRequest)
@@ -26177,13 +26013,20 @@ class Greeter:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def FailWithException( # type: ignore[misc]
+            async def FailWithException(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.FailWithExceptionRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='fail_with_exception',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.FailWithExceptionRequest)
@@ -26257,13 +26100,20 @@ class Greeter:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def FailWithAborted( # type: ignore[misc]
+            async def FailWithAborted(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.FailWithAbortedRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='fail_with_aborted',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.FailWithAbortedRequest)
@@ -26337,13 +26187,20 @@ class Greeter:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def Workflow( # type: ignore[misc]
+            async def Workflow(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.WorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='workflow',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.WorkflowRequest)
@@ -26429,7 +26286,7 @@ class Greeter:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def DangerousFields( # type: ignore[misc]
+            async def DangerousFields(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.DangerousFieldsRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -26447,7 +26304,14 @@ class Greeter:
                 idempotency: IMPORT_typing.Optional[str] | Unset = UNSET,
                 state_id: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='dangerous_fields',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.DangerousFieldsRequest)
@@ -26545,7 +26409,7 @@ class Greeter:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def StoreRecursiveMessage( # type: ignore[misc]
+            async def StoreRecursiveMessage(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.StoreRecursiveMessageRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -26553,7 +26417,14 @@ class Greeter:
                 *,
                 message: IMPORT_typing.Optional[tests.reboot.greeter_pb2.RecursiveMessage] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='store_recursive_message',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.StoreRecursiveMessageRequest)
@@ -26629,13 +26500,20 @@ class Greeter:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def ReadRecursiveMessage( # type: ignore[misc]
+            async def ReadRecursiveMessage(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.ReadRecursiveMessageRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='read_recursive_message',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.ReadRecursiveMessageRequest)
@@ -26711,7 +26589,7 @@ class Greeter:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def ConstructAndStoreRecursiveMessage( # type: ignore[misc]
+            async def ConstructAndStoreRecursiveMessage(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.ConstructAndStoreRecursiveMessageRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -26719,7 +26597,14 @@ class Greeter:
                 *,
                 depth: IMPORT_typing.Optional[int] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='construct_and_store_recursive_message',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.ConstructAndStoreRecursiveMessageRequest)
@@ -26821,7 +26706,7 @@ class Greeter:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def Greet( # type: ignore[misc]
+            async def Greet(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.GreetRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -26830,9 +26715,14 @@ class Greeter:
                 name: IMPORT_typing.Optional[str] | Unset = UNSET,
                 metadata: IMPORT_typing.Optional[dict[str, str]] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='greet',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -26922,7 +26812,7 @@ class Greeter:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def SetAdjective( # type: ignore[misc]
+            async def SetAdjective(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.SetAdjectiveRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -26932,9 +26822,14 @@ class Greeter:
                 arbitrary_message: IMPORT_typing.Optional[tests.reboot.greeter_pb2.SetAdjectiveRequest.NestedMessage] | Unset = UNSET,
                 revert_after_1_second: IMPORT_typing.Optional[bool] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='set_adjective',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -27026,7 +26921,7 @@ class Greeter:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def TransactionSetAdjective( # type: ignore[misc]
+            async def TransactionSetAdjective(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TransactionSetAdjectiveRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -27036,9 +26931,14 @@ class Greeter:
                 arbitrary_message: IMPORT_typing.Optional[tests.reboot.greeter_pb2.SetAdjectiveRequest.NestedMessage] | Unset = UNSET,
                 revert_after_1_second: IMPORT_typing.Optional[bool] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='transaction_set_adjective',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -27126,15 +27026,20 @@ class Greeter:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def TryToConstructContext( # type: ignore[misc]
+            async def TryToConstructContext(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TryToConstructContextRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='try_to_construct_context',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -27216,15 +27121,20 @@ class Greeter:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def TryToConstructExternalContext( # type: ignore[misc]
+            async def TryToConstructExternalContext(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TryToConstructExternalContextRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='try_to_construct_external_context',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -27308,7 +27218,7 @@ class Greeter:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def TestLongRunningFetch( # type: ignore[misc]
+            async def TestLongRunningFetch(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TestLongRunningFetchRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -27316,9 +27226,14 @@ class Greeter:
                 *,
                 sleep_time_seconds: IMPORT_typing.Optional[int] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='test_long_running_fetch',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -27402,15 +27317,20 @@ class Greeter:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def TestLongRunningWriter( # type: ignore[misc]
+            async def TestLongRunningWriter(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TestLongRunningWriterRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='test_long_running_writer',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -27492,15 +27412,20 @@ class Greeter:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def GetWholeState( # type: ignore[misc]
+            async def GetWholeState(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.GetWholeStateRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='get_whole_state',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -27582,15 +27507,20 @@ class Greeter:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def FailWithException( # type: ignore[misc]
+            async def FailWithException(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.FailWithExceptionRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='fail_with_exception',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -27672,15 +27602,20 @@ class Greeter:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def FailWithAborted( # type: ignore[misc]
+            async def FailWithAborted(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.FailWithAbortedRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='fail_with_aborted',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -27762,15 +27697,20 @@ class Greeter:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def Workflow( # type: ignore[misc]
+            async def Workflow(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.WorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='workflow',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -27864,7 +27804,7 @@ class Greeter:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def DangerousFields( # type: ignore[misc]
+            async def DangerousFields(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.DangerousFieldsRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -27882,9 +27822,14 @@ class Greeter:
                 idempotency: IMPORT_typing.Optional[str] | Unset = UNSET,
                 state_id: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='dangerous_fields',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -27990,7 +27935,7 @@ class Greeter:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def StoreRecursiveMessage( # type: ignore[misc]
+            async def StoreRecursiveMessage(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.StoreRecursiveMessageRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -27998,9 +27943,14 @@ class Greeter:
                 *,
                 message: IMPORT_typing.Optional[tests.reboot.greeter_pb2.RecursiveMessage] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='store_recursive_message',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -28084,15 +28034,20 @@ class Greeter:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def ReadRecursiveMessage( # type: ignore[misc]
+            async def ReadRecursiveMessage(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.ReadRecursiveMessageRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='read_recursive_message',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -28176,7 +28131,7 @@ class Greeter:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
 
-            async def ConstructAndStoreRecursiveMessage( # type: ignore[misc]
+            async def ConstructAndStoreRecursiveMessage(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.ConstructAndStoreRecursiveMessageRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -28184,9 +28139,14 @@ class Greeter:
                 *,
                 depth: IMPORT_typing.Optional[int] | Unset = UNSET,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='construct_and_store_recursive_message',
+                )
 
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -28313,7 +28273,7 @@ class Greeter:
             ) -> Greeter.GreetTask:
                 ...
 
-            async def Greet( # type: ignore[misc]
+            async def Greet(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.GreetRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -28322,7 +28282,14 @@ class Greeter:
                 name: IMPORT_typing.Optional[str] | Unset = UNSET,
                 metadata: IMPORT_typing.Optional[dict[str, str]] | Unset = UNSET,
             ) -> Greeter.GreetTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='greet',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.GreetRequest)
@@ -28407,7 +28374,7 @@ class Greeter:
             ) -> Greeter.SetAdjectiveTask:
                 ...
 
-            async def SetAdjective( # type: ignore[misc]
+            async def SetAdjective(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.SetAdjectiveRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -28417,7 +28384,14 @@ class Greeter:
                 arbitrary_message: IMPORT_typing.Optional[tests.reboot.greeter_pb2.SetAdjectiveRequest.NestedMessage] | Unset = UNSET,
                 revert_after_1_second: IMPORT_typing.Optional[bool] | Unset = UNSET,
             ) -> Greeter.SetAdjectiveTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='set_adjective',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.SetAdjectiveRequest)
@@ -28504,7 +28478,7 @@ class Greeter:
             ) -> Greeter.TransactionSetAdjectiveTask:
                 ...
 
-            async def TransactionSetAdjective( # type: ignore[misc]
+            async def TransactionSetAdjective(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TransactionSetAdjectiveRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -28514,7 +28488,14 @@ class Greeter:
                 arbitrary_message: IMPORT_typing.Optional[tests.reboot.greeter_pb2.SetAdjectiveRequest.NestedMessage] | Unset = UNSET,
                 revert_after_1_second: IMPORT_typing.Optional[bool] | Unset = UNSET,
             ) -> Greeter.TransactionSetAdjectiveTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='transaction_set_adjective',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.TransactionSetAdjectiveRequest)
@@ -28597,13 +28578,20 @@ class Greeter:
             ) -> Greeter.TryToConstructContextTask:
                 ...
 
-            async def TryToConstructContext( # type: ignore[misc]
+            async def TryToConstructContext(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TryToConstructContextRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.TryToConstructContextTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='try_to_construct_context',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.TryToConstructContextRequest)
@@ -28680,13 +28668,20 @@ class Greeter:
             ) -> Greeter.TryToConstructExternalContextTask:
                 ...
 
-            async def TryToConstructExternalContext( # type: ignore[misc]
+            async def TryToConstructExternalContext(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TryToConstructExternalContextRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.TryToConstructExternalContextTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='try_to_construct_external_context',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.TryToConstructExternalContextRequest)
@@ -28765,7 +28760,7 @@ class Greeter:
             ) -> Greeter.TestLongRunningFetchTask:
                 ...
 
-            async def TestLongRunningFetch( # type: ignore[misc]
+            async def TestLongRunningFetch(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TestLongRunningFetchRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -28773,7 +28768,14 @@ class Greeter:
                 *,
                 sleep_time_seconds: IMPORT_typing.Optional[int] | Unset = UNSET,
             ) -> Greeter.TestLongRunningFetchTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='test_long_running_fetch',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.TestLongRunningFetchRequest)
@@ -28852,13 +28854,20 @@ class Greeter:
             ) -> Greeter.TestLongRunningWriterTask:
                 ...
 
-            async def TestLongRunningWriter( # type: ignore[misc]
+            async def TestLongRunningWriter(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.TestLongRunningWriterRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.TestLongRunningWriterTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='test_long_running_writer',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.TestLongRunningWriterRequest)
@@ -28935,13 +28944,20 @@ class Greeter:
             ) -> Greeter.GetWholeStateTask:
                 ...
 
-            async def GetWholeState( # type: ignore[misc]
+            async def GetWholeState(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.GetWholeStateRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.GetWholeStateTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='get_whole_state',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.GetWholeStateRequest)
@@ -29018,13 +29034,20 @@ class Greeter:
             ) -> Greeter.FailWithExceptionTask:
                 ...
 
-            async def FailWithException( # type: ignore[misc]
+            async def FailWithException(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.FailWithExceptionRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.FailWithExceptionTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='fail_with_exception',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.FailWithExceptionRequest)
@@ -29101,13 +29124,20 @@ class Greeter:
             ) -> Greeter.FailWithAbortedTask:
                 ...
 
-            async def FailWithAborted( # type: ignore[misc]
+            async def FailWithAborted(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.FailWithAbortedRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.FailWithAbortedTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='fail_with_aborted',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.FailWithAbortedRequest)
@@ -29184,13 +29214,20 @@ class Greeter:
             ) -> Greeter.WorkflowTask:
                 ...
 
-            async def Workflow( # type: ignore[misc]
+            async def Workflow(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.WorkflowRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.WorkflowTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='workflow',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.WorkflowRequest)
@@ -29279,7 +29316,7 @@ class Greeter:
             ) -> Greeter.DangerousFieldsTask:
                 ...
 
-            async def DangerousFields( # type: ignore[misc]
+            async def DangerousFields(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.DangerousFieldsRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -29297,7 +29334,14 @@ class Greeter:
                 idempotency: IMPORT_typing.Optional[str] | Unset = UNSET,
                 state_id: IMPORT_typing.Optional[str] | Unset = UNSET,
             ) -> Greeter.DangerousFieldsTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='dangerous_fields',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.DangerousFieldsRequest)
@@ -29398,7 +29442,7 @@ class Greeter:
             ) -> Greeter.StoreRecursiveMessageTask:
                 ...
 
-            async def StoreRecursiveMessage( # type: ignore[misc]
+            async def StoreRecursiveMessage(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.StoreRecursiveMessageRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -29406,7 +29450,14 @@ class Greeter:
                 *,
                 message: IMPORT_typing.Optional[tests.reboot.greeter_pb2.RecursiveMessage] | Unset = UNSET,
             ) -> Greeter.StoreRecursiveMessageTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='store_recursive_message',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.StoreRecursiveMessageRequest)
@@ -29485,13 +29536,20 @@ class Greeter:
             ) -> Greeter.ReadRecursiveMessageTask:
                 ...
 
-            async def ReadRecursiveMessage( # type: ignore[misc]
+            async def ReadRecursiveMessage(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.ReadRecursiveMessageRequest | IMPORT_reboot_aio_call.Options] = None,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> Greeter.ReadRecursiveMessageTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='read_recursive_message',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.ReadRecursiveMessageRequest)
@@ -29570,7 +29628,7 @@ class Greeter:
             ) -> Greeter.ConstructAndStoreRecursiveMessageTask:
                 ...
 
-            async def ConstructAndStoreRecursiveMessage( # type: ignore[misc]
+            async def ConstructAndStoreRecursiveMessage(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 __request_or_options__: IMPORT_typing.Optional[Greeter.ConstructAndStoreRecursiveMessageRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -29578,7 +29636,14 @@ class Greeter:
                 *,
                 depth: IMPORT_typing.Optional[int] | Unset = UNSET,
             ) -> Greeter.ConstructAndStoreRecursiveMessageTask:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='construct_and_store_recursive_message',
+                )
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=Greeter.ConstructAndStoreRecursiveMessageRequest)
@@ -29703,7 +29768,7 @@ class Greeter:
         ) -> Greeter.GreetResponse:
             ...
 
-        async def Greet( # type: ignore[misc]
+        async def Greet(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Greeter.GreetRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -29774,7 +29839,7 @@ class Greeter:
                 if __options__.bearer_token is not None:
                     __bearer_token__ = __options__.bearer_token
             return GreeterGreetResponseFromProto(
-                await __this__._reader(__context__).Greet(
+                await __this__._get_reader_stub(__context__).Greet(
                     __request__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
@@ -29809,7 +29874,7 @@ class Greeter:
         ) -> Greeter.SetAdjectiveResponse:
             ...
 
-        async def SetAdjective( # type: ignore[misc]
+        async def SetAdjective(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Greeter.SetAdjectiveRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -29877,7 +29942,7 @@ class Greeter:
                     __bearer_token__ = __options__.bearer_token
 
             return GreeterSetAdjectiveResponseFromProto(
-                await __this__._writer(__context__).SetAdjective(
+                await __this__._get_writer_stub(__context__).SetAdjective(
                     __request__,
                     idempotency=__idempotency__,
                     metadata=__metadata__,
@@ -29913,7 +29978,7 @@ class Greeter:
         ) -> Greeter.TransactionSetAdjectiveResponse:
             ...
 
-        async def TransactionSetAdjective( # type: ignore[misc]
+        async def TransactionSetAdjective(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Greeter.TransactionSetAdjectiveRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -29981,7 +30046,7 @@ class Greeter:
                     __bearer_token__ = __options__.bearer_token
 
             return GreeterTransactionSetAdjectiveResponseFromProto(
-                await __this__._workflow(__context__).TransactionSetAdjective(
+                await __this__._get_workflow_stub(__context__).TransactionSetAdjective(
                     __request__,
                     idempotency=__idempotency__,
                     metadata=__metadata__,
@@ -30014,7 +30079,7 @@ class Greeter:
         ) -> Greeter.TryToConstructContextResponse:
             ...
 
-        async def TryToConstructContext( # type: ignore[misc]
+        async def TryToConstructContext(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Greeter.TryToConstructContextRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -30079,7 +30144,7 @@ class Greeter:
                 if __options__.bearer_token is not None:
                     __bearer_token__ = __options__.bearer_token
             return GreeterTryToConstructContextResponseFromProto(
-                await __this__._reader(__context__).TryToConstructContext(
+                await __this__._get_reader_stub(__context__).TryToConstructContext(
                     __request__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
@@ -30111,7 +30176,7 @@ class Greeter:
         ) -> Greeter.TryToConstructExternalContextResponse:
             ...
 
-        async def TryToConstructExternalContext( # type: ignore[misc]
+        async def TryToConstructExternalContext(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Greeter.TryToConstructExternalContextRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -30176,7 +30241,7 @@ class Greeter:
                 if __options__.bearer_token is not None:
                     __bearer_token__ = __options__.bearer_token
             return GreeterTryToConstructExternalContextResponseFromProto(
-                await __this__._reader(__context__).TryToConstructExternalContext(
+                await __this__._get_reader_stub(__context__).TryToConstructExternalContext(
                     __request__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
@@ -30209,7 +30274,7 @@ class Greeter:
         ) -> Greeter.TestLongRunningFetchResponse:
             ...
 
-        async def TestLongRunningFetch( # type: ignore[misc]
+        async def TestLongRunningFetch(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Greeter.TestLongRunningFetchRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -30277,7 +30342,7 @@ class Greeter:
                 if __options__.bearer_token is not None:
                     __bearer_token__ = __options__.bearer_token
             return GreeterTestLongRunningFetchResponseFromProto(
-                await __this__._reader(__context__).TestLongRunningFetch(
+                await __this__._get_reader_stub(__context__).TestLongRunningFetch(
                     __request__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
@@ -30309,7 +30374,7 @@ class Greeter:
         ) -> Greeter.TestLongRunningWriterResponse:
             ...
 
-        async def TestLongRunningWriter( # type: ignore[misc]
+        async def TestLongRunningWriter(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Greeter.TestLongRunningWriterRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -30368,7 +30433,7 @@ class Greeter:
                     __bearer_token__ = __options__.bearer_token
 
             return GreeterTestLongRunningWriterResponseFromProto(
-                await __this__._writer(__context__).TestLongRunningWriter(
+                await __this__._get_writer_stub(__context__).TestLongRunningWriter(
                     __request__,
                     idempotency=__idempotency__,
                     metadata=__metadata__,
@@ -30401,7 +30466,7 @@ class Greeter:
         ) -> Greeter.GetWholeStateResponse:
             ...
 
-        async def GetWholeState( # type: ignore[misc]
+        async def GetWholeState(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Greeter.GetWholeStateRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -30466,7 +30531,7 @@ class Greeter:
                 if __options__.bearer_token is not None:
                     __bearer_token__ = __options__.bearer_token
             return GreeterGetWholeStateResponseFromProto(
-                await __this__._reader(__context__).GetWholeState(
+                await __this__._get_reader_stub(__context__).GetWholeState(
                     __request__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
@@ -30498,7 +30563,7 @@ class Greeter:
         ) -> Greeter.FailWithExceptionResponse:
             ...
 
-        async def FailWithException( # type: ignore[misc]
+        async def FailWithException(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Greeter.FailWithExceptionRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -30563,7 +30628,7 @@ class Greeter:
                 if __options__.bearer_token is not None:
                     __bearer_token__ = __options__.bearer_token
             return GreeterFailWithExceptionResponseFromProto(
-                await __this__._reader(__context__).FailWithException(
+                await __this__._get_reader_stub(__context__).FailWithException(
                     __request__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
@@ -30595,7 +30660,7 @@ class Greeter:
         ) -> Greeter.FailWithAbortedResponse:
             ...
 
-        async def FailWithAborted( # type: ignore[misc]
+        async def FailWithAborted(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Greeter.FailWithAbortedRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -30660,7 +30725,7 @@ class Greeter:
                 if __options__.bearer_token is not None:
                     __bearer_token__ = __options__.bearer_token
             return GreeterFailWithAbortedResponseFromProto(
-                await __this__._reader(__context__).FailWithAborted(
+                await __this__._get_reader_stub(__context__).FailWithAborted(
                     __request__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
@@ -30688,7 +30753,7 @@ class Greeter:
         ) -> Greeter.WorkflowResponse:
             ...
 
-        async def Workflow( # type: ignore[misc]
+        async def Workflow(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -30781,7 +30846,7 @@ class Greeter:
         ) -> Greeter.DangerousFieldsResponse:
             ...
 
-        async def DangerousFields( # type: ignore[misc]
+        async def DangerousFields(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Greeter.DangerousFieldsRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -30873,7 +30938,7 @@ class Greeter:
                     __bearer_token__ = __options__.bearer_token
 
             return GreeterDangerousFieldsResponseFromProto(
-                await __this__._writer(__context__).DangerousFields(
+                await __this__._get_writer_stub(__context__).DangerousFields(
                     __request__,
                     idempotency=__idempotency__,
                     metadata=__metadata__,
@@ -30907,7 +30972,7 @@ class Greeter:
         ) -> Greeter.StoreRecursiveMessageResponse:
             ...
 
-        async def StoreRecursiveMessage( # type: ignore[misc]
+        async def StoreRecursiveMessage(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Greeter.StoreRecursiveMessageRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -30969,7 +31034,7 @@ class Greeter:
                     __bearer_token__ = __options__.bearer_token
 
             return GreeterStoreRecursiveMessageResponseFromProto(
-                await __this__._writer(__context__).StoreRecursiveMessage(
+                await __this__._get_writer_stub(__context__).StoreRecursiveMessage(
                     __request__,
                     idempotency=__idempotency__,
                     metadata=__metadata__,
@@ -31002,7 +31067,7 @@ class Greeter:
         ) -> Greeter.ReadRecursiveMessageResponse:
             ...
 
-        async def ReadRecursiveMessage( # type: ignore[misc]
+        async def ReadRecursiveMessage(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Greeter.ReadRecursiveMessageRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -31067,7 +31132,7 @@ class Greeter:
                 if __options__.bearer_token is not None:
                     __bearer_token__ = __options__.bearer_token
             return GreeterReadRecursiveMessageResponseFromProto(
-                await __this__._reader(__context__).ReadRecursiveMessage(
+                await __this__._get_reader_stub(__context__).ReadRecursiveMessage(
                     __request__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
@@ -31100,7 +31165,7 @@ class Greeter:
         ) -> Greeter.ConstructAndStoreRecursiveMessageResponse:
             ...
 
-        async def ConstructAndStoreRecursiveMessage( # type: ignore[misc]
+        async def ConstructAndStoreRecursiveMessage(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Greeter.ConstructAndStoreRecursiveMessageRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -31162,7 +31227,7 @@ class Greeter:
                     __bearer_token__ = __options__.bearer_token
 
             return GreeterConstructAndStoreRecursiveMessageResponseFromProto(
-                await __this__._workflow(__context__).ConstructAndStoreRecursiveMessage(
+                await __this__._get_workflow_stub(__context__).ConstructAndStoreRecursiveMessage(
                     __request__,
                     idempotency=__idempotency__,
                     metadata=__metadata__,
@@ -31235,7 +31300,7 @@ class Greeter:
         ) -> list[Greeter.GreetResponse]:
             ...
 
-        async def Greet( # type: ignore[misc]
+        async def Greet(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -31315,7 +31380,7 @@ class Greeter:
         ) -> list[Greeter.SetAdjectiveResponse]:
             ...
 
-        async def SetAdjective( # type: ignore[misc]
+        async def SetAdjective(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -31398,7 +31463,7 @@ class Greeter:
         ) -> list[Greeter.TransactionSetAdjectiveResponse]:
             ...
 
-        async def TransactionSetAdjective( # type: ignore[misc]
+        async def TransactionSetAdjective(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -31477,7 +31542,7 @@ class Greeter:
         ) -> list[Greeter.TryToConstructContextResponse]:
             ...
 
-        async def TryToConstructContext( # type: ignore[misc]
+        async def TryToConstructContext(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -31546,7 +31611,7 @@ class Greeter:
         ) -> list[Greeter.TryToConstructExternalContextResponse]:
             ...
 
-        async def TryToConstructExternalContext( # type: ignore[misc]
+        async def TryToConstructExternalContext(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -31617,7 +31682,7 @@ class Greeter:
         ) -> list[Greeter.TestLongRunningFetchResponse]:
             ...
 
-        async def TestLongRunningFetch( # type: ignore[misc]
+        async def TestLongRunningFetch(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -31690,7 +31755,7 @@ class Greeter:
         ) -> list[Greeter.TestLongRunningWriterResponse]:
             ...
 
-        async def TestLongRunningWriter( # type: ignore[misc]
+        async def TestLongRunningWriter(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -31759,7 +31824,7 @@ class Greeter:
         ) -> list[Greeter.GetWholeStateResponse]:
             ...
 
-        async def GetWholeState( # type: ignore[misc]
+        async def GetWholeState(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -31828,7 +31893,7 @@ class Greeter:
         ) -> list[Greeter.FailWithExceptionResponse]:
             ...
 
-        async def FailWithException( # type: ignore[misc]
+        async def FailWithException(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -31897,7 +31962,7 @@ class Greeter:
         ) -> list[Greeter.FailWithAbortedResponse]:
             ...
 
-        async def FailWithAborted( # type: ignore[misc]
+        async def FailWithAborted(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -31978,7 +32043,7 @@ class Greeter:
         ) -> list[Greeter.DangerousFieldsResponse]:
             ...
 
-        async def DangerousFields( # type: ignore[misc]
+        async def DangerousFields(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -32083,7 +32148,7 @@ class Greeter:
         ) -> list[Greeter.StoreRecursiveMessageResponse]:
             ...
 
-        async def StoreRecursiveMessage( # type: ignore[misc]
+        async def StoreRecursiveMessage(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -32156,7 +32221,7 @@ class Greeter:
         ) -> list[Greeter.ReadRecursiveMessageResponse]:
             ...
 
-        async def ReadRecursiveMessage( # type: ignore[misc]
+        async def ReadRecursiveMessage(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -32227,7 +32292,7 @@ class Greeter:
         ) -> list[Greeter.ConstructAndStoreRecursiveMessageResponse]:
             ...
 
-        async def ConstructAndStoreRecursiveMessage( # type: ignore[misc]
+        async def ConstructAndStoreRecursiveMessage(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -32369,7 +32434,7 @@ class Greeter:
         ...
 
     @classmethod
-    async def Create( # type: ignore[misc]
+    async def Create(
         __cls__,
         __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
         __state_id_or_request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.StateId | Greeter.CreateRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -32489,7 +32554,7 @@ class Greeter:
         __reference__ = Greeter.ref(
             __state_id__, bearer_token=__bearer_token__
         )
-        __stub__ = __reference__._writer(__context__)
+        __stub__ = __reference__._get_writer_stub(__context__)
         return (
             __reference__,
             GreeterCreateResponseFromProto(
@@ -32584,7 +32649,7 @@ class Greeter:
         ) -> tuple[Greeter.WeakReference, Greeter.CreateResponse]:
             ...
 
-        async def Create( # type: ignore[misc]
+        async def Create(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __state_id_or_request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.StateId | Greeter.CreateRequest | IMPORT_reboot_aio_call.Options] = None,
@@ -32675,6 +32740,24 @@ class Greeter:
 
 class GreeterServicerNodeAdaptor(Greeter.singleton.Servicer):
 
+    # `reboot_native` sets these on the subclass it creates for each
+    # Node.js servicer.
+    _construct_js_servicer: IMPORT_typing.Callable[[], IMPORT_typing.Any]
+    _construct_authorizer: IMPORT_typing.Callable[
+        [IMPORT_typing.Any],
+        IMPORT_typing.Optional[IMPORT_reboot_aio_auth_authorizers.Authorizer],
+    ]
+    _trampoline: IMPORT_typing.Callable[
+        [
+            IMPORT_typing.Any,
+            IMPORT_reboot_aio_contexts.Context,
+            IMPORT_asyncio.Future[None],
+            bytes,
+        ],
+        IMPORT_asyncio.Future[bytes],
+    ]
+    _js_servicer_reference: IMPORT_typing.Any
+
     @classmethod
     async def _wait_for_cancelled(
         cls,
@@ -32708,10 +32791,10 @@ class GreeterServicerNodeAdaptor(Greeter.singleton.Servicer):
         await future
 
     def __init__(self):
-        self._js_servicer_reference = self._construct_js_servicer()  # type: ignore[attr-defined]
+        self._js_servicer_reference = self._construct_js_servicer()
 
     def authorizer(self) -> IMPORT_typing.Optional[IMPORT_reboot_aio_auth_authorizers.Authorizer]:
-        return self._construct_authorizer(self._js_servicer_reference)  # type: ignore[attr-defined]
+        return self._construct_authorizer(self._js_servicer_reference)
 
     async def _read(
         self,
@@ -32857,7 +32940,7 @@ class GreeterServicerNodeAdaptor(Greeter.singleton.Servicer):
 
             cancelled: IMPORT_asyncio.Future[None] = IMPORT_asyncio.Future()
 
-            bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+            bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
             try:
                 with IMPORT_reboot_aio_tracing.span(
@@ -32867,7 +32950,7 @@ class GreeterServicerNodeAdaptor(Greeter.singleton.Servicer):
                     python_specific=True,
                     level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                 ):
-                    bytes_result_future = self._trampoline(  # type: ignore[attr-defined]
+                    bytes_result_future = self._trampoline(
                         self._js_servicer_reference,
                         context,
                         cancelled,
@@ -32982,10 +33065,10 @@ class GreeterServicerNodeAdaptor(Greeter.singleton.Servicer):
 
         cancelled: IMPORT_asyncio.Future[None] = IMPORT_asyncio.Future()
 
-        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
         try:
-            bytes_result_future = self._trampoline(  # type: ignore[attr-defined]
+            bytes_result_future = self._trampoline(
                 self._js_servicer_reference,
                 context,
                 cancelled,
@@ -33093,7 +33176,7 @@ class GreeterServicerNodeAdaptor(Greeter.singleton.Servicer):
 
             cancelled: IMPORT_asyncio.Future[None] = IMPORT_asyncio.Future()
 
-            bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+            bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
             try:
                 with IMPORT_reboot_aio_tracing.span(
@@ -33103,7 +33186,7 @@ class GreeterServicerNodeAdaptor(Greeter.singleton.Servicer):
                     python_specific=True,
                     level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                 ):
-                    bytes_result_future = self._trampoline(  # type: ignore[attr-defined]
+                    bytes_result_future = self._trampoline(
                         self._js_servicer_reference,
                         context,
                         cancelled,
@@ -33232,7 +33315,7 @@ class GreeterServicerNodeAdaptor(Greeter.singleton.Servicer):
 
             cancelled: IMPORT_asyncio.Future[None] = IMPORT_asyncio.Future()
 
-            bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+            bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
             try:
                 with IMPORT_reboot_aio_tracing.span(
@@ -33242,7 +33325,7 @@ class GreeterServicerNodeAdaptor(Greeter.singleton.Servicer):
                     python_specific=True,
                     level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                 ):
-                    bytes_result_future = self._trampoline(  # type: ignore[attr-defined]
+                    bytes_result_future = self._trampoline(
                         self._js_servicer_reference,
                         context,
                         cancelled,
@@ -33357,10 +33440,10 @@ class GreeterServicerNodeAdaptor(Greeter.singleton.Servicer):
 
         cancelled: IMPORT_asyncio.Future[None] = IMPORT_asyncio.Future()
 
-        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
         try:
-            bytes_result_future = self._trampoline(  # type: ignore[attr-defined]
+            bytes_result_future = self._trampoline(
                 self._js_servicer_reference,
                 context,
                 cancelled,
@@ -33454,10 +33537,10 @@ class GreeterServicerNodeAdaptor(Greeter.singleton.Servicer):
 
         cancelled: IMPORT_asyncio.Future[None] = IMPORT_asyncio.Future()
 
-        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
         try:
-            bytes_result_future = self._trampoline(  # type: ignore[attr-defined]
+            bytes_result_future = self._trampoline(
                 self._js_servicer_reference,
                 context,
                 cancelled,
@@ -33551,10 +33634,10 @@ class GreeterServicerNodeAdaptor(Greeter.singleton.Servicer):
 
         cancelled: IMPORT_asyncio.Future[None] = IMPORT_asyncio.Future()
 
-        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
         try:
-            bytes_result_future = self._trampoline(  # type: ignore[attr-defined]
+            bytes_result_future = self._trampoline(
                 self._js_servicer_reference,
                 context,
                 cancelled,
@@ -33662,7 +33745,7 @@ class GreeterServicerNodeAdaptor(Greeter.singleton.Servicer):
 
             cancelled: IMPORT_asyncio.Future[None] = IMPORT_asyncio.Future()
 
-            bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+            bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
             try:
                 with IMPORT_reboot_aio_tracing.span(
@@ -33672,7 +33755,7 @@ class GreeterServicerNodeAdaptor(Greeter.singleton.Servicer):
                     python_specific=True,
                     level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                 ):
-                    bytes_result_future = self._trampoline(  # type: ignore[attr-defined]
+                    bytes_result_future = self._trampoline(
                         self._js_servicer_reference,
                         context,
                         cancelled,
@@ -33787,10 +33870,10 @@ class GreeterServicerNodeAdaptor(Greeter.singleton.Servicer):
 
         cancelled: IMPORT_asyncio.Future[None] = IMPORT_asyncio.Future()
 
-        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
         try:
-            bytes_result_future = self._trampoline(  # type: ignore[attr-defined]
+            bytes_result_future = self._trampoline(
                 self._js_servicer_reference,
                 context,
                 cancelled,
@@ -33884,10 +33967,10 @@ class GreeterServicerNodeAdaptor(Greeter.singleton.Servicer):
 
         cancelled: IMPORT_asyncio.Future[None] = IMPORT_asyncio.Future()
 
-        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
         try:
-            bytes_result_future = self._trampoline(  # type: ignore[attr-defined]
+            bytes_result_future = self._trampoline(
                 self._js_servicer_reference,
                 context,
                 cancelled,
@@ -33981,10 +34064,10 @@ class GreeterServicerNodeAdaptor(Greeter.singleton.Servicer):
 
         cancelled: IMPORT_asyncio.Future[None] = IMPORT_asyncio.Future()
 
-        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
         try:
-            bytes_result_future = self._trampoline(  # type: ignore[attr-defined]
+            bytes_result_future = self._trampoline(
                 self._js_servicer_reference,
                 context,
                 cancelled,
@@ -34082,13 +34165,13 @@ class GreeterServicerNodeAdaptor(Greeter.singleton.Servicer):
         # propagate `CancelledError` back through Node.js.
         context._cancelled = cancelled
 
-        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
         servicer = cls.__servicer__.get()
-        assert servicer is not None
+        assert isinstance(servicer, GreeterServicerNodeAdaptor), type(servicer)
 
         try:
-            bytes_result_future = servicer._trampoline(  # type: ignore[attr-defined]
+            bytes_result_future = servicer._trampoline(
                 servicer._js_servicer_reference,
                 context,
                 cancelled,
@@ -34195,7 +34278,7 @@ class GreeterServicerNodeAdaptor(Greeter.singleton.Servicer):
 
             cancelled: IMPORT_asyncio.Future[None] = IMPORT_asyncio.Future()
 
-            bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+            bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
             try:
                 with IMPORT_reboot_aio_tracing.span(
@@ -34205,7 +34288,7 @@ class GreeterServicerNodeAdaptor(Greeter.singleton.Servicer):
                     python_specific=True,
                     level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                 ):
-                    bytes_result_future = self._trampoline(  # type: ignore[attr-defined]
+                    bytes_result_future = self._trampoline(
                         self._js_servicer_reference,
                         context,
                         cancelled,
@@ -34334,7 +34417,7 @@ class GreeterServicerNodeAdaptor(Greeter.singleton.Servicer):
 
             cancelled: IMPORT_asyncio.Future[None] = IMPORT_asyncio.Future()
 
-            bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+            bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
             try:
                 with IMPORT_reboot_aio_tracing.span(
@@ -34344,7 +34427,7 @@ class GreeterServicerNodeAdaptor(Greeter.singleton.Servicer):
                     python_specific=True,
                     level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                 ):
-                    bytes_result_future = self._trampoline(  # type: ignore[attr-defined]
+                    bytes_result_future = self._trampoline(
                         self._js_servicer_reference,
                         context,
                         cancelled,
@@ -34459,10 +34542,10 @@ class GreeterServicerNodeAdaptor(Greeter.singleton.Servicer):
 
         cancelled: IMPORT_asyncio.Future[None] = IMPORT_asyncio.Future()
 
-        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
         try:
-            bytes_result_future = self._trampoline(  # type: ignore[attr-defined]
+            bytes_result_future = self._trampoline(
                 self._js_servicer_reference,
                 context,
                 cancelled,
@@ -34570,7 +34653,7 @@ class GreeterServicerNodeAdaptor(Greeter.singleton.Servicer):
 
             cancelled: IMPORT_asyncio.Future[None] = IMPORT_asyncio.Future()
 
-            bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+            bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
             try:
                 with IMPORT_reboot_aio_tracing.span(
@@ -34580,7 +34663,7 @@ class GreeterServicerNodeAdaptor(Greeter.singleton.Servicer):
                     python_specific=True,
                     level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                 ):
-                    bytes_result_future = self._trampoline(  # type: ignore[attr-defined]
+                    bytes_result_future = self._trampoline(
                         self._js_servicer_reference,
                         context,
                         cancelled,
@@ -34669,7 +34752,7 @@ class GreeterServicerNodeAdaptor(Greeter.singleton.Servicer):
 
 class GreeterWeakReferenceNodeAdaptor(Greeter.WeakReference):
 
-    async def _call(  # type: ignore[override]
+    async def _call(
         self,
         *,
         callable: IMPORT_typing.Callable[[IMPORT_google_protobuf_message.Message], IMPORT_typing.Awaitable],
@@ -34716,7 +34799,7 @@ class GreeterWeakReferenceNodeAdaptor(Greeter.WeakReference):
                 }
             )
 
-    async def _schedule(  # type: ignore[override]
+    async def _schedule(
         self,
         *,
         method: str,
@@ -34764,7 +34847,7 @@ class GreeterWeakReferenceNodeAdaptor(Greeter.WeakReference):
             }
         )
 
-    async def _reader(  # type: ignore[override]
+    async def _reader(
         self,
         method: str,
         context: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
@@ -34790,7 +34873,7 @@ class GreeterWeakReferenceNodeAdaptor(Greeter.WeakReference):
             )
 
         method_handle = IMPORT_functools.partial(
-            getattr(super()._reader(context), method),
+            getattr(super()._get_reader_stub(context), method),
             bearer_token=options.get("bearerToken"),
             idempotency=idempotency,
         )
@@ -34803,7 +34886,7 @@ class GreeterWeakReferenceNodeAdaptor(Greeter.WeakReference):
             json_request=json_request,
         )
 
-    async def _writer(  # type: ignore[override]
+    async def _writer(
         self,
         method: str,
         context: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
@@ -34841,7 +34924,7 @@ class GreeterWeakReferenceNodeAdaptor(Greeter.WeakReference):
             )
 
         method_handle = IMPORT_functools.partial(
-            getattr(super()._writer(context), method),
+            getattr(super()._get_writer_stub(context), method),
             idempotency=idempotency,
             bearer_token=options.get("bearerToken"),
         )
@@ -34854,7 +34937,7 @@ class GreeterWeakReferenceNodeAdaptor(Greeter.WeakReference):
             json_request=json_request,
         )
 
-    async def _transaction(  # type: ignore[override]
+    async def _transaction(
         self,
         method: str,
         context: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
@@ -34892,7 +34975,7 @@ class GreeterWeakReferenceNodeAdaptor(Greeter.WeakReference):
             )
 
         method_handle = IMPORT_functools.partial(
-            getattr(super()._workflow(context), method),
+            getattr(super()._get_workflow_stub(context), method),
             idempotency=idempotency,
             bearer_token=options.get("bearerToken"),
         )
@@ -34905,7 +34988,7 @@ class GreeterWeakReferenceNodeAdaptor(Greeter.WeakReference):
             json_request=json_request,
         )
 
-    async def _workflow(  # type: ignore[override]
+    async def _workflow(
         self,
         method: str,
         context: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,

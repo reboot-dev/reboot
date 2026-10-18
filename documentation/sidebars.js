@@ -132,8 +132,8 @@ const sidebars = {
         },
         {
           type: "category",
-          label: "MCP UIs",
-          link: { type: "doc", id: "frontends/mcp_ui" },
+          label: "MCP Apps",
+          link: { type: "doc", id: "frontends/mcp_app" },
           items: [
             {
               type: "doc",

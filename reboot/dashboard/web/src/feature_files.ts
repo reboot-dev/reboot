@@ -4,7 +4,10 @@
 
 import type * as feature_pb from "../../../../rbt/v1alpha1/bdd/feature_pb";
 import type * as grammar_pb from "../../../../rbt/v1alpha1/bdd/grammar_pb";
-import { Element_Role } from "../../../../rbt/v1alpha1/bdd/grammar_pb";
+import {
+  Element_Role,
+  OpensWebApp_ColorScheme,
+} from "../../../../rbt/v1alpha1/bdd/grammar_pb";
 import type { APIs } from "./link_properties_to_data_types";
 import { qualifiedName } from "./link_properties_to_data_types";
 
@@ -416,7 +419,8 @@ export type Role =
   | "label"
   | "page-text"
   | "key"
-  | "path";
+  | "path"
+  | "color-scheme";
 
 export interface Span {
   text: string;
@@ -804,6 +808,15 @@ export const printBuiltInSyntax = (
           ...spansOfUser(step.value.user),
           text(" opens the web app"),
           ...at,
+          text(" in "),
+          {
+            text: OpensWebApp_ColorScheme[
+              step.value.colorScheme ??
+                OpensWebApp_ColorScheme.COLOR_SCHEME_UNSPECIFIED
+            ].toLowerCase(),
+            role: "color-scheme",
+          },
+          text(" mode"),
         ],
         clauses: [],
         tail: [],

@@ -1,8 +1,8 @@
 """End-to-end browser test for the Ping standalone SPA.
 
-Drives WebDriver against the *real* SPA the backend serves at
-`/__/frontend/web/` (the same build the MCP clicker's "Open in web
-app" button lands on) through the full cross-host OAuth dance, the
+Drives WebDriver against the *real* SPA the backend serves at `/`
+(the same build the MCP clicker's "Open in web app" button lands on)
+through the full cross-host OAuth dance, the
 reactive read of the empty counter list, a `createCounter` mutation
 (which goes through the WebSocket multiplex carrying the bearer JWT
 in the request payload), and a `Counter.increment` mutation (same

@@ -1,9 +1,12 @@
 import asyncio
 import os
+import reboot.aio.signals
 import reboot.aio.tracing
+import reboot.portless
 import tempfile
 import uuid
 from dataclasses import dataclass
+from datetime import timedelta
 from log.log import get_logger
 from pathlib import Path
 from rbt.v1alpha1 import database_pb2
@@ -16,7 +19,7 @@ from reboot.aio.http import WebFramework
 from reboot.aio.internals.application_metadata import ApplicationMetadata
 from reboot.aio.internals.channel_manager import _ChannelManager
 from reboot.aio.libraries import AbstractLibrary
-from reboot.aio.monitoring import monitor_event_loop
+from reboot.aio.monitoring import monitor_event_loop, warn_when_slow
 from reboot.aio.placement import PlanOnlyPlacementClient
 from reboot.aio.resolvers import StaticResolver
 from reboot.aio.servers import run_application_initializer
@@ -38,7 +41,9 @@ from reboot.run_environments import on_cloud
 from reboot.server.database import DatabaseServer, DatabaseServerFailed
 from reboot.settings import (
     ENVVAR_LOCAL_ENVOY_USE_TLS,
+    ENVVAR_RBT_PORTLESS_NAME,
     ENVVAR_REBOOT_CLOUD_DATABASE_ADDRESS,
+    ONLY_LOCALHOST_NETWORK_ADDRESS,
 )
 from reboot.wait_for_tasks import wait_for_tasks
 from typing import Awaitable, Callable, Optional, Sequence, overload
@@ -91,6 +96,8 @@ class Reboot:
         """
         self._local_envoy_tls: Optional[bool] = None
         self._local_envoy_picked_port: Optional[int] = None
+        # The name registered with portless in `up()`, to remove in `stop()`.
+        self._portless_name: Optional[str] = None
         self._channel_manager: Optional[_ChannelManager] = None
         self._monitor_event_loop_task: Optional[asyncio.Task] = None
 
@@ -102,6 +109,9 @@ class Reboot:
             )
         else:
             self._application_id = ApplicationId(application_id)
+
+        # Before anything installs a cleanup handler, tracing included.
+        reboot.aio.signals.initialize()
 
         if initialize_tracing:
             reboot.aio.tracing.start(process_name=self._application_name)
@@ -189,8 +199,17 @@ class Reboot:
             # Let the PlacementPlanner choose its own port locally, in
             # case we are running multiple PlacementPlanners on the
             # same host (for example, running multiple unit tests in
-            # parallel).
-            '127.0.0.1:0'
+            # parallel). Only connections from this machine are expected, so we
+            # use only the loopback, and we couldn't use
+            # `EVERY_LOCAL_NETWORK_ADDRESS` anyway on macOS because gRPC binds
+            # IPv6 as well (one dual-stack socket) and macOS has a bug where
+            # its IPv6 ephemeral-port allocator doesn't check ports held by
+            # IPv4 sockets, so the server can be handed a port that an IPv4
+            # listener (e.g., an orphaned Envoy) already holds and connections
+            # to `ONLY_LOCALHOST_NETWORK_ADDRESS` (`127.0.0.1`) reach that
+            # listener instead; see
+            # https://github.com/reboot-dev/reboot/pull/234.
+            f'{ONLY_LOCALHOST_NETWORK_ADDRESS}:0'
         )
 
     async def start(self):
@@ -292,7 +311,6 @@ class Reboot:
         libraries: Sequence[AbstractLibrary] = [],
         web_framework: WebFramework,
         token_verifier: Optional[TokenVerifier] = None,
-        root: Optional[str] = None,
         initialize: Optional[Callable[[InitializeContext],
                                       Awaitable[None]]] = None,
         initialize_bearer_token: Optional[str] = None,
@@ -317,7 +335,6 @@ class Reboot:
         libraries: Sequence[AbstractLibrary] = [],
         web_framework: Optional[WebFramework] = None,
         token_verifier: Optional[TokenVerifier] = None,
-        root: Optional[str] = None,
         initialize: Optional[Callable[[InitializeContext],
                                       Awaitable[None]]] = None,
         initialize_bearer_token: Optional[str] = None,
@@ -484,7 +501,6 @@ class Reboot:
                 serviceables=serviceables,
                 web_framework=web_framework,
                 token_verifier=token_verifier,
-                root=root,
                 in_process=self._in_process,
                 local_envoy=local_envoy,
                 local_envoy_port=local_envoy_port,
@@ -498,17 +514,29 @@ class Reboot:
                 servers=servers,
                 allowed_origins=allowed_origins,
             )
-            await self._application_metadata.validate_schema_backwards_compatibility(
-                config
-            )
+            # This step makes the application metadata calls, which
+            # carry a deadline of their own; expect it to finish well
+            # within that deadline so the log names the step we are
+            # stuck on before the deadline fails the process.
+            async with warn_when_slow(
+                "Validate the application's schema against the database",
+                expected=timedelta(seconds=10),
+            ):
+                await self._application_metadata.validate_schema_backwards_compatibility(
+                    config
+                )
             revision = ApplicationRevision(config=config)
 
         assert revision is not None
 
         # This addition will trigger a new plan being made: then, wait for it
         # to have been observed.
-        await self._config_tracker.add_config(revision.config)
-        await self._wait_for_local_plan_sync()
+        async with warn_when_slow(
+            "Start the application's servers",
+            expected=timedelta(seconds=30),
+        ):
+            await self._config_tracker.add_config(revision.config)
+            await self._wait_for_local_plan_sync()
 
         trusted_address: Optional[str] = None
         if local_envoy:
@@ -516,6 +544,15 @@ class Reboot:
             # we restart the application it can be restarted on the same
             # port.
             self._local_envoy_picked_port = self.envoy_port()
+            # Under `--portless` the name is the address: now that the
+            # port is bound and the servers are up, register the name
+            # the CLI gave us, which is what makes the application
+            # reachable, and what tells the CLI it is serving.
+            self._portless_name = os.environ.get(ENVVAR_RBT_PORTLESS_NAME)
+            if self._portless_name:
+                await reboot.portless.alias(
+                    self._portless_name, self.envoy_port()
+                )
             # Dial the IPv4 loopback Envoy actually binds: `localhost`
             # may resolve to `[::1]` first, where an unrelated process
             # (e.g. the Bazel server JVM) can hold the same numeric
@@ -699,6 +736,15 @@ class Reboot:
     async def stop(self) -> None:
         """Bring down all servicers and shut down the Reboot instance such
         that no more servicers can be brought up. """
+        try:
+            # The name points at a port that is going away with us.
+            if self._portless_name is not None:
+                await reboot.portless.alias_remove(self._portless_name)
+                self._portless_name = None
+        finally:
+            await self._stop()
+
+    async def _stop(self) -> None:
         try:
             await self.down()
         finally:

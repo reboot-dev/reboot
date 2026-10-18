@@ -16,7 +16,7 @@ Feature: Users can sign in
 
     Scenario: Signing in and out with the Development picker
       Given "ben" is an unauthenticated user
-      When "ben" opens the web app
+      When "ben" opens the web app in light mode
       And "ben" clicks the "Sign in" button in the web app
       And "ben" clicks the "Ben" link in the web app
       Then "ben" is signed in to the web app with their user id saved as "ben user id"
@@ -41,8 +41,8 @@ Feature: Users can sign in
       And the resulting `account_id` is saved as "alice account id"
       And "carol" does an `open_account` with `initial_deposit=200.0` on `User` of "carol"
       And the resulting `account_id` is saved as "carol account id"
-      When "alice" opens the web app
-      And "carol" opens the web app
+      When "alice" opens the web app in light mode
+      And "carol" opens the web app in light mode
       Then "alice" sees "<alice account id>" in the "Your Accounts" table in the web app
       And "alice" does not see "<carol account id>" in the web app
       And "carol" sees "<carol account id>" in the "Your Accounts" table in the web app

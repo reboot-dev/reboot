@@ -4,13 +4,20 @@ import {
   ReaderContext,
   Reboot,
   TokenVerifier,
+  allowIf,
+  hasVerifiedToken,
 } from "@reboot-dev/reboot";
+import { errors_pb } from "@reboot-dev/reboot-api";
 import { WebContext } from "@reboot-dev/reboot-web";
 import { fork } from "child_process";
 import { strict as assert } from "node:assert";
 import test from "node:test";
 import { v4 as uuidv4 } from "uuid";
-import { Greeter } from "../../greeter_rbt_web.js";
+import {
+  ErrorWithValue,
+  Greeter,
+  GreeterFailWithAbortedAborted,
+} from "../../greeter_rbt_web.js";
 import { GreeterServicer } from "../greeter.js";
 const TOKEN_FOR_TEST = "S3CR3T!";
 
@@ -21,6 +28,17 @@ const TOKEN_FOR_TEST = "S3CR3T!";
 // retry, which we can't do yet to the best of our knowledge with the
 // tests in 'tests/reboot/react'.
 
+// The next item of a reactive read, which must not be done.
+async function nextItem<Item>(
+  items: AsyncGenerator<Item, void, unknown>
+): Promise<Item> {
+  const result = await items.next();
+  if (result.done === true) {
+    assert.fail("Expected another item");
+  }
+  return result.value;
+}
+
 class StaticTokenVerifier extends TokenVerifier {
   async verifyToken(
     context: ReaderContext,
@@ -28,6 +46,23 @@ class StaticTokenVerifier extends TokenVerifier {
   ): Promise<Auth | null> {
     assert(token === TOKEN_FOR_TEST);
     return null;
+  }
+}
+
+// Verifies `TOKEN_FOR_TEST` and no other token.
+class OnlyTokenForTestVerifier extends TokenVerifier {
+  async verifyToken(
+    context: ReaderContext,
+    token?: string
+  ): Promise<Auth | null> {
+    return token === TOKEN_FOR_TEST ? new Auth({ userId: "test" }) : null;
+  }
+}
+
+// A `GreeterServicer` whose methods require a verified token.
+class AuthenticatedGreeterServicer extends GreeterServicer {
+  authorizer() {
+    return allowIf({ all: [hasVerifiedToken] });
   }
 }
 
@@ -195,6 +230,298 @@ test("Reboot", async (t) => {
     const response = await greeter.greet(context, {});
 
     assert(response.message == "Hi , I am Dr Jonathan the Friendly");
+  });
+
+  await t.test("Reactive reader", async (t) => {
+    const application = new Application({
+      servicers: [GreeterServicer],
+    });
+
+    const rbt = new Reboot();
+    await rbt.start();
+
+    t.after(async () => {
+      await rbt.stop();
+    });
+
+    await rbt.up(application, { localEnvoy: true });
+
+    const context = new WebContext({
+      url: rbt.url(),
+    });
+
+    const [greeter] = await Greeter.create(context, {
+      title: "Dr",
+      name: "Jonathan",
+      adjective: "Best",
+    });
+
+    const abortController = new AbortController();
+
+    const [items] = await greeter
+      .reactively()
+      .greet(context, {}, { signal: abortController.signal });
+
+    const first = await nextItem(items);
+    assert(first.response?.message == "Hi , I am Dr Jonathan the Best");
+
+    await greeter.setAdjective(context, {
+      adjective: "Friendly",
+    });
+
+    // The generator yields a response for each change to the state.
+    const second = await nextItem(items);
+    assert(second.response?.message == "Hi , I am Dr Jonathan the Friendly");
+
+    abortController.abort();
+    assert((await items.next()).done);
+  });
+
+  await t.test(
+    "Reactive reader yields a declared error and keeps reading",
+    async (t) => {
+      const application = new Application({
+        servicers: [GreeterServicer],
+      });
+
+      const rbt = new Reboot();
+      await rbt.start();
+
+      t.after(async () => {
+        await rbt.stop();
+      });
+
+      await rbt.up(application, { localEnvoy: true });
+
+      const context = new WebContext({
+        url: rbt.url(),
+      });
+
+      const [greeter] = await Greeter.create(context, {
+        title: "Dr",
+        name: "Jonathan",
+        adjective: "Best",
+      });
+
+      const abortController = new AbortController();
+
+      const [items] = await greeter
+        .reactively()
+        .failWithAborted(context, {}, { signal: abortController.signal });
+
+      // A declared error is yielded rather than thrown, and it does not
+      // end the read: the next attempt, after a backoff, yields it
+      // again.
+      for (let i = 0; i < 2; i++) {
+        const { response, aborted } = await nextItem(items);
+        assert(response === undefined);
+        assert(aborted instanceof GreeterFailWithAbortedAborted);
+        assert(aborted.error instanceof ErrorWithValue);
+        assert(aborted.error.value == "Hi!");
+      }
+
+      abortController.abort();
+      assert((await items.next()).done);
+    }
+  );
+
+  await t.test(
+    "Reactive reader calls `onUnauthenticated` until the session is renewed",
+    async (t) => {
+      const application = new Application({
+        servicers: [AuthenticatedGreeterServicer],
+        tokenVerifier: new OnlyTokenForTestVerifier(),
+      });
+
+      const rbt = new Reboot();
+      await rbt.start();
+
+      t.after(async () => {
+        await rbt.stop();
+      });
+
+      await rbt.up(application, { localEnvoy: true });
+
+      const [greeter] = await Greeter.create(
+        new WebContext({
+          url: rbt.url(),
+          bearerToken: TOKEN_FOR_TEST,
+        }),
+        {
+          title: "Dr",
+          name: "Jonathan",
+          adjective: "Best",
+        }
+      );
+
+      // The read starts with a token that the verifier rejects.
+      let token = "expired";
+      let calls = 0;
+
+      const context = new WebContext({
+        url: rbt.url(),
+        bearerToken: async () => token,
+        onUnauthenticated: async () => {
+          calls += 1;
+          if (calls === 1) {
+            // The renewal fails, e.g., because the backend is
+            // restarting.
+            return false;
+          }
+          if (calls === 2) {
+            // The renewal reports success, but the token is still the
+            // rejected one.
+            return true;
+          }
+          token = TOKEN_FOR_TEST;
+          return true;
+        },
+      });
+
+      const abortController = new AbortController();
+
+      const [items] = await greeter
+        .reactively()
+        .greet(context, {}, { signal: abortController.signal });
+
+      // The failed renewal yields the error.
+      const first = await nextItem(items);
+      assert(first.aborted?.error instanceof errors_pb.Unauthenticated);
+      assert.equal(calls, 1);
+
+      // The next attempt calls the hook again. It returns `true`, so
+      // the read reconnects right away, and because the token is still
+      // rejected the error is yielded without a third call.
+      const second = await nextItem(items);
+      assert(second.aborted?.error instanceof errors_pb.Unauthenticated);
+      assert.equal(calls, 2);
+
+      // The attempt after the backoff calls the hook a third time,
+      // which renews the token.
+      const third = await nextItem(items);
+      assert(third.response?.message == "Hi , I am Dr Jonathan the Best");
+      assert.equal(calls, 3);
+
+      abortController.abort();
+      assert((await items.next()).done);
+    }
+  );
+
+  await t.test(
+    "Reactive reader sends the token that `setBearerToken` set after it started",
+    async (t) => {
+      const application = new Application({
+        servicers: [AuthenticatedGreeterServicer],
+        tokenVerifier: new OnlyTokenForTestVerifier(),
+      });
+
+      const rbt = new Reboot();
+      await rbt.start();
+
+      t.after(async () => {
+        await rbt.stop();
+      });
+
+      await rbt.up(application, { localEnvoy: true });
+
+      const [greeter] = await Greeter.create(
+        new WebContext({
+          url: rbt.url(),
+          bearerToken: TOKEN_FOR_TEST,
+        }),
+        {
+          title: "Dr",
+          name: "Jonathan",
+          adjective: "Best",
+        }
+      );
+
+      // The read starts with a token that the verifier rejects, and
+      // `onUnauthenticated` renews it with `setBearerToken`.
+      let calls = 0;
+
+      const context: WebContext = new WebContext({
+        url: rbt.url(),
+        bearerToken: "expired",
+        onUnauthenticated: async () => {
+          calls += 1;
+          context.setBearerToken(TOKEN_FOR_TEST);
+          return true;
+        },
+      });
+
+      const abortController = new AbortController();
+
+      const [items] = await greeter
+        .reactively()
+        .greet(context, {}, { signal: abortController.signal });
+
+      // The attempt after the renewal sends the new token, so the
+      // first item is a response and not the `Unauthenticated` error.
+      const first = await nextItem(items);
+      assert(first.aborted === undefined);
+      assert(first.response?.message == "Hi , I am Dr Jonathan the Best");
+      assert.equal(calls, 1);
+
+      abortController.abort();
+      assert((await items.next()).done);
+    }
+  );
+
+  await t.test("Reactive reader retries a restarting server", async (t) => {
+    const application = new Application({
+      servicers: [GreeterServicer],
+    });
+
+    const rbt = new Reboot();
+    await rbt.start();
+
+    t.after(async () => {
+      await rbt.stop();
+    });
+
+    await rbt.up(application, { localEnvoy: true });
+
+    const context = new WebContext({
+      url: rbt.url(),
+    });
+
+    const [greeter] = await Greeter.create(context, {
+      title: "Dr",
+      name: "Jonathan",
+      adjective: "Best",
+    });
+
+    const abortController = new AbortController();
+
+    const [responses] = await greeter
+      .reactively()
+      .greet(context, {}, { signal: abortController.signal });
+
+    const first = await nextItem(responses);
+    assert(first.response?.message == "Hi , I am Dr Jonathan the Best");
+
+    // Restarting the server disconnects the reactive read, which
+    // reconnects rather than surface the disconnect, and then
+    // observes the mutation made after the restart.
+    await rbt.down();
+    await rbt.up(application, { localEnvoy: true });
+
+    await greeter.setAdjective(context, {
+      adjective: "Friendly",
+    });
+
+    while (true) {
+      const { response, aborted } = await nextItem(responses);
+      assert(aborted === undefined);
+      if (response?.message == "Hi , I am Dr Jonathan the Friendly") {
+        break;
+      }
+    }
+
+    // Aborting the read ends the generator.
+    abortController.abort();
+    assert((await responses.next()).done);
   });
 
   await t.test("Transaction", async (t) => {

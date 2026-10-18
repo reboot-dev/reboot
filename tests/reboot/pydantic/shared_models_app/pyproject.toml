@@ -1,0 +1,20 @@
+[project]
+name = "shared-models-app"
+version = "0.1.0"
+requires-python = ">= 3.10"
+# The version is left open since the test always installs the locally
+# built wheel over it.
+dependencies = [
+    "reboot[dev]",
+]
+
+[dependency-groups]
+dev = [
+    "mypy==1.18.1",
+    "pytest>=7.4.2",
+    "types-protobuf>=4.24.0.20240129",
+]
+
+# There is no `[build-system]` table: that tells `uv` this is a virtual
+# (non-package) project — it installs the dependencies into `.venv` but
+# never tries to build/install the project itself.

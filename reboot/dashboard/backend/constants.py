@@ -4,9 +4,14 @@ Kept apart from `main.py` so that reading them does not drag in the
 application and everything it serves with.
 """
 
-# Where the dashboard application serves its page, relative to its
-# own address.
-DASHBOARD_PATH = '/dashboard'
+from pathlib import Path
+
+# The dashboard's built page, beside the application's module, which
+# is the same arrangement `InspectServicer` uses for its own assets.
+# The CLI serves it at `/` the way `--web-app-dist-path` would, by
+# naming it (absolute, since no project root is involved) in the
+# application's environment.
+DASHBOARD_DIRECTORY = Path(__file__).parent / 'dashboard'
 
 # The dashboard application's port. Deliberately not adjacent to
 # `rbt dev run`'s default port of 9991: VS Code forwards a port
@@ -18,7 +23,9 @@ DASHBOARD_PATH = '/dashboard'
 # forwarding never reaches it, outside the 999x band (9990 k3d and
 # WildFly, 9993 ZeroTier, 9997 Splunk), clear of
 # 9000/9090/9200/9222/9229, hard to confuse with 9991 when reading
-# logs, and outside the Linux ephemeral range.
+# logs, and outside the Linux ephemeral range. Under `--portless` the
+# dashboard's address is its name, `https://dashboard.<app>.localhost`,
+# and the port behind the proxy is a free one.
 DEFAULT_DASHBOARD_PORT = 9871
 
 # The `Dashboard` state holding everything the dashboard shows, as
@@ -26,8 +33,8 @@ DEFAULT_DASHBOARD_PORT = 9871
 DASHBOARD_ID = 'dashboard'
 
 # The `Preferences` state holding what the developer has said about
-# opening dashboards: the dashboard's banner writes it and `rbt dev
-# run` reads it.
+# opening dashboards: the dashboard's notice writes it and
+# `rbt dashboard` reads it.
 PREFERENCES_ID = 'preferences'
 
 # The `OrderedMap` of changes to the developer's API files, keyed by
@@ -55,8 +62,8 @@ ENVVAR_RBT_APPLICATION = 'RBT_APPLICATION'
 ENVVAR_RBT_GENERATED_DIRECTORY = 'RBT_GENERATED_DIRECTORY'
 
 # The `Presence` state the dashboard page subscribes to, recording who
-# is looking at a dashboard right now. `rbt dev run` reads it to decide
-# whether to open one.
+# is looking at a dashboard right now. `rbt dashboard` reads it to
+# decide whether to open one.
 #
 # The page names this, `DASHBOARD_ID` and `PREFERENCES_ID` independently,
 # in `frontend/src/constants.ts`, since TypeScript cannot read them

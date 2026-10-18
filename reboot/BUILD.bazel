@@ -448,6 +448,16 @@ py_library(
 )
 
 py_library(
+    name = "portless_py",
+    srcs = ["portless.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":settings_py",
+    ],
+)
+
+py_library(
     name = "time_py",
     srcs = ["time.py"],
     srcs_version = "PY3",

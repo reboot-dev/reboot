@@ -1,7 +1,7 @@
 """The built-in steps for what a user does in the web app and sees in
 it, driven with Playwright.
 
-    When "alice" opens the web app
+    When "alice" opens the web app in light mode
     And "alice" fills "Initial Deposit ($)" in the web app with `1000`
     And "alice" clicks the "Open Account" button in the web app
     Then "alice" eventually sees "$1000" in the "Your Accounts" table in the web app within 10 seconds
@@ -48,7 +48,7 @@ from reboot.bdd.grammar import (
 from reboot.bdd.loop import run
 from reboot.bdd.recording import VIDEO_SIZE, Recording
 from reboot.bdd.steps import _parsed_seconds, _parsed_value, _saved_value
-from typing import Any, Iterator, Optional, cast
+from typing import Any, Iterator, Literal, Optional, cast
 from urllib.parse import urlparse
 
 # Where a saved value is named inside quoted text: 'Signed in as
@@ -90,12 +90,18 @@ class WebApp:
     # as a whole, or between steps.
     asserted: Optional[Locator] = None
 
-    def open(self, *, user: str, path: str) -> Page:
+    def open(
+        self,
+        *,
+        user: str,
+        path: str,
+        color_scheme: Literal['light', 'dark'],
+    ) -> Page:
         """Opens the app at the given path in a browser of the user's
-        own, as the user: their token, minted when the scenario
-        declared them, becomes the session cookie on the backend's
-        host, which the app's `/__/oauth/whoami` call turns back into
-        its bearer."""
+        own, in the given color scheme, as the user: their token,
+        minted when the scenario declared them, becomes the session
+        cookie on the backend's host, which the app's
+        `/__/oauth/whoami` call turns back into its bearer."""
         assert self.world.rbt is not None, (
             "The application is not up; start the scenario with "
             "'Given the application is up'"
@@ -107,6 +113,7 @@ class WebApp:
         context = self.new_context(
             record_video_dir=str(self.recording.directory),
             record_video_size=VIDEO_SIZE,
+            color_scheme=color_scheme,
         )
         token = self.world.token(user)
         if token is not None:
@@ -164,7 +171,7 @@ class WebApp:
         if page is None:
             raise ValueError(
                 f'"{user}" has not opened the web app; say '
-                f'\'When "{user}" opens the web app\' first'
+                f'\'When "{user}" opens the web app in light mode\' first'
             )
         return page
 
@@ -270,8 +277,13 @@ def _opens_web_app(
     web_app: WebApp,
     user: str,
     path: Optional[str],
+    color_scheme: Literal['light', 'dark'],
 ) -> None:
-    web_app.open(user=user, path='/' if path is None else path)
+    web_app.open(
+        user=user,
+        path='/' if path is None else path,
+        color_scheme=color_scheme,
+    )
 
 
 @when(parsers.re(CLICKS_IN_WEB_APP))

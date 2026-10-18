@@ -1,11 +1,13 @@
 """Top-level entry that spins up an in-memory Reboot backend with
 the ping servicers and runs the browser test against it.
 
-The test reuses the *real* SPA the backend serves at
-`/__/frontend/web/` (built by `//reboot/ping:web_dist`, carried in
-`ping_py`'s runfiles alongside `.rbtrc`), so we set
-`RBT_FRONTEND_DIST_PATH` to point the framework's static-file mount
-at `frontend/dist`. We drive the SPA on the `localhost` host with a
+The test reuses the *real* SPA the backend serves at `/` (built by
+`//reboot/ping:web_dist`, carried in `ping_py`'s runfiles alongside
+`.rbtrc`), so we set `RBT_WEB_APP_DIST_PATH` to point the framework's
+web app mount at `frontend/dist/web`. The ping app also declares
+`UI(...)` methods, which `rbt dev` insists are served somehow, so
+`RBT_MCP_APP_DIST_PATH` names their builds too (this test never
+loads them). We drive the SPA on the `localhost` host with a
 `?rebootUrl=http://127.0.0.1:...` query param, so the SPA document
 and the backend it calls are cross-host — the production-style
 cross-origin setup. Because the ping app is `oauth=` with no
@@ -31,7 +33,11 @@ from reboot.ping.ping import (
     PongServicer,
     UserServicer,
 )
-from reboot.settings import ENVVAR_RBT_DEV, ENVVAR_RBT_FRONTEND_DIST_PATH
+from reboot.settings import (
+    ENVVAR_RBT_DEV,
+    ENVVAR_RBT_MCP_APP_DIST_PATH,
+    ENVVAR_RBT_WEB_APP_DIST_PATH,
+)
 from tests.reboot.ping.frontend.web.test import test, test_proactive_refresh
 from urllib.error import HTTPError
 from urllib.parse import urlencode
@@ -40,7 +46,7 @@ from urllib.request import Request, urlopen
 
 def _spa_url(envoy_port: int, backend_url: str) -> str:
     """The URL the browser loads the real SPA from: the backend's
-    `/__/frontend/web/` on the `localhost` host, with the backend's
+    `/` on the `localhost` host, with the backend's
     `127.0.0.1` origin handed to the React provider via `?rebootUrl`.
     `localhost` and `127.0.0.1` both resolve to loopback and reach
     the same Envoy, but the browser treats them as distinct hosts, so
@@ -48,7 +54,7 @@ def _spa_url(envoy_port: int, backend_url: str) -> str:
     the backend's host-scoped `rbt_session` cookie is invisible to
     the SPA's `document.cookie`."""
     query = urlencode({"rebootUrl": backend_url})
-    return f'http://localhost:{envoy_port}/__/frontend/web/?{query}'
+    return f'http://localhost:{envoy_port}/?{query}'
 
 
 def _cors_preflight_status(
@@ -88,12 +94,15 @@ class PingStandaloneSpaTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         # Run the backend as `rbt dev` so Envoy's CORS filter trusts
         # the loopback origins the SPA is driven from (`localhost` /
-        # `127.0.0.1`), and so `RBT_FRONTEND_DIST_PATH` serves the
-        # built SPA over `/__/frontend/` from the backend's own HTTP
-        # server. Both must be set before the cluster comes up so the
+        # `127.0.0.1`), and so `RBT_WEB_APP_DIST_PATH` serves the built
+        # SPA at `/` from the backend's own HTTP server (with
+        # `RBT_MCP_APP_DIST_PATH` naming the MCP App builds, which an
+        # application with `UI(...)` methods must be told how to
+        # serve). All must be set before the cluster comes up so the
         # servers inherit them.
         os.environ[ENVVAR_RBT_DEV] = "true"
-        os.environ[ENVVAR_RBT_FRONTEND_DIST_PATH] = "frontend/dist"
+        os.environ[ENVVAR_RBT_MCP_APP_DIST_PATH] = "frontend/dist/mcp"
+        os.environ[ENVVAR_RBT_WEB_APP_DIST_PATH] = "frontend/dist/web"
         self.rbt = Reboot()
         await self.rbt.start()
 

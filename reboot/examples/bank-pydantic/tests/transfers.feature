@@ -29,7 +29,7 @@ Feature: Customers can transfer money between accounts
       And the resulting `account_id` is saved as "first account id"
       And "alice" does an `open_account` with `initial_deposit=0.0` on `User` of "alice"
       And the resulting `account_id` is saved as "second account id"
-      When "alice" opens the web app
+      When "alice" opens the web app in light mode
       And "alice" selects "<first account id>" in "From Account" in the web app
       And "alice" selects "<second account id>" in "To Account" in the web app
       And "alice" fills "Amount ($)" in the web app with `250`

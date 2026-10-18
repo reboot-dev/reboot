@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "tsBuildInfoFile": "../node_modules/.tmp/tsconfig.web.tsbuildinfo",
     "target": "es6",
     "lib": ["dom", "dom.iterable", "esnext"],
     "strictPropertyInitialization": false,
@@ -15,7 +16,11 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "jsx": "react-jsx"
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@api/*": ["../api/*"]
+    }
   },
   "include": ["src"],
   "exclude": ["node_modules", "**/*.test.tsx"]

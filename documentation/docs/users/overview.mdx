@@ -322,6 +322,12 @@ So, wherever you are, the signed-in person's ID is at hand:
 | Any other servicer method, or an authorizer | `context.auth.user_id` (`context.auth` is `None` when nobody is signed in) |
 | A React component | `user.state_id`, from `useUser()` |
 
+That holds however deep the call goes. When a method calls another
+servicer on the signed-in person's behalf, constructing a new instance
+included, the callee's `context.auth` is that same person, so a nested
+method can record who acted. The call is still application-internal,
+so a rule like `is_app_internal` keeps letting it through.
+
 ## `User` as the entry point
 
 Because `User` is the one type whose instance the framework can always
@@ -350,7 +356,7 @@ On every frontend, the client side of all of this is two hooks:
   sign-in flow: a redirect in a [browser](/frontends/web#signing-in),
   a system-browser round trip in a
   [React Native app](/frontends/react_native). An
-  [MCP client](/frontends/mcp_ui) signs the person in when they
+  [MCP client](/frontends/mcp_app) signs the person in when they
   connect your app, before any `UI` loads, so there is nothing to
   call.
 - **`useUser()`**, generated from your `User` type, resolves the
@@ -408,7 +414,7 @@ button.)
 | --- | --- |
 | [Web](/frontends/web) | `useSignIn()` sends the browser through your identity provider and back. |
 | [React Native](/frontends/react_native) | `useSignIn()` opens a system browser for your identity provider; the app passes `nativeAuth({...})` to its provider once, and everything else is the same. |
-| [MCP UI](/frontends/mcp_ui) | The MCP client runs the flow itself when the person connects your app. |
+| [MCP App](/frontends/mcp_app) | The MCP client runs the flow itself when the person connects your app. |
 
 Because identity is established by the backend, a person who signs in
 on the web is the *same* `User`, with the same state, in your mobile

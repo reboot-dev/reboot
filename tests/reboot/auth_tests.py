@@ -1,4 +1,5 @@
 import asyncio
+import grpc
 import unittest
 from google.protobuf import empty_pb2
 from rbt.v1alpha1.errors_pb2 import (
@@ -8,16 +9,25 @@ from rbt.v1alpha1.errors_pb2 import (
     Unknown,
 )
 from reboot.aio.applications import Application
-from reboot.aio.auth.authorizers import allow_if, has_verified_token
+from reboot.aio.auth import Auth
+from reboot.aio.auth.authorizers import (
+    allow_if,
+    has_verified_token,
+    is_app_internal,
+)
 from reboot.aio.auth.token_verifiers import TokenVerifier
 from reboot.aio.call import Options
+from reboot.aio.caller_id import CallerID
 from reboot.aio.contexts import (
+    Context,
     ReaderContext,
     TransactionContext,
     WriterContext,
 )
+from reboot.aio.headers import Headers
 from reboot.aio.tests import Reboot
-from tests.reboot import bank_rbt
+from reboot.aio.types import ApplicationId, StateRef
+from tests.reboot import bank_pb2, bank_pb2_grpc, bank_rbt
 from tests.reboot.bank import SINGLETON_BANK_ID, AccountServicer, BankServicer
 from tests.reboot.bank_rbt import Account, Bank
 from tests.reboot.test_token_verifier import TestTokenVerifier
@@ -400,6 +410,183 @@ class BankConstructorAuth(unittest.IsolatedAsyncioTestCase):
             context,
             SINGLETON_BANK_ID,
             Options(bearer_token=VALID_JWT),
+        )
+
+
+class PropagatingBankServicer(BankServicer):
+    """`sign_up` makes its nested calls, a constructor and a writer,
+    without passing on the caller's bearer token.
+    """
+
+    def authorizer(self):
+        return allow_if(all=[_is_test_user])
+
+    def token_verifier(self) -> Optional[TokenVerifier]:
+        return TestTokenVerifier(secret=SECRET)
+
+    async def sign_up(
+        self,
+        context: TransactionContext,
+        request: bank_rbt.SignUpRequest,
+    ) -> bank_rbt.SignUpResponse:
+        self.state.account_ids.append(request.account_id)
+        await Account.idempotently('open').open(
+            context,
+            request.account_id,
+            initial_deposit=1,
+        )
+        await Account.ref(request.account_id).deposit(context, amount=1)
+        return bank_rbt.SignUpResponse()
+
+
+class PropagatingAccountServicer(AccountServicer):
+    """Every method requires a verified token, so a nested call only runs
+    at all if `has_verified_token` accepts the propagated `Auth`, and
+    each then checks that it carried the caller's `Auth`, but not their
+    token, and is still app-internal.
+    """
+
+    def authorizer(self):
+        return allow_if(all=[has_verified_token])
+
+    def _check(self, context: Context) -> None:
+        assert context.auth is not None
+        assert context.auth.user_id == TEST_USER
+        assert context.auth.properties['sub'] == TEST_USER
+        assert context.caller_bearer_token is None
+        assert context.app_internal
+
+    async def open(
+        self,
+        context: TransactionContext,
+        state: Account.State,
+        request: bank_rbt.OpenRequest,
+    ) -> bank_rbt.OpenResponse:
+        self._check(context)
+        return await super().open(context, state, request)
+
+    async def deposit(
+        self,
+        context: WriterContext,
+        state: Account.State,
+        request: bank_rbt.DepositRequest,
+    ) -> bank_rbt.DepositResponse:
+        self._check(context)
+        return await super().deposit(context, state, request)
+
+    async def balance(
+        self,
+        context: ReaderContext,
+        state: Account.State,
+        request: bank_rbt.BalanceRequest,
+    ) -> bank_rbt.BalanceResponse:
+        self._check(context)
+        return await super().balance(context, state, request)
+
+
+class AppInternalOnlyAccountServicer(PropagatingAccountServicer):
+
+    def authorizer(self):
+        return Account.Authorizer(
+            open=allow_if(all=[is_app_internal]),
+            _default=allow_if(all=[has_verified_token]),
+        )
+
+
+class AuthPropagationTests(unittest.IsolatedAsyncioTestCase):
+    """A call from within a Reboot method carries its caller's
+    `context.auth` to the callee, which still sees the call as
+    app-internal (github.com/reboot-dev/reboot issues 236 and 237).
+    """
+
+    async def up(self, account_servicer: type[AccountServicer]) -> None:
+        self.rbt = Reboot()
+        await self.rbt.start()
+        await self.rbt.up(
+            Application(
+                servicers=[account_servicer, PropagatingBankServicer],
+                token_verifier=TestTokenVerifier(secret=SECRET),
+            ),
+        )
+        self.context = self.rbt.create_external_context(
+            name=self.id(),
+            bearer_token=VALID_JWT,
+        )
+        await Bank.create(self.context, SINGLETON_BANK_ID)
+
+    async def asyncTearDown(self):
+        await self.rbt.stop()
+
+    async def test_nested_calls_carry_callers_auth(self):
+        await self.up(PropagatingAccountServicer)
+        bank = Bank.ref(SINGLETON_BANK_ID)
+
+        # A nested constructor and writer; the servicers assert what
+        # they saw, and `has_verified_token` let them run at all.
+        await bank.sign_up(self.context, account_id=ACCOUNT_NAME)
+
+        # A nested reader: `balance` of each account.
+        response = await bank.assets_under_management(
+            self.context,
+            wait_for_amount_at_least=2,
+        )
+        self.assertEqual(response.amount, 2)
+
+    async def test_app_internal_only_constructor(self):
+        await self.up(AppInternalOnlyAccountServicer)
+
+        # Directly, the signed-in user may not open an account ...
+        with self.assertRaises(Account.OpenAborted) as aborted:
+            await Account.open(
+                # Its own context: a failed mutation leaves a context
+                # unsure whether it took effect, so it refuses further
+                # non-idempotent mutations.
+                self.rbt.create_external_context(
+                    name=self.id() + '-direct',
+                    bearer_token=VALID_JWT,
+                ),
+                ACCOUNT_NAME,
+                initial_deposit=1,
+            )
+        self.assertEqual(type(aborted.exception.error), PermissionDenied)
+
+        # ... but through the bank they can, and the account knows who.
+        await Bank.ref(SINGLETON_BANK_ID).sign_up(
+            self.context,
+            account_id=ACCOUNT_NAME,
+        )
+
+    async def test_forged_caller_id_auth_is_ignored(self):
+        await self.up(PropagatingAccountServicer)
+        await Bank.ref(SINGLETON_BANK_ID).sign_up(
+            self.context,
+            account_id=ACCOUNT_NAME,
+        )
+
+        # An `Auth` in a caller ID naming another application (as a
+        # cross-application call would) gives the caller no `Auth`.
+        state_ref = StateRef.from_id(Account.__state_type_name__, ACCOUNT_NAME)
+        channel = self.rbt.create_external_context(
+            name=self.id()
+        ).channel_manager.get_channel_to_state(
+            Account.__state_type_name__,
+            state_ref,
+        )
+        with self.assertRaises(grpc.aio.AioRpcError) as error:
+            await bank_pb2_grpc.AccountMethodsStub(channel).Balance(
+                bank_pb2.BalanceRequest(),
+                metadata=Headers(
+                    application_id=None,
+                    state_ref=state_ref,
+                    caller_id=CallerID(
+                        application_id=ApplicationId('application'),
+                        auth=Auth(user_id=TEST_USER),
+                    ),
+                ).to_grpc_metadata(),
+            )
+        self.assertEqual(
+            error.exception.code(),
+            grpc.StatusCode.UNAUTHENTICATED,
         )
 
 

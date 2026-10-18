@@ -11,12 +11,22 @@ on:
   # a job that holds a secret and a write token, so the
   # `approve-fork-pr` job holds every fork run for maintainer approval
   # first; see its comment for the full model.
+  #
+  # A review runs only when someone adds the `claude-review` label to
+  # the pull request (see `REVIEW_LABEL` below), so that we spend
+  # Anthropic API tokens on the pushes a person wants reviewed rather
+  # than on every push. Adding labels takes triage access to the
+  # repository. The job removes the label when it finishes, so adding
+  # it again requests another review.
   pull_request_target:
-    types: [opened, synchronize, ready_for_review, reopened]
+    types: [labeled]
 
-# Every push to a PR triggers a fresh review run, so pushes that land
-# in quick succession pile up several concurrent reviews of which all
-# but the newest look at outdated code. Cancel the superseded runs.
+env:
+  # The label whose addition to a pull request requests a review.
+  REVIEW_LABEL: claude-review
+
+# A second request for the same PR supersedes a review that is still
+# running, which would be looking at outdated code. Cancel it.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
@@ -43,7 +53,8 @@ jobs:
   approve-fork-pr:
     name: Approve fork PR review
     if: >-
-      ${{ github.event.pull_request.head.repo.full_name
+      ${{ github.event.label.name == 'claude-review' &&
+          github.event.pull_request.head.repo.full_name
           != github.repository }}
     runs-on: ubuntu-latest
     environment: fork-pr-ci
@@ -53,10 +64,13 @@ jobs:
 
   claude-review:
     # Runs only after `approve-fork-pr` clears (or is skipped for a
-    # trusted run); see that job.
+    # trusted run); see that job. The `env` context is unavailable in a
+    # job-level `if`, so the label name is repeated here and must match
+    # `REVIEW_LABEL`.
     needs: approve-fork-pr
     if: >-
       ${{ !cancelled() &&
+          github.event.label.name == 'claude-review' &&
           (needs.approve-fork-pr.result == 'success' ||
            needs.approve-fork-pr.result == 'skipped') }}
     runs-on: ubuntu-latest
@@ -127,6 +141,16 @@ jobs:
         uses: anthropics/claude-code-action@v1
         env:
           CLAUDE_CODE_MAX_OUTPUT_TOKENS: ${{ steps.budget.outputs.tokens }}
+          # Claude Code starts subagents in the background unless told
+          # otherwise. The review fans out to subagents, and in this
+          # headless run the session exits as soon as the main agent
+          # ends a turn, so a main agent that ends its turn to "wait for
+          # the reviewers to report" ends the whole review before any
+          # finding is collected or posted, and the job still passes.
+          # Run every subagent in the foreground, so the main agent
+          # blocks on each one and holds their results when it goes on
+          # to post.
+          CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           # Without a token here the action mints one by exchanging a
@@ -137,15 +161,6 @@ jobs:
           # the exchange; the job's `pull-requests: write` is all the
           # inline comments need.
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          # Aviator drives our merge queue and pushes to a pull request
-          # when it rebases the branch, firing a `synchronize` event
-          # whose actor is `aviator-app[bot]`. The action refuses to run
-          # for a non-human actor unless it is named here, so a review
-          # triggered by a rebase failed outright and left the queue
-          # blocked. Name our own merge-queue app rather than `*`, which
-          # would let any GitHub App that can trigger this workflow
-          # spend our Anthropic API budget.
-          allowed_bots: "aviator-app"
           plugin_marketplaces: "https://github.com/anthropics/claude-code.git"
           plugins: "code-review@claude-code-plugins"
           # Pass `--comment` so findings post as inline PR comments;
@@ -170,8 +185,15 @@ jobs:
           # converging (the job's `timeout-minutes` is the hard
           # backstop). Set well above a normal review's turn count so it
           # never truncates real work, only catches runaways.
+          #
+          # The plugin's first step stops the review when Claude has
+          # already commented on the pull request, which suits a review
+          # that runs on every push but would turn every review after
+          # the first into a silent no-op here. `--append-system-prompt`
+          # overrides that step, since a person asked for this run.
           claude_args: |
             --max-turns 80
+            --append-system-prompt "A maintainer explicitly requested this review by labeling the pull request. Review it even if Claude has already commented on it; earlier comments may be about code that has since changed. Wait for every subagent to return its result before you end your turn, and always finish by posting to the pull request: either the inline comments for the issues found or a summary comment saying no issues were found."
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr list:*),Bash(gh pr view:*),Bash(gh search:*),Bash(git blame:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*)"
           # The full execution transcript (tool calls included) lets a
           # broken run be debugged from the workflow log alone. The
@@ -185,13 +207,14 @@ jobs:
       - name: Fail if the review errored or was denied posting comments
         # The action fails the step only when it throws (e.g. a crash
         # or bad auth). A run that completes but is broken still exits
-        # 0, so two failure modes would otherwise pass as a green
+        # 0, so three failure modes would otherwise pass as a green
         # check: a review that errored partway (e.g. it hit the
-        # output-token limit and produced a truncated result), and a
+        # output-token limit and produced a truncated result), a
         # review that was denied the tools it needs to post its
         # findings, so it finished without surfacing anything on the
-        # PR. We inspect the execution log for both and fail the job,
-        # leaving the throw cases to the action.
+        # PR, and a review that ended while its subagents were still
+        # running. We inspect the execution log for all three and fail
+        # the job, leaving the throw cases to the action.
         #
         # Only denials of the comment-posting tools fail the job. The
         # review's subagents routinely attempt tool calls outside the
@@ -211,6 +234,15 @@ jobs:
             exit 0
           fi
           errored=$(jq '[.[] | select(.type == "result") | .is_error] | any' "${EXECUTION_FILE}")
+          # Subagents that had not finished when the session ended: the
+          # review stopped without their results, so it posted nothing
+          # or an incomplete set of findings.
+          unfinished_subagents=$(jq '
+            [.[] | select(.type == "result") | (.subagent_stats // {})
+             | (.spawned // 0) - (.completed // 0) - (.failed // 0)
+               - ([(.killed // {})[]] | add // 0)
+               - ([(.refused // {})[]] | add // 0)]
+            | add // 0' "${EXECUTION_FILE}")
           echo "All permission denials in this run:"
           jq '[.[] | select(.type == "result") | (.permission_denials // [])[]]' "${EXECUTION_FILE}"
           # Match `gh pr comment` only as a whole subcommand (followed by
@@ -231,4 +263,22 @@ jobs:
             echo "::error::Claude Code Review was denied ${posting_denials} attempt(s) to post its review comments, so its findings may not have made it onto the PR. Check that the comment-posting tools are in the action's 'claude_args' --allowedTools list and that the workflow's token has the permissions they need (notably 'pull-requests: write')."
             exit 1
           fi
-          echo "Review completed cleanly: no errors, and no denials of comment-posting tools."
+          if [ "${unfinished_subagents}" -gt 0 ]; then
+            echo "::error::Claude Code Review ended while ${unfinished_subagents} of its subagent(s) were still running, so the review is incomplete and its findings were not posted. See the review step log above."
+            exit 1
+          fi
+          echo "Review completed cleanly: no errors, no denials of comment-posting tools, and no unfinished subagents."
+
+      - name: Remove the review label
+        # Adding a label that is already present fires no event, so
+        # take the label off once the run is over; adding it again
+        # then requests the next review. Do so even when the review
+        # failed or was cancelled, so a retry needs only the label.
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh api --method DELETE \
+            "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels/${REVIEW_LABEL}" \
+            || echo "Label '${REVIEW_LABEL}' was already removed."

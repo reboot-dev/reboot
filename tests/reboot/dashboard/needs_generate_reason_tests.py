@@ -17,23 +17,52 @@ class NeedsGenerateReasonTest(unittest.TestCase):
 
     def test_a_module_not_generated_is_missing(self) -> None:
         state = Dashboard()
+        # Simulate the code analysis having run otherwise
+        # `needs_generate_reason` returns `None`.
+        state.code_check.at.CopyFrom(Timestamp(seconds=1))
         state.api_digests['shop/v1/shop_rbt.py'] = 'a' * 64
         self.assertEqual(needs_generate_reason(state), Reason.MISSING)
 
+    def test_nothing_is_missing_before_the_code_is_checked(self) -> None:
+        # No analysis has finished, so no generated module has been
+        # listed, which says nothing about whether one exists.
+        state = Dashboard()
+        state.api_digests['shop/v1/shop_rbt.py'] = 'a' * 64
+        self.assertIsNone(needs_generate_reason(state))
+
+    def test_nothing_is_missing_while_the_code_check_fails(self) -> None:
+        state = Dashboard()
+        # Record a code check, which the failure below is added to, so
+        # that it is the failure, not a missing check, that makes
+        # `needs_generate_reason` return `None`.
+        state.code_check.at.CopyFrom(Timestamp(seconds=1))
+        state.api_digests['shop/v1/shop_rbt.py'] = 'a' * 64
+        state.code_check.failure = 'pyright exited'
+        self.assertIsNone(needs_generate_reason(state))
+
     def test_a_digest_that_moved_is_changed(self) -> None:
         state = Dashboard()
+        # Simulate the code analysis having run otherwise
+        # `needs_generate_reason` returns `None`.
+        state.code_check.at.CopyFrom(Timestamp(seconds=1))
         state.api_digests['shop/v1/shop_rbt.py'] = 'a' * 64
         state.generated['shop/v1/shop_rbt.py'].api_digest = 'b' * 64
         self.assertEqual(needs_generate_reason(state), Reason.CHANGED)
 
     def test_a_digest_that_matches_is_no_reason(self) -> None:
         state = Dashboard()
+        # Simulate the code analysis having run otherwise
+        # `needs_generate_reason` returns `None`.
+        state.code_check.at.CopyFrom(Timestamp(seconds=1))
         state.api_digests['shop/v1/shop_rbt.py'] = 'a' * 64
         state.generated['shop/v1/shop_rbt.py'].api_digest = 'a' * 64
         self.assertIsNone(needs_generate_reason(state))
 
     def test_a_module_recording_no_digest_is_changed(self) -> None:
         state = Dashboard()
+        # Simulate the code analysis having run otherwise
+        # `needs_generate_reason` returns `None`.
+        state.code_check.at.CopyFrom(Timestamp(seconds=1))
         state.api_digests['shop/v1/shop_rbt.py'] = 'a' * 64
         state.generated['shop/v1/shop_rbt.py'].modified.CopyFrom(
             Timestamp(seconds=1)
@@ -42,6 +71,9 @@ class NeedsGenerateReasonTest(unittest.TestCase):
 
     def test_the_worst_reason_over_all_files_wins(self) -> None:
         state = Dashboard()
+        # Simulate the code analysis having run otherwise
+        # `needs_generate_reason` returns `None`.
+        state.code_check.at.CopyFrom(Timestamp(seconds=1))
         state.api_digests['shop/v1/shop_rbt.py'] = 'a' * 64
         state.generated['shop/v1/shop_rbt.py'].api_digest = 'a' * 64
         state.api_digests['shop/v1/depot_rbt.py'] = 'c' * 64

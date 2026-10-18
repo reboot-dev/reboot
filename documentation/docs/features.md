@@ -323,7 +323,7 @@ other steps call:
 ```gherkin
 Scenario: Opening a first account in the web app
   Given "alice" is an authenticated user
-  When "alice" opens the web app
+  When "alice" opens the web app in light mode
   Then "alice" sees "Signed in as alice" in the web app
   When "alice" fills "Initial Deposit ($)" in the web app with `1000`
   And "alice" clicks the "Open Account" button in the web app
@@ -356,7 +356,7 @@ then bound to the user:
 ```gherkin
 Scenario: Signing in and out with the Development picker
   Given "ben" is an unauthenticated user
-  When "ben" opens the web app
+  When "ben" opens the web app in light mode
   And "ben" clicks the "Sign in" button in the web app
   And "ben" clicks the "Ben" link in the web app
   Then "ben" is signed in to the web app with their user id saved as "ben user id"

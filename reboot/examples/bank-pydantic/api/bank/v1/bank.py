@@ -1,4 +1,3 @@
-from bank.v1.account import OverdraftError
 from reboot.api import (
     API,
     UI,
@@ -12,6 +11,7 @@ from reboot.api import (
     Transaction,
     Type,
 )
+from shared.errors import OverdraftError
 
 
 class BankState(Model):
@@ -111,7 +111,7 @@ BankMethods = Methods(
     ),
     show_accounts=UI(
         request=None,
-        path="frontend/mcp/accounts",
+        path="accounts",
         title="Bank Accounts",
         description="Show a live table of every customer's "
         "accounts and balances.",

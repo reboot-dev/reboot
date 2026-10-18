@@ -67,8 +67,21 @@ new terminal:
 cloudflared tunnel --metrics localhost:4040 --url http://localhost:9991
 ```
 
+Under [`rbt dev run --portless`](/develop_locally#named-local-urls-with---portless)
+point it at the backend's name through the portless proxy instead,
+so it needs no port and keeps working across restarts:
+
+```sh
+cloudflared tunnel --metrics localhost:4040 \
+    --url https://127.0.0.1:443 \
+    --http-host-header <app>.localhost \
+    --origin-server-name <app>.localhost \
+    --origin-ca-pool ~/.portless/ca.pem
+```
+
 The wizard detects the tunnel through cloudflared's metrics endpoint
-(the `--metrics` flag above) and fills in its
+(the `--metrics` flag above, on its default port `4040`), or shows
+the URL `rbt dev run --tunnel-url=<url>` was given, and fills in the
 `*.trycloudflare.com` URL for you. It may take a minute after startup
 for the tunnel's DNS to propagate and the reachability check to turn
 green.
@@ -143,7 +156,7 @@ for details.
 
 ### ChatGPT
 
-ChatGPT supports MCP apps through its
+ChatGPT supports MCP Apps through its
 [Developer Mode](https://developers.openai.com/api/docs/guides/developer-mode),
 a beta feature available on Pro, Plus, Business, Enterprise, and Edu
 plans; see

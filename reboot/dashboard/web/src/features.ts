@@ -135,7 +135,12 @@ export const methodLabel = (stateTypeId: string, method: string): string =>
 
 // The methods the API declares that no feature exercises or reaches,
 // by state type, for the state types with any: the behavior nobody
-// has described yet.
+// has described yet. The `set_claims` Reboot adds to an
+// auto-constructed `User` is Reboot's own, called as a user signs
+// in to store the claims the sign-in verified, so the user does not
+// need to test it and it is not listed; the `create` Reboot also
+// adds is listed, since a servicer overriding it gives a new user
+// its state, which the user does need to test.
 export const undescribedMethods = (
   features: FeatureEntry[],
   graph: GraphStateType[]
@@ -158,6 +163,7 @@ export const undescribedMethods = (
       // Only a method the API declares counts; one known from a call
       // alone belongs to another package.
       .filter((method) => method.kind !== undefined)
+      .filter((method) => !method.userSetClaims)
       .filter((method) => !described.has(`${stateType.id}.${method.name}`))
       .map((method) => method.name);
     return methods.length === 0 ? [] : [{ stateType, methods }];

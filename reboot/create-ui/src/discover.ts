@@ -133,8 +133,18 @@ export function discover(cwd: string): DiscoveryResult | null {
     }
   }
 
+  // A UI's directory is `<frontend>/mcp/<path>`, where `<frontend>` is
+  // the first component of `--react=` (e.g. `frontend/api`) and `mcp`
+  // is the `mcpAppPath` the scaffolded `vite.config.ts` names.
+  const frontend = (reactDir ?? "frontend/api").split("/")[0];
   const unimplemented = allUis.filter((ui) => {
-    const indexHtml = path.join(projectRoot, ui.path, "index.html");
+    const indexHtml = path.join(
+      projectRoot,
+      frontend,
+      "mcp",
+      ui.path,
+      "index.html"
+    );
     return !fs.existsSync(indexHtml);
   });
 

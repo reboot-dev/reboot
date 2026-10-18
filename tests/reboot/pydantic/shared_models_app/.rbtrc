@@ -1,0 +1,18 @@
+# Find Pydantic API files in 'api/'.
+generate api/
+
+# Tell `rbt generate` where to put generated files.
+generate --python=backend/api
+generate --react=frontend/api
+
+# Watch if any source files are modified.
+dev run --watch=backend/**/*.py
+
+# Tell `rbt` that this is a Python application.
+dev run --python
+
+# Save state between chaos restarts.
+dev run --application-name=shared-models
+
+# Run the application!
+dev run --application=backend/src/main.py

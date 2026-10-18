@@ -1,5 +1,6 @@
+import { useRebootClient } from "@reboot-dev/reboot-react";
 import { useEffect, useState } from "react";
-import { CartItem, Money, Product } from "../../api/boutique/v1/demo_pb";
+import { CartItem, Money, Product } from "@api/boutique/v1/demo_pb";
 
 export const SHIPPING_SINGLETON_ID = "shipping";
 export const CHECKOUT_SINGLETON_ID = "checkout";
@@ -15,7 +16,10 @@ export interface ProductEntry {
   price: Money | undefined;
 }
 
+// `url` is the backend's, `useRebootClient().url`: the one the React
+// client found for the page, wherever the app is served from.
 export const convertedShippingCost = async (
+  url: string,
   cost: Money,
   userCurrency: string
 ): Promise<Money> => {
@@ -29,7 +33,7 @@ export const convertedShippingCost = async (
     description: "this is the wrong api",
     price: cost,
   };
-  const response = await fetch(`${import.meta.env.VITE_REBOOT_URL}/convert`, {
+  const response = await fetch(`${url}/convert`, {
     method: "POST",
     body: JSON.stringify({
       products: [fakeProduct],
@@ -45,6 +49,7 @@ export const useCurrencyConvertProductItems = (
   productItems: ProductItem[] | undefined,
   userCurrency: string
 ) => {
+  const { url } = useRebootClient();
   const [convertedProductItems, setConvertedProductItems] = useState<
     ProductItem[]
   >([]);
@@ -55,7 +60,7 @@ export const useCurrencyConvertProductItems = (
     if (userCurrency === "USD") {
       setConvertedProductItems(productItems);
     } else {
-      fetch(`${import.meta.env.VITE_REBOOT_URL}/convert`, {
+      fetch(`${url}/convert`, {
         method: "POST",
         body: JSON.stringify({
           products: productItems.map(
@@ -78,7 +83,7 @@ export const useCurrencyConvertProductItems = (
           setConvertedProductItems(convertedProductItems);
         });
     }
-  }, [productItems, userCurrency]);
+  }, [url, productItems, userCurrency]);
 
   return convertedProductItems;
 };
@@ -87,6 +92,7 @@ export const useCurrencyConvertProducts = (
   product: Product[] | Product | undefined,
   userCurrency: string
 ) => {
+  const { url } = useRebootClient();
   const [convertedProducts, setConvertedProducts] = useState<Product[]>([]);
 
   useEffect(() => {
@@ -100,7 +106,7 @@ export const useCurrencyConvertProducts = (
     if (userCurrency === "USD") {
       setConvertedProducts(products);
     } else {
-      fetch(`${import.meta.env.VITE_REBOOT_URL}/convert`, {
+      fetch(`${url}/convert`, {
         method: "POST",
         body: JSON.stringify({
           products: products,
@@ -113,7 +119,7 @@ export const useCurrencyConvertProducts = (
         })
         .catch((e: unknown) => console.log(e));
     }
-  }, [product, userCurrency]);
+  }, [url, product, userCurrency]);
 
   return convertedProducts;
 };

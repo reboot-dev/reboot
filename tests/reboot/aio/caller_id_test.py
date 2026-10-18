@@ -9,7 +9,7 @@ from reboot.aio.caller_id_auth import (
     TokenVerifier,
     is_from_permitted_applications_by_space,
 )
-from reboot.aio.headers import Headers
+from reboot.aio.headers import CALLER_ID_HEADER, Headers
 from reboot.aio.types import StateRef
 from reboot.naming import ApplicationId, SpaceId
 from typing import Optional
@@ -46,6 +46,53 @@ class CallerIdTest(unittest.IsolatedAsyncioTestCase):
         caller_id_no_space = CallerID(application_id=LEGAL_APPLICATION_ID)
         parsed_no_space = CallerID.parse(str(caller_id_no_space))
         self.assertEqual(caller_id_no_space, parsed_no_space)
+
+    async def test_auth_round_trip(self) -> None:
+        caller_id = CallerID(
+            application_id=LEGAL_APPLICATION_ID,
+            space_id=LEGAL_SPACE_ID,
+            auth=Auth(
+                user_id='alice',
+                properties={
+                    'a': 'property',
+                    'nested': {
+                        'b': True
+                    },
+                },
+            ),
+        )
+        self.assertEqual(caller_id, CallerID.parse(str(caller_id)))
+
+    async def test_auth_round_trip_without_user_id(self) -> None:
+        # An `Auth` need not name a user (a service identity carrying
+        # only properties, say); its `user_id` must come back as `None`,
+        # not as the empty string.
+        caller_id = CallerID(
+            application_id=LEGAL_APPLICATION_ID,
+            auth=Auth(properties={'service': 'billing'}),
+        )
+        parsed = CallerID.parse(str(caller_id))
+        self.assertEqual(caller_id, parsed)
+        assert parsed.auth is not None
+        self.assertIsNone(parsed.auth.user_id)
+
+    async def test_auth_not_sent_with_bearer_token(self) -> None:
+        # A bearer token is what gets verified for a call, so the
+        # caller ID's `Auth` is not sent along with one.
+        headers = Headers(
+            application_id=ApplicationId("unimportant"),
+            state_ref=StateRef.from_maybe_readable("Unimportant:unimportant"),
+            caller_id=CallerID(
+                application_id=LEGAL_APPLICATION_ID,
+                auth=Auth(user_id='alice'),
+            ),
+            bearer_token='token',
+        )
+        metadata = dict(headers.to_grpc_metadata())
+        self.assertEqual(
+            metadata[CALLER_ID_HEADER],
+            str(CallerID(application_id=LEGAL_APPLICATION_ID)),
+        )
 
     async def test_parse_invalid(self) -> None:
         # Test parsing with missing application ID.

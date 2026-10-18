@@ -55,7 +55,7 @@ async def main():
 ### The easy path: `store_tokens=True`
 
 If the tokens you want are the **identity provider's own** (the provider
-the user logs in with) **and** you're an MCP UI using
+the user logs in with) **and** you're an MCP App using
 `Application(oauth=...)`, don't store anything yourself. Configure the
 `OAuthProvider` with `store_tokens=True` and the OAuth server captures
 the access/refresh tokens during the code exchange and persists them
@@ -96,7 +96,7 @@ tokens have been crypto-shredded.
 ### Store (transaction)
 
 You call `store` yourself when you capture tokens from a service
-**other** than an MCP UI login provider — i.e. you run that service's
+**other** than an MCP App login provider — i.e. you run that service's
 OAuth flow via your own HTTP endpoints (the only path in a web app).
 **Store with `OAuthTokenManager`, never hand-rolled `Ciphertext` or a
 `str` field** — it is the same secret-at-rest problem, already solved

@@ -50,3 +50,14 @@ serve run --application-name=boutique
 # Run the application!
 dev run --application=backend/src/main.py
 serve run --application=backend/src/main.py
+
+# Serve the web app at `/` from Vite, on its default port.
+dev run --frontend-url=http://localhost:5173
+dev run --web-app
+
+# In production, serve the built web app at `/` from the image.
+serve run --web-app-dist-path=frontend/dist/web
+
+# Reboot Cloud terminates TLS at the external load balancer, so the app
+# itself only exposes a non-TLS port.
+serve run --tls=external

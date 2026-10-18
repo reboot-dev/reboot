@@ -80,6 +80,9 @@ async def main(path: str):
         # credentialed browser traffic (neither `oauth=` nor
         # `allowed_origins`), which keeps permissive CORS.
         allowed_origins=None,
+        # No web framework paths: the fixture's routes are the catch-all
+        # alone.
+        route_matches=[],
     )._generate_envoy_yaml()
 
     await _write_sorted_yaml(yaml_content, path)

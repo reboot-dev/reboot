@@ -29,7 +29,9 @@ def has_verified_token(*, context: ReaderContext, **kwargs):
 Returns `Ok` when the caller has any verified auth token. It does **not**
 verify that the token's user is registered with the application — only
 that the token itself is valid. Use it as a baseline gate; combine with
-other predicates for "authenticated AND \_\_\_".
+other predicates for "authenticated AND \_\_\_". A call made from inside
+another servicer method on behalf of a verified caller also passes:
+`context.auth` follows the call (`auth-context-propagation.md`).
 
 ```python
 return allow_if(all=[has_verified_token, can_access_resource])
@@ -47,7 +49,9 @@ def is_app_internal(*, context: ReaderContext, **kwargs):
 Returns `Ok` when the call originates from inside the same Reboot app
 (another Servicer calling this one). External clients always get
 `PermissionDenied`. This is the right gate for stdlib-style internal
-helpers.
+helpers. An app-internal call may still carry a `context.auth` — the
+signed-in person the calling method ran for — so `is_app_internal` and
+an owner rule can both match the same call.
 
 ```python
 # The OrderedMap servicer's default:
@@ -93,8 +97,10 @@ allow_if(any=[is_app_internal, has_verified_token])
 
 If your Servicer has methods that schedule workflows on the
 **same actor** (`self.ref().schedule().<workflow>(context)`),
-the workflow runs **app-internally** — it has no bearer token,
-even when the original transaction was authenticated as a user.
+the workflow runs **app-internally** — it has no bearer token and no
+`context.auth`, even when the original transaction was authenticated
+as a user. (A call made directly, not scheduled, does carry the
+caller's `context.auth`; see `auth-context-propagation.md`.)
 Authorizers gated only on user identity will deny the framework's
 scheduled call:
 

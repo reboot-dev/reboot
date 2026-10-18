@@ -1,9 +1,9 @@
 import random
-from bank.v1.account import OverdraftError
 from bank.v1.account_rbt import Account
 from datetime import timedelta
 from reboot.aio.auth.authorizers import allow
 from reboot.aio.contexts import ReaderContext, WriterContext
+from shared.errors import OverdraftError
 
 
 class AccountServicer(Account.Servicer):

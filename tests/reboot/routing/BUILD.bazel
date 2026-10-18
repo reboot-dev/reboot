@@ -45,3 +45,20 @@ py_test(
         "//reboot/routing:xds_server_py",
     ],
 )
+
+py_test(
+    name = "envoy_config_tests_py",
+    timeout = "short",
+    srcs = ["envoy_config_tests.py"],
+    main = "envoy_config_tests.py",
+    deps = [
+        "//envoy/config/route/v3:routev3_py_proto",
+        "//envoy/type/matcher/v3:matcherv3_py_proto",
+        requirement("protobuf"),
+        "//envoy/config/listener/v3:listenerv3_py_proto",
+        "//envoy/extensions/filters/network/http_connection_manager/v3:http_connection_managerv3_py_proto",
+        "//reboot/aio:http_py",
+        "//reboot/aio:types_py",
+        "//reboot/routing:envoy_config_py",
+    ],
+)

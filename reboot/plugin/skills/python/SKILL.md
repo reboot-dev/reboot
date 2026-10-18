@@ -385,6 +385,13 @@ with "unknown actor type."
 - `references/auth-allow-if.md` and `references/auth-built-in-predicates.md`
   — composition patterns
 - `references/auth-custom-predicates.md` — for app-specific rules
+- `references/auth-context-propagation.md` — **always read when a
+  method calls another servicer or records who acted**: a nested call
+  carries the caller's `context.auth` and stays app-internal (so
+  writers can audit who did what and owner rules still match), what
+  is not carried (the bearer token, scheduled calls), and why a
+  reader's body must not read `context.auth` (the answer must be the
+  same for every admitted caller, or the reader cannot be cached).
 - `references/auth-external-api-calls.md` — **acting as the user at an
   external service**: capture a provider's OAuth tokens (your own
   authorize/callback HTTP endpoints → `OAuthTokenManager.store`), read
@@ -392,7 +399,7 @@ with "unknown actor type."
   `Workflow`**. Also the **user-provided API-key path** for services
   without OAuth (`Ciphertext`-encrypted, the ciphertext id kept in
   state; the developer's own service keys are env-var secrets instead).
-  Host-agnostic (MCP UIs and web apps). Pairs with
+  Host-agnostic (MCP Apps and web apps). Pairs with
   `stdlib-oauth-tokens.md` (the `OAuthTokenManager` type).
 
 ### Testing
@@ -469,6 +476,9 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/lifecycle-secrets.md`
 - `references/lifecycle-dockerfile.md`
 - `references/lifecycle-reboot-cloud.md`
+- `references/lifecycle-signals.md` — usually nothing to do on
+  `SIGTERM`/`SIGINT`; when something is, `install_cleanup()`, never a
+  signal handler of your own
 
 **API** (`api-`):
 
@@ -521,6 +531,8 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/auth-allow-if.md`
 - `references/auth-built-in-predicates.md`
 - `references/auth-custom-predicates.md`
+- `references/auth-context-propagation.md` — `context.auth` follows a
+  call through the application; audit in writers, never in readers
 - `references/auth-external-api-calls.md`
 
 **RPC** (`rpc-`):
@@ -544,7 +556,7 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/testing-external-context.md`
 - `references/testing-failure-recovery.md`
 
-**Frontend** (shared by `web-app` and `mcp-ui`):
+**Frontend** (shared by `web-app` and `mcp-app`):
 
 - `references/react-generated-client.md` — what
   `rbt generate --react=` emits: hook overloads, `Use<Type>Api`,

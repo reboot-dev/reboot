@@ -95,8 +95,8 @@ message Dashboard {
   map<string, rbt.v1alpha1.bdd.Feature> features = 9;
 
   // The last check each watcher made of the developer's files: when
-  // it finished and how long it took. Absent until the watcher has
-  // checked once.
+  // it finished and how long it took, or when it failed and why.
+  // Absent until the watcher has checked once.
   optional Check api_check = 10;
   optional Check code_check = 11;
   optional Check features_check = 12;
@@ -111,11 +111,18 @@ message Dashboard {
 
 // One check a watcher made of the developer's files.
 message Check {
-  // When the check finished.
+  // When the check finished, or failed.
   google.protobuf.Timestamp at = 1;
 
-  // How long reading and analyzing the files took.
+  // How long reading and analyzing the files took, up to its failure
+  // for a check that failed.
   google.protobuf.Duration took = 2;
+
+  // Why the check failed, such as the pyright the code analysis asks
+  // having exited, as the error it failed with said it; the watcher
+  // checks again when a file changes. Absent for a check that
+  // finished.
+  optional string failure = 3;
 }
 
 message DashboardGetRequest {}
@@ -126,7 +133,9 @@ message DashboardGetResponse {
   // generated from it, by the digest both record. A module
   // recording no digest was generated before digests were, so
   // whether it came from the file as it is is unknowable, which
-  // also reads as `CHANGED`; regenerating resolves it.
+  // also reads as `CHANGED`; regenerating resolves it. Neither is
+  // said unless the last analysis of the code finished, since only
+  // that lists the generated modules.
   enum NeedsGenerateReason {
     UNKNOWN = 0;
     MISSING = 1;
@@ -883,12 +892,10 @@ message Preferences {
   option (rbt.v1alpha1.state) = {
   };
 
-  // Whether the developer has asked `rbt dev run` to stop opening a
-  // dashboard by itself. False, the default, means `rbt dev run`
-  // opens a dashboard when none is already open.
-  //
-  // `--open-dashboard` opens one even when this is true.
-  bool suppress_open_on_restart = 1;
+  // Whether the developer has asked `rbt dashboard` to stop opening
+  // a dashboard by itself. False, the default, means `rbt dashboard`
+  // opens one when none is already open.
+  bool suppress_automatic_open = 1;
 
   // The methods whose detail the developer has opened, spelled as
   // the state type's fully qualified name, a dot, then the method:
@@ -962,7 +969,7 @@ message CallGraphLayout {
 message PreferencesGetRequest {}
 
 message PreferencesGetResponse {
-  bool suppress_open_on_restart = 1;
+  bool suppress_automatic_open = 1;
   repeated string expanded_methods = 2;
   optional uint32 nav_width = 3;
   optional uint32 pane_width = 4;
@@ -972,11 +979,11 @@ message PreferencesGetResponse {
   optional CallGraphLayout call_graph_layout = 8;
 }
 
-message PreferencesSetSuppressOpenOnRestartRequest {
-  bool suppress_open_on_restart = 1;
+message PreferencesSetSuppressAutomaticOpenRequest {
+  bool suppress_automatic_open = 1;
 }
 
-message PreferencesSetSuppressOpenOnRestartResponse {}
+message PreferencesSetSuppressAutomaticOpenResponse {}
 
 message PreferencesSetMethodsExpandedRequest {
   // The fully qualified name of one state type, spelled as the
@@ -1101,8 +1108,8 @@ service PreferencesMethods {
     };
   }
 
-  rpc SetSuppressOpenOnRestart(PreferencesSetSuppressOpenOnRestartRequest)
-      returns (PreferencesSetSuppressOpenOnRestartResponse) {
+  rpc SetSuppressAutomaticOpen(PreferencesSetSuppressAutomaticOpenRequest)
+      returns (PreferencesSetSuppressAutomaticOpenResponse) {
     option (rbt.v1alpha1.method).writer = {
     };
   }

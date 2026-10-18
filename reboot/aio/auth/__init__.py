@@ -75,6 +75,8 @@ class Auth:
         auth = auth_pb2.Auth()
         auth.ParseFromString(proto_bytes)
         return Auth(
-            user_id=auth.user_id,
+            # `user_id` is `optional`, so an unset one must come back
+            # as `None`, not as the empty string.
+            user_id=auth.user_id if auth.HasField('user_id') else None,
             properties=json_format.MessageToDict(auth.properties),
         )

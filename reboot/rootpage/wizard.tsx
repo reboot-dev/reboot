@@ -30,6 +30,8 @@ interface WizardProps {
   // Public URL the backend's `WatchTunnel` workflow last discovered
   // for ngrok, or absent when ngrok wasn't running / had no matching
   // tunnel for our port.
+  // Public URL `rbt dev run --tunnel-url` named, if it did.
+  tunnelUrl?: string;
   ngrokDetectedUrl?: string;
   // Public URL the backend's `WatchTunnel` workflow last discovered
   // for cloudflared, or absent when cloudflared wasn't running with
@@ -53,6 +55,8 @@ interface WizardProps {
   // MCPJam (local-inspector) client, and go straight to install.
   devMode: boolean;
   appPort: number;
+  // The browser-visible origin. This may be a reverse-proxy or tunnel URL.
+  appUrl: string;
   connectionState: ConnectionState;
 }
 
@@ -86,6 +90,7 @@ export const Wizard = ({
   title,
   description,
   titleReady,
+  tunnelUrl,
   ngrokDetectedUrl,
   cloudflaredDetectedUrl,
   connections,
@@ -93,6 +98,7 @@ export const Wizard = ({
   hasMcpTools,
   devMode,
   appPort,
+  appUrl,
   connectionState,
 }: WizardProps) => {
   const [clientName, setClientName] = useStoredState(
@@ -108,6 +114,7 @@ export const Wizard = ({
   );
 
   const tunnel = useTunnel({
+    configuredUrl: tunnelUrl,
     ngrokDetectedUrl,
     cloudflaredDetectedUrl,
     selectedProviderName: tunnelProviderName,
@@ -177,7 +184,7 @@ export const Wizard = ({
               // MCPJam runs locally alongside the app, so it needs
               // neither a tunnel nor a separate install step —
               // opening the local inspector *is* the install.
-              <MCPJamLaunchStep appPort={appPort} connections={connections} />
+              <MCPJamLaunchStep appUrl={appUrl} connections={connections} />
             ) : (
               <>
                 <TunnelStep

@@ -193,7 +193,9 @@ class UserServicer(User.Servicer):
         return ListCountersResponse(counters=counters)
 
     async def whoami(self, context: ReaderContext) -> WhoAmIResponse:
-        user_id = context.auth.user_id if context.auth else "unauthenticated"
+        user_id = (
+            context.auth.user_id if context.auth else None
+        ) or "unauthenticated"
         return WhoAmIResponse(user_id=user_id, email=self.state.email)
 
 

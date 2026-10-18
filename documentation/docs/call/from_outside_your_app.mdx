@@ -95,39 +95,72 @@ const context = new ExternalContext({
 
 ## Calling readers reactively
 
-Using an `ExternalContext`, you can also call `reader` methods
-_reactively_: you receive a new answer every time the state changes.
-Each answer is a pair of a `response` and an `aborted`: the reader's
-response, or the error it answered with (a declared error, a denied
-`authorizer()`, a state that is not constructed yet). An error does
-not end the read; Reboot keeps the subscription open and yields again
-once the state changes, so you decide whether to keep waiting, to
-`break`, or to `raise aborted`. Failed connections are retried for
-you. For example:
+You can also call `reader` methods _reactively_: you receive a new
+result every time the state changes. Each result is either the reader's
+`response` or the error it raised (`aborted`): a declared error, a
+denied `authorizer()`, a state that does not exist yet. An error does
+not end the read: the subscription stays open and yields again once the
+state changes, so you decide whether to keep reading, stop, or raise the
+error yourself. Failed connections are retried for you.
+
+:::note
+
+The Node.js `ExternalContext` cannot read reactively yet. From Node.js,
+you can use a `WebContext` from `@reboot-dev/reboot-web` instead.
+Running it in Node.js is not supported beyond the case shown below. It
+needs the `fetch` and `WebSocket` globals (Node.js 22 has both by
+default; Node.js 20 needs `--experimental-websocket`).
+
+:::
+
+For example:
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/demos/fig/backend/src/many_readers.py&lines=20-25) -->
-<!-- The below code snippet is automatically added from ../../../reboot/demos/fig/backend/src/many_readers.py -->
+(CODE:src=../../../tests/reboot/documentation/chat_room.py&lines=39-49) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/chat_room.py -->
 
 ```py
-fig = Fig.ref(fig_id)
-async for response, aborted in fig.reactively().get_position(context):
+async for response, aborted in chat_room.reactively().messages(context):
     if aborted is not None:
-        print(f"{fig_id}: {aborted}")
+        # The reader raised an error, e.g., the chat room does not
+        # exist yet. The read continues and yields again once the
+        # state changes.
+        print(f"Could not read messages: {aborted}")
         continue
-    print(f"{fig_id}: {response}")
+    assert response is not None
+    print(response.messages)
+    if "Hello, World!" in response.messages:
+        break
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
 
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
-<!-- TODO: use markdown-autodoc to get this from tested code. -->
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/chat_room.ts&lines=60-73) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/chat_room.ts -->
+
 ```ts
-// COMING SOON!
+const [responses] = await chatRoom.reactively().messages(context);
+for await (const { response, aborted } of responses) {
+  if (aborted !== undefined) {
+    // The reader raised an error, e.g., the chat room does not
+    // exist yet. The read continues and yields again once the
+    // state changes.
+    console.log(`Could not read messages: ${aborted.message}`);
+    continue;
+  }
+  console.log(response.messages);
+  if (response.messages.includes("Hello, World!")) {
+    break;
+  }
+}
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 

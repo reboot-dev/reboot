@@ -35,13 +35,19 @@ function appName(ui: UiEntryWithPackage): string {
 // ── Shared files (web root) ────────────────────────────
 
 /**
- * Generate web/package.json. `build` typechecks then runs
- * `build.mjs`, which discovers and builds every UI (each
- * `mcp/<name>` plus the `web/` SPA).
+ * Generate web/package.json. The `dev` scripts mirror the `.rbtrc`'s
+ * configs: `dev` is the default, `dev:portless`, which runs
+ * `portless frontend.<project-name> vite` (portless appends Vite's `--port`
+ * itself), and `dev:ports` is plain `vite`. `build` typechecks then
+ * runs `build.mjs`, which calls `build()` from
+ * `@reboot-dev/reboot-react/vite` to build every UI the `reboot()`
+ * plugin declares (each `mcp/<name>` plus the `web/` SPA).
  */
 export function packageJson(projectName: string): string {
   const scripts: Record<string, string> = {
-    dev: "vite",
+    dev: "npm run dev:portless",
+    "dev:portless": `portless frontend.${projectName} vite`,
+    "dev:ports": "vite",
     build: "tsc -b && node build.mjs",
   };
 
@@ -65,10 +71,11 @@ export function packageJson(projectName: string): string {
       zod: "^4.0.0",
     },
     devDependencies: {
-      "@types/node": "^20.11.5",
+      "@types/node": "^26.6.4",
       "@types/react": "^18.2.67",
       "@types/react-dom": "^18.2.22",
       "@vitejs/plugin-react": "^4.7.0",
+      portless: "^0.15.7",
       typescript: "^5.9.2",
       vite: "^6.3.5",
       "vite-plugin-singlefile": "^2.0.3",

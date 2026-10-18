@@ -5,7 +5,8 @@ import { useEffect, useState } from "react";
 import { Route, Routes } from "react-router-dom";
 import { Cart } from "./Cart";
 import { Header } from "./Header";
-import { useCart } from "../../api/boutique/v1/demo_rbt_react";
+import { useRebootClient } from "@reboot-dev/reboot-react";
+import { useCart } from "@api/boutique/v1/demo_rbt_react";
 import "./static/styles/cart.css";
 import "./static/styles/order.css";
 import "./static/styles/styles.css";
@@ -17,15 +18,16 @@ function App() {
   const [currencies, setCurrencies] = useState(["USD"]);
 
   const { useGetItems } = useCart({ id: CART_ACTOR_ID });
+  const { url } = useRebootClient();
 
   useEffect(() => {
-    fetch(`${import.meta.env.VITE_REBOOT_URL}/get_supported_currencies`)
+    fetch(`${url}/get_supported_currencies`)
       .then(async (res) => res.json())
       .then((json: { currencyCodes: string[] }) => {
         setCurrencies(json.currencyCodes);
       })
       .catch((error: unknown) => console.log(error));
-  }, []);
+  }, [url]);
 
   const { response } = useGetItems();
 

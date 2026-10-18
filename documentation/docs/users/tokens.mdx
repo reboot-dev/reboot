@@ -18,6 +18,13 @@ This page covers both.
 
 ### From within your application
 
+A call you make from inside a servicer method is already made on
+behalf of whoever called that method: the callee's `context.auth` is
+your caller's, carried across the call without their token, and the
+call still counts as [application-internal](/users/authorization#built-in-callables).
+Attach a token yourself only to make a call *as* somebody in
+particular.
+
 To carry a bearer token on every call to a particular instance,
 pass it to `ref()`:
 
@@ -43,7 +50,7 @@ You can also pass it as an option when doing
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python">
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../tests/reboot/auth_tests.py&lines=399-403) -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../tests/reboot/auth_tests.py&lines=409-413) -->
 <!-- The below code snippet is automatically added from ../../../tests/reboot/auth_tests.py -->
 
 ```py
@@ -273,7 +280,7 @@ rejected if it has expired; any other token is passed on to your
 `TokenVerifier`.
 
 Tokens your `TokenVerifier` accepts authenticate Reboot RPCs. They do
-not authenticate the [`/mcp` endpoint](/frontends/mcp_ui), because
+not authenticate the [`/mcp` endpoint](/frontends/mcp_app), because
 MCP clients sign in through OAuth rather than presenting a bearer
 token of their own, so that endpoint takes only tokens the `OAuth`
 server minted.

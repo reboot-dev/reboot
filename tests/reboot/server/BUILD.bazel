@@ -12,6 +12,17 @@ proto_library(
     ],
 )
 
+py_test(
+    name = "frontend_cluster_test_py",
+    size = "small",
+    srcs = ["frontend_cluster_test.py"],
+    main = "frontend_cluster_test.py",
+    deps = [
+        "//reboot:settings_py",
+        "//reboot/routing:envoy_config_py",
+    ],
+)
+
 py_library(
     name = "local_envoy_test_lib",
     srcs = ["local_envoy_test.py"],
@@ -52,6 +63,19 @@ py_test(
     deps = [
         "//reboot:settings_py",
         "//reboot/server:local_envoy_factory_py",
+    ],
+)
+
+py_test(
+    name = "database_client_deadline_test_py",
+    timeout = "short",
+    srcs = ["database_client_deadline_test.py"],
+    main = "database_client_deadline_test.py",
+    deps = [
+        requirement("grpcio"),
+        "//reboot/server:database_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:application_metadata_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:database_py_grpc",
     ],
 )
 

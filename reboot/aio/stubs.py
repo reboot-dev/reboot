@@ -48,7 +48,9 @@ from typing import (
     Generator,
     Generic,
     Optional,
+    Protocol,
     TypeVar,
+    runtime_checkable,
 )
 
 CallT = TypeVar('CallT', bound=grpc.Call)
@@ -56,6 +58,22 @@ ResponseT = TypeVar('ResponseT', bound=Message)
 RequestT = TypeVar('RequestT', bound=Message)
 
 logger = get_logger(__name__)
+
+
+@runtime_checkable
+class UnaryCall(Protocol):
+    """A unary RPC call: awaiting it returns the response, and after that
+    `trailing_metadata()` returns the metadata the server sent with it.
+
+    `grpc.aio.UnaryUnaryCall`, `UnaryRetriedCall` and
+    `NestedTransactionUnaryRetriedCall` all have this shape.
+    """
+
+    def __await__(self) -> Generator[Any, None, Any]:
+        ...
+
+    async def trailing_metadata(self) -> GrpcMetadata:
+        ...
 
 
 class UnaryRetriedCall(Generic[ResponseT]):
@@ -375,7 +393,14 @@ class Stub:
         coordinator_read_only_aware: bool = False
 
         if context is not None:
-            caller_id = CallerID(application_id=context.application_id)
+            caller_id = CallerID(
+                application_id=context.application_id,
+                # Carry who this call is made on behalf of. If a
+                # bearer token is set, `Headers` drops the `Auth`
+                # again (but not the caller ID: the call stays
+                # app-internal).
+                auth=context.auth,
+            )
 
             # For the time being, all traffic is intra-application. The
             # target application is therefore the same as the calling

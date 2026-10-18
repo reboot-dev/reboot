@@ -10,9 +10,9 @@ reported in user code. #}
 # mypy: disable-error-code="func-returns-value"
 {# Which API this was generated from, for whoever compares: the fifth
 line, after the four above, which are always written, and which
-`yapf` wants first. `reboot/dashboard/implementation_watcher.py`
-reads that line back, and spells it the same, so the two have to
-change together. #}
+`yapf` wants first. `reboot/dashboard/backend/code_watcher.py` reads
+that line back, and spells it the same, so the two have to change
+together. #}
 {% if options.proto.api_digest %}
 # Generated from an API digesting to {{ options.proto.api_digest }}.
 {% endif %}
@@ -74,7 +74,7 @@ import traceback as IMPORT_traceback
 import uuid as IMPORT_uuid
 import pickle as IMPORT_pickle
 import reboot as IMPORT_reboot
-import log.log as IMPORT_log_log   # type: ignore[import]
+import log.log as IMPORT_log_log
 import typing as IMPORT_typing
 import reboot.aio.backoff as IMPORT_reboot_aio_backoff
 import functools as IMPORT_functools
@@ -447,6 +447,9 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
         )
 
         self._servicer = servicer
+        # An instance of the servicer's derived class for each state it
+        # has served; see `{{ state.proto.name }}Servicer._instance()`.
+        self._instances: dict[str, {{ state.proto.name }}Servicer] = {}
         self._state_manager = state_manager
         self.tasks_dispatcher = IMPORT_reboot_aio_internals_tasks_dispatcher.TasksDispatcher(
             application_id=application_id,
@@ -600,8 +603,8 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                     headers=headers, method='{{ method.proto.name }}'
                 )
 
-                request = {{ method.input_type }}()
-                request.ParseFromString(request_bytes)
+                {{ method.proto.name | to_snake }}_request = {{ method.input_type }}()
+                {{ method.proto.name | to_snake }}_request.ParseFromString(request_bytes)
 
                 async with self._state_manager.reactively(
                     context,
@@ -610,7 +613,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                         method_name='{{ method.proto.full_name }}',
                         headers=headers,
                         auth=context.auth,
-                        request=request,
+                        request={{ method.proto.name | to_snake }}_request,
                     ),
                 ) as states:
                     async for (state, idempotency_keys) in states:
@@ -624,7 +627,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                             return await self.__{{ method.proto.name }}(
                                 context,
                                 state,
-                                request,
+                                {{ method.proto.name | to_snake }}_request,
                                 validating_effects=validating_effects,
                             )
 
@@ -714,8 +717,8 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 f"Method '{{ method.proto.name }}' can not be called via React (for now)"
             )
             {% elif method.options.proto.kind in ['writer', 'transaction'] %}
-            request = {{ method.input_type }}()
-            request.ParseFromString(request_bytes)
+            {{ method.proto.name | to_snake }}_request = {{ method.input_type }}()
+            {{ method.proto.name | to_snake }}_request.ParseFromString(request_bytes)
 
             # NOTE: we automatically retry mutations that come through
             # React when we get a `IMPORT_grpc.StatusCode.UNAVAILABLE` to
@@ -748,7 +751,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                     )
                 )
                 call = stub.{{ method.proto.name }}(
-                    request=request,
+                    request={{ method.proto.name | to_snake }}_request,
                     metadata=headers.to_grpc_metadata(),
                 )
                 try:
@@ -1174,6 +1177,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                     message=f"unhandled (in '{{ state.proto.full_name }}.{{ method.proto.name }}') {aborted}"
                 )
             else:
+                {% if method.options.errors|length > 0 %}
                 if (
                     aborted_type is not None and
                     not isinstance(aborted, aborted_type) and
@@ -1201,6 +1205,9 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                         message=aborted.message,
                     ) from aborted
                 elif (
+                {% else %}
+                if (
+                {% endif %}
                     aborted_type is None or
                     not isinstance(aborted, aborted_type)
                 ):
@@ -1426,10 +1433,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
 
                 await writer.complete(effects)
 
-                # TODO: We need a single `Effects` superclass for all methods, so we
-                # would need to make it "partially" generic (with per-method subclasses
-                # filling out the rest of the generic parameters) in order to fix this.
-                return effects.response  # type: ignore[return-value]
+                return effects.response
         {% elif method.options.proto.kind == 'transaction' %}
             assert transaction is not None
             async with self._state_manager.transaction(
@@ -1890,10 +1894,12 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
         headers: IMPORT_reboot_aio_headers.Headers,
         method: str,
     ) -> IMPORT_typing.Optional[IMPORT_reboot_aio_auth.Auth]:
-        """Verify the bearer token and if a token verifier is present.
+        """Verify the bearer token if a token verifier is present.
 
-        Returns the (optional) `reboot.aio.auth.Auth` object
-        produced by the token verifier if the token can be verified.
+        Returns the `reboot.aio.auth.Auth` produced by the token
+        verifier if the token can be verified, else the `Auth` that an
+        app-internal caller passed on in its caller ID, if any, else
+        `None`.
         """
         if self._token_verifier is not None:
             if headers.bearer_token == __internal_magic_token__:
@@ -1917,7 +1923,21 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                         result,
                         message=result.message or None,
                     )
-                return result
+                if result is not None:
+                    return result
+
+        # Otherwise, on an app-internal call, use the `Auth` the caller
+        # carried on behalf of whoever called it, if it carried one at
+        # all (see `CallerID.auth`).
+        caller_id = headers.caller_id
+        if (
+            headers.bearer_token is None and caller_id is not None and
+            caller_id.auth is not None and
+            IMPORT_reboot_aio_contexts.Context.is_app_internal(
+                headers, self.application_id
+            )
+        ):
+            return caller_id.auth
 
         return None
 
@@ -1948,6 +1968,15 @@ class _{{ client.proto.state_name }}Stub(IMPORT_reboot_aio_stubs.Stub):
         # have security implications - we cannot simply trust any service we are calling with
         # the user's credentials. Instead, the developer can rely on the default app-internal
         # auth, or override that and set an explicit bearer token.
+        #
+        # What we do pass on, in our caller ID, is the caller's `context.auth`, i.e., who the
+        # call is made on behalf of. That is safe because an `Auth` is not a credential, it
+        # only says who the caller is, and the callee only honors it on an app-internal call,
+        # i.e., when it arrives with our own (trusted) caller ID, so it can't be used anywhere
+        # else. If there is no `context.auth` then nothing is passed on. Setting an explicit
+        # bearer token overrides it: the callee then verifies that token instead and gets no
+        # `context.auth` from us. The caller ID itself is still sent, so the call is still
+        # app-internal.
         #
         # In the case of `ExternalContext`, however, its `bearer_token` was set specifically
         # by the developer for the purpose of making these calls.
@@ -2411,9 +2440,9 @@ class {{ client.proto.state_name }}TasksStub(_{{ client.proto.state_name }}Stub)
                 always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                assert isinstance(call, IMPORT_reboot_aio_stubs.UnaryCall), type(call)
                 await call
-                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                for (key, value) in await call.trailing_metadata():
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
                         return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
                             state_type=IMPORT_reboot_aio_types.StateTypeName('{{ client.proto.state_full_name }}'),
@@ -2590,7 +2619,7 @@ class {{ state.proto.name }}Authorizer(
                 {% endif %}
                 {% if not (method.options.proto.kind == 'reader' and method.proto.client_streaming) and method.has_non_none_request %}
                 {% if options.proto.pydantic %}
-                request={{ state.proto.name }}{{ method.proto.name }}RequestFromProto(request) if request is not None else request,
+                request={{ state.proto.name }}{{ method.proto.name }}RequestFromProto(IMPORT_typing.cast({{ method.input_type }}, request)) if request is not None else None,
                 {% else %}
                 request=IMPORT_typing.cast({{ method.input_type }}, request),
                 {% endif %}
@@ -2910,20 +2939,11 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% endfor %}
 {% if state.proto.uis | length > 0 %}
 
-        # Map UI method names to web app paths.
+        # Map UI method names to their URL paths under
+        # `/__/frontend/mcp/` (`UI(path=...)`).
         _ui_app_paths: dict[str, str] = {
 {% for ui in state.proto.uis %}
             "{{ ui.name }}": "{{ ui.path }}",
-{% endfor %}
-        }
-
-        # Optional artifact path overrides (only populated
-        # when `artifact_path` is explicitly set).
-        _ui_artifact_paths: dict[str, str] = {
-{% for ui in state.proto.uis %}
-{% if ui.artifact_path %}
-            "{{ ui.name }}": "{{ ui.artifact_path }}",
-{% endif %}
 {% endfor %}
         }
 
@@ -2943,7 +2963,6 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             IMPORT_reboot_mcp_ui.compute_ui_cache_busts(
                 __file__,
                 _ui_app_paths,
-                _ui_artifact_paths,
             )
         )
 
@@ -2961,7 +2980,6 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             caller_file=__file__,
             ui_path=_ui_app_paths["{{ ui.name }}"],
             ui_name="{{ ui.name }}",
-            artifact_path=_ui_artifact_paths.get("{{ ui.name }}"),
             uri_prefix=(
                 "ui://{{ state.proto.name | to_snake }}/"
                 "{{ ui.name }}/"
@@ -3151,7 +3169,6 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 _ui_app_paths[ui],
                 reboot_url,
                 ui_name=ui,
-                artifact_path=_ui_artifact_paths.get(ui),
                 cache_bust=cache_bust,
             )
 
@@ -3321,6 +3338,8 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
     {% if method.options.proto.kind == 'writer' %}
     # For '{{ method.proto.full_name }}'.
     class {{ method.proto.name }}Effects(Effects):
+        response: {{ method.output_type }}
+
         def __init__(
             self,
             *,
@@ -4268,16 +4287,19 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
         default=None,
     )
 
-    # An instance of the derived class for each state.
-    _instances: dict[str, {{ state.proto.name }}Servicer] = {}
-
     def _instance(self, state_id: str):
-        instances = {{ state.proto.name }}Servicer._instances
+        # An instance of the derived class for each state. The
+        # middleware keeps them, so that they live as long as the server
+        # it serves and not as long as the process: another server in
+        # the same process (a later `Reboot` in a test, say) may serve
+        # the same state id with another servicer class.
+        assert self._middleware is not None
+        instances = self._middleware._instances
         instance = instances.get(state_id)
         if instance is None:
             instance = self.__class__()
             instance._middleware = self._middleware
-        instances[state_id] = instance
+            instances[state_id] = instance
         return instance
 
     @property
@@ -4662,14 +4684,14 @@ class {{ client.proto.state_name }}:
     {# Since we do a dynamic dictionary lookup here, 'mypy' can't verify
     that the result of the lookup is indeed a type, so we use 'cast' to
     convince 'mypy' that it is indeed a type. #}
-    {{ method.proto.name }}Request: IMPORT_typing.TypeAlias = {% if options.proto.pydantic %}IMPORT_typing.cast(type, IMPORT_api.{{ client.proto.state_name }}.methods['{{ method.proto.name | to_snake }}'].request){% else %}{{ method.input_type }}{% endif %}
+    {{ method.proto.name }}Request: IMPORT_typing.TypeAlias = {% if options.proto.pydantic %}IMPORT_typing.cast(type, IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.{{ client.proto.state_name }}.methods['{{ method.proto.name | to_snake }}']).request){% else %}{{ method.input_type }}{% endif %}
     {% endif %}
 
     {% if method.has_non_none_response %}
     {# Since we do a dynamic dictionary lookup here, 'mypy' can't verify
     that the result of the lookup is indeed a type, so we use 'cast' to
     convince 'mypy' that it is indeed a type. #}
-    {{ method.proto.name }}Response: IMPORT_typing.TypeAlias = {% if options.proto.pydantic %}IMPORT_typing.cast(type, IMPORT_api.{{ client.proto.state_name }}.methods['{{ method.proto.name | to_snake }}'].response){% else %}{{ method.output_type }}{% endif %}
+    {{ method.proto.name }}Response: IMPORT_typing.TypeAlias = {% if options.proto.pydantic %}IMPORT_typing.cast(type, IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.{{ client.proto.state_name }}.methods['{{ method.proto.name | to_snake }}']).response){% else %}{{ method.output_type }}{% endif %}
     {% endif %}
 
     {% endfor %}
@@ -4735,7 +4757,7 @@ class {{ client.proto.state_name }}:
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, {% if method.has_non_none_response %}{{ client.proto.state_name }}.{{ method.proto.name }}Response{% else %}None{% endif %}]:
             """Awaits for task to finish and returns its response."""
-            async def wait_for_task() -> {{ method.output_type }}:
+            async def wait_for_task() -> {% if method.has_non_none_response %}{{ client.proto.state_name }}.{{ method.proto.name }}Response{% else %}None{% endif %}:
                 channel = self._channel_manager.get_channel_to_state(
                     IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
                     IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
@@ -4841,19 +4863,9 @@ class {{ client.proto.state_name }}:
             IMPORT_reboot.aio.aborted.RebootError,
         ]
 
-        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
-            {% for error, type in method.options.errors.items() %}
-            {{ type }}{% if not loop.last %}, {% endif %}
-            {% endfor %}
-        ]
-
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_PROTOBUF_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
-            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
-        )
-
-        _error: Error
+        {# For a pydantic API `error` is in the pydantic shape when
+        it is declared and the protobuf shape otherwise. #}
+        _error: Error{% if options.proto.pydantic %} | MethodProtobufError{% endif %}
 
         MethodProtobufError = IMPORT_typing.Union[
             {% for error, type in method.options.errors.items() %}
@@ -4864,19 +4876,32 @@ class {{ client.proto.state_name }}:
         ]
         _method_protobuf_error: MethodProtobufError
 
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            {% for error, type in method.options.errors.items() %}
+            {{ type }}{% if not loop.last %}, {% endif %}
+            {% endfor %}
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[MethodProtobufError]] = [
+            *METHOD_PROTOBUF_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
+            *IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES,
+        ]
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
         def __init__(
             self,
-            error: {% if method.options.errors|length > 0 %}MethodError | {% endif %} IMPORT_reboot.aio.aborted.GrpcError,
+            error: {% if method.options.errors|length > 0 %}MethodError | {% endif %}MethodProtobufError,
             *,
             message: IMPORT_typing.Optional[str] = None,
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
             error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
-                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+                *METHOD_PROTOBUF_ERROR_TYPES,
+                *IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES,
             ),
         ):
             super().__init__()
@@ -4974,12 +4999,12 @@ class {{ client.proto.state_name }}:
                     ) + (
                         f"Original error: {error.model_dump_json()}\n"
                     ) + message if message is not None else ""
-
-                # Store both formats so users can access the error via
-                # `aborted.error` and the Protobuf version
-                # will be used to send the error over the wire.
-                self._error = error
-                self._method_protobuf_error = error
+                else:
+                    # Store both formats so users can access the error via
+                    # `aborted.error` and the Protobuf version
+                    # will be used to send the error over the wire.
+                    self._error = error
+                    self._method_protobuf_error = error
             {% else %}
             {# Preemptively store the error for Protobuf schema, so we
             can have the same type validation code below and users can access the Pydantic
@@ -5049,10 +5074,16 @@ class {{ client.proto.state_name }}:
             )
 
         @classmethod
-        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message{% if options.proto.pydantic %} | IMPORT_reboot.api.Model{% endif %}) -> bool:
+        def is_declared_error(
+            cls,
+            error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model,
+        ) -> {% if method.options.errors|length > 0 %}IMPORT_typing.TypeGuard[MethodError{% if options.proto.pydantic %}{% for error, type in method.options.errors.items() %} | {{ type }}{% endfor %}{% endif %}]{% else %}bool{% endif %}:
             {% if options.proto.pydantic %}
             if isinstance(error, IMPORT_reboot.api.Model):
-                return type(error) in IMPORT_api.{{ client.proto.state_name }}.methods['{{ method.proto.name | to_snake }}'].errors
+                return type(error) in IMPORT_typing.cast(IMPORT_reboot_api.MethodModel, IMPORT_api.{{ client.proto.state_name }}.methods['{{ method.proto.name | to_snake }}']).errors
+            {% elif method.options.errors|length > 0 %}
+            if isinstance(error, IMPORT_reboot.api.Model):
+                return False
             {% endif %}
             {% for name in method.options.errors.keys() %}
             {% if loop.first %}
@@ -5099,7 +5130,7 @@ class {{ client.proto.state_name }}:
         def state_id(self) -> IMPORT_reboot_aio_types.StateId:
             return self._state_ref.id
 
-        def _reader(
+        def _get_reader_stub(
             self,
             context: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
         ) -> {{ client.proto.state_name }}ReaderStub:
@@ -5122,7 +5153,7 @@ class {{ client.proto.state_name }}:
                 )
             return self._reader_stub
 
-        def _writer(
+        def _get_writer_stub(
             self,
             context: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
         ) -> {{ client.proto.state_name }}WriterStub:
@@ -5145,7 +5176,7 @@ class {{ client.proto.state_name }}:
                 )
             return self._writer_stub
 
-        def _workflow(
+        def _get_workflow_stub(
             self,
             context: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
         ) -> {{ client.proto.state_name }}WorkflowStub:
@@ -5211,7 +5242,7 @@ class {{ client.proto.state_name }}:
             function signature, so no overloads are needed. #}
             {% if method.has_non_none_request %}
             @IMPORT_typing.overload
-            async def {{ method.proto.name }}(
+            def {{ method.proto.name }}(
                 __this__,
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: {{ client.proto.state_name }}.{{ method.proto.name }}Request,
@@ -5220,7 +5251,7 @@ class {{ client.proto.state_name }}:
                 ...
 
             @IMPORT_typing.overload
-            async def {{ method.proto.name }}(
+            def {{ method.proto.name }}(
                 __this__,
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -5238,7 +5269,7 @@ class {{ client.proto.state_name }}:
                 ...
             {% endif %}
 
-            async def {{ method.proto.name }}( # type: ignore[misc]
+            async def {{ method.proto.name }}(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -5266,7 +5297,12 @@ class {{ client.proto.state_name }}:
                 {% endif %}
                 {% endfor %}
             ) -> IMPORT_typing.AsyncIterator[tuple[{% if method.has_non_none_response %}{{ client.proto.state_name }}.{{ method.proto.name }}Response{% else %}None{% endif %}, None] | tuple[None, {{ client.proto.state_name }}.{{ method.proto.name }}Aborted]]:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='reactively',
+                    method='{{ method.proto.name | to_snake }}',
+                )
                 {% if method.has_non_none_request %}
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -5328,6 +5364,7 @@ class {{ client.proto.state_name }}:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.Context):
                     __caller_id__ = IMPORT_reboot_aio_caller_id.CallerID(
                         application_id=__context__.application_id,
+                        auth=__context__.auth,
                     )
                     if __this__._application_id is None:
                         # Given our context type (inside a Reboot application) we can default to
@@ -5569,7 +5606,7 @@ class {{ client.proto.state_name }}:
                 ...
             {% endif %}
 
-            async def {{ method.proto.name }}( # type: ignore[misc]
+            async def {{ method.proto.name }}(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -5693,7 +5730,7 @@ class {{ client.proto.state_name }}:
                 ...
             {% endif %}
 
-            async def {{ method.proto.name }}( # type: ignore[misc]
+            async def {{ method.proto.name }}(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -5886,9 +5923,11 @@ class {{ client.proto.state_name }}:
                 self,
                 context: IMPORT_reboot_aio_contexts.WorkflowContext,
             ) -> {{ client.proto.state_name }}.WeakReference._UntilChangesSatisfies[{{ client.proto.state_name }}.State]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     context,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='read',
                 )
 
                 async def callable():
@@ -5910,7 +5949,7 @@ class {{ client.proto.state_name }}:
             function signature, so no overloads are needed. #}
             {% if method.has_non_none_request %}
             @IMPORT_typing.overload
-            async def {{ method.proto.name }}(
+            def {{ method.proto.name }}(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: {{ client.proto.state_name }}.{{ method.proto.name }}Request,
@@ -5919,7 +5958,7 @@ class {{ client.proto.state_name }}:
                 ...
 
             @IMPORT_typing.overload
-            async def {{ method.proto.name }}(
+            def {{ method.proto.name }}(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext,
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -5937,7 +5976,7 @@ class {{ client.proto.state_name }}:
                 ...
             {% endif %}
 
-            def {{ method.proto.name }}( # type: ignore[misc]
+            def {{ method.proto.name }}(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
                 # variables to avoid any potential name conflicts with the method's
@@ -5962,9 +6001,11 @@ class {{ client.proto.state_name }}:
                 {% endif %}
                 {% endfor %}
             ) -> {{ client.proto.state_name }}.WeakReference._UntilChangesSatisfies[{% if method.has_non_none_response %}{{ client.proto.state_name }}.{{ method.proto.name }}Response{% else %}None{% endif %}]:
-                IMPORT_reboot_aio_types.assert_type(
+                IMPORT_reboot_aio_contexts.assert_context_type(
                     __context__,
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
+                    via='until',
+                    method='{{ method.proto.name | to_snake }}',
                 )
 
                 {% if method.has_non_none_request %}
@@ -6083,7 +6124,7 @@ class {{ client.proto.state_name }}:
                 ...
             {% endif %}
 
-            async def {{ method.proto.name }}( # type: ignore[misc]
+            async def {{ method.proto.name }}(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 {% if method.has_non_none_request %}
@@ -6101,7 +6142,14 @@ class {{ client.proto.state_name }}:
                 {% endif %}
                 {% endfor %}
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # Only a `transaction` (or, via `self.ref()`, a `writer`)
+                # should `schedule()`; a `workflow` should `spawn()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='{{ method.proto.name | to_snake }}',
+                )
                 {% if method.has_non_none_request %}
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -6232,7 +6280,7 @@ class {{ client.proto.state_name }}:
                 ...
             {% endif %}
 
-            async def {{ method.proto.name }}( # type: ignore[misc]
+            async def {{ method.proto.name }}(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 {% if method.has_non_none_request %}
@@ -6250,9 +6298,14 @@ class {{ client.proto.state_name }}:
                 {% endif %}
                 {% endfor %}
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext],
+                    via='schedule',
+                    method='{{ method.proto.name | to_snake }}',
+                )
 
                 {% if method.has_non_none_request %}
                 # UX improvement: check that neither positional argument was accidentally
@@ -6410,7 +6463,7 @@ class {{ client.proto.state_name }}:
                 ...
             {% endif %}
 
-            async def {{ method.proto.name }}( # type: ignore[misc]
+            async def {{ method.proto.name }}(
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
                 {% if method.has_non_none_request %}
@@ -6428,7 +6481,14 @@ class {{ client.proto.state_name }}:
                 {% endif %}
                 {% endfor %}
             ) -> {{ client.proto.state_name }}.{{ method.proto.name }}Task:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # Only a `workflow` (or code outside of Reboot) should
+                # `spawn()`; a `writer` or `transaction` should `schedule()`.
+                IMPORT_reboot_aio_contexts.assert_context_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext],
+                    via='spawn',
+                    method='{{ method.proto.name | to_snake }}',
+                )
                 {% if method.has_non_none_request %}
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -6583,7 +6643,7 @@ class {{ client.proto.state_name }}:
             ...
         {% endif %}
 
-        async def {{ method.proto.name }}( # type: ignore[misc]
+        async def {{ method.proto.name }}(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -6734,7 +6794,7 @@ class {{ client.proto.state_name }}:
             ...
         {% endif %}
 
-        async def {{ method.proto.name }}( # type: ignore[misc]
+        async def {{ method.proto.name }}(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             {% if method.has_non_none_request %}
@@ -6841,7 +6901,7 @@ class {{ client.proto.state_name }}:
                     __bearer_token__ = __options__.bearer_token
             {% if not method.proto.server_streaming %}
             return {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProto(
-                await __this__._reader(__context__).{{ method.proto.name }}(
+                await __this__._get_reader_stub(__context__).{{ method.proto.name }}(
                     {% if method.has_non_none_request %}
                     __request{% if method.proto.client_streaming %}s__{% else %}__{% endif %},
                     {% endif %}
@@ -6851,7 +6911,7 @@ class {{ client.proto.state_name }}:
                 )
             )
             {% else %}
-            __call__ = __this__._reader(__context__).{{ method.proto.name }}(
+            __call__ = __this__._get_reader_stub(__context__).{{ method.proto.name }}(
                 {% if method.has_non_none_request %}
                 __request{% if method.proto.client_streaming %}s__{% else %}__{% endif %},
                 {% endif %}
@@ -6897,7 +6957,7 @@ class {{ client.proto.state_name }}:
             ...
         {% endif %}
 
-        async def {{ method.proto.name }}( # type: ignore[misc]
+        async def {{ method.proto.name }}(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             {% if method.has_non_none_request %}
@@ -6981,7 +7041,7 @@ class {{ client.proto.state_name }}:
 
             {% if method.options.proto.kind == 'writer' %}
             return {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProto(
-                await __this__._writer(__context__).{{ method.proto.name }}(
+                await __this__._get_writer_stub(__context__).{{ method.proto.name }}(
                     {% if method.has_non_none_request %}
                     __request__,
                     {% endif %}
@@ -6992,7 +7052,7 @@ class {{ client.proto.state_name }}:
             )
             {% elif method.options.proto.kind == 'transaction' %}
             return {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProto(
-                await __this__._workflow(__context__).{{ method.proto.name }}(
+                await __this__._get_workflow_stub(__context__).{{ method.proto.name }}(
                     {% if method.has_non_none_request %}
                     __request__,
                     {% endif %}
@@ -7094,7 +7154,7 @@ class {{ client.proto.state_name }}:
             ...
         {% endif %}
 
-        async def {{ method.proto.name }}( # type: ignore[misc]
+        async def {{ method.proto.name }}(
             # In methods which are dealing with user input, (i.e.,
             # proto message field names), we should use '__double_underscored__'
             # variables to avoid any potential name conflicts with the method's
@@ -7300,7 +7360,7 @@ class {{ client.proto.state_name }}:
     {% endif %}
 
     @classmethod
-    async def {{ method.proto.name }}( # type: ignore[misc]
+    async def {{ method.proto.name }}(
         __cls__,
         __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
         {% if method.has_non_none_request %}
@@ -7442,9 +7502,9 @@ class {{ client.proto.state_name }}:
             __state_id__, bearer_token=__bearer_token__
         )
         {% if method.options.proto.kind == 'writer' %}
-        __stub__ = __reference__._writer(__context__)
+        __stub__ = __reference__._get_writer_stub(__context__)
         {% elif method.options.proto.kind == 'transaction' %}
-        __stub__ = __reference__._workflow(__context__)
+        __stub__ = __reference__._get_workflow_stub(__context__)
         {% endif %}
         return (
             __reference__,
@@ -7563,7 +7623,7 @@ class {{ client.proto.state_name }}:
             ...
         {% endif %}
 
-        async def {{ method.proto.name }}( # type: ignore[misc]
+        async def {{ method.proto.name }}(
             __this__,
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             {% if method.has_non_none_request %}
@@ -7686,6 +7746,24 @@ a Pydantic API, so there is no sense to generate `ServicerNodeAdaptor`. #}
 {% for state in states %}
 class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton.Servicer):
 
+    # `reboot_native` sets these on the subclass it creates for each
+    # Node.js servicer.
+    _construct_js_servicer: IMPORT_typing.Callable[[], IMPORT_typing.Any]
+    _construct_authorizer: IMPORT_typing.Callable[
+        [IMPORT_typing.Any],
+        IMPORT_typing.Optional[IMPORT_reboot_aio_auth_authorizers.Authorizer],
+    ]
+    _trampoline: IMPORT_typing.Callable[
+        [
+            IMPORT_typing.Any,
+            IMPORT_reboot_aio_contexts.Context,
+            IMPORT_asyncio.Future[None],
+            bytes,
+        ],
+        IMPORT_asyncio.Future[bytes],
+    ]
+    _js_servicer_reference: IMPORT_typing.Any
+
     @classmethod
     async def _wait_for_cancelled(
         cls,
@@ -7719,10 +7797,10 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton
         await future
 
     def __init__(self):
-        self._js_servicer_reference = self._construct_js_servicer()  # type: ignore[attr-defined]
+        self._js_servicer_reference = self._construct_js_servicer()
 
     def authorizer(self) -> IMPORT_typing.Optional[IMPORT_reboot_aio_auth_authorizers.Authorizer]:
-        return self._construct_authorizer(self._js_servicer_reference)  # type: ignore[attr-defined]
+        return self._construct_authorizer(self._js_servicer_reference)
 
     async def _read(
         self,
@@ -7872,10 +7950,10 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton
 
         cancelled: IMPORT_asyncio.Future[None] = IMPORT_asyncio.Future()
 
-        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
         try:
-            bytes_result_future = self._trampoline(  # type: ignore[attr-defined]
+            bytes_result_future = self._trampoline(
                 self._js_servicer_reference,
                 context,
                 cancelled,
@@ -7990,7 +8068,7 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton
 
             cancelled: IMPORT_asyncio.Future[None] = IMPORT_asyncio.Future()
 
-            bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+            bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
             try:
                 with IMPORT_reboot_aio_tracing.span(
@@ -8000,7 +8078,7 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton
                     python_specific=True,
                     level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                 ):
-                    bytes_result_future = self._trampoline(  # type: ignore[attr-defined]
+                    bytes_result_future = self._trampoline(
                         self._js_servicer_reference,
                         context,
                         cancelled,
@@ -8118,13 +8196,13 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton
         # propagate `CancelledError` back through Node.js.
         context._cancelled = cancelled
 
-        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[bytes]] = None
 
         servicer = cls.__servicer__.get()
-        assert servicer is not None
+        assert isinstance(servicer, {{ state.proto.name }}ServicerNodeAdaptor), type(servicer)
 
         try:
-            bytes_result_future = servicer._trampoline(  # type: ignore[attr-defined]
+            bytes_result_future = servicer._trampoline(
                 servicer._js_servicer_reference,
                 context,
                 cancelled,
@@ -8197,7 +8275,7 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton
 {% for client in clients %}
 class {{ client.proto.state_name }}WeakReferenceNodeAdaptor({{ client.proto.state_name }}.WeakReference):
 
-    async def _call(  # type: ignore[override]
+    async def _call(
         self,
         *,
         callable: IMPORT_typing.Callable[[IMPORT_google_protobuf_message.Message], IMPORT_typing.Awaitable],
@@ -8244,7 +8322,7 @@ class {{ client.proto.state_name }}WeakReferenceNodeAdaptor({{ client.proto.stat
                 }
             )
 
-    async def _schedule(  # type: ignore[override]
+    async def _schedule(
         self,
         *,
         method: str,
@@ -8292,7 +8370,7 @@ class {{ client.proto.state_name }}WeakReferenceNodeAdaptor({{ client.proto.stat
             }
         )
 
-    async def _reader(  # type: ignore[override]
+    async def _reader(
         self,
         method: str,
         context: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
@@ -8318,7 +8396,7 @@ class {{ client.proto.state_name }}WeakReferenceNodeAdaptor({{ client.proto.stat
             )
 
         method_handle = IMPORT_functools.partial(
-            getattr(super()._reader(context), method),
+            getattr(super()._get_reader_stub(context), method),
             bearer_token=options.get("bearerToken"),
             idempotency=idempotency,
         )
@@ -8331,7 +8409,7 @@ class {{ client.proto.state_name }}WeakReferenceNodeAdaptor({{ client.proto.stat
             json_request=json_request,
         )
 
-    async def _writer(  # type: ignore[override]
+    async def _writer(
         self,
         method: str,
         context: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
@@ -8369,7 +8447,7 @@ class {{ client.proto.state_name }}WeakReferenceNodeAdaptor({{ client.proto.stat
             )
 
         method_handle = IMPORT_functools.partial(
-            getattr(super()._writer(context), method),
+            getattr(super()._get_writer_stub(context), method),
             idempotency=idempotency,
             bearer_token=options.get("bearerToken"),
         )
@@ -8382,7 +8460,7 @@ class {{ client.proto.state_name }}WeakReferenceNodeAdaptor({{ client.proto.stat
             json_request=json_request,
         )
 
-    async def _transaction(  # type: ignore[override]
+    async def _transaction(
         self,
         method: str,
         context: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
@@ -8420,7 +8498,7 @@ class {{ client.proto.state_name }}WeakReferenceNodeAdaptor({{ client.proto.stat
             )
 
         method_handle = IMPORT_functools.partial(
-            getattr(super()._workflow(context), method),
+            getattr(super()._get_workflow_stub(context), method),
             idempotency=idempotency,
             bearer_token=options.get("bearerToken"),
         )
@@ -8433,7 +8511,7 @@ class {{ client.proto.state_name }}WeakReferenceNodeAdaptor({{ client.proto.stat
             json_request=json_request,
         )
 
-    async def _workflow(  # type: ignore[override]
+    async def _workflow(
         self,
         method: str,
         context: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,

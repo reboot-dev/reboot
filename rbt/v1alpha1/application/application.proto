@@ -126,6 +126,9 @@ message GetResponse {
   bool mcp = 7;
   // Whether the app is running under `rbt dev`.
   bool dev = 8;
+  // The public URL `rbt dev run --tunnel-url` named, when it did: the
+  // tunnel to show rather than one found through a provider's API.
+  optional string tunnel_url = 9;
 }
 
 ////////////////////////////////////////////////////////////////////////

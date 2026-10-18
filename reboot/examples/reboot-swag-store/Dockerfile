@@ -35,13 +35,13 @@ RUN rbt generate
 # ---------------------------------------------------------------------------
 # Stage 2: build the web UIs.
 #
-# `rbt serve` serves MCP UI resources from
+# `rbt serve` serves MCP App resources from
 # `frontend/dist/mcp/<name>/index.html` (see `reboot.mcp.ui.ui_html`),
 # so we need pre-built artifacts in the final image. The web UIs
 # import the generated TS bindings at `frontend/api/`, which we pull
 # from the backend stage above.
 # ---------------------------------------------------------------------------
-FROM node:20-alpine AS web-build
+FROM node:26-alpine AS web-build
 
 WORKDIR /app/frontend
 

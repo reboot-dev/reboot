@@ -14,6 +14,7 @@ from abc import ABC, abstractmethod
 from envoy.config.bootstrap.v3 import bootstrap_pb2
 from envoy.config.core.v3 import base_pb2, config_source_pb2, grpc_service_pb2
 from envoy.config.listener.v3 import listener_pb2
+from envoy.config.route.v3 import route_components_pb2
 from envoy.service.discovery.v3 import ads_pb2_grpc
 from google.protobuf.descriptor_pb2 import FileDescriptorSet
 from google.protobuf.json_format import MessageToDict
@@ -65,6 +66,7 @@ class LocalEnvoy(ABC):
         use_tls: bool,
         observed_dir: Path,
         allowed_origins: Optional[list[str]],
+        route_matches: list[route_components_pb2.RouteMatch],
     ):
         self._admin_listen_host = admin_listen_host
         self._admin_port = admin_port
@@ -92,6 +94,9 @@ class LocalEnvoy(ABC):
         # traffic at all, so a malicious site can't exfiltrate the
         # access JWT from `/__/oauth/whoami`.
         self._allowed_origins = allowed_origins
+        # The paths the application's web framework answers, which
+        # Envoy routes to it ahead of its catch-all.
+        self._route_matches = route_matches
 
         self._grpc_server = grpc.aio.server()
         self._register_xds_port()
@@ -221,6 +226,7 @@ class LocalEnvoy(ABC):
             certificate_path=self._observed_dir / CERTIFICATE_FILENAME,
             key_path=self._observed_dir / KEY_FILENAME,
             allowed_origins=self._allowed_origins,
+            route_matches=self._route_matches,
         )
 
     def _generate_envoy_yaml(self) -> str:

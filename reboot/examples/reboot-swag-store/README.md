@@ -17,7 +17,7 @@ For the impatient:
 
 ## Overview
 
-The Reboot Store is an MCP UI that lets users browse
+The Reboot Store is an MCP App that lets users browse
 products, manage a shopping cart, and check out — all from inside an MCP
 client. It exposes three interactive UIs:
 
@@ -154,8 +154,12 @@ directory.
 uv run rbt dev run
 ```
 
-This starts the Reboot backend and watches for file changes. See
-`.rbtrc` for the full set of flags.
+This starts the Reboot backend as `https://reboot-swag-store.localhost`
+through [portless](https://github.com/vercel-labs/portless) (install
+it once with `npm install -g portless` and start its proxy with
+`portless proxy start`), and watches for file changes. See `.rbtrc`
+for the full set of flags; `--config=ports` uses plain ports instead
+(`http://localhost:9991`).
 
 **Terminal 2 — frontend (HMR):**
 
@@ -163,7 +167,10 @@ This starts the Reboot backend and watches for file changes. See
 cd frontend && npm run dev
 ```
 
-This starts the Vite dev server with hot module replacement. The
+This starts the Vite dev server with hot module replacement, as
+`https://frontend.reboot-swag-store.localhost`: `npm run dev` is
+`portless frontend.reboot-swag-store vite`, portless being a dev dependency
+(`npm run dev:ports` for plain ports, with `--config=ports`). The
 backend proxies UI requests to Vite via Envoy.
 
 ## Generate a coupon code
@@ -203,8 +210,8 @@ dashboard.
 
 ## Connect an MCP client
 
-Once the app is running, open <http://localhost:9991> and
-follow the setup wizard to connect a chat host (such as Claude
+Once the app is running, open <https://reboot-swag-store.localhost>
+and follow the setup wizard to connect a chat host (such as Claude
 or ChatGPT) to the app.
 
 ### Try it out

@@ -77,7 +77,9 @@ export const TunnelStatus = ({
   // to screen-reader users.
   const substepTitle: ReactNode = (
     <span aria-live="polite">
-      {urlSource === "detected" ? (
+      {urlSource === "configured" ? (
+        "Using the tunnel rbt dev run was given"
+      ) : urlSource === "detected" ? (
         detectedLabel
       ) : urlSource === "user" ? (
         "Using your tunnel"

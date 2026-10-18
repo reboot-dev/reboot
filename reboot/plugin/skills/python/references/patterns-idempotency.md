@@ -54,10 +54,15 @@ async def open(
 ## Use UUIDv7 IDs for Insertable Records
 
 When inserting into an `OrderedMap` keyed by time, prefer UUIDv7 over UUIDv4
-so iteration is naturally ordered:
+so iteration is naturally ordered. Mint them with Reboot's own
+`reboot.uuidv7.uuid7`, not the `uuid7-standard` package that `reboot`
+also installs: that package's `create()` is not monotonic, so two keys
+minted in the same millisecond may iterate out of order, while
+Reboot's (Python 3.14's implementation) counts up within the
+millisecond:
 
 ```python
-from uuid7 import create as uuid7
+from reboot.uuidv7 import uuid7
 
 await OrderedMap.ref(self.state.account_ids_map_id).insert(
     context,
