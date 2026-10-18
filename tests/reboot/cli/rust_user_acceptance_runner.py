@@ -54,6 +54,7 @@ try:
             root/'rbt/v1alpha1/database.proto',
             root/'rbt/v1alpha1/tasks.proto',
             root/'rbt/v1alpha1/options.proto',
+            root/'rbt/v1alpha1/auth.proto',
         ]
         while pending:
             proto=pending.pop()
@@ -71,6 +72,7 @@ try:
         overlay=stage/'overlay';(overlay/'reboot').mkdir(parents=True)
         (overlay/'reboot/__init__.py').write_text('from pkgutil import extend_path\n__path__ = extend_path(__path__, __name__)\n')
         (overlay/'reboot/cli').symlink_to(root/'reboot/cli',target_is_directory=True)
+        (overlay/'reboot/aio').symlink_to(root/'reboot/aio',target_is_directory=True)
         python=os.environ.get('RUST_DX_PYTHON','/tmp/reboot-rust-app-dx-loop2-venv310/bin/python')
         for package in ['rbt','rbt/v1alpha1']:
             (overlay/package).mkdir(exist_ok=True)
