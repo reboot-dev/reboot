@@ -3,6 +3,16 @@ name = "generated-workflow-cursor-results-app"
 version = "0.0.0"
 edition = "2024"
 publish = false
+autobins = false
+
+[[bin]]
+name = "app"
+path = "src/app.rs"
+
+[[bin]]
+name = "client"
+path = "src/client.rs"
+
 [build-dependencies]
 reboot = { package = "reboot-rust-schema", path = "../../../", features = ["build", "test-support"] }
 [dependencies]
