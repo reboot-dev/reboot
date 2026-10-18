@@ -1183,10 +1183,9 @@ async def dev_run(
                     watch=args.watch, env=environment,
                     allow_insecure_database=args.rust_allow_insecure_database,
                     terminate_after_health_check=args.terminate_after_health_check is True,
-                    # New CLI main owns cancellation for all terminating signals;
-                    # older main leaves SIGTERM/SIGINT ownership to this helper.
-                    terminal_signals_owned_by_caller=callable(getattr(
-                        signals, 'cancel_on_signal_and_raise_system_exit', None)),
+                    # CLI main owns cancellation for all terminating signals;
+                    # rust_dev must never install competing handlers beneath it.
+                    terminal_signals_owned_by_caller=True,
                     report=terminal.info,
                 )
         except (RustDevError, OSError) as error:

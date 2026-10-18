@@ -5,7 +5,6 @@ import importlib.util
 from pathlib import Path
 import signal
 import sys
-from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -78,18 +77,16 @@ class SignalOwnershipTests(unittest.IsolatedAsyncioTestCase):
             await operation()
         self.assertEqual(before, {s: signal.getsignal(s) for s in before})
 
-    def test_normal_entrypoint_uses_public_capability_not_private_state(self):
+    def test_normal_entrypoint_delegates_terminal_signal_ownership_to_cli_main(self):
         tree = ast.parse((ROOT / 'reboot/cli/commands/dev.py').read_text())
         calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
                  and isinstance(node.func, ast.Name) and node.func.id == 'run_rust_dev']
         self.assertEqual(len(calls), 1)
         expression = next(keyword.value for keyword in calls[0].keywords
                           if keyword.arg == 'terminal_signals_owned_by_caller')
-        code = compile(ast.Expression(expression), '<actual caller keyword>', 'eval')
-        for api, expected in ((SimpleNamespace(), False),
-                              (SimpleNamespace(cancel_on_signal_and_raise_system_exit=None), False),
-                              (SimpleNamespace(cancel_on_signal_and_raise_system_exit=lambda: None), True)):
-            self.assertIs(eval(code, {'signals': api}), expected)
+        if not isinstance(expression, ast.Constant):
+            self.fail(f"expected literal signal-owner value, got {ast.dump(expression)}")
+        self.assertIs(expression.value, True)
 
 
 if __name__ == '__main__':
