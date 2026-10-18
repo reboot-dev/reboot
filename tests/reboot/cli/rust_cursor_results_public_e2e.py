@@ -35,12 +35,14 @@ PROBE = FIXTURE / "public_probe.py"
 RBT, ENV, runtime = select_runtime(os.environ)
 TARGET = Path(os.environ["CARGO_TARGET_DIR"])
 STAGE = Path(tempfile.mkdtemp(prefix="reboot-rust-cursor-public-"))
+STATE_DIRECTORY = STAGE / "rbt-state"
 RESULT = STAGE / "result.json"
 owned = {}
 durable_state_identity = None
 evidence = {
     "passed": False,
     "qualification": "not claimed; initial public lifecycle draft",
+    "state_directory": str(STATE_DIRECTORY),
     "runtime": runtime,
     "sessions": [],
     "commands": [],
@@ -121,7 +123,8 @@ def start(name, *, pause="", iteration=0):
     log_path = STAGE / f"{name}.log"
     log = log_path.open("w")
     process = subprocess.Popen(
-        [str(RBT), "dev", "run", "--rust-allow-insecure-database", f"--port={port}"],
+        [str(RBT), f"--state-directory={STATE_DIRECTORY}", "dev", "run",
+         "--rust-allow-insecure-database", f"--port={port}"],
         cwd=FIXTURE, env=launch_env, stdout=log, stderr=subprocess.STDOUT,
     )
     starttime = process_start(process.pid)
@@ -219,7 +222,8 @@ def expect_started_failure():
     log_path = STAGE / f"{name}.log"
     log = log_path.open("w")
     process = subprocess.Popen(
-        [str(RBT), "dev", "run", "--rust-allow-insecure-database", f"--port={port}"],
+        [str(RBT), f"--state-directory={STATE_DIRECTORY}", "dev", "run",
+         "--rust-allow-insecure-database", f"--port={port}"],
         cwd=FIXTURE, env=launch_env, stdout=log, stderr=subprocess.STDOUT,
     )
     starttime = process_start(process.pid)
