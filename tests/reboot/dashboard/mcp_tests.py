@@ -26,7 +26,9 @@ from reboot.cli.commands.dashboard import (
     _viewers,
 )
 from reboot.dashboard.backend import main as dashboard_main
+from reboot.dashboard.backend.constants import MCP_APP_DIRECTORY
 from reboot.dashboard.backend.main import application
+from reboot.settings import ENVVAR_RBT_MCP_APP_DIST_PATH
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
@@ -45,6 +47,11 @@ class McpTest(unittest.IsolatedAsyncioTestCase):
         cwd = os.getcwd()
         os.chdir(directory.name)
         self.addCleanup(os.chdir, cwd)
+
+        # The page built as an MCP App, named the way `rbt dashboard`
+        # names it in the application's environment.
+        os.environ[ENVVAR_RBT_MCP_APP_DIST_PATH] = str(MCP_APP_DIRECTORY)
+        self.addCleanup(os.environ.pop, ENVVAR_RBT_MCP_APP_DIST_PATH, None)
 
         self.rbt = Reboot()
         await self.rbt.start()

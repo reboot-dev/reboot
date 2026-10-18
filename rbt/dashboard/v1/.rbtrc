@@ -1,4 +1,4 @@
-# This `.rbtrc` is required because the MCP UI runtime resolves the
+# This `.rbtrc` is required because the MCP App runtime resolves the
 # `Dashboard` state type's `uis` paths against the nearest directory
 # holding a `.rbtrc`, and the `reboot` package has none above here.
 # Its contents are never read.

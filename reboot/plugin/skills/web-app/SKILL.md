@@ -78,11 +78,11 @@ as MCP).
 
 A plain HTTP route the page calls — a download, an image, an export
 — serves every request unless registered with
-`require_oauth_token=True`, which serves only the signed-in user.
-A page the application serves itself uses it with a plain `<img src>`,
-`<video src>` or `<a href>`, since the browser sends the session
-cookie; a page on another origin fetches it with the client's bearer
-and shows an object URL. Backend and page side are in
+`require_oauth_token=True`, which serves only a request carrying the
+client's bearer. A plain `<img src>`, `<video src>` or `<a href>`
+carries none, and the session cookie never reaches the route, so the
+page obtains a short-lived signed URL with the bearer and gives that
+to `src`. Backend and page side are in
 [python/references/auth-http-routes.md](../python/references/auth-http-routes.md).
 
 > **`token_verifier=` is the escape hatch, not the default.** Use

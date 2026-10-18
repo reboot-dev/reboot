@@ -14,12 +14,13 @@ import "rbt/v1alpha1/bdd/feature.proto";
 // What the dashboard has read from the developer's API files.
 message Dashboard {
   // The dashboard's page as an MCP App, which an MCP host opens by
-  // calling the `dashboard_show` tool. Both paths are relative to this
-  // directory: the MCP UI runtime resolves them against the nearest
-  // directory holding a `.rbtrc`, and the one beside this file is it,
-  // in both the source tree and the installed package.
-  // `artifact_path` holds the page built into one file; see `ui_dist`
-  // in `BUILD.bazel`.
+  // calling the `dashboard_show` tool. `path` is the page's URL path
+  // under `/__/frontend/mcp/`, and its build is `ui/index.html` in
+  // this directory, which `rbt dashboard` names as the MCP App dist
+  // path; see `ui_dist` in `BUILD.bazel`. The `.rbtrc` beside this
+  // file makes this directory the project root the MCP App runtime
+  // resolves from the generated code, in both the source tree and the
+  // installed package.
   option (rbt.v1alpha1.state) = {
     uis: [ {
       name: "show",
@@ -29,7 +30,6 @@ message Dashboard {
                    "call graph between them, its features and its changelog. "
                    "There is one dashboard: pass 'dashboard' as dashboard_id.",
       path: "ui",
-      artifact_path: "ui",
     } ],
   };
 

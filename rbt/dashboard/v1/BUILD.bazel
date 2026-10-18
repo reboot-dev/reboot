@@ -108,7 +108,7 @@ genrule(
 )
 
 # What the `Dashboard` state type's `uis` need at runtime: the page,
-# and the `.rbtrc` the MCP UI runtime resolves its path against.
+# and the `.rbtrc` the MCP App runtime resolves its path against.
 filegroup(
     name = "ui",
     srcs = [

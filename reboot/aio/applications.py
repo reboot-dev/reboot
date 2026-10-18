@@ -958,11 +958,13 @@ class Application:
         # instead, so skip the mount.
         mcp_app_dist_path = os.environ.get(ENVVAR_RBT_MCP_APP_DIST_PATH)
         if mcp_app_dist_path and not os.environ.get(ENVVAR_RBT_FRONTEND_URL):
-            project_root = self._frontend_project_root()
+            directory = Path(mcp_app_dist_path)
+            if not directory.is_absolute():
+                directory = self._frontend_project_root() / directory
             self.http.mount(
                 "/__/frontend/mcp",
                 app=StaticFiles(
-                    directory=str(project_root / mcp_app_dist_path),
+                    directory=str(directory),
                     # `html=True` so a directory URL serves its
                     # `index.html`. `check_dir=False` so a
                     # not-yet-built dist doesn't crash startup: `ui.py`

@@ -1,7 +1,7 @@
 ---
 title: HTTP Routes Only a Signed-in User May Call (`require_oauth_token=True`)
 impact: HIGH
-impactDescription: A plain HTTP route serves every request. Checking the bearer yourself, or writing CORS headers yourself so a page can reach the route, gets the cookie-versus-bearer distinction wrong. One keyword does it correctly, for both web apps and MCP UIs.
+impactDescription: A plain HTTP route serves every request. Checking the bearer yourself, or writing CORS headers yourself so a page can reach the route, gets the cookie-versus-bearer distinction wrong. One keyword does it correctly, for both web apps and MCP Apps.
 tags: auth, http, route, require_oauth_token, bearer, cors, file, download, image, video, fetch, object-url
 ---
 

@@ -32,6 +32,7 @@ from reboot.dashboard.backend.constants import (
     ENVVAR_RBT_API_DIRECTORY,
     ENVVAR_RBT_APPLICATION,
     ENVVAR_RBT_GENERATED_DIRECTORY,
+    MCP_APP_DIRECTORY,
     PREFERENCES_ID,
     PRESENCE_ID,
 )
@@ -214,6 +215,9 @@ def _dashboard_env(
     # dashboard has no project root for a relative path to resolve
     # against.
     composed[ENVVAR_RBT_WEB_APP_DIST_PATH] = str(DASHBOARD_DIRECTORY)
+    # And the page built into one file is its MCP App, served the way
+    # `--mcp-app-dist-path` serves a developer's.
+    composed[ENVVAR_RBT_MCP_APP_DIST_PATH] = str(MCP_APP_DIRECTORY)
 
     # Served with `rbt serve` defaults rather than `rbt dev` ones.
     # Popped rather than left unset, since `detect_run_environment`
