@@ -16,7 +16,7 @@ more than the command itself.
 | `rbt generate` | Generate server, client, and React code from your API definitions. |
 | `rbt dev run` | Run your application for development, regenerating code and restarting on change. |
 | `rbt dev expunge` | Delete the state a named development application has persisted. |
-| `rbt dashboard` | Serve the developer dashboard, which watches your API directory and your [feature files](/features) as you write them, and open it in your browser. Also serves it as an MCP App at `/mcp/`, for an MCP host such as Claude or ChatGPT to show; a host in the cloud reaches it through a tunnel you run yourself. Needs the `reboot[dev]` extra installed. `--portless` serves it as `https://dashboard.<app>.localhost` (see [Named local URLs](/develop_locally#named-local-urls-with---portless)). |
+| `rbt dashboard` | Serve the developer dashboard, which watches your API directory and your [feature files](/features) as you write them, and open it in your browser. Also serves it as an MCP App at `/mcp/`, for an MCP host such as Claude or ChatGPT to show through a tunnel you start yourself (see [The dashboard in Claude or ChatGPT](/develop_locally#the-dashboard-in-claude-or-chatgpt)). Needs the `reboot[dev]` extra installed. `--portless` serves it as `https://dashboard.<app>.localhost` (see [Named local URLs](/develop_locally#named-local-urls-with---portless)). |
 | `rbt inspect type list` | List the state types a running application serves. |
 | `rbt inspect state list` | List the state IDs of one type. |
 | `rbt inspect state get` | Print one instance's state as JSON. |

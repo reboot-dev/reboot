@@ -154,27 +154,12 @@ URL; that always works.
 
 Only when the user asks for it. `rbt dashboard` serves this machine
 alone, so an MCP host in the cloud reaches it through a tunnel the
-user runs themselves, in their own shell; do not start one for them.
-Tell them:
-
-1. Run a Cloudflare quick tunnel to the dashboard. Under portless it
-   reaches the dashboard by name through the portless proxy, the way
-   the `run` skill's tunnel reaches an application:
-
-   ```sh
-   cloudflared tunnel \
-       --url https://127.0.0.1:443 \
-       --http-host-header dashboard.<app>.localhost \
-       --origin-server-name dashboard.<app>.localhost \
-       --origin-ca-pool ~/.portless/ca.pem
-   ```
-
-   (`443` is `PORTLESS_PORT` if the user set it.) Without portless,
-   `cloudflared tunnel --url http://127.0.0.1:9871`. Either way, read
-   the `https://<name>.trycloudflare.com` address it prints.
-2. Add `https://<name>.trycloudflare.com/mcp/` as a custom MCP
-   connector in Claude or ChatGPT; signing in completes by itself.
-
-Remind them that whoever has the address reaches their dashboard as
-them, so not to share it, and that a quick tunnel gets a new address
-each time it starts, so the connector must then be added again.
+user starts themselves, in their own shell; do not start one for
+them. Point them at
+[The dashboard in Claude or ChatGPT](https://docs.reboot.dev/develop_locally#the-dashboard-in-claude-or-chatgpt),
+which gives the `cloudflared` command (by name under portless, by
+port otherwise) and the connector to add,
+`https://<name>.trycloudflare.com/mcp/`. Remind them that whoever has
+the address reaches their dashboard as them, so not to share it, and
+that a quick tunnel gets a new address each time it starts, so the
+connector must then be added again.

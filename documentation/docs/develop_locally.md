@@ -343,6 +343,38 @@ every `rbt dev run` of a session. cloudflared passes the public
 hostname on as `X-Forwarded-Host`, which the OAuth and MCP endpoints
 use for the URLs they hand a client.
 
+### The dashboard in Claude or ChatGPT
+
+`rbt dashboard` also serves the dashboard as an MCP App, at `/mcp/`,
+which an MCP host such as Claude or ChatGPT shows inside a
+conversation. The dashboard serves your machine alone, so a host in
+the cloud reaches it through a tunnel you start yourself. Under
+`--portless`, point a
+[Cloudflare quick tunnel](/call/from_mcp_client#cloudflared) at the
+dashboard by name, the way you would at an application:
+
+```sh
+cloudflared tunnel \
+    --url https://127.0.0.1:443 \
+    --http-host-header dashboard.<app>.localhost \
+    --origin-server-name dashboard.<app>.localhost \
+    --origin-ca-pool ~/.portless/ca.pem
+```
+
+With `--config=ports`, at its port instead:
+
+```sh
+cloudflared tunnel --url http://127.0.0.1:9871
+```
+
+Then add `https://<name>.trycloudflare.com/mcp/`, with the hostname
+the tunnel printed, as a custom connector in
+[Claude](/call/from_mcp_client#claude) or
+[ChatGPT](/call/from_mcp_client#chatgpt); signing in completes by
+itself. Whoever has the address reaches your dashboard, so keep it to
+yourself, and a quick tunnel gets a new address each time it starts,
+so add the connector again after restarting one.
+
 ### Inspecting state
 
 While doing local development you can inspect your application state
