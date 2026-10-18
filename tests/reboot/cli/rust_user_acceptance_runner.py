@@ -79,7 +79,7 @@ try:
             (overlay/package/'__init__.py').write_text('from pkgutil import extend_path\n__path__ = extend_path(__path__, __name__)\n')
         grpc_include=subprocess.check_output([python,'-c','from pathlib import Path; import grpc_tools; print(Path(grpc_tools.__file__).parent / "_proto")'],text=True).strip()
         subprocess.run([python,'-m','grpc_tools.protoc','-I'+str(root),'-I'+grpc_include,'--python_out='+str(overlay),'--grpc_python_out='+str(overlay),*[str(proto) for proto in proto_files]],check=True)
-        env=dict(os.environ,CARGO_TARGET_DIR=str(target),CARGO_BUILD_JOBS='2',CARGO_INCREMENTAL='0',CARGO_PROFILE_DEV_DEBUG='0',CARGO_PROFILE_TEST_DEBUG='0',PYTHONPATH=str(overlay),REBOOT_NATIVE2PC_CXX_DATABASE=str(database),RBT_RUST_DATABASE_BINARY=str(database))
+        env=dict(os.environ,CARGO_TARGET_DIR=str(target),CARGO_BUILD_JOBS='2',CARGO_INCREMENTAL='0',CARGO_PROFILE_DEV_DEBUG='0',CARGO_PROFILE_TEST_DEBUG='0',PYTHONPATH=os.pathsep.join([str(overlay),str(root)]),REBOOT_NATIVE2PC_CXX_DATABASE=str(database),RBT_RUST_DATABASE_BINARY=str(database))
         env.update(RUST_DX_STAGE=str(stage/'greeting'),RUST_DX_TARGET=str(target),RUST_DX_DATABASE_BINARY=str(database),RUST_DX_RBT=os.environ.get('RUST_DX_RBT','/tmp/reboot-rust-app-dx-loop2-venv310/bin/rbt'),RUST_DX_PORT=os.environ.get('RUST_DX_PORT','12991'))
         commands=[
          ('sdk_all_targets',['cargo','test','--manifest-path','reboot/rust/Cargo.toml','--locked','--all-features','--all-targets']),
