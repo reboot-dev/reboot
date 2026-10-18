@@ -242,7 +242,18 @@ def expect_started_failure():
         app_match = re.search(r"Rust app PID=(\d+)", text)
         database_match = re.search(r"Rust Database PID=(\d+)", text)
         if app_match and database_match and len(children) == 2 and len(set(children)) == 2:
-            starts = {str(pid): process_start(pid) for pid in children}
+            reported = {}
+            for row in re.findall(r"^RUST_CHILD_LAUNCH (.+)$", text, re.MULTILINE):
+                launch = json.loads(row)
+                if launch.get("birth_and_argv_observed") is True:
+                    reported[int(launch["pid"])] = str(launch["starttime"])
+            # The intentional Started-without-Stored recovery can make the app
+            # exit before /proc is read; its launcher emitted this exact birth
+            # identity before the natural failure, so retain it for retirement.
+            starts = {
+                str(pid): process_start(pid) or reported.get(pid)
+                for pid in children
+            }
             assert all(starts.values()), (children, starts, text)
             record["children"] = children
             record["child_starttimes"] = starts
