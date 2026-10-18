@@ -7,6 +7,7 @@ root=pathlib.Path(__file__).resolve().parents[3]
 target=pathlib.Path(os.environ.get('CARGO_TARGET_DIR','/tmp/reboot-rust-workflow-loop3-target'))
 stage=pathlib.Path(sys.argv[2]) if probe else pathlib.Path('/tmp/reboot-rust-user-http-full-audit-'+str(time.time_ns()))
 stage.mkdir(exist_ok=probe)
+target.mkdir(parents=True, exist_ok=True)
 lock=open((stage if probe else target)/'owner.lock','a'); fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
 import importlib.util
 helper=pathlib.Path(sys.argv[3]) if probe else root/'tests/reboot/cli/rust_process_ownership.py'
@@ -26,8 +27,9 @@ def budget():
     size=int(subprocess.check_output(['du','-sb',str(target)]).split()[0]);free=shutil.disk_usage('/tmp').free
     # Preserve the original default; operators explicitly pass an approved ceiling.
     ceiling=int(os.environ.get('RUST_DX_TARGET_CEILING_BYTES','10000000000'))
-    assert ceiling>0,ceiling
-    assert size<=ceiling and free>=8*1024**3,(size,free,ceiling)
+    minimum_free=int(os.environ.get('RUST_DX_MIN_FREE_BYTES',str(8*1024**3)))
+    assert ceiling>0 and minimum_free>=0,(ceiling,minimum_free)
+    assert size<=ceiling and free>=minimum_free,(size,free,ceiling,minimum_free)
     return size,free
 results=[]
 try:
