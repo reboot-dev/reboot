@@ -70,6 +70,7 @@ try:
          ('consumer_strict_clippy',['cargo','clippy','--manifest-path','reboot/rust/tests/fixtures/reactive_app/Cargo.toml','--locked','--all-targets','--','-D','warnings']),
          ('cli_unit',[python,'-m','unittest','discover','-s','tests/reboot/cli','-p','rust_app_dx_test.py','-v']),
          ('greeting_public',[python,str(root/'tests/reboot/cli/rust_app_dx_e2e.py')]),
+         ('cursor_results_public',[python,str(root/'tests/reboot/cli/rust_cursor_results_public_e2e.py')]),
         ]
         commands.insert(3, ('native4', ['cargo','test','--manifest-path','reboot/rust/Cargo.toml','--locked','--all-features','--test','reactive_native_restart','--','--ignored','--test-threads=1','--nocapture']))
         commands.insert(5, ('user_public',[python,str(root/'tests/reboot/cli/rust_user_app_e2e.py')]))
@@ -125,7 +126,16 @@ try:
         assert all(s['requested_shutdown'] and s['children_absent'] for s in constructor_proof['sessions'])
         assert len(constructor_proof['commands']) == 8 and all(c['exit'] == 0 for c in constructor_proof['commands'])
         assert all(hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest() == h for p,h in constructor_proof['source_hashes'].items())
-        assert len(results) == 19, len(results)
+        cursor_gate = next(item for item in results if item['suite'] == 'cursor_results_public')
+        handles = re.findall(r'^CURSOR_RESULTS_PUBLIC_LIFECYCLE_RECORDED (.+)$', pathlib.Path(cursor_gate['log']).read_text(), re.MULTILINE)
+        assert len(handles) == 1, handles
+        cursor_proof = json.loads(pathlib.Path(handles[0]).read_text())
+        assert cursor_proof['passed'] and not cursor_proof['live_owned_processes']
+        assert cursor_proof['source_unchanged']
+        assert all(s.get('children_absent') for s in cursor_proof['sessions'])
+        assert all(c['exit'] == 0 for c in cursor_proof['commands'])
+        assert all(hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest() == h for p,h in cursor_proof['source_hashes'].items())
+        assert len(results) == 20, len(results)
         tasks_public_gate = next(item for item in results if item['suite'] == 'upstream_tasks_public')
         handles = re.findall(r'^UPSTREAM_TASKS_ACCEPTED (.+)$', pathlib.Path(tasks_public_gate['log']).read_text(), re.MULTILINE)
         assert len(handles) == 1, handles
