@@ -115,6 +115,29 @@ HostRecovery still withholds global readiness and public writers remain blocked.
 Its real host-bound LiveTaskWaitCatalog uses the exact original task allocations,
 finite accepted placement and running generations; it is not a readiness setter.
 
+## Native taskful external constructor routing (2026-10-18)
+
+The generated external-constructor route now has a real native control for two
+original Account owners with taskful work. It preserves the existing native
+constructor inventory and executes
+`generated_external_constructor_catalog_two_originals_taskful_wait` through the
+canonical Database rather than treating generated source coverage as execution.
+The case's unique completion marker is in its recorded SDK log; it is not a
+synthetic receipt or a copied protobuf payload.
+
+The frozen Bank830 run reran all **22** previous controls plus this control:
+**23 native controls passed** and all **46 SDK/Database children joined**. The
+independent terminal readback rehashed every row log, the **3302** frozen source
+members and bundle members; it verified the attached kernel exit, owner-lock
+release, no adopted child or cleanup failure, and the exact retired Docker
+container (PID zero, exit zero, no OOM/error). See the immutable
+[native evidence](tests/evidence/external-constructor-taskful-native-controls-20261018.json).
+
+This is bounded native evidence for taskful external constructor routing. It is
+not full Bank acceptance, latest-upstream native-build qualification, external
+exactly-once effects, or overall Rust SDK parity. Hosted fork CI remains a
+separate approval-pending gate.
+
 Only actual global Ready permits both generated WelcomeEmail ordinary writers.
 Their bodies log the original example's welcome text and original Account IDs;
 **no external email is sent**. Each owner has exactly one acknowledged writer
