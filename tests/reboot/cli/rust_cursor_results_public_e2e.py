@@ -351,13 +351,14 @@ try:
 
     owner, record = start("started", pause="b-committed", iteration=0)
     try:
-        probe("uncertain-schedule", record)
+        uncertain_handle = probe("uncertain-schedule", record)
+        assert uncertain_handle, "uncertain schedule did not return a workflow handle"
         wait_for_park(record, "b-committed", 0)
-        probe("started", record, handle)
+        probe("started", record, uncertain_handle)
     finally:
         stop(owner, record)
     recovery = expect_started_failure()
-    inspect_unresolved_after_cli_exit(recovery, handle)
+    inspect_unresolved_after_cli_exit(recovery, uncertain_handle)
 
     evidence["source_unchanged"] = freeze_sources() == evidence["source_hashes"]
     assert evidence["source_unchanged"]
