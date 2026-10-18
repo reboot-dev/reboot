@@ -25,6 +25,7 @@ from reboot.cli.commands.dashboard import (
     _should_open_automatically,
     _viewers,
 )
+from reboot.dashboard.backend import main as dashboard_main
 from reboot.dashboard.backend.main import application
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
@@ -196,7 +197,9 @@ class McpTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(response.status, 401, candidate)
 
         # A correctly signed URL expires too, not only a tampered expiry.
-        with patch('reboot.dashboard.backend.main._RECORDING_URL_SECONDS', -1):
+        with patch.object(
+            dashboard_main, '_RECORDING_URL_EXPIRES_AFTER_SECONDS', -1
+        ):
             async with self.client.get(
                 signing, params={'path': self.recording}, headers=headers
             ) as response:

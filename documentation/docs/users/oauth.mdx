@@ -111,8 +111,11 @@ Only the `/__/oauth/` paths are restricted to these origins. Every
 other path — your RPCs, `/mcp`, your HTTP routes — authenticates a
 browser's request by the bearer it carries and answers any origin
 without credentials, so a page can call only with a bearer it already
-holds, never with the user's cookie. That is what lets a UI shown by an
-MCP host, whose sandbox origin you cannot know in advance, or a page
+holds, never with the user's cookie: the session cookie is scoped to
+`/__/oauth/`, and a `Cookie` header is removed from every other
+request and a `Set-Cookie` header from every other response. That is
+what lets a UI shown by an MCP host, whose sandbox origin you cannot
+know in advance, or a page
 calling with an API key, reach your backend without being listed here.
 
 ### `skip_consent_for_redirect_uris`

@@ -85,18 +85,7 @@ py_test(
         "//reboot:settings_py",
         "//reboot/aio:tests_py",
         "//reboot/cli/commands:dashboard_py",
-        "//reboot/dashboard:tunnel_py",
         "//reboot/dashboard/backend:main_py",
-    ],
-)
-
-py_test(
-    name = "tunnel_tests_py",
-    srcs = ["tunnel_tests.py"],
-    main = "tunnel_tests.py",
-    deps = [
-        "//reboot/cli/common:subprocesses_py",
-        "//reboot/dashboard:tunnel_py",
     ],
 )
 

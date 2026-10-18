@@ -172,19 +172,6 @@ def _bearer_token(request: Request) -> Optional[str]:
     return token
 
 
-def _cookie_may_authenticate(request: Request) -> bool:
-    """Whether the session cookie on `request` counts as a credential.
-
-    A browser attaches the cookie to cross-site requests too, so a page
-    on another site could otherwise get a route served as the signed-in
-    user. `Sec-Fetch-Site` says who made the request: `same-origin` and
-    `none` (the user navigated here) count; `same-site` and `cross-site`
-    do not. A client that sends no such header is not a browser, and
-    any cookie it sends it chose to send."""
-    site = request.headers.get("sec-fetch-site")
-    return site is None or site in ("same-origin", "none")
-
-
 def _compute_code_challenge(code_verifier: str) -> str:
     """The PKCE S256 code challenge for `code_verifier` (RFC 7636
     4.2): the URL-safe, unpadded base64 of its SHA-256 digest."""
@@ -428,12 +415,9 @@ class OAuthServer:
 
     def verify_token(self, request: Request) -> Optional[str]:
         """The access JWT `request` is signed in with, verified: the one
-        in its `Authorization: Bearer` header or, when that counts
-        (`_cookie_may_authenticate`), in its session cookie. `None`
-        otherwise. `require_oauth_token=True` routes verify with this."""
+        in its `Authorization: Bearer` header. `None` otherwise.
+        `require_oauth_token=True` routes verify with this."""
         token = _bearer_token(request)
-        if token is None and _cookie_may_authenticate(request):
-            token = request.cookies.get(SESSION_COOKIE_NAME)
         if token is None:
             return None
         decoded = self._verify_jwt(token, "access")
@@ -608,17 +592,31 @@ class OAuthServer:
         `rbt dev` continues to work without HTTPS; production
         requires HTTPS.
         """
-        response.set_cookie(
+        # Both paths are restricted so the browser only sends the
+        # cookies on requests to the OAuth endpoints, never on RPC or
+        # an HTTP route: the page gets its bearer from `/__/oauth/whoami`.
+        # Envoy removes `Cookie` from every other path as well; see
+        # `reboot/routing/envoy_config.py`.
+        #
+        # The session cookie was at `/` before; a browser that still
+        # holds one would send both, so that one is deleted here and
+        # in `_clear_session_cookies`.
+        response.delete_cookie(
             key=SESSION_COOKIE_NAME,
-            value=access_token,
-            max_age=expires_in,
             path="/",
             secure=True,
             httponly=True,
             samesite="none",
         )
-        # Refresh cookie's path is restricted so the browser only
-        # sends it on requests to the OAuth endpoints, never on RPC.
+        response.set_cookie(
+            key=SESSION_COOKIE_NAME,
+            value=access_token,
+            max_age=expires_in,
+            path="/__/oauth/",
+            secure=True,
+            httponly=True,
+            samesite="none",
+        )
         response.set_cookie(
             key=REFRESH_COOKIE_NAME,
             value=refresh_token,
@@ -637,6 +635,7 @@ class OAuthServer:
         delete-cookie request whose attributes don't match.
         """
         for name, path in (
+            (SESSION_COOKIE_NAME, "/__/oauth/"),
             (SESSION_COOKIE_NAME, "/"),
             (REFRESH_COOKIE_NAME, "/__/oauth/"),
         ):

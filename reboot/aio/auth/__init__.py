@@ -10,7 +10,8 @@ from typing import Any, Optional
 # importing the OAuth server's heavy dependency chain.
 #
 # - `SESSION_COOKIE_NAME` carries the OAuth access-token JWT, HttpOnly,
-#   as the browser's durable session. Reboot RPCs authenticate from the
+#   as the browser's durable session, scoped to `/__/oauth/` so it only
+#   reaches the OAuth endpoints. Reboot RPCs authenticate from the
 #   `Authorization: Bearer` header; since a SPA can't read an HttpOnly
 #   cookie, it fetches the token via `/__/oauth/whoami` and sets it as
 #   that bearer itself. (MCP clients hold the token from `/token`

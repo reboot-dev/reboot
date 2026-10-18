@@ -1,6 +1,9 @@
 """An HTTP route with `require_oauth_token=True` serves only a request
 that carries the application's access token, and Envoy lets any
-origin call it without credentials; see `HTTP._api_route`.
+origin call it without credentials; see `HTTP._api_route`. The
+session cookie reaches only the OAuth server's paths, and no other
+route can set one; see `_without_cookies` in
+`reboot/routing/envoy_config.py`.
 """
 import httpx
 import unittest
@@ -24,9 +27,9 @@ def _application(*, oauth: bool) -> Application:
         ) if oauth else None,
     )
 
-    @application.http.get('/private/{name}', require_oauth_token=True)
-    async def private(name: str) -> PlainTextResponse:
-        return PlainTextResponse(f'hello {name}')
+    @application.http.get('/private', require_oauth_token=True)
+    async def private() -> PlainTextResponse:
+        return PlainTextResponse('hello')
 
     # Whether the context the handler calls Reboot methods with carries
     # the token the route accepted.
@@ -37,6 +40,12 @@ def _application(*, oauth: bool) -> Application:
         return PlainTextResponse(
             'none' if context.bearer_token is None else 'bearer'
         )
+
+    @application.http.get('/sets-a-cookie')
+    async def sets_a_cookie() -> PlainTextResponse:
+        response = PlainTextResponse('set')
+        response.set_cookie('other', 'value')
+        return response
 
     return application
 
@@ -50,7 +59,7 @@ class AuthenticatedRoutesTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_only_the_access_token_gets_in(self) -> None:
         await self.rbt.up(_application(oauth=True), local_envoy=True)
-        url = self.rbt.http_localhost_url('/private/you')
+        url = self.rbt.http_localhost_url('/private')
         foreign = {'Origin': 'https://sandbox.example'}
         async with httpx.AsyncClient() as client:
             response = await client.get(url, headers=foreign)
@@ -101,27 +110,33 @@ class AuthenticatedRoutesTest(unittest.IsolatedAsyncioTestCase):
                 }
             )
             self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.text, 'hello you')
+            self.assertEqual(response.text, 'hello')
 
-            # The session cookie holds the access JWT. The route accepts
-            # it on a same-origin request and rejects it cross-site.
+            # The session cookie holds the access JWT too, but Envoy
+            # removes it from every request outside `/__/oauth/`.
             cookie = {'Cookie': f'rbt_session={token}'}
             response = await client.get(url, headers=cookie)
-            self.assertEqual(response.status_code, 200)
-            response = await client.get(
-                url, headers={
-                    **cookie, 'Sec-Fetch-Site': 'cross-site'
-                }
-            )
             self.assertEqual(response.status_code, 401)
+            response = await client.get(
+                self.rbt.http_localhost_url('/__/oauth/whoami'),
+                headers=cookie,
+            )
+            self.assertTrue(response.json()['authenticated'])
 
-            # The handler's context carries the token the route
-            # accepted, from the header or from the cookie.
-            context_url = self.rbt.http_localhost_url('/context')
-            for headers in ({'Authorization': f'Bearer {token}'}, cookie):
-                response = await client.get(context_url, headers=headers)
-                self.assertEqual(response.status_code, 200)
-                self.assertEqual(response.text, 'bearer')
+            # And removes a cookie any other route sets.
+            response = await client.get(
+                self.rbt.http_localhost_url('/sets-a-cookie')
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertNotIn('set-cookie', response.headers)
+
+            # The handler's context carries the token the route accepted.
+            response = await client.get(
+                self.rbt.http_localhost_url('/context'),
+                headers={'Authorization': f'Bearer {token}'},
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.text, 'bearer')
 
     async def test_needs_an_oauth_server(self) -> None:
         with self.assertRaisesRegex(InputError, 'require_oauth_token=True'):

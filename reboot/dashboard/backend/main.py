@@ -76,7 +76,7 @@ def _recording(directory: Path, relative: str) -> Path:
     return path
 
 
-_RECORDING_URL_SECONDS = 60 * 60
+_RECORDING_URL_EXPIRES_AFTER_SECONDS = 60 * 60
 
 
 def _recording_signature(directory: Path, relative: str, expires: int) -> str:
@@ -95,8 +95,9 @@ def application() -> Application:
     """The dashboard application, with its page mounted.
 
     The OAuth server signs in whoever reaches it as the developer, so
-    the tunnel's address is what keeps the dashboard off the internet;
-    see `reboot/dashboard/tunnel.py`.
+    the dashboard serves this machine alone; a developer who exposes
+    it, through a tunnel, to show it in an MCP host must keep its
+    address to themselves.
     """
     # `_dashboard_context` in `reboot/cli/commands/dashboard.py` signs
     # in by following this provider's redirects alone; a provider that
@@ -117,7 +118,7 @@ def application() -> Application:
         libraries=[
             # `is_app_internal` trusts the `x-reboot-caller-id` header,
             # which Envoy removes from every request on the public
-            # listener, the one the tunnel reaches; see
+            # listener; see
             # `_routes_for_server` in `reboot/routing/envoy_config.py`.
             presence_library(
                 authorizer=allow_if(any=[is_app_internal, has_verified_token]),
@@ -149,7 +150,7 @@ def application() -> Application:
     async def sign_recording(path: str) -> JSONResponse:
         directory = Path.cwd()
         _recording(directory, path)
-        expires = int(time.time()) + _RECORDING_URL_SECONDS
+        expires = int(time.time()) + _RECORDING_URL_EXPIRES_AFTER_SECONDS
         query = urlencode(
             {
                 'expires': expires,
