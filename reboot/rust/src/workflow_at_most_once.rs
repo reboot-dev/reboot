@@ -372,6 +372,39 @@ mod at_most_once_unit_behavior_tests {
         server.abort();
     }
     #[tokio::test]
+    async fn cursor_capability_is_required_before_binding_or_body() {
+        let (endpoint, database, server) = crate::runtime::test_support::start_database().await;
+        database.model_control_only_store();
+        database.set_capabilities(Ok(db::DatabaseCapabilitiesResponse::default()));
+        let f = Fixture::new_decl(&endpoint, "cursor", None, true).await;
+        let attempt = WorkflowAttempt::default();
+        let mut context = f.context(&attempt);
+        let stores_before = database.store_requests().len();
+        let constructed = AtomicUsize::new(0);
+        let error = context
+            .run_loop(
+                "main",
+                1,
+                "type.googleapis.com/tests.reboot.protoc.Counter",
+                |_| {
+                    constructed.fetch_add(1, Ordering::SeqCst);
+                    Box::pin(async {
+                        Ok(std::ops::ControlFlow::Break(crate::proto::Counter {
+                            value: 1,
+                        }))
+                    })
+                },
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error.code(), tonic::Code::FailedPrecondition);
+        assert!(error.message().contains("workflow-cursor-advance.v1"));
+        assert_eq!(constructed.load(Ordering::SeqCst), 0);
+        assert_eq!(database.store_requests().len(), stores_before);
+        assert!(attempt.clean());
+        server.abort();
+    }
+    #[tokio::test]
     async fn recovered_cursor_above_finite_bound_replays_break_without_body() {
         let (endpoint, database, server) = crate::runtime::test_support::start_database().await;
         database.model_control_only_store();

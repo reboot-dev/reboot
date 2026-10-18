@@ -267,6 +267,15 @@ class DatabaseTest : public TemporaryDirectoryTest {
     ASSERT_TRUE(result.has_value()) << result.error();
   }
 
+  void put_actor_record(
+      const std::string& state_type,
+      std::string key,
+      std::string value) {
+    auto result = TestOnly_PutActorRecord(
+        server->TestOnly_GetService(), state_type, std::move(key), std::move(value));
+    ASSERT_TRUE(result.has_value()) << result.error();
+  }
+
   std::optional<std::string> get_default_record(const std::string& key) {
     auto result = TestOnly_GetDefaultRecord(server->TestOnly_GetService(), key);
     EXPECT_TRUE(result.has_value()) << result.error();
@@ -2378,6 +2387,130 @@ TEST_F(TwoShardDatabaseTest, RecoverWorkflowIterationIdempotentMutation) {
   ASSERT_EQ(1, response.idempotent_mutations().size());
   EXPECT_EQ(idempotency_key.toBytes(), response.idempotent_mutations(0).key());
   EXPECT_EQ("iteration_response", response.idempotent_mutations(0).response());
+}
+
+////////////////////////////////////////////////////////////////////////
+
+TEST_F(TwoShardDatabaseTest, AdvanceWorkflowCursorReclaimsOnlyCompletedIteration) {
+  const std::string state_type = "Greeter";
+  const std::string state_ref = make_state_ref("advance_cursor");
+  const UUID workflow_id = UUID::random();
+  auto predecessor = MakeTask(state_type, state_ref, workflow_id.toBytes());
+  predecessor.set_iteration(7);
+  store({}, {predecessor});
+  for (uint64_t iteration : {7, 8}) {
+    v1alpha1::IdempotentMutation mutation;
+    mutation.set_state_type(state_type);
+    mutation.set_state_ref(state_ref);
+    mutation.set_key(UUID::random().toBytes());
+    mutation.set_workflow_id(workflow_id.toBytes());
+    mutation.set_workflow_iteration(iteration);
+    mutation.set_response(fmt::format("iteration{}", iteration));
+    store({}, {}, std::nullopt, std::move(mutation));
+  }
+  v1alpha1::AdvanceWorkflowCursorRequest request;
+  *request.mutable_successor() = predecessor;
+  request.mutable_successor()->set_iteration(8);
+  request.set_workflow_id(workflow_id.toBytes());
+  request.set_completed_iteration(7);
+  request.set_sync(true);
+  v1alpha1::AdvanceWorkflowCursorResponse response;
+  grpc::ClientContext context;
+  ASSERT_TRUE(stub->AdvanceWorkflowCursor(&context, request, &response).ok());
+  EXPECT_TRUE(response.has_timestamp());
+  const std::string accepted_request = request.SerializeAsString();
+  v1alpha1::AdvanceWorkflowCursorRequest duplicate_request;
+  ASSERT_TRUE(duplicate_request.ParseFromString(accepted_request));
+  v1alpha1::AdvanceWorkflowCursorResponse duplicate_response;
+  grpc::ClientContext duplicate_context;
+  ASSERT_TRUE(stub->AdvanceWorkflowCursor(&duplicate_context, duplicate_request,
+                                          &duplicate_response)
+                  .ok());
+  EXPECT_EQ(duplicate_request.SerializeAsString(), accepted_request);
+  EXPECT_TRUE(duplicate_response.has_timestamp());
+  v1alpha1::LoadRequest load_request;
+  *load_request.add_task_ids() = predecessor.task_id();
+  v1alpha1::LoadResponse loaded;
+  grpc::ClientContext load_context;
+  ASSERT_TRUE(stub->Load(&load_context, load_request, &loaded).ok());
+  ASSERT_EQ(loaded.tasks_size(), 1);
+  EXPECT_EQ(loaded.tasks(0).iteration(), 8);
+  for (uint64_t iteration : {7, 8}) {
+    v1alpha1::RecoverIdempotentMutationsRequest recover;
+    recover.set_state_type(state_type);
+    recover.set_state_ref(state_ref);
+    recover.set_workflow_id(workflow_id.toBytes());
+    recover.set_workflow_iteration(iteration);
+    grpc::ClientContext recover_context;
+    auto reader = stub->RecoverIdempotentMutations(&recover_context, recover);
+    v1alpha1::RecoverIdempotentMutationsResponse page;
+    size_t count = 0;
+    while (reader->Read(&page)) count += page.idempotent_mutations_size();
+    ASSERT_TRUE(reader->Finish().ok());
+    EXPECT_EQ(count, iteration == 7 ? 0 : 1);
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+TEST_F(TwoShardDatabaseTest, AdvanceWorkflowCursorRejectsActiveTransaction) {
+  const std::string state_type = "Greeter";
+  const std::string state_ref = make_state_ref("advance_cursor_transaction");
+  const UUID workflow_id = UUID::random();
+  auto predecessor = MakeTask(state_type, state_ref, workflow_id.toBytes());
+  predecessor.set_iteration(7);
+  store({}, {predecessor});
+  store_and_prepare_participant(state_type, state_ref);
+  v1alpha1::AdvanceWorkflowCursorRequest request;
+  *request.mutable_successor() = predecessor;
+  request.mutable_successor()->set_iteration(8);
+  request.set_workflow_id(workflow_id.toBytes());
+  request.set_completed_iteration(7);
+  request.set_sync(true);
+  v1alpha1::AdvanceWorkflowCursorResponse response;
+  grpc::ClientContext context;
+  EXPECT_EQ(stub->AdvanceWorkflowCursor(&context, request, &response).error_code(),
+            grpc::StatusCode::FAILED_PRECONDITION);
+  v1alpha1::LoadRequest load_request;
+  *load_request.add_task_ids() = predecessor.task_id();
+  v1alpha1::LoadResponse loaded;
+  grpc::ClientContext load_context;
+  ASSERT_TRUE(stub->Load(&load_context, load_request, &loaded).ok());
+  ASSERT_EQ(loaded.tasks_size(), 1);
+  EXPECT_EQ(loaded.tasks(0).iteration(), 7);
+}
+
+////////////////////////////////////////////////////////////////////////
+
+TEST_F(TwoShardDatabaseTest, AdvanceWorkflowCursorRejectsMalformedCheckpoint) {
+  const std::string state_type = "Greeter";
+  const std::string state_ref = make_state_ref("advance_cursor_malformed");
+  const UUID workflow_id = UUID::random();
+  auto predecessor = MakeTask(state_type, state_ref, workflow_id.toBytes());
+  predecessor.set_iteration(7);
+  store({}, {predecessor});
+  put_actor_record(
+      state_type,
+      fmt::format("workflow-iteration-idempotent-mutation:{}:{}:{}:{}",
+                  state_ref, workflow_id.toBytes(), 7, UUID::random().toBytes()),
+      "not a serialized IdempotentMutation");
+  v1alpha1::AdvanceWorkflowCursorRequest request;
+  *request.mutable_successor() = predecessor;
+  request.mutable_successor()->set_iteration(8);
+  request.set_workflow_id(workflow_id.toBytes());
+  request.set_completed_iteration(7);
+  request.set_sync(true);
+  v1alpha1::AdvanceWorkflowCursorResponse response;
+  grpc::ClientContext context;
+  EXPECT_EQ(stub->AdvanceWorkflowCursor(&context, request, &response).error_code(),
+            grpc::StatusCode::DATA_LOSS);
+  v1alpha1::LoadRequest load_request;
+  *load_request.add_task_ids() = predecessor.task_id();
+  v1alpha1::LoadResponse loaded;
+  grpc::ClientContext load_context;
+  ASSERT_TRUE(stub->Load(&load_context, load_request, &loaded).ok());
+  ASSERT_EQ(loaded.tasks_size(), 1);
+  EXPECT_EQ(loaded.tasks(0).iteration(), 7);
 }
 
 ////////////////////////////////////////////////////////////////////////

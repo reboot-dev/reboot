@@ -268,6 +268,12 @@ mod custody_host_model {
         ) -> Result<Response<db::StoreResponse>, Status> {
             self.client.clone().store(request).await
         }
+        async fn advance_workflow_cursor(
+            &self,
+            request: Request<db::AdvanceWorkflowCursorRequest>,
+        ) -> Result<Response<db::AdvanceWorkflowCursorResponse>, Status> {
+            self.client.clone().advance_workflow_cursor(request).await
+        }
         async fn complete_task(
             &self,
             request: Request<db::CompleteTaskRequest>,

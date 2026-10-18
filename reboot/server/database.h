@@ -147,6 +147,14 @@ tl::expected<void, std::string> TestOnly_PutDefaultRecord(
     grpc::Service* service,
     std::string key,
     std::string value);
+// Writes a raw record into an existing actor state-type column family. This is
+// deliberately test-only so corruption-path tests can target durable actor
+// data without broad production DB access.
+tl::expected<void, std::string> TestOnly_PutActorRecord(
+    grpc::Service* service,
+    const std::string& state_type,
+    std::string key,
+    std::string value);
 tl::expected<std::optional<std::string>, std::string> TestOnly_GetDefaultRecord(
     grpc::Service* service,
     const std::string& key);

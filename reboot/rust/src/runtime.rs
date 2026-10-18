@@ -5228,7 +5228,8 @@ pub mod test_support {
     /// Minimal durable fake exposed through the generated Database Tonic server.
     /// It implements only the storage semantics this runtime needs, while every
     /// unused generated RPC remains deliberately well-formed and inert.
-    type CapabilityReply = Arc<Mutex<Option<Result<database::DatabaseCapabilitiesResponse, Status>>>>;
+    type CapabilityReply =
+        Arc<Mutex<Option<Result<database::DatabaseCapabilitiesResponse, Status>>>>;
 
     #[derive(Clone, Default)]
     pub struct FakeDatabase {
@@ -5569,7 +5570,9 @@ pub mod test_support {
             *self.capability_reply.lock().unwrap() = Some(reply);
         }
         #[cfg(test)]
-        pub(crate) fn park_capabilities(&self) -> (
+        pub(crate) fn park_capabilities(
+            &self,
+        ) -> (
             tokio::sync::oneshot::Receiver<()>,
             tokio::sync::oneshot::Sender<()>,
         ) {
@@ -5580,8 +5583,12 @@ pub mod test_support {
         }
         #[cfg(test)]
         pub(crate) fn constructor_write_calls(&self) -> (usize, usize) {
-            (self.create_rpc_calls.load(std::sync::atomic::Ordering::Acquire),
-             self.store_rpc_calls.load(std::sync::atomic::Ordering::Acquire))
+            (
+                self.create_rpc_calls
+                    .load(std::sync::atomic::Ordering::Acquire),
+                self.store_rpc_calls
+                    .load(std::sync::atomic::Ordering::Acquire),
+            )
         }
         pub fn create_requests(&self) -> Vec<database::CreateActorRequest> {
             self.state
@@ -5608,13 +5615,23 @@ pub mod test_support {
             }
             // This fake implements atomic task-bearing creates. Old-engine
             // fixtures explicitly override this response with UNIMPLEMENTED.
-            self.capability_reply.lock().unwrap().clone().unwrap_or_else(|| {
-                Ok(database::DatabaseCapabilitiesResponse {
-                    atomic_constructor_tasks_protocol: "reboot.atomic-constructor-tasks.v1".into(),
-                    atomic_constructor_tasks_version: 1,
-                    atomic_constructor_tasks_enabled: true,
+            self.capability_reply
+                .lock()
+                .unwrap()
+                .clone()
+                .unwrap_or_else(|| {
+                    Ok(database::DatabaseCapabilitiesResponse {
+                        atomic_constructor_tasks_protocol: "reboot.atomic-constructor-tasks.v1"
+                            .into(),
+                        atomic_constructor_tasks_version: 1,
+                        atomic_constructor_tasks_enabled: true,
+                        workflow_cursor_advance_protocol: "reboot.workflow-cursor-advance.v1"
+                            .into(),
+                        workflow_cursor_advance_version: 1,
+                        workflow_cursor_advance_enabled: true,
+                    })
                 })
-            }).map(Response::new)
+                .map(Response::new)
         }
 
         type PreloadStream = DatabaseStream<database::PreloadResponse>;
@@ -5761,11 +5778,59 @@ pub mod test_support {
             }))
         }
 
+        async fn advance_workflow_cursor(
+            &self,
+            request: Request<database::AdvanceWorkflowCursorRequest>,
+        ) -> Result<Response<database::AdvanceWorkflowCursorResponse>, Status> {
+            let request = request.into_inner();
+            let successor = request
+                .successor
+                .ok_or_else(|| Status::invalid_argument("missing cursor successor"))?;
+            let id = successor
+                .task_id
+                .as_ref()
+                .ok_or_else(|| Status::invalid_argument("missing cursor task ID"))?;
+            if !request.sync
+                || request.workflow_id != id.task_uuid
+                || successor.status != database::task::Status::Pending as i32
+                || successor.response_or_error.is_some()
+                || successor.iteration
+                    != request
+                        .completed_iteration
+                        .checked_add(1)
+                        .ok_or_else(|| Status::out_of_range("cursor iteration overflow"))?
+            {
+                return Err(Status::invalid_argument("invalid cursor advance"));
+            }
+            let mut state = self.state.lock().unwrap();
+            let canonical = state
+                .tasks
+                .get_mut(&id.encode_to_vec())
+                .ok_or_else(|| Status::failed_precondition("missing cursor predecessor"))?;
+            let mut expected = canonical.clone();
+            if expected.status != database::task::Status::Pending as i32
+                || expected.iteration != request.completed_iteration
+            {
+                return Err(Status::failed_precondition("cursor predecessor differs"));
+            }
+            expected.iteration = successor.iteration;
+            if expected != successor {
+                return Err(Status::invalid_argument(
+                    "cursor successor identity changed",
+                ));
+            }
+            *canonical = successor;
+            Ok(Response::new(database::AdvanceWorkflowCursorResponse {
+                timestamp: None,
+            }))
+        }
+
         async fn store(
             &self,
             request: Request<database::StoreRequest>,
         ) -> Result<Response<database::StoreResponse>, Status> {
-            self.store_rpc_calls.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+            self.store_rpc_calls
+                .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
             #[cfg(test)]
             {
                 let park = self.store_park.lock().unwrap().take();
@@ -5881,7 +5946,8 @@ pub mod test_support {
             &self,
             request: Request<database::CreateActorRequest>,
         ) -> Result<Response<database::CreateActorResponse>, Status> {
-            self.create_rpc_calls.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+            self.create_rpc_calls
+                .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
             let request = request.into_inner();
             if !request.task_upserts.is_empty() {
                 return Err(Status::invalid_argument(
@@ -5895,7 +5961,8 @@ pub mod test_support {
             &self,
             request: Request<database::CreateActorRequest>,
         ) -> Result<Response<database::CreateActorResponse>, Status> {
-            self.create_rpc_calls.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+            self.create_rpc_calls
+                .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
             if self
                 .reject_task_create
                 .load(std::sync::atomic::Ordering::Acquire)

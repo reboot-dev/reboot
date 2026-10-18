@@ -392,6 +392,26 @@ message StoreResponse {
   optional google.protobuf.Timestamp timestamp = 1;
 }
 
+// Advances exactly one pending durable cursor task and atomically reclaims only
+// its previous iteration-scoped idempotent checkpoints. This is deliberately
+// not a generic deletion API: the successor must be the exact same pending
+// task with its iteration incremented by one, and root workflow records (with
+// no workflow_iteration) are never selected for reclamation.
+message AdvanceWorkflowCursorRequest {
+  Task successor = 1;
+  // Raw RFC 4122 UUID bytes. Must equal successor.task_id.task_uuid.
+  bytes workflow_id = 2;
+  // The exact durable pending iteration being advanced.
+  uint64 completed_iteration = 3;
+  // Sync the RocksDB write before returning success.
+  bool sync = 4;
+}
+
+message AdvanceWorkflowCursorResponse {
+  // Latest timestamp from database clock, for timestamp refresh.
+  optional google.protobuf.Timestamp timestamp = 1;
+}
+
 // Atomically completes a pending task among concurrent CompleteTask callers.
 // Legacy Store and transactional task upserts remain unconditional and can
 // overwrite or recreate task records; this is not a global first-result-wins
@@ -714,6 +734,9 @@ message DatabaseCapabilitiesResponse {
   string atomic_constructor_tasks_protocol = 1;
   uint32 atomic_constructor_tasks_version = 2;
   bool atomic_constructor_tasks_enabled = 3;
+  string workflow_cursor_advance_protocol = 4;
+  uint32 workflow_cursor_advance_version = 5;
+  bool workflow_cursor_advance_enabled = 6;
 }
 
 service Database {
@@ -746,6 +769,11 @@ service Database {
 
   // Stores the specified data.
   rpc Store(StoreRequest) returns (StoreResponse);
+
+  // Persists one exact cursor successor and reclaims only the completed
+  // iteration's workflow-scoped checkpoints in one atomic write.
+  rpc AdvanceWorkflowCursor(AdvanceWorkflowCursorRequest)
+      returns (AdvanceWorkflowCursorResponse);
 
   // Changes a task from PENDING to COMPLETED only if it is still pending.
   rpc CompleteTask(CompleteTaskRequest) returns (CompleteTaskResponse);

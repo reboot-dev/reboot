@@ -2668,8 +2668,8 @@ impl WorkflowContext<'_> {
         }
     }
     /// One serial, declared open-ended loop. Continue advances only the canonical
-    /// Pending task, synchronously; Break is saved at the current cursor. Prior
-    /// checkpoint records are retained on disk (no physical GC is claimed).
+    /// Pending task and atomically reclaims only its prior iteration-scoped
+    /// checkpoints; Break is saved at the current cursor.
     pub async fn run_loop<R, F>(
         &mut self,
         alias: &str,
@@ -2689,7 +2689,6 @@ impl WorkflowContext<'_> {
                 >,
             > + Send,
     {
-        let guard = self.attempt.operation();
         if self.iteration.is_some()
             || !self.parents.is_empty()
             || self.tasks.cursor_declaration(&self.task) != Some((alias, version))
@@ -2715,6 +2714,29 @@ impl WorkflowContext<'_> {
             .clone()
             .ok_or_else(|| Status::failed_precondition("missing cursor task"))?;
         let store = self.tasks.inner.store.clone();
+        let capabilities = store
+            .task_database()
+            .get_capabilities(db::DatabaseCapabilitiesRequest {})
+            .await
+            .map_err(|status| {
+                if status.code() == tonic::Code::Unimplemented {
+                    Status::failed_precondition(
+                        "Database lacks GetCapabilities: workflow cursors require reboot.workflow-cursor-advance.v1 version 1",
+                    )
+                } else {
+                    status
+                }
+            })?
+            .into_inner();
+        if capabilities.workflow_cursor_advance_protocol != "reboot.workflow-cursor-advance.v1"
+            || capabilities.workflow_cursor_advance_version != 1
+            || !capabilities.workflow_cursor_advance_enabled
+        {
+            return Err(Status::failed_precondition(
+                "Database does not support enabled reboot.workflow-cursor-advance.v1 version 1",
+            ));
+        }
+        let guard = self.attempt.operation();
         let gate = store.actor_gate(&id.state_type, &id.state_ref);
         let mut revisions = gate.committed_revisions();
         {
@@ -2867,16 +2889,20 @@ impl WorkflowContext<'_> {
                         .await?;
                     let mut durable = self.durable();
                     let commit = gate.commit_attempt();
+                    let workflow_id = self
+                        .task
+                        .task_id
+                        .as_ref()
+                        .ok_or_else(|| Status::failed_precondition("missing cursor task"))?
+                        .task_uuid
+                        .clone();
                     store
                         .task_database()
-                        .store(db::StoreRequest {
-                            actor_upserts: vec![],
-                            task_upserts: vec![next.clone()],
-                            colocated_upserts: vec![],
-                            transaction: None,
-                            ensure_state_types_created: vec![],
+                        .advance_workflow_cursor(db::AdvanceWorkflowCursorRequest {
+                            successor: Some(next.clone()),
+                            workflow_id,
+                            completed_iteration: self.task.iteration,
                             sync: true,
-                            idempotent_mutation: None,
                         })
                         .await?;
                     commit.checkpoint_acknowledged();

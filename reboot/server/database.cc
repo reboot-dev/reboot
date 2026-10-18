@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <ios>
+#include <limits>
 #include <mutex>
 #include <optional>
 #include <shared_mutex>
@@ -48,6 +49,8 @@
 using id::UUID;
 
 using rbt::v1alpha1::Actor;
+using rbt::v1alpha1::AdvanceWorkflowCursorRequest;
+using rbt::v1alpha1::AdvanceWorkflowCursorResponse;
 using rbt::v1alpha1::ApplicationMetadata;
 using rbt::v1alpha1::ColocatedRangeRequest;
 using rbt::v1alpha1::ColocatedRangeResponse;
@@ -410,6 +413,24 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
     return {};
   }
 
+  expected<void> TestOnlyPutActorRecord(
+      const std::string& state_type,
+      std::string key,
+      std::string value) {
+    auto column_family_handle = LookupColumnFamilyHandle(state_type);
+    if (!column_family_handle) {
+      return make_unexpected(column_family_handle.error());
+    }
+    rocksdb::WriteOptions options;
+    options.sync = true;
+    rocksdb::Status status =
+        db_->Put(options, *column_family_handle, std::move(key), std::move(value));
+    if (!status.ok()) {
+      return make_unexpected(status.ToString());
+    }
+    return {};
+  }
+
   expected<std::optional<std::string>> TestOnlyGetDefaultRecord(
       const std::string& key) {
     std::string value;
@@ -476,6 +497,10 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
       grpc::ServerContext* context,
       const StoreRequest* request,
       StoreResponse* response) override;
+  grpc::Status AdvanceWorkflowCursor(
+      grpc::ServerContext* context,
+      const AdvanceWorkflowCursorRequest* request,
+      AdvanceWorkflowCursorResponse* response) override;
   grpc::Status CompleteTask(
       grpc::ServerContext* context,
       const CompleteTaskRequest* request,
@@ -497,6 +522,10 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
         "reboot.atomic-constructor-tasks.v1");
     response->set_atomic_constructor_tasks_version(1);
     response->set_atomic_constructor_tasks_enabled(true);
+    response->set_workflow_cursor_advance_protocol(
+        "reboot.workflow-cursor-advance.v1");
+    response->set_workflow_cursor_advance_version(1);
+    response->set_workflow_cursor_advance_enabled(true);
     return grpc::Status::OK;
   }
 
@@ -3181,6 +3210,140 @@ grpc::Status DatabaseService::Store(
           fmt::format("Failed to store: {}", status->ToString()));
     }
   }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+grpc::Status DatabaseService::AdvanceWorkflowCursor(
+    grpc::ServerContext* context,
+    const AdvanceWorkflowCursorRequest* request,
+    AdvanceWorkflowCursorResponse* response) {
+  REBOOT_DATABASE_LOG(1) << "AdvanceWorkflowCursor { "
+                         << request->ShortDebugString() << " }";
+  *response->mutable_timestamp() = monotonic_clock_->Now();
+
+  if (!request->has_successor() || !request->successor().has_task_id()
+      || request->workflow_id().size() != 16 || !request->sync()) {
+    return grpc::Status(grpc::INVALID_ARGUMENT,
+                        "Cursor advance requires a synchronous successor and UUID workflow ID");
+  }
+  const Task& successor = request->successor();
+  const TaskId& id = successor.task_id();
+  if (id.state_type().empty() || id.state_ref().empty()
+      || id.task_uuid().size() != 16 || id.task_uuid() != request->workflow_id()
+      || successor.status() != Task::PENDING || successor.has_response()
+      || successor.has_error()
+      || request->completed_iteration() == std::numeric_limits<uint64_t>::max()
+      || successor.iteration() != request->completed_iteration() + 1) {
+    return grpc::Status(grpc::INVALID_ARGUMENT,
+                        "Cursor successor must be the next pending workflow task");
+  }
+
+  // Serialize the exact pending-task read, checkpoint-prefix scan, and final
+  // WriteBatch with Store/CompleteTask. This is an admitted cursor transition,
+  // not a general task-update or mutation-deletion capability.
+  std::lock_guard<std::mutex> lock(idempotency_collision_mutex_);
+  if (HasTransaction(id.state_ref())) {
+    return grpc::Status(grpc::FAILED_PRECONDITION,
+                        "Cursor advance cannot modify an actor with an active transaction");
+  }
+  expected<rocksdb::ColumnFamilyHandle*> column_family =
+      LookupColumnFamilyHandle(id.state_type());
+  if (!column_family.has_value()) {
+    return grpc::Status(grpc::FAILED_PRECONDITION,
+                        "Cursor predecessor state type is absent");
+  }
+  const std::string pending_key = MakeTaskKey(Task::PENDING, id);
+  std::string predecessor_bytes;
+  rocksdb::Status get = db_->Get(
+      rocksdb::ReadOptions(), *column_family, rocksdb::Slice(pending_key),
+      &predecessor_bytes);
+  if (get.IsNotFound()) {
+    return grpc::Status(grpc::FAILED_PRECONDITION,
+                        "Cursor predecessor is no longer pending");
+  }
+  if (!get.ok()) {
+    return grpc::Status(
+        grpc::UNKNOWN,
+        fmt::format("Failed to read cursor predecessor: {}", get.ToString()));
+  }
+  Task predecessor;
+  if (!predecessor.ParseFromString(predecessor_bytes)) {
+    return grpc::Status(grpc::UNKNOWN, "Failed to parse cursor predecessor");
+  }
+  // A reply can be lost after the atomic WriteBatch. The exact successor is
+  // durable evidence that this same advance won; acknowledge it without a
+  // second mutation or a speculative fallback.
+  if (google::protobuf::util::MessageDifferencer::Equals(predecessor, successor)) {
+    return grpc::Status::OK;
+  }
+  Task expected_successor = predecessor;
+  if (predecessor.status() != Task::PENDING
+      || predecessor.iteration() != request->completed_iteration()) {
+    return grpc::Status(grpc::FAILED_PRECONDITION,
+                        "Cursor predecessor iteration differs");
+  }
+  expected_successor.set_iteration(request->completed_iteration() + 1);
+  if (!google::protobuf::util::MessageDifferencer::Equals(
+          successor, expected_successor)) {
+    return grpc::Status(grpc::INVALID_ARGUMENT,
+                        "Cursor successor changes immutable task scheduling data");
+  }
+
+  std::string successor_bytes;
+  if (!successor.SerializeToString(&successor_bytes)) {
+    return grpc::Status(grpc::UNKNOWN, "Failed to serialize cursor successor");
+  }
+  const std::string checkpoint_prefix = fmt::format(
+      WORKFLOW_ITERATION_IDEMPOTENT_MUTATION_KEY_PREFIX ":{}:{}:{}:",
+      id.state_ref(), request->workflow_id(), request->completed_iteration());
+  rocksdb::WriteBatch batch;
+  rocksdb::Status status = batch.Put(
+      *column_family, rocksdb::Slice(pending_key), rocksdb::Slice(successor_bytes));
+  if (!status.ok()) {
+    return grpc::Status(
+        grpc::UNKNOWN,
+        fmt::format("Failed to persist cursor successor: {}", status.ToString()));
+  }
+  std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(db_->NewIterator(
+      NonPrefixIteratorReadOptions(), *column_family)));
+  for (iterator->Seek(rocksdb::Slice(checkpoint_prefix)); iterator->Valid();
+       iterator->Next()) {
+    if (iterator->key().ToStringView().find(checkpoint_prefix) != 0) {
+      break;
+    }
+    IdempotentMutation checkpoint;
+    if (!checkpoint.ParseFromArray(iterator->value().data(), iterator->value().size())) {
+      return grpc::Status(grpc::DATA_LOSS, "Malformed cursor checkpoint during reclamation");
+    }
+    if (checkpoint.state_type() != id.state_type()
+        || checkpoint.state_ref() != id.state_ref()
+        || !checkpoint.has_workflow_id()
+        || checkpoint.workflow_id() != request->workflow_id()
+        || !checkpoint.has_workflow_iteration()
+        || checkpoint.workflow_iteration() != request->completed_iteration()) {
+      return grpc::Status(grpc::DATA_LOSS,
+                          "Cursor checkpoint key/value scope mismatch during reclamation");
+    }
+    status = batch.Delete(*column_family, iterator->key());
+    if (!status.ok()) {
+      return grpc::Status(
+          grpc::UNKNOWN,
+          fmt::format("Failed to reclaim cursor checkpoint: {}", status.ToString()));
+    }
+  }
+  if (!iterator->status().ok()) {
+    return grpc::Status(
+        grpc::UNKNOWN,
+        fmt::format("Failed to scan cursor checkpoints: {}", iterator->status().ToString()));
+  }
+  status = db_->Write(DefaultWriteOptions(true), &batch);
+  if (!status.ok()) {
+    return grpc::Status(
+        grpc::UNKNOWN,
+        fmt::format("Failed to advance cursor: {}", status.ToString()));
+  }
+  return grpc::Status::OK;
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -6139,6 +6302,19 @@ expected<void> TestOnly_PutDefaultRecord(
     return make_unexpected("service is not a DatabaseService");
   }
   return db_service->TestOnlyPutDefaultRecord(std::move(key), std::move(value));
+}
+
+expected<void> TestOnly_PutActorRecord(
+    grpc::Service* service,
+    const std::string& state_type,
+    std::string key,
+    std::string value) {
+  auto* db_service = dynamic_cast<DatabaseService*>(service);
+  if (db_service == nullptr) {
+    return make_unexpected("service is not a DatabaseService");
+  }
+  return db_service->TestOnlyPutActorRecord(
+      state_type, std::move(key), std::move(value));
 }
 
 expected<std::optional<std::string>> TestOnly_GetDefaultRecord(
