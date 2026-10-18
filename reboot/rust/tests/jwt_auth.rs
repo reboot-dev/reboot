@@ -72,6 +72,7 @@ impl reboot_rust_schema::runtime::DurableStateDeclaration for Account {
     const STATE_TYPE: &'static str = "example.Account";
     const AUTO_CONSTRUCT: i32 = 1;
 }
+#[allow(clippy::result_large_err)]
 async fn verify(
     policy: &AuthorizationPolicy,
     token: Option<String>,
