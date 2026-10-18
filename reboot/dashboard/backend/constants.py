@@ -5,6 +5,7 @@ application and everything it serves with.
 """
 
 from pathlib import Path
+from rbt.dashboard.v1 import dashboard_rbt
 
 # The dashboard's built page, beside the application's module, which
 # is the same arrangement `InspectServicer` uses for its own assets.
@@ -12,6 +13,13 @@ from pathlib import Path
 # naming it (absolute, since no project root is involved) in the
 # application's environment.
 DASHBOARD_DIRECTORY = Path(__file__).parent / 'dashboard'
+
+# Where the page built into one file for an MCP host is, as
+# `ui/index.html`: beside the generated code, whose `.rbtrc` makes that
+# directory the project root the MCP App runtime resolves against; see
+# `rbt/dashboard/v1/BUILD.bazel`.
+assert dashboard_rbt.__file__ is not None
+MCP_APP_DIRECTORY = Path(dashboard_rbt.__file__).parent
 
 # The dashboard application's port. Deliberately not adjacent to
 # `rbt dev run`'s default port of 9991: VS Code forwards a port

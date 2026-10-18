@@ -623,10 +623,10 @@ is in
 
 **Files the UI fetches from the backend.** A plain HTTP route — an
 image or video the UI shows, a download — serves every request
-unless registered with `require_oauth_token=True`. A UI is
-cross-origin to the backend and has no cookie, so it fetches with the
-client's bearer and shows an object URL; a plain `<img src>` cannot
-carry one. Backend and page side in
+unless registered with `require_oauth_token=True`, which serves only
+a request carrying the client's bearer. A plain `<img src>` cannot
+carry one, so the UI obtains a short-lived signed URL with the bearer
+and gives that to `src`. Backend and page side in
 [`python/references/auth-http-routes.md`](../python/references/auth-http-routes.md).
 
 ### Declarative, Not Decorator

@@ -157,9 +157,21 @@ alone, so an MCP host in the cloud reaches it through a tunnel the
 user runs themselves, in their own shell; do not start one for them.
 Tell them:
 
-1. Run a tunnel to the dashboard's port, for example
-   `cloudflared tunnel --url http://127.0.0.1:9871`, and read the
-   `https://<name>.trycloudflare.com` address it prints.
+1. Run a Cloudflare quick tunnel to the dashboard. Under portless it
+   reaches the dashboard by name through the portless proxy, the way
+   the `run` skill's tunnel reaches an application:
+
+   ```sh
+   cloudflared tunnel \
+       --url https://127.0.0.1:443 \
+       --http-host-header dashboard.<app>.localhost \
+       --origin-server-name dashboard.<app>.localhost \
+       --origin-ca-pool ~/.portless/ca.pem
+   ```
+
+   (`443` is `PORTLESS_PORT` if the user set it.) Without portless,
+   `cloudflared tunnel --url http://127.0.0.1:9871`. Either way, read
+   the `https://<name>.trycloudflare.com` address it prints.
 2. Add `https://<name>.trycloudflare.com/mcp/` as a custom MCP
    connector in Claude or ChatGPT; signing in completes by itself.
 
