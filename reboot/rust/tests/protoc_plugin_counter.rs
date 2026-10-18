@@ -208,15 +208,18 @@ fn counter_cargo_build_helper_executes_durable_adapters_in_a_downstream_fixture(
     std::fs::write(
         fixture.join("src/constructor_child.rs"),
         include_str!("fixtures/generated_constructor_child.rs"),
-    ).unwrap();
+    )
+    .unwrap();
     std::fs::write(
         fixture.join("src/external_constructor_route.rs"),
         include_str!("fixtures/generated_external_constructor_route.rs"),
-    ).unwrap();
+    )
+    .unwrap();
     std::fs::write(
         fixture.join("src/external_constructor_tasks.rs"),
         include_str!("fixtures/generated_external_constructor_tasks.rs"),
-    ).unwrap();
+    )
+    .unwrap();
     std::fs::write(
         fixture.join("src/lib.rs"),
         r#"// Generated Tonic APIs intentionally return tonic::Status (including rich details).
@@ -4818,6 +4821,7 @@ async fn generated_transaction_client_reroutes_through_legacy_application_placem
     .unwrap();
 
     let status = Command::new("cargo")
+        .env_remove("CARGO_TARGET_DIR")
         .arg("test")
         .arg("--offline")
         .arg("--")
@@ -4827,11 +4831,19 @@ async fn generated_transaction_client_reroutes_through_legacy_application_placem
         .unwrap();
     assert!(status.success());
 
-    if std::env::var_os("RBT_STRICT_GENERATED_CLIPPY").as_deref()
-        == Some(std::ffi::OsStr::new("1"))
+    if std::env::var_os("RBT_STRICT_GENERATED_CLIPPY").as_deref() == Some(std::ffi::OsStr::new("1"))
     {
         let lint = Command::new("cargo")
-            .args(["clippy", "--locked", "--offline", "--all-targets", "--", "-D", "warnings"])
+            .env_remove("CARGO_TARGET_DIR")
+            .args([
+                "clippy",
+                "--locked",
+                "--offline",
+                "--all-targets",
+                "--",
+                "-D",
+                "warnings",
+            ])
             .current_dir(&fixture)
             .status()
             .unwrap();
@@ -4857,6 +4869,7 @@ async fn generated_transaction_client_reroutes_through_legacy_application_placem
     );
     std::fs::write(&build_path, format!("{prefix}{mutation}")).unwrap();
     let output = Command::new("cargo")
+        .env_remove("CARGO_TARGET_DIR")
         .args(["check", "--offline"])
         .current_dir(&fixture)
         .output()
@@ -4980,6 +4993,7 @@ mod tests {
     .unwrap();
 
     let status = Command::new("cargo")
+        .env_remove("CARGO_TARGET_DIR")
         .arg("test")
         .arg("--offline")
         .arg("--")
