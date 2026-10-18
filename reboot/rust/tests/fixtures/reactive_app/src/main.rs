@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 use prost::Message;
 use reboot::{
     application_host::ApplicationHost, database_proto as db, runtime::DatabaseActorStore,
