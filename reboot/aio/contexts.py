@@ -1217,6 +1217,8 @@ class WriterContext(Context):
 class TransactionContext(Context):
     """Call context for a transaction call."""
 
+    request_fingerprint: Optional[bytes]
+
     def __init__(
         self,
         *,
@@ -1271,6 +1273,8 @@ class TransactionContext(Context):
             task=task,
             effect_validation=effect_validation,
         )
+
+        self.request_fingerprint = None
 
     @property
     def exclusive(self) -> bool:

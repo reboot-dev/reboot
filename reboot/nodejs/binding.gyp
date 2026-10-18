@@ -51,7 +51,7 @@
                                         "python_bin_dir":
                                             "<!(<(python3) -c \"import sysconfig; print(sysconfig.get_path('scripts', scheme='posix_prefix'))\")",
                                         "python3_config":
-                                            "<(python_bin_dir)/python3.10-config"
+                                            "<!(<(python3) -c \"import sysconfig; print(sysconfig.get_config_var('BINDIR') + '/python' + sysconfig.get_config_var('py_version_short') + '-config')\")"
                                     },
                                 "include_dirs":
                                     [
