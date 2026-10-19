@@ -75,6 +75,9 @@ class OAuthResourceHookTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 harness.claims(tokens["access_token"])["aud"], FOREIGN
             )
+            # The response says who signed in, for a client that
+            # cannot read the token.
+            self.assertEqual(tokens["sub"], self.requests[0].user_id)
             # Such a token is good at the resource, not here: the
             # server's own verifiers reject it.
             self.assertIsNone(

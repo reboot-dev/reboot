@@ -686,12 +686,19 @@ class OAuthServer:
         # we propagate it.
         if self._authenticated is not None:
             await self._authenticated(context, user_id, claims)
-        return {
+        response = {
             "access_token": access_token,
             "token_type": "bearer",
             "expires_in": self._access_token_ttl_seconds,
             "refresh_token": refresh_token,
         }
+        if resource is not None and decision is not None:
+            # A token for another resource is opaque to the client
+            # that holds it, which cannot verify this server's
+            # signature; the response, which arrives over TLS from
+            # this server, tells it who signed in.
+            response["sub"] = user_id
+        return response
 
     def _set_session_cookies(
         self,

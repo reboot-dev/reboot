@@ -46,6 +46,9 @@ class OAuthResourceTest(unittest.IsolatedAsyncioTestCase):
                 harness.claims(tokens["refresh_token"])["resource"],
                 FOREIGN + "/mcp",
             )
+            # Without a hook the token stays this server's, and the
+            # response says nothing a token for this server would not.
+            self.assertNotIn("sub", tokens)
             response = await harness.refresh(
                 client,
                 client_id=client_id,
