@@ -1,5 +1,5 @@
 //! Rust-only local reactive readers. One trusted host owns all mutations to
-//! the sidecar; optional bounded one-hop local dependencies, no distributed watch
+//! the sidecar; optional bounded transitive local dependencies, no distributed watch
 //! or Python React wire.
 //! Invalidations follow acknowledged durable commits, not polling. Streams are
 //! pull-driven: no spawned subscriber children, one coalescing revision cursor,
@@ -175,7 +175,7 @@ include!("reactive_group_tests.rs");
 /// An immutable-at-installation allowlist of at most 64 exact local actors.
 /// Each entry keeps its generated binding, authorization, gate and stream scope.
 /// Independent routing by default; opt-in database reader composition tracks
-/// at most eight direct same-endpoint dependencies per evaluation.
+/// at most eight transitive same-endpoint dependencies per evaluation.
 #[derive(Clone)]
 pub struct LocalReaderRegistry {
     entries: std::collections::BTreeMap<String, Arc<dyn RegisteredReader>>,
@@ -187,7 +187,11 @@ pub struct LocalReaderRegistry {
 trait RegisteredReader: Send + Sync {
     fn owner(&self) -> LocalReaderOwner;
     fn matches_unary_methods(&self, identity: &Arc<()>, names: &[&str]) -> bool;
-    async fn read_registered(&self, request: Request<wire::Query>) -> Result<Vec<u8>, Status>;
+    async fn read_registered(
+        &self,
+        request: Request<wire::Query>,
+        context: LocalReaderContext,
+    ) -> Result<Vec<u8>, Status>;
     async fn subscribe_registered(
         &self,
         request: Request<wire::Query>,
@@ -199,8 +203,12 @@ trait RegisteredReader: Send + Sync {
 }
 #[tonic::async_trait]
 impl<B: ReaderBinding> RegisteredReader for LocalReaderService<B> {
-    async fn read_registered(&self, request: Request<wire::Query>) -> Result<Vec<u8>, Status> {
-        self.binding.read(request).await
+    async fn read_registered(
+        &self,
+        request: Request<wire::Query>,
+        context: LocalReaderContext,
+    ) -> Result<Vec<u8>, Status> {
+        self.binding.read_with_context(request, context).await
     }
     fn owner(&self) -> LocalReaderOwner {
         self.owner.clone()
@@ -253,8 +261,8 @@ impl LocalReaderRegistry {
         self.entries.insert(key, Arc::new(service));
         Ok(())
     }
-    /// Enable one-hop reads of registered actors, with at most eight dependencies
-    /// per evaluation. This is not an atomic cross-actor snapshot.
+    /// Enable acyclic transitive reads of registered actors: at most eight unique
+    /// dependencies and 64 calls per evaluation. This is not an atomic cross-actor snapshot.
     pub fn with_reader_composition(mut self) -> Self {
         self.composition = true;
         self
@@ -549,12 +557,14 @@ struct ReadDependency {
 #[derive(Clone)]
 #[doc(hidden)]
 pub struct SnapshotReader;
-/// Evaluation-scoped, one-hop local read capability. It cannot create actors,
-/// forward transaction authority, or recursively invoke composed handlers.
+/// Evaluation-scoped transitive local read capability. It cannot create actors
+/// or forward transaction authority. Cycles fail before invoking the target;
+/// all nested calls share the root dependency set, budget and cancellation.
 #[derive(Default)]
 struct EvaluationState {
     closed: bool,
     reads: usize,
+    calls: usize,
     failure: Option<Status>,
 }
 struct Evaluation {
@@ -606,6 +616,14 @@ impl DependencyReadGuard {
             if let Some(failure) = &state.failure {
                 return Err(failure.clone());
             }
+            if state.calls == 64 {
+                let failure = Status::resource_exhausted(
+                    "composed evaluation capacity is 64 dependency calls",
+                );
+                state.failure = Some(failure.clone());
+                return Err(failure);
+            }
+            state.calls += 1;
             state.reads += 1;
         }
         Ok(Self {
@@ -650,7 +668,7 @@ impl Drop for DependencyReadGuard {
 #[derive(Clone)]
 pub struct LocalReaderContext {
     entries: Arc<ReaderEntries>,
-    root: String,
+    path: Arc<Vec<String>>,
     metadata: tonic::metadata::MetadataMap,
     scope: ReaderScope,
     trusted: Option<crate::application_host::TrustedApplicationContext>,
@@ -707,10 +725,9 @@ impl LocalReaderContext {
         body: Q,
     ) -> Result<R, Status> {
         self.check()?;
-        self.check()?;
-        if state_ref == self.root {
+        if self.path.iter().any(|ancestor| ancestor == state_ref) {
             return Err(Status::failed_precondition(
-                "composed reader cannot read its own root",
+                "composed reader dependency cycle",
             ));
         }
         let entry = self
@@ -769,14 +786,20 @@ impl LocalReaderContext {
                 .map_err(|_| Status::invalid_argument("invalid dependency actor reference"))?,
         );
         request.extensions_mut().insert(scope.clone());
+        request.extensions_mut().insert(SnapshotReader);
         if let Some(trusted) = &self.trusted {
             request.extensions_mut().insert(trusted.clone());
         }
+        let mut child = self.clone();
+        let mut path = self.path.as_ref().clone();
+        path.push(state_ref.to_owned());
+        child.path = Arc::new(path);
+        // The generated snapshot envelope releases its shared actor admission
+        // after load/authorization, before invoking any transitive dependency.
         let read = async {
-            let _lease = owner.inner.gate.shared().await;
             self.check()?;
             scope.check()?;
-            entry.read_registered(request).await
+            entry.read_registered(request, child).await
         };
         let used_dependencies = self
             .dependencies
@@ -956,7 +979,7 @@ impl<B: ReaderBinding> Cursor<B> {
             }
             let context = self.resolver.as_ref().map(|entries| LocalReaderContext {
                 entries: entries.clone(),
-                root: self.owner.inner.state_ref.clone(),
+                path: Arc::new(vec![self.owner.inner.state_ref.clone()]),
                 metadata: self.metadata.clone(),
                 scope: self.scope.clone(),
                 trusted: self

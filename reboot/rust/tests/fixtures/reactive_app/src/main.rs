@@ -14,6 +14,7 @@ pub mod generated {
 mod secured_user;
 mod secured_user_transactions;
 mod secured_user_workflows;
+mod transitive;
 struct Counter;
 struct RequireHost;
 impl reboot::auth::Authorizer for RequireHost {
@@ -71,6 +72,35 @@ impl generated::CounterMethodsDatabaseHandler for Counter {
             padding: vec![7; 65536],
         })
     }
+    async fn select_next(
+        &self,
+        state: &mut proto::Counter,
+        request: proto::Select,
+    ) -> Result<proto::Empty, tonic::Status> {
+        state.next = request.next;
+        Ok(proto::Empty {})
+    }
+    async fn query_with_reader_context(
+        &self,
+        state: &proto::Counter,
+        request: proto::Empty,
+        context: reboot::reactive::LocalReaderContext,
+    ) -> Result<proto::Value, tonic::Status> {
+        transitive::QUERY_CALLS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if state.value < 0 {
+            return Err(tonic::Status::permission_denied("transitive leaf denied"));
+        }
+        if state.next.is_empty() {
+            self.query(state, request).await
+        } else {
+            generated::CounterMethodsReactiveClient::query_read_local(
+                &context,
+                &state.next,
+                request,
+            )
+            .await
+        }
+    }
     async fn refuse(
         &self,
         state: &proto::Counter,
@@ -103,6 +133,7 @@ async fn value(s: &mut reboot::reactive::TypedSubscription<proto::Value, tonic::
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match arg(1).as_str() {
+        command if command.starts_with("transitive-") => transitive::run(command).await?,
         command if command.starts_with("user-txn-") => {
             secured_user_transactions::run(command).await?
         }

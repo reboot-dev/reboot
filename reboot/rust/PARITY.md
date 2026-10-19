@@ -12,6 +12,54 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Bounded transitive generated reader composition (2026-10-19)
+
+Generated `*ReactiveClient::*_read_local` calls now execute the registered target's
+context-aware generated reader handler, rather than silently falling back to its
+non-composed handler. A -> B -> C therefore returns C's typed response and records
+B and C in the root evaluation's watch set. The same engine serves subscribed
+reads and ordinary generated unary readers with an attached composed registry.
+Generated external writers continue to execute the normal durable writer envelope;
+their acknowledged commits wake dependent roots, not unrelated roots. This is an
+executable same-host vertical, **not a generated WeakReference identity shell**.
+
+Source map at base `1cd2758f4695943f2cf9adb98ba08822ff45cfda`:
+
+| Python observable contract | Rust implementation / bounded difference |
+| --- | --- |
+| `templates/reboot.py.j2:5101-5177`: WeakReference targets a canonical actor and binds reader/writer stubs to a context | Existing generated target-specific external writers and evaluation-scoped typed local readers; no general WorkflowContext writer/WeakReference yet |
+| `aio/state_managers.py:4495-4615`: state watch plus transitive query changes trigger reevaluation, teardown cancels owned work | `reactive.rs` shares dependency watches and evaluation cancellation through nested generated handlers; no distributed React.Query protocol |
+| `aio/contexts.py:635-713`: avoid missed updates, retire unused queries, cancel every owned query | Subscribe-before-load revisions retained from first read; fresh root-wide dependency set per evaluation, retired dependencies stop invalidating; stream Drop closes evaluation |
+| generated immutable reader snapshot / authorization | SnapshotReader takes shared actor admission through load+authorization, releases it before the nested call; every target reauthorizes with the original credentials and host-trusted identity |
+
+All nested branches share at most eight unique same-endpoint dependency actors
+and **64 total dependency calls per evaluation** (including repeated DAG edges).
+Each branch carries an immutable ancestor path: self/ancestor cycles fail before
+target dispatch, while sibling/diamond reuse is permitted. Caught dependency errors,
+cancelled reads, uncertainty and escaped evaluation contexts remain fail-closed.
+The shared snapshot admission is never retained across a nested handler call, so
+FIFO writers cannot form a cross-actor shared-lease cycle.
+
+Acceptance: `tests/fixtures/reactive_app/prove_transitive.py` drives actual generated
+Tonic clients/handlers and the existing immutable C++ Database/RocksDB binary. It
+proves unchanged output remains pending, relevant leaf writers wake, unrelated and
+retired writers do not even reevaluate the root (handler counters), transitive
+errors close the stream, disconnect releases admission, cycles reject, and ordinary
+unary readers compose. It restarts both host and C++ Database against retained
+RocksDB, reconnects, rebuilds dependencies from durable actor selection, then
+observes another relevant writer. The negative control reinstates the old
+non-context-aware dispatch and fails with actual `0 != 7`, not a textual assertion.
+See `tests/evidence/transitive-readers-20261019.json` for source/binary pins and
+actual results. No new C++ build or C++ source attestation is claimed.
+
+**Remaining architecture gates:** routed remote reader/watch ownership and failure
+propagation, canonical React protocol, WorkflowContext callable writers with durable
+idempotency/effect integration, and pending-wait/task recovery. This slice does not
+persist subscriptions, resume a parked wait across restart, add generic reactive
+retry helpers, provide an atomic multi-actor snapshot, or establish full SDK parity.
+Earlier one-hop entries below describe their historical qualification boundary;
+this section supersedes their one-hop restriction only for this bounded local engine.
+
 ## Public Rust CLI/native acceptance (CCX43, 2026-10-18)
 
 The full fail-closed public acceptance owner completed successfully on a fresh
@@ -3015,8 +3063,9 @@ Inbound transaction/recovery authority must not be inferred from user headers.
   guarantee recoverable rollback of eager nested SortedMap effects either.
 - **C2:** Rust-native Queue, OrderedMap, PubSub, presence, OAuth and ciphertext
   libraries are absent; this does not imply Rust cannot call existing services.
-- **R1:** local exact-endpoint one-hop dependencies lack transitive/distributed
-  invalidation; Python reactive calls also exclude transactions.
+- **R1:** local exact-endpoint bounded acyclic transitive invalidation exists;
+  distributed invalidation and workflow callable writer integration remain absent.
+  Python reactive calls also exclude transactions.
 - **R2:** LocalReaders.Subscribe and explicit fresh-baseline reconnect exist;
   canonical React/browser protocol and general streaming/state-reader support
   are separate missing surfaces, not absence of subscriptions.
@@ -3070,7 +3119,7 @@ satisfy that gate. Later feature sections retain their individual recorded evide
 | Transactions | Legacy durable coordinator/participant paths, bounded supervised chains/star and opt-in registered shared-root typed errors over existing writers | General nested snapshots, transactional constructors/tasks, reentrancy, intersecting subtrees, migration |
 | Tasks | Durable scheduled tasks, typed results/Wait with opt-in result policy, recovery, local admin list/stream and scheduled-workflow cancellation | Transactional targets, running/ordinary/distributed cancellation, aggregation, broad retry and dispatcher fencing |
 | Workflows | Finite typed named steps, bounded nested indexed replay, saved reader observations and finite Continue/Break, typed declared business terminals; explicit local-body resumption | Python unbounded Task cursor/GC/Break, cross-actor composition, framework failure isolation |
-| Reactive readers | Typed bounded database/workflow/transaction-service ordinary reader subscriptions, plain-database/workflow-bearing/mixed-transaction external unary composition, allowlisted multi-actor routing, bounded one-hop composition, commit invalidation and explicit same-query reconnect | Transactional-context composition, remote/transitive invalidation, transparent reconnect/durable resume, streaming/transaction RPC subscriptions |
+| Reactive readers | Typed bounded database/workflow/transaction-service ordinary reader subscriptions, plain-database/workflow-bearing/mixed-transaction external unary composition, allowlisted multi-actor routing, bounded acyclic transitive local composition, commit invalidation and explicit same-query reconnect | Transactional-context composition, remote invalidation, workflow callable writers, transparent reconnect/durable resume, streaming/transaction RPC subscriptions |
 | SortedMap | Canonical empty constructor, serial same-host app/map transactions, same-root session reopening, live keyset pages and atomic multi-entry approval transfer | Public inbound adapter, nested/reusable siblings, distributed collection lifecycle |
 
 ## Local app development

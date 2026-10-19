@@ -64,11 +64,25 @@ mod composition_tests {
             if let Some(delay) = request.extensions().get::<SlowCallback>() {
                 std::thread::sleep(delay.0);
             }
+            // Model the generated SnapshotReader envelope: admission protects
+            // loading this actor, never the subsequent nested dependency call.
+            let reference = request
+                .metadata()
+                .get("x-reboot-state-ref")
+                .unwrap()
+                .to_str()
+                .unwrap();
+            let snapshot = self
+                .store
+                .actor_gate("unit.Compose", reference)
+                .shared()
+                .await;
             let selected = self.selected.lock().unwrap().clone();
             *self.escaped.lock().unwrap() = Some(context.clone());
             if selected.is_empty() {
                 return self.read(request).await;
             }
+            drop(snapshot);
             let mut value = 0;
             for target in selected {
                 value += context
@@ -157,6 +171,94 @@ mod composition_tests {
             .unwrap()
             .unwrap()?;
         Ok(Value::decode(item.response.as_slice()).unwrap().value)
+    }
+    #[tokio::test]
+    async fn transitive_diamond_is_not_a_cycle_and_capacity_is_root_wide() {
+        let actors = (0..10)
+            .map(|_| actor("http://127.0.0.1:9"))
+            .collect::<Vec<_>>();
+        let root = &actors[0];
+        let left = &actors[1];
+        let right = &actors[2];
+        let leaf = &actors[3];
+        leaf.value.store(6, Ordering::SeqCst);
+        *root.selected.lock().unwrap() = vec![
+            left.owner.inner.state_ref.clone(),
+            right.owner.inner.state_ref.clone(),
+        ];
+        for branch in [left, right] {
+            *branch.selected.lock().unwrap() = vec![leaf.owner.inner.state_ref.clone()];
+        }
+        let (registry, _) = registry(&actors.iter().collect::<Vec<_>>()).await;
+        let mut stream = registry.subscribe(query(root)).await.unwrap().into_inner();
+        assert_eq!(next(&mut stream).await.unwrap(), 12);
+        leaf.value.store(7, Ordering::SeqCst);
+        leaf.owner.inner.gate.committed();
+        assert_eq!(next(&mut stream).await.unwrap(), 14);
+        drop(stream);
+        // Nine nested distinct dependencies must fail at the existing global
+        // eight-actor bound, not allocate a fresh budget at every hop.
+        for pair in actors.windows(2) {
+            *pair[0].selected.lock().unwrap() = vec![pair[1].owner.inner.state_ref.clone()];
+        }
+        let mut stream = registry.subscribe(query(root)).await.unwrap().into_inner();
+        assert_eq!(
+            next(&mut stream).await.unwrap_err().code(),
+            tonic::Code::ResourceExhausted
+        );
+        assert_eq!(actors[9].calls.load(Ordering::SeqCst), 0);
+        assert_eq!(registry.active_subscriptions(), 0);
+    }
+    #[tokio::test]
+    async fn transitive_leaf_wakes_retirement_cycles_and_global_call_budget() {
+        let root = actor("http://127.0.0.1:9");
+        let branch = actor("http://127.0.0.1:9");
+        let leaf = actor("http://127.0.0.1:9");
+        let unrelated = actor("http://127.0.0.1:9");
+        leaf.value.store(7, Ordering::SeqCst);
+        *root.selected.lock().unwrap() = vec![branch.owner.inner.state_ref.clone()];
+        *branch.selected.lock().unwrap() = vec![leaf.owner.inner.state_ref.clone()];
+        let (registry, _) = registry(&[&root, &branch, &leaf, &unrelated]).await;
+        let mut stream = registry.subscribe(query(&root)).await.unwrap().into_inner();
+        assert_eq!(next(&mut stream).await.unwrap(), 7);
+        unrelated.owner.inner.gate.committed();
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(20), stream.next())
+                .await
+                .is_err()
+        );
+        assert_eq!(leaf.calls.load(Ordering::SeqCst), 1);
+        leaf.value.store(8, Ordering::SeqCst);
+        leaf.owner.inner.gate.committed();
+        assert_eq!(next(&mut stream).await.unwrap(), 8);
+        // A branch update retires the formerly transitive leaf.
+        branch.selected.lock().unwrap().clear();
+        branch.value.store(9, Ordering::SeqCst);
+        branch.owner.inner.gate.committed();
+        assert_eq!(next(&mut stream).await.unwrap(), 9);
+        leaf.owner.inner.gate.committed();
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(20), stream.next())
+                .await
+                .is_err()
+        );
+        drop(stream);
+        *branch.selected.lock().unwrap() = vec![root.owner.inner.state_ref.clone()];
+        let mut cycle = registry.subscribe(query(&root)).await.unwrap().into_inner();
+        assert_eq!(
+            next(&mut cycle).await.unwrap_err().code(),
+            tonic::Code::FailedPrecondition
+        );
+        assert_eq!(registry.active_subscriptions(), 0);
+        drop(cycle);
+        // Repeated DAG edges cannot evade the per-root call budget.
+        *branch.selected.lock().unwrap() = vec![leaf.owner.inner.state_ref.clone(); 64];
+        let mut budget = registry.subscribe(query(&root)).await.unwrap().into_inner();
+        assert_eq!(
+            next(&mut budget).await.unwrap_err().code(),
+            tonic::Code::ResourceExhausted
+        );
+        assert_eq!(registry.active_subscriptions(), 0);
     }
     #[tokio::test]
     async fn selection_dependency_changes_retirement_and_closed_scope() {
@@ -429,7 +531,7 @@ mod composition_tests {
         let (registry, _) = registry(&[&root, &source]).await;
         let context = LocalReaderContext {
             entries: Arc::new(registry.entries.clone()),
-            root: root.owner.inner.state_ref.clone(),
+            path: Arc::new(vec![root.owner.inner.state_ref.clone()]),
             metadata: query(&root).metadata().clone(),
             scope: ReaderScope::new(root.owner.lifecycle().unwrap()),
             trusted: None,
