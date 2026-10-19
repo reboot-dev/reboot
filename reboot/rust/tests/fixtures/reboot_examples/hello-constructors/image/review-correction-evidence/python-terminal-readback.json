@@ -1,0 +1,227 @@
+{
+  "Id": "04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3",
+  "Created": "2026-10-19T18:04:46.116489102Z",
+  "Path": "/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin/python3",
+  "Args": [
+    "/usr/local/bin/python-entrypoint.py"
+  ],
+  "State": {
+    "Status": "exited",
+    "Running": false,
+    "Paused": false,
+    "Restarting": false,
+    "OOMKilled": false,
+    "Dead": false,
+    "Pid": 0,
+    "ExitCode": 143,
+    "Error": "",
+    "StartedAt": "2026-10-19T18:05:02.068708811Z",
+    "FinishedAt": "2026-10-19T18:05:10.985947696Z"
+  },
+  "Image": "sha256:3e48dc3ed3642bd468e4a700acf8bdedb95fee038fda13c0749f01e381f67194",
+  "ResolvConfPath": "/var/lib/docker/containers/04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3/resolv.conf",
+  "HostnamePath": "/var/lib/docker/containers/04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3/hostname",
+  "HostsPath": "/var/lib/docker/containers/04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3/hosts",
+  "LogPath": "/var/lib/docker/containers/04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3/04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3-json.log",
+  "Name": "/hello-image-review-correction-python-1",
+  "RestartCount": 0,
+  "Driver": "overlayfs",
+  "Platform": "linux",
+  "MountLabel": "",
+  "ProcessLabel": "",
+  "AppArmorProfile": "docker-default",
+  "ExecIDs": null,
+  "HostConfig": {
+    "Binds": [
+      "hello-image-review-correction_python-state:/state:rw"
+    ],
+    "ContainerIDFile": "",
+    "LogConfig": {
+      "Type": "json-file",
+      "Config": {}
+    },
+    "NetworkMode": "hello-image-review-correction_private",
+    "PortBindings": {},
+    "RestartPolicy": {
+      "Name": "no",
+      "MaximumRetryCount": 0
+    },
+    "AutoRemove": false,
+    "VolumeDriver": "",
+    "VolumesFrom": null,
+    "ConsoleSize": [
+      0,
+      0
+    ],
+    "CapAdd": null,
+    "CapDrop": null,
+    "CgroupnsMode": "private",
+    "Dns": null,
+    "DnsOptions": null,
+    "DnsSearch": null,
+    "ExtraHosts": [],
+    "GroupAdd": null,
+    "IpcMode": "private",
+    "Cgroup": "",
+    "Links": null,
+    "OomScoreAdj": 0,
+    "PidMode": "",
+    "Privileged": false,
+    "PublishAllPorts": false,
+    "ReadonlyRootfs": false,
+    "SecurityOpt": null,
+    "UTSMode": "",
+    "UsernsMode": "",
+    "ShmSize": 67108864,
+    "Runtime": "runc",
+    "Isolation": "",
+    "CpuShares": 0,
+    "Memory": 0,
+    "NanoCpus": 0,
+    "CgroupParent": "",
+    "BlkioWeight": 0,
+    "BlkioWeightDevice": null,
+    "BlkioDeviceReadBps": null,
+    "BlkioDeviceWriteBps": null,
+    "BlkioDeviceReadIOps": null,
+    "BlkioDeviceWriteIOps": null,
+    "CpuPeriod": 0,
+    "CpuQuota": 0,
+    "CpuRealtimePeriod": 0,
+    "CpuRealtimeRuntime": 0,
+    "CpusetCpus": "",
+    "CpusetMems": "",
+    "Devices": null,
+    "DeviceCgroupRules": null,
+    "DeviceRequests": null,
+    "MemoryReservation": 0,
+    "MemorySwap": 0,
+    "MemorySwappiness": null,
+    "OomKillDisable": null,
+    "PidsLimit": null,
+    "Ulimits": null,
+    "CpuCount": 0,
+    "CpuPercent": 0,
+    "IOMaximumIOps": 0,
+    "IOMaximumBandwidth": 0,
+    "MaskedPaths": [
+      "/proc/acpi",
+      "/proc/asound",
+      "/proc/interrupts",
+      "/proc/kcore",
+      "/proc/keys",
+      "/proc/latency_stats",
+      "/proc/sched_debug",
+      "/proc/scsi",
+      "/proc/timer_list",
+      "/proc/timer_stats",
+      "/sys/devices/virtual/powercap",
+      "/sys/firmware"
+    ],
+    "ReadonlyPaths": [
+      "/proc/bus",
+      "/proc/fs",
+      "/proc/irq",
+      "/proc/sys",
+      "/proc/sysrq-trigger"
+    ],
+    "Init": true
+  },
+  "Storage": {
+    "RootFS": {
+      "Snapshot": {
+        "Name": "overlayfs"
+      }
+    }
+  },
+  "Mounts": [
+    {
+      "Type": "volume",
+      "Name": "hello-image-review-correction_python-state",
+      "Source": "/var/lib/docker/volumes/hello-image-review-correction_python-state/_data",
+      "Destination": "/state",
+      "Driver": "local",
+      "Mode": "rw",
+      "RW": true,
+      "Propagation": ""
+    }
+  ],
+  "Config": {
+    "Hostname": "04c4e5cae1d3",
+    "Domainname": "",
+    "User": "",
+    "AttachStdin": false,
+    "AttachStdout": true,
+    "AttachStderr": true,
+    "Tty": false,
+    "OpenStdin": false,
+    "StdinOnce": false,
+    "Env": [
+      "PATH=/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin:/usr/local/bin:/usr/bin:/bin",
+      "PYTHONPATH=/example/hello-constructors/backend/api",
+      "REBOOT_LOCAL_ENVOY_MODE=executable"
+    ],
+    "Cmd": null,
+    "Image": "sha256:3e48dc3ed3642bd468e4a700acf8bdedb95fee038fda13c0749f01e381f67194",
+    "Volumes": null,
+    "WorkingDir": "/example/hello-constructors",
+    "Entrypoint": [
+      "/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin/python3",
+      "/usr/local/bin/python-entrypoint.py"
+    ],
+    "Labels": {
+      "com.docker.compose.config-hash": "75b6aa16663b792ad618a17fb4e89bec9cd53c0110cab961577e0d3d697c88ca",
+      "com.docker.compose.container-number": "1",
+      "com.docker.compose.depends_on": "",
+      "com.docker.compose.image": "sha256:47994f8d8011ff1b1038a6e423e37b2a5aa67d9085fd5abb78329f4b88e84a9f",
+      "com.docker.compose.oneoff": "False",
+      "com.docker.compose.project": "hello-image-review-correction",
+      "com.docker.compose.project.config_files": "/home/benchbuild/.cache/hello-image-review-src/reboot/rust/tests/fixtures/reboot_examples/hello-constructors/image/compose.review-correction.yaml",
+      "com.docker.compose.project.working_dir": "/home/benchbuild/.cache/hello-image-review-src/reboot/rust/tests/fixtures/reboot_examples/hello-constructors/image",
+      "com.docker.compose.service": "python",
+      "com.docker.compose.version": "5.6.0",
+      "org.opencontainers.image.version": "24.04"
+    },
+    "StopTimeout": 30
+  },
+  "NetworkSettings": {
+    "SandboxID": "",
+    "SandboxKey": "",
+    "Ports": {},
+    "Networks": {
+      "hello-image-review-correction_private": {
+        "IPAMConfig": null,
+        "Links": null,
+        "Aliases": [
+          "hello-image-review-correction-python-1",
+          "python"
+        ],
+        "DriverOpts": null,
+        "GwPriority": 0,
+        "NetworkID": "6489626d4cf66048432708150e0d0bb012cba1d8706d5548a4b43b905257c3d2",
+        "EndpointID": "",
+        "Gateway": "",
+        "IPAddress": "",
+        "MacAddress": "",
+        "IPPrefixLen": 0,
+        "IPv6Gateway": "",
+        "GlobalIPv6Address": "",
+        "GlobalIPv6PrefixLen": 0,
+        "DNSNames": [
+          "hello-image-review-correction-python-1",
+          "python",
+          "04c4e5cae1d3"
+        ]
+      }
+    }
+  },
+  "ImageManifestDescriptor": {
+    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+    "digest": "sha256:47994f8d8011ff1b1038a6e423e37b2a5aa67d9085fd5abb78329f4b88e84a9f",
+    "size": 1623,
+    "platform": {
+      "architecture": "amd64",
+      "os": "linux"
+    }
+  }
+}
