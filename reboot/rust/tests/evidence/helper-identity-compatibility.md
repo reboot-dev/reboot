@@ -31,6 +31,16 @@ The generated `WeakReference` identity/store/handler shell is removed. It had no
 callable read/write/schedule/spawn behavior, despite documentation saying those
 methods were generated. Existing untyped `ActorRef` remains identity-only.
 
+The new `retry_reactively_until` and `retry` wrappers are removed rather than
+preserving unsupported reactive-wait or durable-error-memoization promises.
+Use the existing descriptor-bound `wait_reader` for supported same-actor predicate
+waits; this does not add general Python reactive/retry parity. `until_changes`
+and `until_truthy` are manually driven comparisons restricted to top-level finite
+scopes (at most 1024 iterations), not reactive waiters. `memoize`/`memoize_unit`
+cache successful completion only and can rerun a callback after failure or a
+crash before acknowledgement; non-idempotent effects must not rely on them for
+at-most-once delivery.
+
 ## Evidence boundary
 
 Unit regressions exercise canonical stored-reference preservation (including
