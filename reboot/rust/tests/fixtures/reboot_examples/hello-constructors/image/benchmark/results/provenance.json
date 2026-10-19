@@ -1,0 +1,65 @@
+{
+  "source_commit": "61476200e5d37dff57a1df8156da710649deabba",
+  "images": [
+    {
+      "tags": [
+        "hello-rust:qualification"
+      ],
+      "id": "sha256:f2b48e8e9ef922b0aadc558c3c4e4c8db0b19ab712fc53f7ed75bf7e6e45fc06",
+      "repo_digests": [
+        "hello-rust@sha256:f2b48e8e9ef922b0aadc558c3c4e4c8db0b19ab712fc53f7ed75bf7e6e45fc06"
+      ],
+      "architecture": "amd64"
+    },
+    {
+      "tags": [
+        "hello-database:qualification"
+      ],
+      "id": "sha256:1a73705b0771f9c861d9ba96509806849423a3d8bbff140b1261da76280460cd",
+      "repo_digests": [
+        "hello-database@sha256:1a73705b0771f9c861d9ba96509806849423a3d8bbff140b1261da76280460cd"
+      ],
+      "architecture": "amd64"
+    },
+    {
+      "tags": [
+        "hello-python:qualification"
+      ],
+      "id": "sha256:3e48dc3ed3642bd468e4a700acf8bdedb95fee038fda13c0749f01e381f67194",
+      "repo_digests": [
+        "hello-python@sha256:3e48dc3ed3642bd468e4a700acf8bdedb95fee038fda13c0749f01e381f67194"
+      ],
+      "architecture": "amd64"
+    }
+  ],
+  "binary_sha256": {
+    "libstdc++.so.6": "1fd75fe70354a416d75aef22bcae68c47bd25d20e2d0568c30b1a9838cf62f11",
+    "probe": "ebbc459a696b44ff7b3ab5291e2f9e6660edc5161167d71aca53b57258731123",
+    "app": "045e853e06d7520a4ae8b3776097b5ed81d501187daceaf4a55fc2315669cf09",
+    "database": "619002c569e9841144a8bbedf4f2ce6a753bb0e6b103af71883d91d43f413803",
+    "libgcc_s.so.1": "d93224d2b0dab4247598be683adca02f5cf00586f99c187579cd7e92058fb7cb"
+  },
+  "python_native_library_sha256": {
+    "rbt.runfiles/com_github_reboot_dev_reboot/reboot/server/libdatabase_native.so": "7272c152f0ccbf890963861452e9eb13f6fe0c7abb2a26e779f2a9988f2ac06b"
+  },
+  "engine_source": "8574ccb0df9893274e69d1a19eca469dad56d779",
+  "python_sdk_source": "8574ccb0df9893274e69d1a19eca469dad56d779",
+  "upstream_example": "5c332a2910122d6035799bfaf2a314bf1de830b8",
+  "base_images": {
+    "ubuntu_amd64": "sha256:a2d43bffc46670d7108bb3c0468c67c5557c4c92e83e1e34cbff1322ad1b94dc",
+    "envoy_amd64": "sha256:f02b483283bf9651c85fe31f943e59496e76a87e54ba70a277d00a8eb7a4328b"
+  },
+  "published_correctness_head": "8d80e66a294d46d197b80d097cf16d258f54c3aa",
+  "remote_review_source_head": "63799f2071c4092cf6a5f3d547e384e2d713f121",
+  "benchmark_source_sha256": {
+    "run.py": "09f6bd3d6b7a6ab50d5c21a508f241145668dd5b5748e33b515e099b657d64ca",
+    "transcript_comparison.py": "894cc0edb7e752fdf7f25451eea1943a1e9f8ef5afd8b2896c5b4f4c2d4ea74b",
+    "shared_probe.py": "51b98988f4162ee29c784c281014ef85004b8427724b99b8623589ad888166ba",
+    "client.py": "e70397be1e722ed01901636292c9f506d5ae4d6ea2f307266c72424ebdf34317"
+  },
+  "qualified_receipt_sha256": "41755844b69fca7dbb99ec577d5cc608665b685a541c8abd24635ad86a7212c3",
+  "schema_sha256": "c144183d68a73783f260886469706b865fcddbb393aae3899808f971ee5717c1",
+  "scope": "Existing immutable qualified images; inherited build provenance, not a fresh hermetic build attestation; no full SDK parity.",
+  "server_id": 171072439,
+  "expiry_unchanged": "2026-10-20 20:46 CEST"
+}
