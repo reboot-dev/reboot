@@ -27,8 +27,11 @@ fn validate_cursor_binding(
     if scope.is_some() || result.type_url != CURSOR_BINDING_TYPE {
         return Err("cursor binding must be a root-scoped typed record".into());
     }
+    if task.method != "Run" {
+        return Err("cursor binding requires canonical Run task".into());
+    }
     let expected = CursorBindingContract {
-        method: task.method.clone(),
+        method: "cursor.v1.AMethods.Run".into(),
         request: task.request.clone(),
         alias: "cursor-proof".into(),
         version: 1,
@@ -48,12 +51,12 @@ mod binding_tests {
     #[test]
     fn only_exact_root_binding_is_accepted() {
         let task = db::Task {
-            method: "cursor.v1.AMethods.Run".into(),
+            method: "Run".into(),
             request: vec![8, 7],
             ..Default::default()
         };
         let binding = CursorBindingContract {
-            method: task.method.clone(),
+            method: "cursor.v1.AMethods.Run".into(),
             request: task.request.clone(),
             alias: "cursor-proof".into(),
             version: 1,
