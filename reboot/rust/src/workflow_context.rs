@@ -1643,6 +1643,25 @@ mod idempotency_key_scope_tests {
         assert_eq!(from_helper, from_key);
     }
     #[tokio::test]
+    async fn checkpoint_key_is_stable_for_same_inputs() {
+        let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
+        let context = build_context(&tasks, task.clone(), &cancel, &attempt, None, Vec::new());
+        let seed = context.task_id().unwrap();
+        let key1 = context.checkpoint_key(seed, "effect", Some("v1"));
+        let key2 = context.checkpoint_key(seed, "effect", Some("v1"));
+        assert_eq!(key1, key2);
+    }
+    #[tokio::test]
+    async fn checkpoint_key_differs_with_vs_without_condition_in_loop() {
+        let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
+        let context = build_context(
+            &tasks, task.clone(), &cancel, &attempt, Some(("loop".to_string(), 3, 1)), Vec::new());
+        let seed = context.task_id().unwrap();
+        let with_condition = context.checkpoint_key(seed, "effect", Some("v1"));
+        let without_condition = context.checkpoint_key(seed, "effect", None);
+        assert_ne!(with_condition, without_condition);
+    }
+    #[tokio::test]
     async fn sleep_waits_for_duration() {
         let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
         let context = build_context(&tasks, task, &cancel, &attempt, None, Vec::new());
@@ -2071,7 +2090,14 @@ impl<'a> WorkflowContext<'a> {
         }
     }
 
-    pub(crate) fn checkpoint_key(
+    /// Build a deterministic checkpoint key from a seed, alias, and optional
+    /// condition.
+    ///
+    /// This is the low-level primitive behind `make_idempotency_key` and the
+    /// durable `at_least_once` helpers. Making it public lets user code build
+    /// custom idempotency keys that are compatible with the built-in storage
+    /// layout.
+    pub fn checkpoint_key(
         &self,
         seed: uuid::Uuid,
         alias: &str,
