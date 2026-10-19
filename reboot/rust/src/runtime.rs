@@ -9481,7 +9481,10 @@ mod tests {
             for same_key in [false, true] {
                 let (address, fake, server) = start_database().await;
                 let a = DatabaseActorStore::connect(&address).await.unwrap();
-                let b = DatabaseActorStore::connect(&address).await.unwrap();
+                let mut b = DatabaseActorStore::connect(&address).await.unwrap();
+                // Model independent processes: the transport remains the same
+                // Database, but no process-global actor gate can serialize them.
+                b.endpoint = format!("{address}/independent-process-gate");
                 let barrier = Arc::new(tokio::sync::Barrier::new(2));
                 let call = |store: DatabaseActorStore, key, barrier: Arc<tokio::sync::Barrier>| async move {
                     let request = ExternalContext::new("competing-constructors")
@@ -9496,7 +9499,7 @@ mod tests {
                                 move |state, request| {
                                     Box::pin(async move {
                                         // Independent stores both observed absence.
-                                        barrier.wait().await;
+                                        tokio::time::timeout(std::time::Duration::from_secs(3), barrier.wait()).await.expect("both independent handlers must reach CreateActor boundary");
                                         state.value = request.amount;
                                         Ok(proto::CounterValue { value: state.value })
                                     })
@@ -9511,7 +9514,7 @@ mod tests {
                                 move |state, request| {
                                     Box::pin(async move {
                                         // Independent stores both observed absence.
-                                        barrier.wait().await;
+                                        tokio::time::timeout(std::time::Duration::from_secs(3), barrier.wait()).await.expect("both independent handlers must reach CreateActor boundary");
                                         state.value = request.amount;
                                         Ok(proto::CounterValue { value: state.value })
                                     })
