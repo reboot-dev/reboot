@@ -1,0 +1,77 @@
+# Access policy
+
+An **access policy** decides who may reach your application at all.
+It stands in front of every route and every RPC: a visitor who has
+not been let in sees nothing of your application, not even its own
+sign-in page.
+
+That makes it different from [sign-in](/users/oauth), which says who
+your application's _users_ are. Sign-in is part of your application;
+the access policy is the door in front of it. The two compose: a
+visitor the policy lets in then signs in to your application as
+usual, and an MCP client goes through your application's own OAuth
+flow exactly as it would without a policy.
+
+The typical use is running your application on a public URL for your
+own MCP clients, without letting the rest of the internet in.
+
+## Let in only yourself
+
+Sign in to the Reboot Cloud once:
+
+```sh
+rbt login
+```
+
+Then run your application with `--access=user`:
+
+```sh
+rbt dev run --access=user ...
+```
+
+Only you can reach it now, on every address it is served at, your
+tunnel's URL and `localhost` alike. Point a browser at it and you are
+sent through the Reboot Cloud to sign in, once per browser; after
+that the browser carries a host-scoped `rbt_access` cookie, good for
+twelve hours, and everything works as before. Anything that is not a
+browser, an MCP client or a `curl`, gets a `401` until it holds a
+credential your application minted, which it can only get by signing
+in through a browser that was let in.
+
+When you give `rbt dev run` a `--tunnel-url` and you are signed in,
+`--access=user` is the default, and `rbt dev run` says so. Pass
+`--access=public` to let in anyone.
+
+:::note What the Cloud learns
+Letting you in asks the Reboot Cloud for a token for your
+application's origin (RFC 8707 `resource`). That token is good for
+nothing but telling your application who signed in: it does not let
+your application act as you on the Cloud, and the Cloud never sees
+your application's traffic.
+:::
+
+## Sign out
+
+Visit `/__/access/signout` on your application to forget that your
+browser was let in; `rbt logout` forgets your sign-in to the Cloud.
+
+## Under `rbt serve`
+
+The policy is configured by two environment variables, which
+`rbt dev run --access=user` sets for you:
+
+| Variable | Meaning |
+| --- | --- |
+| `REBOOT_ACCESS_POLICY` | `user:<id>`: let in one user of the issuer, by their id there, and nobody else. |
+| `REBOOT_ACCESS_ISSUER` | The origin of the OAuth authorization server that says who a visitor is, e.g. `https://cloud.prod1.rbt.cloud`. |
+
+Set both for a deployment that only you should reach; leave both
+unset for one that is open.
+
+## Limits
+
+- Python applications only. A TypeScript application refuses to start
+  under a policy rather than run open.
+- The policy stands in front of what your application serves. Under
+  `rbt dev run --frontend-url`, your frontend's dev server answers
+  `/__/frontend/**` itself, and that stays reachable.

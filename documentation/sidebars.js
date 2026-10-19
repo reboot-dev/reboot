@@ -108,6 +108,11 @@ const sidebars = {
           id: "users/external_apis",
           label: "Call external APIs as the user",
         },
+        {
+          type: "doc",
+          id: "users/access",
+          label: "Access policy",
+        },
       ],
     },
     {

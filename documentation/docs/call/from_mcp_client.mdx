@@ -123,6 +123,15 @@ Tailscale Funnel, a named `cloudflared` tunnel, or an SSH reverse
 tunnel. Pick **Other** in the wizard and paste your tunnel's URL so it
 can run the reachability check and fill in your MCP URL.
 
+### Keep the tunnel to yourself
+
+A tunnel puts your app on the public internet. To let in only you,
+sign in to the Reboot Cloud once with `rbt login`, then run with
+`rbt dev run --access=user` (the default once you pass
+`--tunnel-url` while signed in). Browsers are sent through the Cloud
+to sign in once; Claude and ChatGPT then go through your app's own
+sign-in as usual. See [Access policy](/users/access).
+
 ## Install in Claude or ChatGPT
 
 Adding your app to an MCP client takes two values, which the wizard
