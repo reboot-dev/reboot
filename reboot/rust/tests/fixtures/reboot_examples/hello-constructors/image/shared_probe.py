@@ -1,4 +1,5 @@
-"""One unmodified public gRPC transcript for both original Python and Rust."""
+"""One public gRPC probe: exact deterministic records, unordered concurrency."""
+from transcript_comparison import assert_concurrent_membership
 import sys,os,json,uuid,time,concurrent.futures
 from pathlib import Path
 root=Path('/opt/rbt.runfiles')
@@ -74,13 +75,14 @@ try:
   results=list(pool.map(lambda i:call('Send',other,{'message':'concurrent-'+str(i)},30+i),range(8)))
  record('concurrent-responses',results)
  v=messages(other)
- if v.get('ok'):v['response']['messages']=sorted(v['response'].get('messages',[]))
+ # Keep the server-returned order intact in both the case and explicit raw evidence.
+ report['concurrency_raw_messages']=list(v['response'].get('messages',[])) if v.get('ok') else None
  record('isolation',v)
  record('final-original',messages(actor))
  c=report['cases']
  assert c['startup']=={'ok':True,'response':{'messages':['Welcome! This message was sent by a constructor.','This message was sent after construction!']}}
  assert c['messages']==c['reader-repeat']==c['final-original']==c['supplied-token']=={'ok':True,'response':{'messages':expected}}
- assert c['isolation']=={'ok':True,'response':{'messages':['']+['concurrent-'+str(i) for i in range(8)]}}
+ assert_concurrent_membership(c['isolation'])
  for name in ['create','create-replay','send','send-replay','other-create']+['fidelity-'+str(i) for i in range(5)]:assert c[name]=={'ok':True,'response':{}},(name,c[name])
  assert c['concurrent-responses']==[{'ok':True,'response':{}}]*8
  for name,code,kind,value,message in [

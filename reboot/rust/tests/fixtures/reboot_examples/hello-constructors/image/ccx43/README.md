@@ -24,3 +24,15 @@ The owner exits only after stopping its own app/Python/engine children and joini
 wait processes. Docker's runtime is daemon-managed: Docker wait children are exact
 Unix subprocesses, while container retirement is separately read-back API evidence.
 An absent former owner PID is only a terminal observation, not an exact parent wait.
+
+## Corrected review run
+
+`review_stack_owner.py` is the existing owner with separate source/evidence and
+Compose paths only; `review_probe_run.py` is its finite, exact-parent-waited driver.
+It uses `compose.review-correction.yaml`, pinned original image IDs, a fresh
+`hello-image-review-correction` project and volumes, then restarts that same stack
+on those retained volumes. Its output root is `stack-review-correction`; sources
+are frozen separately in `review-correction-source-v1`. The original `stack` and
+all interruption receipts are untouched. The historical `recipe_probes.py` also
+uses the corrected comparator and copies its dependency alongside the shared probe;
+it no longer asserts entire-case equality after normalizing concurrency.

@@ -84,15 +84,19 @@ names, initializer identities, and volumes stable across restarts. Never use `do
 
 ## Shared test and interruption boundary
 
-Copy `shared_probe.py` into the running Python reference container (the test can
+Copy both `shared_probe.py` and `transcript_comparison.py` into the running Python reference container (the test can
 also run in a separate client container carrying its pinned generated bindings),
 then execute that identical program against the two public gRPC endpoints. Pass
 the same fresh actor prefix and UUIDv7 key base, whose timestamp is in the future,
 to both runs. The CCX43 controllers demonstrate exact invocations. They assert
-22 complete case records, including rich status code/message/type/serialized
-fields, anonymous and supplied-token access, identity misuse, fidelity, concurrent
-membership/multiplicity, replay and isolation. Only concurrent message ordering is
-sorted for membership comparison; **errors are never normalized**. `--restart`
+22 complete case records: **21 deterministic records compared exactly**
+and **1 concurrent isolation record compared by membership/multiplicity**.
+This includes rich status code/message/type/serialized fields, anonymous and
+supplied-token access, identity misuse, fidelity, replay and isolation. The raw
+concurrent response is never sorted or overwritten: it remains in the `isolation`
+case and the separate `concurrency_raw_messages` evidence. `compare_transcripts`
+checks each side against the expected multiset, not just against each other.
+Concurrent ordering is not a contract; **errors are never normalized**. `--restart`
 reuses the original actor IDs and keys, and `--boot` reads only initialized state.
 
 Observed Python behavior corrects an assumption in the initial assessment:
@@ -123,3 +127,35 @@ a multi-process C++ race proof.
 See `qualification.json` for actual gates, artifact identities, retained evidence
 handles and any bounded qualifications. No benchmark or full-SDK parity claim is
 made by these application correctness results.
+
+## Review correction receipts
+
+`qualification.json` now distinguishes deterministic exact equality from concurrent
+membership/multiplicity equivalence. The previous whole-transcript-equality gate
+was an overclaim because the earlier probe sorted the concurrent response in place.
+Historical source and evidence remain frozen at candidate
+`98265ecb9c5d6ef4dd3da9efcae752421637b8b7` and the prior evidence root; the corrected
+run is separately retained in `stack-review-correction` with corrected source bytes
+in `review-correction-source-v1`. No runtime/business implementation changed and
+none of the three retained production images was rebuilt or pulled.
+
+The finite `ccx43/review_probe_run.py` runs the existing exact-ID owner as a waited
+child with new, refuse-existing source/evidence/project names, immutable original
+image IDs, fresh volumes, and then a full app/engine retained-volume restart.
+Run it only on the authorized host after reviewing its host-scoped paths; these
+paths now already exist, so a repeat must use new names rather than overwrite proof.
+Fresh public probes produced 22 records per implementation (21 exact,
+1 concurrent membership/multiplicity); restart produced 5 deterministic
+records per implementation using the same actor IDs and keys. Raw concurrent order
+happened to match in this run; that observation is not an ordering guarantee.
+The comparator unit suite accepts different concurrent order without mutation and
+rejects missing, duplicate, unexpected messages, raw-evidence mismatch, deterministic
+ordering differences, and exact rich-error byte/message differences.
+
+```sh
+python3 -m unittest discover -s "$IMAGE" -p test_transcript_comparison.py -v
+```
+
+Prior SDK/build/interruption results in the qualification are inherited historical
+receipts, **not rerun** by this narrow correction. There is no benchmark, full-SDK
+parity, registry publication, deployment or new-capacity claim.
