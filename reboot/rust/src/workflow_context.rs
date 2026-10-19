@@ -1919,6 +1919,17 @@ impl<'a> WorkflowContext<'a> {
         &self.task.method
     }
 
+    /// An untyped reference to the actor this workflow is running on.
+    ///
+    /// This is the Rust equivalent of Python's `WorkflowContext.task` wrapped
+    /// as a `WeakReference` identity.
+    pub fn actor_ref(&self) -> crate::actor_ref::ActorRef {
+        crate::actor_ref::ActorRef::new(
+            self.state_type(),
+            self.state_ref(),
+        )
+    }
+
     /// Wait for a duration, respecting workflow cancellation.
     ///
     /// This is a Rust convenience helper equivalent to awaiting

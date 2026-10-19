@@ -51,6 +51,7 @@ pub mod registered_local;
 #[doc(hidden)]
 pub mod registered_local_service;
 pub mod runtime;
+pub mod actor_ref;
 pub mod state_ref;
 /// Canonical SortedMap wire DTOs and Tonic bindings. No builtin Reboot host adapter
 /// or public constructor is established by these transport bindings alone.
