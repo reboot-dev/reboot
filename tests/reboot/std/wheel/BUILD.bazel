@@ -1,0 +1,11 @@
+load("@rules_python//python:defs.bzl", "py_test")
+
+# Reads the built wheel, not the source tree: under Bazel every module
+# imports whether or not the wheel ships it.
+py_test(
+    name = "std_in_wheel_tests_py",
+    srcs = ["std_in_wheel_tests.py"],
+    data = ["//reboot:reboot.dev"],
+    env = {"REBOOT_WHL_FILE": "$(location //reboot:reboot.dev)"},
+    main = "std_in_wheel_tests.py",
+)
