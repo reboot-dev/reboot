@@ -5,7 +5,7 @@ use reboot::{
     one_shot_tasks::WorkflowContext,
     runtime::{DatabaseActorStore, TransactionExecution},
 };
-use std::sync::Arc;
+use std::{future::Future, sync::Arc};
 pub mod proto {
     tonic::include_proto!("workflow.v1");
 }
@@ -160,6 +160,37 @@ impl generated::LedgerMethodsDatabaseHandler for Ledger {
         request: proto::Step,
     ) -> Result<proto::Result, reboot::one_shot_tasks::WorkflowBodyError> {
         event("body");
+        if std::env::var("WORKFLOW_BODY_MODE").as_deref() == Ok("revision") {
+            // Compare against the recovered Database TaskId bytes, not a second
+            // encoding of an actor id (the original Q2 regression).
+            let stored = context.task().task_id.as_ref().expect("stored TaskId");
+            assert_eq!(stored.state_type, "workflow.v1.Ledger");
+            assert_eq!(context.state_ref()?.as_str(), stored.state_ref);
+            let actor = context.actor_ref()?;
+            assert_eq!(actor.state_ref().as_str(), stored.state_ref);
+            assert_eq!(actor.state_type(), stored.state_type);
+            event(&format!("revision-identity:{}", stored.state_ref));
+
+            let revision = context.wait_for_revision();
+            tokio::pin!(revision);
+            // Poll THIS pinned future, installing its real subscription before
+            // exposing the barrier. A marker before .await would prove nothing.
+            std::future::poll_fn(|cx| {
+                assert!(revision.as_mut().poll(cx).is_pending(),
+                    "revision completed without a writer commit");
+                std::task::Poll::Ready(())
+            }).await;
+            event("revision-parked");
+            revision.await?;
+            event("revision-woke");
+            let state = generated::LedgerMethodsWorkflowSteps::query_until(
+                context, Arc::new(self.clone()), "revision-readback",
+                "first-equals-signal.v1", proto::Empty {},
+                move |state| state.first == request.amount,
+            ).await?;
+            event("revision-readback-ack");
+            return Ok(proto::Result { first: state.first, second: state.second });
+        }
         if std::env::var("WORKFLOW_BODY_MODE").as_deref() == Ok("reader-outcome") {
             let _ = generated::LedgerMethodsWorkflowSteps::first(
                 context,
@@ -494,9 +525,17 @@ fn arg(index: usize) -> String {
     std::env::args().nth(index).unwrap()
 }
 fn reference() -> String {
-    reboot::state_ref::StateRef::from_id("workflow.v1.Ledger", "ledger")
-        .unwrap()
-        .to_string()
+    use reboot::state_ref::StateRef;
+    match std::env::var("WORKFLOW_REFERENCE_KIND").as_deref() {
+        Ok("escaped") => StateRef::from_id("workflow.v1.Ledger", "ledger/escaped")
+            .unwrap().to_string(),
+        Ok("composed") => StateRef::from_id("workflow.v1.Parent", "parent/escaped")
+            .unwrap().colocate("workflow.v1.Ledger", "ledger/escaped")
+            .unwrap().to_string(),
+        Ok("plain") | Err(_) => StateRef::from_id("workflow.v1.Ledger", "ledger")
+            .unwrap().to_string(),
+        Ok(other) => panic!("unknown WORKFLOW_REFERENCE_KIND: {other}"),
+    }
 }
 fn request<T>(body: T, key: Option<&str>) -> tonic::Request<T> {
     let mut r = tonic::Request::new(body);
@@ -623,7 +662,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         return Ok(());
     }
-    if mode == "inspect" || mode == "inspect-control" || mode == "inspect-reader-outcome" {
+    if mode == "inspect" || mode == "inspect-control" || mode == "inspect-reader-outcome" || mode == "inspect-reference" {
         let mut c = db::database_client::DatabaseClient::connect(arg(2)).await?;
         let id = db::TaskId {
             state_type: "workflow.v1.Ledger".into(),
@@ -639,6 +678,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .into_inner()
             .tasks;
         let task = tasks.first().ok_or("missing canonical task")?;
+        if mode == "inspect-reference" {
+            let stored = task.task_id.as_ref().ok_or("missing stored TaskId")?;
+            assert_eq!(stored.state_type, id.state_type);
+            assert_eq!(stored.state_ref, id.state_ref);
+            println!("{}", stored.state_ref);
+            return Ok(());
+        }
         let mut stream = c
             .recover_idempotent_mutations(db::RecoverIdempotentMutationsRequest {
                 state_type: id.state_type.clone(),

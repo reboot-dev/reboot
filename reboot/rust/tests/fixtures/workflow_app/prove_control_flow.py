@@ -1,4 +1,12 @@
 """Generated public Rust workflow + real CXX/RocksDB; no seeded tasks/state."""
+# The Q2 path runs inside the parent's existing runtime gate. It must branch
+# before importing/executing the historical subprocess-based control driver.
+import os
+if os.environ.get('WORKFLOW_CONTROL_SCENARIO') == 'revision':
+ import runpy
+ from pathlib import Path
+ runpy.run_path(str(Path(__file__).with_name('prove_revision.py')), run_name='__main__')
+ raise SystemExit(0)
 import hashlib,json,os,socket,subprocess,sys,tempfile,time,uuid
 from pathlib import Path
 BIN=Path(sys.argv[1]);DB=Path(os.environ['REBOOT_NATIVE2PC_CXX_DATABASE'])
