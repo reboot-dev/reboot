@@ -161,10 +161,16 @@ class PingStandaloneSpaTest(unittest.IsolatedAsyncioTestCase):
         # a page there can call RPCs with a bearer it holds, and the
         # browser hides from it any response to a request it sent
         # with the cookie.
+        # A well-formed state reference: the routing filter rejects a
+        # malformed one with a 400 before the CORS filter answers the
+        # preflight.
         for origin in ('http://evil.example', 'null'):
             rpc_status, rpc_headers = await asyncio.to_thread(
                 _cors_preflight,
-                url=f'{backend_url}/__/reboot/rpc/x/y',
+                url=(
+                    f'{backend_url}/__/reboot/rpc/reboot.ping.Counter:x'
+                    '/reboot.ping.CounterMethods/Get'
+                ),
                 origin=origin,
             )
             self.assertEqual(rpc_status, 200, msg=rpc_headers)

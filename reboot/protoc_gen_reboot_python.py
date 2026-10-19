@@ -186,11 +186,9 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
             proto_ui_request_fields={} if from_pydantic else {
                 ui.name:
                     self._analyze_message_fields(
-                        file.proto._descriptor.
-                        message_types_by_name[ui.request_message]
-                    )
-                for ui in state.proto.uis
-                if ui.request_message
+                        file.proto._descriptor.message_types_by_name[
+                            ui.request_message]
+                    ) for ui in state.proto.uis if ui.request_message
             },
         )
 
