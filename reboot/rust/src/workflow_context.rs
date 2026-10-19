@@ -1570,6 +1570,19 @@ mod idempotency_key_scope_tests {
         );
         assert!(context.within_loop());
     }
+    #[tokio::test]
+    async fn is_cancelled_false_initially() {
+        let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
+        let context = build_context(&tasks, task, &cancel, &attempt, None, Vec::new());
+        assert!(!context.is_cancelled());
+    }
+    #[tokio::test]
+    async fn is_cancelled_true_after_cancel() {
+        let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
+        let context = build_context(&tasks, task, &cancel, &attempt, None, Vec::new());
+        context.cancel.cancel();
+        assert!(context.is_cancelled());
+    }
 }
 
 /// Private, dispatcher-minted workflow authority. Explicit named same-actor
@@ -1794,6 +1807,11 @@ impl<'a> WorkflowContext<'a> {
     /// This is the Rust equivalent of Python's `WorkflowContext.within_loop()`.
     pub fn within_loop(&self) -> bool {
         self.iteration.is_some() || self.cursor_scope().is_some()
+    }
+
+    /// Whether cancellation has been requested for this workflow attempt.
+    pub fn is_cancelled(&self) -> bool {
+        self.cancel.is_cancelled()
     }
 
     /// Await a future while respecting workflow cancellation.
