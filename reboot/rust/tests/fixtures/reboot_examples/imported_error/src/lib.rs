@@ -1,18 +1,23 @@
 pub mod rbt {
+    // Generated Tonic signatures intentionally retain tonic::Status.
+    #[allow(clippy::result_large_err)]
     pub mod v1alpha1 {
         tonic::include_proto!("rbt.v1alpha1");
     }
 }
 pub mod bank {
+    #[allow(clippy::result_large_err)]
     pub mod v1 {
         tonic::include_proto!("bank.v1");
     }
 }
 pub mod hello_tasks {
+    #[allow(clippy::result_large_err)]
     pub mod v1 {
         tonic::include_proto!("hello_tasks.v1");
     }
 }
+#[allow(clippy::result_large_err)]
 pub mod tasks_adapter {
     include!(concat!(env!("OUT_DIR"), "/hello_tasks/v1/hello.reboot.rs"));
     #[cfg(test)]
@@ -115,6 +120,7 @@ pub mod tasks_adapter {
         }
     }
 }
+#[allow(clippy::result_large_err)]
 pub mod account_adapter {
     include!(concat!(env!("OUT_DIR"), "/bank/v1/account.reboot.rs"));
     #[cfg(test)]
