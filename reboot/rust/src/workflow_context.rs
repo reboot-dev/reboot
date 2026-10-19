@@ -1095,6 +1095,135 @@ mod declared_reader_serial_tests {
     }
 }
 
+#[cfg(test)]
+mod cursor_iteration_tests {
+    use super::*;
+    use crate::runtime::DurableStateDeclaration;
+    struct D;
+    impl DurableStateDeclaration for D {
+        type State = crate::proto::Counter;
+        const STATE_TYPE: &'static str = "tests.reboot.protoc.Counter";
+    }
+    struct Binding(bool);
+    #[tonic::async_trait]
+    impl ReaderTaskBinding for Binding {
+        fn validate(&self, _: &db::Task) -> Result<(), Status> {
+            Ok(())
+        }
+        fn validate_error(&self, _: &db::Task, _: &prost_types::Any) -> Result<(), Status> {
+            Ok(())
+        }
+        fn writer_capable(&self) -> bool {
+            self.0
+        }
+        fn is_writer(&self, _: &db::Task) -> bool {
+            self.0
+        }
+        async fn execute(&self, _: &db::Task) -> Result<prost_types::Any, Status> {
+            Err(Status::failed_precondition("not reader"))
+        }
+    }
+    fn make_context(
+        iteration: u64,
+    ) -> (
+        OneShotTasks,
+        db::Task,
+        RecoveryCancellation,
+        WorkflowAttempt,
+    ) {
+        let tasks = OneShotTasks::new_with_declarations(
+            DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(),
+            D::STATE_TYPE.into(),
+            "actor".into(),
+            Binding(true),
+            vec![
+                TaskMethodDeclaration::new::<D, crate::proto::Counter, crate::proto::Counter>(
+                    "tests.Service.Run",
+                    "type.googleapis.com/Counter",
+                    vec![],
+                )
+                .workflow_cursor("unbounded", 1),
+            ],
+        )
+        .unwrap();
+        let task = db::Task {
+            task_id: Some(db::TaskId {
+                state_type: D::STATE_TYPE.into(),
+                state_ref: "actor".into(),
+                task_uuid: uuid::Uuid::new_v4().as_bytes().to_vec(),
+            }),
+            method: "Run".into(),
+            iteration,
+            ..Default::default()
+        };
+        (
+            tasks,
+            task,
+            RecoveryCancellation::new(),
+            WorkflowAttempt::default(),
+        )
+    }
+    #[tokio::test]
+    async fn cursor_checkpoint_keys_remain_distinct_across_extreme_iterations() {
+        let seed = uuid::Uuid::new_v4();
+        let alias = "effect";
+        let mut keys = std::collections::HashSet::new();
+        for iteration in [0u64, 1, 1024, u64::MAX - 1, u64::MAX] {
+            let (tasks, task, cancel, attempt) = make_context(iteration);
+            let context = WorkflowContext {
+                tasks: &tasks,
+                task,
+                cancel: &cancel,
+                generation: Arc::new(()),
+                attempt: &attempt,
+                iteration: Some(("unbounded".into(), iteration, u64::MAX)),
+                parents: Vec::new(),
+            };
+            assert!(context.cursor_scope().is_some());
+            assert_eq!(context.checkpoint_iteration(), Some(iteration));
+            let key = context.checkpoint_key(seed, alias, None);
+            assert!(
+                keys.insert(key),
+                "cursor checkpoint key collision at iteration {iteration}"
+            );
+            let decision = context.checkpoint_decision_key(seed, alias);
+            assert!(
+                keys.insert(decision),
+                "cursor decision key collision at iteration {iteration}"
+            );
+        }
+    }
+    #[tokio::test]
+    async fn cursor_key_is_stable_for_replay_at_large_iteration() {
+        let seed = uuid::Uuid::new_v4();
+        let (tasks1, task1, cancel1, attempt1) = make_context(1024);
+        let first = WorkflowContext {
+            tasks: &tasks1,
+            task: task1,
+            cancel: &cancel1,
+            generation: Arc::new(()),
+            attempt: &attempt1,
+            iteration: Some(("unbounded".into(), 1024, u64::MAX)),
+            parents: Vec::new(),
+        };
+        let (tasks2, task2, cancel2, attempt2) = make_context(1024);
+        let second = WorkflowContext {
+            tasks: &tasks2,
+            task: task2,
+            cancel: &cancel2,
+            generation: Arc::new(()),
+            attempt: &attempt2,
+            iteration: Some(("unbounded".into(), 1024, u64::MAX)),
+            parents: Vec::new(),
+        };
+        assert_eq!(
+            first.checkpoint_key(seed, "effect", None),
+            second.checkpoint_key(seed, "effect", None),
+            "cursor key must be stable across replay"
+        );
+    }
+}
+
 /// Private, dispatcher-minted workflow authority. Explicit named same-actor
 /// typed named writer steps and checkpointed immutable-reader waits. Explicit
 /// finite indexed replay scopes and named at-most-once unit external blocks;
