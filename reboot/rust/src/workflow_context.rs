@@ -1525,6 +1525,26 @@ mod idempotency_key_scope_tests {
             "control character in seed key must be rejected"
         );
     }
+    #[tokio::test]
+    async fn wait_returns_future_value_when_not_cancelled() {
+        let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
+        let context = build_context(&tasks, task, &cancel, &attempt, None, Vec::new());
+        let value = context.wait(async { 42 }).await.unwrap();
+        assert_eq!(value, 42);
+    }
+    #[tokio::test]
+    async fn wait_returns_cancelled_after_cancel() {
+        let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
+        let context = build_context(&tasks, task, &cancel, &attempt, None, Vec::new());
+        context.cancel.cancel();
+        let result = context.wait(async move {
+            // This future should never complete because cancellation wins.
+            loop {
+                tokio::task::yield_now().await;
+            }
+        }).await;
+        assert_eq!(result.unwrap_err().code(), tonic::Code::Cancelled);
+    }
 }
 
 /// Private, dispatcher-minted workflow authority. Explicit named same-actor
@@ -1743,6 +1763,24 @@ impl<'a> WorkflowContext<'a> {
     pub(crate) fn checkpoint_bound(&self) -> u64 {
         self.iteration.as_ref().map_or(0, |(_, _, count)| *count)
     }
+
+    /// Await a future while respecting workflow cancellation.
+    ///
+    /// This is the Rust equivalent of Python's `WorkflowContext.wait(...)`.
+    /// If the workflow context has been cancelled, the future is aborted and a
+    /// `CANCELLED` status is returned. Otherwise the future's result is
+    /// returned.
+    pub async fn wait<T, F>(&self, awaitable: F) -> Result<T, Status>
+    where
+        F: std::future::Future<Output = T> + Send,
+        T: Send,
+    {
+        tokio::select! {
+            _ = self.cancel.cancelled() => Err(Status::cancelled("workflow cancelled")),
+            result = awaitable => Ok(result),
+        }
+    }
+
     pub(crate) fn checkpoint_key(
         &self,
         seed: uuid::Uuid,
