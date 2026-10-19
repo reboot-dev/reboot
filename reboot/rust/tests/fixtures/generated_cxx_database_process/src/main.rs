@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 mod marker_publication;
 mod registered_same_host;
 
@@ -1746,7 +1748,10 @@ impl reboot::auth::Authorizer for ReplayStatePolicy {
 
 #[tokio::main(worker_threads = 4)]
 async fn main() {
-    if has("--registered-same-host") { registered_same_host::run().await; return; }
+    if has("--registered-same-host") {
+        registered_same_host::run().await;
+        return;
+    }
     let role = arg("--role");
     let listen = arg("--listen");
     if role == "wait-result" {
