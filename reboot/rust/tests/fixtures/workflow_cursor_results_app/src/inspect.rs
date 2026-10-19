@@ -1,5 +1,6 @@
 // Read-only native canonical evidence; no fixture Store seeding.
 include!("inventory.rs");
+include!("binding.rs");
 #[derive(Clone, PartialEq, prost::Message)]
 struct ResultEnvelope {
     #[prost(uint32, tag = "1")]
@@ -122,7 +123,17 @@ async fn inspect() -> Result<(), Box<dyn std::error::Error>> {
                             r.cursor, r.ordinal, r.proof
                         )
                     }
-                    _ => return Err("unexpected iteration-scoped Stored result type".into()),
+                    CURSOR_BINDING_TYPE => {
+                        validate_cursor_binding(m.workflow_iteration, &result, task)?;
+                        "null".into() // Raw binding bytes remain in the inventory/equality proof.
+                    }
+                    _ => {
+                        return Err(format!(
+                            "unexpected Stored result type {} in scope {:?}",
+                            result_type, m.workflow_iteration
+                        )
+                        .into());
+                    }
                 };
             }
         }
