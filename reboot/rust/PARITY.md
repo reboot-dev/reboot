@@ -12,6 +12,51 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Generated callable workflow writers (bounded external unary)
+
+Pure database services now generate `*WorkflowWriterRef` for ordinary non-constructor
+writers. A private dispatcher-minted `WorkflowContext` calls the actual generated
+Tonic target adapter, not a reference shell. The host supplies one fixed channel,
+canonical `ActorRef`, application caller identity and optional explicit outbound
+service credential; original workflow-user credentials are never invented or
+implicitly forwarded. Server-owned application identity injection and existing
+current-state authorization still apply, including on receipt replay.
+
+Before dispatch, a source-owned Started journal durably binds the alias/scope to
+application, target actor, method and encoded payload. The deterministic target
+key binds source actor plus workflow UUID and named finite scope, NOT the payload
+or destination: changing either under the same alias rejects before dispatch.
+Recovery reuses the key through the generated authorized ordinary writer, which
+atomically stores target state plus its fingerprinted response. Target Store ACK
+and source Stored-journal ACK precede return. Stored-source replay still consults
+target authorization and its saved response; it cannot bypass policy by disclosing
+a source memo. A clean explicit local workflow retry can replay an acknowledged
+writer without repeating its effects. Error/cancellation poisons the attempt;
+transport/commit uncertainty is not retried inside that attempt.
+
+**Boundaries:** this is independently committed calls, NOT atomic multi-actor
+transactions or distributed ownership. No routing/placement refresh, migration,
+scheduling, spawn, trusted app-internal auth propagation or inherited user auth.
+Mixed transaction/workflow-bearing target services have no generated writer-ref
+surface. Constructors are excluded. Canonical cursor calls explicitly reject:
+ordinary target receipts currently live in the target's non-workflow receipt scope,
+so cross-actor cursor receipt GC/retention is not implemented. Root and bounded
+finite scopes are supported. Credentials are not included in persisted contracts
+and may rotate; application/caller identity and destination are contract-bound.
+Declared target errors may be decoded but are not durable business-error checkpoints;
+no error can be swallowed into a successful workflow completion.
+
+Source map: [WORKFLOW-WRITER-MAP.md](WORKFLOW-WRITER-MAP.md). Acceptance:
+`tests/fixtures/workflow_app/prove_outbound.py` and the ignored explicit native gate
+`tests/workflow_outbound_native.rs`. Native cases exercise actual two-actor generated
+public scheduling/callable writer paths, crash after target ACK before source
+Stored, native/host restart on retained RocksDB, identical full target receipt bytes,
+payload/destination rejection, policy denial on replay, clean local retry, handler
+failure and graceful cancellation. Private fake-transport tests separately prove
+lost source intent ACK and target Store cancellation uncertainty; they are not
+native lost-ACK/distributed-fencing evidence. Existing C++ binary is reused with
+provenance, not freshly compiled C++ qualification. Broader Rust SDK parity remains open.
+
 ## Bounded transitive generated reader composition (2026-10-19)
 
 Generated `*ReactiveClient::*_read_local` calls now execute the registered target's
@@ -3118,8 +3163,8 @@ satisfy that gate. Later feature sections retain their individual recorded evide
 | State/client runtime | Durable constructors/readers/writers, idempotent response replay, metadata/auth | General distributed ownership/fencing and arbitrary external effects |
 | Transactions | Legacy durable coordinator/participant paths, bounded supervised chains/star and opt-in registered shared-root typed errors over existing writers | General nested snapshots, transactional constructors/tasks, reentrancy, intersecting subtrees, migration |
 | Tasks | Durable scheduled tasks, typed results/Wait with opt-in result policy, recovery, local admin list/stream and scheduled-workflow cancellation | Transactional targets, running/ordinary/distributed cancellation, aggregation, broad retry and dispatcher fencing |
-| Workflows | Finite typed named steps, bounded nested indexed replay, saved reader observations and finite Continue/Break, typed declared business terminals; explicit local-body resumption | Python unbounded Task cursor/GC/Break, cross-actor composition, framework failure isolation |
-| Reactive readers | Typed bounded database/workflow/transaction-service ordinary reader subscriptions, plain-database/workflow-bearing/mixed-transaction external unary composition, allowlisted multi-actor routing, bounded acyclic transitive local composition, commit invalidation and explicit same-query reconnect | Transactional-context composition, remote invalidation, workflow callable writers, transparent reconnect/durable resume, streaming/transaction RPC subscriptions |
+| Workflows | Finite typed named steps, bounded nested indexed replay, saved reader observations and finite Continue/Break, typed declared business terminals; explicit local-body resumption; generated fixed-channel ordinary cross-actor writers with durable intent/target receipt replay | General cross-actor references, outbound cursor receipt GC, trusted internal auth propagation, framework failure isolation |
+| Reactive readers | Typed bounded database/workflow/transaction-service ordinary reader subscriptions, plain-database/workflow-bearing/mixed-transaction external unary composition, allowlisted multi-actor routing, bounded acyclic transitive local composition, commit invalidation and explicit same-query reconnect | Transactional-context composition, remote invalidation, general workflow callable references beyond the bounded ordinary writer path, transparent reconnect/durable resume, streaming/transaction RPC subscriptions |
 | SortedMap | Canonical empty constructor, serial same-host app/map transactions, same-root session reopening, live keyset pages and atomic multi-entry approval transfer | Public inbound adapter, nested/reusable siblings, distributed collection lifecycle |
 
 ## Local app development

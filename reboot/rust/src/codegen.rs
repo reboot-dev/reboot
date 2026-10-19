@@ -13,6 +13,9 @@ use prost_types::{
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 include!("workflow_codegen.rs");
+#[cfg(test)]
+#[path = "workflow_writer_codegen_tests.rs"]
+mod workflow_writer_codegen_tests;
 const MODULE_PARAMETER_PREFIX: &str = "module=";
 const RUNTIME_MODULE_PARAMETER_PREFIX: &str = "runtime_module=";
 const DEFAULT_RUNTIME_MODULE: &str = "reboot_rust_schema";
@@ -1458,6 +1461,7 @@ fn emit_durable(
             .collect();
         emit_external_client(
             output,
+            service,
             service_name,
             runtime_module,
             annotation,
@@ -1731,6 +1735,7 @@ fn emit_durable(
     )?;
     emit_external_client(
         output,
+        service,
         service_name,
         runtime_module,
         annotation,
@@ -1900,6 +1905,7 @@ fn emit_declared_error_enum(
 
 fn emit_external_client(
     output: &mut String,
+    descriptor: &ServiceDescriptorProto,
     service_name: &str,
     runtime_module: &str,
     annotation: &DurableService,
@@ -1945,6 +1951,75 @@ fn emit_external_client(
                 unreachable!("transactions/workflows are filtered above")
             }
         }
+    }
+    output.push_str("}\n\n");
+    emit_workflow_writer_reference(
+        output,
+        descriptor,
+        service_name,
+        runtime_module,
+        annotation,
+        database_methods,
+    );
+}
+
+fn emit_workflow_writer_reference(
+    output: &mut String,
+    descriptor: &ServiceDescriptorProto,
+    service: &str,
+    runtime: &str,
+    annotation: &DurableService,
+    methods: &[&(&DurableKind, String, String, String, String)],
+) {
+    // Mixed transaction/workflow adapters have additional scheduling/participant
+    // semantics. Deliberately leave them outside this external-unary vertical.
+    if annotation
+        .methods
+        .values()
+        .any(|kind| matches!(kind, DurableKind::Transaction(_) | DurableKind::Workflow))
+    {
+        return;
+    }
+    let writers: Vec<_> = methods
+        .iter()
+        .filter(|(kind, _, _, _, _)| {
+            matches!(
+                kind,
+                DurableKind::Writer(WriterMetadata { constructor: false })
+            )
+        })
+        .collect();
+    if writers.is_empty() {
+        return;
+    }
+    let name = format!("{service}WorkflowWriterRef");
+    let module = format!("{}_client", snake_case(service));
+    let state_type = annotation.state.trim_start_matches('.');
+    output.push_str(&format!("/// Fixed-channel ordinary writer reference for dispatcher-owned workflows.\\n/// No constructors, transactions, scheduling, spawn, placement or internal auth bypass.\\n#[derive(Clone)]\\npub struct {name} {{ channel: tonic::transport::Channel, target: {runtime}::one_shot_tasks::WorkflowWriterTarget }}\\nimpl {name} {{ pub fn new(channel: tonic::transport::Channel, actor: {runtime}::actor_ref::ActorRef, application: {runtime}::CallerId, bearer: Option<String>) -> Result<Self, tonic::Status> {{ if actor.state_type() != \"{state_type}\" {{ return Err(tonic::Status::invalid_argument(\"generated writer reference state type mismatch\")); }} Ok(Self {{ channel, target: {runtime}::one_shot_tasks::WorkflowWriterTarget::new(actor, application, bearer)? }}) }}\\n").replace("\\n", "\n"));
+    for (_, method, request, response, identity) in writers {
+        let response_type = descriptor
+            .method
+            .iter()
+            .find(|m| m.name.as_deref() == identity.rsplit('.').next())
+            .and_then(|m| m.output_type.as_deref())
+            .unwrap_or("")
+            .trim_start_matches('.');
+        let errors = declared_database_errors(
+            annotation,
+            &DurableKind::Writer(WriterMetadata { constructor: false }),
+            identity,
+        );
+        let error = if errors.is_empty() {
+            "tonic::Status".to_owned()
+        } else {
+            declared_error_type(service, method)
+        };
+        let map = if errors.is_empty() {
+            String::new()
+        } else {
+            format!(".map_err({error}::from_status)")
+        };
+        output.push_str(&format!("pub async fn {method}(&self, context: &{runtime}::one_shot_tasks::WorkflowContext<'_>, alias: &str, request: proto::{request}) -> Result<proto::{response}, {error}> {{ let mut client = proto::{module}::{service}Client::new(self.channel.clone()); context.invoke_writer(&self.target, alias, {runtime}::one_shot_tasks::WorkflowWriterMethod {{ state_type: \"{state_type}\", method: \"{identity}\", response_type: \"type.googleapis.com/{response_type}\" }}, request, move |request| async move {{ client.{method}(request).await }}).await{map} }}\\n").replace("\\n", "\n"));
     }
     output.push_str("}\n\n");
 }
@@ -2905,9 +2980,12 @@ fn emit_reader_tasks(
         // Ordinary writers also have a TransactionAdapter. Preserve the
         // DatabaseAdapter helpers and provide original-participant helpers too.
         // Reader/constructor-only services have no TransactionAdapter.
-        if !annotation.methods.values().any(|kind| matches!(
-            kind, DurableKind::Writer(WriterMetadata { constructor: false })
-        )) {
+        if !annotation.methods.values().any(|kind| {
+            matches!(
+                kind,
+                DurableKind::Writer(WriterMetadata { constructor: false })
+            )
+        }) {
             return;
         }
     }
@@ -3156,10 +3234,17 @@ fn emit_transactions(
         )
         .collect::<Vec<_>>()
         .join(", ");
-    let constructor_child_methods = database_methods.iter()
-        .filter(|(kind, _, _, _, _)| matches!(**kind, DurableKind::Writer(WriterMetadata { constructor: true })))
+    let constructor_child_methods = database_methods
+        .iter()
+        .filter(|(kind, _, _, _, _)| {
+            matches!(
+                **kind,
+                DurableKind::Writer(WriterMetadata { constructor: true })
+            )
+        })
         .map(|(_, _, _, _, identity)| format!("{identity:?}.to_owned()"))
-        .collect::<Vec<_>>().join(", ");
+        .collect::<Vec<_>>()
+        .join(", ");
     let shared_root_methods = transactions
         .iter()
         .filter_map(|(kind, _, _, _, identity)| match kind {
@@ -3278,7 +3363,10 @@ fn emit_transactions(
             );
             transactional_writer.push_str("        }).await; }\n");
         }
-        if matches!(**kind, DurableKind::Writer(WriterMetadata { constructor: true })) {
+        if matches!(
+            **kind,
+            DurableKind::Writer(WriterMetadata { constructor: true })
+        ) {
             emit_registered_constructor_child_flow(
                 &mut transactional_writer, method, request, state,
                 method_identity, runtime_module, error_map,
@@ -3856,7 +3944,13 @@ mod tests {
         emit_exclusive_transaction_method(&mut explicit, TransactionFlow { default_root: false, ..flow });
         assert!(!explicit.contains(root_default));
         let mut shared = String::new();
-        emit_shared_transaction_method(&mut shared, TransactionFlow { mode: "Shared", ..flow });
+        emit_shared_transaction_method(
+            &mut shared,
+            TransactionFlow {
+                mode: "Shared",
+                ..flow
+            },
+        );
         assert!(!shared.contains(root_default));
     }
 

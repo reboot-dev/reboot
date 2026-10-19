@@ -17,6 +17,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 include!("workflow_context.rs");
+include!("workflow_outbound_writer.rs");
 include!("task_listing.rs");
 include!("task_cancellation.rs");
 include!("initializer_admission.rs");

@@ -19,3 +19,10 @@ service LedgerMethods {
  rpc Second(Step) returns (Value) { option (rbt.v1alpha1.method).writer = {}; }
  rpc Run(Step) returns (Result) { option (rbt.v1alpha1.method).workflow = {}; }
 }
+message Remote { option (rbt.v1alpha1.state) = { implements: ["workflow.v1.RemoteMethods"] }; int64 value = 1; }
+service RemoteMethods {
+ option (rbt.v1alpha1.service) = { state: "workflow.v1.Remote" };
+ rpc Create(Empty) returns (Empty) { option (rbt.v1alpha1.method).writer = { constructor: {} }; }
+ rpc Apply(Step) returns (Value) { option (rbt.v1alpha1.method).writer = {}; }
+ rpc Query(Empty) returns (Remote) { option (rbt.v1alpha1.method).reader = {}; }
+}

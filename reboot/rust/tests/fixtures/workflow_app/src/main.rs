@@ -1,4 +1,5 @@
 use prost::Message;
+mod outbound;
 use reboot::{
     application_host::ApplicationHost,
     database_proto as db,
@@ -6,9 +7,13 @@ use reboot::{
     runtime::{DatabaseActorStore, TransactionExecution},
 };
 use std::{future::Future, sync::Arc};
+// Generated Tonic APIs intentionally expose rich tonic::Status by value.
+#[allow(clippy::result_large_err)]
 pub mod proto {
     tonic::include_proto!("workflow.v1");
 }
+// Preserve the SDK's established typed error/Status ABI at this codegen boundary.
+#[allow(clippy::result_large_err)]
 pub mod generated {
     include!(concat!(env!("OUT_DIR"), "/workflow/v1/workflow.reboot.rs"));
 }
@@ -160,6 +165,9 @@ impl generated::LedgerMethodsDatabaseHandler for Ledger {
         request: proto::Step,
     ) -> Result<proto::Result, reboot::one_shot_tasks::WorkflowBodyError> {
         event("body");
+        if std::env::var("WORKFLOW_BODY_MODE").as_deref() == Ok("outbound") {
+            return outbound::run(context, request).await;
+        }
         if std::env::var("WORKFLOW_BODY_MODE").as_deref() == Ok("revision") {
             // Compare against the recovered Database TaskId bytes, not a second
             // encoding of an actor id (the original Q2 regression).
@@ -187,7 +195,8 @@ impl generated::LedgerMethodsDatabaseHandler for Ledger {
                 context, Arc::new(self.clone()), "revision-readback",
                 "first-equals-signal.v1", proto::Empty {},
                 move |state| state.first == request.amount,
-            ).await?;
+            )
+            .await?;
             event("revision-readback-ack");
             return Ok(proto::Result { first: state.first, second: state.second });
         }
@@ -528,12 +537,14 @@ fn reference() -> String {
     use reboot::state_ref::StateRef;
     match std::env::var("WORKFLOW_REFERENCE_KIND").as_deref() {
         Ok("escaped") => StateRef::from_id("workflow.v1.Ledger", "ledger/escaped")
-            .unwrap().to_string(),
+            .unwrap()
+            .to_string(),
         Ok("composed") => StateRef::from_id("workflow.v1.Parent", "parent/escaped")
             .unwrap().colocate("workflow.v1.Ledger", "ledger/escaped")
             .unwrap().to_string(),
         Ok("plain") | Err(_) => StateRef::from_id("workflow.v1.Ledger", "ledger")
-            .unwrap().to_string(),
+            .unwrap()
+            .to_string(),
         Ok(other) => panic!("unknown WORKFLOW_REFERENCE_KIND: {other}"),
     }
 }
@@ -547,6 +558,13 @@ fn request<T>(body: T, key: Option<&str>) -> tonic::Request<T> {
     }
     r
 }
+fn application() -> &'static str {
+    if std::env::var("WORKFLOW_BODY_MODE").as_deref() == Ok("outbound") {
+        "a0000000001"
+    } else {
+        "workflow-app"
+    }
+}
 fn plan(port: u16) -> reboot::legacy_placement::PlanOnlyLegacyPlacement {
     use reboot::placement_proto as p;
     let plan = reboot::legacy_placement::PlanOnlyLegacyPlacement::new();
@@ -554,7 +572,7 @@ fn plan(port: u16) -> reboot::legacy_placement::PlanOnlyLegacyPlacement {
         plan: Some(p::Plan {
             version: 1,
             applications: vec![p::plan::Application {
-                id: "workflow-app".into(),
+                id: application().into(),
                 services: vec![
                     p::plan::application::Service {
                         full_name: "workflow.v1.LedgerMethods".into(),
@@ -575,7 +593,7 @@ fn plan(port: u16) -> reboot::legacy_placement::PlanOnlyLegacyPlacement {
         }),
         servers: vec![p::Server {
             id: "server".into(),
-            application_id: "workflow-app".into(),
+            application_id: application().into(),
             address: Some(p::server::Address {
                 host: "127.0.0.1".into(),
                 port: i32::from(port),
@@ -610,19 +628,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Err(_) => reboot::auth::AuthorizationPolicy::permissive_for_development(),
         };
         let (adapter, tasks) =
-            generated::LedgerMethodsDatabaseAdapter::new(store, Ledger::default())
+            generated::LedgerMethodsDatabaseAdapter::new(store.clone(), Ledger::default())
                 .with_authorization(policy)
                 .with_workflows(&reference())?;
         if let Ok(limit) = std::env::var("CONTROL_MAX_LIVE") {
             tasks.set_max_live_deliveries(limit.parse()?)?;
         }
         let wait = tasks.wait_service_with_policy(
-            reboot::legacy_placement::LegacyApplicationId::new("workflow-app")?,
+            reboot::legacy_placement::LegacyApplicationId::new(application())?,
             "server",
             plan(address.port()),
             reboot::auth::AuthorizationPolicy::permissive_for_development(),
         );
-        ApplicationHost::new("workflow-app")
+        ApplicationHost::new(application())
             .with_host_recovery(tasks.recovery(db::RecoverRequest {
                 state_tags_by_state_type: [("workflow.v1.Ledger".into(), "Ledger".into())].into(),
                 shard_ids: vec!["s000000000".into()],
@@ -631,6 +649,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .add_public_service(proto::ledger_methods_server::LedgerMethodsServer::new(
                 adapter,
             ))
+            .add_public_service(
+                proto::remote_methods_server::RemoteMethodsServer::with_interceptor(
+                    generated::RemoteMethodsDatabaseAdapter::new(store, outbound::Remote)
+                        .with_authorization(reboot::auth::AuthorizationPolicy::new(
+                            None,
+                            Some(Arc::new(outbound::Policy)),
+                        )),
+                    outbound::wire,
+                ),
+            )
             .add_public_service(wait)
             .serve_with_shutdown(address, async {
                 while !std::path::Path::new(&arg(4)).exists() {
@@ -753,6 +781,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let channel = tonic::transport::Endpoint::from_shared(arg(2))?
         .connect()
         .await?;
+    if mode.starts_with("remote-") {
+        return outbound::command(&mode, channel).await;
+    }
     let mut client = proto::ledger_methods_client::LedgerMethodsClient::new(channel.clone());
     match mode.as_str() {
         "signal" => {

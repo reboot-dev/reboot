@@ -2,10 +2,11 @@
 //! cross-actor composition.
 //!
 //! Python exposes a generated `WeakReference` per actor type with typed
-//! `read`, `write`, `schedule`, `spawn`, and `reactively` methods. Rust does
-//! not yet have generated typed actor references for workflows, but the
-//! identity of the target actor (state type + state reference) is already
-//! language-agnostic. This module exposes that identity as a public type so
+//! `read`, `write`, `schedule`, `spawn`, and `reactively` methods. Rust's bounded
+//! generated `*WorkflowWriterRef` accepts this identity for ordinary writers;
+//! broader generated workflow-reference methods remain unsupported. Actor
+//! identity (state type + state reference) is language-agnostic. This module
+//! exposes that identity as a public type so
 //! future generated code and runtime helpers can build typed wrappers on top
 //! of it without inventing a second identity encoding.
 

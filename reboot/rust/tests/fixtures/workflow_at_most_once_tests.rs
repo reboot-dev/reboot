@@ -1427,6 +1427,10 @@ async fn memoize_unit_failure_is_not_saved_and_same_iteration_can_rerun() {
     server.abort();
 }
 
+include!("workflow_outbound_writer_tests.rs");
+include!("workflow_outbound_writer_uncertain_tests.rs");
+include!("workflow_outbound_writer_ack_tests.rs");
+
 trait TestCursorDeclaration {
     fn with_test_cursor(self, enabled: bool) -> Self;
 }
