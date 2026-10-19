@@ -143,6 +143,29 @@ class McpTest(unittest.IsolatedAsyncioTestCase):
                 [TUNNEL_URL, 'wss://' + TUNNEL_URL.removeprefix('https://')],
             )
 
+    async def test_the_mount_path_itself(self) -> None:
+        """`/mcp`, which an MCP client is told to connect to, is the
+        MCP server, not the page served at `/` and not a redirect."""
+        async with self.client.post(
+            self.url + '/mcp',
+            json={'jsonrpc': '2.0', 'id': 1, 'method': 'initialize'},
+            headers={'Accept': 'application/json, text/event-stream'},
+            allow_redirects=False,
+        ) as response:
+            self.assertEqual(response.status, 401)
+            self.assertIn('WWW-Authenticate', response.headers)
+        token = await self.rbt.make_valid_oauth_access_token()
+        async with httpx.AsyncClient(
+            headers={'Authorization': f'Bearer {token}'}
+        ) as client, streamable_http_client(
+            self.url + '/mcp', http_client=client
+        ) as (read, write, _), ClientSession(read, write) as session:
+            await session.initialize()
+            self.assertIn(
+                'dashboard_show',
+                [tool.name for tool in (await session.list_tools()).tools],
+            )
+
     async def test_cards(self) -> None:
         token = await self.rbt.make_valid_oauth_access_token()
         async with httpx.AsyncClient(
