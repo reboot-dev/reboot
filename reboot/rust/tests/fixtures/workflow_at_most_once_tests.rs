@@ -1289,6 +1289,48 @@ async fn retry_memoizes_error_per_iteration() {
     server.abort();
 }
 
+#[tokio::test]
+async fn always_runs_callable_every_time() {
+    let (f, _database, server) = fake().await;
+    let url = "type.googleapis.com/tests.reboot.protoc.Counter";
+    let constructed = Arc::new(AtomicI64::new(0));
+    let c = constructed.clone();
+    let first = WorkflowAttempt::default();
+    let context0 = f.context(&first).iteration("loop", 0, 2).unwrap();
+    let value0 = context0
+        .always(
+            "probe",
+            1,
+            url,
+            || {
+                let c = c.clone();
+                async move { Ok(crate::proto::Counter { value: c.fetch_add(1, Ordering::SeqCst) + 1 }) }
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(value0.value, 1);
+
+    let second = WorkflowAttempt::default();
+    let context1 = f.context(&second).iteration("loop", 0, 2).unwrap();
+    let value1 = context1
+        .always(
+            "probe",
+            1,
+            url,
+            || {
+                let c = constructed.clone();
+                async move { Ok(crate::proto::Counter { value: c.fetch_add(1, Ordering::SeqCst) + 1 }) }
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(value1.value, 2);
+    assert_eq!(constructed.load(Ordering::SeqCst), 2);
+    assert!(second.clean());
+    server.abort();
+}
+
 trait TestCursorDeclaration {
     fn with_test_cursor(self, enabled: bool) -> Self;
 }

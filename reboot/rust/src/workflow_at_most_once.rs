@@ -1083,6 +1083,8 @@ impl WorkflowContext<'_> {
     /// returned without invoking the callable. By default the memo is scoped to
     /// the current finite iteration; pass `per_workflow: true` to share the
     /// value across all iterations, matching Python's `memoize(..., per_workflow=True)`.
+    /// Pass `always: true` to bypass memoization and invoke the callable every
+    /// time, equivalent to Python's `ALWAYS` idempotency mode.
     pub async fn memoize<T, F, Fut>(
         &self,
         alias: &str,
@@ -1169,6 +1171,26 @@ impl WorkflowContext<'_> {
             callable,
         )
         .await
+    }
+
+    /// Run a callable every time, bypassing durable memoization.
+    ///
+    /// This is the Rust equivalent of Python's `Idempotency::ALWAYS` mode for
+    /// workflow helper callables. The result is not stored and the callable is
+    /// invoked on every workflow iteration/replay.
+    pub async fn always<T, F, Fut>(
+        &self,
+        _alias: &str,
+        _version: u32,
+        _result_type: &'static str,
+        callable: F,
+    ) -> Result<T, Status>
+    where
+        T: prost::Message + Default + Clone + Send + 'static,
+        F: FnOnce() -> Fut + Send,
+        Fut: std::future::Future<Output = Result<T, Status>> + Send,
+    {
+        callable().await
     }
 }
 
