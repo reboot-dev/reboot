@@ -785,7 +785,15 @@ a worked set are in
     follow it. It is the single canonical "start the app"
     procedure: it detects the app type, makes sure dependencies
     and secrets are in place, and starts the backend and
-    frontend. **The handoff for an MCP App is the setup wizard,
+    frontend. Required final hand-over: if you started the developer
+    dashboard, include the `cloudflared` command and the Claude and
+    ChatGPT connector instructions in your final response. This
+    applies even when the user asked only for a standalone web app and
+    never mentioned MCP. Do not omit them for brevity or perceived
+    relevance. A dashboard URL, or instructions saved in a README, do
+    not satisfy this requirement.
+    The steps are the [`dashboard` skill](../dashboard/SKILL.md)'s
+    step 6. **The handoff for an MCP App is the setup wizard,
     not the `/mcp` URL.** The backend serves an interactive
     **setup wizard at its root (`https://<app>.localhost` under
     portless, else `http://localhost:9991`)** — the

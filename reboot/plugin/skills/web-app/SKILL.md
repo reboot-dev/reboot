@@ -644,7 +644,15 @@ config: it adds `frontend/mcp/<name>/` beside `web/` and
     procedure: it makes sure dependencies and secrets are in
     place, starts the backend and frontend dev server, waits for
     them to come up, and hands the user the URLs plus a first page
-    to open.
+    to open. Required final hand-over: if you started the developer
+    dashboard, include the `cloudflared` command and the Claude and
+    ChatGPT connector instructions in your final response. This
+    applies even when the user asked only for a standalone web app and
+    never mentioned MCP. Do not omit them for brevity or perceived
+    relevance. A dashboard URL, or instructions saved in a README, do
+    not satisfy this requirement.
+    The steps are the [`dashboard` skill](../dashboard/SKILL.md)'s
+    step 6.
 
 ## Update Flow
 

@@ -558,6 +558,33 @@ async def dashboard(
 
         terminal.info(f'Your dashboard is at {origin}/\n')
 
+        # An MCP host in the cloud reaches the dashboard through a
+        # tunnel the developer starts; by name under portless, so it
+        # needs no port, and by port otherwise.
+        if portless_name is not None:
+            hostname = reboot.portless.hostname(portless_name)
+            proxy_port = reboot.portless.proxy_port()
+            tunnel = (
+                'cloudflared tunnel \\\n'
+                f'    --url https://127.0.0.1:{proxy_port} \\\n'
+                f'    --http-host-header {hostname} \\\n'
+                f'    --origin-server-name {hostname} \\\n'
+                f'    --origin-ca-pool {reboot.portless.CA_PATH}'
+            )
+        else:
+            tunnel = f'cloudflared tunnel --url {origin}'
+        terminal.info(
+            'To show it in Claude or ChatGPT, start a tunnel to it in '
+            'another shell:\n'
+            '\n'
+            f'{tunnel}\n'
+            '\n'
+            'and add the address it prints, with `/mcp` on the end, as a '
+            'custom MCP connector. Anyone with the address reaches your '
+            'dashboard. See https://docs.reboot.dev/develop_locally'
+            '#the-dashboard-in-claude-or-chatgpt\n'
+        )
+
         open_task = asyncio.create_task(
             _open_when_serving(origin=origin, portless_name=portless_name),
             name=f'_open_when_serving(...) in {__name__}',

@@ -347,9 +347,15 @@ use for the URLs they hand a client.
 
 `rbt dashboard` also serves the dashboard as an MCP App, at `/mcp/`,
 which an MCP host such as Claude or ChatGPT shows inside a
-conversation. The dashboard serves your machine alone, so a host in
-the cloud reaches it through a tunnel you start yourself. Under
-`--portless`, point a
+conversation: the whole dashboard, for the changelog, the call graph
+or the features as a whole, and a card of one feature or one state
+type, inline, when you ask about a specific one. The dashboard is a
+Reboot application of its own, with its own `/mcp`: the tunnel goes
+to the dashboard's address, `https://dashboard.<app>.localhost` or
+`http://127.0.0.1:9871`, not to your application's. The dashboard
+serves your machine alone, so a host in the cloud reaches it through
+a tunnel you start yourself; `rbt dashboard` prints the command for
+the mode it runs in. Under `--portless`, point a
 [Cloudflare quick tunnel](/call/from_mcp_client#cloudflared) at the
 dashboard by name, the way you would at an application:
 
