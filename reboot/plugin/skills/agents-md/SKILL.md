@@ -27,7 +27,8 @@ user wrote. Otherwise fill this template from the project's real files
 (`.rbtrc`, `pyproject.toml` and the tree): each path as it is
 (`api/hotel/v1/hotel.py`), `<project>` the `.rbtrc`'s
 `--application-name`, the Reboot version from the `reboot` pin, no
-line for what the project doesn't have (no frontend, no `.env`), no
+line for what the project doesn't have (no frontend; the `.env` row
+only when the file itself exists, not because `.rbtrc` names one), no
 placeholder left. It is written for any coding agent, with the Reboot
 plugin or without it, so every command is spelled out.
 
