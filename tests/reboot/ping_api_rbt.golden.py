@@ -15284,7 +15284,8 @@ class PingBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         ):
             reboot_context = IMPORT_reboot_mcp_context.get_reboot_context(ctx)
             ref = Ping.ref(ping_id)
-            return await ref.do_ping(reboot_context)
+            response = await ref.do_ping(reboot_context)
+            return response
 
 
         # Tool for 'reboot.ping.PingMethods.NumPings'.
@@ -15299,7 +15300,8 @@ class PingBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         ):
             reboot_context = IMPORT_reboot_mcp_context.get_reboot_context(ctx)
             ref = Ping.ref(ping_id)
-            return await ref.num_pings(reboot_context)
+            response = await ref.num_pings(reboot_context)
+            return response
 
 
         # Map UI method names to their URL paths under
@@ -17459,7 +17461,8 @@ class UserBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             # State is auto-constructed when the user's
             # JWT is minted; see `_authenticated`.
             ref = User.ref(id)
-            return await ref.create_counter(reboot_context, request)
+            response = await ref.create_counter(reboot_context, request)
+            return response
 
 
         # Tool for 'reboot.ping.UserMethods.ListCounters'.
@@ -17476,7 +17479,8 @@ class UserBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             # State is auto-constructed when the user's
             # JWT is minted; see `_authenticated`.
             ref = User.ref(id)
-            return await ref.list_counters(reboot_context)
+            response = await ref.list_counters(reboot_context)
+            return response
 
 
         # Tool for 'reboot.ping.UserMethods.Whoami'.
@@ -17493,7 +17497,8 @@ class UserBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             # State is auto-constructed when the user's
             # JWT is minted; see `_authenticated`.
             ref = User.ref(id)
-            return await ref.whoami(reboot_context)
+            response = await ref.whoami(reboot_context)
+            return response
 
         pass  # End of _add_mcp.
 
@@ -18864,7 +18869,8 @@ class CounterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         ):
             reboot_context = IMPORT_reboot_mcp_context.get_reboot_context(ctx)
             ref = Counter.ref(counter_id)
-            return await ref.increment(reboot_context)
+            response = await ref.increment(reboot_context)
+            return response
 
 
         # Tool for 'reboot.ping.CounterMethods.Value'.
@@ -18879,7 +18885,8 @@ class CounterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         ):
             reboot_context = IMPORT_reboot_mcp_context.get_reboot_context(ctx)
             ref = Counter.ref(counter_id)
-            return await ref.value(reboot_context)
+            response = await ref.value(reboot_context)
+            return response
 
 
         # Map UI method names to their URL paths under

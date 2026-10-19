@@ -1,6 +1,7 @@
-"""The dashboard as an MCP App: the MCP endpoint offers one tool,
-which shows the whole dashboard page, built to call back on the
-address the request arrived at, the tunnel's. And its sign-in:
+"""The dashboard as MCP Apps: the MCP endpoint offers the whole
+dashboard page, a card of one feature and a card of one state type,
+each built to call back on the address the request arrived at, the
+tunnel's, and a listing of what the cards can show. And its sign-in:
 whoever reaches the endpoint signs in with no sign-in page, and the
 application issues recording URLs only with the access token; `application()`
 in `reboot/dashboard/backend/main.py` sets both up.
@@ -114,15 +115,22 @@ class McpTest(unittest.IsolatedAsyncioTestCase):
             self.url + '/mcp/', http_client=client
         ) as (read, write, _), ClientSession(read, write) as session:
             await session.initialize()
-            tools = (await session.list_tools()).tools
-            self.assertEqual([tool.name for tool in tools], ['dashboard_show'])
+            tools = {tool.name: tool for tool in (await session.list_tools()).tools}
+            self.assertEqual(
+                set(tools), {
+                    'dashboard_list',
+                    'dashboard_show',
+                    'dashboard_show_feature',
+                    'dashboard_show_state_type',
+                }
+            )
             shown = await session.call_tool(
                 'dashboard_show', {'dashboard_id': 'dashboard'}
             )
             self.assertFalse(shown.isError)
             # The App takes its access token from the tool's result.
             self.assertIn(token, str(shown))
-            uri = tools[0].meta['ui']['resourceUri']
+            uri = tools['dashboard_show'].meta['ui']['resourceUri']
             (content,) = (await session.read_resource(uri)).contents
             # The page itself, not an iframe of it; it calls back on the
             # tunnel's address, which its CSP allows.
@@ -134,6 +142,48 @@ class McpTest(unittest.IsolatedAsyncioTestCase):
                 content.meta['ui']['csp']['connectDomains'],
                 [TUNNEL_URL, 'wss://' + TUNNEL_URL.removeprefix('https://')],
             )
+
+    async def test_cards(self) -> None:
+        token = await self.rbt.make_valid_oauth_access_token()
+        async with httpx.AsyncClient(
+            headers={'Authorization': f'Bearer {token}'}
+        ) as client, streamable_http_client(
+            self.url + '/mcp/', http_client=client
+        ) as (read, write, _), ClientSession(read, write) as session:
+            await session.initialize()
+            tools = {tool.name: tool for tool in (await session.list_tools()).tools}
+
+            # What the cards can show: nothing yet, since this test's
+            # working directory holds no feature file and no API.
+            listed = await session.call_tool(
+                'dashboard_list', {'dashboard_id': 'dashboard'}
+            )
+            self.assertFalse(listed.isError)
+            (text,) = listed.content
+            assert text.type == 'text'
+            index = json.loads(text.text)
+            self.assertEqual(index.get('features', []), [])
+            self.assertEqual(index.get('stateTypes', []), [])
+
+            # A card's tool takes what to show and hands it to the page
+            # with the token; the page is the dashboard's, told which
+            # card it is by its title.
+            for tool, argument, title in (
+                ('dashboard_show_feature', 'feature', 'show_feature'),
+                ('dashboard_show_state_type', 'state_type', 'show_state_type'),
+            ):
+                shown = await session.call_tool(
+                    tool, {'dashboard_id': 'dashboard', argument: 'x'}
+                )
+                self.assertFalse(shown.isError, tool)
+                self.assertIn(token, str(shown))
+                self.assertIn('"x"', str(shown))
+                uri = tools[tool].meta['ui']['resourceUri']
+                (content,) = (await session.read_resource(uri)).contents
+                self.assertIn(
+                    f'window.REBOOT_MCP_UI_TITLE={json.dumps(title)};',
+                    content.text,
+                )
 
     async def test_signed_recordings(self) -> None:
         signing = self.url + '/recordings/sign'

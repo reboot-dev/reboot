@@ -345,7 +345,7 @@ use for the URLs they hand a client.
 
 ### The dashboard in Claude or ChatGPT
 
-`rbt dashboard` also serves the dashboard as an MCP App, at `/mcp/`,
+`rbt dashboard` also serves the dashboard as MCP Apps, at `/mcp`,
 which an MCP host such as Claude or ChatGPT shows inside a
 conversation: the whole dashboard, for the changelog, the call graph
 or the features as a whole, and a card of one feature or one state

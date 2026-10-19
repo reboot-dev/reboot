@@ -2,6 +2,8 @@
 import os
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_pb2 import (
+    DashboardIndexRequest,
+    DashboardIndexResponse,
     DashboardGetRequest,
     DashboardGetResponse,
     DashboardRecordCheckRequest,
@@ -65,6 +67,28 @@ class DashboardServicer(Dashboard.Servicer):
         # The dashboard's own watchers write what it holds; the
         # signed-in developer reads it.
         return allow_if(any=[is_app_internal, has_verified_token])
+
+    async def Index(
+        self,
+        context: ReaderContext,
+        request: DashboardIndexRequest,
+    ) -> DashboardIndexResponse:
+        return DashboardIndexResponse(
+            features=[
+                DashboardIndexResponse.Feature(
+                    id=filename,
+                    name=feature.name if feature.HasField('name') else None,
+                ) for filename, feature in sorted(self.state.features.items())
+            ],
+            state_types=[
+                DashboardIndexResponse.StateType(
+                    id=f'{api.package}.{state_type.name}',
+                    name=state_type.name,
+                    file=api.filename,
+                ) for _, api in sorted(self.state.apis.items())
+                for state_type in api.state_types
+            ],
+        )
 
     async def Get(
         self,

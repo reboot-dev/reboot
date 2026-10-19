@@ -91,6 +91,12 @@ class PythonService(BaseService):
 class PythonState(BaseState):
     services: Sequence[PythonService]
     pb2_name: str
+    # For an API defined in proto, each UI's request message fields by
+    # the UI's name, as `input_type_fields` are for a method: the
+    # generated tool takes them as its parameters, since FastMCP
+    # cannot derive a schema from a protobuf class. Empty for an API
+    # defined in pydantic, whose request is a model.
+    proto_ui_request_fields: dict[str, dict[str, str]]
 
 
 @dataclass
@@ -169,15 +175,23 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
         )
 
     def _py_state(self, file: BaseFile, state: BaseState) -> PythonState:
+        from_pydantic = file.options.proto.pydantic is not None
         return PythonState(
             proto=state.proto,
             services=[
-                self._py_service(
-                    service,
-                    file.options.proto.pydantic is not None,
-                ) for service in state.services
+                self._py_service(service, from_pydantic)
+                for service in state.services
             ],
             pb2_name=self._pb2_module_name(file.proto._descriptor),
+            proto_ui_request_fields={} if from_pydantic else {
+                ui.name:
+                    self._analyze_message_fields(
+                        file.proto._descriptor.
+                        message_types_by_name[ui.request_message]
+                    )
+                for ui in state.proto.uis
+                if ui.request_message
+            },
         )
 
     def add_language_dependent_data(self, file: BaseFile) -> BaseFile:

@@ -3176,3 +3176,39 @@ header .state-type-description {
   font-family: ui-monospace, Menlo, monospace;
   font-size: 12px;
 }
+
+/* A card, one feature or one state type in an MCP host's inline
+   frame (`MCP_CARD`): the host sizes the frame by the content, nothing
+   in it is clickable, and no recording is shown. */
+html.mcp-card,
+html.mcp-card body,
+html.mcp-card #root {
+  height: auto;
+}
+
+html.mcp-host.mcp-card body {
+  min-height: 0;
+}
+
+html.mcp-card .card {
+  padding: 16px;
+}
+
+html.mcp-card a,
+html.mcp-card button,
+html.mcp-card [role="button"] {
+  pointer-events: none;
+}
+
+html.mcp-card a {
+  color: inherit;
+  text-decoration: none;
+}
+
+html.mcp-card .anchor,
+html.mcp-card .copy-scenario-name,
+html.mcp-card .scenario-caret,
+html.mcp-card .scenario-video,
+html.mcp-card .step-screenshot {
+  display: none;
+}
