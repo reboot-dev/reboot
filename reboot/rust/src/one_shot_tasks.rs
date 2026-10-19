@@ -1683,6 +1683,10 @@ pub struct ConstructorUncertaintyStatus {
     pub actor_retained: bool,
 }
 impl OneShotTasks {
+    pub(crate) fn database_actor_store(&self) -> &crate::runtime::DatabaseActorStore {
+        &self.inner.store
+    }
+
     pub fn constructor_uncertainty_status(&self) -> ConstructorUncertaintyStatus {
         let key = (
             self.inner.store.database_endpoint().to_owned(),

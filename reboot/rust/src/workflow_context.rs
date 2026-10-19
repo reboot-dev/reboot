@@ -1641,6 +1641,29 @@ mod idempotency_key_scope_tests {
         assert_eq!(result.unwrap_err().code(), tonic::Code::Cancelled);
     }
     #[tokio::test]
+    async fn wait_for_revision_resolves_on_commit() {
+        let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
+        let context = build_context(&tasks, task, &cancel, &attempt, None, Vec::new());
+        let gate = tasks.database_actor_store().actor_gate(
+            &context.state_type(),
+            context.state_ref().as_str(),
+        );
+        let bump = tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            gate.committed();
+        });
+        context.wait_for_revision().await.unwrap();
+        bump.await.unwrap();
+    }
+    #[tokio::test]
+    async fn wait_for_revision_returns_cancelled_after_cancel() {
+        let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
+        let context = build_context(&tasks, task, &cancel, &attempt, None, Vec::new());
+        context.cancel.cancel();
+        let result = context.wait_for_revision().await;
+        assert_eq!(result.unwrap_err().code(), tonic::Code::Cancelled);
+    }
+    #[tokio::test]
     async fn state_ref_matches_task_state_ref() {
         let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
         let expected = crate::state_ref::StateRef::from_id(
@@ -1936,6 +1959,32 @@ impl<'a> WorkflowContext<'a> {
     /// `tokio::time::sleep` while respecting `WorkflowContext::wait` semantics.
     pub async fn sleep(&self, duration: std::time::Duration) -> Result<(), Status> {
         self.wait(tokio::time::sleep(duration)).await
+    }
+
+    /// Wait until the actor this workflow is running on commits a state
+    /// change, respecting workflow cancellation.
+    ///
+    /// This is a Rust building block toward Python's reactive
+    /// `retry_reactively_until`. It watches the actor gate revision stream and
+    /// returns once a durable commit has been observed on this host.
+    pub async fn wait_for_revision(&self) -> Result<(), Status> {
+        let gate = self
+            .tasks
+            .database_actor_store()
+            .actor_gate(&self.state_type(), self.state_ref().as_str());
+        let mut revisions = gate.committed_revisions();
+        let start = revisions.borrow().0;
+        self.wait(async move {
+            loop {
+                if revisions.changed().await.is_err() {
+                    return ();
+                }
+                if revisions.borrow().0 != start {
+                    return ();
+                }
+            }
+        })
+        .await
     }
 
     /// The encoded state reference of the actor this workflow is running on.
