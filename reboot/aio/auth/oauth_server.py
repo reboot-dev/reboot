@@ -29,6 +29,13 @@ from reboot.aio.auth.allowed_origins import (
     OAUTH_PATH_PREFIX,
     is_allowed_origin,
 )
+from reboot.aio.auth.oauth import (
+    Allow,
+    AuthorizeResource,
+    Deny,
+    ResourceDecision,
+    ResourceRequest,
+)
 from reboot.aio.auth.oauth_providers import (
     ClaimsChanged,
     OAuthProvider,
@@ -69,6 +76,11 @@ _ALGORITHM = "HS256"
 
 # Audience claim for access tokens.
 _AUDIENCE = "reboot-mcp"
+
+# Access-token claims `Allow.claims` may not override.
+_RESERVED_ACCESS_TOKEN_CLAIMS = frozenset(
+    ["type", "sub", "iss", "aud", "iat", "exp"]
+)
 
 # OAuth endpoint paths. Prefixed with `__/oauth/` to avoid collisions
 # with developer-specified routes. The `/.well-known/` discovery paths
@@ -266,10 +278,20 @@ class OAuthTokenVerifier(TokenVerifier):
 
     Decodes the HS256 JWT and checks `type`, `aud`, and `exp`.
     Returns `Auth(user_id=...)` on success, `None` otherwise.
+
+    `audiences` are the `aud` values that authenticate here: the
+    server's own and `OAuth(accepted_audiences=...)`. A token minted
+    for another resource (`OAuth(authorize_resource=...)`) has that
+    resource as its `aud` and is rejected, by design.
     """
 
-    def __init__(self, signing_secret: bytes):
+    def __init__(
+        self,
+        signing_secret: bytes,
+        audiences: Optional[Sequence[str]] = None,
+    ):
         self._signing_secret = signing_secret
+        self._audiences = list(audiences or [_AUDIENCE])
 
     async def verify_token(
         self,
@@ -283,7 +305,7 @@ class OAuthTokenVerifier(TokenVerifier):
                 token,
                 self._signing_secret,
                 algorithms=[_ALGORITHM],
-                audience=_AUDIENCE,
+                audience=self._audiences,
             )
             if decoded.get("type") != "access":
                 return None
@@ -320,8 +342,13 @@ class MCPSDKOAuthTokenVerifier:
     signature, audience, and type.
     """
 
-    def __init__(self, signing_secret: bytes):
+    def __init__(
+        self,
+        signing_secret: bytes,
+        audiences: Optional[Sequence[str]] = None,
+    ):
         self._signing_secret = signing_secret
+        self._audiences = list(audiences or [_AUDIENCE])
 
     async def verify_token(  # type: ignore[override]
         self, token: str
@@ -331,7 +358,7 @@ class MCPSDKOAuthTokenVerifier:
                 token,
                 self._signing_secret,
                 algorithms=[_ALGORITHM],
-                audience=_AUDIENCE,
+                audience=self._audiences,
                 # Don't verify expiry here — let the MCP SDK's
                 # `BearerAuthBackend` check `expires_at` so it returns a
                 # proper 401 with `WWW-Authenticate`.
@@ -426,6 +453,8 @@ class OAuthServer:
         claims_changed: Optional[ClaimsChanged] = None,
         allowed_origins: Optional[Sequence[str]] = None,
         skip_consent_for_redirect_uris: Optional[Sequence[str]] = None,
+        authorize_resource: Optional[AuthorizeResource] = None,
+        accepted_audiences: Optional[Sequence[str]] = None,
     ):
         """`authenticated`, if given, runs right after each fresh
         access token is minted for a user, receiving an app-internal
@@ -454,6 +483,13 @@ class OAuthServer:
         the redirect URIs whose clients the application already
         trusts; a client registering only such URIs skips the
         consent screen.
+
+        `authorize_resource` and `accepted_audiences` are
+        `OAuth(authorize_resource=...)` and
+        `OAuth(accepted_audiences=...)`: the decision on a request
+        for a token for another resource (RFC 8707), and the token
+        audiences, besides this server's own, that its verifiers
+        accept.
         """
         self._provider = provider
         self._protected_resources = protected_resources
@@ -472,7 +508,14 @@ class OAuthServer:
         # if `REBOOT_CRYPTO_ROOT_KEYS` is unset/malformed (fail fast at
         # construction rather than per-request).
         self._signing_secret = signing_secret()
-        self._token_verifier = OAuthTokenVerifier(self._signing_secret)
+        self._authorize_resource = authorize_resource
+        self._audiences = [_AUDIENCE] + [
+            audience for audience in (accepted_audiences or [])
+            if audience != _AUDIENCE
+        ]
+        self._token_verifier = OAuthTokenVerifier(
+            self._signing_secret, self._audiences
+        )
         # The consent page template, compiled lazily on first render so
         # only apps that actually serve an OAuth flow pay for it.
         self._consent_page_template: Optional[Template] = None
@@ -503,7 +546,7 @@ class OAuthServer:
         For use with the SDK's `BearerAuthBackend` /
         `RequireAuthMiddleware`.
         """
-        return MCPSDKOAuthTokenVerifier(self._signing_secret)
+        return MCPSDKOAuthTokenVerifier(self._signing_secret, self._audiences)
 
     def mount_routes(self, http: PythonWebFramework.HTTP) -> None:
         """Register all OAuth endpoints on `http`."""
@@ -575,12 +618,16 @@ class OAuthServer:
         context: ExternalContext,
         claims: Optional[Mapping[str, Any]] = None,
         resource: Optional[str] = None,
+        decision: Optional[Allow] = None,
     ) -> dict[str, Any]:
         """Mint a fresh access/refresh token pair for `user_id` and
         return the standard OAuth token response body (`access_token`,
         `token_type`, `expires_in`, `refresh_token`). `resource` is the
         RFC 8707 resource the grant was issued for, if any; the refresh
-        token records it so refreshed tokens are for the same one.
+        token records it so refreshed tokens are for the same one, and
+        `decision` is `authorize_resource`'s `Allow` for it, which sets
+        the access token's audience and may add claims; without a
+        decision (no hook configured) the token is for this server.
 
         Every JWT this server hands out is minted here: using a Reboot
         app always requires the user to authenticate, and this is the
@@ -602,12 +649,22 @@ class OAuthServer:
         `authenticated` runs is trusted app code rather than a call
         made as the (not-yet-existent) user.
         """
+        audience = _AUDIENCE
+        extra_claims: dict[str, Any] = {}
+        if resource is not None and decision is not None:
+            audience = decision.audience or resource
+            extra_claims = {
+                name: value
+                for name, value in decision.claims.items()
+                if name not in _RESERVED_ACCESS_TOKEN_CLAIMS
+            }
         access_token = self._make_jwt(
             {
+                **extra_claims,
                 "type": "access",
                 "sub": user_id,
                 "iss": base,
-                "aud": _AUDIENCE,
+                "aud": audience,
             },
             ttl_seconds=self._access_token_ttl_seconds,
         )
@@ -804,7 +861,7 @@ class OAuthServer:
             # Access tokens have an `aud` claim; others don't.
             kwargs: dict[str, Any] = {}
             if "access" in expected_types:
-                kwargs["audience"] = _AUDIENCE
+                kwargs["audience"] = self._audiences
             else:
                 kwargs["options"] = {"verify_aud": False}
 
@@ -957,6 +1014,33 @@ class OAuthServer:
             redirect_uri=callback_uri,
         )
         return RedirectResponse(url=idp_url, status_code=302)
+
+    async def _decide_resource(
+        self,
+        request: Request,
+        *,
+        user_id: UserId,
+        resource: Optional[str],
+        client_id: str,
+        redirect_uri: str,
+    ) -> Optional[ResourceDecision]:
+        """Whether `user_id` may have a token for `resource`: `None`
+        when none was requested or no `authorize_resource` is
+        configured (the token is then for this server, as always),
+        else whatever the hook decides. Runs where the request's
+        context is app-internal (the callback, the token endpoint),
+        so the hook can read the application's state."""
+        if resource is None or self._authorize_resource is None:
+            return None
+        return await self._authorize_resource(
+            external_context(request),
+            ResourceRequest(
+                resource=resource,
+                user_id=user_id,
+                client_id=client_id,
+                redirect_uri=redirect_uri,
+            ),
+        )
 
     async def _store_oauth_tokens(
         self,
@@ -1574,6 +1658,30 @@ class OAuthServer:
 
         user_id = result.user_id
 
+        # A request for a token for another resource is decided now,
+        # the first moment the user is known, so that someone it
+        # refuses never gets a code. The token endpoint decides again
+        # when the code is exchanged.
+        decision = await self._decide_resource(
+            request,
+            user_id=user_id,
+            resource=pending.get("resource"),
+            client_id=str(pending["client_id"]),
+            redirect_uri=str(pending["redirect_uri"]),
+        )
+        if isinstance(decision, Deny):
+            query = urlencode(
+                {
+                    "error": "access_denied",
+                    "error_description": decision.reason,
+                    "state": pending.get("mcp_state", ""),
+                }
+            )
+            return RedirectResponse(
+                url=f"{pending['redirect_uri']}?{query}",
+                status_code=302,
+            )
+
         # If the provider captured the identity provider's tokens
         # (`store_tokens=True`), persist them, encrypted, so the app can
         # use them to call the provider's API.
@@ -1711,6 +1819,15 @@ class OAuthServer:
         mismatch = self._resource_mismatch(form, resource, own_origin=base)
         if mismatch is not None:
             return mismatch
+        decision = await self._decide_resource(
+            request,
+            user_id=user_id,
+            resource=resource,
+            client_id=str(client_id),
+            redirect_uri=str(redirect_uri),
+        )
+        if isinstance(decision, Deny):
+            return self._denied_resource(decision)
 
         tokens = await self._mint_tokens_for_user(
             user_id=user_id,
@@ -1718,8 +1835,18 @@ class OAuthServer:
             base=base,
             context=external_context(request),
             resource=resource,
+            decision=decision,
         )
         return JSONResponse(tokens, headers=_CORS_HEADERS)
+
+    def _denied_resource(self, decision: Deny) -> JSONResponse:
+        """The token endpoint's answer when `authorize_resource`
+        refuses the grant's resource (RFC 8707 2.2)."""
+        return _oauth_error(
+            error="invalid_target",
+            description=decision.reason,
+            status_code=400,
+        )
 
     def _resource_mismatch(
         self,
@@ -1799,6 +1926,18 @@ class OAuthServer:
         mismatch = self._resource_mismatch(form, resource, own_origin=base)
         if mismatch is not None:
             return mismatch
+        # Decided again on every refresh, so a decision can be
+        # withdrawn; the refresh token does not say where the code
+        # went, and the hook gets the client instead.
+        decision = await self._decide_resource(
+            request,
+            user_id=user_id,
+            resource=resource,
+            client_id=str(client_id),
+            redirect_uri="",
+        )
+        if isinstance(decision, Deny):
+            return self._denied_resource(decision)
 
         return JSONResponse(
             await self._mint_tokens_for_user(
@@ -1807,6 +1946,7 @@ class OAuthServer:
                 base=base,
                 context=external_context(request),
                 resource=resource,
+                decision=decision,
             ),
             headers=_CORS_HEADERS,
         )

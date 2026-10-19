@@ -15,7 +15,7 @@ from mcp.server.fastmcp import FastMCP
 from pathlib import Path
 from rbt.v1alpha1.application.application_pb2 import ExamplePrompt
 from reboot.aio.auth.allowed_origins import frontend_dev_origin
-from reboot.aio.auth.oauth import OAuth
+from reboot.aio.auth.oauth import AuthorizeResource, OAuth
 from reboot.aio.auth.oauth_server import OAuthServer
 from reboot.aio.auth.token_verifiers import (
     CompoundTokenVerifier,
@@ -462,6 +462,8 @@ class Application:
         # without credentials (see `reboot/routing/envoy_config.py`).
         self._allowed_origins: Optional[list[str]] = None
         self._skip_consent_for_redirect_uris: list[str] = []
+        self._authorize_resource: Optional[AuthorizeResource] = None
+        self._accepted_audiences: list[str] = []
         if oauth is not None:
             self._allowed_origins = list(oauth.allowed_origins or [])
             # Under `rbt dev run`, the frontend dev server's origin too:
@@ -475,6 +477,8 @@ class Application:
             self._skip_consent_for_redirect_uris = list(
                 oauth.skip_consent_for_redirect_uris
             )
+            self._authorize_resource = oauth.authorize_resource
+            self._accepted_audiences = list(oauth.accepted_audiences)
         self._title = title or application_name()
         self._description = description
         self._example_prompts = example_prompts or []
@@ -734,6 +738,8 @@ class Application:
                 skip_consent_for_redirect_uris=(
                     self._skip_consent_for_redirect_uris
                 ),
+                authorize_resource=self._authorize_resource,
+                accepted_audiences=self._accepted_audiences,
             )
             self._oauth_server = oauth_server
             self.http.verify_oauth_token_with(oauth_server.verify_token)
