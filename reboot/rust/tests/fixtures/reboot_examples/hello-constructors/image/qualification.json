@@ -1,0 +1,517 @@
+{
+  "scope": "hello-constructors native release Docker application and original shared Python public-runtime correctness; not full SDK parity",
+  "verified_utc": "2026-10-19T17:58:40.667499+00:00",
+  "source_commit": "ad20bba10d4f054a6df34e05814bdc4e5b18cc56",
+  "source_hashes": {
+    "reboot/rust/src/runtime.rs": "9df916f9b3d9a0f676e8577e60133b35f3b173c21a67897f593a73fcfd0e0ce6",
+    "reboot/rust/tests/fixtures/reboot_examples/hello-constructors/backend/src/main.rs": "6b342cb7e294940467b65a9dfeacb9f11f5e26b9ba0223dba50646d65a43dbb6",
+    "reboot/rust/tests/fixtures/reboot_examples/hello-constructors/backend/src/startup.rs": "471799bebdd13b8fb31edc2504d4cf4094c0efb127a284c3809576ea65c757fe",
+    "reboot/rust/tests/fixtures/reboot_examples/hello-constructors/backend/src/lib.rs": "8d0c78e17fbbf431ab4783ec00c20ce5fb31a78a3809328cff109a7bda085b36",
+    "reboot/rust/tests/fixtures/reboot_examples/hello-constructors/backend/src/bin/client.rs": "6a2830e022c01dc5f12622d21763c0ff2753178ad997694aae3017e006e66174",
+    "reboot/rust/tests/fixtures/reboot_examples/hello-constructors/backend/tests/application.rs": "9e8d01817692b47719530df4af97581aeae861247c1657c91258dbb814c8cf80",
+    "reboot/rust/tests/fixtures/reboot_examples/hello-constructors/backend/tests/native.rs": "bde0ea2902e5b95250da238bce68e9b133ec822adb0e2e913c8e2d7b460fac97",
+    "reboot/rust/tests/fixtures/reboot_examples/hello-constructors/backend/Cargo.lock": "9161b40cfc36b5248fd7607fd1cda643b9c1a684238a263a20048f072d3cd7d2",
+    "reboot/rust/tests/fixtures/reboot_examples/hello-constructors/backend/build.rs": "f17a5d46e213cc0368dba2c92d5058ef19386cf4d818b03dd74f727ca39d905f",
+    "reboot/rust/tests/fixtures/reboot_examples/hello-constructors/image/build_images.py": "36ba2d212cea78ec5f002ecbbb76c855d6276f6548100f1eae8a12ea882a95d5",
+    "reboot/rust/tests/fixtures/reboot_examples/hello-constructors/image/shared_probe.py": "a929f0fc57a9f708a0cd94ece63fe00da41777076befa8897c3cd65c1297bfd8",
+    "reboot/rust/tests/fixtures/reboot_examples/hello-constructors/image/compose.yaml": "fd8d4de70a62246f504e5b33b87d4d08271f54ff4713ba52ae803a903261bdf1"
+  },
+  "host": {
+    "server_id": 171072439,
+    "address": "2.29.27.53",
+    "placement": "authorized existing CCX43 only",
+    "expiry_unchanged": "2026-10-20 20:46 Europe/Prague",
+    "architecture": "x86_64",
+    "boot_id": "bdc3e231-59dd-45ae-a5d7-59e7e9384078"
+  },
+  "toolchain": {
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1\n",
+    "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)\n",
+    "vendored_protoc": "libprotoc 31.1; protoc-bin-vendored 3.2.0 locked",
+    "docker": "29.9.1",
+    "compose": "Docker Compose version v5.6.0"
+  },
+  "base_images": {
+    "ubuntu_amd64": "sha256:a2d43bffc46670d7108bb3c0468c67c5557c4c92e83e1e34cbff1322ad1b94dc",
+    "envoy_amd64": "sha256:f02b483283bf9651c85fe31f943e59496e76a87e54ba70a277d00a8eb7a4328b"
+  },
+  "images": [
+    {
+      "tags": [
+        "hello-rust:qualification"
+      ],
+      "id": "sha256:f2b48e8e9ef922b0aadc558c3c4e4c8db0b19ab712fc53f7ed75bf7e6e45fc06",
+      "repo_digests": [
+        "hello-rust@sha256:f2b48e8e9ef922b0aadc558c3c4e4c8db0b19ab712fc53f7ed75bf7e6e45fc06"
+      ],
+      "architecture": "amd64"
+    },
+    {
+      "tags": [
+        "hello-database:qualification"
+      ],
+      "id": "sha256:1a73705b0771f9c861d9ba96509806849423a3d8bbff140b1261da76280460cd",
+      "repo_digests": [
+        "hello-database@sha256:1a73705b0771f9c861d9ba96509806849423a3d8bbff140b1261da76280460cd"
+      ],
+      "architecture": "amd64"
+    },
+    {
+      "tags": [
+        "hello-python:qualification"
+      ],
+      "id": "sha256:3e48dc3ed3642bd468e4a700acf8bdedb95fee038fda13c0749f01e381f67194",
+      "repo_digests": [
+        "hello-python@sha256:3e48dc3ed3642bd468e4a700acf8bdedb95fee038fda13c0749f01e381f67194"
+      ],
+      "architecture": "amd64"
+    }
+  ],
+  "binary_sha256": {
+    "libstdc++.so.6": "1fd75fe70354a416d75aef22bcae68c47bd25d20e2d0568c30b1a9838cf62f11",
+    "probe": "ebbc459a696b44ff7b3ab5291e2f9e6660edc5161167d71aca53b57258731123",
+    "app": "045e853e06d7520a4ae8b3776097b5ed81d501187daceaf4a55fc2315669cf09",
+    "database": "619002c569e9841144a8bbedf4f2ce6a753bb0e6b103af71883d91d43f413803",
+    "libgcc_s.so.1": "d93224d2b0dab4247598be683adca02f5cf00586f99c187579cd7e92058fb7cb"
+  },
+  "python_native_library_sha256": {
+    "rbt.runfiles/com_github_reboot_dev_reboot/reboot/server/libdatabase_native.so": "7272c152f0ccbf890963861452e9eb13f6fe0c7abb2a26e779f2a9988f2ac06b"
+  },
+  "engine_source": "8574ccb0df9893274e69d1a19eca469dad56d779",
+  "python_sdk_source": "8574ccb0df9893274e69d1a19eca469dad56d779",
+  "upstream_example": "5c332a2910122d6035799bfaf2a314bf1de830b8",
+  "gates": {
+    "locked_release_build": true,
+    "recipe_ran_end_to_end": true,
+    "application_tests": {
+      "passed": 6,
+      "ignored_native_fixture_tests": 2
+    },
+    "sdk_lib_tests": {
+      "passed": 820,
+      "ignored": 7
+    },
+    "reference_pin_tests": 2,
+    "shared_public_records_each": 22,
+    "exact_shared_transcript_equality": true,
+    "unchanged_anonymous_and_supplied_token_behavior": true,
+    "rich_errors_and_strict_changed_request_identity": true,
+    "retained_volume_app_restart": true,
+    "retained_volume_engine_restart": true,
+    "actual_container_recreation_original_receipts_replayed": true,
+    "engine_loss_stack_unhealthy_then_recovered": true,
+    "startup_engine_failure_closed": true,
+    "rust_image_interruption": true,
+    "python_image_interruption": true,
+    "constructor_missing_empty_fingerprint_red_green": true
+  },
+  "custody": {
+    "original_durable_owners": {
+      "stack": {
+        "pid": 472101,
+        "terminal_receipt": true,
+        "wait_children": 10,
+        "all_waits_joined": true
+      },
+      "image-interruption-3": {
+        "pid": 478382,
+        "terminal_receipt": true,
+        "wait_children": 8,
+        "all_waits_joined": true
+      },
+      "python-image-interruption-4": {
+        "pid": 478384,
+        "terminal_receipt": true,
+        "wait_children": 3,
+        "all_waits_joined": true
+      }
+    },
+    "exact_docker_wait_children_joined": 21,
+    "terminal_container_readback_count": 10,
+    "all_task_targets_stopped": true,
+    "no_engine_host_publication": true,
+    "note": "Docker wait children are exact Unix subprocess waits; container retirement is separately exact-ID API readback. A missing outer owner PID is only an observation, not an exact parent wait. Early pre-start Docker wait receipts were superseded by post-start wait plus exit-code readback."
+  },
+  "retained_containers": {
+    "13ec60ded2a2528b1b6aa3d697cf4274aa08a7eb38843c0d088d6c3a1b38cef8": {
+      "image": "sha256:1a73705b0771f9c861d9ba96509806849423a3d8bbff140b1261da76280460cd",
+      "state": {
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-10-19T17:54:20.095470719Z",
+        "FinishedAt": "2026-10-19T17:54:26.511246394Z",
+        "Health": {
+          "Status": "unhealthy",
+          "FailingStreak": 0,
+          "Log": [
+            {
+              "Start": "2026-10-19T17:54:15.984245942Z",
+              "End": "2026-10-19T17:54:16.020813822Z",
+              "ExitCode": 0,
+              "Output": "DATABASE_READABLE\n"
+            },
+            {
+              "Start": "2026-10-19T17:54:18.021726231Z",
+              "End": "2026-10-19T17:54:18.056961891Z",
+              "ExitCode": 0,
+              "Output": "DATABASE_READABLE\n"
+            },
+            {
+              "Start": "2026-10-19T17:54:25.095639245Z",
+              "End": "2026-10-19T17:54:25.129655891Z",
+              "ExitCode": 0,
+              "Output": "DATABASE_READABLE\n"
+            }
+          ]
+        }
+      },
+      "mounts": [
+        {
+          "type": "volume",
+          "name": "hello-image-interruption-state-3",
+          "destination": "/state"
+        }
+      ]
+    },
+    "1a262d0c3f8cb1316a533bd1e2621213c8afc47dd354789dd37df7b0c331348f": {
+      "image": "sha256:1a73705b0771f9c861d9ba96509806849423a3d8bbff140b1261da76280460cd",
+      "state": {
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-10-19T17:53:16.963433079Z",
+        "FinishedAt": "2026-10-19T17:56:05.172105466Z",
+        "Health": {
+          "Status": "unhealthy",
+          "FailingStreak": 0,
+          "Log": [
+            {
+              "Start": "2026-10-19T17:55:56.696564438Z",
+              "End": "2026-10-19T17:55:56.731889941Z",
+              "ExitCode": 0,
+              "Output": "DATABASE_READABLE\n"
+            },
+            {
+              "Start": "2026-10-19T17:55:58.732415334Z",
+              "End": "2026-10-19T17:55:58.768643403Z",
+              "ExitCode": 0,
+              "Output": "DATABASE_READABLE\n"
+            },
+            {
+              "Start": "2026-10-19T17:56:00.770083889Z",
+              "End": "2026-10-19T17:56:00.80446005Z",
+              "ExitCode": 0,
+              "Output": "DATABASE_READABLE\n"
+            },
+            {
+              "Start": "2026-10-19T17:56:02.805432377Z",
+              "End": "2026-10-19T17:56:02.841777598Z",
+              "ExitCode": 0,
+              "Output": "DATABASE_READABLE\n"
+            },
+            {
+              "Start": "2026-10-19T17:56:04.842651617Z",
+              "End": "2026-10-19T17:56:04.878193959Z",
+              "ExitCode": 0,
+              "Output": "DATABASE_READABLE\n"
+            }
+          ]
+        }
+      },
+      "mounts": [
+        {
+          "type": "volume",
+          "name": "hello-image-qualification_rust-state",
+          "destination": "/state"
+        }
+      ]
+    },
+    "1ae2fe3ceb3bd2beb9c132bf1b50ce492b8571a84ed774b170541453db6a9c73": {
+      "image": "sha256:3e48dc3ed3642bd468e4a700acf8bdedb95fee038fda13c0749f01e381f67194",
+      "state": {
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 143,
+        "Error": "",
+        "StartedAt": "2026-10-19T17:54:29.051225305Z",
+        "FinishedAt": "2026-10-19T17:54:37.385061302Z"
+      },
+      "mounts": [
+        {
+          "type": "bind",
+          "name": null,
+          "destination": "/proof"
+        },
+        {
+          "type": "volume",
+          "name": "hello-python-interruption-state-4",
+          "destination": "/state"
+        }
+      ]
+    },
+    "312f0c3dfcdfd47480210e436e25af76eac243a5542c130ecbf581b1b4c2349c": {
+      "image": "sha256:f2b48e8e9ef922b0aadc558c3c4e4c8db0b19ab712fc53f7ed75bf7e6e45fc06",
+      "state": {
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-10-19T17:52:12.822650412Z",
+        "FinishedAt": "2026-10-19T17:52:12.932522844Z",
+        "Health": {
+          "Status": "unhealthy",
+          "FailingStreak": 0,
+          "Log": []
+        }
+      },
+      "mounts": [
+        {
+          "type": "volume",
+          "name": "hello-image-qualification_rust-state",
+          "destination": "/state"
+        }
+      ]
+    },
+    "3482f8817e6562052d5fa3fbf22cd2c0d4c2068919d179eece6fb0104f885919": {
+      "image": "sha256:3e48dc3ed3642bd468e4a700acf8bdedb95fee038fda13c0749f01e381f67194",
+      "state": {
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 143,
+        "Error": "",
+        "StartedAt": "2026-10-19T17:53:02.477520217Z",
+        "FinishedAt": "2026-10-19T17:56:05.001380357Z"
+      },
+      "mounts": [
+        {
+          "type": "volume",
+          "name": "hello-image-qualification_python-state",
+          "destination": "/state"
+        }
+      ]
+    },
+    "5000d11a8e42747ce05352aff4d25a7f6159e1b85d2f0c834d89a7ea689f9fd3": {
+      "image": "sha256:f2b48e8e9ef922b0aadc558c3c4e4c8db0b19ab712fc53f7ed75bf7e6e45fc06",
+      "state": {
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 1,
+        "Error": "",
+        "StartedAt": "2026-10-19T17:54:25.876672579Z",
+        "FinishedAt": "2026-10-19T17:54:26.001531312Z",
+        "Health": {
+          "Status": "unhealthy",
+          "FailingStreak": 0,
+          "Log": []
+        }
+      },
+      "mounts": []
+    },
+    "859ed761190e0ed40720d2444e3de4c6bdb7132fbd03b237b2bf6428a8aef964": {
+      "image": "sha256:f2b48e8e9ef922b0aadc558c3c4e4c8db0b19ab712fc53f7ed75bf7e6e45fc06",
+      "state": {
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-10-19T17:54:20.248024947Z",
+        "FinishedAt": "2026-10-19T17:54:26.164369264Z",
+        "Health": {
+          "Status": "unhealthy",
+          "FailingStreak": 0,
+          "Log": [
+            {
+              "Start": "2026-10-19T17:54:19.00041995Z",
+              "End": "2026-10-19T17:54:19.037565869Z",
+              "ExitCode": 0,
+              "Output": "SERVING_ENGINE_BACKED\n"
+            },
+            {
+              "Start": "2026-10-19T17:54:25.248332946Z",
+              "End": "2026-10-19T17:54:25.284980105Z",
+              "ExitCode": 0,
+              "Output": "SERVING_ENGINE_BACKED\n"
+            }
+          ]
+        }
+      },
+      "mounts": []
+    },
+    "a00593c0f095df17b5193ff77f76532f482e3b5838a89b3a9cc6e86c62f2f8ad": {
+      "image": "sha256:3e48dc3ed3642bd468e4a700acf8bdedb95fee038fda13c0749f01e381f67194",
+      "state": {
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-10-19T17:54:11.174509492Z",
+        "FinishedAt": "2026-10-19T17:54:26.348491426Z"
+      },
+      "mounts": [
+        {
+          "type": "bind",
+          "name": null,
+          "destination": "/proof"
+        }
+      ]
+    },
+    "ce97331a18857d53aba348f598b1f0b772b7539fdb441798b3806cc92b309824": {
+      "image": "sha256:f2b48e8e9ef922b0aadc558c3c4e4c8db0b19ab712fc53f7ed75bf7e6e45fc06",
+      "state": {
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-10-19T17:53:02.139722804Z",
+        "FinishedAt": "2026-10-19T17:56:03.69034671Z",
+        "Health": {
+          "Status": "unhealthy",
+          "FailingStreak": 0,
+          "Log": [
+            {
+              "Start": "2026-10-19T17:55:54.268709444Z",
+              "End": "2026-10-19T17:55:54.304187308Z",
+              "ExitCode": 0,
+              "Output": "SERVING_ENGINE_BACKED\n"
+            },
+            {
+              "Start": "2026-10-19T17:55:56.304859275Z",
+              "End": "2026-10-19T17:55:56.341166834Z",
+              "ExitCode": 0,
+              "Output": "SERVING_ENGINE_BACKED\n"
+            },
+            {
+              "Start": "2026-10-19T17:55:58.342423187Z",
+              "End": "2026-10-19T17:55:58.376765972Z",
+              "ExitCode": 0,
+              "Output": "SERVING_ENGINE_BACKED\n"
+            },
+            {
+              "Start": "2026-10-19T17:56:00.377544895Z",
+              "End": "2026-10-19T17:56:00.413535996Z",
+              "ExitCode": 0,
+              "Output": "SERVING_ENGINE_BACKED\n"
+            },
+            {
+              "Start": "2026-10-19T17:56:02.414158951Z",
+              "End": "2026-10-19T17:56:02.448617757Z",
+              "ExitCode": 0,
+              "Output": "SERVING_ENGINE_BACKED\n"
+            }
+          ]
+        }
+      },
+      "mounts": []
+    },
+    "e7dbada71335f3bf252d43442a493eb373b6f09f8795e96efc52e78273dc355a": {
+      "image": "sha256:f2b48e8e9ef922b0aadc558c3c4e4c8db0b19ab712fc53f7ed75bf7e6e45fc06",
+      "state": {
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-10-19T17:54:10.64783419Z",
+        "FinishedAt": "2026-10-19T17:54:10.780801063Z",
+        "Health": {
+          "Status": "unhealthy",
+          "FailingStreak": 0,
+          "Log": []
+        }
+      },
+      "mounts": [
+        {
+          "type": "volume",
+          "name": "hello-image-interruption-state-3",
+          "destination": "/state"
+        }
+      ]
+    }
+  },
+  "evidence_root": "/home/benchbuild/.cache/hello-image-evidence",
+  "evidence_sha256": {
+    "recipe-build.log": "f8a0702ec6c944f794840e0a066ea6d070e112bec44145ed2b3dc956ca71a0b1",
+    "recipe-source-tests.log": "dfbcff39ac1c14a1067e653250deae39687a19d1f5edad8f3b6f26d849b44e9c",
+    "final-source-and-sdk.log": "76e1bd8902f68203066b9afec6ab88a3e75228450636de98592a6c126b4d6476",
+    "fingerprint-red.log": "da553506a357ab12c528286a2613f67d943371f9c4b7a7d030fd9f275e146552",
+    "fingerprint-green-2.log": "a020e553e731af29a7a5f2d299f559fc739f547323a098fd7d242e309135dc59",
+    "stack/owner.json": "737a6a9ae19e84f29a617c690215341483ad4eb8c450acd8fb8035d013b645f8",
+    "stack/fresh-comparison.json": "d0b119836a990d5c8dd76e3bbb55cf1bc8a4156781fc19e236769e86f62abbf3",
+    "stack/lifecycle-passed.json": "1267cccc6d565b880b3e77d3d50396de7b2a70fa246982db0ca7715bef62c66a",
+    "stack/engine-loss.json": "d59b2ac4edd0204bc47b131ff658b7d75ef31718adc76ede98cfc76f334725d8",
+    "stack/retained-container-recreation.json": "4edcb2922d338f301c2a9830d9a5be5d90a82451f917874ac3c73f59d8e3d1ec",
+    "image-interruption-3/owner.json": "bc87e2e2d547e29633120a56aa57d0bc9b73751d401250499edb493cc3244362",
+    "python-image-interruption-4/owner.json": "35b185bd63e0b2e17988faaa54545c19aa90736bb8aa3ed1ff188fb4aa5fc0cb",
+    "recipe-build/build-receipt.json": "d82714e1eaeb474b5e28636057769542beed6a7f29c6499a86fb069282d66898",
+    "pinned-images.json": "e86f9453ad7b24d27251fb200668117d0f8b24ef18339028b92e3a39fc046aff",
+    "docker-install.log": "cea34a0c705ccc822391751fb001e630f73268f6bbc8ebc097dc689212ae6579"
+  },
+  "prior_frozen_native_sources": {
+    "paths_checked": 334,
+    "all_unchanged": true,
+    "receipt": "/home/benchbuild/.cache/hello-app-qualification-evidence/native-1/owner.json",
+    "native_owner_terminal_only_observed_not_parent_waited": true
+  },
+  "qualifications": [
+    "Stack readiness includes canonical host health plus an engine-backed read; host-only canonical health does not detect engine loss.",
+    "Rust interruption uses a transparent native gRPC ACK parking proxy. Python uses test-only generated public Hello.create stub parking via sitecustomize. Neither instrumentation is baked into normal application images.",
+    "Lower-level legacy replay compatibility remains; constructor paths fail closed on missing/empty fingerprints.",
+    "Independent SDK actor gates in race regression are one-process fake gRPC proof, not multiprocess C++ race proof.",
+    "Python graceful SIGTERM exits 143; injected abrupt kills exit 137.",
+    "No benchmark, registry push, deployment, paid-capacity or retention changes.",
+    "Source wire pin assumptions corrected from observed Python: absent reader requires_constructor=false, writer=true; exact rich envelopes are compared."
+  ],
+  "remaining_application_correctness_blockers": []
+}
