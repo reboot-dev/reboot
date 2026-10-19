@@ -89,6 +89,10 @@ try:
         assert rbt_runfiles.is_dir(),rbt_runfiles
         env=dict(os.environ,CARGO_TARGET_DIR=str(target),CARGO_BUILD_JOBS='2',CARGO_INCREMENTAL='0',CARGO_PROFILE_DEV_DEBUG='0',CARGO_PROFILE_TEST_DEBUG='0',PYTHONPATH=os.pathsep.join([str(overlay),str(rbt_runfiles),str(root)]),REBOOT_NATIVE2PC_CXX_DATABASE=str(database),RBT_RUST_DATABASE_BINARY=str(database))
         env.update(RUST_DX_STAGE=str(stage/'greeting'),RUST_DX_TARGET=str(target),RUST_DX_DATABASE_BINARY=str(database),RUST_DX_RBT=str(rbt),RBT=str(rbt),RUST_DX_PORT=os.environ.get('RUST_DX_PORT','12991'))
+        cursor_app_bin = target / 'debug' / 'app'
+        cursor_stage = stage / 'cursor-native-10k'
+        cursor_evidence = cursor_stage / 'evidence.json'
+        env.update(CURSOR_APP_BIN=str(cursor_app_bin), CURSOR_STAGE=str(cursor_stage), CURSOR_EVIDENCE=str(cursor_evidence))
         commands=[
          ('sdk_all_targets',['cargo','test','--manifest-path','reboot/rust/Cargo.toml','--locked','--all-features','--all-targets']),
          ('sdk_strict_clippy',['cargo','clippy','--manifest-path','reboot/rust/Cargo.toml','--locked','--all-features','--all-targets','--','-D','warnings']),
@@ -104,6 +108,8 @@ try:
         commands.extend([
          ('native_local11', ['cargo','test','--manifest-path','reboot/rust/Cargo.toml','--locked','--all-features','--test','generated_cxx_database_process','registered_same_host_generated_','--','--ignored','--test-threads=1','--nocapture']),
          ('native_fixture_strict_clippy', ['cargo','clippy','--manifest-path','reboot/rust/tests/fixtures/generated_cxx_database_process/Cargo.toml','--locked','--all-targets','--','-D','warnings']),
+         ('cursor_native_10k_build', ['cargo','build','--manifest-path','reboot/rust/tests/fixtures/workflow_cursor_results_app/Cargo.toml','--locked','--bins']),
+         ('cursor_native_10k_gc', ['cargo','test','--manifest-path','reboot/rust/Cargo.toml','--locked','--all-features','--test','workflow_cursor_results_native','--','--ignored','--test-threads=1','--nocapture','cursor_gc_survives_ten_thousand_iterations_and_restarts']),
         ])
         commands.extend([
          ('upstream_schema_strict_clippy', ['cargo','clippy','--manifest-path','reboot/rust/tests/fixtures/reboot_examples/Cargo.toml','--locked','--all-targets','--','-D','warnings']),
@@ -160,7 +166,7 @@ try:
         assert all(s.get('children_absent') for s in cursor_proof['sessions'])
         assert all(c['exit'] == 0 for c in cursor_proof['commands'])
         assert all(hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest() == h for p,h in cursor_proof['source_hashes'].items())
-        assert len(results) == 20, len(results)
+        assert len(results) == 22, len(results)
         tasks_public_gate = next(item for item in results if item['suite'] == 'upstream_tasks_public')
         handles = re.findall(r'^UPSTREAM_TASKS_ACCEPTED (.+)$', pathlib.Path(tasks_public_gate['log']).read_text(), re.MULTILINE)
         assert len(handles) == 1, handles
