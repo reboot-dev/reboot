@@ -4600,7 +4600,7 @@ impl DatabaseActorStore {
         let commit_attempt = self
             .actor_gate(Declaration::STATE_TYPE, &state_ref)
             .commit_attempt();
-        database
+        let created = database
             .create_actor(database::CreateActorRequest {
                 task_upserts: vec![],
                 actor: Some(database::Actor {
@@ -4616,14 +4616,37 @@ impl DatabaseActorStore {
                     task_ids: vec![],
                     workflow_id: None,
                     workflow_iteration: None,
-                    request_fingerprint: Some(fingerprint),
+                    request_fingerprint: Some(fingerprint.clone()),
                 }),
                 sync: true,
             })
-            .await
-            .map_err(database_status)?;
-        commit_attempt.acknowledged();
-        Ok(Response::new(response))
+            .await;
+        match created {
+            Ok(_) => {
+                commit_attempt.acknowledged();
+                Ok(Response::new(response))
+            }
+            Err(error)
+                if error.code() == tonic::Code::FailedPrecondition
+                    && error.message() == "Actor already exists"
+                    && error.details().is_empty() =>
+            {
+                // Only this exact native CreateActor rejection confirms a
+                // competing commit. Arbitrary transport errors stay failures.
+                commit_attempt.acknowledged();
+                if let Some(replayed) = self
+                    .replay_type(Declaration::STATE_TYPE, &state_ref, key, Some(&fingerprint))
+                    .await?
+                {
+                    return Ok(Response::new(replayed));
+                }
+                Err(crate::SystemAborted::StateAlreadyConstructed(
+                    database::StateAlreadyConstructed {},
+                )
+                .into_status("actor state has already been constructed"))
+            }
+            Err(error) => Err(database_status(error)),
+        }
     }
 
     /// Runs a generated external constructor writer with bearer verification
@@ -4701,7 +4724,7 @@ impl DatabaseActorStore {
         let commit_attempt = self
             .actor_gate(Declaration::STATE_TYPE, &state_ref)
             .commit_attempt();
-        database
+        let created = database
             .create_actor(database::CreateActorRequest {
                 task_upserts: vec![],
                 actor: Some(database::Actor {
@@ -4717,14 +4740,37 @@ impl DatabaseActorStore {
                     task_ids: vec![],
                     workflow_id: None,
                     workflow_iteration: None,
-                    request_fingerprint: Some(fingerprint),
+                    request_fingerprint: Some(fingerprint.clone()),
                 }),
                 sync: true,
             })
-            .await
-            .map_err(database_status)?;
-        commit_attempt.acknowledged();
-        Ok(Response::new(response))
+            .await;
+        match created {
+            Ok(_) => {
+                commit_attempt.acknowledged();
+                Ok(Response::new(response))
+            }
+            Err(error)
+                if error.code() == tonic::Code::FailedPrecondition
+                    && error.message() == "Actor already exists"
+                    && error.details().is_empty() =>
+            {
+                // Only this exact native CreateActor rejection confirms a
+                // competing commit. Arbitrary transport errors stay failures.
+                commit_attempt.acknowledged();
+                if let Some(replayed) = self
+                    .replay_type(Declaration::STATE_TYPE, &state_ref, key, Some(&fingerprint))
+                    .await?
+                {
+                    return Ok(Response::new(replayed));
+                }
+                Err(crate::SystemAborted::StateAlreadyConstructed(
+                    database::StateAlreadyConstructed {},
+                )
+                .into_status("actor state has already been constructed"))
+            }
+            Err(error) => Err(database_status(error)),
+        }
     }
 
     /// Runs a synchronous reader callback after loading the actor state.
@@ -9422,6 +9468,91 @@ mod tests {
         );
         server.abort();
         database_server.abort();
+    }
+
+    #[tokio::test]
+    async fn constructor_writer_competing_stores_reconcile_only_committed_receipts() {
+        struct Construct;
+        impl DurableStateDeclaration for Construct {
+            type State = proto::Counter;
+            const STATE_TYPE: &'static str = "tests.reboot.protoc.Counter";
+        }
+        for authorized in [false, true] {
+            for same_key in [false, true] {
+                let (address, fake, server) = start_database().await;
+                let a = DatabaseActorStore::connect(&address).await.unwrap();
+                let b = DatabaseActorStore::connect(&address).await.unwrap();
+                let barrier = Arc::new(tokio::sync::Barrier::new(2));
+                let call = |store: DatabaseActorStore, key, barrier: Arc<tokio::sync::Barrier>| async move {
+                    let request = ExternalContext::new("competing-constructors")
+                        .writer_with_key(proto::IncrementRequest { amount: 7 }, key)
+                        .unwrap();
+                    let invoke =
+                        move |state: &mut proto::Counter, request: proto::IncrementRequest| {
+                            Box::pin(async move {
+                                // Both independent stores have observed absence and
+                                // reached their handlers before either may create.
+                                barrier.wait().await;
+                                state.value = request.amount;
+                                Ok(proto::CounterValue { value: state.value })
+                            })
+                                as Pin<
+                                    Box<
+                                        dyn Future<Output = Result<proto::CounterValue, Status>>
+                                            + Send
+                                            + '_,
+                                    >,
+                                >
+                        };
+                    if authorized {
+                        store
+                            .constructor_writer_async_for_method_authorized::<Construct, _, _, _>(
+                                "Construct",
+                                &crate::auth::AuthorizationPolicy::permissive_for_development(),
+                                request,
+                                invoke,
+                            )
+                            .await
+                    } else {
+                        store
+                            .constructor_writer_async_for_method::<Construct, _, _, _>(
+                                "Construct",
+                                request,
+                                invoke,
+                            )
+                            .await
+                    }
+                };
+                let (left, right) = tokio::join!(
+                    call(a, Uuid::from_u128(501), barrier.clone()),
+                    call(
+                        b,
+                        Uuid::from_u128(if same_key { 501 } else { 502 }),
+                        barrier
+                    )
+                );
+                if same_key {
+                    assert_eq!(left.unwrap().into_inner().value, 7);
+                    assert_eq!(right.unwrap().into_inner().value, 7);
+                } else {
+                    let error = match (left, right) {
+                        (Ok(value), Err(error)) | (Err(error), Ok(value)) => {
+                            assert_eq!(value.into_inner().value, 7);
+                            error
+                        }
+                        _ => panic!("exactly one distinct-key constructor must win"),
+                    };
+                    assert_eq!(error.code(), tonic::Code::Aborted);
+                    let rich = crate::declared_error_details(&error).unwrap().unwrap();
+                    assert_eq!(
+                        rich.details[0].type_url,
+                        "type.googleapis.com/rbt.v1alpha1.StateAlreadyConstructed"
+                    );
+                }
+                assert_eq!(fake.create_requests().len(), 1);
+                server.abort();
+            }
+        }
     }
 
     #[tokio::test]

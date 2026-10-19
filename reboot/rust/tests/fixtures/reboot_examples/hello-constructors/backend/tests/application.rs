@@ -358,3 +358,48 @@ async fn startup_is_automatic_and_public_anonymous_access_needs_no_dev_selector(
         .unwrap()
         .unwrap();
 }
+
+struct FailSend(Arc<Adapter>);
+#[tonic::async_trait]
+impl HelloMethods for FailSend {
+    async fn create(
+        &self,
+        r: Request<proto::CreateRequest>,
+    ) -> Result<Response<proto::CreateResponse>, Status> {
+        self.0.create(r).await
+    }
+    async fn messages(
+        &self,
+        r: Request<proto::MessagesRequest>,
+    ) -> Result<Response<proto::MessagesResponse>, Status> {
+        self.0.messages(r).await
+    }
+    async fn send(
+        &self,
+        _: Request<proto::SendRequest>,
+    ) -> Result<Response<proto::SendResponse>, Status> {
+        Err(Status::unavailable("injected Send failure"))
+    }
+}
+#[tokio::test]
+async fn failing_initializer_never_binds_and_next_boot_recovers_retained_create() {
+    let database = Database::start().await;
+    let adapter = database.adapter().await;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    drop(listener);
+    let startup = Startup::new(Arc::new(FailSend(adapter.clone())), "failure-test").unwrap();
+    let result = ApplicationHost::new("failure-test")
+        .with_lifecycle(startup)
+        .add_public_service(HelloMethodsServer::from_arc(adapter))
+        .serve_with_shutdown(address, std::future::pending::<()>())
+        .await;
+    assert!(result.is_err());
+    assert!(tokio::net::TcpStream::connect(address).await.is_err());
+    assert_eq!(database.fake.create_requests().len(), 1);
+    assert!(database.fake.store_requests().is_empty());
+    let startup = Startup::new(database.adapter().await, "failure-test").unwrap();
+    assert_eq!(startup.run().await.unwrap(), INITIAL_MESSAGES);
+    assert_eq!(database.fake.create_requests().len(), 1);
+    assert_eq!(database.fake.store_requests().len(), 1);
+}
