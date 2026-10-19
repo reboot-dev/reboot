@@ -53,9 +53,9 @@ the Reboot plugin installed, its skills know Reboot best.
 - **Run:** the Reboot plugin's `run` skill, which starts every process
   the app needs. Without it: `uv run rbt dev run`, and in a second
   shell `cd frontend && npm run dev`; the app is at
-  https://<project>.localhost. Without portless, `uv run rbt dev run
-  --config=ports` and `npm run dev:ports`; the app is at
-  http://localhost:9991.
+  https://<project>.localhost. Without portless,
+  `uv run rbt dev run --config=ports` and `npm run dev:ports`; the app
+  is at http://localhost:9991.
 - **Dashboard** (the domain model, the features and their rules):
   `uv run rbt dashboard`, at https://dashboard.<project>.localhost/
   (without portless, `--config=ports`, at http://127.0.0.1:9871/).
