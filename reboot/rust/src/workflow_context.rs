@@ -1613,6 +1613,12 @@ mod idempotency_key_scope_tests {
         assert_eq!(context.task_id(), expected);
     }
     #[tokio::test]
+    async fn workflow_id_matches_task_id() {
+        let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
+        let context = build_context(&tasks, task, &cancel, &attempt, None, Vec::new());
+        assert_eq!(context.workflow_id(), context.task_id());
+    }
+    #[tokio::test]
     async fn state_ref_matches_task_state_ref() {
         let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
         let expected = crate::state_ref::StateRef::from_id(
@@ -1874,6 +1880,14 @@ impl<'a> WorkflowContext<'a> {
             .task_id
             .as_ref()
             .and_then(|id| uuid::Uuid::from_slice(&id.task_uuid).ok())
+    }
+
+    /// The workflow identifier this context belongs to, if any.
+    ///
+    /// In the Rust runtime the workflow identifier is the task UUID of the
+    /// workflow task, matching Python's `WorkflowContext.workflow_id`.
+    pub fn workflow_id(&self) -> Option<uuid::Uuid> {
+        self.task_id()
     }
 
     /// The encoded state reference of the actor this workflow is running on.
