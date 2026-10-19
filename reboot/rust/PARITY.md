@@ -12,6 +12,28 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Public Rust CLI/native acceptance (CCX43, 2026-10-18)
+
+The full fail-closed public acceptance owner completed successfully on a fresh
+CCX43 checkout at `8574ccb0df9893274e69d1a19eca469dad56d779`. Its compact,
+committed [receipt](tests/evidence/public-rust-native-acceptance-ccx43-20261018.json)
+records the frozen source and exact Bazel `rbt`/Database hashes, plus the
+accepted-receipt hash. The owner accepted **20 gates**: SDK all-target tests and
+strict Clippy, public user/workflow/checkpoint/greeting paths, public
+cursor/results lifecycle, native generated-host controls, and upstream generated
+constructor/task public paths.
+
+Every accepted gate exited zero, reported no live owned children, and reported
+no frozen-source mismatch. The runner marked the evidence
+`publication_eligible: true`; it is not merely an SSH-launch result. In
+particular, `cursor_results_public` exercised the real `rbt` lifecycle under
+its distinct parent-owned/public custody path, rather than promoting the private
+fixture evidence.
+
+This qualifies the bounded public Rust CLI/native routes covered by these gates.
+It does **not** claim full Python/TypeScript parity, arbitrary historical replay,
+distributed exactly-once semantics, or production readiness.
+
 ## CLI signal-owner compatibility source checkpoint (2026-10-15)
 
 The Rust dev helper now has an explicit caller-owned cancellation mode. Normal
