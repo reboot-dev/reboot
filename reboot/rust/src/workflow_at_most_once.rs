@@ -873,6 +873,109 @@ impl WorkflowContext<'_> {
         operation.acknowledged();
         Ok(result)
     }
+
+    /// Run a named, versioned unit-effect block at least once in this task/scope.
+    ///
+    /// On success a unit checkpoint is durably stored; subsequent replays acknowledge
+    /// it without re-running the callback. If the callback fails no checkpoint is
+    /// written, so the next workflow retry will re-run it. This is the Rust equivalent
+    /// of Python's `reboot.aio.workflows.at_least_once` with a `None` return type.
+    pub async fn at_least_once_unit<F, Fut>(
+        &self,
+        alias: &str,
+        version: u32,
+        callback: F,
+    ) -> Result<(), Status>
+    where
+        F: FnOnce() -> Fut + Send,
+        Fut: std::future::Future<Output = Result<(), Status>> + Send,
+    {
+        let operation = self.attempt.operation();
+        if alias.is_empty()
+            || alias.len() > 256
+            || alias.chars().any(char::is_control)
+            || version == 0
+        {
+            return Err(Status::invalid_argument(
+                "at-least-once block requires a bounded name and nonzero version",
+            ));
+        }
+        let id = self
+            .task
+            .task_id
+            .as_ref()
+            .ok_or_else(|| Status::failed_precondition("missing workflow identity"))?;
+        if id.state_type != self.tasks.inner.state_type
+            || id.state_ref != self.tasks.inner.state_ref
+        {
+            return Err(Status::failed_precondition(
+                "at-least-once task actor/owner mismatch",
+            ));
+        }
+        let declaration = self
+            .tasks
+            .declaration(&self.task)
+            .filter(|declaration| declaration.workflow)
+            .ok_or_else(|| {
+                Status::failed_precondition("at-least-once requires a registered workflow")
+            })?;
+        (declaration.decode_request)(&self.task.request)?;
+        let seed = uuid::Uuid::from_slice(&id.task_uuid)
+            .map_err(|_| Status::failed_precondition("invalid workflow UUID"))?;
+        let key = self.checkpoint_key(
+            uuid::Uuid::new_v5(&seed, b"reboot.at-most-once.unit.v1"),
+            alias,
+            Some("at-most-once.unit.v1"),
+        );
+        let contract = AtMostOnceUnitContract {
+            method: declaration.method.into(),
+            request: self.task.request.clone(),
+            alias: self.checkpoint_alias(alias),
+            version,
+            bound: self.checkpoint_bound(),
+            parent_bounds: self.checkpoint_parent_bounds(),
+            result_type: AT_MOST_ONCE_UNIT_TYPE.into(),
+        };
+        let store = &self.tasks.inner.store;
+        let gate = store.actor_gate(&id.state_type, &id.state_ref);
+        let mut revisions = gate.committed_revisions();
+        {
+            let _lease = workflow_reader_lease(&gate, &mut revisions).await?;
+            self.validate_scope().await?;
+            if let Some(saved) = store
+                .workflow_at_most_once_load(self, key, &contract)
+                .await?
+            {
+                if saved.phase == 2 {
+                    operation.acknowledged();
+                    return Ok(());
+                }
+                // Non-Stored checkpoint from an incomplete attempt: re-run.
+            }
+        }
+        self.validate_scope().await?;
+        let future = callback();
+        tokio::select! {
+            biased;
+            _ = self.cancel.cancelled() => return Err(Status::cancelled("at-least-once callback cancelled")),
+            result = future => result?,
+        };
+        {
+            let _lease = workflow_reader_lease(&gate, &mut revisions).await?;
+            self.validate_scope().await?;
+            store
+                .workflow_at_most_once_save(
+                    self,
+                    key,
+                    &contract,
+                    AtMostOnceUnitCheckpoint::stored(),
+                )
+                .await?;
+            self.validate_scope().await?;
+        }
+        operation.acknowledged();
+        Ok(())
+    }
 }
 
 #[cfg(test)]

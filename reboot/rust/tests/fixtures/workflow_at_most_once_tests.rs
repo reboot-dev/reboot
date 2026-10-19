@@ -744,6 +744,91 @@ async fn at_least_once_result_scopes_by_finite_iteration() {
     server.abort();
 }
 
+#[tokio::test]
+async fn at_least_once_unit_memoizes_and_replays_without_callback() {
+    let (f, _database, server) = fake().await;
+    let attempt = WorkflowAttempt::default();
+    let context = f.context(&attempt);
+    let constructed = AtomicUsize::new(0);
+    context
+        .at_least_once_unit("unit-effect", 1, || {
+            constructed.fetch_add(1, Ordering::SeqCst);
+            async { Ok(()) }
+        })
+        .await
+        .unwrap();
+    context
+        .at_least_once_unit("unit-effect", 1, || {
+            panic!("Stored constructed callback");
+            #[allow(unreachable_code)]
+            async { Ok(()) }
+        })
+        .await
+        .unwrap();
+    assert_eq!(constructed.load(Ordering::SeqCst), 1);
+    assert!(attempt.clean());
+    server.abort();
+}
+
+#[tokio::test]
+async fn at_least_once_unit_reruns_callback_after_failure() {
+    let (f, _database, server) = fake().await;
+    let constructed = AtomicUsize::new(0);
+    let first = WorkflowAttempt::default();
+    assert!(
+        f.context(&first)
+            .at_least_once_unit("unit-effect", 1, || {
+                constructed.fetch_add(1, Ordering::SeqCst);
+                async { Err(Status::unavailable("B may have committed")) }
+            })
+            .await
+            .is_err()
+    );
+    assert!(!first.clean());
+    let second = WorkflowAttempt::default();
+    f.context(&second)
+        .at_least_once_unit("unit-effect", 1, || {
+            constructed.fetch_add(1, Ordering::SeqCst);
+            async { Ok(()) }
+        })
+        .await
+        .unwrap();
+    assert_eq!(constructed.load(Ordering::SeqCst), 2);
+    assert!(second.clean());
+    server.abort();
+}
+
+#[tokio::test]
+async fn at_least_once_unit_scopes_by_finite_iteration() {
+    let (f, _database, server) = fake().await;
+    let constructed = AtomicUsize::new(0);
+    for index in [0u64, 1] {
+        let attempt = WorkflowAttempt::default();
+        let context = f
+            .context(&attempt)
+            .iteration("batch", index, 2)
+            .unwrap();
+        context
+            .at_least_once_unit("step", 1, || {
+                constructed.fetch_add(1, Ordering::SeqCst);
+                async { Ok(()) }
+            })
+            .await
+            .unwrap();
+    }
+    assert_eq!(constructed.load(Ordering::SeqCst), 2);
+    let replay0 = WorkflowAttempt::default();
+    f.context(&replay0)
+        .iteration("batch", 0, 2)
+        .unwrap()
+        .at_least_once_unit("step", 1, || async { panic!("iteration 0 replay ran") })
+        .await
+        .unwrap();
+    assert_eq!(constructed.load(Ordering::SeqCst), 2);
+    assert!(replay0.clean());
+    server.abort();
+}
+
 trait TestCursorDeclaration {
     fn with_test_cursor(self, enabled: bool) -> Self;
 }
