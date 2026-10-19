@@ -20,6 +20,9 @@ from reboot.wait_for_tasks import wait_for_tasks
 from starlette.exceptions import HTTPException  # type: ignore[import]
 from starlette.requests import Request  # type: ignore[import]
 from starlette.responses import Response  # type: ignore[import]
+from starlette.routing import BaseRoute
+from starlette.routing import Mount as StarletteMount
+from starlette.routing import Route
 from starlette.staticfiles import StaticFiles  # type: ignore[import]
 from starlette.types import Receive, Scope, Send  # type: ignore[import]
 from typing import (
@@ -176,6 +179,39 @@ def origin_from_request(request: Request) -> str:
     return f"{scheme}://{host}"
 
 
+class _MountRoot:
+    """An ASGI app serving a mount's path itself, `/mcp`, the way the
+    mount serves `/mcp/`: the request is handed to the mount with the
+    slash it matches on.
+
+    Starlette strips trailing slashes from mount declarations but matches
+    only `<mount>/{path:path}`, not the bare mount path. Its slash redirect
+    runs after route matching, so a catch-all can claim the bare path first.
+    See https://github.com/Kludex/starlette/issues/869.
+
+    Starlette would otherwise redirect `/mcp` to `/mcp/`, naming the
+    host the request reached, which behind a proxy that rewrites it is
+    not the client's; and a web app served at `/` catches `/mcp` first
+    and refuses a POST. An MCP client is told to connect to `/mcp`.
+
+    A class because `Route` wraps a function, a method or a partial of
+    one as a request handler, and uses anything else as an ASGI app."""
+
+    def __init__(self, mount: BaseRoute):
+        self._mount = mount
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send):
+        await self._mount(
+            {
+                **scope,
+                "path": scope["path"] + "/",
+                "raw_path": (scope.get("raw_path") or b"") + b"/",
+            },
+            receive,
+            send,
+        )
+
+
 class PythonWebFramework(WebFramework):
 
     @dataclass(kw_only=True, frozen=True)
@@ -204,7 +240,13 @@ class PythonWebFramework(WebFramework):
             _route_match(api_route) for api_route in self._internal_api_routes
         ]
         for mount in self._http._mounts:
-            matches.append(route_components_pb2.RouteMatch(prefix=mount.path))
+            # Match the bare mount path even when declared with a trailing
+            # slash, so Envoy forwards it to the exact route below.
+            matches.append(
+                route_components_pb2.RouteMatch(
+                    prefix=mount.path.rstrip("/") or "/",
+                )
+            )
         for api_route in self._http._api_routes:
             matches.append(_route_match(api_route))
         return matches
@@ -540,12 +582,26 @@ class PythonWebFramework(WebFramework):
 
         for mount in self._http._mounts:
             assert mount.app is not None or mount.factory is not None
-            fastapi.mount(
+            # Use mounted_route.path because Starlette strips trailing slashes;
+            # the original mount.path could still be `/something/`, which would
+            # leave `/something` unhandled.
+            mounted_route = StarletteMount(
                 mount.path,
-                mount.app or mount.factory(  # type: ignore[misc]
+                app=mount.app or mount.factory(  # type: ignore[misc]
                     external_context_from_request,
                 ),
             )
+            fastapi.router.routes.append(mounted_route)
+            # Starlette's Mount matches `/something/` and its descendants, but
+            # not `/something`. Its slash redirect runs after route matching,
+            # so a later catch-all can claim `/something` before it redirects.
+            # To compensate, add another route for `/something` that forwards
+            # to the same mount, treating `/something` and `/something/` alike.
+            # See https://github.com/Kludex/starlette/issues/869.
+            if mounted_route.path:
+                fastapi.router.routes.append(
+                    Route(mounted_route.path, _MountRoot(mounted_route))
+                )
 
         for api_route in self._http._api_routes:
             fastapi.add_api_route(

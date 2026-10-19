@@ -37,6 +37,11 @@ async def hello_greeter(
 fastapi = FastAPI()
 
 
+@fastapi.api_route("/", methods=["GET", "POST"])
+async def mount_root(request: Request):
+    return {"message": "mount root", "method": request.method}
+
+
 @fastapi.get("/{message}")
 async def mount(message: str):
     return {"message": message}
@@ -47,6 +52,7 @@ def factory(_):
 
 
 application.http.mount("/mount", factory=factory)
+application.http.mount("/trailing/", factory=factory)
 
 
 class TestSomething(unittest.IsolatedAsyncioTestCase):
@@ -97,6 +103,26 @@ class TestSomething(unittest.IsolatedAsyncioTestCase):
                                 "Hi You, I am Dr Reboot the best doctor ever",
                         },
                     )
+
+        # Both declarations must serve the bare and slashed mount root
+        # directly, including POSTs, through Envoy and the Python router.
+        async with aiohttp.ClientSession() as session:
+            for path in ("/mount", "/mount/", "/trailing", "/trailing/"):
+                for method in ("GET", "POST"):
+                    with self.subTest(path=path, method=method):
+                        async with session.request(
+                            method,
+                            self.rbt.url() + path,
+                            allow_redirects=False,
+                        ) as response:
+                            self.assertEqual(response.status, 200)
+                            self.assertEqual(
+                                await response.json(),
+                                {
+                                    "message": "mount root",
+                                    "method": method
+                                },
+                            )
 
         # Make sure we can also access the mount.
         async with aiohttp.ClientSession() as session:

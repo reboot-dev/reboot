@@ -373,11 +373,13 @@ With `--config=ports`, at its port instead:
 cloudflared tunnel --url http://127.0.0.1:9871
 ```
 
-Then add `https://<name>.trycloudflare.com/mcp/`, with the hostname
+Then add `https://<name>.trycloudflare.com/mcp`, with the hostname
 the tunnel printed, as a custom connector in
 [Claude](/call/from_mcp_client#claude) or
 [ChatGPT](/call/from_mcp_client#chatgpt); signing in completes by
-itself. Whoever has the address reaches your dashboard, so keep it to
+itself. In Claude that includes the desktop app's Code tab: the
+connector, added at claude.ai, shows the dashboard and its cards
+beside the session that is building the app. Whoever has the address reaches your dashboard, so keep it to
 yourself, and a quick tunnel gets a new address each time it starts,
 so add the connector again after restarting one.
 
