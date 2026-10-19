@@ -250,6 +250,7 @@ class PythonWebFramework(WebFramework):
         for api_route in self._http._api_routes:
             matches.append(_route_match(api_route))
         return matches
+
     class HTTP:
         """Interface for decorating functions as API routes.
 

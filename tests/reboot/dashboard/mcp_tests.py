@@ -115,7 +115,9 @@ class McpTest(unittest.IsolatedAsyncioTestCase):
             self.url + '/mcp/', http_client=client
         ) as (read, write, _), ClientSession(read, write) as session:
             await session.initialize()
-            tools = {tool.name: tool for tool in (await session.list_tools()).tools}
+            tools = {
+                tool.name: tool for tool in (await session.list_tools()).tools
+            }
             self.assertEqual(
                 set(tools), {
                     'dashboard_list',
@@ -148,7 +150,11 @@ class McpTest(unittest.IsolatedAsyncioTestCase):
         MCP server, not the page served at `/` and not a redirect."""
         async with self.client.post(
             self.url + '/mcp',
-            json={'jsonrpc': '2.0', 'id': 1, 'method': 'initialize'},
+            json={
+                'jsonrpc': '2.0',
+                'id': 1,
+                'method': 'initialize'
+            },
             headers={'Accept': 'application/json, text/event-stream'},
             allow_redirects=False,
         ) as response:
@@ -174,7 +180,9 @@ class McpTest(unittest.IsolatedAsyncioTestCase):
             self.url + '/mcp/', http_client=client
         ) as (read, write, _), ClientSession(read, write) as session:
             await session.initialize()
-            tools = {tool.name: tool for tool in (await session.list_tools()).tools}
+            tools = {
+                tool.name: tool for tool in (await session.list_tools()).tools
+            }
 
             # What the cards can show: nothing yet, since this test's
             # working directory holds no feature file and no API.
@@ -196,7 +204,10 @@ class McpTest(unittest.IsolatedAsyncioTestCase):
                 ('dashboard_show_state_type', 'state_type', 'show_state_type'),
             ):
                 shown = await session.call_tool(
-                    tool, {'dashboard_id': 'dashboard', argument: 'x'}
+                    tool, {
+                        'dashboard_id': 'dashboard',
+                        argument: 'x'
+                    }
                 )
                 self.assertFalse(shown.isError, tool)
                 self.assertIn(token, str(shown))
