@@ -9487,30 +9487,20 @@ mod tests {
                     let request = ExternalContext::new("competing-constructors")
                         .writer_with_key(proto::IncrementRequest { amount: 7 }, key)
                         .unwrap();
-                    let invoke =
-                        move |state: &mut proto::Counter, request: proto::IncrementRequest| {
-                            Box::pin(async move {
-                                // Both independent stores have observed absence and
-                                // reached their handlers before either may create.
-                                barrier.wait().await;
-                                state.value = request.amount;
-                                Ok(proto::CounterValue { value: state.value })
-                            })
-                                as Pin<
-                                    Box<
-                                        dyn Future<Output = Result<proto::CounterValue, Status>>
-                                            + Send
-                                            + '_,
-                                    >,
-                                >
-                        };
                     if authorized {
                         store
                             .constructor_writer_async_for_method_authorized::<Construct, _, _, _>(
                                 "Construct",
                                 &crate::auth::AuthorizationPolicy::permissive_for_development(),
                                 request,
-                                invoke,
+                                move |state, request| {
+                                    Box::pin(async move {
+                                        // Independent stores both observed absence.
+                                        barrier.wait().await;
+                                        state.value = request.amount;
+                                        Ok(proto::CounterValue { value: state.value })
+                                    })
+                                },
                             )
                             .await
                     } else {
@@ -9518,7 +9508,14 @@ mod tests {
                             .constructor_writer_async_for_method::<Construct, _, _, _>(
                                 "Construct",
                                 request,
-                                invoke,
+                                move |state, request| {
+                                    Box::pin(async move {
+                                        // Independent stores both observed absence.
+                                        barrier.wait().await;
+                                        state.value = request.amount;
+                                        Ok(proto::CounterValue { value: state.value })
+                                    })
+                                },
                             )
                             .await
                     }
