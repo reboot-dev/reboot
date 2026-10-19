@@ -1629,7 +1629,7 @@ mod idempotency_key_scope_tests {
         let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
         let context = build_context(&tasks, task.clone(), &cancel, &attempt, None, Vec::new());
         let seed = context.task_id().unwrap();
-        let from_helper = context.make_idempotency_key("charge", true);
+        let from_helper = context.make_idempotency_key("charge", true).unwrap();
         let from_key = context.checkpoint_key(seed, "charge", None);
         assert_eq!(from_helper, from_key);
     }
@@ -1638,7 +1638,7 @@ mod idempotency_key_scope_tests {
         let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
         let context = build_context(&tasks, task.clone(), &cancel, &attempt, Some(("loop".to_string(), 7, 1)), Vec::new());
         let seed = context.task_id().unwrap();
-        let from_helper = context.make_idempotency_key("charge", false);
+        let from_helper = context.make_idempotency_key("charge", false).unwrap();
         let from_key = context.checkpoint_key(seed, "charge #7", None);
         assert_eq!(from_helper, from_key);
     }
@@ -1679,11 +1679,13 @@ mod idempotency_key_scope_tests {
     }
     #[tokio::test]
     async fn wait_for_revision_resolves_on_commit() {
-        let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
+        let (tasks, mut task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
+        let id = task.task_id.as_mut().unwrap();
+        id.state_ref = crate::state_ref::StateRef::from_id(&id.state_type, "actor").unwrap().to_string();
         let context = build_context(&tasks, task, &cancel, &attempt, None, Vec::new());
         let gate = tasks.database_actor_store().actor_gate(
             &context.state_type(),
-            context.state_ref().as_str(),
+            context.state_ref().unwrap().as_str(),
         );
         let bump = tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(5)).await;
@@ -1694,7 +1696,9 @@ mod idempotency_key_scope_tests {
     }
     #[tokio::test]
     async fn wait_for_revision_returns_cancelled_after_cancel() {
-        let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
+        let (tasks, mut task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
+        let id = task.task_id.as_mut().unwrap();
+        id.state_ref = crate::state_ref::StateRef::from_id(&id.state_type, "actor").unwrap().to_string();
         let context = build_context(&tasks, task, &cancel, &attempt, None, Vec::new());
         context.cancel.cancel();
         let result = context.wait_for_revision().await;
@@ -1704,13 +1708,17 @@ mod idempotency_key_scope_tests {
     async fn state_ref_matches_task_state_ref() {
         let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
         let expected = crate::state_ref::StateRef::from_id(
-            &task.task_id.as_ref().unwrap().state_type,
-            &task.task_id.as_ref().unwrap().state_ref,
-        )
-        .unwrap();
+            &task.task_id.as_ref().unwrap().state_type, "proof/slash",
+        ).unwrap().colocate(&task.task_id.as_ref().unwrap().state_type, "child").unwrap();
+        let mut task = task;
+        task.task_id.as_mut().unwrap().state_ref = expected.as_str().to_owned();
+        let stored = task.task_id.as_ref().unwrap().state_ref.clone();
         let context = build_context(&tasks, task, &cancel, &attempt, None, Vec::new());
-        assert_eq!(context.state_ref(), expected);
+        assert_eq!(context.state_ref().unwrap().as_str(), stored);
+        assert_eq!(context.actor_ref().unwrap().state_ref().as_str(), stored);
     }
+    include!("workflow_identity_regression_tests.rs");
+
     #[tokio::test]
     async fn state_type_matches_task_state_type() {
         let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
@@ -1896,6 +1904,8 @@ impl<'a> WorkflowContext<'a> {
             seeds.retain(|(k, _)| k != key);
             seeds.push((key.to_string(), value.to_vec()));
         }
+        // Effective seed values are a map, not an insertion-ordered history.
+        seeds.sort_by(|(left, _), (right, _)| left.cmp(right));
         let context = WorkflowContext {
             tasks: self.tasks,
             task: self.task.clone(),
@@ -1989,29 +1999,31 @@ impl<'a> WorkflowContext<'a> {
         &self,
         alias: &str,
         per_workflow: bool,
-    ) -> uuid::Uuid {
-        let seed = self.task_id().unwrap_or_else(uuid::Uuid::new_v4);
-        let iteration = if per_workflow {
-            None
-        } else {
-            self.workflow_iteration()
-        };
+    ) -> Result<uuid::Uuid, Status> {
+        let seed = self.task_id().ok_or_else(||
+            Status::failed_precondition("workflow task identity is missing or invalid")
+        )?;
+        if per_workflow {
+            // Do not retain finite, cursor, or ancestor iteration identity.
+            return Ok(uuid::Uuid::new_v5(&self.seeded_namespace(seed), alias.as_bytes()));
+        }
+        let iteration = self.workflow_iteration();
         let alias_iteration = match iteration {
             Some(index) => format!("{alias} #{index}"),
             None => alias.to_string(),
         };
-        self.checkpoint_key(seed, &alias_iteration, None)
+        Ok(self.checkpoint_key(seed, &alias_iteration, None))
     }
 
     /// An untyped reference to the actor this workflow is running on.
     ///
     /// This is the Rust equivalent of Python's `WorkflowContext.task` wrapped
     /// as a `WeakReference` identity.
-    pub fn actor_ref(&self) -> crate::actor_ref::ActorRef {
-        crate::actor_ref::ActorRef::new(
+    pub fn actor_ref(&self) -> Result<crate::actor_ref::ActorRef, Status> {
+        Ok(crate::actor_ref::ActorRef::new(
             self.state_type(),
-            self.state_ref(),
-        )
+            self.state_ref()?,
+        ))
     }
 
     /// Wait for a duration, respecting workflow cancellation.
@@ -2032,7 +2044,7 @@ impl<'a> WorkflowContext<'a> {
         let gate = self
             .tasks
             .database_actor_store()
-            .actor_gate(&self.state_type(), self.state_ref().as_str());
+            .actor_gate(&self.state_type(), self.state_ref()?.as_str());
         let mut revisions = gate.committed_revisions();
         let start = revisions.borrow().0;
         self.wait(async move {
@@ -2051,15 +2063,19 @@ impl<'a> WorkflowContext<'a> {
     /// The encoded state reference of the actor this workflow is running on.
     ///
     /// This is the Rust equivalent of Python's `WorkflowContext.task.state_ref`.
-    pub fn state_ref(&self) -> crate::state_ref::StateRef {
-        let (state_type, state_id) = self
-            .task
-            .task_id
-            .as_ref()
-            .map(|id| (id.state_type.clone(), id.state_ref.clone()))
-            .unwrap_or_default();
-        crate::state_ref::StateRef::from_id(&state_type, &state_id)
-            .unwrap_or_else(|_| crate::state_ref::StateRef::from_id("", "").unwrap())
+    pub fn state_ref(&self) -> Result<crate::state_ref::StateRef, Status> {
+        let identity = self.task.task_id.as_ref().ok_or_else(||
+            Status::failed_precondition("workflow task identity is missing")
+        )?;
+        if !crate::state_ref::StateRef::is_encoded(&identity.state_ref) {
+            return Err(Status::failed_precondition("workflow state reference is not canonical"));
+        }
+        let reference = crate::state_ref::StateRef::from_maybe_readable(&identity.state_ref)
+            .map_err(|_| Status::failed_precondition("workflow state reference is invalid"))?;
+        if !reference.matches_state_type(&identity.state_type) {
+            return Err(Status::failed_precondition("workflow state reference type mismatch"));
+        }
+        Ok(reference)
     }
 
     /// The state type name of the actor this workflow is running on.
@@ -2085,6 +2101,7 @@ impl<'a> WorkflowContext<'a> {
         T: Send,
     {
         tokio::select! {
+            biased;
             _ = self.cancel.cancelled() => Err(Status::cancelled("workflow cancelled")),
             result = awaitable => Ok(result),
         }
