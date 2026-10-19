@@ -37,6 +37,38 @@ class RbtDevTestCase(unittest.IsolatedAsyncioTestCase):
             "--application\n"
         )
 
+    async def test_access_choices(self) -> None:
+        for access in ('user', 'public'):
+            parser: ArgumentParser = cli.create_parser(
+                argv=[
+                    'rbt',
+                    'dev',
+                    'run',
+                    '--working-directory=.',
+                    '--python',
+                    '--application=some.py',
+                    f'--access={access}',
+                ]
+            )
+            args, _ = parser.parse_args()
+            self.assertEqual(args.access, access)
+            self.assertEqual(args.cloud_url, "https://cloud.prod1.rbt.cloud")
+        parser = cli.create_parser(
+            argv=[
+                'rbt',
+                'dev',
+                'run',
+                '--working-directory=.',
+                '--python',
+                '--application=some.py',
+                '--access=everyone',
+            ]
+        )
+        with self.assertRaises(MockExitException) as e:
+            parser.parse_args()
+        self.assertEqual(e.exception.status, 2)
+        self.assertIn('--access', e.exception.message)
+
     async def test_generate_watch_fail_with_no_rbtrc(self) -> None:
         parser: ArgumentParser = cli.create_parser(
             argv=[
