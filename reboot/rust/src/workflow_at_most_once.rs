@@ -1178,7 +1178,43 @@ impl WorkflowContext<'_> {
     /// This is the Rust equivalent of Python's `Idempotency::ALWAYS` mode for
     /// workflow helper callables. The result is not stored and the callable is
     /// invoked on every workflow iteration/replay.
-    pub async fn always<T, F, Fut>(
+        /// Reactively wait until a produced value changes.
+    ///
+    /// This is the Rust equivalent of Python's `reboot.aio.workflows
+    /// .retry_reactively_until`. It repeatedly calls `callable` and compares
+    /// the result with the previous value using `equals`. When the value is
+    /// unchanged, the workflow waits for the actor state to commit a new
+    /// revision before trying again.
+    pub async fn retry_reactively_until<T, F, Fut, Eq>(
+        &self,
+        _alias: &str,
+        _version: u32,
+        _result_type: &'static str,
+        mut callable: F,
+        mut equals: Eq,
+    ) -> Result<T, Status>
+    where
+        T: prost::Message + Default + Clone + Send + 'static,
+        F: FnMut() -> Fut + Send,
+        Fut: std::future::Future<Output = Result<T, Status>> + Send,
+        Eq: FnMut(&T, &T) -> bool + Send,
+    {
+        let last: Option<T> = None;
+        loop {
+            if self.cancel.is_cancelled() {
+                return Err(Status::cancelled("workflow cancelled"));
+            }
+            let current = callable().await?;
+            if let Some(ref previous) = last {
+                if equals(&current, previous) {
+                    self.wait_for_revision().await?;
+                    continue;
+                }
+            }
+            return Ok(current);
+        }
+    }
+pub async fn always<T, F, Fut>(
         &self,
         _alias: &str,
         _version: u32,

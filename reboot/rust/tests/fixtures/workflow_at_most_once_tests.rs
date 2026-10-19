@@ -1397,6 +1397,74 @@ async fn memoize_with_seeds_stores_separate_values() {
     server.abort();
 }
 
+#[tokio::test]
+async fn retry_reactively_until_breaks_when_value_changes() {
+    let (f, _database, server) = fake().await;
+    let url = "type.googleapis.com/tests.reboot.protoc.Counter";
+    let constructed = Arc::new(AtomicI64::new(0));
+    let first = WorkflowAttempt::default();
+    let context0 = f.context(&first);
+
+    let value0: crate::proto::Counter = context0
+        .retry_reactively_until(
+            "reactive-counter",
+            1,
+            url,
+            || async {
+                Ok(crate::proto::Counter {
+                    value: constructed.fetch_add(1, Ordering::SeqCst),
+                })
+            },
+            |a, b| a.value == b.value,
+        )
+        .await
+        .unwrap();
+    assert_eq!(value0.value, 0);
+
+    // Now pretend a state change happened; bump the "current" value.
+    constructed.store(7, Ordering::SeqCst);
+    let second = WorkflowAttempt::default();
+    let context1 = f.context(&second);
+    let value1: crate::proto::Counter = context1
+        .retry_reactively_until(
+            "reactive-counter",
+            1,
+            url,
+            || async {
+                Ok(crate::proto::Counter {
+                    value: constructed.load(Ordering::SeqCst),
+                })
+            },
+            |a, b| a.value == b.value,
+        )
+        .await
+        .unwrap();
+    assert_eq!(value1.value, 7);
+    server.abort();
+}
+
+#[tokio::test]
+async fn retry_reactively_until_respects_cancellation() {
+    let (f, _database, server) = fake().await;
+    let url = "type.googleapis.com/tests.reboot.protoc.Counter";
+    let first = WorkflowAttempt::default();
+    let context0 = f.context(&first);
+    context0.cancel.cancel();
+    let result = context0
+        .retry_reactively_until(
+            "reactive-cancel",
+            1,
+            url,
+            || async {
+                Ok(crate::proto::Counter { value: 1 })
+            },
+            |a, b| a.value == b.value,
+        )
+        .await;
+    assert_eq!(result.unwrap_err().code(), tonic::Code::Cancelled);
+    server.abort();
+}
+
 trait TestCursorDeclaration {
     fn with_test_cursor(self, enabled: bool) -> Self;
 }
