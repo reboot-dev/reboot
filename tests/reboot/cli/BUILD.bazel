@@ -62,6 +62,16 @@ py_test(
 )
 
 py_test(
+    name = "subprocesses_tests_py",
+    size = "small",
+    srcs = ["subprocesses_tests.py"],
+    main = "subprocesses_tests.py",
+    deps = [
+        "//reboot/cli/common:subprocesses_py",
+    ],
+)
+
+py_test(
     name = "type_check_tests_py",
     srcs = [
         "type_check_tests.py",
