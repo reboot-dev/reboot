@@ -1619,6 +1619,12 @@ mod idempotency_key_scope_tests {
         assert_eq!(context.workflow_id(), context.task_id());
     }
     #[tokio::test]
+    async fn method_matches_task_method() {
+        let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
+        let context = build_context(&tasks, task.clone(), &cancel, &attempt, None, Vec::new());
+        assert_eq!(context.method(), task.method);
+    }
+    #[tokio::test]
     async fn state_ref_matches_task_state_ref() {
         let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
         let expected = crate::state_ref::StateRef::from_id(
@@ -1888,6 +1894,13 @@ impl<'a> WorkflowContext<'a> {
     /// workflow task, matching Python's `WorkflowContext.workflow_id`.
     pub fn workflow_id(&self) -> Option<uuid::Uuid> {
         self.task_id()
+    }
+
+    /// The method name this workflow context is executing.
+    ///
+    /// This is the Rust equivalent of Python's `WorkflowContext.task.method`.
+    pub fn method(&self) -> &str {
+        &self.task.method
     }
 
     /// The encoded state reference of the actor this workflow is running on.
