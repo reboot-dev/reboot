@@ -145,21 +145,52 @@ gives the developer two tabs.
 
 Tell the user the dashboard is up and what it is for — e.g.
 "Developer dashboard (watch the API as I build it) at
-https://dashboard.<app>.localhost/" — and get on with the build.
+https://dashboard.<app>.localhost/. It can also open in Claude or
+ChatGPT; I'll give you the steps once the app is built." — and get on
+with the build.
 
 If the developer expected a window and none appeared, give them the
 URL; that always works.
 
-## Step 6 — If the user wants the dashboard in Claude or ChatGPT
+## Step 6 — Required final hand-over: the connector
 
-Only when the user asks for it. `rbt dashboard` serves this machine
-alone, so an MCP host in the cloud reaches it through a tunnel the
-user starts themselves, in their own shell; do not start one for
-them. Point them at
-[The dashboard in Claude or ChatGPT](https://docs.reboot.dev/develop_locally#the-dashboard-in-claude-or-chatgpt),
-which gives the `cloudflared` command (by name under portless, by
-port otherwise) and the connector to add,
-`https://<name>.trycloudflare.com/mcp/`. Remind them that whoever has
-the address reaches their dashboard as them, so not to share it, and
-that a quick tunnel gets a new address each time it starts, so the
-connector must then be added again.
+Required final hand-over: if you started the developer dashboard,
+include the `cloudflared` command and the Claude and ChatGPT connector
+instructions in your final response. This applies even when the user
+asked only for a standalone web app and never mentioned MCP. Do not
+omit them for brevity or perceived relevance. A dashboard URL, or
+instructions saved in a README, do not satisfy this requirement.
+
+Give them once the app is built and the `run` skill has handed it
+over, in the same message; do not interrupt the build for this, and
+do not wait to be asked. `rbt dashboard` serves this machine alone,
+so an MCP host in the cloud reaches it through a tunnel the user
+starts themselves, in their own shell; do not start one for them.
+
+`rbt dashboard` printed the command for the mode it runs in, right
+after the dashboard's URL: by name under portless, by port with
+`--config=ports`. The dashboard is a Reboot application of its own
+with its own `/mcp`, so the tunnel goes to the dashboard's address
+(`dashboard.<app>.localhost`, or port 9871), never to the user's
+application (`<app>.localhost`), whose `/mcp` is the application's.
+Read the command from the shell it runs in and give the user these,
+with the command verbatim:
+
+1. If `cloudflared` is not installed: `brew install cloudflared` on
+   macOS, or the
+   [download page](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/).
+   The plugin's own `cloudflared` is on your PATH, not theirs.
+2. The tunnel command `rbt dashboard` printed, to run in another
+   shell. It prints a `https://<name>.trycloudflare.com` address.
+3. Add that address with `/mcp` on the end as a custom MCP
+   connector: in Claude under Customize, Connectors, Add custom
+   connector; in ChatGPT under Settings, Connectors. Signing in
+   completes by itself. In Claude the connector also works in the
+   desktop app's Code tab, so a user building with Claude Code sees
+   the dashboard and its cards beside the session; say so.
+
+Then two reminders: whoever has the address reaches their dashboard
+as them, so not to share it; and a quick tunnel gets a new address
+each time it starts, so the connector must then be added again. The
+long form is
+[The dashboard in Claude or ChatGPT](https://docs.reboot.dev/develop_locally#the-dashboard-in-claude-or-chatgpt).
