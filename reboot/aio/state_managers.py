@@ -599,6 +599,14 @@ class StateManager(ABC):
             # `SidecarStateManager.transaction_participant_prepare()`.
             self.prepare_task: Optional[asyncio.Task[None]] = None
 
+            # The request `prepare_task` sent to the database. What a
+            # participant prepares is fixed once the transaction's
+            # methods have returned, so a second `Prepare` checks that
+            # it would send this same request before answering from
+            # the task.
+            self.prepare_request: Optional[
+                database_pb2.TransactionParticipantPrepareRequest] = None
+
             # Whether or not the transaction has been prepared.
             self._prepared = prepared
 
@@ -6472,55 +6480,51 @@ class SidecarStateManager(
                 # already applied to the RocksDB transaction during
                 # intermediate `_store()` calls, so we just need to
                 # call prepare on the existing transaction.
-                async def prepare_in_database() -> None:
-                    if transaction.using_restart_detection:
-                        timestamp = await self._database_client.transaction_participant_prepare(
-                            state_type,
-                            state_ref,
-                            transaction=(
-                                database_pb2.Transaction(
-                                    state_type=state_type,
-                                    state_ref=state_ref.to_str(),
-                                    transaction_ids=[
-                                        transaction_id.bytes
-                                        for transaction_id in transaction.ids
-                                    ],
-                                    coordinator_state_type=(
-                                        transaction.coordinator_state_type
-                                    ),
-                                    coordinator_state_ref=(
-                                        transaction.coordinator_state_ref.
-                                        to_str()
-                                    ),
-                                )
-                            ),
-                            state=(
-                                transaction.state.SerializeToString()
-                                if transaction.state is not None and
-                                # Only persist the state when we actually
-                                # mutated it. A transaction holding a
-                                # shared lock means its
-                                # `transaction.state` has not been
-                                # mutated!
-                                transaction.mode == Lock.Mode.EXCLUSIVE else
-                                None
-                            ),
-                            task_upserts=[
-                                task.to_sidecar_task()
-                                for task in transaction.tasks
+                if transaction.using_restart_detection:
+                    request = database_pb2.TransactionParticipantPrepareRequest(
+                        state_type=state_type,
+                        state_ref=state_ref.to_str(),
+                        transaction=database_pb2.Transaction(
+                            state_type=state_type,
+                            state_ref=state_ref.to_str(),
+                            transaction_ids=[
+                                transaction_id.bytes
+                                for transaction_id in transaction.ids
                             ],
-                            idempotent_mutations=(
-                                list(
-                                    transaction.idempotent_mutations.values()
-                                ) if len(transaction.idempotent_mutations) > 0
-                                else None
+                            coordinator_state_type=(
+                                transaction.coordinator_state_type
                             ),
-                        )
-                    else:
-                        timestamp = await self._database_client.transaction_participant_prepare(
-                            state_type, state_ref
-                        )
+                            coordinator_state_ref=(
+                                transaction.coordinator_state_ref.to_str()
+                            ),
+                        ),
+                        state=(
+                            transaction.state.SerializeToString()
+                            if transaction.state is not None and
+                            # Only persist the state when we actually
+                            # mutated it. A transaction holding a
+                            # shared lock means its `transaction.state`
+                            # has not been mutated!
+                            transaction.mode == Lock.Mode.EXCLUSIVE else None
+                        ),
+                        task_upserts=[
+                            task.to_sidecar_task()
+                            for task in transaction.tasks
+                        ],
+                        idempotent_mutations=list(
+                            transaction.idempotent_mutations.values()
+                        ),
+                    )
+                else:
+                    request = database_pb2.TransactionParticipantPrepareRequest(
+                        state_type=state_type,
+                        state_ref=state_ref.to_str(),
+                    )
 
+                async def prepare_in_database() -> None:
+                    timestamp = await self._database_client.transaction_participant_prepare(
+                        request
+                    )
                     self._update_latest_timestamp(timestamp)
                     transaction.prepare()
 
@@ -6566,17 +6570,58 @@ class SidecarStateManager(
                 # `transaction_participant_abort()` awaits the task
                 # before sending its rollback, so the rollback is
                 # handled after the prepare and finds the transaction
-                # the prepare began. A retried `Prepare` awaits the task
-                # already in flight rather than sending a second
-                # prepare; only a prepare that failed is tried again.
+                # the prepare began.
+                #
+                # A second `Prepare` for this transaction, from a
+                # coordinator retrying after a transport failure or
+                # from a recovered coordinator re-preparing, joins the
+                # task already in flight rather than sending a second
+                # prepare, which the database would handle concurrently
+                # with the first. The task's request is the very
+                # prepare the second `Prepare` asks for: what this
+                # participant prepares, the transaction's writes kept
+                # in memory, is fixed once its methods have returned
+                # (`transaction.prepare_request` records what the task
+                # sent, and we check below that we would send the
+                # same), and the coordinator only needs to know whether
+                # this transaction is prepared, which the task's
+                # outcome answers.
+                #
+                # A prepare that failed, i.e., whose task raised because
+                # the database answered with an error or could not be
+                # reached, is tried again with a fresh task: its RPC
+                # failed with that error, and the coordinator retries a
+                # `Prepare` whose RPC failed, just as it did when the
+                # prepare was an `await` here. The database tolerates
+                # the retry even if it had in fact handled the first
+                # request, as it looks the transaction up by name
+                # before beginning it.
                 if (
                     transaction.prepare_task is None or
                     _task_raised(transaction.prepare_task)
                 ):
+                    transaction.prepare_request = request
                     transaction.prepare_task = asyncio.create_task(
                         prepare_in_database(),
                         name=
                         f'Prepare in database ({state_ref.id}) in {__name__}',
+                    )
+                else:
+                    # The task we answer from sent the request we would
+                    # send, and is in flight or has prepared; a failed
+                    # one was replaced above.
+                    assert transaction.prepare_request == request, (
+                        f"Prepare task of transaction '{transaction.root_id}' "
+                        f"for '{state_type}'/'{state_ref.id}' sent a "
+                        "different request than this `Prepare` would"
+                    )
+                    assert (
+                        not transaction.prepare_task.done() or
+                        transaction.prepared()
+                    ), (
+                        f"Prepare task of transaction '{transaction.root_id}' "
+                        f"for '{state_type}'/'{state_ref.id}' is neither in "
+                        "flight nor prepared"
                     )
 
                 await asyncio.shield(transaction.prepare_task)

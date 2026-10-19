@@ -4344,11 +4344,11 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
         )
 
         async def mock_database_transaction_participant_prepare(
-            database_client, state_type, state_ref, *args, **kwargs
+            database_client, request
         ):
-            if not is_alice(state_type, state_ref):
+            if not is_alice(request.state_type, StateRef(request.state_ref)):
                 return await database_transaction_participant_prepare(
-                    database_client, state_type, state_ref, *args, **kwargs
+                    database_client, request
                 )
 
             # Only an abort after this point ends this attempt.
@@ -4367,11 +4367,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
                 async def prepare_after_abort():
                     await alice_aborted_in_database.wait()
                     await database_transaction_participant_prepare(
-                        database_client,
-                        state_type,
-                        state_ref,
-                        *args,
-                        **kwargs,
+                        database_client, request
                     )
 
                 late_prepares.append(
@@ -4380,7 +4376,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
                 raise
 
             return await database_transaction_participant_prepare(
-                database_client, state_type, state_ref, *args, **kwargs
+                database_client, request
             )
 
         async def mock_database_transaction_participant_abort(

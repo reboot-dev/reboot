@@ -549,14 +549,7 @@ class DatabaseClient:
 
     async def transaction_participant_prepare(
         self,
-        state_type: StateTypeName,
-        state_ref: StateRef,
-        transaction: Optional[database_pb2.Transaction] = None,
-        *,
-        state: Optional[bytes] = None,
-        task_upserts: Optional[list[database_pb2.Task]] = None,
-        idempotent_mutations: Optional[list[database_pb2.IdempotentMutation]
-                                      ] = None,
+        request: database_pb2.TransactionParticipantPrepareRequest,
     ) -> Optional[Timestamp]:
         """Called by a transaction participant when they are
         prepared. Guarantees that the preparedness of this participant
@@ -566,26 +559,17 @@ class DatabaseClient:
         transaction's information.
 
         When using restart detection, all intermediate writes within
-        the transaction are deferred and passed here via `state`,
-        `task_upserts`, and `idempotent_mutations`. The `state_type`
-        and `state_ref` for `state` is taken from the `transaction`
-        field.
+        the transaction are deferred and passed here via the request's
+        `transaction`, `state`, `task_upserts`, and
+        `idempotent_mutations`. The `state_type` and `state_ref` for
+        `state` is taken from the `transaction` field.
 
         Returns the piggybacked database timestamp, or None
         if the database does not support this field.
         """
         stub = await self._get_database_stub()
 
-        response = await stub.TransactionParticipantPrepare(
-            database_pb2.TransactionParticipantPrepareRequest(
-                state_type=state_type,
-                state_ref=state_ref.to_str(),
-                transaction=transaction,
-                state=state,
-                task_upserts=task_upserts or [],
-                idempotent_mutations=idempotent_mutations or [],
-            )
-        )
+        response = await stub.TransactionParticipantPrepare(request)
 
         return response.timestamp if response.HasField("timestamp") else None
 
