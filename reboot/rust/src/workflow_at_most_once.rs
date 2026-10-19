@@ -830,22 +830,20 @@ impl WorkflowContext<'_> {
             if let Some(saved) = store
                 .workflow_at_most_once_result_load(self, key, &contract)
                 .await?
+                && saved.phase == 2
             {
-                if saved.phase == 2 {
-                    let value = saved
-                        .result
-                        .ok_or_else(|| Status::data_loss("missing typed result"))?;
-                    if value.type_url != result_type {
-                        return Err(Status::data_loss("typed result URL mismatch"));
-                    }
-                    let decoded = R::decode(value.value.as_slice())
-                        .map_err(|_| Status::data_loss("malformed typed result"))?;
-                    operation.acknowledged();
-                    return Ok(decoded);
+                let value = saved
+                    .result
+                    .ok_or_else(|| Status::data_loss("missing typed result"))?;
+                if value.type_url != result_type {
+                    return Err(Status::data_loss("typed result URL mismatch"));
                 }
-                // A non-Stored checkpoint means a previous attempt did not complete;
-                // at-least-once semantics allow re-running the callback.
+                let decoded = R::decode(value.value.as_slice())
+                    .map_err(|_| Status::data_loss("malformed typed result"))?;
+                operation.acknowledged();
+                return Ok(decoded);
             }
+            // Non-Stored checkpoint: at-least-once permits re-running.
         }
         self.validate_scope().await?;
         let future = callback();
@@ -945,13 +943,12 @@ impl WorkflowContext<'_> {
             if let Some(saved) = store
                 .workflow_at_most_once_load(self, key, &contract)
                 .await?
+                && saved.phase == 2
             {
-                if saved.phase == 2 {
-                    operation.acknowledged();
-                    return Ok(());
-                }
-                // Non-Stored checkpoint from an incomplete attempt: re-run.
+                operation.acknowledged();
+                return Ok(());
             }
+            // Non-Stored checkpoint from an incomplete attempt: re-run.
         }
         self.validate_scope().await?;
         let future = callback();
