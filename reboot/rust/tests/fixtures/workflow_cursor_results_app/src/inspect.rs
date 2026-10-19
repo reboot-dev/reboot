@@ -73,9 +73,6 @@ async fn inspect() -> Result<(), Box<dyn std::error::Error>> {
             let mut mutations = vec![];
             while let Some(batch) = stream.message().await.map_err(|e| e.to_string())? {
                 for m in batch.idempotent_mutations {
-                    if m.workflow_iteration != scope {
-                        return Err("inventory returned wrong iteration scope".to_string());
-                    }
                     mutations.push(m);
                 }
             }
@@ -83,9 +80,16 @@ async fn inspect() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
     let mutations = if all {
-        inventory(task.iteration, read).await?
+        inventory(task.iteration, read, |m| m.workflow_iteration).await?
     } else {
-        read(Some(arg(4).parse()?)).await?
+        let scope = Some(arg(4).parse()?);
+        let mutations = read(scope).await?;
+        // A single-scope snapshot is an exact assertion, unlike all-inventory's
+        // disjoint lexical prefix scans. Never silently discard a wrong scope.
+        if mutations.iter().any(|m| m.workflow_iteration != scope) {
+            return Err(format!("snapshot {scope:?} returned wrong iteration scope").into());
+        }
+        mutations
     };
     let inventory_count = mutations.len();
     let mut records = vec![];
