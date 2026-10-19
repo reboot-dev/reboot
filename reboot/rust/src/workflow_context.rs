@@ -1612,6 +1612,17 @@ mod idempotency_key_scope_tests {
         let context = build_context(&tasks, task, &cancel, &attempt, None, Vec::new());
         assert_eq!(context.task_id(), expected);
     }
+    #[tokio::test]
+    async fn state_ref_matches_task_state_ref() {
+        let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
+        let expected = crate::state_ref::StateRef::from_id(
+            &task.task_id.as_ref().unwrap().state_type,
+            &task.task_id.as_ref().unwrap().state_ref,
+        )
+        .unwrap();
+        let context = build_context(&tasks, task, &cancel, &attempt, None, Vec::new());
+        assert_eq!(context.state_ref(), expected);
+    }
 }
 
 /// Private, dispatcher-minted workflow authority. Explicit named same-actor
@@ -1856,6 +1867,20 @@ impl<'a> WorkflowContext<'a> {
             .task_id
             .as_ref()
             .and_then(|id| uuid::Uuid::from_slice(&id.task_uuid).ok())
+    }
+
+    /// The encoded state reference of the actor this workflow is running on.
+    ///
+    /// This is the Rust equivalent of Python's `WorkflowContext.task.state_ref`.
+    pub fn state_ref(&self) -> crate::state_ref::StateRef {
+        let (state_type, state_id) = self
+            .task
+            .task_id
+            .as_ref()
+            .map(|id| (id.state_type.clone(), id.state_ref.clone()))
+            .unwrap_or_default();
+        crate::state_ref::StateRef::from_id(&state_type, &state_id)
+            .unwrap_or_else(|_| crate::state_ref::StateRef::from_id("", "").unwrap())
     }
 
     /// Await a future while respecting workflow cancellation.
