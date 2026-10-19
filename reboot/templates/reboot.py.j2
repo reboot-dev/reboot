@@ -2823,14 +2823,20 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% else %}
             _, response = await {{ state.proto.name }}.{{ method.proto.name }}(reboot_context, {{ mcp_name_prefix }}id)
 {% endif %}
-            return response
 {% else %}
             ref = {{ state.proto.name }}.ref({{ mcp_name_prefix }}id)
 {% if method.input_type_fields %}
-            return await ref.{{ method.proto.name | to_snake }}(reboot_context, request)
+            response = await ref.{{ method.proto.name | to_snake }}(reboot_context, request)
 {% else %}
-            return await ref.{{ method.proto.name | to_snake }}(reboot_context)
+            response = await ref.{{ method.proto.name | to_snake }}(reboot_context)
 {% endif %}
+{% endif %}
+{% if options.proto.pydantic %}
+            return response
+{% else %}
+            # A protobuf message is not JSON to FastMCP, which would
+            # hand the model its text form; a dict is.
+            return IMPORT_google_protobuf_json_format.MessageToDict(response)
 {% endif %}
 
 {% endif %}
@@ -3000,9 +3006,14 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
         async def {{ mcp_name_prefix }}{{ ui.name }}_tool(
             ctx: IMPORT_mcp_server_fastmcp.Context,
-{% if ui.request_message %}
+{% if ui.request_message and options.proto.pydantic %}
             *,
             request: {{ state.proto.name }}.{{ ui.request_message }},
+{% elif ui.request_message and state.proto_ui_request_fields[ui.name] %}
+            *,
+{% for name, type in state.proto_ui_request_fields[ui.name].items() %}
+            {{ name }}: {{ type }},
+{% endfor %}
 {% endif %}
         ) -> dict:
             _ids: dict[IMPORT_reboot_aio_types.StateTypeName, str | None] = {
@@ -3033,7 +3044,20 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             result: dict = {
                 "ids": _ids,
                 "request": IMPORT_reboot_mcp_ui.camelize_request_payload(
+{% if options.proto.pydantic %}
                     request.model_dump(mode="json")
+{% else %}
+                    # TODO: Construct the declared protobuf request before
+                    # serializing it for the UI. FastMCP validates the argument
+                    # types, but this dict bypasses protobuf construction checks
+                    # (e.g. integer ranges). Use MessageToDict for protobuf JSON
+                    # field names, accounting for omitted default-valued fields.
+                    {
+{% for name in state.proto_ui_request_fields[ui.name] %}
+                        "{{ name }}": {{ name }},
+{% endfor %}
+                    }
+{% endif %}
                 ),
             }
 {% else %}
@@ -3058,9 +3082,14 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         async def {{ mcp_name_prefix }}{{ ui.name }}_tool(
             ctx: IMPORT_mcp_server_fastmcp.Context,
             {{ mcp_name_prefix }}id: str,
-{% if ui.request_message %}
+{% if ui.request_message and options.proto.pydantic %}
             *,
             request: {{ state.proto.name }}.{{ ui.request_message }},
+{% elif ui.request_message and state.proto_ui_request_fields[ui.name] %}
+            *,
+{% for name, type in state.proto_ui_request_fields[ui.name].items() %}
+            {{ name }}: {{ type }},
+{% endfor %}
 {% endif %}
         ) -> dict:
             _ids: dict[IMPORT_reboot_aio_types.StateTypeName, str | None] = {
@@ -3089,7 +3118,20 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             result: dict = {
                 "ids": _ids,
                 "request": IMPORT_reboot_mcp_ui.camelize_request_payload(
+{% if options.proto.pydantic %}
                     request.model_dump(mode="json")
+{% else %}
+                    # TODO: Construct the declared protobuf request before
+                    # serializing it for the UI. FastMCP validates the argument
+                    # types, but this dict bypasses protobuf construction checks
+                    # (e.g. integer ranges). Use MessageToDict for protobuf JSON
+                    # field names, accounting for omitted default-valued fields.
+                    {
+{% for name in state.proto_ui_request_fields[ui.name] %}
+                        "{{ name }}": {{ name }},
+{% endfor %}
+                    }
+{% endif %}
                 ),
             }
 {% else %}
@@ -4683,7 +4725,7 @@ class {{ client.proto.state_name }}:
     {% endfor %}
 {%- if client.state is not none %}
 {%- for ui in client.state.proto.uis %}
-{%- if ui.request_message %}
+{%- if ui.request_message and options.proto.pydantic %}
 
     {# UI request type alias. The generated MCP tool annotates its
     `request:` parameter with `<State>.<RequestMessage>` (see the UI

@@ -126,9 +126,11 @@ until the probe from Step 3 succeeds before calling it up. It stays running for 
 session — leave it alone afterwards; it never needs a restart when
 code changes.
 
-It also serves the dashboard as an MCP App at `/mcp/`, which Claude
-or ChatGPT can show once they can reach it; that is Step 6, at the
-end, and only if the user asks for it.
+It also serves the dashboard as MCP Apps at `/mcp`, which Claude or
+ChatGPT can show once they can reach it: the whole dashboard, and a
+card of one feature or one state type, inline, for when the user asks
+about a specific one; a listing tool gives the host the ids. Step 6
+hands the user the steps for that once the app is built.
 
 If it fails to come up (for example the local Envoy check fails
 because neither Docker nor an `envoy` executable is available, or

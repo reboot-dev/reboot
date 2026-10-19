@@ -13,24 +13,57 @@ import "rbt/v1alpha1/bdd/feature.proto";
 
 // What the dashboard has read from the developer's API files.
 message Dashboard {
-  // The dashboard's page as an MCP App, which an MCP host opens by
-  // calling the `dashboard_show` tool. `path` is the page's URL path
-  // under `/__/frontend/mcp/`, and its build is `ui/index.html` in
-  // this directory, which `rbt dashboard` names as the MCP App dist
-  // path; see `ui_dist` in `BUILD.bazel`. The `.rbtrc` beside this
-  // file makes this directory the project root the MCP App runtime
-  // resolves from the generated code, in both the source tree and the
-  // installed package.
+  // The dashboard's page as MCP Apps, which an MCP host opens by
+  // calling the tools: the whole dashboard, or one feature or one
+  // state type as a card. Each `path` is a URL path under
+  // `/__/frontend/mcp/`, and its build is `<path>/index.html` in
+  // this directory, the same page three times, which `rbt dashboard`
+  // names as the MCP App dist path; see `ui_dist` in `BUILD.bazel`.
+  // The `.rbtrc` beside this file makes this directory the project
+  // root the MCP App runtime resolves from the generated code, in
+  // both the source tree and the installed package.
   option (rbt.v1alpha1.state) = {
-    uis: [ {
-      name: "show",
-      title: "Reboot dashboard",
-      description: "Opens the Reboot developer dashboard for the application "
-                   "being developed: its state types and their methods, the "
-                   "call graph between them, its features and its changelog. "
-                   "There is one dashboard: pass 'dashboard' as dashboard_id.",
-      path: "ui",
-    } ],
+    uis: [
+      {
+        name: "show",
+        title: "Reboot dashboard",
+        description: "Opens the Reboot developer dashboard for the "
+                     "application being developed: its state types and "
+                     "their methods, the call graph between them, its "
+                     "features and its changelog. Use it when the user wants "
+                     "to see the changelog, the call graph or the features as "
+                     "a whole; for one feature or one state type, use "
+                     "dashboard_show_feature or dashboard_show_state_type. "
+                     "There is one dashboard: pass 'dashboard' as "
+                     "dashboard_id.",
+        path: "ui",
+      },
+      {
+        name: "show_feature",
+        title: "Reboot dashboard: a feature",
+        description: "Shows one feature of the application being developed, "
+                     "inline: its scenarios and their steps, as the dashboard "
+                     "shows them. Use it when the user asks about a specific "
+                     "feature, or one that was just written. Pass 'dashboard' "
+                     "as dashboard_id, and the feature's file path (from "
+                     "dashboard_list) or its name as feature.",
+        path: "feature",
+        request_message: "ShowFeatureRequest",
+      },
+      {
+        name: "show_state_type",
+        title: "Reboot dashboard: a state type",
+        description: "Shows one state type of the application being "
+                     "developed, inline: its properties and its methods with "
+                     "their signatures, as the dashboard shows them. Use it "
+                     "when the user asks about a specific state type, or one "
+                     "that was just written. Pass 'dashboard' as "
+                     "dashboard_id, and the state type's qualified name (from "
+                     "dashboard_list) or its name as state_type.",
+        path: "state-type",
+        request_message: "ShowStateTypeRequest",
+      }
+    ],
   };
 
   // The API directory as the developer spelled it to `rbt dashboard`,
@@ -140,6 +173,39 @@ message Check {
   // checks again when a file changes. Absent for a check that
   // finished.
   optional string failure = 3;
+}
+
+// What `dashboard_show_feature` takes: a feature's file path, as
+// `dashboard_list` gives it, or its name.
+message ShowFeatureRequest {
+  string feature = 1;
+}
+
+// What `dashboard_show_state_type` takes: a state type's qualified
+// name, as `dashboard_list` gives it, or its name.
+message ShowStateTypeRequest {
+  string state_type = 1;
+}
+
+message DashboardIndexRequest {}
+
+// The features and state types the dashboard shows, by the ids the
+// card tools take, for an MCP host's model to pick from.
+message DashboardIndexResponse {
+  message Feature {
+    // The feature file's path relative to the working directory.
+    string id = 1;
+    optional string name = 2;
+  }
+  message StateType {
+    // The state type's qualified name, e.g. "bank.v1.Account".
+    string id = 1;
+    string name = 2;
+    // The API file declaring it, relative to the API directory.
+    string file = 3;
+  }
+  repeated Feature features = 1;
+  repeated StateType state_types = 2;
 }
 
 message DashboardGetRequest {}
@@ -1051,6 +1117,25 @@ message PreferencesSetCallGraphLayoutResponse {}
 service DashboardMethods {
   rpc Get(DashboardGetRequest) returns (DashboardGetResponse) {
     option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  // What an MCP host's model calls before `dashboard_show_feature`
+  // or `dashboard_show_state_type`, to learn what there is to show
+  // and the id to pass.
+  rpc Index(DashboardIndexRequest) returns (DashboardIndexResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+      description: "Lists the features and the state types of the "
+                   "application being developed, with the ids that "
+                   "dashboard_show_feature and dashboard_show_state_type "
+                   "take. There is one dashboard: pass 'dashboard' as "
+                   "dashboard_id.",
+      mcp: {
+        tool: true,
+        name: "dashboard_list",
+        title: "List the features and state types",
+      },
     };
   }
 

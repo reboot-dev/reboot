@@ -10,6 +10,7 @@ import { useOrderedMap } from "@reboot-dev/reboot-std-api/collections/ordered_ma
 import {
   RebootClientProvider,
   useMcpApp,
+  useMcpToolData,
   useRebootClient,
   useRefreshBearerToken,
   useSignIn,
@@ -52,6 +53,7 @@ import {
   DASHBOARD_ID,
   CHANGELOG_ID,
   IN_MCP_HOST,
+  MCP_CARD,
   PREFERENCES_ID,
   PRESENCE_ID,
 } from "./constants";
@@ -692,6 +694,9 @@ const useRecording = (path: string, attempt = 0): string | undefined => {
   const [url, setUrl] = useState<string | undefined>(undefined);
   useEffect(() => {
     setUrl(undefined);
+    if (MCP_CARD !== undefined) {
+      return;
+    }
     let cancelled = false;
     let retry: ReturnType<typeof setTimeout> | undefined;
     const later = (attempt: () => Promise<void>): void => {
@@ -986,7 +991,7 @@ type DisplayMode = "inline" | "fullscreen" | "pip";
 const useFullscreenInHost = (): void => {
   const mcpApp = useMcpApp();
   useEffect(() => {
-    if (mcpApp === null) {
+    if (mcpApp === null || MCP_CARD !== undefined) {
       return;
     }
     const sized = (mode: DisplayMode | undefined): void => {
@@ -2679,7 +2684,7 @@ const ScenarioRow: FC<{
   // starts out open, since it has nothing to be opened from.
   const target = useTarget();
   const targeted = id !== undefined && target === id;
-  const [expanded, setExpanded] = useState(targeted);
+  const [expanded, setExpanded] = useState(targeted || MCP_CARD !== undefined);
   const [relatedKey, setRelatedKey] = useState<string | null>(null);
   const backgroundSteps = useMemo(
     () => backgrounds.flatMap((background) => background.steps),
@@ -4775,11 +4780,156 @@ const App: FC = () => {
   );
 };
 
+// The feature `asked` names: by its file path, as `dashboard_list`
+// gives it, by the path's last part, or by its name.
+const featureNamed = (
+  features: Features,
+  asked: string
+): FeatureEntry | undefined => {
+  const entries = sortedFeatures(features);
+  const wanted = asked.trim().toLowerCase();
+  return (
+    entries.find(({ filename }) => filename === asked) ??
+    entries.find(
+      ({ filename }) =>
+        filename.toLowerCase() === wanted ||
+        filename.toLowerCase().endsWith(`/${wanted}`)
+    ) ??
+    entries.find(({ feature }) => feature.name?.toLowerCase() === wanted)
+  );
+};
+
+// The state type `asked` names: by its qualified name, as
+// `dashboard_list` gives it, or by its name, when one type has it.
+const stateTypeNamed = (
+  declarations: Map<string, StateTypeDeclaration>,
+  asked: string
+): StateTypeDeclaration | undefined => {
+  const exact = declarations.get(asked);
+  if (exact !== undefined) {
+    return exact;
+  }
+  const wanted = asked.trim().toLowerCase();
+  const matches = [...declarations.entries()].filter(
+    ([id, { stateType }]) =>
+      id.toLowerCase() === wanted || stateType.name.toLowerCase() === wanted
+  );
+  return matches.length === 1 ? matches[0][1] : undefined;
+};
+
+// What a card shows when the tool named nothing it has: what there
+// is, by the ids the tool takes.
+const CardMissing: FC<{
+  what: string;
+  asked: string | undefined;
+  names: { id: string; name?: string }[];
+}> = ({ what, asked, names }) => (
+  <div className="card">
+    <div className="error">
+      {asked === undefined || asked === ""
+        ? `No ${what} was named.`
+        : `No ${what} named "${asked}".`}
+    </div>
+    {names.length === 0 ? (
+      <p>The dashboard has read no {what} yet.</p>
+    ) : (
+      <>
+        <p>The {what}s the dashboard has, by id:</p>
+        <ul>
+          {names.map(({ id, name }) => (
+            <li key={id}>
+              <code>{id}</code>
+              {name !== undefined && name !== id && `: ${name}`}
+            </li>
+          ))}
+        </ul>
+      </>
+    )}
+  </div>
+);
+
+// One feature on its own: named the way the features page names a
+// chosen feature, then the whole feature.
+const FeatureCardAlone: FC<{ entry: FeatureEntry; links: StepLinks }> = ({
+  entry: { filename, feature },
+  links,
+}) => (
+  <div className="card">
+    <div className="state-type-head">
+      <div className="state-type-heading">
+        <h2>{feature.name ?? filename}</h2>
+        <span className="summary-line">
+          {countWithNoun(scenariosOfFeature(feature).length, "scenario")}
+          {feature.rules.length > 0 &&
+            ` · ${countWithNoun(feature.rules.length, "rule")}`}
+        </span>
+      </div>
+    </div>
+    <div className="file">{filename}</div>
+    {feature.description !== undefined && (
+      <Description
+        className="state-type-description"
+        text={feature.description}
+      />
+    )}
+    <FeatureCard filename={filename} feature={feature} links={links} />
+  </div>
+);
+
+// The page as a card in an MCP host's inline frame: the one feature
+// or state type the tool call named, from the same state the whole
+// dashboard reads, so it changes as the files do. Nothing in it is
+// clickable and no recording is shown; `dashboard.css` sees to both
+// by the `mcp-card` class.
+const Card: FC = () => {
+  const { useGet } = useDashboard({ id: DASHBOARD_ID });
+  const { response } = useGet();
+  const request = (useMcpToolData()?.request ?? {}) as {
+    feature?: string;
+    stateType?: string;
+  };
+  const apis: APIs = useMemo(() => response?.apis ?? {}, [response?.apis]);
+  const links = useMemo(() => stepLinks(apis), [apis]);
+  const declarations = useMemo(() => stateTypeDeclarationsById(apis), [apis]);
+  if (response === undefined) {
+    return <div className="loading-token">Loading...</div>;
+  }
+  if (MCP_CARD === "feature") {
+    const entry = featureNamed(response.features, request.feature ?? "");
+    return entry === undefined ? (
+      <CardMissing
+        what="feature"
+        asked={request.feature}
+        names={sortedFeatures(response.features).map(
+          ({ filename, feature }) => ({ id: filename, name: feature.name })
+        )}
+      />
+    ) : (
+      <FeatureCardAlone entry={entry} links={links} />
+    );
+  }
+  const declaration = stateTypeNamed(declarations, request.stateType ?? "");
+  return declaration === undefined ? (
+    <CardMissing
+      what="state type"
+      asked={request.stateType}
+      names={[...declarations.keys()].map((id) => ({ id }))}
+    />
+  ) : (
+    <div className="card">
+      <StateType api={declaration.api} stateType={declaration.stateType} />
+    </div>
+  );
+};
+
 const root = document.getElementById("root");
 
 // `dashboard.css` sizes the page by this class in an MCP host.
 if (IN_MCP_HOST) {
   document.documentElement.classList.add("mcp-host");
+}
+if (MCP_CARD !== undefined) {
+  document.documentElement.classList.add("mcp-card");
 }
 
 if (root !== null) {
@@ -4791,9 +4941,15 @@ if (root !== null) {
           which the application writes into the page. */}
       <RebootClientProvider offlineCacheEnabled={true}>
         <WithToken>
-          <Presence id={PRESENCE_ID} subscriberId={SUBSCRIBER_ID}>
-            <App />
-          </Presence>
+          {MCP_CARD === undefined ? (
+            <Presence id={PRESENCE_ID} subscriberId={SUBSCRIBER_ID}>
+              <App />
+            </Presence>
+          ) : (
+            <MemoryRouter>
+              <Card />
+            </MemoryRouter>
+          )}
         </WithToken>
       </RebootClientProvider>
     </StrictMode>

@@ -89,7 +89,9 @@ js_reboot_react_library(
 # as a single resource with no address to fetch a script or stylesheet
 # from. Built here rather than in `//reboot/dashboard/web` because the
 # `Dashboard` state type's `uis` name it by a path relative to this
-# directory; see `dashboard.proto`.
+# directory; see `dashboard.proto`. One copy per UI, since the MCP App
+# runtime reads each UI's build from its own `<path>/index.html`; the
+# page tells the UIs apart by the title the runtime writes into it.
 genrule(
     name = "ui_dist",
     srcs = [
@@ -97,13 +99,19 @@ genrule(
         "//reboot/dashboard/web:dashboard_bundle.js",
         "//reboot/dashboard/web:index.html",
     ],
-    outs = ["ui/index.html"],
+    outs = [
+        "ui/index.html",
+        "feature/index.html",
+        "state-type/index.html",
+    ],
     cmd = "$(location //reboot/ping:inline_bundle) " +
           "$(location //reboot/dashboard/web:index.html) " +
           "$(location //reboot/dashboard/web:dashboard_bundle.js) " +
-          "$@ " +
+          "$(location ui/index.html) " +
           "--css $(location //reboot/dashboard/web:dashboard_bundle.css) " +
-          "--marker '<script type=\"module\" src=\"./src/main.tsx\"></script>'",
+          "--marker '<script type=\"module\" src=\"./src/main.tsx\"></script>' && " +
+          "cp $(location ui/index.html) $(location feature/index.html) && " +
+          "cp $(location ui/index.html) $(location state-type/index.html)",
     tools = ["//reboot/ping:inline_bundle"],
 )
 
