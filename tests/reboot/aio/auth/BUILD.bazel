@@ -13,6 +13,17 @@ py_test(
 )
 
 py_test(
+    name = "redirect_uris_test_py",
+    size = "small",
+    srcs = ["redirect_uris_test.py"],
+    main = "redirect_uris_test.py",
+    deps = [
+        "//reboot:settings_py",
+        "//reboot/aio/auth:redirect_uris_py",
+    ],
+)
+
+py_test(
     name = "oauth_providers_test_py",
     size = "small",
     timeout = "long",

@@ -135,6 +135,37 @@ class OAuthResourceTest(unittest.IsolatedAsyncioTestCase):
             assert code is not None
             self.assertEqual(harness.claims(code)["resource"], FOREIGN)
 
+    async def test_consent_skipped_when_the_code_goes_to_the_resource(self):
+        async with harness.client(self.app, ORIGIN) as client:
+
+            async def authorize(redirect_uri: str) -> int:
+                client_id = await harness.register(client, redirect_uri)
+                _, challenge = harness.pkce_pair()
+                response = await client.get(
+                    "/__/oauth/authorize",
+                    params=[
+                        ("response_type", "code"),
+                        ("client_id", client_id),
+                        ("redirect_uri", redirect_uri),
+                        ("code_challenge", challenge),
+                        ("code_challenge_method", "S256"),
+                        ("resource", FOREIGN),
+                    ],
+                    follow_redirects=False,
+                )
+                return response.status_code
+
+            # The code lands on the resource's own origin: straight to
+            # sign-in.
+            self.assertEqual(
+                await authorize(f"{FOREIGN}/__/access/callback"), 302
+            )
+            # Anywhere else: the consent screen, as for any client.
+            self.assertEqual(await authorize("https://other.test/cb"), 200)
+            self.assertEqual(
+                await authorize(harness.DEFAULT_REDIRECT_URI), 200
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

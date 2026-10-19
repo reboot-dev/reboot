@@ -1338,22 +1338,29 @@ class OAuthServer:
                 status_code=400,
             )
 
-        # Two kinds of client skip the consent screen, both of them the
-        # application's own. The browser client minted by
-        # `/__/oauth/start` is server-minted with a fixed, same-origin
-        # `redirect_uri`. A native client is one whose every registered
-        # redirect URI the application claimed via
-        # `OAuth(skip_consent_for_redirect_uris=...)`, checked at
-        # registration and carried in the signed `client_id`. Either
-        # way the authorization code can only land somewhere the
-        # application already trusts, so the confused-deputy attack the
-        # consent screen guards against — an attacker registering a
-        # client with their own `redirect_uri` — can't arise. Go
-        # straight to the browser-flow behavior: reuse an existing
-        # session if there is one, otherwise sign in at the IdP.
+        # Three kinds of request skip the consent screen. The browser
+        # client minted by `/__/oauth/start` is server-minted with a
+        # fixed, same-origin `redirect_uri`. A native client is one
+        # whose every registered redirect URI the application claimed
+        # via `OAuth(skip_consent_for_redirect_uris=...)`, checked at
+        # registration and carried in the signed `client_id`. And a
+        # request for a token for another resource (RFC 8707) whose
+        # code goes to that resource's own origin. In each case the
+        # authorization code can only land somewhere the token it buys
+        # is meant for, so the confused-deputy attack the consent
+        # screen guards against — an attacker registering a client
+        # with their own `redirect_uri` — can't arise. Go straight to
+        # the browser-flow behavior: reuse an existing session if there
+        # is one, otherwise sign in at the IdP.
         if (
             client_data.get("type") == _BROWSER_CLIENT_TYPE or
-            client_data.get("first_party") is True
+            client_data.get("first_party") is True or (
+                resource is not None and skips_consent(
+                    redirect_uri,
+                    skip_consent_for_redirect_uris=[],
+                    resource=resource,
+                )
+            )
         ):
             existing_user_id = self._verify_session_cookie(request)
             if existing_user_id is not None:
