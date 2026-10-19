@@ -1201,6 +1201,93 @@ async fn memoize_unit_per_workflow_runs_once() {
     server.abort();
 }
 
+#[tokio::test]
+async fn retry_memoizes_success_without_rerunning() {
+    let (f, _database, server) = fake().await;
+    let url = "type.googleapis.com/tests.reboot.protoc.Counter";
+    let constructed = Arc::new(AtomicI64::new(0));
+    let c = constructed.clone();
+    let attempt = WorkflowAttempt::default();
+    let context = f.context(&attempt).iteration("loop", 0, 2).unwrap();
+    let value = context
+        .retry(
+            "fetch",
+            1,
+            url,
+            || {
+                let c = c.clone();
+                async move { Ok(crate::proto::Counter { value: c.fetch_add(1, Ordering::SeqCst) + 1 }) }
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(value.value, 1);
+    assert_eq!(constructed.load(Ordering::SeqCst), 1);
+
+    let replay = WorkflowAttempt::default();
+    let replay_context = f.context(&replay).iteration("loop", 0, 2).unwrap();
+    let replay_value: crate::proto::Counter = replay_context
+        .retry(
+            "fetch",
+            1,
+            url,
+            || async move { panic!("callable must not rerun on replay") },
+        )
+        .await
+        .unwrap();
+    assert_eq!(replay_value.value, 1);
+    assert_eq!(constructed.load(Ordering::SeqCst), 1);
+    assert!(replay.clean());
+    server.abort();
+}
+
+#[tokio::test]
+async fn retry_memoizes_error_per_iteration() {
+    let (f, _database, server) = fake().await;
+    let url = "type.googleapis.com/tests.reboot.protoc.Counter";
+    let constructed = Arc::new(AtomicI64::new(0));
+    let c0 = constructed.clone();
+    let first = WorkflowAttempt::default();
+    let context0 = f.context(&first).iteration("loop", 0, 2).unwrap();
+    let error0 = context0
+        .retry::<crate::proto::Counter, _, _>(
+            "fetch",
+            1,
+            url,
+            || {
+                let c = c0.clone();
+                async move {
+                    c.fetch_add(1, Ordering::SeqCst);
+                    Err::<_, tonic::Status>(Status::unavailable("transient"))
+                }
+            },
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error0.code(), tonic::Code::Unavailable);
+    assert_eq!(constructed.load(Ordering::SeqCst), 1);
+
+    let second = WorkflowAttempt::default();
+    let context1 = f.context(&second).iteration("loop", 1, 2).unwrap();
+    let c1 = constructed.clone();
+    let value1 = context1
+        .retry(
+            "fetch",
+            1,
+            url,
+            || {
+                let c = c1.clone();
+                async move { Ok(crate::proto::Counter { value: c.fetch_add(1, Ordering::SeqCst) + 1 }) }
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(value1.value, 2);
+    assert_eq!(constructed.load(Ordering::SeqCst), 2);
+    assert!(second.clean());
+    server.abort();
+}
+
 trait TestCursorDeclaration {
     fn with_test_cursor(self, enabled: bool) -> Self;
 }

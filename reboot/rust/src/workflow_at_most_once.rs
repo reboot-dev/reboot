@@ -1141,6 +1141,35 @@ impl WorkflowContext<'_> {
             self.at_least_once_unit(alias, version, callable).await
         }
     }
+
+    /// Retry a callable with durable memoization of each attempt.
+    ///
+    /// The callable is invoked once per finite iteration. If it succeeds, the
+    /// value is memoized and returned. If it fails, the error is also memoized
+    /// for this iteration; the caller is expected to advance the iteration and
+    /// re-invoke `retry`. This is the Rust equivalent of a bounded, manually
+    /// driven retry loop over `at_least_once_result`.
+    pub async fn retry<T, F, Fut>(
+        &self,
+        alias: &str,
+        version: u32,
+        result_type: &'static str,
+        callable: F,
+    ) -> Result<T, Status>
+    where
+        T: prost::Message + Default + Clone + Send + 'static,
+        F: FnOnce() -> Fut + Send,
+        Fut: std::future::Future<Output = Result<T, Status>> + Send,
+    {
+        self.at_least_once_result::<T, F, Fut>(
+            alias,
+            version,
+            result_type,
+            b"reboot.retry.v1",
+            callable,
+        )
+        .await
+    }
 }
 
 #[cfg(test)]
