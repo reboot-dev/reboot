@@ -321,6 +321,11 @@ impl DatabaseActorStore {
         let key = idempotency_key(&request)?;
         let gate = self.actor_gate(D::STATE_TYPE, &state_ref);
         let _lease = gate.exclusive().await;
+        if gate.committed_revisions().borrow().1 {
+            return Err(Status::unavailable(
+                "actor commit outcome uncertain; restart host before writing",
+            ));
+        }
         let initial_running = owner.and_then(|owner| {
             owner
                 .validate_scheduling_store(self, D::STATE_TYPE, &state_ref)

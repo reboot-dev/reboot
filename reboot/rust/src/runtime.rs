@@ -2750,6 +2750,21 @@ impl Drop for ActorCommitAttempt {
                 event.0 = event.0.wrapping_add(1);
                 event.1 = true;
             });
+            // Weak registrations normally retire idle actor gates. Uncertain
+            // durable attempts are different: keep this exact gate alive until
+            // process restart, even after its final lease/subscription drops.
+            let mut registry = DATABASE_ACTOR_LOCKS
+                .lock()
+                .expect("database actor-lock registry mutex poisoned");
+            for registration in registry.values_mut() {
+                if registration
+                    .upgrade()
+                    .is_some_and(|inner| Arc::ptr_eq(&inner, &self.gate.inner))
+                {
+                    *registration = ActorGateRegistration::Uncertain(Arc::clone(&self.gate.inner));
+                    break;
+                }
+            }
         }
     }
 }
@@ -3051,7 +3066,20 @@ impl SharedActorLease {
     }
 }
 
-static DATABASE_ACTOR_LOCKS: LazyLock<Mutex<HashMap<ActorLockKey, Weak<ActorGateInner>>>> =
+enum ActorGateRegistration {
+    Live(Weak<ActorGateInner>),
+    // A durable RPC may have committed: only process restart clears this latch.
+    Uncertain(Arc<ActorGateInner>),
+}
+impl ActorGateRegistration {
+    fn upgrade(&self) -> Option<Arc<ActorGateInner>> {
+        match self {
+            Self::Live(inner) => inner.upgrade(),
+            Self::Uncertain(inner) => Some(Arc::clone(inner)),
+        }
+    }
+}
+static DATABASE_ACTOR_LOCKS: LazyLock<Mutex<HashMap<ActorLockKey, ActorGateRegistration>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Returns the process-local gate shared by normal actor access and an
@@ -3065,16 +3093,21 @@ pub(crate) fn same_actor_gate(endpoint: &str, state_type: &str, state_ref: &str)
     let mut registry = DATABASE_ACTOR_LOCKS
         .lock()
         .expect("database actor-lock registry mutex poisoned");
-    registry.retain(|_, gate| gate.strong_count() > 0);
-    match registry.get(&key).and_then(Weak::upgrade) {
+    registry.retain(|_, gate| gate.upgrade().is_some());
+    match registry.get(&key).and_then(ActorGateRegistration::upgrade) {
         Some(inner) => ActorGate { inner },
         None => {
             let gate = ActorGate::new();
-            registry.insert(key, Arc::downgrade(&gate.inner));
+            registry.insert(
+                key,
+                ActorGateRegistration::Live(Arc::downgrade(&gate.inner)),
+            );
             gate
         }
     }
 }
+
+include!("actor_uncertainty_retention_tests.rs");
 
 // Weak registrations preserve identity while any lease/waiter owns the gate,
 // without retaining a permanent gate for every rejected actor reference.
@@ -4449,6 +4482,14 @@ impl DatabaseActorStore {
         let key = idempotency_key(&request)?;
         let lock = self.lock_for_type(state_type, &state_ref);
         let _guard = lock.exclusive().await;
+        // A failed/dropped Store may already have committed. Do not admit a
+        // second ordinary mutation on this host until recovery has reconciled
+        // its gate; a later successful Store must not erase that uncertainty.
+        if lock.committed_revisions().borrow().1 {
+            return Err(Status::unavailable(
+                "actor commit outcome uncertain; restart host before writing",
+            ));
+        }
         // Replayed receipts are data disclosure too. Evaluate current policy
         // against a freshly loaded immutable state while holding the same gate.
         // Unauthenticated compatibility calls retain their historical replay path.

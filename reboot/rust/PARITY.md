@@ -52,10 +52,45 @@ Source map: [WORKFLOW-WRITER-MAP.md](WORKFLOW-WRITER-MAP.md). Acceptance:
 public scheduling/callable writer paths, crash after target ACK before source
 Stored, native/host restart on retained RocksDB, identical full target receipt bytes,
 payload/destination rejection, policy denial on replay, clean local retry, handler
-failure and graceful cancellation. Private fake-transport tests separately prove
-lost source intent ACK and target Store cancellation uncertainty; they are not
-native lost-ACK/distributed-fencing evidence. Existing C++ binary is reused with
-provenance, not freshly compiled C++ qualification. Broader Rust SDK parity remains open.
+failure and graceful cancellation. A further native Store-ACK-loss checkpoint
+uses `prove_ack_loss.py` and a transparent raw-wire Database proxy: the proxy
+forwards the real synchronous Store, saves the actual successful upstream ACK,
+then withholds it until independent direct-Database readback and returns
+Unavailable instead. No fake Store response or mutating RPC retry is used.
+
+The three fault boundaries are target state+receipt, source Started, and source
+Stored. Separate generated target/source hosts and retained native Database are
+restarted; stable-key recovery returns 7 with exactly one target handler entry,
+identical full target receipts after committed-target recovery, and no source
+success before both ACKs. Payload changes and authorization denial fail closed,
+including when the source already contains Stored. The seven preceding native
+cases (including errors/cancellation/local retry) were also rerun.
+
+This found and fixed a process-local safety defect: weak actor-gate registration
+could discard unknown-ACK uncertainty after the last lease dropped. Uncertain
+registered gates now remain strongly retained until process restart; clean idle
+gates stay weak. Generated ordinary writers and the authorized compatibility
+writer envelope refuse further writes on an uncertain gate. RED disables only
+that retention and the genuine native proof observes an illicit new mutation
+returning 8; restored GREEN denies it and recovers 7 after restart.
+
+Qualification: 829 library tests, 55 protoc tests, locked offline all-targets,
+strict SDK and generated-fixture Clippy; three native loss cases plus seven
+native regression cases, and the explicit ignored Rust loss gate rerun. The
+final RED/GREEN/regression/wrapper receipts contain 291 exact parent-waited
+native children; 362 Rust source-input hashes match the delivered tree.
+See `tests/evidence/workflow-store-ack-loss-20261019.json` and its raw archive
+(SHA-256 `6978756a281e67bf4008ece2ffd5de6e70ac3c7f507ff6d12938ed038786a61d`).
+Earlier failed/setup attempts remain archived as such; the previous callable
+writer's initial native1 still has no qualified historical custody.
+
+**Still missing:** declared typed target errors are not memoized/replayed as
+durable business outcomes. Status/detail-preserving typed outcome envelopes,
+source/target receipt arbitration and catching a declared error without poisoning
+the workflow remain a separate implementation gap. Transport errors are never
+reclassified as declared errors. Private fake tests remain useful uncertainty
+coverage, not native fault evidence. This checkpoint reuses the pinned C++ binary,
+not freshly compiled C++ qualification. Broader Rust SDK parity remains open.
 
 ## Bounded transitive generated reader composition (2026-10-19)
 

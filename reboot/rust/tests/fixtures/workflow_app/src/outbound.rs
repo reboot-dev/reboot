@@ -196,7 +196,18 @@ pub async fn command(
     }
     let mut client = proto::remote_methods_client::RemoteMethodsClient::new(channel);
     let ctx = reboot::ExternalContext::new(actor().state_ref().as_str());
-    if mode == "remote-create" {
+    if mode == "remote-apply" {
+        let mut headers = reboot::RebootHeaders::new(actor().state_ref().as_str());
+        headers.caller_id = Some(reboot::CallerId::new("a0000000001", None)?);
+        headers.application_id = Some("a0000000001".into());
+        headers.bearer_token = Some("outbound-service-credential".into());
+        headers.idempotency_key = Some(uuid::Uuid::parse_str(&arg(3))?);
+        let mut request = tonic::Request::new(proto::Step {
+            amount: arg(4).parse()?,
+        });
+        *request.metadata_mut() = headers.to_metadata()?;
+        println!("{}", client.apply(request).await?.into_inner().value);
+    } else if mode == "remote-create" {
         client
             .create(ctx.writer_with_key(proto::Empty {}, uuid::Uuid::parse_str(&arg(3))?)?)
             .await?;

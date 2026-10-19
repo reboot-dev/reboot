@@ -184,21 +184,30 @@ impl generated::LedgerMethodsDatabaseHandler for Ledger {
             // Poll THIS pinned future, installing its real subscription before
             // exposing the barrier. A marker before .await would prove nothing.
             std::future::poll_fn(|cx| {
-                assert!(revision.as_mut().poll(cx).is_pending(),
-                    "revision completed without a writer commit");
+                assert!(
+                    revision.as_mut().poll(cx).is_pending(),
+                    "revision completed without a writer commit"
+                );
                 std::task::Poll::Ready(())
-            }).await;
+            })
+            .await;
             event("revision-parked");
             revision.await?;
             event("revision-woke");
             let state = generated::LedgerMethodsWorkflowSteps::query_until(
-                context, Arc::new(self.clone()), "revision-readback",
-                "first-equals-signal.v1", proto::Empty {},
+                context,
+                Arc::new(self.clone()),
+                "revision-readback",
+                "first-equals-signal.v1",
+                proto::Empty {},
                 move |state| state.first == request.amount,
             )
             .await?;
             event("revision-readback-ack");
-            return Ok(proto::Result { first: state.first, second: state.second });
+            return Ok(proto::Result {
+                first: state.first,
+                second: state.second,
+            });
         }
         if std::env::var("WORKFLOW_BODY_MODE").as_deref() == Ok("reader-outcome") {
             let _ = generated::LedgerMethodsWorkflowSteps::first(
@@ -519,13 +528,27 @@ impl generated::LedgerMethodsDatabaseHandler for Ledger {
         })
     }
 }
-struct SchedulingPolicy { path: std::path::PathBuf }
+struct SchedulingPolicy {
+    path: std::path::PathBuf,
+}
 impl reboot::auth::Authorizer for SchedulingPolicy {
-    fn authorize<'a>(&'a self, context: &'a reboot::auth::AuthorizationContext, _: Option<&'a reboot::auth::Auth>, _: Option<&'a [u8]>, _: &'a [u8]) -> reboot::auth::AuthorizeFuture<'a> {
+    fn authorize<'a>(
+        &'a self,
+        context: &'a reboot::auth::AuthorizationContext,
+        _: Option<&'a reboot::auth::Auth>,
+        _: Option<&'a [u8]>,
+        _: &'a [u8],
+    ) -> reboot::auth::AuthorizeFuture<'a> {
         Box::pin(async move {
-            if context.method.ends_with(".ScheduleWork") && std::fs::read_to_string(&self.path).unwrap().trim() == "deny" {
-                reboot::auth::AuthorizationDecision::PermissionDenied { message: "workflow scheduling revoked".into() }
-            } else { reboot::auth::AuthorizationDecision::Allow }
+            if context.method.ends_with(".ScheduleWork")
+                && std::fs::read_to_string(&self.path).unwrap().trim() == "deny"
+            {
+                reboot::auth::AuthorizationDecision::PermissionDenied {
+                    message: "workflow scheduling revoked".into(),
+                }
+            } else {
+                reboot::auth::AuthorizationDecision::Allow
+            }
         })
     }
 }
@@ -540,8 +563,10 @@ fn reference() -> String {
             .unwrap()
             .to_string(),
         Ok("composed") => StateRef::from_id("workflow.v1.Parent", "parent/escaped")
-            .unwrap().colocate("workflow.v1.Ledger", "ledger/escaped")
-            .unwrap().to_string(),
+            .unwrap()
+            .colocate("workflow.v1.Ledger", "ledger/escaped")
+            .unwrap()
+            .to_string(),
         Ok("plain") | Err(_) => StateRef::from_id("workflow.v1.Ledger", "ledger")
             .unwrap()
             .to_string(),
@@ -620,11 +645,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )?;
         return Ok(());
     }
+    if mode == "serve-target" {
+        let store = DatabaseActorStore::connect(arg(2)).await?;
+        ApplicationHost::new(application())
+            .add_public_service(
+                proto::remote_methods_server::RemoteMethodsServer::with_interceptor(
+                    generated::RemoteMethodsDatabaseAdapter::new(store, outbound::Remote)
+                        .with_authorization(reboot::auth::AuthorizationPolicy::new(
+                            None,
+                            Some(Arc::new(outbound::Policy)),
+                        )),
+                    outbound::wire,
+                ),
+            )
+            .serve_with_shutdown(arg(3).parse()?, async {
+                while !std::path::Path::new(&arg(4)).exists() {
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+            })
+            .await?;
+        return Ok(());
+    }
     if mode == "serve" {
         let store = DatabaseActorStore::connect(arg(2)).await?;
         let address: std::net::SocketAddr = arg(3).parse()?;
         let policy = match std::env::var("WORKFLOW_SCHEDULING_POLICY") {
-            Ok(path) => reboot::auth::AuthorizationPolicy::new(None, Some(std::sync::Arc::new(SchedulingPolicy { path: path.into() }))),
+            Ok(path) => reboot::auth::AuthorizationPolicy::new(
+                None,
+                Some(std::sync::Arc::new(SchedulingPolicy { path: path.into() })),
+            ),
             Err(_) => reboot::auth::AuthorizationPolicy::permissive_for_development(),
         };
         let (adapter, tasks) =
@@ -690,7 +739,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         return Ok(());
     }
-    if mode == "inspect" || mode == "inspect-control" || mode == "inspect-reader-outcome" || mode == "inspect-reference" {
+    if mode == "inspect"
+        || mode == "inspect-control"
+        || mode == "inspect-reader-outcome"
+        || mode == "inspect-reference"
+    {
         let mut c = db::database_client::DatabaseClient::connect(arg(2)).await?;
         let id = db::TaskId {
             state_type: "workflow.v1.Ledger".into(),
