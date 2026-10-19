@@ -11,6 +11,13 @@ from typing import AsyncIterator, Optional
 
 _subprocesses: Optional[weakref.ReferenceType[Subprocesses]] = None
 
+# How long a process that was asked to stop (SIGTERM) gets to do so on
+# its own before whatever is left of it, and of its descendants, is
+# terminated and then killed. A process that stops sooner, which is
+# the common case, waits for nothing; the time is only for one that
+# has cleanup to do. Also what portless gives a process it stops.
+TERMINATE_GRACE_SECONDS: float = 5.0
+
 
 class Subprocesses:
     """Abstracts creating subprocesses and managing their termination due
@@ -216,17 +223,34 @@ class Subprocesses:
                 # because it crashed, or we already killed it.
                 pass
 
-            # Send SIGTERM to the process _but not_ the descendants to let
-            # it try and clean up after itself first.
-            #
-            # Give it some time, but not too much time, before we try and
-            # terminate everything.
+            # Send SIGTERM to the process _but not_ the descendants, and
+            # give it time to stop on its own. A process asked to stop
+            # stops what it started, e.g., an application its servers
+            # and Envoy, and cleans up after itself, and some of that
+            # cleanup starts processes of its own, e.g., removing a
+            # name from the portless proxy runs the `portless` CLI, a
+            # Node.js process that takes a while to start. Terminating
+            # everything in its process group a tenth of a second
+            # later, and killing it all a second after that, as we
+            # used to, killed that cleanup more often than not (see
+            # https://github.com/reboot-dev/reboot/issues/268).
+            # Whatever the process leaves behind, and a process that
+            # ignores the signal, is terminated and then killed below.
             try:
                 process.terminate()
-                await asyncio.sleep(0.1)
             except ProcessLookupError:
                 # Process might have already exited, e.g., because it
                 # crashed, or we already killed it.
+                pass
+
+            try:
+                await asyncio.wait_for(
+                    process.wait(),
+                    timeout=TERMINATE_GRACE_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                # Still running: it gets terminated again, with its
+                # descendants, and killed, below.
                 pass
 
             # (3) Add _our_ descendants that are not expected, i.e.,
