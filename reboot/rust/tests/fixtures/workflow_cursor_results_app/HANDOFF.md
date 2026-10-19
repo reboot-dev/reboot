@@ -61,32 +61,59 @@ Acquisition failures stay in the ledger and sticky custody failures reject
 acceptance. There are no attach descriptors because this route never transfers
 children to another supervisor; contract v2 records original direct ownership.
 
-Iteration-zero Stored bytes must survive the first Database restart, but must
-be **absent** after advancing. The inspector's `all` mode reads all checkpoints
-for the exact workflow; the gate checks root-byte retention, absence of old
-iteration scopes, a fixture-specific constant checkpoint bound, current Break
-payload retention, and exact all-record equality across Database restarts.
-Actor-global destination idempotency records are outside this workflow-scoped
-bound. The two native scenarios still test saved result/Break replay and refusal
-to redispatch an ambiguous Started-after-commit effect.
+The gate installs SIGTERM/SIGINT ownership handlers before any launch. Handlers
+latch sticky failure/cancellation rather than interrupting reservation, pidfd or
+wait-receipt publication. Launch/readiness/wait/retirement boundaries observe
+cancellation and enter the same protected retention path; repeated catchable
+signals cannot unwind that path. The original lock remains held while an owned
+child is stopped **or alive**, including after external SIGCONT, until genuine
+exit/reaping and descendant reconciliation. No SIGKILL survivability is claimed.
+A zero exit that predates a shutdown request is an unexpected exit, not healthy
+shutdown; its exact receipt is kept but acceptance fails sticky. The explicit
+Started-recovery nonzero-natural-failure path remains separate.
 
-Local verification for this repair: 20 fixture Python tests, including real
-short-child pidfd joins/shutdown, timeout preservation, natural failure, ECHILD
-and acquisition-failure regressions; 15 existing public ownership tests; offline
-Cargo check of both generated bins and offline app build. Generated
-`BMethodsWeakReference` has an existing dead-code warning. **No current native
-10000-iteration acceptance:** the actual gate preflight fails on missing
-`REBOOT_NATIVE2PC_CXX_DATABASE`; there is no selected current native executable
-or local Bazel command. No native source build or infrastructure change was
-attempted on the low-free-space host. Historical receipts/PROVENANCE below are
-not current-source certification. The documentation verifier's nine self-tests
-pass but its final source fingerprint remains stale; it was not refreshed.
+Iteration-zero Stored bytes must survive the first Database restart, but must
+be **absent** after advancing. C++ `RecoverIdempotentMutations(workflow_id,
+workflow_iteration=None)` reads root prefixes only; it does not enumerate
+iteration checkpoints. The inspector's repaired `all` mode reads the root scope
+plus **every explicit iteration 0..canonical task.iteration inclusive**, keeping
+at most 32 read streams active over the cloned shared gRPC channel. It retains
+and counts actual returned mutations (including leaked old nonzero iterations),
+not a count inferred from current/root reads. Inventory metadata is mandatory
+for the GC assertions. Each call is made while the workflow is parked or terminal;
+this is not an atomic multi-RPC inventory for a concurrently advancing workflow,
+or an inventory of actor-global/other-workflow keys. No engine protocol changes.
+The gate checks retained root bytes, absence of completed scopes, the
+fixture-specific checkpoint bound, current Break payloads and exact inventory
+bytes across Database restarts. The 10k inventory has a separate finite
+200-second client budget, not a native performance claim or timeout acceptance.
+The two native scenarios still test saved result/Break replay and refusal to
+redispatch an ambiguous Started-after-commit effect.
+
+Local verification for this correction: 23 fixture Python tests, including a
+real stopped-child gate SIGTERM test, repeated SIGTERM/SIGINT during retention,
+external pidfd SIGCONT with the child still alive, eventual natural exit and lock
+release, unexpected-zero retirement, and expected-nonzero failure controls;
+15 existing public ownership tests; two Rust inventory tests with 10000 explicit
+iteration reads, a leaked iteration7341 record, actual returned count, bounded
+concurrency and partial-read failure. Those Rust reads are a labelled async test
+double, **not native Database throughput/GC proof**. Offline Cargo check covers
+both generated bins. Generated `BMethodsWeakReference` has an existing dead-code
+warning. **No current native 10000-iteration acceptance:** no
+`REBOOT_NATIVE2PC_CXX_DATABASE` is selected in this environment. No native source
+build or infrastructure change was attempted on the low-free-space host.
+Historical receipts/PROVENANCE below are not current-source certification. The
+documentation verifier's historical source fingerprint remains stale; it was
+not refreshed for this correction.
 
 Short-lived clients and failed acquisition reservations belong to the same ledger. Before **any** Database retirement, every SDK/client must have genuine exact joins and closed original pidfd handles; an unknown reservation retains Database and the original exclusive owner. Never synthesize success on ECHILD. Distinguish intentional graceful Database retirement, healthy SDK exit and natural Started-recovery SDK failure. After adopted-child draining, sticky cleanup failures must reject success even when custody is demonstrably discharged.
 
 The checked-in outer gate persists preflight/bootstrap failures and captures/hashes receipts and logs even with an empty command-row list. It launches no containers. Setup/write failures do not guarantee an evidence file if the filesystem itself is unavailable; callers must preserve the printed stage and stderr. Do not select a historical native executable as current-source acceptance merely because its path exists.
 
-`PROVENANCE.json` separates historical seed inputs, current fixture hashes and the bounded evidence scope. The bounded cursor/results native fixture proof is accepted after the real scenario run and separate canonical readback; full-native/public acceptance remains false.
+`PROVENANCE.json` records historical seed inputs and the earlier bounded evidence
+scope; it has not been regenerated for this repair. Its historical native run and
+canonical readback do **not** certify this inventory/signal/retirement correction.
+Current native/public acceptance remains false.
 
 ## Independent canonical readback
 

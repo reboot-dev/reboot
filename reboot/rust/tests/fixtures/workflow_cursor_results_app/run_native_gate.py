@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path
 import runpy
+import signal
 import sys
 import tempfile
 import traceback
@@ -47,10 +48,25 @@ def main():
     def save():
         target.write_text(json.dumps(report, indent=2) + '\n')
 
+    previous_handlers = {}
+
+    def cancel(signum, frame):
+        # Latch only. Arbitrary asynchronous exceptions could interrupt child
+        # acquisition or exact receipt publication. Safe ownership/wait boundaries
+        # observe cancellation; retention never unwinds on repeated signals.
+        reason = f'owner received signal {signum}; reconciliation required'
+        cursor_custody._owner.cancellation = reason
+        cursor_custody._owner.failure = cursor_custody._owner.failure or reason
+        report.setdefault('signals', []).append(signum)
+        report['complete'] = False
+
     save()
     print('CURSOR_NATIVE_GATE', target, flush=True)
     try:
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            previous_handlers[sig] = signal.signal(sig, cancel)
         enable_subreaper()
+        cursor_custody.check_cancelled()
         cursor_custody._owner.active_gate = True
         binary = Path(sys.argv[1] if len(sys.argv) > 1 else os.environ['CURSOR_APP_BIN']).resolve(strict=True)
         database = Path(os.environ['REBOOT_NATIVE2PC_CXX_DATABASE']).resolve(strict=True)
@@ -116,6 +132,11 @@ def main():
             save()
             # Keep the flock descriptor alive until all retention is finished.
             lock.close()
+            cursor_custody._owner.active_gate = False
+            for sig, handler in previous_handlers.items():
+                signal.signal(sig, handler)
+    if not report['complete']:
+        raise RuntimeError('gate incomplete; see sticky ownership failure')
     print('CURSOR_NATIVE_ACCEPTED', target)
 
 

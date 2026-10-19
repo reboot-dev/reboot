@@ -30,11 +30,11 @@ def port():
    if n not in used:used.add(n);return n
  raise RuntimeError('no ports')
 
-def run(*args):
+def run(*args,timeout=15):
  c=[str(BIN),*map(str,args)]
  # Adapter must own and exactly join even these short-lived clients, including
  # timeout/failure paths, before returning or raising with ownership retained.
- r=custody().run(c,timeout=15)
+ r=custody().run(c,timeout=timeout)
  commands.append({'command':c,'exit':r.returncode,'stdout':r.stdout,'stderr':r.stderr})
  assert r.joined_exact and r.returncode==0,commands[-1]
  return r.stdout.strip()
@@ -75,8 +75,8 @@ def cleanup_sdk_reservations():
 def stop(p,shutdown=None):
  if p.argv[0]==str(DB):sdk_exact_join_barrier()
  entry=next(e for e in processes if e['process'] is p)
- # Idempotent exact-child retirement; adapter escalates only on still-proven
- # ownership, joins, and never maps ECHILD/unknown to a successful receipt.
+ # Idempotent exact-child retirement requires a still-live owner before any
+ # intentional shutdown; ECHILD/unknown/preexisting exit is never success.
  p.retire(shutdown=shutdown,timeout=15)
  assert p.joined_exact
  if entry['expected_exit']=='healthy':assert p.returncode==0
@@ -96,6 +96,7 @@ def expected_host_failure(p,diagnostic):
 def until(f,timeout=10):
  deadline=time.monotonic()+timeout
  while time.monotonic()<deadline:
+  custody().check_cancelled()
   if f():return
   time.sleep(.02)
  raise RuntimeError('bounded wait timed out (not semantic failure evidence)')

@@ -29,7 +29,10 @@ def starthost(pause='',iteration=0,fail=False,expected_failure=False):
  if not expected_failure:listener(p,ap)
  return p,shutdown
 def parked(name,i,timeout=10):until(lambda:'park:%s:%d'%(name,i) in events(),timeout=timeout)
-def snapshot(i):return json.loads(run('inspect',database,handle,i))
+def snapshot(i):
+ # all is root + explicit 0..current RPCs (32 concurrent streams); allow the
+ # bounded 10k scan its own budget, never turn a timeout into acceptance.
+ return json.loads(run('inspect',database,handle,i,timeout=max(30,ITERATIONS//50) if i=='all' else 15))
 def canonical_restart(i):
  global db,host,shutdown
  stop(host,shutdown);assert host.returncode==0

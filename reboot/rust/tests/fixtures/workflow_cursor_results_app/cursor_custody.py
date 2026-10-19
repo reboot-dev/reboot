@@ -16,17 +16,25 @@ from types import SimpleNamespace
 
 CONTRACT = 'cursor-exact-child-v2'
 children = []
-_owner = SimpleNamespace(failure=None, direct=[], owned={}, active_gate=False)
+_owner = SimpleNamespace(failure=None, cancellation=None, direct=[], owned={}, active_gate=False)
+
+
+def check_cancelled():
+    # Signal handlers only latch cancellation: never interrupt Popen/pidfd/wait
+    # acquisition or unwind protected retention at an arbitrary instruction.
+    if _owner.cancellation is not None:
+        raise RuntimeError(_owner.cancellation)
 
 
 def _fail(child, error):
     child.failure = repr(error)
-    _owner.failure = child.failure
+    _owner.failure = _owner.failure or child.failure
     return error
 
 
 class Child:
     def __init__(self, argv, **kwargs):
+        check_cancelled()
         self.argv = list(map(str, argv))
         self.joined_exact = False
         self.returncode = None
@@ -61,6 +69,7 @@ class Child:
             raise _fail(self, error)
 
     def require_owned_alive(self):
+        check_cancelled()
         if self.joined_exact or self._ready() is not None:
             raise RuntimeError('owned child exited before readiness/shutdown')
 
@@ -89,6 +98,7 @@ class Child:
                     return self
                 except BaseException as error:
                     raise _fail(self, error)
+            check_cancelled()
             if time.monotonic() >= deadline:
                 self.timed_out = True
                 raise TimeoutError('exact child timeout; retained without escalation')
@@ -97,8 +107,11 @@ class Child:
     def retire(self, shutdown=None, timeout=15):
         if self.joined_exact:
             return self
+        check_cancelled()
         if self._ready() is not None:
-            return self.join(timeout)
+            self.join(timeout)  # Keep the exact receipt, but not shutdown credit.
+            raise _fail(self, RuntimeError(
+                f'owned child exited before requested shutdown: {self.returncode}'))
         if self.timed_out:
             raise RuntimeError('timed-out live owner retained; no shutdown escalation')
         if not self.requested_shutdown:
@@ -115,6 +128,8 @@ class Child:
     def join_failure(self, timeout=15):
         self.join(timeout)
         self.natural_exit = not self.requested_shutdown
+        if not self.natural_exit or self.returncode == 0:
+            raise _fail(self, RuntimeError('expected nonzero natural child failure'))
         return self
 
     def assert_joined(self):

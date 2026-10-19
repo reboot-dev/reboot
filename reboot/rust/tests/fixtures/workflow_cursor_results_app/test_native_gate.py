@@ -43,6 +43,29 @@ class CustodyTests(unittest.TestCase):
         child.retire()  # Idempotent, no signal to the now-reaped PID.
         child.assert_joined()
 
+    def test_unexpected_zero_exit_is_not_requested_shutdown(self):
+        child = self.custody.spawn([sys.executable, '-c', 'pass'])
+        deadline = time.monotonic() + 5
+        while child._ready() is None and time.monotonic() < deadline:
+            time.sleep(.01)
+        with self.assertRaisesRegex(RuntimeError, 'exited before requested shutdown: 0'):
+            child.retire()
+        self.assertTrue(child.joined_exact)
+        self.assertEqual(child.returncode, 0)
+        self.assertIsNotNone(child.receipt)
+        self.assertFalse(child.requested_shutdown)
+        self.assertIsNotNone(self.custody._owner.failure)
+        child.retire()  # Idempotence cannot clear the original sticky failure.
+        with self.assertRaisesRegex(RuntimeError, 'obligation retained'):
+            child.assert_joined()
+
+    def test_expected_failure_cannot_accept_zero(self):
+        child = self.custody.spawn([sys.executable, '-c', 'pass'])
+        with self.assertRaisesRegex(RuntimeError, 'expected nonzero natural child failure'):
+            child.join_failure()
+        self.assertTrue(child.joined_exact)
+        self.assertIsNotNone(self.custody._owner.failure)
+
     def test_cooperative_file_shutdown_joins(self):
         with tempfile.TemporaryDirectory() as directory:
             shutdown = Path(directory) / 'shutdown'
@@ -110,13 +133,21 @@ class GCAssertionTests(unittest.TestCase):
     def test_synthetic_scope_regressions(self):
         root = {'scope_iteration': None, 'record': 'UNIT-root'}
         current = {'scope_iteration': 9999, 'record': 'UNIT-current'}
-        snapshot = {'records': [root, current]}
+        def inventory(records):
+            return {'records': records, 'inventory_through': 9999,
+                    'inventory_count': len(records)}
+        snapshot = inventory([root, current])
         initial = roots(snapshot)
         assert_gc(snapshot, initial, 9999)
         for records in ([current], [root, dict(current, scope_iteration=0)],
+                        [root, dict(current, scope_iteration=7341), current],
                         [root] + [dict(current, record=str(i)) for i in range(9)]):
             with self.subTest(records=records), self.assertRaises(AssertionError):
-                assert_gc({'records': records}, initial, 9999)
+                assert_gc(inventory(records), initial, 9999)
+        with self.assertRaisesRegex(AssertionError, 'missing complete iteration inventory'):
+            assert_gc({'records': [root]}, initial, 9999)
+        with self.assertRaisesRegex(AssertionError, 'inventory count mismatch'):
+            assert_gc(dict(snapshot, inventory_count=1), initial, 9999)
 
     def test_actual_gate_retains_lock_until_owned_child_natural_exit(self):
         with tempfile.TemporaryDirectory() as directory:

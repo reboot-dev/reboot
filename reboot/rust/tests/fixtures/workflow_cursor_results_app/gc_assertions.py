@@ -7,6 +7,8 @@ def roots(snapshot):
 
 def assert_gc(snapshot, initial_roots, current):
     records = snapshot['records']
+    assert snapshot.get('inventory_through') == current, 'missing complete iteration inventory'
+    assert snapshot.get('inventory_count') == len(records), 'inventory count mismatch'
     assert initial_roots, 'missing root/cursor binding witness'
     assert initial_roots <= roots(snapshot), 'root records reclaimed or rewritten'
     assert all(r['scope_iteration'] in (None, current) for r in records), 'completed iteration retained'

@@ -42,7 +42,8 @@ class CleanupBarrierTests(unittest.TestCase):
         # SDK intentionally absent from processes: short clients/reservations
         # must still block Database through the complete adapter ledger.
         self.owner = NS(failure=None, direct=[self.sdk.row, self.db.row])
-        setattr(self.helper, '_custody', NS(_owner=self.owner, children=[self.sdk, self.db]))
+        setattr(self.helper, '_custody', NS(_owner=self.owner, children=[self.sdk, self.db],
+                                          check_cancelled=lambda: None))
         setattr(self.helper, 'processes', [{'process': self.db, 'expected_exit': 'healthy'}])
 
     def rejects_without_database_request(self):
