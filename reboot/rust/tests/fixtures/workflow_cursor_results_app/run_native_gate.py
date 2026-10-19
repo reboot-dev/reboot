@@ -76,12 +76,24 @@ def main():
         if not all(hasattr(os, name) for name in ('pidfd_open', 'P_PIDFD', 'waitid')):
             raise RuntimeError('Linux pidfd/waitid Python support required')
         os.environ['REBOOT_NATIVE2PC_CXX_DATABASE'] = str(database)
-        os.environ.setdefault('CURSOR_STAGE', str(stage / 'work'))
-        os.environ.setdefault('CURSOR_EVIDENCE', str(stage / 'evidence.json'))
+        scenario = os.environ.get('NATIVE_GATE_SCENARIO', 'cursor')
+        if scenario not in ('cursor', 'revision'):
+            raise RuntimeError(f'unsupported native gate scenario: {scenario}')
+        report['scenario'] = scenario
+        if scenario == 'revision':
+            driver = HERE.parent / 'workflow_app/prove_revision.py'
+            stage_key, evidence_key = 'WORKFLOW_REVISION_STAGE', 'WORKFLOW_CONTROL_EVIDENCE'
+            # Supply the original already-active module, never a second owner.
+            os.environ['WORKFLOW_CUSTODY_MODULE'] = cursor_custody.__name__
+        else:
+            driver = HERE / 'prove_cursor.py'
+            stage_key, evidence_key = 'CURSOR_STAGE', 'CURSOR_EVIDENCE'
+        os.environ.setdefault(stage_key, str(stage / 'work'))
+        os.environ.setdefault(evidence_key, str(stage / 'evidence.json'))
         os.environ.setdefault('CURSOR_ITERATIONS', '10000')
-        evidence = Path(os.environ['CURSOR_EVIDENCE'])
-        if Path(os.environ['CURSOR_STAGE']).exists() or evidence.exists():
-            raise RuntimeError('fresh exclusive CURSOR_STAGE and CURSOR_EVIDENCE required')
+        evidence = Path(os.environ[evidence_key])
+        if Path(os.environ[stage_key]).exists() or evidence.exists():
+            raise RuntimeError('fresh exclusive scenario stage and evidence required')
         sources = [p for tree in (ROOT / 'reboot/rust', ROOT / 'rbt')
                    for p in tree.rglob('*') if p.is_file() and
                    p.suffix in ('.py', '.rs', '.proto', '.toml', '.lock') and
@@ -96,11 +108,12 @@ def main():
         report['source_hashes'] = {str(p): sha(p) for p in sorted(set(sources))}
         report['iterations'] = int(os.environ['CURSOR_ITERATIONS'])
         save()
-        sys.argv = [str(HERE / 'prove_cursor.py'), str(binary)]
+        sys.argv = [str(driver), str(binary)]
         with (stage / 'driver.log').open('x') as log, contextlib.redirect_stdout(log), contextlib.redirect_stderr(log):
-            runpy.run_path(str(HERE / 'prove_cursor.py'), run_name='__main__')
+            runpy.run_path(str(driver), run_name='__main__')
         proof = json.loads(evidence.read_text())
-        if not proof['complete'] or not proof['all_owned_children_joined']:
+        if not proof['complete'] or not proof.get(
+                'all_owned_children_joined' if scenario == 'cursor' else 'native_proof', False):
             raise RuntimeError('driver evidence incomplete')
         for child in cursor_custody.children:
             child.assert_joined()

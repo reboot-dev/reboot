@@ -202,6 +202,40 @@ gate.main()
             with (stage / 'owner.lock').open() as lock:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
+    def test_revision_dispatch_uses_original_active_runtime(self):
+        # Labelled dispatch unit test, not native acceptance.
+        with tempfile.TemporaryDirectory() as directory:
+            stage = Path(directory) / 'gate'
+            code = f'''import sys, os, json
+from pathlib import Path
+sys.path.insert(0, {str(HERE)!r})
+import run_native_gate as gate
+
+def body(path, run_name):
+    assert path.endswith('/workflow_app/prove_revision.py')
+    assert sys.modules[os.environ['WORKFLOW_CUSTODY_MODULE']] is gate.cursor_custody
+    assert gate.cursor_custody._owner.active_gate
+    assert os.environ['WORKFLOW_REVISION_STAGE'] == {str(stage / 'work')!r}
+    Path(os.environ['WORKFLOW_CONTROL_EVIDENCE']).write_text(json.dumps(
+        {{'complete': True, 'native_proof': True, 'label': 'UNIT dispatch only'}}))
+
+gate.runpy.run_path = body
+gate.main()
+'''
+            env = dict(os.environ, CURSOR_GATE_DIR=str(stage),
+                       CURSOR_APP_BIN=sys.executable,
+                       REBOOT_NATIVE2PC_CXX_DATABASE=sys.executable,
+                       NATIVE_GATE_SCENARIO='revision')
+            for key in ('WORKFLOW_REVISION_STAGE', 'WORKFLOW_CONTROL_EVIDENCE'):
+                env.pop(key, None)
+            result = subprocess.run([sys.executable, '-c', code], env=env,
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            report = json.loads((stage / 'gate.json').read_text())
+            self.assertEqual(report['scenario'], 'revision')
+            self.assertTrue(report['complete'])
+            self.assertEqual(len(report['children']), 1)  # Only genuine git child.
+
     def test_gate_missing_input_persists_real_preflight_failure(self):
         with tempfile.TemporaryDirectory() as directory:
             env = dict(os.environ, CURSOR_GATE_DIR=str(Path(directory) / 'gate'))
