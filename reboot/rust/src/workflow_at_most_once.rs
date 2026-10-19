@@ -1117,6 +1117,30 @@ impl WorkflowContext<'_> {
             .await
         }
     }
+
+    /// Memoize a unit effect for the lifetime of the workflow.
+    ///
+    /// Identical to [`Self::memoize`] but for callbacks that produce no typed
+    /// return value. The `callable` is invoked at most once per memo scope.
+    pub async fn memoize_unit<F, Fut>(
+        &self,
+        alias: &str,
+        version: u32,
+        callable: F,
+        per_workflow: bool,
+    ) -> Result<(), Status>
+    where
+        F: FnOnce() -> Fut + Send,
+        Fut: std::future::Future<Output = Result<(), Status>> + Send,
+    {
+        if per_workflow {
+            self.per_workflow()
+                .at_least_once_unit(alias, version, callable)
+                .await
+        } else {
+            self.at_least_once_unit(alias, version, callable).await
+        }
+    }
 }
 
 #[cfg(test)]

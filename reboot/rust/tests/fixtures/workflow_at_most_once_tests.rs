@@ -1125,6 +1125,82 @@ async fn memoize_per_workflow_survives_iterations() {
     server.abort();
 }
 
+#[tokio::test]
+async fn memoize_unit_scopes_per_iteration_by_default() {
+    let (f, _database, server) = fake().await;
+    let constructed = Arc::new(AtomicI64::new(0));
+    let c0 = constructed.clone();
+    let first = WorkflowAttempt::default();
+    let context0 = f.context(&first).iteration("loop", 0, 2).unwrap();
+    context0
+        .memoize_unit(
+            "effect",
+            1,
+            || {
+                let c = c0.clone();
+                async move { c.fetch_add(1, Ordering::SeqCst); Ok(()) }
+            },
+            false,
+        )
+        .await
+        .unwrap();
+
+    let c1 = constructed.clone();
+    let second = WorkflowAttempt::default();
+    let context1 = f.context(&second).iteration("loop", 1, 2).unwrap();
+    context1
+        .memoize_unit(
+            "effect",
+            1,
+            || {
+                let c = c1.clone();
+                async move { c.fetch_add(1, Ordering::SeqCst); Ok(()) }
+            },
+            false,
+        )
+        .await
+        .unwrap();
+    assert_eq!(constructed.load(Ordering::SeqCst), 2);
+    assert!(second.clean());
+    server.abort();
+}
+
+#[tokio::test]
+async fn memoize_unit_per_workflow_runs_once() {
+    let (f, _database, server) = fake().await;
+    let constructed = Arc::new(AtomicI64::new(0));
+    let c = constructed.clone();
+    let first = WorkflowAttempt::default();
+    let context0 = f.context(&first).iteration("loop", 0, 2).unwrap();
+    context0
+        .memoize_unit(
+            "effect",
+            1,
+            || {
+                let c = c.clone();
+                async move { c.fetch_add(1, Ordering::SeqCst); Ok(()) }
+            },
+            true,
+        )
+        .await
+        .unwrap();
+
+    let second = WorkflowAttempt::default();
+    let context1 = f.context(&second).iteration("loop", 1, 2).unwrap();
+    context1
+        .memoize_unit(
+            "effect",
+            1,
+            || async move { panic!("unit callable must not rerun when per-workflow memo exists") },
+            true,
+        )
+        .await
+        .unwrap();
+    assert_eq!(constructed.load(Ordering::SeqCst), 1);
+    assert!(second.clean());
+    server.abort();
+}
+
 trait TestCursorDeclaration {
     fn with_test_cursor(self, enabled: bool) -> Self;
 }
