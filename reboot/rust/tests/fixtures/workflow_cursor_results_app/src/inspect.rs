@@ -56,7 +56,11 @@ async fn inspect() -> Result<(), Box<dyn std::error::Error>> {
             state_ref: id.state_ref.clone(),
             idempotency_key: None,
             workflow_id: Some(id.task_uuid.clone()),
-            workflow_iteration: Some(arg(4).parse()?),
+            workflow_iteration: if arg(4) == "all" {
+                None
+            } else {
+                Some(arg(4).parse()?)
+            },
         })
         .await?
         .into_inner();
@@ -101,7 +105,8 @@ async fn inspect() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             records.push(format!(
-                "{{\"type\":\"{}\",\"phase\":{},\"result_type\":\"{}\",\"reply\":{},\"record\":\"{}\",\"raw_response\":\"{}\"}}",
+                "{{\"scope_iteration\":{},\"type\":\"{}\",\"phase\":{},\"result_type\":\"{}\",\"reply\":{},\"record\":\"{}\",\"raw_response\":\"{}\"}}",
+                m.workflow_iteration.map(|i| i.to_string()).unwrap_or_else(|| "null".into()),
                 any.type_url,
                 phase,
                 result_type,

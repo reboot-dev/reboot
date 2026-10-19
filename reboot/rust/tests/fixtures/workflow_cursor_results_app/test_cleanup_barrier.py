@@ -14,9 +14,14 @@ class Child:
         self.joined_exact = True
         self.failure = None
         self.row = {'joined': True, 'fd': None}
-        self.attach = NS(receipt={'unit_only': True}, fd=None, failure=None)
+        self.receipt = {'unit_only': True}
+        self.fd = None
         self.returncode = 0
         self.requests = 0
+
+    def assert_joined(self):
+        from cursor_custody import Child as RealChild
+        RealChild.assert_joined(self)
 
     def retire(self, **kwargs):
         self.requests += 1  # UNIT observation, never a process signal.
@@ -54,7 +59,7 @@ class CleanupBarrierTests(unittest.TestCase):
         self.rejects_without_database_request()
 
     def test_unknown_receipt(self):
-        self.sdk.attach.receipt = None
+        self.sdk.receipt = None
         self.rejects_without_database_request()
 
     def test_unrepresented_reservation(self):
@@ -65,8 +70,8 @@ class CleanupBarrierTests(unittest.TestCase):
         self.sdk.row['fd'] = 123
         self.rejects_without_database_request()
 
-    def test_attach_descriptor_open(self):
-        self.sdk.attach.fd = 123
+    def test_pidfd_open(self):
+        self.sdk.fd = 123
         self.rejects_without_database_request()
 
     def test_missing_descriptor_state(self):

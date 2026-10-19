@@ -1,9 +1,7 @@
-"""Reviewed helper adaptation, NOT the original workflow helper prefix.
+"""Cursor scenario helpers using the checked-in original direct-child owner.
 
-BLOCKED until parent supplies CURSOR_CUSTODY_MODULE implementing the contract
-in HANDOFF.md using its existing task-owned exact-child custody machinery.
-No Popen poll/wait fallback, ECHILD synthesis, or PID-only signalling is allowed.
-This module does not implement or certify that external adapter.
+Run via run_native_gate.py, which holds the exclusive lock and uses the public
+acceptance subreaper/retention route. No PID-only signal or ECHILD fallback.
 """
 import hashlib,json,os,socket,sys,time,uuid,importlib
 from pathlib import Path
@@ -14,11 +12,14 @@ _custody=None
 def custody():
  global _custody
  if _custody is None:
-  name=os.environ.get('CURSOR_CUSTODY_MODULE')
-  if not name:raise RuntimeError('BLOCKED: parent exact-child custody adapter is required; see HANDOFF.md')
-  _custody=importlib.import_module(name)
-  if _custody.CONTRACT != 'cursor430-exact-child-v1':
+  name=os.environ.get('CURSOR_CUSTODY_MODULE', 'cursor_custody')
+  if name != 'cursor_custody':raise RuntimeError('gate requires checked-in original custody owner')
+  adapter=importlib.import_module(name)
+  if adapter.CONTRACT != 'cursor-exact-child-v2':
    raise RuntimeError('unsupported custody contract')
+  if not adapter._owner.active_gate:
+   raise RuntimeError('run via run_native_gate.py; original lock/subreaper required')
+  _custody=adapter
  return _custody
 
 def port():
@@ -57,11 +58,7 @@ def sdk_exact_join_barrier():
   raise RuntimeError('SDK barrier: original owner unknown; Database retained')
  sdk=[c for c in adapter.children if c.argv[0]!=str(DB)]
  for child in sdk:
-  if not (child.joined_exact and child.failure is None and child.row is not None
-          and child.row.get('joined') is True and 'fd' in child.row and child.row['fd'] is None
-          and child.attach is not None and child.attach.receipt is not None
-          and child.attach.fd is None and child.attach.failure is None):
-   raise RuntimeError('SDK barrier: exact join/handle obligation retained')
+  child.assert_joined()
  # Every owner reservation must be represented; unknown rows are never skipped.
  if any(not any(c.row is row for c in adapter.children) for row in owner.direct):
   raise RuntimeError('SDK barrier: unrepresented owner reservation retained')

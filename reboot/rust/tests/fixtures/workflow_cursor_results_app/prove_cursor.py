@@ -1,4 +1,4 @@
-"""Parent-run native proof. Requires parent exact-child custody integration (not supplied).
+"""Native proof body. Launch via the checked-in run_native_gate.py supervisor.
 No synthetic Database/Store or task injection; no stable destination dedupe key.
 Evidence is attempted only after valid setup/preflight reaches the body try/finally.
 Parent must retain a preflight receipt for earlier failures and evidence delivery
@@ -11,10 +11,11 @@ if not __debug__:
  raise RuntimeError("proof requires Python assertions; optimization is forbidden")
 # Reviewed adaptation; no dynamic exec of the obsolete reference test body.
 from supervision_reference import *
+from gc_assertions import roots, assert_gc
 work=Path(os.environ['CURSOR_STAGE']);work.mkdir(exist_ok=False)
 evidence=Path(os.environ['CURSOR_EVIDENCE'])
 ITERATIONS=int(os.environ.get('CURSOR_ITERATIONS','1030'))
-assert ITERATIONS>0,"positive iteration count required"
+assert ITERATIONS>=6,"restart milestones require at least six iterations"
 PENULTIMATE=ITERATIONS-1
 scenarios=[]
 def startdb():
@@ -24,6 +25,7 @@ def starthost(pause='',iteration=0,fail=False,expected_failure=False):
  eventpath=work/('events-%d'%len(processes));shutdown=work/('shutdown-%d'%len(processes));env=os.environ.copy()
  env.update(CURSOR_EVENTS=str(eventpath),CURSOR_PAUSE=pause,CURSOR_PAUSE_ITERATION=str(iteration),CURSOR_FAIL_AFTER_B='1' if fail else '0')
  p=spawn([BIN,'serve',database,'127.0.0.1:%d'%ap,shutdown],env)
+ p.shutdown=shutdown
  if not expected_failure:listener(p,ap)
  return p,shutdown
 def parked(name,i,timeout=10):until(lambda:'park:%s:%d'%(name,i) in events(),timeout=timeout)
@@ -46,22 +48,27 @@ try:
  parked('stored',0);assert run('concurrent',app,uuid.uuid4())=='1'
  before=snapshot(0);assert before['iteration']==0 and len(stored(before))==1
  assert stored(before)[0]['reply']=={'iteration':0,'ordinal':1,'proof':'committed:0:1'}
+ initial_all=snapshot('all');initial_roots=roots(initial_all);assert_gc(initial_all,initial_roots,0)
  disk=canonical_restart(0);assert disk==before
+ assert snapshot('all')==initial_all
  # Observed native480 advanced through iteration99 in the default ten seconds.
  # Budget this finite workload, not an unbounded retry or timeout success.
  host,shutdown=starthost('entry',PENULTIMATE-4);parked('entry',PENULTIMATE-4,timeout=max(180,ITERATIONS//10))
  no_callback(0);assert 'iteration:0' in events() # replay current, NOT preceding iterations after cursor recovery.
  replayed_effect=snapshot(0)
- assert stored(replayed_effect)==stored(before) and not started(replayed_effect)
- # Only selected effect records are equal: actors/task cursor legitimately advanced.
+ assert not replayed_effect['records'], 'iteration zero must be reclaimed after Continue'
+ # The original Stored bytes survived the restart above, not subsequent GC.
  s=snapshot(PENULTIMATE-4);assert s['iteration']==PENULTIMATE-4 and s['b_commits']==PENULTIMATE-4
  assert json.loads(run('read-state',app))=={'consumed':PENULTIMATE-4,'concurrent':1,'after':0,'commits':PENULTIMATE-4}
+ advanced_all=snapshot('all');assert_gc(advanced_all,initial_roots,PENULTIMATE-4)
  disk=canonical_restart(PENULTIMATE-4);assert disk==s
+ assert snapshot('all')==advanced_all
  host,shutdown=starthost('break',PENULTIMATE);parked('break',PENULTIMATE)
  assert f'iteration:{PENULTIMATE-5}' not in events() and f'iteration:{PENULTIMATE-4}' in events()
  assert events().count(f'break-evaluate:{PENULTIMATE}')==1
  assert run('concurrent',app,uuid.uuid4())=='2'
  broken=canonical_restart(PENULTIMATE);assert broken['iteration']==PENULTIMATE and broken['b_commits']==ITERATIONS
+ break_all=snapshot('all');assert_gc(break_all,initial_roots,PENULTIMATE)
  assert len(breaks(broken))==1
  assert breaks(broken)[0]['reply']=={'cursor':PENULTIMATE,'ordinal':ITERATIONS,'proof':f'committed:{PENULTIMATE}:{ITERATIONS}'}
  host,shutdown=starthost()
@@ -70,10 +77,12 @@ try:
  assert json.loads(run('read-state',app))=={'consumed':ITERATIONS,'concurrent':2,'after':1,'commits':ITERATIONS}
  completed=snapshot(PENULTIMATE);assert completed['terminal'] and completed['iteration']==PENULTIMATE
  assert breaks(completed)==breaks(broken)
+ completed_all=snapshot('all');assert_gc(completed_all,initial_roots,PENULTIMATE)
  stop(host,shutdown);assert host.returncode==0;stop(db);db=startdb();host,shutdown=starthost()
  assert json.loads(run('wait',app,handle))==terminal
  assert not events();assert snapshot(PENULTIMATE)==completed
- scenarios.append({'name':'stored-cursor-break-terminal','iterations':ITERATIONS,'stored_before':before,'stored_after_replay':replayed_effect,'pending_cursor':disk,'pending_break':broken,'terminal':terminal,'completed':completed})
+ assert snapshot('all')==completed_all
+ scenarios.append({'name':'stored-cursor-break-terminal','iterations':ITERATIONS,'stored_before':before,'reclaimed_iteration_zero':replayed_effect,'initial_all':initial_all,'advanced_all':advanced_all,'break_all':break_all,'completed_all':completed_all,'pending_cursor':disk,'pending_break':broken,'terminal':terminal,'completed':completed})
  # New workflow, same real B, no reset/seed. Kill after B commit before typed Store.
  stop(host,shutdown);assert host.returncode==0
  host,shutdown=starthost('b-committed',0)
