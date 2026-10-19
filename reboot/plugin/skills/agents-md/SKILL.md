@@ -24,16 +24,43 @@ directory with `.rbtrc` (or the one the build is creating).
 
 If it exists, add only the sections it lacks; never rewrite what the
 user wrote. Otherwise fill this template from the project's real files
-(`.rbtrc` and the tree): each path as it is (`api/hotel/v1/hotel.py`),
-no rows for what the project doesn't have, no placeholder left.
+(`.rbtrc`, `pyproject.toml` and the tree): each path as it is
+(`api/hotel/v1/hotel.py`), `<project>` the `.rbtrc`'s
+`--application-name`, the Reboot version from the `reboot` pin, no
+line for what the project doesn't have (no frontend, no `.env`), no
+placeholder left. It is written for any coding agent, with the Reboot
+plugin or without it, so every command is spelled out.
 
 ```markdown
 # <App name>
 
 <What the app does and who uses it, in a sentence.> A Reboot
-application: durable state types in Python, with <a web app | an MCP
-App | both> in front. For Reboot itself, use the Reboot plugin's
-skills.
+application, on Reboot <version>: durable state types whose APIs are
+Pydantic models in `api/` (not `.proto` files), with <a web app | an
+MCP App | both> in front. Reboot's docs: https://docs.reboot.dev; with
+the Reboot plugin installed, its skills know Reboot best.
+
+## Setup, on a fresh clone
+
+- `uv sync`, and `cd frontend && npm install`.
+- `uv run rbt generate` (after `npm install`: it writes the React
+  code into `frontend/api/`).
+- `uv run playwright install chromium`, once, for the browser scenarios.
+
+## Commands
+
+- **Run:** the Reboot plugin's `run` skill, which starts every process
+  the app needs. Without it: `uv run rbt dev run`, and in a second
+  shell `cd frontend && npm run dev`; the app is at
+  https://<project>.localhost. Without portless, `uv run rbt dev run
+  --config=ports` and `npm run dev:ports`; the app is at
+  http://localhost:9991.
+- **Dashboard** (the domain model, the features and their rules):
+  `uv run rbt dashboard`, at https://dashboard.<project>.localhost/
+  (without portless, `--config=ports`, at http://127.0.0.1:9871/).
+- **Generate** after any change under `api/`: `uv run rbt generate`.
+- **Test:** `uv run pytest`, then `uv run mypy backend/ tests/`.
+- **Deploy:** the plugin's `deploy` skill, or `uv run rbt cloud up`.
 
 ## Where things live
 
@@ -48,22 +75,15 @@ skills.
 | Feature files: what the app must do            | `tests/*.feature`                                                 |
 | Test modules                                   | `tests/*_test.py`                                                 |
 | `rbt` settings, one per line, not YAML         | `.rbtrc`                                                          |
-
-## Commands
-
-- **Generate** after any change under `api/`: `uv run rbt generate`.
-- **Run:** the Reboot plugin's `run` skill, which starts every process
-  the app needs. Not a bare `rbt dev run`.
-- **Test:** `uv run pytest`, then `uv run mypy backend/ tests/`.
-- **Deploy:** the Reboot plugin's `deploy` skill.
+| Secrets for development, never committed       | `.env`                                                            |
 
 ## Rules
 
 1. A feature starts as a `@wip` feature file agreed in plain English,
    before the API or the code changes.
 2. Once the app has persisted state or is deployed, the API only grows:
-   add fields, methods and types, and never remove or rename one. See
-   the `python` skill's `references/api-schema-evolution.md`.
+   add fields, methods and types, and never remove or rename one
+   (schema evolution, in Reboot's docs).
 3. Run `uv run rbt generate` after every API change, and never edit
    generated code.
 4. Every servicer has a real `authorizer()`. `allow()` makes a method
