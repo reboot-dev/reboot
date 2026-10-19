@@ -453,7 +453,9 @@ py_library(
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
+        requirement("psutil"),
         ":settings_py",
+        "//reboot/aio:exceptions_py",
     ],
 )
 

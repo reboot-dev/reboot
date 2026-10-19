@@ -146,6 +146,14 @@ If they accept, before the backend and frontend:
 3. Start the frontend with its `dev:portless` script and the
    backend with its portless config, as the sections below say.
 
+If the backend (or the dashboard) exits at startup saying its
+`https://....localhost` name is in use, another application is
+serving under the same `--application-name` right now (another
+checkout or worktree of the project, say), and the proxy would have
+sent its URLs to this one: do not stop it unasked. Tell the user
+which process holds the name, as the message says, and let them
+stop it or pick another `--application-name` for this project.
+
 ### Tunnel — MCP Apps only
 
 An MCP App's backend needs a Cloudflare quick tunnel so external MCP

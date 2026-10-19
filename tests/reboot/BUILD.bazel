@@ -974,5 +974,6 @@ py_test(
     main = "portless_test.py",
     deps = [
         "//reboot:portless_py",
+        "//reboot/aio:exceptions_py",
     ],
 )
