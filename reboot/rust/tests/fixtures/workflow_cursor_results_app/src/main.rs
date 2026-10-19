@@ -6,9 +6,12 @@ use reboot::{
     runtime::{DatabaseActorStore, TransactionExecution},
 };
 use std::sync::Arc;
+// Generated Tonic APIs return Status by value; keep handwritten code strict.
+#[allow(clippy::result_large_err)]
 pub mod proto {
     tonic::include_proto!("cursor.v1");
 }
+#[allow(clippy::result_large_err)]
 pub mod generated {
     include!(concat!(env!("OUT_DIR"), "/cursor/v1/cursor.reboot.rs"));
 }
