@@ -116,6 +116,7 @@ impl Fixture {
             attempt,
             iteration: None,
             parents: vec![],
+            seeds: Vec::new(),
         }
     }
 }

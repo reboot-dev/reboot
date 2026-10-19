@@ -235,6 +235,7 @@ async fn forwards_every_binding_hook_including_terminal_writer_and_cursor_contex
         attempt: &attempt,
         iteration: Some(("cursor".into(), 3, 7)),
         parents: vec![],
+        seeds: Vec::new(),
     };
     assert_eq!(
         bound

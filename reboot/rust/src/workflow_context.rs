@@ -292,6 +292,7 @@ mod workflow_admission_tests {
             attempt: &attempt,
             iteration: None,
             parents: Vec::new(),
+            seeds: Vec::new(),
         };
         let error = |url: &str, value: Vec<u8>| prost_types::Any {
             type_url: "type.googleapis.com/google.rpc.Status".into(),
@@ -385,6 +386,7 @@ mod workflow_admission_tests {
             attempt: &attempt,
             iteration: None,
             parents: Vec::new(),
+            seeds: Vec::new(),
         };
         let error = |url: &str, value: Vec<u8>| prost_types::Any {
             type_url: "type.googleapis.com/google.rpc.Status".into(),
@@ -526,6 +528,7 @@ mod workflow_admission_tests {
                 attempt: &attempt,
                 iteration: None,
                 parents: Vec::new(),
+                seeds: Vec::new(),
             };
             let error = context
                 .finish::<D, crate::proto::Counter, crate::proto::Counter>(
@@ -594,6 +597,7 @@ mod workflow_admission_tests {
             attempt: &attempt,
             iteration: None,
             parents: Vec::new(),
+            seeds: Vec::new(),
         };
         let seed = uuid::Uuid::new_v4();
         let scoped = context.iteration("a:1", 0, 3).unwrap();
@@ -743,6 +747,7 @@ mod workflow_admission_tests {
                 attempt: &attempt,
                 iteration: None,
                 parents: Vec::new(),
+                seeds: Vec::new(),
             };
             assert_eq!(
                 context
@@ -775,6 +780,7 @@ mod workflow_admission_tests {
                 attempt: &attempt,
                 iteration: scoped.then(|| ("loop".into(), 0, 1)),
                 parents: Vec::new(),
+                seeds: Vec::new(),
             };
             let denied = context
                 .body_failed(WorkflowBodyError::Declared(error.clone()))
@@ -1178,6 +1184,7 @@ mod cursor_iteration_tests {
                 attempt: &attempt,
                 iteration: Some(("unbounded".into(), iteration, u64::MAX)),
                 parents: Vec::new(),
+                seeds: Vec::new(),
             };
             assert!(context.cursor_scope().is_some());
             assert_eq!(context.checkpoint_iteration(), Some(iteration));
@@ -1205,6 +1212,7 @@ mod cursor_iteration_tests {
             attempt: &attempt1,
             iteration: Some(("unbounded".into(), 1024, u64::MAX)),
             parents: Vec::new(),
+            seeds: Vec::new(),
         };
         let (tasks2, task2, cancel2, attempt2) = make_context(1024);
         let second = WorkflowContext {
@@ -1215,6 +1223,7 @@ mod cursor_iteration_tests {
             attempt: &attempt2,
             iteration: Some(("unbounded".into(), 1024, u64::MAX)),
             parents: Vec::new(),
+            seeds: Vec::new(),
         };
         assert_eq!(
             first.checkpoint_key(seed, "effect", None),
@@ -1297,6 +1306,7 @@ mod idempotency_key_scope_tests {
             task,
             cancel,
             generation: Arc::new(()),
+            seeds: Vec::new(),
             attempt,
             iteration,
             parents,
@@ -1443,6 +1453,78 @@ mod idempotency_key_scope_tests {
             "different parent indices must produce distinct keys"
         );
     }
+    #[tokio::test]
+    async fn with_seeds_changes_key_for_same_alias_and_seed() {
+        let seed = uuid::Uuid::new_v4();
+        let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
+        let base = build_context(&tasks, task.clone(), &cancel, &attempt, None, Vec::new());
+        let seeded = base.with_seeds(&[("tenant", b"acme")]).unwrap();
+        assert_ne!(
+            base.checkpoint_key(seed, "charge", None),
+            seeded.checkpoint_key(seed, "charge", None),
+            "seeds must perturb the checkpoint key"
+        );
+    }
+    #[tokio::test]
+    async fn same_seeds_produce_same_key() {
+        let seed = uuid::Uuid::new_v4();
+        let (tasks1, task1, cancel1, attempt1) = make_scope_context(0, 1, Vec::new());
+        let first = build_context(&tasks1, task1, &cancel1, &attempt1, None, Vec::new())
+            .with_seeds(&[("tenant", b"acme")])
+            .unwrap();
+        let (tasks2, task2, cancel2, attempt2) = make_scope_context(0, 1, Vec::new());
+        let second = build_context(&tasks2, task2, &cancel2, &attempt2, None, Vec::new())
+            .with_seeds(&[("tenant", b"acme")])
+            .unwrap();
+        assert_eq!(
+            first.checkpoint_key(seed, "charge", None),
+            second.checkpoint_key(seed, "charge", None),
+            "identical seeds must produce identical keys"
+        );
+    }
+    #[tokio::test]
+    async fn different_seeds_produce_different_keys() {
+        let seed = uuid::Uuid::new_v4();
+        let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
+        let a = build_context(&tasks, task.clone(), &cancel, &attempt, None, Vec::new())
+            .with_seeds(&[("tenant", b"acme")])
+            .unwrap();
+        let b = build_context(&tasks, task, &cancel, &attempt, None, Vec::new())
+            .with_seeds(&[("tenant", b"globex")])
+            .unwrap();
+        assert_ne!(
+            a.checkpoint_key(seed, "charge", None),
+            b.checkpoint_key(seed, "charge", None),
+            "different seed values must produce different keys"
+        );
+    }
+    #[tokio::test]
+    async fn with_seeds_inner_overrides_outer() {
+        let seed = uuid::Uuid::new_v4();
+        let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
+        let outer = build_context(&tasks, task.clone(), &cancel, &attempt, None, Vec::new())
+            .with_seeds(&[("tenant", b"acme")])
+            .unwrap();
+        let inner = outer.with_seeds(&[("tenant", b"globex")]).unwrap();
+        assert_ne!(
+            outer.checkpoint_key(seed, "charge", None),
+            inner.checkpoint_key(seed, "charge", None),
+            "inner seed must override outer seed"
+        );
+    }
+    #[tokio::test]
+    async fn with_seeds_rejects_invalid_keys() {
+        let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
+        let base = build_context(&tasks, task, &cancel, &attempt, None, Vec::new());
+        assert!(
+            base.with_seeds(&[("", b"empty")]).is_err(),
+            "empty seed key must be rejected"
+        );
+        assert!(
+            base.with_seeds(&[("bad key", b"control")]).is_err(),
+            "control character in seed key must be rejected"
+        );
+    }
 }
 
 /// Private, dispatcher-minted workflow authority. Explicit named same-actor
@@ -1463,6 +1545,7 @@ pub struct WorkflowContext<'a> {
     attempt: &'a WorkflowAttempt,
     iteration: Option<(String, u64, u64)>,
     parents: Vec<(String, u64, u64)>,
+    seeds: Vec<(String, Vec<u8>)>,
 }
 /// Consumed private receipt: user callbacks cannot manufacture completion.
 /// Explicit body disposition. Status propagation is always nonretryable, even
@@ -1568,6 +1651,7 @@ impl<'a> WorkflowContext<'a> {
             generation: self.generation.clone(),
             attempt: self.attempt,
             iteration: Some((alias.to_owned(), index, count)),
+            seeds: self.seeds.clone(),
             parents,
         };
         operation.acknowledged();
@@ -1589,8 +1673,73 @@ impl<'a> WorkflowContext<'a> {
             attempt: self.attempt,
             iteration: None,
             parents: self.parents.clone(),
+            seeds: self.seeds.clone(),
         }
     }
+
+    /// Push key/value entries that scope every idempotency-keyed call made
+    /// through the returned context. Nested calls merge with
+    /// inner-overrides-outer semantics: entries with the same key replace the
+    /// outer value, and the outer state is restored when the returned context
+    /// is dropped. This is the Rust equivalent of Python
+    /// `WorkflowContext.idempotency_seeds(...)`.
+    pub fn with_seeds(
+        &self,
+        entries: &[(&str, &[u8])],
+    ) -> Result<WorkflowContext<'a>, Status> {
+        let operation = self.attempt.operation();
+        for (key, _) in entries {
+            if key.is_empty()
+                || key.len() > 256
+                || key.chars().any(char::is_control)
+            {
+                return Err(Status::invalid_argument(
+                    "idempotency seed key must be non-empty, ASCII/control-free and ≤256 bytes",
+                ));
+            }
+        }
+        let mut seeds = self.seeds.clone();
+        for (key, value) in entries {
+            seeds.retain(|(k, _)| k != key);
+            seeds.push((key.to_string(), value.to_vec()));
+        }
+        let context = WorkflowContext {
+            tasks: self.tasks,
+            task: self.task.clone(),
+            cancel: self.cancel,
+            generation: self.generation.clone(),
+            attempt: self.attempt,
+            iteration: self.iteration.clone(),
+            parents: self.parents.clone(),
+            seeds,
+        };
+        operation.acknowledged();
+        Ok(context)
+    }
+
+    fn seeded_namespace(&self, seed: uuid::Uuid) -> uuid::Uuid {
+        if self.seeds.is_empty() {
+            return seed;
+        }
+        let mut encoded = Vec::new();
+        for (key, value) in &self.seeds {
+            encoded.extend_from_slice(&(key.len() as u64).to_be_bytes());
+            encoded.extend_from_slice(key.as_bytes());
+            encoded.extend_from_slice(&(value.len() as u64).to_be_bytes());
+            encoded.extend_from_slice(value);
+        }
+        let seeds_namespace = uuid::Uuid::new_v5(
+            &uuid::Uuid::NAMESPACE_DNS,
+            b"idempotency_seeds.reboot.dev",
+        );
+        let namespace = uuid::Uuid::new_v5(&seed,
+            seeds_namespace.as_bytes(),
+        );
+        uuid::Uuid::new_v5(&namespace,
+            &encoded,
+        )
+    }
+
     pub(crate) fn checkpoint_bound(&self) -> u64 {
         self.iteration.as_ref().map_or(0, |(_, _, count)| *count)
     }
@@ -1600,6 +1749,7 @@ impl<'a> WorkflowContext<'a> {
         alias: &str,
         condition: Option<&str>,
     ) -> uuid::Uuid {
+        let seed = self.seeded_namespace(seed);
         if let Some((name, index, _)) = self.cursor_scope() {
             let namespace = uuid::Uuid::new_v5(&seed, b"reboot.workflow.cursor.step.v1");
             let identity = (
@@ -2757,6 +2907,7 @@ impl OneShotTasks {
             attempt: &attempt,
             iteration: None,
             parents: Vec::new(),
+            seeds: Vec::new(),
         };
         {
             let id = task.task_id.clone().expect("validated workflow ID");
@@ -2862,6 +3013,7 @@ impl OneShotTasks {
             attempt: &attempt,
             iteration: None,
             parents: Vec::new(),
+            seeds: Vec::new(),
         }
         .validate_scope()
         .await?;
@@ -3173,6 +3325,7 @@ impl WorkflowContext<'_> {
                 attempt: self.attempt,
                 iteration: Some((alias.into(), self.task.iteration, u64::MAX)),
                 parents: Vec::new(),
+                seeds: Vec::new(),
             };
             let key = scoped.checkpoint_key(
                 scoped.cursor_key(b"reboot.workflow.cursor.break.v1")?,
@@ -3223,6 +3376,7 @@ impl WorkflowContext<'_> {
                         attempt: self.attempt,
                         iteration: Some((alias.into(), self.task.iteration, u64::MAX)),
                         parents: Vec::new(),
+                        seeds: Vec::new(),
                     };
                     store
                         .workflow_at_most_once_result_save(
