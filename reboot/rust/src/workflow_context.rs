@@ -1602,6 +1602,16 @@ mod idempotency_key_scope_tests {
         );
         assert_eq!(context.workflow_iteration(), Some(3));
     }
+    #[tokio::test]
+    async fn task_id_matches_task_uuid() {
+        let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
+        let expected = task
+            .task_id
+            .as_ref()
+            .and_then(|id| uuid::Uuid::from_slice(&id.task_uuid).ok());
+        let context = build_context(&tasks, task, &cancel, &attempt, None, Vec::new());
+        assert_eq!(context.task_id(), expected);
+    }
 }
 
 /// Private, dispatcher-minted workflow authority. Explicit named same-actor
@@ -1836,6 +1846,16 @@ impl<'a> WorkflowContext<'a> {
     /// The current finite or cursor iteration index, if any.
     pub fn workflow_iteration(&self) -> Option<u64> {
         self.iteration.as_ref().map(|(_, index, _)| *index)
+    }
+
+    /// The task identity this workflow context is executing, if any.
+    ///
+    /// This is the Rust equivalent of Python's `WorkflowContext.task_id`.
+    pub fn task_id(&self) -> Option<uuid::Uuid> {
+        self.task
+            .task_id
+            .as_ref()
+            .and_then(|id| uuid::Uuid::from_slice(&id.task_uuid).ok())
     }
 
     /// Await a future while respecting workflow cancellation.
