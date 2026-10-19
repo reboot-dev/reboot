@@ -1224,6 +1224,227 @@ mod cursor_iteration_tests {
     }
 }
 
+#[cfg(test)]
+mod idempotency_key_scope_tests {
+    use super::*;
+    use crate::runtime::DurableStateDeclaration;
+    struct D;
+    impl DurableStateDeclaration for D {
+        type State = crate::proto::Counter;
+        const STATE_TYPE: &'static str = "tests.reboot.protoc.Counter";
+    }
+    struct Binding(bool);
+    #[tonic::async_trait]
+    impl ReaderTaskBinding for Binding {
+        fn validate(&self, _: &db::Task) -> Result<(), Status> {
+            Ok(())
+        }
+        fn validate_error(&self, _: &db::Task, _: &prost_types::Any) -> Result<(), Status> {
+            Ok(())
+        }
+        fn writer_capable(&self) -> bool {
+            self.0
+        }
+        fn is_writer(&self, _: &db::Task) -> bool {
+            self.0
+        }
+        async fn execute(&self, _: &db::Task) -> Result<prost_types::Any, Status> {
+            Err(Status::failed_precondition("not reader"))
+        }
+    }
+    fn make_scope_context(
+        iteration: u64,
+        _bound: u64,
+        _parents: Vec<(String, u64, u64)>,
+    ) -> (OneShotTasks, db::Task, RecoveryCancellation, WorkflowAttempt) {
+        let tasks = OneShotTasks::new_with_declarations(
+            DatabaseActorStore::connect_lazy("http://127.0.0.1:1").unwrap(),
+            D::STATE_TYPE.into(),
+            "actor".into(),
+            Binding(true),
+            vec![
+                TaskMethodDeclaration::new::<D, crate::proto::Counter, crate::proto::Counter>(
+                    "tests.Service.Run",
+                    "type.googleapis.com/Counter",
+                    vec![],
+                )
+                .workflow_cursor("unbounded", 1),
+            ],
+        )
+        .unwrap();
+        let task = db::Task {
+            task_id: Some(db::TaskId {
+                state_type: D::STATE_TYPE.into(),
+                state_ref: "actor".into(),
+                task_uuid: uuid::Uuid::new_v4().as_bytes().to_vec(),
+            }),
+            method: "Run".into(),
+            iteration,
+            ..Default::default()
+        };
+        (tasks, task, RecoveryCancellation::new(), WorkflowAttempt::default())
+    }
+    fn build_context<'a>(
+        tasks: &'a OneShotTasks,
+        task: db::Task,
+        cancel: &'a RecoveryCancellation,
+        attempt: &'a WorkflowAttempt,
+        iteration: Option<(String, u64, u64)>,
+        parents: Vec<(String, u64, u64)>,
+    ) -> WorkflowContext<'a> {
+        WorkflowContext {
+            tasks,
+            task,
+            cancel,
+            generation: Arc::new(()),
+            attempt,
+            iteration,
+            parents,
+        }
+    }
+    #[tokio::test]
+    async fn unscoped_key_is_stable_per_alias_and_seed() {
+        let seed = uuid::Uuid::new_v4();
+        let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
+        let first = build_context(&tasks, task.clone(), &cancel, &attempt, None, Vec::new());
+        let second = build_context(&tasks, task, &cancel, &attempt, None, Vec::new());
+        assert_eq!(
+            first.checkpoint_key(seed, "charge", None),
+            second.checkpoint_key(seed, "charge", None),
+            "unscoped key must be stable for replay"
+        );
+        assert_ne!(
+            first.checkpoint_key(seed, "charge", None),
+            first.checkpoint_key(seed, "refund", None),
+            "different aliases must not collide"
+        );
+        let other_seed = uuid::Uuid::new_v4();
+        assert_ne!(
+            first.checkpoint_key(seed, "charge", None),
+            first.checkpoint_key(other_seed, "charge", None),
+            "different seeds must not collide"
+        );
+    }
+    #[tokio::test]
+    async fn finite_iteration_scopes_keys_per_iteration() {
+        let seed = uuid::Uuid::new_v4();
+        let alias = "effect";
+        let bound = 1024u64;
+        let mut keys = std::collections::HashSet::new();
+        for index in [0u64, 1, 1023] {
+            let (tasks, task, cancel, attempt) = make_scope_context(index, bound, Vec::new());
+            let context = build_context(
+                &tasks,
+                task,
+                &cancel,
+                &attempt,
+                Some(("loop".into(), index, bound)),
+                Vec::new(),
+            );
+            assert!(
+                keys.insert(context.checkpoint_key(seed, alias, None)),
+                "finite iteration key collision at index {index}"
+            );
+        }
+    }
+    #[tokio::test]
+    async fn finite_iteration_same_index_same_key() {
+        let seed = uuid::Uuid::new_v4();
+        let (tasks1, task1, cancel1, attempt1) = make_scope_context(7, 100, Vec::new());
+        let first = build_context(
+            &tasks1,
+            task1,
+            &cancel1,
+            &attempt1,
+            Some(("loop".into(), 7, 100)),
+            Vec::new(),
+        );
+        let (tasks2, task2, cancel2, attempt2) = make_scope_context(7, 100, Vec::new());
+        let second = build_context(
+            &tasks2,
+            task2,
+            &cancel2,
+            &attempt2,
+            Some(("loop".into(), 7, 100)),
+            Vec::new(),
+        );
+        assert_eq!(
+            first.checkpoint_key(seed, "effect", None),
+            second.checkpoint_key(seed, "effect", None),
+            "same finite iteration must produce the same key for replay"
+        );
+    }
+    #[tokio::test]
+    async fn cursor_scope_is_distinct_from_finite_scope() {
+        let seed = uuid::Uuid::new_v4();
+        let (tasks1, task1, cancel1, attempt1) = make_scope_context(5, u64::MAX, Vec::new());
+        let cursor = build_context(
+            &tasks1,
+            task1,
+            &cancel1,
+            &attempt1,
+            Some(("unbounded".into(), 5, u64::MAX)),
+            Vec::new(),
+        );
+        assert!(cursor.cursor_scope().is_some());
+        let (tasks2, task2, cancel2, attempt2) = make_scope_context(5, 100, Vec::new());
+        let finite = build_context(
+            &tasks2,
+            task2,
+            &cancel2,
+            &attempt2,
+            Some(("unbounded".into(), 5, 100)),
+            Vec::new(),
+        );
+        assert!(finite.cursor_scope().is_none());
+        assert_ne!(
+            cursor.checkpoint_key(seed, "effect", None),
+            finite.checkpoint_key(seed, "effect", None),
+            "cursor and finite scopes must not share checkpoint keys"
+        );
+    }
+    #[tokio::test]
+    async fn nested_parent_scopes_are_distinct() {
+        let seed = uuid::Uuid::new_v4();
+        let alias = "effect";
+        let (tasks, task, cancel, attempt) = make_scope_context(3, 10, Vec::new());
+        let flat = build_context(
+            &tasks,
+            task.clone(),
+            &cancel,
+            &attempt,
+            Some(("inner".into(), 3, 10)),
+            Vec::new(),
+        );
+        let nested = build_context(
+            &tasks,
+            task.clone(),
+            &cancel,
+            &attempt,
+            Some(("inner".into(), 3, 10)),
+            vec![("outer".into(), 2, 5)],
+        );
+        assert_ne!(
+            flat.checkpoint_key(seed, alias, None),
+            nested.checkpoint_key(seed, alias, None),
+            "nested parent scopes must produce distinct keys"
+        );
+        let different_parent = build_context(
+            &tasks,
+            task.clone(),
+            &cancel,
+            &attempt,
+            Some(("inner".into(), 3, 10)),
+            vec![("outer".into(), 1, 5)],
+        );
+        assert_ne!(
+            nested.checkpoint_key(seed, alias, None),
+            different_parent.checkpoint_key(seed, alias, None),
+            "different parent indices must produce distinct keys"
+        );
+    }
+}
+
 /// Private, dispatcher-minted workflow authority. Explicit named same-actor
 /// typed named writer steps and checkpointed immutable-reader waits. Explicit
 /// finite indexed replay scopes and named at-most-once unit external blocks;
