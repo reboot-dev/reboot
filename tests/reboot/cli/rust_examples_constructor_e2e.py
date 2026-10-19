@@ -92,7 +92,7 @@ client = TARGET / 'debug/client'
 owner, record = start('initial')
 try:
     command(client, 'missing', 'absent-hello')
-    command(client, 'initialize', 'reboot-hello')
+    command(client, 'verify', 'reboot-hello')
     command(client, 'scenario', 'testing-hello')
 finally:
     if not timeout_seen:
@@ -101,8 +101,8 @@ owner, record = start('restart')
 try:
     command(client, 'verify', 'testing-hello')
     command(client, 'verify', 'reboot-hello')
-    # Replaying stable initializer/feature keys must not append duplicate messages.
-    command(client, 'initialize', 'reboot-hello')
+    # Startup replays its own permanent keys; clients replay only feature keys.
+    command(client, 'verify', 'reboot-hello')
     command(client, 'scenario', 'testing-hello')
 finally:
     if not timeout_seen:

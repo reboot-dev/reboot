@@ -1,6 +1,7 @@
 use prost::Message;
 use reboot::{application_host::ApplicationHost, runtime::DatabaseActorStore};
-use upstream_hello_constructors::{Hello, generated, proto};
+use std::sync::Arc;
+use upstream_hello_constructors::{Hello, authorization, generated, proto, startup::Startup};
 async fn shutdown() {
     let mut term =
         tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).unwrap();
@@ -29,24 +30,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let endpoint = std::env::var("RBT_RUST_DATABASE_URL")?;
     let address = std::env::var("RBT_RUST_LISTEN_ADDR")?.parse()?;
-    let adapter = generated::HelloMethodsDatabaseAdapter::new(
-        DatabaseActorStore::connect(endpoint).await?,
-        Hello,
-    )
-    .with_authorization(
-        if std::env::var("RBT_RUST_UNAUTHORIZED_DEVELOPMENT").as_deref() == Ok("1") {
-            reboot::auth::AuthorizationPolicy::permissive_for_development()
-        } else {
-            reboot::auth::AuthorizationPolicy::default()
-        },
+    let application =
+        std::env::var("RBT_NAME").unwrap_or_else(|_| "upstream_hello_constructors".into());
+    let adapter = Arc::new(
+        generated::HelloMethodsDatabaseAdapter::new(
+            DatabaseActorStore::connect(endpoint).await?,
+            Hello,
+        )
+        .with_authorization(authorization()),
     );
-    ApplicationHost::new(
-        std::env::var("RBT_NAME").unwrap_or_else(|_| "upstream_hello_constructors".into()),
-    )
-    .add_public_service(proto::hello_methods_server::HelloMethodsServer::new(
-        adapter,
-    ))
-    .serve_with_shutdown(address, shutdown())
-    .await?;
+    let startup = Startup::new(adapter.clone(), &application)?;
+    ApplicationHost::new(application)
+        .with_lifecycle(startup)
+        .add_public_service(proto::hello_methods_server::HelloMethodsServer::from_arc(
+            adapter,
+        ))
+        .serve_with_shutdown(address, shutdown())
+        .await?;
     Ok(())
 }

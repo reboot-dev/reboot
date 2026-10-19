@@ -4406,7 +4406,10 @@ async fn generated_external_constructor_authorization_hides_absence_and_authoriz
     .await;
     let mut client = proto::constructor_counter_writes_methods_client::ConstructorCounterWritesMethodsClient::connect(address).await.unwrap();
     assert_eq!(client.create(request("constructor-denied", "allow", 5)).await.unwrap().into_inner().value, 5);
-    assert_eq!(client.create(request("constructor-denied", "allow", 9)).await.unwrap_err().code(), tonic::Code::FailedPrecondition);
+    let duplicate = client.create(request("constructor-denied", "allow", 9)).await.unwrap_err();
+    assert_eq!(duplicate.code(), tonic::Code::Aborted);
+    let rich = reboot::declared_error_details(&duplicate).unwrap().unwrap();
+    assert_eq!(rich.details[0].type_url, "type.googleapis.com/rbt.v1alpha1.StateAlreadyConstructed");
     assert_eq!(allowed.handler_calls.load(Ordering::SeqCst), 1, "denial and existing-actor conflict must not invoke the constructor handler");
     assert_eq!(database.create_requests().len(), 1, "only the allowed constructor may atomically create its actor and idempotency mutation");
     let contexts = allowed.contexts.lock().unwrap();

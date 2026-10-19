@@ -1360,6 +1360,7 @@ dependencies = [
  "prost-types",
  "reboot-rust-schema",
  "tokio",
+ "tokio-stream",
  "tonic",
  "tonic-health",
  "uuid",

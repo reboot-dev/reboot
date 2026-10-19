@@ -68,7 +68,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .messages(proto::MessagesRequest {})
                 .await
                 .unwrap_err();
-            assert_eq!(error.code(), tonic::Code::FailedPrecondition);
+            assert_eq!(error.code(), tonic::Code::Aborted);
+            let rich = reboot::declared_error_details(&error)?.ok_or("missing rich error")?;
+            assert_eq!(
+                rich.details[0].type_url,
+                "type.googleapis.com/rbt.v1alpha1.StateNotConstructed"
+            );
+            use prost::Message;
+            assert!(
+                reboot::database_proto::StateNotConstructed::decode(
+                    rich.details[0].value.as_slice()
+                )?
+                .requires_constructor
+            );
             println!("MISSING_REJECTED");
             return Ok(());
         }

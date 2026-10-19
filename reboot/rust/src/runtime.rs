@@ -3516,9 +3516,12 @@ fn admit_state<State: Default>(
     match (state, admission) {
         (Some(state), _) => Ok(state),
         (None, StateAdmission::DefaultOnAbsent) => Ok(State::default()),
-        (None, StateAdmission::RequireExisting) => Err(Status::failed_precondition(
-            "actor state must be constructed before this method can be called",
-        )),
+        (None, StateAdmission::RequireExisting) => Err(crate::SystemAborted::StateNotConstructed(
+            database::StateNotConstructed {
+                requires_constructor: true,
+            },
+        )
+        .into_status("actor state must be constructed before this method can be called")),
     }
 }
 
@@ -4586,9 +4589,10 @@ impl DatabaseActorStore {
             .await?
             .is_some()
         {
-            return Err(Status::failed_precondition(
-                "actor state has already been constructed",
-            ));
+            return Err(crate::SystemAborted::StateAlreadyConstructed(
+                database::StateAlreadyConstructed {},
+            )
+            .into_status("actor state has already been constructed"));
         }
         let mut state = Declaration::State::default();
         let response = invoke(&mut state, request.into_inner()).await?;
@@ -4686,9 +4690,10 @@ impl DatabaseActorStore {
             return Ok(Response::new(response));
         }
         if state_bytes.is_some() {
-            return Err(Status::failed_precondition(
-                "actor state has already been constructed",
-            ));
+            return Err(crate::SystemAborted::StateAlreadyConstructed(
+                database::StateAlreadyConstructed {},
+            )
+            .into_status("actor state has already been constructed"));
         }
         let mut state = Declaration::State::default();
         let response = invoke(&mut state, request.into_inner()).await?;
@@ -6486,12 +6491,18 @@ mod tests {
             admit_state::<u32>(None, StateAdmission::DefaultOnAbsent).unwrap(),
             0
         );
+        let error = admit_state::<u32>(None, StateAdmission::RequireExisting).unwrap_err();
+        assert_eq!(error.code(), tonic::Code::Aborted);
+        let rich = crate::declared_error_details(&error).unwrap().unwrap();
+        assert_eq!(rich.code, tonic::Code::Aborted as i32);
+        assert_eq!(rich.details.len(), 1);
         assert_eq!(
-            admit_state::<u32>(None, StateAdmission::RequireExisting)
-                .unwrap_err()
-                .code(),
-            tonic::Code::FailedPrecondition
+            rich.details[0].type_url,
+            "type.googleapis.com/rbt.v1alpha1.StateNotConstructed"
         );
+        let detail =
+            database::StateNotConstructed::decode(rich.details[0].value.as_slice()).unwrap();
+        assert!(detail.requires_constructor);
         assert_eq!(
             admit_state(Some(7_u32), StateAdmission::RequireExisting).unwrap(),
             7
@@ -9481,7 +9492,12 @@ mod tests {
             )
             .await
             .unwrap_err();
-        assert_eq!(duplicate.code(), tonic::Code::FailedPrecondition);
+        assert_eq!(duplicate.code(), tonic::Code::Aborted);
+        let rich = crate::declared_error_details(&duplicate).unwrap().unwrap();
+        assert_eq!(
+            rich.details[0].type_url,
+            "type.googleapis.com/rbt.v1alpha1.StateAlreadyConstructed"
+        );
 
         let failed_context = ExternalContext::new("failed-constructor");
         let failed_key = Uuid::from_u128(403);

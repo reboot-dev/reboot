@@ -40,3 +40,23 @@ impl generated::HelloMethodsDatabaseHandler for Hello {
         })
     }
 }
+
+pub mod startup;
+
+/// The upstream application explicitly returns allow(), without a verifier.
+/// Keep this app policy separate from the SDK's fail-closed default.
+struct Allow;
+impl reboot::auth::Authorizer for Allow {
+    fn authorize<'a>(
+        &'a self,
+        _: &'a reboot::auth::AuthorizationContext,
+        _: Option<&'a reboot::auth::Auth>,
+        _: Option<&'a [u8]>,
+        _: &'a [u8],
+    ) -> reboot::auth::AuthorizeFuture<'a> {
+        Box::pin(async { reboot::auth::AuthorizationDecision::Allow })
+    }
+}
+pub fn authorization() -> reboot::auth::AuthorizationPolicy {
+    reboot::auth::AuthorizationPolicy::new(None, Some(std::sync::Arc::new(Allow)))
+}

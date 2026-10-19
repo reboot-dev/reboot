@@ -4,7 +4,8 @@
   "files": [
     {
       "upstream_path": "api/hello_constructors/v1/hello.proto",
-      "sha256": "c144183d68a73783f260886469706b865fcddbb393aae3899808f971ee5717c1"
+      "sha256": "c144183d68a73783f260886469706b865fcddbb393aae3899808f971ee5717c1",
+      "reference_path": "hello-constructors/upstream/api/hello_constructors/v1/hello.proto"
     },
     {
       "upstream_path": "api/hello_tasks/v1/hello.proto",
@@ -61,6 +62,31 @@
       "upstream_path": "hello-legacy-grpc/backend/tests/greeter_servicer_test.py",
       "sha256": "53a0bce4e7e35a03a1b063cfd282d67e6b7ebcc983db8ca6f08c5e916a240d76",
       "reference_path": "hello-legacy-grpc/upstream/hello-legacy-grpc/backend/tests/greeter_servicer_test.py"
+    },
+    {
+      "upstream_path": "hello-constructors/backend/src/hello_servicer.py",
+      "sha256": "aa71c568defc4f1137b7951e58ce6b74f4f2ee9a312f11576fabd3c0cdadc822",
+      "reference_path": "hello-constructors/upstream/hello-constructors/backend/src/hello_servicer.py"
+    },
+    {
+      "upstream_path": "hello-constructors/backend/src/main.py",
+      "sha256": "d85c728a8f6c46ad2fbc274f5ccab39f3992eb618a5cf2ea2479f6da0c56e229",
+      "reference_path": "hello-constructors/upstream/hello-constructors/backend/src/main.py"
+    },
+    {
+      "upstream_path": "hello-constructors/backend/tests/hello.feature",
+      "sha256": "47f8af55c23965b034b377f99e46495336d53950f244d55e1de0cb1c8c1960e2",
+      "reference_path": "hello-constructors/upstream/hello-constructors/backend/tests/hello.feature"
+    },
+    {
+      "upstream_path": "hello-constructors/backend/tests/hello_servicer_test.py",
+      "sha256": "b3a3b82e745b9f229d7f4830e2428d4180e00751d1faf3da182b8eaa65f36983",
+      "reference_path": "hello-constructors/upstream/hello-constructors/backend/tests/hello_servicer_test.py"
+    },
+    {
+      "upstream_path": "hello-constructors/.rbtrc",
+      "sha256": "287133bd598bcc98cf5af23a9d511c5b43a8ca5715bea122f9b0cafc1ec56fd4",
+      "reference_path": "hello-constructors/upstream/hello-constructors/.rbtrc"
     }
   ],
   "status": "Pinned original schemas; Rust ports and execution acceptance in progress."
