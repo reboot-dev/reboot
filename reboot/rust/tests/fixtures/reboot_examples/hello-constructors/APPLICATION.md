@@ -50,11 +50,12 @@ existing `--server-info PATH` mode remains available for engine configuration.
 
 ## Qualification boundary
 
-Source/provenance verification and locked offline Cargo dependency resolution
-were exercised for this slice. Rust runtime tests below are supplied but **not
-executed in this source slice**: the local host had only 115 MiB free and heavy
-build/native ownership is reserved for the coordinated CCX43 owner. Do not infer
-compiled or native behavior from formatting or provenance checks.
+Source/provenance verification, offline locked compilation and tests, and real
+native Database application restart qualification were exercised on the existing
+authorized CCX43 (not the low-disk local host). See the committed compact receipt
+`qualification-ccx43.json` for exact source/artifact pins and evidence paths.
+The release/image and shared Python gates below remain open; native debug
+execution is not Docker evidence.
 
 After coordination, run the generated-consumer tests against the SDK's existing
 Database fake (no native engine is involved):
@@ -73,13 +74,36 @@ cargo test --locked --manifest-path reboot/rust/Cargo.toml --lib \
 exact message fidelity and replay, stable identity, interrupted initialization,
 owned host cancellation before listening, repeated boot against retained fake
 receipts, and anonymous public gRPC access after automatic startup. Fake receipts
-and fresh SDK adapters are **not** C++ process/RocksDB restart evidence. The CLI
-restart recipe now verifies automatic initialization instead of running a second
-manual initializer with unrelated keys; that recipe also awaits native rerun.
+and fresh SDK adapters are **not** C++ process/RocksDB restart evidence.
+`tests/native.rs` and `run_native_application.py` separately exercised the
+production app against the native C++ engine: automatic initializer recovery,
+anonymous public Create/Send/Messages, rich missing/duplicate errors, exact data
+fidelity, same-key replay after unrelated writes, app-only and full-engine
+retained-volume restarts. The interrupted initializer is the same Startup hook
+inside ApplicationHost, with a **test-only** generated service wrapper parking
+Send after the real durable Create ACK. Its exact child is SIGKILLed before the
+engine is retired/restarted; it is not a production binary failpoint. All 15
+owned children have exact wait receipts; sources/executables remained frozen.
 
-Remaining release gates: compile/tests on the authorized host; actual Python rich
-error diagnostics and identity-misuse observations; shared Python/Rust public
-transport conformance; interrupted boot and retained-volume engine restart;
-engine-loss readiness; pinned compatible native artifact and runtime libraries;
-pinned Python generation/launcher; release Dockerfiles/topology and image digests.
-No Docker image was built and no shared conformance or benchmark result is claimed.
+Offline tests also cover independent competing process gates (both authorized
+and compatibility constructors): same-key replay and distinct-key typed rejection.
+A failing Send makes startup fail before binding, and the next boot recovers the
+retained Create without duplication.
+
+Remaining release gates: actual Python rich error diagnostics and identity-misuse
+observations; shared Python/Rust public transport conformance; engine-loss
+readiness; release artifacts/runtime libraries; Dockerfiles/topology/image digests.
+No Docker image was built and no shared conformance or benchmark is claimed.
+
+**Known Python behavior gap:** SDK `reboot/aio/servers.py` retries initializer
+exceptions with backoff (except InputError); this Rust application exits on
+initializer failure. Native restart recovery passes, but this is not equivalent
+to Python's in-process retry policy. Do not call this same-behavior acceptance
+until the intended policy is reconciled and shared-tested.
+
+**Environment blocker:** Python reference code generation succeeded using the
+existing Bazel `rbt`, its Reboot plugins, and existing mypy plugin paths. Its
+supported public dev runtime still requires Envoy: neither an `envoy` executable
+nor Docker is present on this authorized host. No install, image pull, paid
+capacity, deletion or push was performed. Shared Python execution remains
+unverified, rather than replacing the runtime with a fake or direct handler.
