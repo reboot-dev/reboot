@@ -153,8 +153,12 @@ export default function McpConnector({
           } else if (typeof sc.text === "string") {
             sources.push(sc.text);
           } else if (typeof sc === "object") {
-            // Already parsed — merge directly.
+            // Already parsed — merge directly, and forward the bearer
+            // token the way the parsed-text branch below does.
             setToolData((prev) => ({ ...prev, ...sc }));
+            if (typeof sc.bearer_token === "string") {
+              setBearerTokenRef.current(sc.bearer_token);
+            }
             return;
           }
         }
