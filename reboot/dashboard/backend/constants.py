@@ -15,9 +15,9 @@ from rbt.dashboard.v1 import dashboard_rbt
 DASHBOARD_DIRECTORY = Path(__file__).parent / 'dashboard'
 
 # Where the page built into one file for an MCP host is, as
-# `ui/index.html`: beside the generated code, whose `.rbtrc` makes that
-# directory the project root the MCP App runtime resolves against; see
-# `rbt/dashboard/v1/BUILD.bazel`.
+# `dashboard/ui/index.html`: beside the generated code, whose `.rbtrc`
+# makes that directory the project root the MCP App runtime resolves
+# against; see `rbt/dashboard/v1/BUILD.bazel`.
 assert dashboard_rbt.__file__ is not None
 MCP_APP_DIRECTORY = Path(dashboard_rbt.__file__).parent
 

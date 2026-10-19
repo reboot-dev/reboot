@@ -36,7 +36,7 @@ message Dashboard {
                      "dashboard_show_feature or dashboard_show_state_type. "
                      "There is one dashboard: pass 'dashboard' as "
                      "dashboard_id.",
-        path: "ui",
+        path: "dashboard/ui",
       },
       {
         name: "show_feature",
@@ -47,7 +47,7 @@ message Dashboard {
                      "feature, or one that was just written. Pass 'dashboard' "
                      "as dashboard_id, and the feature's file path (from "
                      "dashboard_list) or its name as feature.",
-        path: "feature",
+        path: "dashboard/feature",
         request_message: "ShowFeatureRequest",
       },
       {
@@ -60,7 +60,7 @@ message Dashboard {
                      "that was just written. Pass 'dashboard' as "
                      "dashboard_id, and the state type's qualified name (from "
                      "dashboard_list) or its name as state_type.",
-        path: "state-type",
+        path: "dashboard/state_type",
         request_message: "ShowStateTypeRequest",
       }
     ],

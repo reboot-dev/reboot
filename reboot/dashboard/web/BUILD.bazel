@@ -19,6 +19,7 @@ ts_project(
         "src/main.tsx",
         "src/markdown.ts",
         "src/pane_target.ts",
+        "src/recordings.tsx",
         "src/svg.d.ts",
     ],
     declaration = True,
