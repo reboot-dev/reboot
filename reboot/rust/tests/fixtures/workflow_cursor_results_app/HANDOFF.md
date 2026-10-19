@@ -75,11 +75,17 @@ Started-recovery nonzero-natural-failure path remains separate.
 Iteration-zero Stored bytes must survive the first Database restart, but must
 be **absent** after advancing. C++ `RecoverIdempotentMutations(workflow_id,
 workflow_iteration=None)` reads root prefixes only; it does not enumerate
-iteration checkpoints. The inspector's repaired `all` mode reads the root scope
-plus **every explicit iteration 0..canonical task.iteration inclusive**, keeping
-at most 32 read streams active over the cloned shared gRPC channel. It retains
-and counts actual returned mutations (including leaked old nonzero iterations),
-not a count inferred from current/root reads. Inventory metadata is mandatory
+iteration checkpoints. C++ `RecoverIdempotentMutations` builds an **undelimited
+ decimal prefix** for a requested iteration: `Some(9)` also reads `90..99`,
+`900..999`, and `9999`. Treating that query as exact equality caused the native
+Break inventory failure; looping over every integer would also duplicate rows.
+The inspector's repaired `all` mode reads root plus the ten disjoint decimal
+first-digit prefixes `0..9`, validating every decoded iteration against its
+requested prefix and the canonical task bound. It retains every returned
+mutation without filtering or deduplication, including old nonzero leaks. A
+wrong prefix, root/iteration scope mismatch, future scope, or read failure rejects
+the inventory. Single-iteration snapshots still require exact scope equality.
+Inventory metadata is mandatory
 for the GC assertions. Each call is made while the workflow is parked or terminal;
 this is not an atomic multi-RPC inventory for a concurrently advancing workflow,
 or an inventory of actor-global/other-workflow keys. No engine protocol changes.
@@ -90,7 +96,8 @@ bytes across Database restarts. The 10k inventory has a separate finite
 The two native scenarios still test saved result/Break replay and refusal to
 redispatch an ambiguous Started-after-commit effect.
 
-Local verification for this correction: 23 fixture Python tests, including a
+Historical pre-native verification (superseded for inventory by the CCX43 receipt
+below): 23 fixture Python tests, including a
 real stopped-child gate SIGTERM test, repeated SIGTERM/SIGINT during retention,
 external pidfd SIGCONT with the child still alive, eventual natural exit and lock
 release, unexpected-zero retirement, and expected-nonzero failure controls;
@@ -113,7 +120,32 @@ The checked-in outer gate persists preflight/bootstrap failures and captures/has
 `PROVENANCE.json` records historical seed inputs and the earlier bounded evidence
 scope; it has not been regenerated for this repair. Its historical native run and
 canonical readback do **not** certify this inventory/signal/retirement correction.
-Current native/public acceptance remains false.
+At that historical checkpoint native/public acceptance was false.
+
+## Native decimal-prefix repair: accepted on CCX43
+
+`reboot/rust/tests/evidence/q6-native-inventory-scope-ccx43-20261019.json`
+binds the accepted feature run to source `4cee506d7c52091c03542f04674cda8401c89258`.
+The original Omarchy failed owner and all 25 children retired before any retry;
+its receipts and RocksDB were archived unchanged. On CCX43, the original
+inspector reproduced the exact scope failure against an offline copy, while the
+repaired inspector returned all five rows (two roots, three iteration 9999) and
+passed the unchanged total-GC assertions. No SDK host ran against that copy.
+
+The subsequent fresh 10000-iteration gate passed both native scenarios in
+382.85 seconds, with 43 exact child receipts, no custody/cleanup failure,
+unchanged frozen source/executables, and terminal owner/gate. Initial/advanced/
+Break/completed inventories contained 3/2/5/6 actual rows. The two root bytes
+survived GC; no completed nonzero iteration leaked. Both generated binaries'
+unit tests (six executions), 24 Python regressions and strict all-target Clippy
+passed offline. The Tonic Status-size lint allowance is restricted to generated
+modules. No public CLI, Dockerized app, or Python-example parity is claimed.
+
+The tested remote source remains frozen at `/home/benchbuild/.cache/q6-inventory-repair-src`;
+evidence lives at `/home/benchbuild/.cache/q6-inventory-repair-evidence`.
+Reuse the existing CCX43 Cargo cache `/home/benchbuild/reboot-rust/.cargo-target-acceptance`
+and Bazel root `/home/benchbuild/.bazel-reboot` for coordinated later work; do not
+rebuild in the evidence directory or mutate retained executable files.
 
 ## Independent canonical readback
 
