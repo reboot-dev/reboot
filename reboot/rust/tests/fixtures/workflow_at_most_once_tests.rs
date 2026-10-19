@@ -1331,6 +1331,72 @@ async fn always_runs_callable_every_time() {
     server.abort();
 }
 
+#[tokio::test]
+async fn memoize_with_seeds_stores_separate_values() {
+    let (f, _database, server) = fake().await;
+    let url = "type.googleapis.com/tests.reboot.protoc.Counter";
+    let constructed = Arc::new(AtomicI64::new(0));
+    let c1 = constructed.clone();
+    let first = WorkflowAttempt::default();
+    let context0 = f.context(&first).iteration("loop", 0, 2).unwrap();
+    let value_a = context0
+        .with_seeds(&[("tenant", b"acme")])
+        .unwrap()
+        .memoize(
+            "charge",
+            1,
+            url,
+            || {
+                let c = c1.clone();
+                async move { Ok(crate::proto::Counter { value: c.fetch_add(1, Ordering::SeqCst) + 1 }) }
+            },
+            false,
+        )
+        .await
+        .unwrap();
+    assert_eq!(value_a.value, 1);
+
+    let c2 = constructed.clone();
+    let second = WorkflowAttempt::default();
+    let context1 = f.context(&second).iteration("loop", 0, 2).unwrap();
+    let value_b = context1
+        .with_seeds(&[("tenant", b"globex")])
+        .unwrap()
+        .memoize(
+            "charge",
+            1,
+            url,
+            || {
+                let c = c2.clone();
+                async move { Ok(crate::proto::Counter { value: c.fetch_add(1, Ordering::SeqCst) + 1 }) }
+            },
+            false,
+        )
+        .await
+        .unwrap();
+    assert_eq!(value_b.value, 2);
+    assert_eq!(constructed.load(Ordering::SeqCst), 2);
+
+    let third = WorkflowAttempt::default();
+    let context2 = f.context(&third).iteration("loop", 0, 2).unwrap();
+    let value_a_replay: crate::proto::Counter = context2
+        .with_seeds(&[("tenant", b"acme")])
+        .unwrap()
+        .memoize(
+            "charge",
+            1,
+            url,
+            || async move { panic!("acme replay must not invoke callable") },
+            false,
+        )
+        .await
+        .unwrap();
+    assert_eq!(value_a_replay.value, 1);
+    assert_eq!(constructed.load(Ordering::SeqCst), 2);
+    assert!(third.clean());
+    server.abort();
+}
+
 trait TestCursorDeclaration {
     fn with_test_cursor(self, enabled: bool) -> Self;
 }
