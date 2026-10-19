@@ -219,6 +219,17 @@ class McpTest(unittest.IsolatedAsyncioTestCase):
                     content.text,
                 )
 
+    async def test_namespaced_ui_builds_are_served(self) -> None:
+        # These are the actual nested build paths declared by the proto UIs.
+        for path in (
+            'dashboard/ui', 'dashboard/feature', 'dashboard/state_type'
+        ):
+            async with self.client.get(
+                self.url + f'/__/frontend/mcp/{path}/index.html'
+            ) as response:
+                self.assertEqual(response.status, 200, path)
+                self.assertIn('<html', await response.text())
+
     async def test_signed_recordings(self) -> None:
         signing = self.url + '/recordings/sign'
         async with self.client.get(
@@ -237,7 +248,10 @@ class McpTest(unittest.IsolatedAsyncioTestCase):
                 self.assertGreater(signed['expires'], time.time())
                 return self.url + signed['url']
 
+        before = int(time.time())
         url = await sign(self.recording)
+        signed_expiry = int(parse_qs(urlsplit(url).query)['expires'][0])
+        self.assertGreaterEqual(signed_expiry, before + 24 * 60 * 60)
         async with self.client.get(url) as response:
             self.assertEqual(response.status, 200)
             self.assertEqual(await response.read(), b'png')
@@ -297,6 +311,12 @@ class McpTest(unittest.IsolatedAsyncioTestCase):
                 expired = await response.json()
         async with self.client.get(self.url + expired['url']) as response:
             self.assertEqual(response.status, 401)
+
+        # The same recording becomes playable again after obtaining a
+        # fresh signature, as the UI does after a media error.
+        async with self.client.get(await sign(self.recording)) as response:
+            self.assertEqual(response.status, 200)
+            self.assertEqual(await response.read(), b'png')
 
         encoded = self.recording.replace('shot.png', 'a space 雪 #?.png')
         Path(encoded).write_bytes(b'encoded')

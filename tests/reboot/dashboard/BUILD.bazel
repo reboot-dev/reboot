@@ -370,3 +370,38 @@ vitest_test(
     node_modules = "//:node_modules",
     visibility = ["//visibility:public"],
 )
+
+# Recording recovery uses browser media error events and React effects.
+ts_project(
+    name = "recordings_test_ts",
+    srcs = ["recordings.test.tsx"],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "jsx": "react-jsx",
+            "module": "esnext",
+            "moduleResolution": "bundler",
+            "skipLibCheck": True,
+            "target": "es2020",
+        },
+    },
+    deps = [
+        "//:node_modules/@testing-library/react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//reboot/dashboard/web:dashboard_ts",
+        "//reboot/std/vitest:vitest_ts",
+    ],
+)
+
+vitest_test(
+    name = "recordings_test",
+    config = "recordings.vitest.config.mjs",
+    data = [
+        "package.json",
+        ":recordings_test_ts",
+    ],
+    node_modules = "//:node_modules",
+)

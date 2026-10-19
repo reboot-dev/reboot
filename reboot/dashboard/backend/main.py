@@ -76,7 +76,9 @@ def _recording(directory: Path, relative: str) -> Path:
     return path
 
 
-_RECORDING_URL_EXPIRES_AFTER_SECONDS = 60 * 60
+# Keep recordings playable throughout a working day. Expiry is still enforced
+# on every media request; the UI obtains a fresh signature after a load error.
+_RECORDING_URL_EXPIRES_AFTER_SECONDS = 24 * 60 * 60
 
 
 def _recording_signature(directory: Path, relative: str, expires: int) -> str:

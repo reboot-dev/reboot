@@ -100,18 +100,18 @@ genrule(
         "//reboot/dashboard/web:index.html",
     ],
     outs = [
-        "ui/index.html",
-        "feature/index.html",
-        "state-type/index.html",
+        "dashboard/ui/index.html",
+        "dashboard/feature/index.html",
+        "dashboard/state_type/index.html",
     ],
     cmd = "$(location //reboot/ping:inline_bundle) " +
           "$(location //reboot/dashboard/web:index.html) " +
           "$(location //reboot/dashboard/web:dashboard_bundle.js) " +
-          "$(location ui/index.html) " +
+          "$(location dashboard/ui/index.html) " +
           "--css $(location //reboot/dashboard/web:dashboard_bundle.css) " +
           "--marker '<script type=\"module\" src=\"./src/main.tsx\"></script>' && " +
-          "cp $(location ui/index.html) $(location feature/index.html) && " +
-          "cp $(location ui/index.html) $(location state-type/index.html)",
+          "cp $(location dashboard/ui/index.html) $(location dashboard/feature/index.html) && " +
+          "cp $(location dashboard/ui/index.html) $(location dashboard/state_type/index.html)",
     tools = ["//reboot/ping:inline_bundle"],
 )
 
