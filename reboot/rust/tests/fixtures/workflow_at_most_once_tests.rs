@@ -617,6 +617,133 @@ async fn simultaneous_same_alias_never_constructs_second_callback() {
     server.abort();
 }
 
+#[tokio::test]
+async fn at_least_once_result_memoizes_and_replays_without_callback() {
+    let (f, database, server) = fake().await;
+    let attempt = WorkflowAttempt::default();
+    let context = f.context(&attempt);
+    let constructed = AtomicUsize::new(0);
+    let url = "type.googleapis.com/tests.reboot.protoc.Counter";
+    let value = context
+        .at_least_once_result("remote", 1, url, b"B/ref/Full.Method/request", || {
+            constructed.fetch_add(1, Ordering::SeqCst);
+            async { Ok(crate::proto::Counter { value: 42 }) }
+        })
+        .await
+        .unwrap();
+    assert_eq!(value.value, 42);
+    let replay: crate::proto::Counter = context
+        .at_least_once_result("remote", 1, url, b"B/ref/Full.Method/request", || {
+            panic!("Stored constructed callback");
+            #[allow(unreachable_code)]
+            async { Ok(crate::proto::Counter { value: 0 }) }
+        })
+        .await
+        .unwrap();
+    assert_eq!(replay, value);
+    assert_eq!(constructed.load(Ordering::SeqCst), 1);
+    assert!(attempt.clean());
+    assert!(
+        database.store_requests()[1..]
+            .iter()
+            .all(|r| r.sync && r.actor_upserts.is_empty() && r.task_upserts.is_empty())
+    );
+    server.abort();
+}
+
+#[tokio::test]
+async fn at_least_once_result_reruns_callback_after_failure() {
+    let (f, _database, server) = fake().await;
+    let url = "type.googleapis.com/tests.reboot.protoc.Counter";
+    let constructed = AtomicUsize::new(0);
+    let first = WorkflowAttempt::default();
+    assert!(
+        f.context(&first)
+            .at_least_once_result::<crate::proto::Counter, _, _>(
+                "remote",
+                1,
+                url,
+                b"call",
+                || {
+                    constructed.fetch_add(1, Ordering::SeqCst);
+                    async { Err(Status::unavailable("B may have committed")) }
+                },
+            )
+            .await
+            .is_err()
+    );
+    assert!(!first.clean());
+    let second = WorkflowAttempt::default();
+    let value = f
+        .context(&second)
+        .at_least_once_result::<crate::proto::Counter, _, _>(
+            "remote",
+            1,
+            url,
+            b"call",
+            || {
+                constructed.fetch_add(1, Ordering::SeqCst);
+                async { Ok(crate::proto::Counter { value: 7 }) }
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(value.value, 7);
+    assert_eq!(constructed.load(Ordering::SeqCst), 2);
+    assert!(second.clean());
+    server.abort();
+}
+
+#[tokio::test]
+async fn at_least_once_result_scopes_by_finite_iteration() {
+    let (f, database, server) = fake().await;
+    let url = "type.googleapis.com/tests.reboot.protoc.Counter";
+    let constructed = AtomicUsize::new(0);
+    for index in [0u64, 1] {
+        let attempt = WorkflowAttempt::default();
+        let context = f
+            .context(&attempt)
+            .iteration("batch", index, 2)
+            .unwrap();
+        let value = context
+            .at_least_once_result::<crate::proto::Counter, _, _>(
+                "step",
+                1,
+                url,
+                b"call",
+                || {
+                    constructed.fetch_add(1, Ordering::SeqCst);
+                    async { Ok(crate::proto::Counter { value: index as i64 + 1 }) }
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(value.value, index as i64 + 1);
+    }
+    assert_eq!(constructed.load(Ordering::SeqCst), 2);
+    let replay0 = WorkflowAttempt::default();
+    let value0 = f
+        .context(&replay0)
+        .iteration("batch", 0, 2)
+        .unwrap()
+        .at_least_once_result::<crate::proto::Counter, _, _>(
+            "step",
+            1,
+            url,
+            b"call",
+            || async { panic!("iteration 0 replay ran") },
+        )
+        .await
+        .unwrap();
+    assert_eq!(value0.value, 1);
+    assert_eq!(constructed.load(Ordering::SeqCst), 2);
+    assert!(database
+        .store_requests()
+        .iter()
+        .all(|r| r.sync && r.actor_upserts.is_empty()));
+    server.abort();
+}
+
 trait TestCursorDeclaration {
     fn with_test_cursor(self, enabled: bool) -> Self;
 }

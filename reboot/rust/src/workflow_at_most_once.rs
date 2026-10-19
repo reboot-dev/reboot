@@ -750,6 +750,129 @@ impl WorkflowContext<'_> {
         operation.acknowledged();
         Ok(result)
     }
+
+    /// Run a named, versioned external-effect block at least once in this task/scope.
+    ///
+    /// On success the result is durably memoized; subsequent replays return the stored
+    /// value without re-running the callback. If the callback fails no checkpoint is
+    /// written, so the next workflow retry will re-run it. This is the Rust equivalent
+    /// of Python's `reboot.aio.workflows.at_least_once`.
+    pub async fn at_least_once_result<R, F, Fut>(
+        &self,
+        alias: &str,
+        version: u32,
+        result_type: &'static str,
+        call_contract: &[u8],
+        callback: F,
+    ) -> Result<R, Status>
+    where
+        R: prost::Message + Default + Send,
+        F: FnOnce() -> Fut + Send,
+        Fut: std::future::Future<Output = Result<R, Status>> + Send,
+    {
+        let operation = self.attempt.operation();
+        if alias.is_empty()
+            || alias.len() > 256
+            || alias.chars().any(char::is_control)
+            || version == 0
+            || result_type.is_empty()
+            || result_type.len() > 512
+            || call_contract.is_empty()
+            || call_contract.len() > 1048576
+        {
+            return Err(Status::invalid_argument(
+                "at-least-once block requires a bounded name and nonzero version",
+            ));
+        }
+        let id = self
+            .task
+            .task_id
+            .as_ref()
+            .ok_or_else(|| Status::failed_precondition("missing workflow identity"))?;
+        if id.state_type != self.tasks.inner.state_type
+            || id.state_ref != self.tasks.inner.state_ref
+        {
+            return Err(Status::failed_precondition(
+                "at-least-once task actor/owner mismatch",
+            ));
+        }
+        let declaration = self
+            .tasks
+            .declaration(&self.task)
+            .filter(|declaration| declaration.workflow)
+            .ok_or_else(|| {
+                Status::failed_precondition("at-least-once requires a registered workflow")
+            })?;
+        (declaration.decode_request)(&self.task.request)?;
+        let seed = uuid::Uuid::from_slice(&id.task_uuid)
+            .map_err(|_| Status::failed_precondition("invalid workflow UUID"))?;
+        let key = self.checkpoint_key(
+            uuid::Uuid::new_v5(&seed, b"reboot.at-most-once.result.v1"),
+            alias,
+            Some("at-most-once.result.v1"),
+        );
+        let contract = AtMostOnceResultContract {
+            method: declaration.method.into(),
+            request: self.task.request.clone(),
+            alias: self.checkpoint_alias(alias),
+            version,
+            bound: self.checkpoint_bound(),
+            parent_bounds: self.checkpoint_parent_bounds(),
+            result_type: result_type.into(),
+            call_contract: call_contract.to_vec(),
+        };
+        let store = &self.tasks.inner.store;
+        let gate = store.actor_gate(&id.state_type, &id.state_ref);
+        let mut revisions = gate.committed_revisions();
+        {
+            let _lease = workflow_reader_lease(&gate, &mut revisions).await?;
+            self.validate_scope().await?;
+            if let Some(saved) = store
+                .workflow_at_most_once_result_load(self, key, &contract)
+                .await?
+            {
+                if saved.phase == 2 {
+                    let value = saved
+                        .result
+                        .ok_or_else(|| Status::data_loss("missing typed result"))?;
+                    if value.type_url != result_type {
+                        return Err(Status::data_loss("typed result URL mismatch"));
+                    }
+                    let decoded = R::decode(value.value.as_slice())
+                        .map_err(|_| Status::data_loss("malformed typed result"))?;
+                    operation.acknowledged();
+                    return Ok(decoded);
+                }
+                // A non-Stored checkpoint means a previous attempt did not complete;
+                // at-least-once semantics allow re-running the callback.
+            }
+        }
+        self.validate_scope().await?;
+        let future = callback();
+        let result = tokio::select! {
+            biased;
+            _ = self.cancel.cancelled() => return Err(Status::cancelled("at-least-once callback cancelled")),
+            result = future => result?,
+        };
+        if result.encoded_len() > 1048576 {
+            return Err(Status::resource_exhausted("typed result exceeds 1MiB"));
+        }
+        {
+            let _lease = workflow_reader_lease(&gate, &mut revisions).await?;
+            self.validate_scope().await?;
+            store
+                .workflow_at_most_once_result_save(
+                    self,
+                    key,
+                    &contract,
+                    AtMostOnceResultCheckpoint::stored(result_type, result.encode_to_vec()),
+                )
+                .await?;
+            self.validate_scope().await?;
+        }
+        operation.acknowledged();
+        Ok(result)
+    }
 }
 
 #[cfg(test)]
