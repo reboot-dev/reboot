@@ -102,6 +102,21 @@ py_library(
 )
 
 py_library(
+    name = "login_py",
+    srcs = ["login.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("aiohttp"),
+        "//reboot/cli/common:credentials_py",
+        "//reboot/cli/common:rc_py",
+        "//reboot/cli/common:terminal_py",
+        "@com_github_reboot_dev_reboot//reboot/aio/auth:oauth_client_py",
+        "@com_github_reboot_dev_reboot//reboot/aio/auth:oauth_server_py",
+    ],
+)
+
+py_library(
     name = "inspect_py",
     srcs = ["inspect.py"],
     srcs_version = "PY3",
