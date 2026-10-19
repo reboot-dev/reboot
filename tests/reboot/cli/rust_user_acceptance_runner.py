@@ -88,7 +88,7 @@ try:
         rbt_runfiles=rbt.parent/(rbt.name+'.runfiles')/'com_github_reboot_dev_reboot'
         assert rbt_runfiles.is_dir(),rbt_runfiles
         env=dict(os.environ,CARGO_TARGET_DIR=str(target),CARGO_BUILD_JOBS='2',CARGO_INCREMENTAL='0',CARGO_PROFILE_DEV_DEBUG='0',CARGO_PROFILE_TEST_DEBUG='0',PYTHONPATH=os.pathsep.join([str(overlay),str(rbt_runfiles),str(root)]),REBOOT_NATIVE2PC_CXX_DATABASE=str(database),RBT_RUST_DATABASE_BINARY=str(database))
-        env.update(RUST_DX_STAGE=str(stage/'greeting'),RUST_DX_TARGET=str(target),RUST_DX_DATABASE_BINARY=str(database),RUST_DX_RBT=str(rbt),RUST_DX_PORT=os.environ.get('RUST_DX_PORT','12991'))
+        env.update(RUST_DX_STAGE=str(stage/'greeting'),RUST_DX_TARGET=str(target),RUST_DX_DATABASE_BINARY=str(database),RUST_DX_RBT=str(rbt),RBT=str(rbt),RUST_DX_PORT=os.environ.get('RUST_DX_PORT','12991'))
         commands=[
          ('sdk_all_targets',['cargo','test','--manifest-path','reboot/rust/Cargo.toml','--locked','--all-features','--all-targets']),
          ('sdk_strict_clippy',['cargo','clippy','--manifest-path','reboot/rust/Cargo.toml','--locked','--all-features','--all-targets','--','-D','warnings']),
