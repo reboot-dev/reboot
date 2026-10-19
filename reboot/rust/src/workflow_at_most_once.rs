@@ -983,9 +983,15 @@ impl WorkflowContext<'_> {
     /// iterations the value is memoized for the current iteration, compared to
     /// the previous iteration's stored value, and returned only when it differs.
     /// Equal values return `Continue` so the caller can advance the iteration and
-    /// re-invoke after an external state change. This is the Rust equivalent of
-    /// Python's `reboot.aio.workflows.until_changes` without built-in reactive
-    /// polling: the caller owns the loop driver.
+    /// re-invoke after an external state change. This is a manually driven
+    /// comparison, NOT Python's reactive `until_changes`: it never waits for a
+    /// commit. Use descriptor-bound [`Self::wait_reader`] for supported
+    /// same-actor predicate waits.
+    ///
+    /// Only top-level finite iteration scopes are supported. Root, nested and
+    /// open-ended cursor scopes fail before invoking the callback or writing a
+    /// memo. Indexed workflow-wide records are retained, so allowing an
+    /// open-ended cursor here would defeat its checkpoint reclamation.
     pub async fn until_changes<T, F, Fut, Eq>(
         &self,
         alias: &str,
@@ -1000,7 +1006,19 @@ impl WorkflowContext<'_> {
         Fut: std::future::Future<Output = Result<T, Status>> + Send,
         Eq: Fn(&T, &T) -> bool + Send + Sync + 'static,
     {
-        let iteration = self.checkpoint_iteration().unwrap_or(0);
+        let operation = self.attempt.operation();
+        let iteration = match &self.iteration {
+            Some((_, index, bound))
+                if self.parents.is_empty() && *bound > 0 && *bound <= 1024 && index < bound =>
+            {
+                *index
+            }
+            _ => {
+                return Err(Status::failed_precondition(
+                    "iteration comparison requires a top-level finite workflow scope",
+                ));
+            }
+        };
         let current_alias = format!("{alias} #{iteration}");
         let current = self
             .per_workflow()
@@ -1013,6 +1031,7 @@ impl WorkflowContext<'_> {
             )
             .await?;
         if iteration == 0 {
+            operation.acknowledged();
             return Ok(std::ops::ControlFlow::Break(current));
         }
         let previous_alias = format!("{alias} #{}" , iteration - 1);
@@ -1026,21 +1045,25 @@ impl WorkflowContext<'_> {
                 || async { Err(Status::failed_precondition("missing previous until_changes memo")) },
             )
             .await?;
-        if equals(&previous, &current) {
-            Ok(std::ops::ControlFlow::Continue(()))
+        let result = if equals(&previous, &current) {
+            std::ops::ControlFlow::Continue(())
         } else {
-            Ok(std::ops::ControlFlow::Break(current))
-        }
+            std::ops::ControlFlow::Break(current)
+        };
+        operation.acknowledged();
+        Ok(result)
     }
 
-    /// Reactively converge on a truthy value within a finite workflow loop.
+    /// Compare truthiness within a manually driven finite workflow loop.
     ///
-    /// This is a convenience loop driver around [`Self::until_changes`]. It
+    /// This is a convenience comparison around [`Self::until_changes`]. It
     /// memoizes the value at each iteration and returns the first iteration
     /// whose value is truthy according to `is_truthy`. The caller must run this
     /// inside a workflow loop and re-invoke with an incremented iteration index
     /// whenever the previous iteration returned `Continue`. If the current value
-    /// is already truthy on iteration zero, it is returned immediately.
+    /// is already truthy on iteration zero, it is returned immediately. This
+    /// does not reactively wait; the same top-level finite-only boundary as
+    /// `until_changes` applies.
     pub async fn until_truthy<T, F, Fut, Pred>(
         &self,
         alias: &str,
@@ -1076,15 +1099,15 @@ impl WorkflowContext<'_> {
         }
     }
 
-    /// Memoize a typed value for the lifetime of the workflow.
+    /// Memoize a successful typed value within the selected workflow scope.
     ///
     /// On the first call the `callable` is invoked and the result is durably
     /// stored. On subsequent workflow iterations or replays the stored value is
-    /// returned without invoking the callable. By default the memo is scoped to
-    /// the current finite iteration; pass `per_workflow: true` to share the
-    /// value across all iterations, matching Python's `memoize(..., per_workflow=True)`.
-    /// Pass `always: true` to bypass memoization and invoke the callable every
-    /// time, equivalent to Python's `ALWAYS` idempotency mode.
+    /// returned without invoking the callable in the same memo scope. By
+    /// default the memo is scoped to the current iteration; pass
+    /// `per_workflow: true` to request workflow-wide scope. Failures are not
+    /// memoized and fail the current attempt. A later workflow attempt may
+    /// rerun the callback; effects must tolerate at-least-once execution.
     pub async fn memoize<T, F, Fut>(
         &self,
         alias: &str,
@@ -1120,10 +1143,13 @@ impl WorkflowContext<'_> {
         }
     }
 
-    /// Memoize a unit effect for the lifetime of the workflow.
+    /// Memoize successful unit completion within the selected workflow scope.
     ///
     /// Identical to [`Self::memoize`] but for callbacks that produce no typed
-    /// return value. The `callable` is invoked at most once per memo scope.
+    /// return value. This delegates to [`Self::at_least_once_unit`], NOT
+    /// `at_most_once_unit`: a failure or a crash before durable success can
+    /// cause the callback to run again on a later workflow attempt. External
+    /// effects must be idempotent or otherwise tolerate repeated execution.
     pub async fn memoize_unit<F, Fut>(
         &self,
         alias: &str,
@@ -1144,77 +1170,12 @@ impl WorkflowContext<'_> {
         }
     }
 
-    /// Retry a callable with durable memoization of each attempt.
-    ///
-    /// The callable is invoked once per finite iteration. If it succeeds, the
-    /// value is memoized and returned. If it fails, the error is also memoized
-    /// for this iteration; the caller is expected to advance the iteration and
-    /// re-invoke `retry`. This is the Rust equivalent of a bounded, manually
-    /// driven retry loop over `at_least_once_result`.
-    pub async fn retry<T, F, Fut>(
-        &self,
-        alias: &str,
-        version: u32,
-        result_type: &'static str,
-        callable: F,
-    ) -> Result<T, Status>
-    where
-        T: prost::Message + Default + Clone + Send + 'static,
-        F: FnOnce() -> Fut + Send,
-        Fut: std::future::Future<Output = Result<T, Status>> + Send,
-    {
-        self.at_least_once_result::<T, F, Fut>(
-            alias,
-            version,
-            result_type,
-            b"reboot.retry.v1",
-            callable,
-        )
-        .await
-    }
-
     /// Run a callable every time, bypassing durable memoization.
     ///
     /// This is the Rust equivalent of Python's `Idempotency::ALWAYS` mode for
     /// workflow helper callables. The result is not stored and the callable is
     /// invoked on every workflow iteration/replay.
-        /// Reactively wait until a produced value changes.
-    ///
-    /// This is the Rust equivalent of Python's `reboot.aio.workflows
-    /// .retry_reactively_until`. It repeatedly calls `callable` and compares
-    /// the result with the previous value using `equals`. When the value is
-    /// unchanged, the workflow waits for the actor state to commit a new
-    /// revision before trying again.
-    pub async fn retry_reactively_until<T, F, Fut, Eq>(
-        &self,
-        _alias: &str,
-        _version: u32,
-        _result_type: &'static str,
-        mut callable: F,
-        mut equals: Eq,
-    ) -> Result<T, Status>
-    where
-        T: prost::Message + Default + Clone + Send + 'static,
-        F: FnMut() -> Fut + Send,
-        Fut: std::future::Future<Output = Result<T, Status>> + Send,
-        Eq: FnMut(&T, &T) -> bool + Send,
-    {
-        let last: Option<T> = None;
-        loop {
-            if self.cancel.is_cancelled() {
-                return Err(Status::cancelled("workflow cancelled"));
-            }
-            let current = callable().await?;
-            if let Some(ref previous) = last {
-                if equals(&current, previous) {
-                    self.wait_for_revision().await?;
-                    continue;
-                }
-            }
-            return Ok(current);
-        }
-    }
-pub async fn always<T, F, Fut>(
+    pub async fn always<T, F, Fut>(
         &self,
         _alias: &str,
         _version: u32,

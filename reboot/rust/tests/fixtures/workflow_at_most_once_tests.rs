@@ -1203,93 +1203,6 @@ async fn memoize_unit_per_workflow_runs_once() {
 }
 
 #[tokio::test]
-async fn retry_memoizes_success_without_rerunning() {
-    let (f, _database, server) = fake().await;
-    let url = "type.googleapis.com/tests.reboot.protoc.Counter";
-    let constructed = Arc::new(AtomicI64::new(0));
-    let c = constructed.clone();
-    let attempt = WorkflowAttempt::default();
-    let context = f.context(&attempt).iteration("loop", 0, 2).unwrap();
-    let value = context
-        .retry(
-            "fetch",
-            1,
-            url,
-            || {
-                let c = c.clone();
-                async move { Ok(crate::proto::Counter { value: c.fetch_add(1, Ordering::SeqCst) + 1 }) }
-            },
-        )
-        .await
-        .unwrap();
-    assert_eq!(value.value, 1);
-    assert_eq!(constructed.load(Ordering::SeqCst), 1);
-
-    let replay = WorkflowAttempt::default();
-    let replay_context = f.context(&replay).iteration("loop", 0, 2).unwrap();
-    let replay_value: crate::proto::Counter = replay_context
-        .retry(
-            "fetch",
-            1,
-            url,
-            || async move { panic!("callable must not rerun on replay") },
-        )
-        .await
-        .unwrap();
-    assert_eq!(replay_value.value, 1);
-    assert_eq!(constructed.load(Ordering::SeqCst), 1);
-    assert!(replay.clean());
-    server.abort();
-}
-
-#[tokio::test]
-async fn retry_memoizes_error_per_iteration() {
-    let (f, _database, server) = fake().await;
-    let url = "type.googleapis.com/tests.reboot.protoc.Counter";
-    let constructed = Arc::new(AtomicI64::new(0));
-    let c0 = constructed.clone();
-    let first = WorkflowAttempt::default();
-    let context0 = f.context(&first).iteration("loop", 0, 2).unwrap();
-    let error0 = context0
-        .retry::<crate::proto::Counter, _, _>(
-            "fetch",
-            1,
-            url,
-            || {
-                let c = c0.clone();
-                async move {
-                    c.fetch_add(1, Ordering::SeqCst);
-                    Err::<_, tonic::Status>(Status::unavailable("transient"))
-                }
-            },
-        )
-        .await
-        .unwrap_err();
-    assert_eq!(error0.code(), tonic::Code::Unavailable);
-    assert_eq!(constructed.load(Ordering::SeqCst), 1);
-
-    let second = WorkflowAttempt::default();
-    let context1 = f.context(&second).iteration("loop", 1, 2).unwrap();
-    let c1 = constructed.clone();
-    let value1 = context1
-        .retry(
-            "fetch",
-            1,
-            url,
-            || {
-                let c = c1.clone();
-                async move { Ok(crate::proto::Counter { value: c.fetch_add(1, Ordering::SeqCst) + 1 }) }
-            },
-        )
-        .await
-        .unwrap();
-    assert_eq!(value1.value, 2);
-    assert_eq!(constructed.load(Ordering::SeqCst), 2);
-    assert!(second.clean());
-    server.abort();
-}
-
-#[tokio::test]
 async fn always_runs_callable_every_time() {
     let (f, _database, server) = fake().await;
     let url = "type.googleapis.com/tests.reboot.protoc.Counter";
@@ -1397,71 +1310,87 @@ async fn memoize_with_seeds_stores_separate_values() {
     server.abort();
 }
 
+// These comparisons retain indexed workflow-wide memos. They are deliberately
+// not reactive waits and must never be admitted in an unbounded cursor.
 #[tokio::test]
-async fn retry_reactively_until_breaks_when_value_changes() {
-    let (f, _database, server) = fake().await;
-    let url = "type.googleapis.com/tests.reboot.protoc.Counter";
-    let constructed = Arc::new(AtomicI64::new(0));
-    let first = WorkflowAttempt::default();
-    let context0 = f.context(&first);
-
-    let value0: crate::proto::Counter = context0
-        .retry_reactively_until(
-            "reactive-counter",
-            1,
-            url,
-            || async {
-                Ok(crate::proto::Counter {
-                    value: constructed.fetch_add(1, Ordering::SeqCst),
-                })
-            },
-            |a, b| a.value == b.value,
-        )
-        .await
-        .unwrap();
-    assert_eq!(value0.value, 0);
-
-    // Now pretend a state change happened; bump the "current" value.
-    constructed.store(7, Ordering::SeqCst);
-    let second = WorkflowAttempt::default();
-    let context1 = f.context(&second);
-    let value1: crate::proto::Counter = context1
-        .retry_reactively_until(
-            "reactive-counter",
-            1,
-            url,
-            || async {
-                Ok(crate::proto::Counter {
-                    value: constructed.load(Ordering::SeqCst),
-                })
-            },
-            |a, b| a.value == b.value,
-        )
-        .await
-        .unwrap();
-    assert_eq!(value1.value, 7);
+async fn iteration_comparisons_reject_root_nested_and_cursor_before_effects() {
+    let (f, database, server) = fake().await;
+    let initial_stores = database.store_requests().len();
+    for truthy in [false, true] {
+        for scope in ["root", "nested", "cursor"] {
+            let attempt = WorkflowAttempt::default();
+            let mut context = f.context(&attempt);
+            match scope {
+                "root" => {}
+                "nested" => {
+                    context = context.iteration("outer", 0, 2).unwrap();
+                    context = context.iteration("inner", 0, 2).unwrap();
+                }
+                "cursor" => {
+                    // Private cursor shape used by run_loop; no cursor advance
+                    // or native persistence semantics are modeled by this fake.
+                    context.iteration = Some(("main".into(), 0, u64::MAX));
+                }
+                _ => unreachable!(),
+            }
+            let calls = AtomicUsize::new(0);
+            let callback = || {
+                calls.fetch_add(1, Ordering::SeqCst);
+                async { Ok(crate::proto::Counter { value: 1 }) }
+            };
+            let result = if truthy {
+                context.until_truthy(
+                    "value", 1, "type.googleapis.com/tests.reboot.protoc.Counter",
+                    callback, |value| value.value != 0,
+                ).await
+            } else {
+                context.until_changes(
+                    "value", 1, "type.googleapis.com/tests.reboot.protoc.Counter",
+                    callback, |a, b| a.value == b.value,
+                ).await
+            };
+            assert_eq!(result.unwrap_err().code(), tonic::Code::FailedPrecondition);
+            assert_eq!(calls.load(Ordering::SeqCst), 0, "{scope}, truthy={truthy}");
+            assert_eq!(database.store_requests().len(), initial_stores);
+            assert!(!attempt.clean(), "scope rejection must fence the attempt");
+        }
+    }
     server.abort();
 }
 
 #[tokio::test]
-async fn retry_reactively_until_respects_cancellation() {
-    let (f, _database, server) = fake().await;
-    let url = "type.googleapis.com/tests.reboot.protoc.Counter";
+async fn memoize_unit_failure_is_not_saved_and_same_iteration_can_rerun() {
+    let (f, database, server) = fake().await;
+    let calls = AtomicUsize::new(0);
+    let initial_stores = database.store_requests().len();
     let first = WorkflowAttempt::default();
-    let context0 = f.context(&first);
-    context0.cancel.cancel();
-    let result = context0
-        .retry_reactively_until(
-            "reactive-cancel",
-            1,
-            url,
-            || async {
-                Ok(crate::proto::Counter { value: 1 })
-            },
-            |a, b| a.value == b.value,
-        )
-        .await;
-    assert_eq!(result.unwrap_err().code(), tonic::Code::Cancelled);
+    let context = f.context(&first).iteration("loop", 0, 2).unwrap();
+    let error = context.memoize_unit("effect", 1, || async {
+        calls.fetch_add(1, Ordering::SeqCst);
+        Err(Status::unavailable("effect may have happened"))
+    }, false).await.unwrap_err();
+    assert_eq!(error.code(), tonic::Code::Unavailable);
+    assert!(!first.clean(), "catching callback failure must not clear the guard");
+    assert_eq!(database.store_requests().len(), initial_stores);
+
+    let second = WorkflowAttempt::default();
+    let context = f.context(&second).iteration("loop", 0, 2).unwrap();
+    context.memoize_unit("effect", 1, || async {
+        calls.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }, false).await.unwrap();
+    assert!(second.clean());
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(database.store_requests().len(), initial_stores + 1);
+
+    let replay = WorkflowAttempt::default();
+    let context = f.context(&replay).iteration("loop", 0, 2).unwrap();
+    context.memoize_unit("effect", 1, || async {
+        panic!("durable success must replay without redispatch")
+    }, false).await.unwrap();
+    assert!(replay.clean());
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(database.store_requests().len(), initial_stores + 1);
     server.abort();
 }
 
