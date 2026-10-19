@@ -976,6 +976,62 @@ impl WorkflowContext<'_> {
         operation.acknowledged();
         Ok(())
     }
+
+    /// Detect a change in a memoized value across finite workflow iterations.
+    ///
+    /// On iteration zero the value is memoized and returned immediately. On later
+    /// iterations the value is memoized for the current iteration, compared to
+    /// the previous iteration's stored value, and returned only when it differs.
+    /// Equal values return `Continue` so the caller can advance the iteration and
+    /// re-invoke after an external state change. This is the Rust equivalent of
+    /// Python's `reboot.aio.workflows.until_changes` without built-in reactive
+    /// polling: the caller owns the loop driver.
+    pub async fn until_changes<T, F, Fut, Eq>(
+        &self,
+        alias: &str,
+        version: u32,
+        result_type: &'static str,
+        callable: F,
+        equals: Eq,
+    ) -> Result<std::ops::ControlFlow<T, ()>, Status>
+    where
+        T: prost::Message + Default + Clone + Send + 'static,
+        F: FnOnce() -> Fut + Send,
+        Fut: std::future::Future<Output = Result<T, Status>> + Send,
+        Eq: Fn(&T, &T) -> bool + Send + Sync + 'static,
+    {
+        let iteration = self.checkpoint_iteration().unwrap_or(0);
+        let current_alias = format!("{alias} #{iteration}");
+        let current = self
+            .per_workflow()
+            .at_least_once_result(
+                &current_alias,
+                version,
+                result_type,
+                b"reboot.until-changes.v1",
+                callable,
+            )
+            .await?;
+        if iteration == 0 {
+            return Ok(std::ops::ControlFlow::Break(current));
+        }
+        let previous_alias = format!("{alias} #{}" , iteration - 1);
+        let previous = self
+            .per_workflow()
+            .at_least_once_result::<T, _, _>(
+                &previous_alias,
+                version,
+                result_type,
+                b"reboot.until-changes.v1",
+                || async { Err(Status::failed_precondition("missing previous until_changes memo")) },
+            )
+            .await?;
+        if equals(&previous, &current) {
+            Ok(std::ops::ControlFlow::Continue(()))
+        } else {
+            Ok(std::ops::ControlFlow::Break(current))
+        }
+    }
 }
 
 #[cfg(test)]

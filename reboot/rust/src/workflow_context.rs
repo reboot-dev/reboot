@@ -1576,6 +1576,21 @@ impl<'a> WorkflowContext<'a> {
     pub(crate) fn checkpoint_iteration(&self) -> Option<u64> {
         self.iteration.as_ref().map(|(_, index, _)| *index)
     }
+
+    /// A context variant whose idempotent checkpoints are scoped to the
+    /// workflow identity rather than the current finite iteration. Used by
+    /// `until_changes` to compare values stored under previous loop indices.
+    pub(crate) fn per_workflow(&self) -> WorkflowContext<'a> {
+        WorkflowContext {
+            tasks: self.tasks,
+            task: self.task.clone(),
+            cancel: self.cancel,
+            generation: self.generation.clone(),
+            attempt: self.attempt,
+            iteration: None,
+            parents: self.parents.clone(),
+        }
+    }
     pub(crate) fn checkpoint_bound(&self) -> u64 {
         self.iteration.as_ref().map_or(0, |(_, _, count)| *count)
     }

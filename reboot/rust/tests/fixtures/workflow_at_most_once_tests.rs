@@ -4,7 +4,8 @@
 use super::*;
 use crate::runtime::DurableStateDeclaration;
 use prost::Message;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
 struct D;
 impl DurableStateDeclaration for D {
     type State = crate::proto::Counter;
@@ -826,6 +827,142 @@ async fn at_least_once_unit_scopes_by_finite_iteration() {
         .unwrap();
     assert_eq!(constructed.load(Ordering::SeqCst), 2);
     assert!(replay0.clean());
+    server.abort();
+}
+
+#[tokio::test]
+async fn until_changes_breaks_on_first_iteration() {
+    let (f, _database, server) = fake().await;
+    let url = "type.googleapis.com/tests.reboot.protoc.Counter";
+    let constructed = Arc::new(AtomicI64::new(0));
+    let attempt = WorkflowAttempt::default();
+    let context = f.context(&attempt).iteration("watch", 0, 2).unwrap();
+    let c = constructed.clone();
+    let result = context
+        .until_changes(
+            "signal",
+            1,
+            url,
+            || {
+                let c = c.clone();
+                async move {
+                    let value = c.fetch_add(1, Ordering::SeqCst) + 1;
+                    Ok(crate::proto::Counter { value })
+                }
+            },
+            |a: &crate::proto::Counter, b: &crate::proto::Counter| a.value == b.value,
+        )
+        .await
+        .unwrap();
+    assert!(matches!(result, std::ops::ControlFlow::Break(_)));
+    assert_eq!(result.break_value().unwrap().value, 1);
+    assert_eq!(constructed.load(Ordering::SeqCst), 1);
+    assert!(attempt.clean());
+    server.abort();
+}
+
+#[tokio::test]
+async fn until_changes_continues_while_value_unchanged() {
+    let (f, _database, server) = fake().await;
+    let url = "type.googleapis.com/tests.reboot.protoc.Counter";
+    let constructed = Arc::new(AtomicI64::new(0));
+    let c0 = constructed.clone();
+    let first = WorkflowAttempt::default();
+    let context0 = f.context(&first).iteration("watch", 0, 2).unwrap();
+    let result0 = context0
+        .until_changes(
+            "signal",
+            1,
+            url,
+            || {
+                let c = c0.clone();
+                async move { Ok(crate::proto::Counter { value: c.fetch_add(1, Ordering::SeqCst) + 1 }) }
+            },
+            |a: &crate::proto::Counter, b: &crate::proto::Counter| a.value == b.value,
+        )
+        .await
+        .unwrap();
+    assert!(matches!(result0, std::ops::ControlFlow::Break(_)));
+    assert_eq!(result0.break_value().unwrap().value, 1);
+
+    let second = WorkflowAttempt::default();
+    let context1 = f.context(&second).iteration("watch", 1, 2).unwrap();
+    let result1 = context1
+        .until_changes(
+            "signal",
+            1,
+            url,
+            || async move { Ok(crate::proto::Counter { value: 1 }) },
+            |a: &crate::proto::Counter, b: &crate::proto::Counter| a.value == b.value,
+        )
+        .await
+        .unwrap();
+    assert!(matches!(result1, std::ops::ControlFlow::Continue(_)));
+    assert_eq!(constructed.load(Ordering::SeqCst), 1);
+
+    let replay = WorkflowAttempt::default();
+    let result_replay = f
+        .context(&replay)
+        .iteration("watch", 1, 2)
+        .unwrap()
+        .until_changes(
+            "signal",
+            1,
+            url,
+            || async { panic!("unchanged replay ran callback") },
+            |a: &crate::proto::Counter, b: &crate::proto::Counter| a.value == b.value,
+        )
+        .await
+        .unwrap();
+    assert!(matches!(result_replay, std::ops::ControlFlow::Continue(_)));
+    assert_eq!(constructed.load(Ordering::SeqCst), 1);
+    assert!(replay.clean());
+    server.abort();
+}
+
+#[tokio::test]
+async fn until_changes_breaks_when_value_changes() {
+    let (f, _database, server) = fake().await;
+    let url = "type.googleapis.com/tests.reboot.protoc.Counter";
+    let constructed = Arc::new(AtomicI64::new(0));
+    let c0 = constructed.clone();
+    let first = WorkflowAttempt::default();
+    let context0 = f.context(&first).iteration("watch", 0, 2).unwrap();
+    let result0 = context0
+        .until_changes(
+            "signal",
+            1,
+            url,
+            || {
+                let c = c0.clone();
+                async move { Ok(crate::proto::Counter { value: c.fetch_add(1, Ordering::SeqCst) + 1 }) }
+            },
+            |a: &crate::proto::Counter, b: &crate::proto::Counter| a.value == b.value,
+        )
+        .await
+        .unwrap();
+    assert_eq!(result0.break_value().unwrap().value, 1);
+
+    let c1 = constructed.clone();
+    let second = WorkflowAttempt::default();
+    let context1 = f.context(&second).iteration("watch", 1, 2).unwrap();
+    let result1 = context1
+        .until_changes(
+            "signal",
+            1,
+            url,
+            || {
+                let c = c1.clone();
+                async move { Ok(crate::proto::Counter { value: c.fetch_add(1, Ordering::SeqCst) + 1 }) }
+            },
+            |a: &crate::proto::Counter, b: &crate::proto::Counter| a.value == b.value,
+        )
+        .await
+        .unwrap();
+    assert!(matches!(result1, std::ops::ControlFlow::Break(_)));
+    assert_eq!(result1.break_value().unwrap().value, 2);
+    assert_eq!(constructed.load(Ordering::SeqCst), 2);
+    assert!(second.clean());
     server.abort();
 }
 
