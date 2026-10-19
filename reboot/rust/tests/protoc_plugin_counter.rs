@@ -55,6 +55,10 @@ fn protoc_plugin_emits_durable_counter_adapters() {
     assert!(content.contains("Box::pin(async move"));
     assert!(content.contains("reboot::runtime::DatabaseActorStore"));
     assert!(content.contains("pub struct CounterWritesMethodsExternalClient"));
+    assert!(content.contains("pub struct CounterWritesMethodsWeakReference<H>"));
+    assert!(content.contains("pub struct CounterReadsMethodsWeakReference<H>"));
+    assert!(content.contains("actor_ref: reboot::actor_ref::ActorRef"));
+    assert!(content.contains("pub fn actor_ref(&self) -> &reboot::actor_ref::ActorRef"));
     assert!(content.contains("context: reboot::ExternalContext"));
     assert!(content.contains(
         "let original_request = prost::Message::encode_to_vec(&request); let mut retry_backoff"
