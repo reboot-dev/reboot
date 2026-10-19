@@ -10,6 +10,7 @@ from reboot.aio.auth.access import (
     Access,
     AppSignIn,
     Policy,
+    UserPolicy,
     Visitor,
 )
 from reboot.aio.auth.oauth import Allow, ResourceDecision, ResourceRequest
@@ -17,7 +18,11 @@ from reboot.aio.auth.oauth_providers import Development
 from reboot.aio.auth.oauth_server import OAuthServer
 from reboot.aio.auth.token_verifiers import TokenVerifier
 from reboot.aio.http import PythonWebFramework
-from reboot.settings import ENVVAR_RBT_DEV
+from reboot.settings import (
+    ENVVAR_RBT_DEV,
+    ENVVAR_REBOOT_ACCESS_ISSUER,
+    ENVVAR_REBOOT_ACCESS_POLICY,
+)
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 from tests.reboot.aio.auth import oauth_server_harness as harness
@@ -364,6 +369,52 @@ class AccessTest(unittest.IsolatedAsyncioTestCase):
             await verify(with_inner, cookie=cookie),
             errors_pb2.Unauthenticated,
         )
+
+
+class AccessFromEnvironmentTest(unittest.TestCase):
+    """The policy the environment imposes."""
+
+    def setUp(self) -> None:
+        harness.ensure_root_keys()
+        for name in (ENVVAR_REBOOT_ACCESS_POLICY, ENVVAR_REBOOT_ACCESS_ISSUER):
+            os.environ.pop(name, None)
+
+    def test_none_when_unset(self):
+        self.assertIsNone(Access.from_environment())
+        os.environ[ENVVAR_REBOOT_ACCESS_ISSUER] = "https://cloud.test"
+        self.assertIsNone(Access.from_environment())
+
+    def test_user_policy(self):
+        os.environ[ENVVAR_REBOOT_ACCESS_POLICY] = "user:abc"
+        os.environ[ENVVAR_REBOOT_ACCESS_ISSUER] = "https://cloud.test/"
+        access = Access.from_environment()
+        assert access is not None
+        self.assertEqual(access.issuer, "https://cloud.test")
+        self.assertEqual(access.policy, UserPolicy(user_id="abc"))
+        self.assertTrue(
+            access.policy.allows(
+                Visitor(user_id="abc", issuer="https://cloud.test")
+            )
+        )
+        self.assertFalse(
+            access.policy.allows(
+                Visitor(user_id="abd", issuer="https://cloud.test")
+            )
+        )
+        self.assertIn("abc", access.policy.describe())
+
+    def test_malformed(self):
+        os.environ[ENVVAR_REBOOT_ACCESS_ISSUER] = "https://cloud.test"
+        for policy in ("user", "user:", "owner", "everyone"):
+            os.environ[ENVVAR_REBOOT_ACCESS_POLICY] = policy
+            with self.assertRaises(ValueError):
+                Access.from_environment()
+
+    def test_policy_without_issuer(self):
+        os.environ[ENVVAR_REBOOT_ACCESS_POLICY] = "user:abc"
+        with self.assertRaises(ValueError) as raised:
+            Access.from_environment()
+        self.assertIn(ENVVAR_REBOOT_ACCESS_ISSUER, str(raised.exception))
 
 
 if __name__ == "__main__":

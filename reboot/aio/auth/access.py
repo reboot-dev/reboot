@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import html
 import jwt
+import os
 import secrets
 import time
 from abc import ABC, abstractmethod
@@ -39,6 +40,10 @@ from reboot.aio.auth.origin import origin_from_request
 from reboot.aio.auth.token_verifiers import TokenVerifier, VerifyTokenResult
 from reboot.aio.contexts import ReaderContext
 from reboot.crypto import root_keys
+from reboot.settings import (
+    ENVVAR_REBOOT_ACCESS_ISSUER,
+    ENVVAR_REBOOT_ACCESS_POLICY,
+)
 from starlette.requests import Request
 from starlette.responses import (
     HTMLResponse,
@@ -115,6 +120,28 @@ class Policy(ABC):
 
 
 @dataclass(frozen=True)
+class UserPolicy(Policy):
+    """Lets in one user of the issuer, by their subject there, and
+    nobody else: the developer running their own application."""
+    user_id: str
+
+    def allows(self, visitor: Visitor) -> bool:
+        return visitor.user_id == self.user_id
+
+    def describe(self) -> str:
+        return f"the user who started it ({self.user_id})"
+
+
+def parse_policy(text: str) -> Policy:
+    """The policy `text` spells, as `REBOOT_ACCESS_POLICY` does:
+    `user:<id>`. Raises `ValueError` for anything else."""
+    kind, _, argument = text.strip().partition(":")
+    if kind == "user" and argument:
+        return UserPolicy(user_id=argument)
+    raise ValueError(f"Unknown access policy {text!r}; expected 'user:<id>'")
+
+
+@dataclass(frozen=True)
 class AppSignIn:
     """How the application's own sign-in (`Application(oauth=...)`)
     presents a credential, so that a visitor holding one is let in
@@ -167,6 +194,34 @@ class Access:
         # and registration is stateless on a Reboot issuer, so one per
         # origin, made when first needed.
         self._clients: dict[str, OAuthClient] = {}
+
+    @classmethod
+    def from_environment(
+        cls,
+        *,
+        app: Optional[AppSignIn] = None,
+        client_name: str = "Reboot application",
+    ) -> Optional[Access]:
+        """The policy the environment imposes, from
+        `REBOOT_ACCESS_POLICY` and `REBOOT_ACCESS_ISSUER`, or `None`
+        when it imposes none. Raises `ValueError` when the policy is
+        malformed or set without an issuer."""
+        policy = os.environ.get(ENVVAR_REBOOT_ACCESS_POLICY)
+        issuer = os.environ.get(ENVVAR_REBOOT_ACCESS_ISSUER)
+        if not policy:
+            return None
+        if not issuer:
+            raise ValueError(
+                f"'{ENVVAR_REBOOT_ACCESS_POLICY}' is set but "
+                f"'{ENVVAR_REBOOT_ACCESS_ISSUER}' is not; the issuer is "
+                "the OAuth authorization server that says who a visitor is"
+            )
+        return cls(
+            issuer=issuer,
+            policy=parse_policy(policy),
+            app=app,
+            client_name=client_name,
+        )
 
     @property
     def issuer(self) -> str:

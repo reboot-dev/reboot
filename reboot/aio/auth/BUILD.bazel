@@ -103,6 +103,7 @@ py_library(
         ":origin_py",
         ":token_verifiers_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:errors_py_proto",
+        "//reboot:settings_py",
         "//reboot/aio:contexts_py",
         "//reboot/crypto:root_keys_py",
         "@com_github_reboot_dev_reboot//log:log_py",
