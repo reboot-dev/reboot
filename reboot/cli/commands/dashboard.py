@@ -83,8 +83,9 @@ def register_dashboard(parser: ArgumentParser):
         default=False,
         help=(
             'serve under a named `.localhost` URL via portless '
-            '(https://github.com/vercel-labs/portless): registers '
-            'the dashboard with the running portless proxy as '
+            '(https://github.com/vercel-labs/portless): runs the '
+            'dashboard with `portless run`, which registers it with the '
+            'running portless proxy as '
             '`https://dashboard.<application-name>.localhost`, beside '
             "the application's `https://<application-name>.localhost`. "
             'The name is the '
@@ -224,10 +225,12 @@ def _dashboard_env(
 
     composed[ENVVAR_REBOOT_EXPECTED_VERSION] = REBOOT_VERSION
     composed[ENVVAR_REBOOT_LOCAL_ENVOY] = 'true'
-    composed[ENVVAR_REBOOT_LOCAL_ENVOY_PORT] = str(port)
-    if portless_name is not None:
-        # The dashboard application registers this name once it is
-        # serving (see `reboot.portless.alias`).
+    if portless_name is None:
+        composed[ENVVAR_REBOOT_LOCAL_ENVOY_PORT] = str(port)
+    else:
+        # The dashboard runs under `portless run` as this name, which
+        # picks the port and tells the dashboard in `PORT` (see
+        # `_run_dashboard`).
         composed[ENVVAR_RBT_PORTLESS_NAME] = portless_name
 
     # A single server, so that a subscriber's `Connect` and
@@ -287,8 +290,15 @@ async def _run_dashboard(
     env: dict[str, str],
     state_directory: Path,
     subprocesses: Subprocesses,
+    portless_name: Optional[str],
+    portless_port: Optional[int],
 ) -> None:
     """Runs the dashboard application, restarting it if it exits.
+
+    Under `--portless` (`portless_name`) it runs under `portless run`,
+    which registers the name with the proxy, picks the port (or takes
+    `portless_port`), tells the dashboard in `PORT`, and removes the
+    name when the dashboard exits; see `reboot.cli.common.portless`.
 
     The dashboard's schema changes whenever Reboot's does, so the
     expected reason for it to fail at startup is a backwards
@@ -301,13 +311,14 @@ async def _run_dashboard(
     failures = 0
     reported = False
 
+    command = [sys.executable, '-m', 'reboot.dashboard.backend.main']
+    if portless_name is not None:
+        command = portless.run_command(
+            portless_name, *command, port=portless_port
+        )
+
     while True:
-        async with subprocesses.exec(
-            sys.executable,
-            '-m',
-            'reboot.dashboard.backend.main',
-            env=env,
-        ) as process:
+        async with subprocesses.exec(*command, env=env) as process:
             await process.wait()
             failed = process.returncode != 0
 
@@ -390,7 +401,7 @@ async def _should_open(dashboard_url: str) -> bool:
 async def _open_when_serving(
     *,
     origin: str,
-    portless_name: Optional[str] = None,
+    under_portless: bool = False,
 ) -> None:
     """Opens a dashboard once the dashboard application is serving,
     unless the developer clicked "Don't reopen automatically" in the
@@ -412,16 +423,16 @@ async def _open_when_serving(
     dashboard opens; the URL this prints still reaches it.
 
     `origin` is where the browser is sent: the loopback port, or under
-    `--portless` the dashboard's name, `portless_name`. The checks go
-    to the dashboard application's port either way, under `--portless`
-    the one the proxy routes the name to, once it is registered.
+    `--portless` the dashboard's URL. The checks go to the dashboard
+    application's port either way, under `--portless` the one the
+    proxy routes the name to, once `portless run` has registered it.
     """
     page_url = f'{origin}/'
 
     try:
         dashboard_url = origin
-        if portless_name is not None:
-            port = await portless.wait_for_port(portless_name)
+        if under_portless:
+            port = await portless.wait_for_port(portless.hostname_of(origin))
             dashboard_url = f'http://127.0.0.1:{port}'
 
         try:
@@ -480,9 +491,11 @@ async def dashboard(
         await check_local_envoy_mode(subprocesses)
 
         # Under `--portless` the name is the address, so unless `--port`
-        # says otherwise the port behind the proxy is any free one (0),
-        # and the dashboards of several applications run at once; the
-        # dashboard application registers the name once it is serving.
+        # says otherwise the port behind the proxy is any free one, and
+        # the dashboards of several applications run at once. The
+        # dashboard runs under `portless run` (see `_run_dashboard`),
+        # which registers the name, picks the port and tells the
+        # dashboard; the CLI picks no port.
         portless_name: Optional[str] = None
         if args.portless:
             # The dashboard is `https://dashboard.<name>.localhost`
@@ -501,7 +514,9 @@ async def dashboard(
             await portless.check('--portless')
             portless_name = reboot.portless.dashboard_name(application_name)
             port = args.port if args.port is not None else 0
-            origin = 'https://' + reboot.portless.hostname(portless_name)
+            # What `portless run` will serve the name at, which in a git
+            # worktree is not simply `https://dashboard.<name>.localhost`.
+            origin = await portless.url(portless_name)
         else:
             port = args.port or DEFAULT_DASHBOARD_PORT
             origin = f'http://127.0.0.1:{port}'
@@ -519,7 +534,9 @@ async def dashboard(
         terminal.info(f'Your dashboard is at {origin}/\n')
 
         open_task = asyncio.create_task(
-            _open_when_serving(origin=origin, portless_name=portless_name),
+            _open_when_serving(
+                origin=origin, under_portless=portless_name is not None
+            ),
             name=f'_open_when_serving(...) in {__name__}',
         )
 
@@ -528,6 +545,8 @@ async def dashboard(
                 env=env,
                 state_directory=Path(env[ENVVAR_RBT_STATE_DIRECTORY]),
                 subprocesses=subprocesses,
+                portless_name=portless_name,
+                portless_port=args.port if args.portless else None,
             )
         finally:
             open_task.cancel()

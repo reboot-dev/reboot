@@ -146,6 +146,18 @@ If they accept, before the backend and frontend:
 3. Start the frontend with its `dev:portless` script and the
    backend with its portless config, as the sections below say.
 
+`rbt dev run` runs the backend with `portless run`, so portless's
+rules apply. If it exits at startup saying the name `is already
+registered by a running process (PID ...)`, another application is
+serving under the same `--application-name` right now (another
+checkout or worktree of the project, say): do not stop it unasked,
+and do not pass `--force`. Tell the user which process holds the
+name and let them stop it or pick another `--application-name`. In
+a git worktree on a non-default branch, portless prefixes the branch
+name to every URL (`https://<branch>.<app>.localhost`); `rbt dev run`
+and `rbt dashboard` print the URL they actually serve at, so read it
+from their output rather than assuming `https://<app>.localhost`.
+
 ### Tunnel — MCP Apps only
 
 An MCP App's backend needs a Cloudflare quick tunnel so external MCP

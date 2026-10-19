@@ -3,10 +3,12 @@ which `rbt dev run --portless` serves an application through: the
 names it gives things, where its proxy listens, and how to trust the
 certificates the proxy serves.
 
-Shared by the CLI, which checks that portless is there, and by the
-server, which registers its name with the proxy once it is serving,
-trusts the named origins, and reaches named dev servers through the
-proxy.
+Shared by the CLI, which checks that portless is there and runs the
+application under `portless run` (see `reboot.cli.common.portless`),
+and by the server, which serves on the port portless picked, trusts
+the named origins, and reaches named dev servers through the proxy.
+Nothing here registers a name: `portless run` registers the name for
+as long as the application runs, and removes it when it exits.
 """
 
 import asyncio
@@ -39,55 +41,27 @@ def dashboard_name(name: str) -> str:
     return f'dashboard.{name}'
 
 
-async def alias(name: str, port: int) -> None:
-    """Register `name` with the running proxy as a route to the local
-    `port`, replacing whatever the name pointed at before, so that
-    `https://<name>.localhost` reaches it. Called by the server once it
-    is serving, which is when the port is known and when the name
-    should start answering; `alias_remove` is its counterpart when the
-    server stops. Raises when the `portless` CLI can't do it, saying
-    what it said."""
-    process = await asyncio.create_subprocess_exec(
-        'portless',
-        'alias',
-        name,
-        str(port),
-        '--force',
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-    )
-    stdout, _ = await process.communicate()
-    if process.returncode != 0:
-        raise RuntimeError(
-            f'Could not register `https://{hostname(name)}` with '
-            f'portless:\n{stdout.decode() if stdout else "<no output>"}'
-        )
-
-
-async def alias_remove(name: str) -> None:
-    """Remove a name `alias` registered, since the port is going
-    away with the server. Best effort: a stale name is harmless, the
-    next `alias` replaces it, and a server that dies without
-    getting here leaves one anyway."""
-    try:
-        process = await asyncio.create_subprocess_exec(
-            'portless',
-            'alias',
-            '--remove',
-            name,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        await process.wait()
-    except OSError:
-        pass
-
-
 def enabled() -> bool:
     """Whether this process runs under portless, which
     `RBT_PORTLESS_NAME` says: the CLI sets it only when told
     `--portless`."""
     return bool(os.environ.get(ENVVAR_RBT_PORTLESS_NAME))
+
+
+def port() -> int:
+    """The port the application serves on under portless: the one
+    `portless run` picked (or `--app-port` fixed) and routes
+    `https://<name>.localhost` to, told in `PORT`, which `portless run`
+    sets for the command it runs. Only under portless (see `enabled`)."""
+    assert enabled(), 'not running under portless'
+    value = os.environ.get('PORT')
+    if value is None:
+        raise RuntimeError(
+            f'`{ENVVAR_RBT_PORTLESS_NAME}` is set but `PORT` is not: an '
+            'application under `--portless` is run by `portless run`, '
+            'which sets `PORT` to the port it routes the name to'
+        )
+    return int(value)
 
 
 def ssl_context() -> ssl.SSLContext:

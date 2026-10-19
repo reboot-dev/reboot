@@ -34,6 +34,7 @@ py_library(
         ":tracing_py",
         ":workflows_py",
         "//rbt/v1alpha1/application:application_py_reboot",
+        "//reboot:portless_py",
         "//reboot:run_environments_py",
         "//reboot:version_py",
         "//reboot:versioning_py",

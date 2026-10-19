@@ -286,10 +286,17 @@ $ rbt dev run --portless --application-name=bank
   Your API is available at:      https://bank.localhost
 ```
 
-`rbt dev run` registers the backend with the proxy as
-`https://<app>.localhost`. The name is the address, so the port
-behind the proxy is a free one unless `--port` says otherwise, and
-several applications run at once without colliding on `9991`. It
+`rbt dev run` runs the backend with `portless run`, which registers
+it with the proxy as `https://<app>.localhost` for as long as it runs.
+The name is the address, so the port behind the proxy is a free one
+unless `--port` says otherwise, and several applications run at once
+without colliding on `9991`. Two applications can't share a name,
+though: portless refuses to start one while another process holds
+its name (another checkout of the same project, say), saying which,
+so stop that one or give one of the two another `--application-name`.
+In a git worktree on a branch other than the default one, portless
+prefixes the branch name, `https://<branch>.<app>.localhost`, which
+`rbt dev run` prints. It
 expects the frontend's dev server at `https://frontend.<app>.localhost`,
 which is what running it under portless with that name gives you.
 The frontend's `package.json` carries that as scripts mirroring the
@@ -329,8 +336,9 @@ dashboard:ports --no-portless
 ```
 
 `rbt dashboard --portless` serves the developer dashboard the same
-way, as `https://dashboard.<app>.localhost` on a free port the proxy
-routes to (the name is the `.rbtrc`'s `dev run --application-name`).
+way, with `portless run`, as `https://dashboard.<app>.localhost` on a
+free port the proxy routes to (the name is the `.rbtrc`'s `dev run
+--application-name`).
 The dashboard's configs are named like `rbt dev run`'s, so
 `rbt dashboard --config=ports` goes with `rbt dev run --config=ports`:
 the plain port, `http://127.0.0.1:9871`.

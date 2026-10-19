@@ -2,7 +2,6 @@ import asyncio
 import os
 import reboot.aio.signals
 import reboot.aio.tracing
-import reboot.portless
 import tempfile
 import uuid
 from dataclasses import dataclass
@@ -41,7 +40,6 @@ from reboot.run_environments import on_cloud
 from reboot.server.database import DatabaseServer, DatabaseServerFailed
 from reboot.settings import (
     ENVVAR_LOCAL_ENVOY_USE_TLS,
-    ENVVAR_RBT_PORTLESS_NAME,
     ENVVAR_REBOOT_CLOUD_DATABASE_ADDRESS,
     ONLY_LOCALHOST_NETWORK_ADDRESS,
 )
@@ -96,8 +94,6 @@ class Reboot:
         """
         self._local_envoy_tls: Optional[bool] = None
         self._local_envoy_picked_port: Optional[int] = None
-        # The name registered with portless in `up()`, to remove in `stop()`.
-        self._portless_name: Optional[str] = None
         self._channel_manager: Optional[_ChannelManager] = None
         self._monitor_event_loop_task: Optional[asyncio.Task] = None
 
@@ -544,15 +540,6 @@ class Reboot:
             # we restart the application it can be restarted on the same
             # port.
             self._local_envoy_picked_port = self.envoy_port()
-            # Under `--portless` the name is the address: now that the
-            # port is bound and the servers are up, register the name
-            # the CLI gave us, which is what makes the application
-            # reachable, and what tells the CLI it is serving.
-            self._portless_name = os.environ.get(ENVVAR_RBT_PORTLESS_NAME)
-            if self._portless_name:
-                await reboot.portless.alias(
-                    self._portless_name, self.envoy_port()
-                )
             # Dial the IPv4 loopback Envoy actually binds: `localhost`
             # may resolve to `[::1]` first, where an unrelated process
             # (e.g. the Bazel server JVM) can hold the same numeric
@@ -736,15 +723,6 @@ class Reboot:
     async def stop(self) -> None:
         """Bring down all servicers and shut down the Reboot instance such
         that no more servicers can be brought up. """
-        try:
-            # The name points at a port that is going away with us.
-            if self._portless_name is not None:
-                await reboot.portless.alias_remove(self._portless_name)
-                self._portless_name = None
-        finally:
-            await self._stop()
-
-    async def _stop(self) -> None:
         try:
             await self.down()
         finally:

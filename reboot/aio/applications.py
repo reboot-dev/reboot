@@ -8,6 +8,7 @@ import reboot.aio.memoize
 import reboot.aio.signals
 import reboot.aio.workflows
 import reboot.application
+import reboot.portless
 import sys
 import traceback
 from log.log import get_logger
@@ -1077,11 +1078,18 @@ class Application:
             'false',
         ).lower() == 'true'
 
-        local_envoy_port: int = int(
-            os.environ.get(
-                ENVVAR_REBOOT_LOCAL_ENVOY_PORT, str(DEFAULT_SECURE_PORT)
+        # Under `--portless` the CLI runs us with `portless run`, which
+        # picked the port it routes `https://<name>.localhost` to and
+        # says so in `PORT`; otherwise the CLI picked it.
+        local_envoy_port: int
+        if reboot.portless.enabled():
+            local_envoy_port = reboot.portless.port()
+        else:
+            local_envoy_port = int(
+                os.environ.get(
+                    ENVVAR_REBOOT_LOCAL_ENVOY_PORT, str(DEFAULT_SECURE_PORT)
+                )
             )
-        )
 
         servers = os.environ.get(ENVVAR_RBT_SERVERS, None)
 
