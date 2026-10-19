@@ -13,6 +13,9 @@ if not __debug__:
 from supervision_reference import *
 work=Path(os.environ['CURSOR_STAGE']);work.mkdir(exist_ok=False)
 evidence=Path(os.environ['CURSOR_EVIDENCE'])
+ITERATIONS=int(os.environ.get('CURSOR_ITERATIONS','1030'))
+assert ITERATIONS>0,"positive iteration count required"
+PENULTIMATE=ITERATIONS-1
 scenarios=[]
 def startdb():
  p=spawn([DB,work/'rocksdb',work/'server-info.pb',dp]);listener(p,dp);return p
@@ -39,50 +42,50 @@ dp=port();ap=port();database='http://127.0.0.1:%d'%dp;app='http://127.0.0.1:%d'%
 try:
  run('info',work/'server-info.pb')
  db=startdb();host,shutdown=starthost('stored',0)
- run('create',app,uuid.uuid4(),uuid.uuid4());handle=run('start-run',app,uuid.uuid4(),1030)
+ run('create',app,uuid.uuid4(),uuid.uuid4());handle=run('start-run',app,uuid.uuid4(),ITERATIONS)
  parked('stored',0);assert run('concurrent',app,uuid.uuid4())=='1'
  before=snapshot(0);assert before['iteration']==0 and len(stored(before))==1
  assert stored(before)[0]['reply']=={'iteration':0,'ordinal':1,'proof':'committed:0:1'}
  disk=canonical_restart(0);assert disk==before
  # Observed native480 advanced through iteration99 in the default ten seconds.
- # Budget this finite1030 workload, not an unbounded retry or timeout success.
- host,shutdown=starthost('entry',1025);parked('entry',1025,timeout=180)
+ # Budget this finite workload, not an unbounded retry or timeout success.
+ host,shutdown=starthost('entry',PENULTIMATE-4);parked('entry',PENULTIMATE-4,timeout=max(180,ITERATIONS//10))
  no_callback(0);assert 'iteration:0' in events() # replay current, NOT preceding iterations after cursor recovery.
  replayed_effect=snapshot(0)
  assert stored(replayed_effect)==stored(before) and not started(replayed_effect)
  # Only selected effect records are equal: actors/task cursor legitimately advanced.
- s=snapshot(1025);assert s['iteration']==1025 and s['b_commits']==1025
- assert json.loads(run('read-state',app))=={'consumed':1025,'concurrent':1,'after':0,'commits':1025}
- disk=canonical_restart(1025);assert disk==s
- host,shutdown=starthost('break',1029);parked('break',1029)
- assert 'iteration:1024' not in events() and 'iteration:1025' in events()
- assert events().count('break-evaluate:1029')==1
+ s=snapshot(PENULTIMATE-4);assert s['iteration']==PENULTIMATE-4 and s['b_commits']==PENULTIMATE-4
+ assert json.loads(run('read-state',app))=={'consumed':PENULTIMATE-4,'concurrent':1,'after':0,'commits':PENULTIMATE-4}
+ disk=canonical_restart(PENULTIMATE-4);assert disk==s
+ host,shutdown=starthost('break',PENULTIMATE);parked('break',PENULTIMATE)
+ assert f'iteration:{PENULTIMATE-5}' not in events() and f'iteration:{PENULTIMATE-4}' in events()
+ assert events().count(f'break-evaluate:{PENULTIMATE}')==1
  assert run('concurrent',app,uuid.uuid4())=='2'
- broken=canonical_restart(1029);assert broken['iteration']==1029 and broken['b_commits']==1030
+ broken=canonical_restart(PENULTIMATE);assert broken['iteration']==PENULTIMATE and broken['b_commits']==ITERATIONS
  assert len(breaks(broken))==1
- assert breaks(broken)[0]['reply']=={'cursor':1029,'ordinal':1030,'proof':'committed:1029:1030'}
+ assert breaks(broken)[0]['reply']=={'cursor':PENULTIMATE,'ordinal':ITERATIONS,'proof':f'committed:{PENULTIMATE}:{ITERATIONS}'}
  host,shutdown=starthost()
- terminal=json.loads(run('wait',app,handle));assert terminal=={'cursor':1029,'ordinal':1030,'proof':'committed:1029:1030'}
+ terminal=json.loads(run('wait',app,handle));assert terminal=={'cursor':PENULTIMATE,'ordinal':ITERATIONS,'proof':f'committed:{PENULTIMATE}:{ITERATIONS}'}
  assert not any(e.startswith('break-evaluate:') or e.startswith('callback-constructed:') for e in events())
- assert json.loads(run('read-state',app))=={'consumed':1030,'concurrent':2,'after':1,'commits':1030}
- completed=snapshot(1029);assert completed['terminal'] and completed['iteration']==1029
+ assert json.loads(run('read-state',app))=={'consumed':ITERATIONS,'concurrent':2,'after':1,'commits':ITERATIONS}
+ completed=snapshot(PENULTIMATE);assert completed['terminal'] and completed['iteration']==PENULTIMATE
  assert breaks(completed)==breaks(broken)
  stop(host,shutdown);assert host.returncode==0;stop(db);db=startdb();host,shutdown=starthost()
  assert json.loads(run('wait',app,handle))==terminal
- assert not events();assert snapshot(1029)==completed
- scenarios.append({'name':'stored-cursor-break-terminal','stored_before':before,'stored_after_replay':replayed_effect,'pending_cursor':disk,'pending_break':broken,'terminal':terminal,'completed':completed})
+ assert not events();assert snapshot(PENULTIMATE)==completed
+ scenarios.append({'name':'stored-cursor-break-terminal','iterations':ITERATIONS,'stored_before':before,'stored_after_replay':replayed_effect,'pending_cursor':disk,'pending_break':broken,'terminal':terminal,'completed':completed})
  # New workflow, same real B, no reset/seed. Kill after B commit before typed Store.
  stop(host,shutdown);assert host.returncode==0
  host,shutdown=starthost('b-committed',0)
  handle=run('start-run',app,uuid.uuid4(),1);parked('b-committed',0)
  assert run('concurrent',app,uuid.uuid4())=='3'
- uncertain=snapshot(0);assert len(started(uncertain))==1 and not stored(uncertain) and uncertain['b_commits']==1031
+ uncertain=snapshot(0);assert len(started(uncertain))==1 and not stored(uncertain) and uncertain['b_commits']==ITERATIONS+1
  disk=canonical_restart(0);assert disk==uncertain
  host,shutdown=starthost(expected_failure=True)
  failure=expected_host_failure(host, 'at-most-once block Started without Stored; callback will not run again')
  no_callback(0);assert snapshot(0)==uncertain
- assert {k:uncertain[k] for k in ('consumed','concurrent','after','b_commits')}=={'consumed':1030,'concurrent':3,'after':1,'b_commits':1031}
- scenarios.append({'name':'started-after-actual-b-commit','pending':uncertain,'host_failure':failure})
+ assert {k:uncertain[k] for k in ('consumed','concurrent','after','b_commits')}=={'consumed':ITERATIONS,'concurrent':3,'after':1,'b_commits':ITERATIONS+1}
+ scenarios.append({'name':'started-after-actual-b-commit','iterations':ITERATIONS,'pending':uncertain,'host_failure':failure})
  result.update(scenarios=scenarios,scope='native generated two-service feature proof; not public CLI or example parity')
  result['body_passed']=True
 except BaseException as error:
