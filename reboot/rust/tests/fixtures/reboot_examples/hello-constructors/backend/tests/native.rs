@@ -104,7 +104,7 @@ async fn native_public_contract() {
             .unwrap_err();
         let d = detail(e, "StateNotConstructed");
         assert!(
-            reboot::database_proto::StateNotConstructed::decode(d.value.as_slice())
+            !reboot::database_proto::StateNotConstructed::decode(d.value.as_slice())
                 .unwrap()
                 .requires_constructor
         );

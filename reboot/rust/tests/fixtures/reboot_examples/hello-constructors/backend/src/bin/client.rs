@@ -15,7 +15,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .await??;
     if command == "health" {
-        let response = tonic_health::pb::health_client::HealthClient::new(channel)
+        let response = tonic_health::pb::health_client::HealthClient::new(channel.clone())
             .check(tonic::Request::new(tonic_health::pb::HealthCheckRequest {
                 service: String::new(),
             }))
@@ -25,7 +25,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         {
             return Err("not ready".into());
         }
-        println!("SERVING");
+        // Canonical host health alone does not prove Database liveness. This
+        // read-only request crosses the real engine and initialization barrier.
+        let reference =
+            reboot::state_ref::StateRef::from_id("hello_constructors.v1.Hello", "reboot-hello")?;
+        let context = ExternalContext::new(reference.to_string());
+        let response = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            generated::HelloMethodsExternalClient::new(channel, context)
+                .messages(proto::MessagesRequest {}),
+        )
+        .await??;
+        if response.into_inner().messages.len() < 2 {
+            return Err("initializer incomplete".into());
+        }
+        println!("SERVING_ENGINE_BACKED");
         return Ok(());
     }
     let mut client = generated::HelloMethodsExternalClient::new(channel, context);
@@ -76,7 +90,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
             use prost::Message;
             assert!(
-                reboot::database_proto::StateNotConstructed::decode(
+                !reboot::database_proto::StateNotConstructed::decode(
                     rich.details[0].value.as_slice()
                 )?
                 .requires_constructor

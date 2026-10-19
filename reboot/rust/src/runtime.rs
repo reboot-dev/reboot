@@ -3521,7 +3521,7 @@ fn admit_state<State: Default>(
                 requires_constructor: true,
             },
         )
-        .into_status("actor state must be constructed before this method can be called")),
+        .into_status("")),
     }
 }
 
@@ -3850,6 +3850,16 @@ fn decode_writer_task_checkpoint<Response: Message + Default>(
     key: Uuid,
     fingerprint: &[u8],
 ) -> Result<Response, Status> {
+    if mutation
+        .request_fingerprint
+        .as_deref()
+        .is_some_and(|stored| !stored.is_empty() && stored != fingerprint)
+    {
+        return Err(
+            crate::SystemAborted::FailedPrecondition(database::FailedPrecondition {})
+                .into_status("Idempotency key was reused with a different request"),
+        );
+    }
     if mutation.state_type != state_type
         || mutation.state_ref != state_ref
         || mutation.key != key.as_bytes()
@@ -4015,6 +4025,20 @@ impl DatabaseActorStore {
         key: Uuid,
         request_fingerprint: Option<&[u8]>,
     ) -> Result<Option<Response>, Status> {
+        self.replay_type_policy(state_type, state_ref, key, request_fingerprint, false)
+            .await
+    }
+
+    // Constructor receipts require positive request-identity proof. The public
+    // low-level replay API retains its explicitly legacy-compatible boundary.
+    async fn replay_type_policy<Response: Message + Default>(
+        &self,
+        state_type: &str,
+        state_ref: &str,
+        key: Uuid,
+        request_fingerprint: Option<&[u8]>,
+        strict: bool,
+    ) -> Result<Option<Response>, Status> {
         let mut database = self.database.clone();
         let mut stream = database
             .recover_idempotent_mutations(database::RecoverIdempotentMutationsRequest {
@@ -4044,15 +4068,26 @@ impl DatabaseActorStore {
                             "scheduling checkpoint requires scheduling replay authority",
                         ));
                     }
+                    if strict
+                        && mutation
+                            .request_fingerprint
+                            .as_deref()
+                            .is_none_or(|fp| fp.is_empty())
+                    {
+                        return Err(Status::failed_precondition(
+                            "constructor receipt lacks request fingerprint",
+                        ));
+                    }
                     if request_fingerprint.is_some_and(|expected| {
                         mutation
                             .request_fingerprint
                             .as_deref()
                             .is_some_and(|stored| !stored.is_empty() && stored != expected)
                     }) {
-                        return Err(Status::failed_precondition(
-                            "idempotency key was reused with a different request",
-                        ));
+                        return Err(crate::SystemAborted::FailedPrecondition(
+                            database::FailedPrecondition {},
+                        )
+                        .into_status("Idempotency key was reused with a different request"));
                     }
                     return Response::decode(mutation.response.as_slice())
                         .map(Some)
@@ -4579,7 +4614,13 @@ impl DatabaseActorStore {
         let lock = self.lock_for_type(Declaration::STATE_TYPE, &state_ref);
         let _guard = lock.exclusive().await;
         if let Some(response) = self
-            .replay_type(Declaration::STATE_TYPE, &state_ref, key, Some(&fingerprint))
+            .replay_type_policy(
+                Declaration::STATE_TYPE,
+                &state_ref,
+                key,
+                Some(&fingerprint),
+                true,
+            )
             .await?
         {
             return Ok(Response::new(response));
@@ -4592,7 +4633,7 @@ impl DatabaseActorStore {
             return Err(crate::SystemAborted::StateAlreadyConstructed(
                 database::StateAlreadyConstructed {},
             )
-            .into_status("actor state has already been constructed"));
+            .into_status(""));
         }
         let mut state = Declaration::State::default();
         let response = invoke(&mut state, request.into_inner()).await?;
@@ -4635,7 +4676,13 @@ impl DatabaseActorStore {
                 // competing commit. Arbitrary transport errors stay failures.
                 commit_attempt.acknowledged();
                 if let Some(replayed) = self
-                    .replay_type(Declaration::STATE_TYPE, &state_ref, key, Some(&fingerprint))
+                    .replay_type_policy(
+                        Declaration::STATE_TYPE,
+                        &state_ref,
+                        key,
+                        Some(&fingerprint),
+                        true,
+                    )
                     .await?
                 {
                     return Ok(Response::new(replayed));
@@ -4643,7 +4690,7 @@ impl DatabaseActorStore {
                 Err(crate::SystemAborted::StateAlreadyConstructed(
                     database::StateAlreadyConstructed {},
                 )
-                .into_status("actor state has already been constructed"))
+                .into_status(""))
             }
             Err(error) => Err(database_status(error)),
         }
@@ -4707,7 +4754,13 @@ impl DatabaseActorStore {
             )
             .await?;
         if let Some(response) = self
-            .replay_type(Declaration::STATE_TYPE, &state_ref, key, Some(&fingerprint))
+            .replay_type_policy(
+                Declaration::STATE_TYPE,
+                &state_ref,
+                key,
+                Some(&fingerprint),
+                true,
+            )
             .await?
         {
             return Ok(Response::new(response));
@@ -4716,7 +4769,7 @@ impl DatabaseActorStore {
             return Err(crate::SystemAborted::StateAlreadyConstructed(
                 database::StateAlreadyConstructed {},
             )
-            .into_status("actor state has already been constructed"));
+            .into_status(""));
         }
         let mut state = Declaration::State::default();
         let response = invoke(&mut state, request.into_inner()).await?;
@@ -4759,7 +4812,13 @@ impl DatabaseActorStore {
                 // competing commit. Arbitrary transport errors stay failures.
                 commit_attempt.acknowledged();
                 if let Some(replayed) = self
-                    .replay_type(Declaration::STATE_TYPE, &state_ref, key, Some(&fingerprint))
+                    .replay_type_policy(
+                        Declaration::STATE_TYPE,
+                        &state_ref,
+                        key,
+                        Some(&fingerprint),
+                        true,
+                    )
                     .await?
                 {
                     return Ok(Response::new(replayed));
@@ -4767,7 +4826,7 @@ impl DatabaseActorStore {
                 Err(crate::SystemAborted::StateAlreadyConstructed(
                     database::StateAlreadyConstructed {},
                 )
-                .into_status("actor state has already been constructed"))
+                .into_status(""))
             }
             Err(error) => Err(database_status(error)),
         }
@@ -4953,6 +5012,16 @@ impl DatabaseActorStore {
             )
             .await?;
         crate::reactive::check_reader_scope(&request)?;
+        // Python reader absence does not set requires_constructor; only an
+        // attempted writer needs to tell the caller to invoke a constructor.
+        if state_bytes.is_none() && admission == StateAdmission::RequireExisting {
+            return Err(
+                crate::SystemAborted::StateNotConstructed(database::StateNotConstructed {
+                    requires_constructor: false,
+                })
+                .into_status(""),
+            );
+        }
         let state = admit_state(
             decode_persisted_state::<Declaration::State>(state_bytes, Declaration::STATE_TYPE)?,
             admission,
@@ -9468,6 +9537,123 @@ mod tests {
         );
         server.abort();
         database_server.abort();
+    }
+
+    // One-process gRPC fake: forces the exact CreateActor conflict-recovery
+    // branch, not a real multi-process C++ race claim.
+    #[tokio::test]
+    async fn constructor_writer_conflict_rejects_missing_or_empty_legacy_fingerprint() {
+        struct Construct;
+        impl DurableStateDeclaration for Construct {
+            type State = proto::Counter;
+            const STATE_TYPE: &'static str = "tests.reboot.protoc.Counter";
+        }
+        for authorized in [false, true] {
+            for fingerprint in [None, Some(vec![])] {
+                let (address, fake, server) = start_database().await;
+                let store = DatabaseActorStore::connect(&address).await.unwrap();
+                let mut competitor = store.database.clone();
+                let key = Uuid::from_u128(602);
+                let request = ExternalContext::new("legacy-constructor-conflict")
+                    .writer_with_key(proto::IncrementRequest { amount: 7 }, key)
+                    .unwrap();
+                let error = if authorized {
+                    store
+                        .constructor_writer_async_for_method_authorized::<Construct, _, _, _>(
+                            "Construct",
+                            &crate::auth::AuthorizationPolicy::permissive_for_development(),
+                            request,
+                            move |_state, _request| {
+                                Box::pin(async move {
+                                    competitor
+                                        .create_actor(database::CreateActorRequest {
+                                            actor: Some(database::Actor {
+                                                state_type: Construct::STATE_TYPE.into(),
+                                                state_ref: "legacy-constructor-conflict".into(),
+                                                state: Some(
+                                                    proto::Counter { value: 11 }.encode_to_vec(),
+                                                ),
+                                            }),
+                                            idempotent_mutation: Some(
+                                                database::IdempotentMutation {
+                                                    state_type: Construct::STATE_TYPE.into(),
+                                                    state_ref: "legacy-constructor-conflict".into(),
+                                                    key: key.as_bytes().to_vec(),
+                                                    response: proto::CounterValue { value: 11 }
+                                                        .encode_to_vec(),
+                                                    request_fingerprint: fingerprint,
+                                                    ..Default::default()
+                                                },
+                                            ),
+                                            sync: true,
+                                            ..Default::default()
+                                        })
+                                        .await?;
+                                    Ok(proto::CounterValue { value: 7 })
+                                })
+                            },
+                        )
+                        .await
+                        .unwrap_err()
+                } else {
+                    store
+                        .constructor_writer_async_for_method::<Construct, _, _, _>(
+                            "Construct",
+                            request,
+                            move |_state, _request| {
+                                Box::pin(async move {
+                                    competitor
+                                        .create_actor(database::CreateActorRequest {
+                                            actor: Some(database::Actor {
+                                                state_type: Construct::STATE_TYPE.into(),
+                                                state_ref: "legacy-constructor-conflict".into(),
+                                                state: Some(
+                                                    proto::Counter { value: 11 }.encode_to_vec(),
+                                                ),
+                                            }),
+                                            idempotent_mutation: Some(
+                                                database::IdempotentMutation {
+                                                    state_type: Construct::STATE_TYPE.into(),
+                                                    state_ref: "legacy-constructor-conflict".into(),
+                                                    key: key.as_bytes().to_vec(),
+                                                    response: proto::CounterValue { value: 11 }
+                                                        .encode_to_vec(),
+                                                    request_fingerprint: fingerprint,
+                                                    ..Default::default()
+                                                },
+                                            ),
+                                            sync: true,
+                                            ..Default::default()
+                                        })
+                                        .await?;
+                                    Ok(proto::CounterValue { value: 7 })
+                                })
+                            },
+                        )
+                        .await
+                        .unwrap_err()
+                };
+                assert_eq!(error.code(), tonic::Code::FailedPrecondition);
+                assert_eq!(
+                    error.message(),
+                    "constructor receipt lacks request fingerprint"
+                );
+                assert_eq!(fake.create_requests().len(), 1);
+                assert_eq!(
+                    store
+                        .load_type::<proto::Counter>(
+                            Construct::STATE_TYPE,
+                            "legacy-constructor-conflict"
+                        )
+                        .await
+                        .unwrap()
+                        .unwrap()
+                        .value,
+                    11
+                );
+                server.abort();
+            }
+        }
     }
 
     #[tokio::test]

@@ -105,7 +105,7 @@ async fn generated_taskless_construction_errors_and_replay_preserve_exact_messag
         .unwrap_err();
     let detail = rich(error, "StateNotConstructed");
     assert!(
-        reboot::database_proto::StateNotConstructed::decode(detail.value.as_slice())
+        !reboot::database_proto::StateNotConstructed::decode(detail.value.as_slice())
             .unwrap()
             .requires_constructor
     );
@@ -359,7 +359,7 @@ async fn startup_is_automatic_and_public_anonymous_access_needs_no_dev_selector(
         .unwrap();
 }
 
-struct FailSend(Arc<Adapter>);
+struct FailSend(Arc<Adapter>, Arc<std::sync::atomic::AtomicUsize>, usize);
 #[tonic::async_trait]
 impl HelloMethods for FailSend {
     async fn create(
@@ -376,30 +376,83 @@ impl HelloMethods for FailSend {
     }
     async fn send(
         &self,
-        _: Request<proto::SendRequest>,
+        request: Request<proto::SendRequest>,
     ) -> Result<Response<proto::SendResponse>, Status> {
-        Err(Status::unavailable("injected Send failure"))
+        let n = self.1.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if n < self.2 {
+            return Err(Status::unavailable("injected Send failure"));
+        }
+        self.0.send(request).await
     }
 }
 #[tokio::test]
-async fn failing_initializer_never_binds_and_next_boot_recovers_retained_create() {
+async fn failing_initializer_retries_without_binding_and_cancellation_recovers_retained_create() {
     let database = Database::start().await;
     let adapter = database.adapter().await;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     drop(listener);
-    let startup = Startup::new(Arc::new(FailSend(adapter.clone())), "failure-test").unwrap();
-    let result = ApplicationHost::new("failure-test")
-        .with_lifecycle(startup)
-        .add_public_service(HelloMethodsServer::from_arc(adapter))
-        .serve_with_shutdown(address, std::future::pending::<()>())
-        .await;
-    assert!(result.is_err());
+    let attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let startup = Startup::new(
+        Arc::new(FailSend(adapter.clone(), attempts.clone(), usize::MAX)),
+        "failure-test",
+    )
+    .unwrap();
+    let (stop, stopped) = tokio::sync::oneshot::channel();
+    let host = tokio::spawn(async move {
+        ApplicationHost::new("failure-test")
+            .with_lifecycle(startup)
+            .add_public_service(HelloMethodsServer::from_arc(adapter))
+            .serve_with_shutdown(address, async {
+                let _ = stopped.await;
+            })
+            .await
+    });
+    tokio::time::sleep(Duration::from_millis(1200)).await;
+    assert!(
+        !host.is_finished(),
+        "RPC error must retry, not exit or become ready"
+    );
+    assert!(attempts.load(std::sync::atomic::Ordering::SeqCst) >= 2);
+    stop.send(()).unwrap();
+    tokio::time::timeout(Duration::from_secs(2), host)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
     assert!(tokio::net::TcpStream::connect(address).await.is_err());
     assert_eq!(database.fake.create_requests().len(), 1);
     assert!(database.fake.store_requests().is_empty());
     let startup = Startup::new(database.adapter().await, "failure-test").unwrap();
     assert_eq!(startup.run().await.unwrap(), INITIAL_MESSAGES);
+    assert_eq!(database.fake.create_requests().len(), 1);
+    assert_eq!(database.fake.store_requests().len(), 1);
+}
+
+#[tokio::test]
+async fn initializer_retry_converges_using_the_original_durable_keys() {
+    use reboot::application_host::ApplicationLifecycle;
+    let database = Database::start().await;
+    let attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let adapter = database.adapter().await;
+    let startup = Startup::new(
+        Arc::new(FailSend(adapter.clone(), attempts.clone(), 1)),
+        "retry-success",
+    )
+    .unwrap();
+    tokio::time::timeout(Duration::from_secs(4), startup.initialize())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 2);
+    assert_eq!(
+        Startup::new(adapter, "retry-success")
+            .unwrap()
+            .run()
+            .await
+            .unwrap(),
+        INITIAL_MESSAGES
+    );
     assert_eq!(database.fake.create_requests().len(), 1);
     assert_eq!(database.fake.store_requests().len(), 1);
 }

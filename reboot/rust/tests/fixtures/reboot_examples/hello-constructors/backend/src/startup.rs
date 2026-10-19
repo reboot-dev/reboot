@@ -100,9 +100,29 @@ pub fn initialization_keys(application: &str) -> [Uuid; 2] {
 #[tonic::async_trait]
 impl<T: HelloMethods> ApplicationLifecycle for Startup<T> {
     async fn initialize(&self) -> Result<(), Status> {
-        let messages = self.run().await?;
-        println!("After initialization, the Hello messages are: {messages:?}");
-        Ok(())
+        // Python run_application_initializer retries application failures, except
+        // developer InputError. Our input validation occurs in new(); statuses
+        // here are failed RPCs, not successful initialization. Keep the same
+        // persisted keys on every attempt, including after ambiguous commits.
+        // This future and its backoff belong to ApplicationHost: dropping it on
+        // shutdown cancels both work and sleep; no detached task can survive.
+        let mut ceiling_ms = 1_000u64;
+        let mut delay_ms = 1_000u64;
+        loop {
+            match self.run().await {
+                Ok(messages) => {
+                    println!("After initialization, the Hello messages are: {messages:?}");
+                    return Ok(());
+                }
+                Err(status) => {
+                    eprintln!("Initialization failed; retrying in {delay_ms}ms: {status}");
+                    tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                    // Full jitter with Python's initial 1s and capped 30s bound.
+                    delay_ms = (Uuid::new_v4().as_u128() % u128::from(ceiling_ms + 1)) as u64;
+                    ceiling_ms = ceiling_ms.saturating_mul(2).min(30_000);
+                }
+            }
+        }
     }
     async fn recover(&self) -> Result<(), Status> {
         Ok(())
