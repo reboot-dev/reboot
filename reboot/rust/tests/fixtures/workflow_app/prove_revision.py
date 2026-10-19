@@ -156,6 +156,8 @@ def main():
             assert 'revision-woke' not in events.read_text().splitlines()
             pending = json.loads(run('inspect-reader-outcome', database, handle))
             assert pending == {'status': 1, 'has_terminal': False, 'checkpoints': []}, pending
+            recovered_state = json.loads(run('inspect-state', database))
+            assert recovered_state == {'first': 0, 'second': 0, 'schedules': 1}, recovered_state
             signal_key = str(uuid.uuid4())  # fresh ordinary generated First RPC, sent once
             assert run('signal', app, signal_key, 7) == '7'
             assert json.loads(run('wait', app, handle)) == {'first': 7, 'second': 0}
