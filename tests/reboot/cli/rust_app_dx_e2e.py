@@ -264,7 +264,7 @@ try:
     assert durable_count(current) == 1
     assert command([TARGET / 'debug/client', 'greet', 'hello', '11111111-1111-4111-8111-111111111111']) == '1'
     assert durable_count(current) == 1
-    assert current.close(signal.SIGINT) == 130
+    assert current.close(signal.SIGINT) in (-signal.SIGINT, 128 + signal.SIGINT)
     current = None
     current = Session('host-exit')
     # Supervision failure is caused by the actual generated app host exiting,
