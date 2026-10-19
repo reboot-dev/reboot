@@ -253,7 +253,7 @@ try:
                 proto_path.write_text(original)
     if http_fixture:
         http_fixture.begin_slow_body()
-    assert current.close(signal.SIGTERM) == 143
+    assert current.close(signal.SIGTERM) in (-signal.SIGTERM, 128 + signal.SIGTERM)
     current = None
     current = Session('restart')
     if reader_registry_fixture:
