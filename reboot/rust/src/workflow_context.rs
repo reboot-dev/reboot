@@ -1625,6 +1625,24 @@ mod idempotency_key_scope_tests {
         assert_eq!(context.method(), task.method);
     }
     #[tokio::test]
+    async fn make_idempotency_key_matches_checkpoint_key() {
+        let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
+        let context = build_context(&tasks, task.clone(), &cancel, &attempt, None, Vec::new());
+        let seed = context.task_id().unwrap();
+        let from_helper = context.make_idempotency_key("charge", true);
+        let from_key = context.checkpoint_key(seed, "charge", None);
+        assert_eq!(from_helper, from_key);
+    }
+    #[tokio::test]
+    async fn make_idempotency_key_appends_iteration_in_loop() {
+        let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
+        let context = build_context(&tasks, task.clone(), &cancel, &attempt, Some(("loop".to_string(), 7, 1)), Vec::new());
+        let seed = context.task_id().unwrap();
+        let from_helper = context.make_idempotency_key("charge", false);
+        let from_key = context.checkpoint_key(seed, "charge #7", None);
+        assert_eq!(from_helper, from_key);
+    }
+    #[tokio::test]
     async fn sleep_waits_for_duration() {
         let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
         let context = build_context(&tasks, task, &cancel, &attempt, None, Vec::new());
@@ -1940,6 +1958,30 @@ impl<'a> WorkflowContext<'a> {
     /// This is the Rust equivalent of Python's `WorkflowContext.task.method`.
     pub fn method(&self) -> &str {
         &self.task.method
+    }
+
+    /// Build a deterministic idempotency key for an external alias.
+    ///
+    /// This is the Rust equivalent of Python's `WorkflowContext
+    /// .make_idempotency_key`. Inside a finite loop it appends the iteration
+    /// number to the alias unless `per_workflow` is `true`. The returned UUID
+    /// matches the namespace used by the durable `at_least_once` helpers.
+    pub fn make_idempotency_key(
+        &self,
+        alias: &str,
+        per_workflow: bool,
+    ) -> uuid::Uuid {
+        let seed = self.task_id().unwrap_or_else(uuid::Uuid::new_v4);
+        let iteration = if per_workflow {
+            None
+        } else {
+            self.workflow_iteration()
+        };
+        let alias_iteration = match iteration {
+            Some(index) => format!("{alias} #{index}"),
+            None => alias.to_string(),
+        };
+        self.checkpoint_key(seed, &alias_iteration, None)
     }
 
     /// An untyped reference to the actor this workflow is running on.
