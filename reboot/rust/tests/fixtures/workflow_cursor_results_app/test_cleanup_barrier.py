@@ -93,8 +93,8 @@ class CleanupBarrierTests(unittest.TestCase):
         def advance(_):
             clock[0] += 1
         with patch.object(self.helper.time, 'monotonic', side_effect=lambda: clock[0]), patch.object(self.helper.time, 'sleep', side_effect=advance):
-            self.helper.until(lambda: clock[0] >= 20, timeout=180)
-        self.assertEqual(clock[0], 20)
+            self.helper.until(lambda: clock[0] >= 1200, timeout=max(180, 10000 // 4))
+        self.assertEqual(clock[0], 1200)
 
     def test_sticky_owner_failure(self):
         self.owner.failure = 'UNIT unknown acquisition'

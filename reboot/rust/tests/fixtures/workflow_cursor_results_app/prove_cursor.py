@@ -54,9 +54,9 @@ try:
  initial_all=snapshot('all');initial_roots=roots(initial_all);assert_gc(initial_all,initial_roots,0)
  disk=canonical_restart(0);assert disk==before
  assert snapshot('all')==initial_all
- # Observed native480 advanced through iteration99 in the default ten seconds.
- # Budget this finite workload, not an unbounded retry or timeout success.
- host,shutdown=starthost('entry',PENULTIMATE-4);parked('entry',PENULTIMATE-4,timeout=max(180,ITERATIONS//10))
+ # A native 10k run on the approved host needs more than 1000 seconds.
+ # Budget only this finite advancement wait; readiness/retirement stay bounded.
+ host,shutdown=starthost('entry',PENULTIMATE-4);parked('entry',PENULTIMATE-4,timeout=max(180,ITERATIONS//4))
  no_callback(0);assert 'iteration:0' in events() # replay current, NOT preceding iterations after cursor recovery.
  replayed_effect=snapshot(0)
  assert not replayed_effect['records'], 'iteration zero must be reclaimed after Continue'
