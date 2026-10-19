@@ -1545,6 +1545,31 @@ mod idempotency_key_scope_tests {
         }).await;
         assert_eq!(result.unwrap_err().code(), tonic::Code::Cancelled);
     }
+    #[tokio::test]
+    async fn within_loop_false_outside_loops() {
+        let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
+        let context = build_context(&tasks, task, &cancel, &attempt, None, Vec::new());
+        assert!(!context.within_loop());
+    }
+    #[tokio::test]
+    async fn within_loop_true_inside_finite_iteration() {
+        let (tasks, task, cancel, attempt) = make_scope_context(0, 2, Vec::new());
+        let context = build_context(&tasks, task, &cancel, &attempt, Some(("loop".into(), 0, 2)), Vec::new());
+        assert!(context.within_loop());
+    }
+    #[tokio::test]
+    async fn within_loop_true_inside_cursor_scope() {
+        let (tasks, task, cancel, attempt) = make_scope_context(0, u64::MAX, Vec::new());
+        let context = build_context(
+            &tasks,
+            task,
+            &cancel,
+            &attempt,
+            Some(("unbounded".into(), 0, u64::MAX)),
+            Vec::new(),
+        );
+        assert!(context.within_loop());
+    }
 }
 
 /// Private, dispatcher-minted workflow authority. Explicit named same-actor
@@ -1762,6 +1787,13 @@ impl<'a> WorkflowContext<'a> {
 
     pub(crate) fn checkpoint_bound(&self) -> u64 {
         self.iteration.as_ref().map_or(0, |(_, _, count)| *count)
+    }
+
+    /// Whether this context is inside any explicit finite or cursor loop.
+    ///
+    /// This is the Rust equivalent of Python's `WorkflowContext.within_loop()`.
+    pub fn within_loop(&self) -> bool {
+        self.iteration.is_some() || self.cursor_scope().is_some()
     }
 
     /// Await a future while respecting workflow cancellation.
