@@ -124,3 +124,18 @@ py_library(
         requirement("uvicorn"),
     ],
 )
+
+py_test(
+    name = "oauth_code_page_test_py",
+    size = "small",
+    timeout = "short",
+    srcs = ["oauth_code_page_test.py"],
+    main = "oauth_code_page_test.py",
+    deps = [
+        ":oauth_server_harness_py",
+        "//reboot:settings_py",
+        "//reboot/aio/auth:oauth_providers_py",
+        "//reboot/aio/auth:oauth_server_py",
+        requirement("httpx"),
+    ],
+)

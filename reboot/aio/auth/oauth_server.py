@@ -88,6 +88,34 @@ _CONSENT_PAGE_TEMPLATE_PATH = os.path.join(
     "consent_page.html.j2",
 )
 
+# A redirect URI on this server that shows the authorization code on a
+# page instead of delivering it to a client, for a client that cannot
+# receive a redirect: a CLI on a machine other than the browser's. The
+# person copies the code into the client, which exchanges it as usual,
+# PKCE and all.
+CODE_PAGE_PATH = "/__/oauth/code"
+
+_CODE_PAGE_TEMPLATE_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "code_page.html.j2",
+)
+
+# The `error` codes (RFC 6749 §4.1.2.1) the code page explains; any
+# other value in the query is shown as `invalid_request`, so the page
+# never echoes text an attacker put in a link to it.
+_CODE_PAGE_ERRORS = frozenset(
+    [
+        "access_denied",
+        "invalid_request",
+        "invalid_scope",
+        "invalid_target",
+        "server_error",
+        "temporarily_unavailable",
+        "unauthorized_client",
+        "unsupported_response_type",
+    ]
+)
+
 # Cap on the optional RFC 7591 display metadata (`client_name`,
 # `client_uri`) we copy into the signed `client_id`. These are
 # attacker-controlled and purely cosmetic on the consent screen, so a
@@ -412,6 +440,7 @@ class OAuthServer:
         # The consent page template, compiled lazily on first render so
         # only apps that actually serve an OAuth flow pay for it.
         self._consent_page_template: Optional[Template] = None
+        self._code_page_template: Optional[Template] = None
 
     def verify_token(self, request: Request) -> Optional[str]:
         """The access JWT `request` is signed in with, verified: the one
@@ -467,6 +496,7 @@ class OAuthServer:
         # decision here (same-origin form submission, so no CORS
         # preflight is needed).
         http.post(_CONSENT_PATH)(self.consent)
+        http.get(CODE_PAGE_PATH)(self.code_page)
         # The callback persists the provider's tokens (when
         # `store_tokens=True`) via the app-internal-only `Ciphertext` /
         # `OrderedMap` servicers, so it opts in to an app-internal context
@@ -755,6 +785,75 @@ class OAuthServer:
                     autoescape=True,
                 )
         return self._consent_page_template.render(**context)
+
+    def _render_code_page(self, **context: Any) -> str:
+        """Render the code page HTML, compiling the template on first
+        use. `autoescape` is on: the code is a JWT this server minted,
+        but the page is reached by a link anyone can craft."""
+        if self._code_page_template is None:
+            with open(_CODE_PAGE_TEMPLATE_PATH) as template_file:
+                self._code_page_template = Template(
+                    template_file.read(),
+                    autoescape=True,
+                )
+        return self._code_page_template.render(**context)
+
+    async def code_page(self, request: Request) -> Response:
+        """GET /__/oauth/code
+
+        The redirect target for a client that cannot receive a
+        redirect, such as a CLI on a remote machine: shows the
+        authorization code `/authorize` delivered here so the person
+        can paste it into the client, or, after a refused sign-in,
+        which `error` ended it.
+
+        Only a code this server minted for this very redirect URI is
+        shown, so the page cannot be made to display a string of
+        someone else's choosing; anything else is a 400.
+        """
+        headers = {
+            "Cache-Control": "no-store",
+            "Referrer-Policy": "no-referrer",
+        }
+        code = request.query_params.get("code")
+        if code is None:
+            error = request.query_params.get("error")
+            if error is None:
+                return Response(
+                    "Missing 'code' or 'error'.",
+                    status_code=400,
+                    headers=headers,
+                )
+            return HTMLResponse(
+                self._render_code_page(
+                    application_title=self._application_title,
+                    code=None,
+                    error=(
+                        error
+                        if error in _CODE_PAGE_ERRORS else "invalid_request"
+                    ),
+                ),
+                headers=headers,
+            )
+        code_data = self._verify_jwt(code, "code")
+        own_redirect_uri = f"{origin_from_request(request)}{CODE_PAGE_PATH}"
+        if (
+            code_data is None or
+            code_data.get("redirect_uri") != own_redirect_uri
+        ):
+            return Response(
+                "Not an authorization code for this page.",
+                status_code=400,
+                headers=headers,
+            )
+        return HTMLResponse(
+            self._render_code_page(
+                application_title=self._application_title,
+                code=code,
+                error=None,
+            ),
+            headers=headers,
+        )
 
     def _redirect_to_idp(
         self,
