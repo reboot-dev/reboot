@@ -2,11 +2,7 @@ import os
 import reboot.cli.common.terminal as terminal
 import sys
 from pathlib import Path
-from reboot.cli.commands.cloud import (
-    cloud_subcommands,
-    handle_cloud_subcommand,
-    register_cloud,
-)
+from reboot.cli.commands import cloud
 from reboot.cli.commands.dashboard import (
     dashboard_subcommands,
     handle_dashboard_subcommand,
@@ -47,6 +43,10 @@ from reboot.cli.commands.task import (
     register_task,
     task_subcommands,
 )
+from reboot.cli.common.command_group import (
+    CommandGroup,
+    discover_command_groups,
+)
 from reboot.cli.common.rc import ArgumentParser
 from reboot.cli.common.update_check import check_for_newer_version
 from typing import Optional
@@ -65,17 +65,32 @@ def add_global_options(
     )
 
 
+def load_command_groups() -> list[CommandGroup]:
+    """Returns the command groups that register through the
+    `CommandGroup` protocol: those that ship with `rbt` followed by those
+    that installed distributions contribute."""
+    command_groups: list[CommandGroup] = [cloud]
+    command_groups.extend(discover_command_groups())
+    return command_groups
+
+
 def create_parser(
     *,
     rc_file: Optional[str] = None,
     argv: Optional[list[str]] = None,
+    command_groups: Optional[list[CommandGroup]] = None,
 ) -> ArgumentParser:
+    if command_groups is None:
+        command_groups = load_command_groups()
 
     parser = ArgumentParser(
         program='rbt',
         filename='.rbtrc',
         subcommands=(
-            cloud_subcommands() + dashboard_subcommands() + dev_subcommands() +
+            [
+                subcommand for command_group in command_groups
+                for subcommand in command_group.subcommands()
+            ] + dashboard_subcommands() + dev_subcommands() +
             export_and_import_subcommands() + generate_subcommands() +
             init_subcommands() + inspect_subcommands() + serve_subcommands() +
             task_subcommands()
@@ -86,7 +101,8 @@ def create_parser(
 
     add_global_options(parser)
 
-    register_cloud(parser)
+    for command_group in command_groups:
+        command_group.register(parser)
     register_dashboard(parser)
     register_dev(parser)
     register_export_and_import(parser)
@@ -120,13 +136,20 @@ async def cli() -> int:
     # available; throttled and silent on any failure.
     check_for_newer_version()
 
-    parser = create_parser(argv=argv)
+    command_groups = load_command_groups()
+
+    def parser_factory(argv: Optional[list[str]]) -> ArgumentParser:
+        return create_parser(argv=argv, command_groups=command_groups)
+
+    parser = parser_factory(argv)
 
     args, argv_after_dash_dash = parser.parse_args()
 
-    if (result := await handle_cloud_subcommand(args)) is not None:
-        return result
-    elif (
+    for command_group in command_groups:
+        if (result := await command_group.handle(args)) is not None:
+            return result
+
+    if (
         result := await handle_dashboard_subcommand(args, parser=parser)
     ) is not None:
         return result
@@ -134,7 +157,7 @@ async def cli() -> int:
         result := await handle_dev_subcommand(
             args,
             parser=parser,
-            parser_factory=lambda argv: create_parser(argv=argv),
+            parser_factory=parser_factory,
         )
     ) is not None:
         return result
@@ -158,7 +181,7 @@ async def cli() -> int:
         result := await handle_serve_subcommand(
             args,
             parser=parser,
-            parser_factory=lambda argv: create_parser(argv=argv),
+            parser_factory=parser_factory,
         )
     ) is not None:
         return result

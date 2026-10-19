@@ -158,6 +158,17 @@ py_library(
 )
 
 py_library(
+    name = "command_group_py",
+    srcs = ["command_group.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":rc_py",
+        ":terminal_py",
+    ],
+)
+
+py_library(
     # We have to name that `cli.py` instead of `rbt.py`, because we keep protos
     # in `rbt/` and it will be a name conflict with the `rbt` package.
     name = "cli_py",
@@ -176,6 +187,7 @@ py_library(
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
+        ":command_group_py",
         ":rc_py",
         ":update_check_py",
         "//reboot/cli/commands:dashboard_py",
