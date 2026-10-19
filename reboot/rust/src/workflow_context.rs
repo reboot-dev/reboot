@@ -1625,6 +1625,22 @@ mod idempotency_key_scope_tests {
         assert_eq!(context.method(), task.method);
     }
     #[tokio::test]
+    async fn sleep_waits_for_duration() {
+        let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
+        let context = build_context(&tasks, task, &cancel, &attempt, None, Vec::new());
+        let start = std::time::Instant::now();
+        context.sleep(std::time::Duration::from_millis(10)).await.unwrap();
+        assert!(start.elapsed() >= std::time::Duration::from_millis(10));
+    }
+    #[tokio::test]
+    async fn sleep_returns_cancelled_after_cancel() {
+        let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
+        let context = build_context(&tasks, task, &cancel, &attempt, None, Vec::new());
+        context.cancel.cancel();
+        let result = context.sleep(std::time::Duration::from_secs(60)).await;
+        assert_eq!(result.unwrap_err().code(), tonic::Code::Cancelled);
+    }
+    #[tokio::test]
     async fn state_ref_matches_task_state_ref() {
         let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
         let expected = crate::state_ref::StateRef::from_id(
@@ -1901,6 +1917,14 @@ impl<'a> WorkflowContext<'a> {
     /// This is the Rust equivalent of Python's `WorkflowContext.task.method`.
     pub fn method(&self) -> &str {
         &self.task.method
+    }
+
+    /// Wait for a duration, respecting workflow cancellation.
+    ///
+    /// This is a Rust convenience helper equivalent to awaiting
+    /// `tokio::time::sleep` while respecting `WorkflowContext::wait` semantics.
+    pub async fn sleep(&self, duration: std::time::Duration) -> Result<(), Status> {
+        self.wait(tokio::time::sleep(duration)).await
     }
 
     /// The encoded state reference of the actor this workflow is running on.
