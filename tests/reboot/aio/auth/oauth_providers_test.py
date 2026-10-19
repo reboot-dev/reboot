@@ -27,6 +27,7 @@ from reboot.aio.auth.oauth_providers import (
     RegisteredOAuthProvider,
     UserId,
 )
+from reboot.aio.auth.oauth_server import OAuthServer
 from reboot.aio.auth.token_verifiers import TokenVerifier, VerifyTokenResult
 from reboot.aio.contexts import ReaderContext
 from reboot.aio.exceptions import InputError
@@ -38,6 +39,7 @@ from reboot.std.collections.ordered_map.v1.ordered_map import (
     ordered_map_library,
 )
 from reboot.std.oauth.v1.oauth import oauth_library
+from starlette.responses import Response
 from tests.reboot.pydantic.auto_construct_user.servicer import \
     ProfileServicer as AutoConstructProfileServicer
 from tests.reboot.pydantic.auto_construct_user.servicer import \
@@ -92,6 +94,50 @@ async def _approve_consent(
             "action": "approve",
         },
     )
+
+
+class SessionCookieMigrationTest(unittest.TestCase):
+
+    def test_signin_and_signout_remove_legacy_root_cookie(self):
+        # Cookie helpers don't depend on the provider or signing keys.
+        server = object.__new__(OAuthServer)
+        for signing_in in (True, False):
+            with self.subTest(signing_in=signing_in):
+                response = Response()
+                if signing_in:
+                    server._set_session_cookies(
+                        response,
+                        access_token='new-access',
+                        refresh_token='new-refresh',
+                        expires_in=3600,
+                    )
+                else:
+                    server._clear_session_cookies(response)
+                cookies = httpx.Cookies()
+                cookies.set(
+                    'rbt_session', 'legacy', domain='app.example', path='/'
+                )
+                cookies.set(
+                    'rbt_session',
+                    'previous',
+                    domain='app.example',
+                    path='/__/oauth/',
+                )
+                cookies.extract_cookies(
+                    httpx.Response(
+                        200,
+                        headers=response.headers.raw,
+                        request=httpx.Request(
+                            'GET', 'https://app.example/__/oauth/finish'
+                        ),
+                    )
+                )
+                sessions = [c for c in cookies.jar if c.name == 'rbt_session']
+                self.assertFalse(any(c.path == '/' for c in sessions))
+                self.assertEqual(
+                    [(c.path, c.value) for c in sessions],
+                    [('/__/oauth/', 'new-access')] if signing_in else [],
+                )
 
 
 class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
