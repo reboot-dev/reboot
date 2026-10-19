@@ -72,7 +72,7 @@ def register_cloud_up(parser: ArgumentParser) -> None:
 async def _maybe_create_application(
     qualified_application_name: QualifiedApplicationName,
     cloud_url: str,
-    api_key: str,
+    credential: str,
 ) -> None:
     """
     Creates the Application with the given `qualified_application_name` if it
@@ -84,7 +84,7 @@ async def _maybe_create_application(
     context = ExternalContext(
         name="cloud-up-create-application",
         url=cloud_url,
-        bearer_token=api_key,
+        bearer_token=credential,
     )
     try:
         await Application.Create(context, qualified_application_name)
@@ -102,7 +102,7 @@ async def _does_application_exist(
     *,
     qualified_application_name: QualifiedApplicationName,
     cloud_url: str,
-    api_key: str,
+    credential: str,
 ) -> bool:
     """
     Checks if the `Application` with the given
@@ -114,7 +114,7 @@ async def _does_application_exist(
     context = ExternalContext(
         name="cloud-application-status",
         url=cloud_url,
-        bearer_token=api_key,
+        bearer_token=credential,
     )
     try:
         await Application.ref(qualified_application_name).status(context)
@@ -139,14 +139,14 @@ async def cloud_up(args: argparse.Namespace) -> int:
     if organization_name is None and not await _does_application_exist(
         qualified_application_name=qualified_application_name,
         cloud_url=args.cloud_url,
-        api_key=args.api_key,
+        credential=args.credential,
     ):
         terminal.fail("--organization=... is required for new applications")
 
     context = ExternalContext(
         name="cloud-up",
         url=args.cloud_url,
-        bearer_token=args.api_key,
+        bearer_token=args.credential,
     )
 
     try:
@@ -154,7 +154,7 @@ async def cloud_up(args: argparse.Namespace) -> int:
         await _maybe_create_application(
             qualified_application_name=qualified_application_name,
             cloud_url=args.cloud_url,
-            api_key=args.api_key,
+            credential=args.credential,
         )
         application = Application.ref(qualified_application_name)
 
@@ -267,7 +267,7 @@ async def cloud_up(args: argparse.Namespace) -> int:
                 source=SourceType.CONFIG,
                 name=args.application_name,
                 cloud_url=args.cloud_url,
-                api_key=args.api_key,
+                credential=args.credential,
                 revisions=f"{revision.number}",
                 last=None,  # Show all logs for this revision.
                 show_revision=False,

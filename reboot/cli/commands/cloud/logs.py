@@ -195,7 +195,7 @@ async def cloud_logs(args: argparse.Namespace) -> None:
         source=source,
         name=args.application_name,
         cloud_url=args.cloud_url,
-        api_key=args.api_key,
+        credential=args.credential,
         revisions=args.revisions,
         last=args.last,
         show_revision=args.show_revision,
@@ -213,7 +213,7 @@ async def _cloud_logs(
     source: SourceType,
     name: str,
     cloud_url: str,
-    api_key: str,
+    credential: str,
     revisions: str,
     last: Optional[int],
     show_revision: Optional[bool],
@@ -224,7 +224,7 @@ async def _cloud_logs(
     context = ExternalContext(
         name="cloud-logs",
         url=cloud_url,
-        bearer_token=api_key,
+        bearer_token=credential,
     )
 
     application = Application.ref(qualified_application_name)

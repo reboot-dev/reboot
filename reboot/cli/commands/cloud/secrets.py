@@ -72,7 +72,7 @@ async def cloud_secret_set(args: argparse.Namespace) -> None:
     context = ExternalContext(
         name="cloud-secret-set",
         url=args.cloud_url,
-        bearer_token=args.api_key,
+        bearer_token=args.credential,
     )
     application = Application.ref(qualified_application_name)
     try:
@@ -118,7 +118,7 @@ async def cloud_secret_list(args: argparse.Namespace) -> None:
     context = ExternalContext(
         name="cloud-secret-list",
         url=args.cloud_url,
-        bearer_token=args.api_key,
+        bearer_token=args.credential,
     )
     application = Application.ref(qualified_application_name)
     try:
@@ -164,7 +164,7 @@ async def cloud_secret_delete(args: argparse.Namespace) -> None:
     context = ExternalContext(
         name="cloud-secret-delete",
         url=args.cloud_url,
-        bearer_token=args.api_key,
+        bearer_token=args.credential,
     )
     application = Application.ref(qualified_application_name)
     try:
