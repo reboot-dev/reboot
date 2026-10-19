@@ -87,8 +87,13 @@ the Reboot plugin installed, its skills know Reboot best.
    (schema evolution, in Reboot's docs).
 3. Run `uv run rbt generate` after every API change, and never edit
    generated code.
-4. Every servicer has a real `authorizer()`. `allow()` makes a method
-   public, in production too.
+4. Every servicer has a real `authorizer()`. Use `allow()` only for a
+   method that is public in production, open to anyone, signed in or
+   not; never to make a test or a page work. Tests run against the real
+   authorizers: they call as a signed-in user
+   (`create_external_context_as`) or as the app itself
+   (`create_external_context(..., app_internal=True)`), as the Reboot
+   plugin's `python` skill says in `references/testing-harness.md`.
 5. <A rule this project learned the hard way.>
 
 When a file moves, a command changes, or a rule is learned, update
