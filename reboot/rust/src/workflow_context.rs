@@ -1583,6 +1583,25 @@ mod idempotency_key_scope_tests {
         context.cancel.cancel();
         assert!(context.is_cancelled());
     }
+    #[tokio::test]
+    async fn workflow_iteration_none_outside_loop() {
+        let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
+        let context = build_context(&tasks, task, &cancel, &attempt, None, Vec::new());
+        assert_eq!(context.workflow_iteration(), None);
+    }
+    #[tokio::test]
+    async fn workflow_iteration_some_inside_loop() {
+        let (tasks, task, cancel, attempt) = make_scope_context(0, 2, Vec::new());
+        let context = build_context(
+            &tasks,
+            task,
+            &cancel,
+            &attempt,
+            Some(("loop".into(), 3, 2)),
+            Vec::new(),
+        );
+        assert_eq!(context.workflow_iteration(), Some(3));
+    }
 }
 
 /// Private, dispatcher-minted workflow authority. Explicit named same-actor
@@ -1812,6 +1831,11 @@ impl<'a> WorkflowContext<'a> {
     /// Whether cancellation has been requested for this workflow attempt.
     pub fn is_cancelled(&self) -> bool {
         self.cancel.is_cancelled()
+    }
+
+    /// The current finite or cursor iteration index, if any.
+    pub fn workflow_iteration(&self) -> Option<u64> {
+        self.iteration.as_ref().map(|(_, index, _)| *index)
     }
 
     /// Await a future while respecting workflow cancellation.
