@@ -1075,6 +1075,48 @@ impl WorkflowContext<'_> {
             std::ops::ControlFlow::Continue(()) => Ok(std::ops::ControlFlow::Continue(())),
         }
     }
+
+    /// Memoize a typed value for the lifetime of the workflow.
+    ///
+    /// On the first call the `callable` is invoked and the result is durably
+    /// stored. On subsequent workflow iterations or replays the stored value is
+    /// returned without invoking the callable. By default the memo is scoped to
+    /// the current finite iteration; pass `per_workflow: true` to share the
+    /// value across all iterations, matching Python's `memoize(..., per_workflow=True)`.
+    pub async fn memoize<T, F, Fut>(
+        &self,
+        alias: &str,
+        version: u32,
+        result_type: &'static str,
+        callable: F,
+        per_workflow: bool,
+    ) -> Result<T, Status>
+    where
+        T: prost::Message + Default + Clone + Send + 'static,
+        F: FnOnce() -> Fut + Send,
+        Fut: std::future::Future<Output = Result<T, Status>> + Send,
+    {
+        if per_workflow {
+            self.per_workflow()
+                .at_least_once_result::<T, F, Fut>(
+                    alias,
+                    version,
+                    result_type,
+                    b"reboot.memoize.v1",
+                    callable,
+                )
+                .await
+        } else {
+            self.at_least_once_result::<T, F, Fut>(
+                alias,
+                version,
+                result_type,
+                b"reboot.memoize.v1",
+                callable,
+            )
+            .await
+        }
+    }
 }
 
 #[cfg(test)]

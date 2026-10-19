@@ -1039,6 +1039,92 @@ async fn until_truthy_continues_while_falsy() {
     server.abort();
 }
 
+#[tokio::test]
+async fn memoize_scopes_per_iteration_by_default() {
+    let (f, _database, server) = fake().await;
+    let url = "type.googleapis.com/tests.reboot.protoc.Counter";
+    let constructed = Arc::new(AtomicI64::new(0));
+    let c0 = constructed.clone();
+    let first = WorkflowAttempt::default();
+    let context0 = f.context(&first).iteration("loop", 0, 2).unwrap();
+    let value0 = context0
+        .memoize(
+            "value",
+            1,
+            url,
+            || {
+                let c = c0.clone();
+                async move { Ok(crate::proto::Counter { value: c.fetch_add(1, Ordering::SeqCst) + 1 }) }
+            },
+            false,
+        )
+        .await
+        .unwrap();
+    assert_eq!(value0.value, 1);
+
+    let c1 = constructed.clone();
+    let second = WorkflowAttempt::default();
+    let context1 = f.context(&second).iteration("loop", 1, 2).unwrap();
+    let value1 = context1
+        .memoize(
+            "value",
+            1,
+            url,
+            || {
+                let c = c1.clone();
+                async move { Ok(crate::proto::Counter { value: c.fetch_add(1, Ordering::SeqCst) + 1 }) }
+            },
+            false,
+        )
+        .await
+        .unwrap();
+    assert_eq!(value1.value, 2);
+    assert_eq!(constructed.load(Ordering::SeqCst), 2);
+    assert!(second.clean());
+    server.abort();
+}
+
+#[tokio::test]
+async fn memoize_per_workflow_survives_iterations() {
+    let (f, _database, server) = fake().await;
+    let url = "type.googleapis.com/tests.reboot.protoc.Counter";
+    let constructed = Arc::new(AtomicI64::new(0));
+    let c = constructed.clone();
+    let first = WorkflowAttempt::default();
+    let context0 = f.context(&first).iteration("loop", 0, 2).unwrap();
+    let value0 = context0
+        .memoize(
+            "shared",
+            1,
+            url,
+            || {
+                let c = c.clone();
+                async move { Ok(crate::proto::Counter { value: c.fetch_add(1, Ordering::SeqCst) + 1 }) }
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    assert_eq!(value0.value, 1);
+
+    let second = WorkflowAttempt::default();
+    let context1 = f.context(&second).iteration("loop", 1, 2).unwrap();
+    let value1: crate::proto::Counter = context1
+        .memoize(
+            "shared",
+            1,
+            url,
+            || async move { panic!("callable must not rerun when per-workflow memo exists") },
+            true,
+        )
+        .await
+        .unwrap();
+    assert_eq!(value1.value, 1);
+    assert_eq!(constructed.load(Ordering::SeqCst), 1);
+    assert!(second.clean());
+    server.abort();
+}
+
 trait TestCursorDeclaration {
     fn with_test_cursor(self, enabled: bool) -> Self;
 }
