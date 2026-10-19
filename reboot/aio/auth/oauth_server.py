@@ -51,7 +51,7 @@ from starlette.responses import (
     Response,
 )
 from typing import Any, Awaitable, Callable, Mapping, Optional, Sequence
-from urllib.parse import urlencode, urlparse
+from urllib.parse import urlencode, urlparse, urlunparse
 
 logger = logging.getLogger(__name__)
 
@@ -222,6 +222,42 @@ def _oauth_error(
             "error_description": description,
         },
         headers=_CORS_HEADERS,
+    )
+
+
+def _parse_resource(
+    values: Sequence[str],
+    *,
+    own_origin: str,
+) -> Optional[str]:
+    """The protected resource a client asked for a token for (RFC
+    8707 `resource`), normalized, or `None` when the client asked for
+    none or named this server's own origin, which is what a token is
+    for by default. Raises `ValueError`, worded for the client, when
+    the request is malformed: more than one distinct resource, or one
+    that is not an absolute `http(s)` URI without a fragment."""
+    distinct = list(dict.fromkeys(value for value in values if value))
+    if not distinct:
+        return None
+    if len(distinct) > 1:
+        raise ValueError("Only one 'resource' may be requested.")
+    resource = distinct[0]
+    parsed = urlparse(resource)
+    if (
+        parsed.scheme.lower() not in ("http", "https") or not parsed.netloc or
+        parsed.fragment
+    ):
+        raise ValueError(
+            "The 'resource' must be an absolute http(s) URI without a "
+            "fragment."
+        )
+    origin = f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
+    if origin == own_origin.lower():
+        return None
+    return urlunparse(
+        parsed._replace(
+            scheme=parsed.scheme.lower(), netloc=parsed.netloc.lower()
+        )
     )
 
 
@@ -538,10 +574,13 @@ class OAuthServer:
         base: str,
         context: ExternalContext,
         claims: Optional[Mapping[str, Any]] = None,
+        resource: Optional[str] = None,
     ) -> dict[str, Any]:
         """Mint a fresh access/refresh token pair for `user_id` and
         return the standard OAuth token response body (`access_token`,
-        `token_type`, `expires_in`, `refresh_token`).
+        `token_type`, `expires_in`, `refresh_token`). `resource` is the
+        RFC 8707 resource the grant was issued for, if any; the refresh
+        token records it so refreshed tokens are for the same one.
 
         Every JWT this server hands out is minted here: using a Reboot
         app always requires the user to authenticate, and this is the
@@ -577,6 +616,9 @@ class OAuthServer:
                 "type": "refresh",
                 "sub": user_id,
                 "client_id": client_id,
+                **({
+                    "resource": resource
+                } if resource is not None else {}),
             },
             ttl_seconds=_REFRESH_TOKEN_TTL_SECONDS,
         )
@@ -722,10 +764,13 @@ class OAuthServer:
         redirect_uri: str,
         code_challenge: str,
         state: str,
+        resource: Optional[str] = None,
     ) -> RedirectResponse:
         """Mint a short-lived authorization-code JWT for `user_id` and
         302 the client to `redirect_uri` carrying the `code` (plus the
-        client's opaque `state`, echoed verbatim per RFC 6749)."""
+        client's opaque `state`, echoed verbatim per RFC 6749). The
+        code records the `resource` it was issued for, if any, so the
+        token endpoint can hold the client to it."""
         auth_code = self._make_jwt(
             {
                 "type": "code",
@@ -733,6 +778,9 @@ class OAuthServer:
                 "client_id": client_id,
                 "redirect_uri": redirect_uri,
                 "code_challenge": code_challenge,
+                **({
+                    "resource": resource
+                } if resource is not None else {}),
             },
             ttl_seconds=_AUTH_CODE_TTL_SECONDS,
         )
@@ -864,6 +912,7 @@ class OAuthServer:
         code_challenge: str,
         code_challenge_method: str,
         mcp_state: str,
+        resource: Optional[str] = None,
     ) -> RedirectResponse:
         """Mint the `pending` state JWT and redirect the user to the
         identity provider to sign in. Reached only after the user
@@ -893,6 +942,9 @@ class OAuthServer:
                 "code_challenge": code_challenge,
                 "code_challenge_method": code_challenge_method,
                 "mcp_state": mcp_state,
+                **({
+                    "resource": resource
+                } if resource is not None else {}),
             },
             ttl_seconds=_PENDING_STATE_TTL_SECONDS,
         )
@@ -1187,6 +1239,21 @@ class OAuthServer:
 
         mcp_state = params.get("state", "")
 
+        # RFC 8707: the resource the client wants the token for. Rides
+        # through the consent, pending, code and refresh tokens so the
+        # token endpoint knows what the code was issued for.
+        try:
+            resource = _parse_resource(
+                params.getlist("resource"),
+                own_origin=origin_from_request(request),
+            )
+        except ValueError as e:
+            return _oauth_error(
+                error="invalid_target",
+                description=str(e),
+                status_code=400,
+            )
+
         # Two kinds of client skip the consent screen, both of them the
         # application's own. The browser client minted by
         # `/__/oauth/start` is server-minted with a fixed, same-origin
@@ -1212,6 +1279,7 @@ class OAuthServer:
                     redirect_uri=redirect_uri,
                     code_challenge=str(code_challenge),
                     state=mcp_state,
+                    resource=resource,
                 )
             return self._redirect_to_idp(
                 request=request,
@@ -1220,6 +1288,7 @@ class OAuthServer:
                 code_challenge=code_challenge,
                 code_challenge_method=code_challenge_method,
                 mcp_state=mcp_state,
+                resource=resource,
             )
 
         # Don't redirect to the identity provider yet: show a consent
@@ -1247,6 +1316,9 @@ class OAuthServer:
                 "code_challenge_method": code_challenge_method,
                 "mcp_state": mcp_state,
                 "nonce": nonce,
+                **({
+                    "resource": resource
+                } if resource is not None else {}),
             },
             ttl_seconds=_PENDING_STATE_TTL_SECONDS,
         )
@@ -1363,6 +1435,7 @@ class OAuthServer:
 
         redirect_uri = consent_data["redirect_uri"]
         mcp_state = consent_data.get("mcp_state", "")
+        resource = consent_data.get("resource")
 
         if form.get("action") != "approve":
             # Anything that isn't an explicit approval — the "Cancel"
@@ -1392,6 +1465,7 @@ class OAuthServer:
                 redirect_uri=redirect_uri,
                 code_challenge=str(consent_data["code_challenge"]),
                 state=mcp_state,
+                resource=resource,
             )
             sso.delete_cookie(_CONSENT_CSRF_COOKIE, path=_CONSENT_PATH)
             return sso
@@ -1403,6 +1477,7 @@ class OAuthServer:
             code_challenge=consent_data["code_challenge"],
             code_challenge_method=consent_data["code_challenge_method"],
             mcp_state=mcp_state,
+            resource=resource,
         )
         response.delete_cookie(_CONSENT_CSRF_COOKIE, path=_CONSENT_PATH)
         return response
@@ -1511,6 +1586,7 @@ class OAuthServer:
             redirect_uri=str(pending["redirect_uri"]),
             code_challenge=str(pending["code_challenge"]),
             state=pending.get("mcp_state", ""),
+            resource=pending.get("resource"),
         )
         # MCP→web SSO: also set the browser session cookies on the
         # callback response. The callback is reached via a top-level
@@ -1631,13 +1707,50 @@ class OAuthServer:
         user_id: UserId = UserId(code_data["sub"])
         base = origin_from_request(request)
 
+        resource = code_data.get("resource")
+        mismatch = self._resource_mismatch(form, resource, own_origin=base)
+        if mismatch is not None:
+            return mismatch
+
         tokens = await self._mint_tokens_for_user(
             user_id=user_id,
             client_id=str(client_id),
             base=base,
             context=external_context(request),
+            resource=resource,
         )
         return JSONResponse(tokens, headers=_CORS_HEADERS)
+
+    def _resource_mismatch(
+        self,
+        form: Any,
+        resource: Optional[str],
+        *,
+        own_origin: str,
+    ) -> Optional[JSONResponse]:
+        """An `invalid_target` error when the `resource` a token
+        request names differs from `resource`, the one its code or
+        refresh token was issued for (RFC 8707 2.2); `None` when they
+        agree or the request names none, which keeps the issued one."""
+        try:
+            requested = _parse_resource(
+                [str(value) for value in form.getlist("resource")],
+                own_origin=own_origin,
+            )
+        except ValueError as e:
+            return _oauth_error(
+                error="invalid_target",
+                description=str(e),
+                status_code=400,
+            )
+        if requested is not None and requested != resource:
+            return _oauth_error(
+                error="invalid_target",
+                description="The 'resource' does not match the one this "
+                "grant was issued for.",
+                status_code=400,
+            )
+        return None
 
     async def _token_refresh(
         self,
@@ -1682,12 +1795,18 @@ class OAuthServer:
         user_id: UserId = UserId(refresh_data["sub"])
         base = origin_from_request(request)
 
+        resource = refresh_data.get("resource")
+        mismatch = self._resource_mismatch(form, resource, own_origin=base)
+        if mismatch is not None:
+            return mismatch
+
         return JSONResponse(
             await self._mint_tokens_for_user(
                 user_id=user_id,
                 client_id=str(client_id),
                 base=base,
                 context=external_context(request),
+                resource=resource,
             ),
             headers=_CORS_HEADERS,
         )

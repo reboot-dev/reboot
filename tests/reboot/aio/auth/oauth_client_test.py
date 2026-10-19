@@ -21,8 +21,8 @@ FOREIGN = "https://ben--counter--acme.dev.rbt.cloud"
 
 class OAuthClientTest(unittest.IsolatedAsyncioTestCase):
     """`OAuthClient` against an `OAuthServer`: discovery, dynamic
-    registration, the authorization code grant with PKCE, refresh, and
-    the server's refusals."""
+    registration, the authorization code grant with PKCE and a
+    resource, refresh, and the server's refusals."""
 
     def setUp(self) -> None:
         harness.ensure_root_keys()
@@ -92,10 +92,11 @@ class OAuthClientTest(unittest.IsolatedAsyncioTestCase):
                 redirect_uri=redirect_uri,
                 state="opaque",
                 code_challenge=challenge,
+                resource=FOREIGN,
             )
             params = parse_qs(urlparse(url).query)
             self.assertEqual(params["code_challenge_method"], ["S256"])
-            self.assertNotIn("resource", params)
+            self.assertEqual(params["resource"], [FOREIGN])
             code, state = await self._sign_in(origin, url)
             self.assertEqual(state, "opaque")
 
@@ -105,6 +106,7 @@ class OAuthClientTest(unittest.IsolatedAsyncioTestCase):
                     code=code,
                     redirect_uri=redirect_uri,
                     code_verifier="not-the-verifier",
+                    resource=FOREIGN,
                 )
             self.assertEqual(raised.exception.error, "invalid_grant")
 
@@ -112,12 +114,22 @@ class OAuthClientTest(unittest.IsolatedAsyncioTestCase):
                 code=code,
                 redirect_uri=redirect_uri,
                 code_verifier=verifier,
+                resource=FOREIGN,
             )
             self.assertIn("access_token", tokens)
             refreshed = await client.refresh(
                 refresh_token=tokens["refresh_token"],
+                resource=FOREIGN,
             )
             self.assertIn("access_token", refreshed)
+            # A refresh for another resource than the grant's is
+            # refused.
+            with self.assertRaises(OAuthClientError) as raised:
+                await client.refresh(
+                    refresh_token=refreshed["refresh_token"],
+                    resource="https://other.example",
+                )
+            self.assertEqual(raised.exception.error, "invalid_target")
             # A refresh token that is not one is refused.
             with self.assertRaises(OAuthClientError) as raised:
                 await client.refresh(refresh_token="not-a-refresh-token")
