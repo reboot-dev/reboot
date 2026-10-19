@@ -14,6 +14,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         context.connect(std::env::var("RBT_RUST_URL")?),
     )
     .await??;
+    if command == "database-health" {
+        let reference = reboot::state_ref::StateRef::from_id("hello_constructors.v1.Hello", "reboot-hello")?;
+        tokio::time::timeout(std::time::Duration::from_secs(2),
+            reboot::database_proto::database_client::DatabaseClient::new(channel)
+                .load(reboot::database_proto::LoadRequest {
+                    actors: vec![reboot::database_proto::Actor {
+                        state_type: "hello_constructors.v1.Hello".into(),
+                        state_ref: reference.to_string(), state: None,
+                    }], task_ids: vec![],
+                })).await??;
+        println!("DATABASE_READABLE");
+        return Ok(());
+    }
     if command == "health" {
         let response = tonic_health::pb::health_client::HealthClient::new(channel.clone())
             .check(tonic::Request::new(tonic_health::pb::HealthCheckRequest {
