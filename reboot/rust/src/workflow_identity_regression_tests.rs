@@ -72,6 +72,47 @@ async fn invalid_task_identity_fails_closed_without_random_keys_or_panics() {
 }
 
 #[tokio::test]
+async fn revision_wait_rejects_uncertainty_before_and_during_wait() {
+    let (tasks, mut task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
+    let identity = task.task_id.as_mut().unwrap();
+    identity.state_ref = crate::state_ref::StateRef::from_id(&identity.state_type, "proof").unwrap().to_string();
+    let context = build_context(&tasks, task, &cancel, &attempt, None, Vec::new());
+    let reference = context.state_ref().unwrap();
+    let gate = tasks.database_actor_store().actor_gate(&context.state_type(), reference.as_str());
+    let waiting = context.wait_for_revision();
+    tokio::pin!(waiting);
+    std::future::poll_fn(|cx| {
+        match std::future::Future::poll(waiting.as_mut(), cx) {
+            std::task::Poll::Pending => (),
+            std::task::Poll::Ready(_) => panic!("revision wait did not park"),
+        }
+        std::task::Poll::Ready(())
+    }).await;
+    // Failed/dropped durable writes publish uncertainty, not acknowledged commits.
+    drop(gate.commit_attempt());
+    assert_eq!(waiting.await.unwrap_err().code(), tonic::Code::Unavailable);
+    assert_eq!(context.wait_for_revision().await.unwrap_err().code(), tonic::Code::Unavailable);
+}
+
+#[tokio::test]
+async fn canonical_identity_rejects_foreign_type_empty_ids_and_bad_ancestors() {
+    let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
+    let own_type = task.task_id.as_ref().unwrap().state_type.clone();
+    let valid = crate::state_ref::StateRef::from_id(&own_type, "proof").unwrap();
+    let invalid = [
+        crate::state_ref::StateRef::from_id("foreign.Type", "proof").unwrap().to_string(),
+        crate::state_ref::StateRef::from_id_prefix(&own_type, "").unwrap().to_string(),
+        format!("malformed/{valid}"),
+    ];
+    for reference in invalid {
+        let mut bad = task.clone();
+        bad.task_id.as_mut().unwrap().state_ref = reference;
+        let context = build_context(&tasks, bad, &cancel, &attempt, None, Vec::new());
+        assert_eq!(context.state_ref().unwrap_err().code(), tonic::Code::FailedPrecondition);
+    }
+}
+
+#[tokio::test]
 async fn already_cancelled_wait_never_polls_ready_callback() {
     let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
     let context = build_context(&tasks, task, &cancel, &attempt, None, Vec::new());

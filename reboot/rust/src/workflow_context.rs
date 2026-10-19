@@ -1993,8 +1993,9 @@ impl<'a> WorkflowContext<'a> {
     ///
     /// This is the Rust equivalent of Python's `WorkflowContext
     /// .make_idempotency_key`. Inside a finite loop it appends the iteration
-    /// number to the alias unless `per_workflow` is `true`. The returned UUID
-    /// matches the namespace used by the durable `at_least_once` helpers.
+    /// number to the alias unless `per_workflow` is `true`. Workflow-wide keys
+    /// include only the task UUID, effective seed map and alias, not loop scopes.
+    /// Missing task UUIDs fail closed; they never generate random replacement keys.
     pub fn make_idempotency_key(
         &self,
         alias: &str,
@@ -2049,15 +2050,19 @@ impl<'a> WorkflowContext<'a> {
         let start = revisions.borrow().0;
         self.wait(async move {
             loop {
-                if revisions.changed().await.is_err() {
-                    return ();
+                let (revision, uncertain) = *revisions.borrow_and_update();
+                if uncertain {
+                    return Err(Status::unavailable("actor commit outcome uncertain"));
                 }
-                if revisions.borrow().0 != start {
-                    return ();
+                if revision != start {
+                    return Ok(());
+                }
+                if revisions.changed().await.is_err() {
+                    return Err(Status::unavailable("actor revision stream closed"));
                 }
             }
         })
-        .await
+        .await?
     }
 
     /// The encoded state reference of the actor this workflow is running on.
@@ -2067,7 +2072,10 @@ impl<'a> WorkflowContext<'a> {
         let identity = self.task.task_id.as_ref().ok_or_else(||
             Status::failed_precondition("workflow task identity is missing")
         )?;
-        if !crate::state_ref::StateRef::is_encoded(&identity.state_ref) {
+        if identity.state_ref.split('/').any(|component| {
+            !crate::state_ref::StateRef::is_encoded(component)
+                || component.len() <= crate::state_ref::STATE_TYPE_TAG_LENGTH + 1
+        }) {
             return Err(Status::failed_precondition("workflow state reference is not canonical"));
         }
         let reference = crate::state_ref::StateRef::from_maybe_readable(&identity.state_ref)
