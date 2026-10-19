@@ -1032,6 +1032,49 @@ impl WorkflowContext<'_> {
             Ok(std::ops::ControlFlow::Break(current))
         }
     }
+
+    /// Reactively converge on a truthy value within a finite workflow loop.
+    ///
+    /// This is a convenience loop driver around [`Self::until_changes`]. It
+    /// memoizes the value at each iteration and returns the first iteration
+    /// whose value is truthy according to `is_truthy`. The caller must run this
+    /// inside a workflow loop and re-invoke with an incremented iteration index
+    /// whenever the previous iteration returned `Continue`. If the current value
+    /// is already truthy on iteration zero, it is returned immediately.
+    pub async fn until_truthy<T, F, Fut, Pred>(
+        &self,
+        alias: &str,
+        version: u32,
+        result_type: &'static str,
+        callable: F,
+        is_truthy: Pred,
+    ) -> Result<std::ops::ControlFlow<T, ()>, Status>
+    where
+        T: prost::Message + Default + Clone + Send + 'static,
+        F: FnOnce() -> Fut + Send,
+        Fut: std::future::Future<Output = Result<T, Status>> + Send,
+        Pred: Fn(&T) -> bool + Clone + Send + Sync + 'static,
+    {
+        let is_truthy2 = is_truthy.clone();
+        let result = self
+            .until_changes(
+                alias,
+                version,
+                result_type,
+                callable,
+                move |previous, current| {
+                    !is_truthy(previous) && !is_truthy(current)
+                },
+            )
+            .await?;
+        match result {
+            std::ops::ControlFlow::Break(value) if is_truthy2(&value) => {
+                Ok(std::ops::ControlFlow::Break(value))
+            }
+            std::ops::ControlFlow::Break(_) => Ok(std::ops::ControlFlow::Continue(())),
+            std::ops::ControlFlow::Continue(()) => Ok(std::ops::ControlFlow::Continue(())),
+        }
+    }
 }
 
 #[cfg(test)]

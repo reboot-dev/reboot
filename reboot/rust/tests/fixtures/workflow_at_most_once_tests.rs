@@ -966,6 +966,79 @@ async fn until_changes_breaks_when_value_changes() {
     server.abort();
 }
 
+#[tokio::test]
+async fn until_truthy_breaks_on_first_truthy_iteration() {
+    let (f, _database, server) = fake().await;
+    let url = "type.googleapis.com/tests.reboot.protoc.Counter";
+    let constructed = Arc::new(AtomicI64::new(0));
+    let c = constructed.clone();
+    let attempt = WorkflowAttempt::default();
+    let context = f.context(&attempt).iteration("watch", 0, 2).unwrap();
+    let result = context
+        .until_truthy(
+            "ready",
+            1,
+            url,
+            || {
+                let c = c.clone();
+                async move {
+                    let value = c.fetch_add(1, Ordering::SeqCst) + 1;
+                    Ok(crate::proto::Counter { value })
+                }
+            },
+            |c: &crate::proto::Counter| c.value >= 1,
+        )
+        .await
+        .unwrap();
+    assert!(matches!(result, std::ops::ControlFlow::Break(_)));
+    assert_eq!(result.break_value().unwrap().value, 1);
+    assert_eq!(constructed.load(Ordering::SeqCst), 1);
+    assert!(attempt.clean());
+    server.abort();
+}
+
+#[tokio::test]
+async fn until_truthy_continues_while_falsy() {
+    let (f, _database, server) = fake().await;
+    let url = "type.googleapis.com/tests.reboot.protoc.Counter";
+    let constructed = Arc::new(AtomicI64::new(0));
+    let first = WorkflowAttempt::default();
+    let context0 = f.context(&first).iteration("watch", 0, 2).unwrap();
+    let result0 = context0
+        .until_truthy(
+            "ready",
+            1,
+            url,
+            || async move { Ok(crate::proto::Counter { value: 0 }) },
+            |c: &crate::proto::Counter| c.value > 0,
+        )
+        .await
+        .unwrap();
+    assert!(matches!(result0, std::ops::ControlFlow::Continue(_)));
+
+    let c1 = constructed.clone();
+    let second = WorkflowAttempt::default();
+    let context1 = f.context(&second).iteration("watch", 1, 2).unwrap();
+    let result1 = context1
+        .until_truthy(
+            "ready",
+            1,
+            url,
+            || {
+                let c = c1.clone();
+                async move { Ok(crate::proto::Counter { value: c.fetch_add(1, Ordering::SeqCst) + 1 }) }
+            },
+            |c: &crate::proto::Counter| c.value > 0,
+        )
+        .await
+        .unwrap();
+    assert!(matches!(result1, std::ops::ControlFlow::Break(_)));
+    assert_eq!(result1.break_value().unwrap().value, 1);
+    assert_eq!(constructed.load(Ordering::SeqCst), 1);
+    assert!(second.clean());
+    server.abort();
+}
+
 trait TestCursorDeclaration {
     fn with_test_cursor(self, enabled: bool) -> Self;
 }
