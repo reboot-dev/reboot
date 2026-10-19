@@ -23,6 +23,8 @@ pub mod hello_tasks {
     }
 }
 pub mod bank {
+    // Generated Tonic signatures intentionally retain tonic::Status.
+    #[allow(clippy::result_large_err)]
     pub mod v1 {
         tonic::include_proto!("bank.v1");
     }
@@ -40,10 +42,12 @@ pub mod constructors_adapter {
 pub mod tasks_adapter {
     include!(concat!(env!("OUT_DIR"), "/hello_tasks/v1/hello.reboot.rs"));
 }
+#[allow(clippy::result_large_err)]
 pub mod account_adapter {
     include!(concat!(env!("OUT_DIR"), "/bank/v1/account.reboot.rs"));
 }
 #[cfg(feature = "bank-shared")]
+#[allow(clippy::result_large_err)]
 pub mod bank_adapter {
     include!(concat!(env!("OUT_DIR"), "/bank/v1/bank.reboot.rs"));
 }
