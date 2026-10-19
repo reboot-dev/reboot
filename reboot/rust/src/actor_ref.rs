@@ -43,6 +43,18 @@ impl ActorRef {
     }
 }
 
+impl ActorRef {
+    /// Convenience constructor from raw state type and id strings.
+    pub fn from_id(
+        state_type: impl Into<String>,
+        state_id: &str,
+    ) -> Result<Self, crate::state_ref::StateRefError> {
+        let state_type = state_type.into();
+        let state_ref = crate::state_ref::StateRef::from_id(&state_type, state_id)?;
+        Ok(Self::new(state_type, state_ref))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -53,5 +65,14 @@ mod tests {
         let actor_ref = ActorRef::new("tests.Service", state_ref.clone());
         assert_eq!(actor_ref.state_ref(), &state_ref);
         assert_eq!(actor_ref.state_type(), "tests.Service");
+    }
+    #[test]
+    fn actor_ref_from_id_matches_new() {
+        let from_id = ActorRef::from_id("tests.Service", "actor-123").unwrap();
+        let from_new = ActorRef::new(
+            "tests.Service",
+            StateRef::from_id("tests.Service", "actor-123").unwrap(),
+        );
+        assert_eq!(from_id, from_new);
     }
 }
