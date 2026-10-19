@@ -80,7 +80,7 @@ def listening(child, number):
 
 
 try:
-    for boundary in ['target', 'started', 'stored']:
+    for boundary in ([] if os.environ.get('WORKFLOW_ACK_CROSSPATH_ONLY') == '1' else ['target', 'started', 'stored']):
         work = ROOT / boundary
         work.mkdir()
         events = work / 'events'
@@ -182,6 +182,54 @@ try:
         cases.append(dict(boundary=boundary, task=task, ack=observed, before_restart=pending,
                           after_restart=final, retained_target=retained, final_target=recovered,
                           events=lines()))
+    # Cross-envelope admission: a taskless handle poisons the actor before any
+    # dispatcher exists; only the process registry can carry that uncertainty.
+    work = ROOT / 'crosspath'
+    work.mkdir()
+    other = work / 'other-store'
+    other.mkdir()
+    events = work / 'events'
+    dp, pp, od, op = port(), port(), port(), port()
+    run('info', work / 'info.pb')
+    databases, proxies = [], []
+    for directory, database_port, proxy_port, selected in [(work, dp, pp, 'taskless'), (other, od, op, 'disabled')]:
+        child = spawn([DB, directory / 'rocksdb', work / 'info.pb', database_port])
+        databases.append(child)
+        listening(child, database_port)
+        child = spawn([sys.executable, Path(__file__).with_name('database_ack_proxy.py'),
+                       f'127.0.0.1:{database_port}', f'127.0.0.1:{proxy_port}', selected, directory])
+        proxies.append(child)
+        listening(child, proxy_port)
+    fixture = spawn([BIN, 'crosspath-ack-loss', f'http://127.0.0.1:{pp}', f'http://127.0.0.1:{op}'],
+                    os.environ.copy() | {'WORKFLOW_BODY_EVENTS': str(events)})
+    until((work / 'ack-observed.json').exists, fixture)
+    observed = json.loads((work / 'ack-observed.json').read_text())
+    assert observed['real_store_ack_observed'] and not observed['downstream_success_delivered']
+    retained = json.loads(run('inspect-state', f'http://127.0.0.1:{dp}'))
+    assert retained == {'first': 7, 'second': 0, 'schedules': 0}
+    before = len((work / 'store-attempts.jsonl').read_text().splitlines())
+    other_before = len((other / 'store-attempts.jsonl').read_text().splitlines()) if (other / 'store-attempts.jsonl').exists() else 0
+    (work / 'release').touch()
+    wait(fixture)
+    assert fixture.returncode == 0, Path(row(fixture)['log']).read_text()
+    markers = events.read_text().splitlines()
+    assert markers.count('taskless-handler') == 1
+    assert markers.count('taskless-handles-dropped') == 1
+    assert markers.count('workflow-crosspath-rejected') == 1
+    assert markers.count('workflow-crosspath-control') == 2
+    assert markers.count('first-handler') == 2, 'rejected writer reached handler'
+    assert markers.count('workflow-crosspath-complete') == 1
+    after = len((work / 'store-attempts.jsonl').read_text().splitlines())
+    other_after = len((other / 'store-attempts.jsonl').read_text().splitlines())
+    assert after == before + 1, 'only the different-actor control may Store'
+    assert other_after == other_before + 1, 'different-store control must Store'
+    assert json.loads(run('inspect-state', f'http://127.0.0.1:{dp}')) == retained
+    assert json.loads(run('inspect-state', f'http://127.0.0.1:{od}')) == {'first': 1, 'second': 0, 'schedules': 0}
+    for child in proxies + databases:
+        stop(child)
+    cases.append(dict(boundary='taskless-to-workflow-ordinary-writer', ack=observed,
+                      retained_actor=retained, primary_stores_before=before, primary_stores_after=after,
+                      other_store_before=other_before, other_store_after=other_after, events=markers))
     receipt['complete'] = True
 finally:
     for child in children:

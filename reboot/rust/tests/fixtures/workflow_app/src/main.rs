@@ -1,4 +1,5 @@
 use prost::Message;
+mod crosspath;
 mod outbound;
 use reboot::{
     application_host::ApplicationHost,
@@ -632,6 +633,9 @@ fn plan(port: u16) -> reboot::legacy_placement::PlanOnlyLegacyPlacement {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mode = arg(1);
+    if mode == "crosspath-ack-loss" {
+        return crosspath::run().await;
+    }
     if mode == "info" {
         std::fs::write(
             arg(2),

@@ -53,6 +53,9 @@ def boundary(body):
         return 'target'
     if mutation.get(4) == [b'workflow.v1.Ledger']:
         envelope = fields(mutation[2][0])
+        if store.get(1) and envelope.get(1) == [7]:
+            # Taskless store_type retains the raw Value response, not Any.
+            return 'taskless'
         if envelope.get(1) == [b'type.googleapis.com/reboot.rust.workflow.AtMostOnceResultV1']:
             checkpoint = fields(envelope.get(2, [b''])[0])
             return {1: 'started', 2: 'stored'}.get(checkpoint.get(2, [0])[0])
@@ -85,6 +88,11 @@ def main():
             call = channel.unary_unary(path)
             def unary(body, context):
                 try:
+                    if method == 'Store':
+                        with lock:
+                            with (root / 'store-attempts.jsonl').open('a') as output:
+                                output.write(json.dumps({'request_sha256': hashlib.sha256(body).hexdigest(),
+                                                         'boundary': boundary(body)}) + '\n')
                     # Fault is strictly AFTER the upstream real RPC succeeded.
                     response = call(body)
                     with lock:

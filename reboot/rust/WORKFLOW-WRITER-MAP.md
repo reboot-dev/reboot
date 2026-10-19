@@ -28,6 +28,27 @@ Generate a separate typed workflow writer reference for ordinary, non-constructo
 
 The safety repair makes registered uncertain actor gates process-sticky; weak idle registration previously discarded the uncertainty latch. Both ordinary writer envelopes now reject an uncertain gate before further mutation. Clean gates still retire normally. Two library regressions cover gate retention, clean retirement, actor isolation and sticky uncertainty across other known ACKs. Native RED removes only uncertain retention and observes a fresh target mutation return 8; GREEN rejects it and later recovers 7. Evidence: `tests/evidence/workflow-store-ack-loss-20261019.json` and `.tar.gz`; exact final source/native qualification is in archive `suite-final3`, with earlier attempts preserved, not relabeled.
 
+## Final narrow correctness repair and pause
+
+The workflow-capable generated adapter uses a distinct ordinary-writer envelope,
+`workflow_scheduling_writer`. Its dispatcher admission does not see actor-only
+uncertainty caused by a taskless `store_type`. Check the sticky actor latch after
+taking its exclusive lease, before loading state, entering a handler or Store.
+
+`crosspath.rs` and the extended `prove_ack_loss.py` qualify that exact transition:
+real taskless Store ACK withheld, all original handles dropped, fresh same-endpoint
+workflow-capable generated adapter and fresh key. RED commits 8; GREEN rejects
+without handler/Store. Different-actor and independent native-store controls pass.
+The full extended gate also reruns target/Started/Stored loss recovery. Final
+source inputs match all 363 manifest entries; locked offline all-targets and
+strict SDK/fixture Clippy pass. Receipts and failed formatting-check attempt are
+in `tests/evidence/workflow-crosspath-uncertainty-20261019.{json,tar.gz}`.
+
+Plan status: bounded correctness repair and evidence complete; **parent review,
+then PAUSE unpublished**. No declared-error memoization or further feature work.
+Prior 291 native joins, three loss boundaries and seven regression cases retain
+their original bounded meaning; they are not replaced or recounted here.
+
 ## Acceptance
 
 Generated two-actor native Database/RocksDB path, crash after target ACK and before source result journal, retained DB/host restart and replay, exact handler count/state/receipt, payload/destination mismatch denial, authorization/error/cancellation and uncertainty gates; Rust library and generator consumer gates on exact final source. No fresh C++ compile claim for reused native binary.

@@ -861,6 +861,11 @@ impl DatabaseActorStore {
         let running = owner.workflow_running_admission()?;
         let gate = self.actor_gate(D::STATE_TYPE, &state_ref);
         let _lease = gate.exclusive().await;
+        if gate.committed_revisions().borrow().1 {
+            return Err(Status::unavailable(
+                "actor commit outcome uncertain; restart host before writing",
+            ));
+        }
         {
             let _owner = running.lock()?;
         }
@@ -952,7 +957,8 @@ impl DatabaseActorStore {
                 let loaded = if mutation.task_ids.is_empty() {
                     Vec::new()
                 } else {
-                    self.load_existing_workflow_tasks(&mutation.task_ids).await?
+                    self.load_existing_workflow_tasks(&mutation.task_ids)
+                        .await?
                 };
                 {
                     let _owner = running.lock()?;

@@ -84,6 +84,31 @@ See `tests/evidence/workflow-store-ack-loss-20261019.json` and its raw archive
 Earlier failed/setup attempts remain archived as such; the previous callable
 writer's initial native1 still has no qualified historical custody.
 
+**Final correctness follow-up / pause:** review found that the separate
+`workflow_scheduling_writer` ordinary-writer path checked dispatcher/task
+uncertainty but not sticky actor uncertainty. It now checks the actor latch
+immediately after exclusive admission, before handler or Store. The extended
+native gate first loses a real taskless `store_type` ACK with no dispatcher,
+drops every taskless handle, then reconnects a fresh generated workflow-capable
+adapter at the same endpoint/type/ref with a fresh key. RED returned 8; GREEN
+rejects without handler entry or Store. Different-actor and independent native
+store controls each commit 1; the poisoned actor retains 7. This is a separate
+qualification from the unchanged earlier 291-child checkpoint above.
+
+Follow-up qualification: locked offline all-targets **942 passed, 0 failed,
+165 ignored**, strict SDK/all-target and generated-fixture Clippy, focused native
+RED/GREEN, and the full extended gate (the three earlier boundaries plus the new
+cross-path case). Final native receipts contain **111** parent-waited children;
+the suite owner additionally waited its **10** command children. All recorded
+processes retired, approved cache locks were free, and **363** source-input hashes
+match the delivered tree. Evidence:
+`tests/evidence/workflow-crosspath-uncertainty-20261019.json` and `.tar.gz`
+(SHA-256 `6dbaff32d56e7141676ff0eaa0bc39b96cd9ad4045d6ef17987f183965566864`).
+The earlier formatting-only failed check remains archived separately. Clean gates
+remain weak; uncertain gates are retained per identity until restart, not under a
+hard global memory cap. **Disposition: stop for parent review, then pause;
+unpublished, with no broader feature continuation.**
+
 **Still missing:** declared typed target errors are not memoized/replayed as
 durable business outcomes. Status/detail-preserving typed outcome envelopes,
 source/target receipt arbitration and catching a declared error without poisoning
