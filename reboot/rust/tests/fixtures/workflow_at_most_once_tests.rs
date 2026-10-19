@@ -1310,6 +1310,39 @@ async fn memoize_with_seeds_stores_separate_values() {
     server.abort();
 }
 
+#[tokio::test]
+async fn equivalent_seed_maps_replay_stored_results_without_redispatch() {
+    let (f, database, server) = fake().await;
+    let url = "type.googleapis.com/tests.reboot.protoc.Counter";
+    let first = WorkflowAttempt::default();
+    let context = f.context(&first).iteration("loop", 0, 2).unwrap();
+    let original = context.with_seeds(&[("tenant", b"acme"), ("region", b"eu")]).unwrap();
+    let stored: crate::proto::Counter = original.memoize(
+        "seed-map-replay", 1, url,
+        || async { Ok(crate::proto::Counter { value: 73 }) }, false,
+    ).await.unwrap();
+    assert_eq!(stored.value, 73);
+    assert!(first.clean());
+    let stored_requests = database.store_requests().len();
+    for noop_override in [false, true] {
+        let restarted = WorkflowAttempt::default();
+        let context = f.context(&restarted).iteration("loop", 0, 2).unwrap();
+        let reordered = context.with_seeds(&[("region", b"eu"), ("tenant", b"acme")]).unwrap();
+        let effective = if noop_override {
+            reordered.with_seeds(&[("region", b"eu")]).unwrap()
+        } else { reordered };
+        let replay: crate::proto::Counter = effective.memoize(
+            "seed-map-replay", 1, url,
+            || async { panic!("equivalent effective seeds redispatched callback") }, false,
+        ).await.unwrap();
+        assert_eq!(replay.value, 73);
+        assert_eq!(database.store_requests().len(), stored_requests);
+        assert!(restarted.clean());
+    }
+    server.abort();
+    let _ = server.await;
+}
+
 // These comparisons retain indexed workflow-wide memos. They are deliberately
 // not reactive waits and must never be admitted in an unbounded cursor.
 #[tokio::test]
