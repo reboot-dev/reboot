@@ -1623,6 +1623,13 @@ mod idempotency_key_scope_tests {
         let context = build_context(&tasks, task, &cancel, &attempt, None, Vec::new());
         assert_eq!(context.state_ref(), expected);
     }
+    #[tokio::test]
+    async fn state_type_matches_task_state_type() {
+        let (tasks, task, cancel, attempt) = make_scope_context(0, 1, Vec::new());
+        let expected = task.task_id.as_ref().unwrap().state_type.clone();
+        let context = build_context(&tasks, task, &cancel, &attempt, None, Vec::new());
+        assert_eq!(context.state_type(), expected);
+    }
 }
 
 /// Private, dispatcher-minted workflow authority. Explicit named same-actor
@@ -1881,6 +1888,17 @@ impl<'a> WorkflowContext<'a> {
             .unwrap_or_default();
         crate::state_ref::StateRef::from_id(&state_type, &state_id)
             .unwrap_or_else(|_| crate::state_ref::StateRef::from_id("", "").unwrap())
+    }
+
+    /// The state type name of the actor this workflow is running on.
+    ///
+    /// This is the Rust equivalent of Python's `WorkflowContext.task.state_type`.
+    pub fn state_type(&self) -> String {
+        self.task
+            .task_id
+            .as_ref()
+            .map(|id| id.state_type.clone())
+            .unwrap_or_default()
     }
 
     /// Await a future while respecting workflow cancellation.
