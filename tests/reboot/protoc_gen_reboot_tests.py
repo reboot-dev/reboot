@@ -1,3 +1,4 @@
+import ast
 import os
 import unittest
 from google.api import annotations_pb2
@@ -68,6 +69,42 @@ class GeneratorTest(unittest.TestCase):
             self.descriptor_set = FileDescriptorSet.FromString(file.read())
 
         self.plugin = ModifiedRebootProtocPlugin()
+
+    def test_empty_proto_ui_requests_generate_valid_signatures(self) -> None:
+        for auto_construct in (
+            options_pb2.AUTO_CONSTRUCT_UNSPECIFIED,
+            options_pb2.PER_USER_ID,
+        ):
+            with self.subTest(auto_construct=auto_construct):
+                descriptor_set = FileDescriptorSet()
+                descriptor_set.CopyFrom(self.descriptor_set)
+                file = descriptor_set.file[-1]
+                file.message_type.add(name='EmptyUIRequest')
+                state = next(
+                    m for m in file.message_type if m.name == 'Greeter'
+                )
+                options = state.options.Extensions[options_pb2.state]
+                options.uis.add(
+                    name='show_empty',
+                    title='Empty UI',
+                    path='empty',
+                    request_message='EmptyUIRequest',
+                )
+                plugin = ModifiedRebootProtocPlugin()
+                test_plugin(plugin, descriptor_set)
+                template_data = plugin.proto_to_template_data[file.name]
+                # Exercise both UI signature branches independently of the
+                # unrelated SetClaims requirements for per-user APIs.
+                template_data.states[0].proto.auto_construct = auto_construct
+                rendered = plugin.template_render(template_data)
+                tree = ast.parse(rendered)
+                tools = [
+                    node for node in ast.walk(tree)
+                    if isinstance(node, ast.AsyncFunctionDef) and
+                    node.name.endswith('show_empty_tool')
+                ]
+                self.assertEqual(len(tools), 1)
+                self.assertEqual(tools[0].args.kwonlyargs, [])
 
     def test_normal_run(self) -> None:
         test_plugin(self.plugin, self.descriptor_set)

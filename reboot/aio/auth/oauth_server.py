@@ -572,11 +572,11 @@ class OAuthServer:
         refresh_token: str,
         expires_in: int,
     ) -> None:
-        """Set the three session cookies on `response`.
+        """Set the access and refresh session cookies on `response`.
 
-        `SameSite=None; Secure` because Reboot's only deployment mode
-        today serves the SPA on a different origin than the backend,
-        and `SameSite=Lax` cookies aren't sent on cross-site fetches.
+        `SameSite=None; Secure` supports SPAs served on a different
+        origin than the backend; `SameSite=Lax` cookies aren't sent
+        on cross-site fetches to the OAuth endpoints.
         Users with strict tracking prevention (Safari ITP, Firefox
         ETP, Chrome 3PC blocking) may have these stripped and be
         unable to sign in. TODO: prefer `SameSite=Lax; Secure`

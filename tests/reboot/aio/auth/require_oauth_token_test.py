@@ -74,6 +74,21 @@ class AuthenticatedRoutesTest(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(challenge.startswith('Bearer resource_metadata='))
             self.assertIn('/.well-known/oauth-protected-resource', challenge)
 
+            # A portless tunnel rewrites Host; discovery must still use
+            # the public origin carried by the forwarded headers.
+            response = await client.get(
+                url,
+                headers={
+                    'X-Forwarded-Host': 'dashboard.example.com',
+                    'X-Forwarded-Proto': 'https',
+                },
+            )
+            self.assertEqual(response.status_code, 401)
+            self.assertIn(
+                'https://dashboard.example.com/.well-known/oauth-protected-resource',
+                response.headers['WWW-Authenticate'],
+            )
+
             response = await client.get(
                 url, headers={
                     **foreign, 'Authorization': 'Bearer wrong'
