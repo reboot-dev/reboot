@@ -1,6 +1,6 @@
 ---
 name: agents-md
-description: Give a Reboot application an `AGENTS.md`, the project's map and rules for any coding agent, and a `CLAUDE.md` that imports it. Use when creating a Reboot app (the `mcp-ui` and `web-app` skills call this at their first step), when working in an existing Reboot project (one with a `.rbtrc`) that has no `AGENTS.md`, and whenever a change moves a file, changes a command, or teaches a rule the next session needs.
+description: Give a Reboot application an `AGENTS.md`, the project's map and rules for any coding agent, and a `CLAUDE.md` that imports it. Use when creating a Reboot app (the `mcp-app` and `web-app` skills call this at their first step), when working in an existing Reboot project (one with a `.rbtrc`) that has no `AGENTS.md`, and whenever a change moves a file, changes a command, or teaches a rule the next session needs.
 argument-hint: [<project-directory>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 ---
@@ -45,7 +45,7 @@ for what the project doesn't have, and leave no placeholder behind.
 
 <One or two sentences: what the app does and who uses it.> It is a
 Reboot application: Python state types with durable state, and
-<a web app | an MCP UI | a web app and an MCP UI> in front of them. For
+<a web app | an MCP App | a web app and an MCP App> in front of them. For
 anything about Reboot itself, use the Reboot plugin's skills; this file
 says where things are in this project and what it has learned.
 
@@ -58,7 +58,7 @@ says where things are in this project and what it has learned.
 | Application: servicers, `initialize`, `oauth=` | `backend/src/main.py`                                             |
 | Generated code, never edited                   | `backend/api/`, `frontend/api/`, rebuilt by `uv run rbt generate` |
 | Web app                                        | `frontend/web/src/`                                               |
-| MCP UIs                                        | `frontend/mcp/<ui>/`                                              |
+| MCP Apps                                       | `frontend/mcp/<name>/`                                            |
 | Feature files: what the app must do            | `tests/*.feature`                                                 |
 | Test modules                                   | `tests/*_test.py`                                                 |
 | `rbt` settings, one per line, not YAML         | `.rbtrc`                                                          |
@@ -98,5 +98,5 @@ project has a rule of its own, then replace it with that rule.
 
 Every later change that moves a file, adds a state type, a page or a
 UI, changes a command, or teaches a rule updates `AGENTS.md` in the
-same change. The `mcp-ui` and `web-app` Update Flows end with this
+same change. The `mcp-app` and `web-app` Update Flows end with this
 step.
