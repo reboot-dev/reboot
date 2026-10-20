@@ -114,14 +114,14 @@ project directory):
 uv run rbt dev run
 
 # Terminal 2: start the Vite dev server for Hot Module Replacement,
-# as https://frontend.agent-wiki.localhost, which the backend serves the
+# as https://frontend-agent-wiki.localhost, which the backend serves the
 # MCP Apps from.
 cd frontend && npm run dev
 ```
 
 Both run under [portless](https://github.com/vercel-labs/portless),
 which gives them names instead of ports: `npm run dev` is
-`portless frontend.agent-wiki vite`, portless being a dev dependency, and
+`portless frontend-agent-wiki vite`, portless being a dev dependency, and
 `rbt dev run` needs the `portless` CLI too: install it once with
 `npm install -g portless` and start its proxy with
 `portless proxy start`. (For plain ports instead, run

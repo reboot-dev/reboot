@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "npm run dev:portless",
-    "dev:portless": "portless frontend.reboot-swag-store vite",
+    "dev:portless": "portless frontend-reboot-swag-store vite",
     "dev:ports": "vite",
     "build": "tsc -b && node build.mjs"
   },

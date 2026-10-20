@@ -161,7 +161,7 @@ ENVVAR_RBT_WEB_APP_DIST_PATH = 'RBT_WEB_APP_DIST_PATH'
 # The name to register with the portless proxy once the application is
 # serving (see `reboot.portless`), so that it is served as
 # `https://<RBT_PORTLESS_NAME>.localhost`: the `--application-name`
-# under `rbt dev run --portless`, and `dashboard.<application-name>`
+# under `rbt dev run --portless`, and `dashboard-<application-name>`
 # for `rbt dashboard --portless`. Unset when not under portless.
 ENVVAR_RBT_PORTLESS_NAME = 'RBT_PORTLESS_NAME'
 # The public URL this application is reachable at through a tunnel

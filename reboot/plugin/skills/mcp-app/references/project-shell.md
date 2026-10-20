@@ -59,7 +59,7 @@ dev run --application=backend/src/main.py
 # Default to named URLs via portless (https://github.com/vercel-labs/portless)
 # when no --config is specified: the app is https://<project-name>.localhost, serving
 # the MCP Apps (and a web app) from Vite, run as `cd frontend && npm run dev`
-# (`portless frontend.<project-name> vite`) at https://frontend.<project-name>.localhost,
+# (`portless frontend-<project-name> vite`) at https://frontend-<project-name>.localhost,
 # serves the MCP Apps at https://<project-name>.localhost. Needs the `portless`
 # CLI and its proxy (`portless proxy start`).
 dev run --default-config=portless
@@ -68,7 +68,7 @@ dev run --default-config=portless
 # in either config.
 
 dev run:portless --portless
-dev run:portless --frontend-url=https://frontend.<project-name>.localhost
+dev run:portless --frontend-url=https://frontend-<project-name>.localhost
 dev run:portless --mcp-app
 # A dual-frontend app also serves its web app from the dev server, at `/`:
 # dev run:portless --web-app
@@ -87,7 +87,7 @@ dev run:dist --mcp-app-dist-path=frontend/dist/mcp
 # dev run:dist --web-app-dist-path=frontend/dist/web
 
 # The developer dashboard (`rbt dashboard`) too: it is
-# https://dashboard.<project-name>.localhost by default, or on the plain
+# https://dashboard-<project-name>.localhost by default, or on the plain
 # port http://127.0.0.1:9871 with `rbt dashboard --config=ports`.
 dashboard --default-config=portless
 dashboard:portless --portless

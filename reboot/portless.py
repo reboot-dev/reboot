@@ -35,8 +35,12 @@ def hostname(name: str) -> str:
 
 def dashboard_name(name: str) -> str:
     """The name `rbt dashboard --portless` registers an application's
-    developer dashboard under, `dashboard.<name>`."""
-    return f'dashboard.{name}'
+    developer dashboard under, `dashboard-<name>`: one hostname label,
+    like the frontend dev server's `frontend-<name>`, so that every
+    name of an application is a direct subdomain of one domain, which
+    is what a single wildcard certificate covers once these names are
+    served through a tunnel."""
+    return f'dashboard-{name}'
 
 
 async def alias(name: str, port: int) -> None:

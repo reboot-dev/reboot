@@ -8,7 +8,7 @@
   ],
   "scripts": {
     "dev": "npm run dev:portless",
-    "dev:portless": "portless frontend.bank vite",
+    "dev:portless": "portless frontend-bank vite",
     "dev:ports": "vite",
     "lint": "eslint web/src mcp",
     "build": "npm run lint && tsc -b && node build.mjs",

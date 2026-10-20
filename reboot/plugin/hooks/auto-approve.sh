@@ -276,7 +276,7 @@ case "$tool" in
                         # `run` skill — frontend dev server: `dev`,
                         # or a script named after an `.rbtrc`
                         # config (`dev:portless`, which runs
-                        # `portless frontend.<name> vite`, or `dev:ports`).
+                        # `portless frontend-<name> vite`, or `dev:ports`).
                         in_reboot_project "$effective_dir" || exit 1
                         rest="${trimmed#npm run dev}"
                         case "$rest" in

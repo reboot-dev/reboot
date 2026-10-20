@@ -111,7 +111,7 @@ def _get_frontend_config() -> FrontendConfig | None:
     """Get frontend host configuration from environment.
 
     Parses `RBT_FRONTEND_URL` (e.g., "http://localhost:5173", or
-    "https://frontend.<name>.localhost" under `--portless`): the dev server
+    "https://frontend-<name>.localhost" under `--portless`): the dev server
     serving the MCP Apps, the web app, or both, which Envoy routes
     `/__/frontend/**` to.
 

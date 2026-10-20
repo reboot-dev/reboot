@@ -33,7 +33,7 @@ OAUTH_PATH_PREFIX = "/__/oauth/"
 def frontend_dev_origin() -> Optional[str]:
     """Under `rbt dev run`, the origin of the frontend dev server it
     routes to (`--frontend-url`), where a browser may open the web app
-    too, e.g., `https://frontend.<app>.localhost` under `--portless`.
+    too, e.g., `https://frontend-<app>.localhost` under `--portless`.
     Trusted exactly: it is the dev server we were told about, not a
     pattern. `None` without one, or outside `rbt dev run`."""
     if not running_rbt_dev():

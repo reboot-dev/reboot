@@ -34,7 +34,7 @@ which the plugin raises an error about if the config sets them: the
 backend's `--frontend-url` and `--mcp-app-dist-path` depend on
 their values. The copy's `server.host: true` goes too: the plugin
 listens on every interface unless the config or the command line
-(`portless frontend.<app> vite` passes `--host 127.0.0.1`) says where. The copy fixed the dev server's port at 4444; the plugin
+(`portless frontend-<app> vite` passes `--host 127.0.0.1`) says where. The copy fixed the dev server's port at 4444; the plugin
 leaves the port to Vite, so it is Vite's default, 5173, unless the
 config sets `server.port`. Change `--frontend-url` (and
 `VITE_WEB_APP_URL`, if set) in `.rbtrc` and `.env.development` from

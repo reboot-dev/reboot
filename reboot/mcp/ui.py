@@ -490,7 +490,7 @@ def _build_claude_ngrok_free_error_html() -> str:
 
 def _dev_server_ssl_context() -> Optional[ssl.SSLContext]:
     """Under portless, which serves the dev server as
-    `https://frontend.<name>.localhost`, a context that trusts the
+    `https://frontend-<name>.localhost`, a context that trusts the
     portless proxy's CA too; otherwise `None`, `urlopen`'s default."""
     if reboot.portless.enabled():
         return reboot.portless.ssl_context()

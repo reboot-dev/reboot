@@ -124,10 +124,10 @@ npm run dev
 ```
 
 That starts a single Vite dev server that serves both the web app and
-the MCP Apps, as `https://frontend.{{ application_name }}.localhost`, which the backend
+the MCP Apps, as `https://frontend-{{ application_name }}.localhost`, which the backend
 serves them from (the name matches the backend's `{{ application_name }}.localhost`,
 which is how the two trust each other): `npm run dev` is
-`portless frontend.{{ application_name }} vite`, portless being a dev dependency,
+`portless frontend-{{ application_name }} vite`, portless being a dev dependency,
 mirroring the `.rbtrc`. Visit
 [https://{{ application_name }}.localhost](https://{{ application_name }}.localhost) for the web app.
 Without portless (`rbt dev run --config=ports`), run

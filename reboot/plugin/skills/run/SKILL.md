@@ -118,7 +118,7 @@ each local server a name instead of a port: the app is
 `https://<app>.localhost`, where `<app>` is the `.rbtrc`'s
 `--application-name`, serving the API, the web app at `/` and the
 MCP Apps, the latter two proxied from the frontend dev server, which
-runs as `https://frontend.<app>.localhost`. One origin, so no
+runs as `https://frontend-<app>.localhost`. One origin, so no
 `VITE_REBOOT_URL` is needed and one tunnel carries everything; the
 backend trusts exactly that dev server origin too. An app scaffolded
 by these skills defaults to it: its `.rbtrc` has
@@ -232,7 +232,7 @@ logs its named URLs once it is serving; without, pass
 
 Run the Vite dev server from `frontend/`. Its `package.json`
 mirrors the `.rbtrc`: `npm run dev` is the default, `dev:portless`,
-which runs `portless frontend.<app> vite` (portless is a dev dependency, so
+which runs `portless frontend-<app> vite` (portless is a dev dependency, so
 `npm install` brought it), and `dev:ports` is plain `vite` on Vite's
 port. Under portless, when the user chose it:
 

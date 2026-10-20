@@ -88,7 +88,7 @@ def register_dashboard(parser: ArgumentParser):
             'serve under a named `.localhost` URL via portless '
             '(https://github.com/vercel-labs/portless): registers '
             'the dashboard with the running portless proxy as '
-            '`https://dashboard.<application-name>.localhost`, beside '
+            '`https://dashboard-<application-name>.localhost`, beside '
             "the application's `https://<application-name>.localhost`. "
             'The name is the '
             "application's, from `dev run --application-name` in "
@@ -525,14 +525,14 @@ async def dashboard(
         # dashboard application registers the name once it is serving.
         portless_name: Optional[str] = None
         if args.portless:
-            # The dashboard is `https://dashboard.<name>.localhost`
+            # The dashboard is `https://dashboard-<name>.localhost`
             # beside the application's `https://<name>.localhost`.
             application_name = _application_name(parser)
             if application_name is None:
                 terminal.fail(
                     '`--portless` needs the application\'s name, which is '
                     'the hostname '
-                    '(`https://dashboard.<application-name>.localhost`). '
+                    '(`https://dashboard-<application-name>.localhost`). '
                     '`rbt dashboard` reads it from your '
                     f'{parser.dot_rc_filename}, where `rbt dev run` does:\n'
                     '\n'
