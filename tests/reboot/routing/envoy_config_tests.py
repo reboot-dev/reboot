@@ -1,6 +1,5 @@
 """The routes Envoy gets for the paths the web framework answers."""
 
-import os
 import unittest
 from envoy.config.listener.v3 import listener_pb2
 from envoy.config.route.v3 import route_components_pb2
@@ -14,11 +13,6 @@ from reboot.aio.http import PythonWebFramework
 from reboot.aio.types import ApplicationId, ServerId
 from reboot.routing import envoy_config
 from reboot.routing.envoy_config import ServerAddress, ServerInfo
-from reboot.settings import (
-    ENVVAR_RBT_DEV,
-    ENVVAR_RBT_FRONTEND_URL,
-    ENVVAR_RBT_WEB_APP,
-)
 
 
 def _public_routes(listeners: list[listener_pb2.Listener]):
@@ -35,7 +29,8 @@ def _public_routes(listeners: list[listener_pb2.Listener]):
 
 
 def _listeners(
-    route_matches: list[route_components_pb2.RouteMatch]
+    route_matches: list[route_components_pb2.RouteMatch],
+    frontend: envoy_config.FrontendConfig | None = None,
 ) -> list[listener_pb2.Listener]:
     return envoy_config.listeners(
         application_id=ApplicationId("testing"),
@@ -61,17 +56,11 @@ def _listeners(
         key_path=Path("key"),
         allowed_origins=None,
         route_matches=route_matches,
+        frontend=frontend,
     )
 
 
 class EnvoyConfigTest(unittest.TestCase):
-
-    def setUp(self) -> None:
-        for name in (
-            ENVVAR_RBT_DEV, ENVVAR_RBT_FRONTEND_URL, ENVVAR_RBT_WEB_APP
-        ):
-            os.environ.pop(name, None)
-            self.addCleanup(os.environ.pop, name, None)
 
     def test_route_matches_are_routed_ahead_of_the_catch_all(self) -> None:
         listeners = _listeners(
@@ -112,12 +101,14 @@ class EnvoyConfigTest(unittest.TestCase):
         self.assertEqual(routes[-1][0].prefix, "/")
 
     def test_web_app_gives_the_catch_all_to_the_dev_server(self) -> None:
-        os.environ[ENVVAR_RBT_DEV] = "true"
-        os.environ[ENVVAR_RBT_FRONTEND_URL] = "http://localhost:5173"
-        os.environ[ENVVAR_RBT_WEB_APP] = "true"
-
         routes = _public_routes(
-            _listeners([route_components_pb2.RouteMatch(prefix="/mcp")])
+            _listeners(
+                [route_components_pb2.RouteMatch(prefix="/mcp")],
+                frontend=envoy_config.frontend_config(
+                    "http://localhost:5173",
+                    web_app=True,
+                ),
+            )
         )
 
         # `/__/frontend/` first, the application's paths to its HTTP
@@ -133,10 +124,15 @@ class EnvoyConfigTest(unittest.TestCase):
         self.assertEqual(routes[-1][1], envoy_config.FRONTEND_CLUSTER_NAME)
 
     def test_without_web_app_the_http_port_keeps_the_catch_all(self) -> None:
-        os.environ[ENVVAR_RBT_DEV] = "true"
-        os.environ[ENVVAR_RBT_FRONTEND_URL] = "http://localhost:5173"
-
-        routes = _public_routes(_listeners([]))
+        routes = _public_routes(
+            _listeners(
+                [],
+                frontend=envoy_config.frontend_config(
+                    "http://localhost:5173",
+                    web_app=False,
+                ),
+            )
+        )
 
         self.assertEqual(routes[0][0].prefix, "/__/frontend/")
         self.assertEqual(routes[-1][0].prefix, "/")

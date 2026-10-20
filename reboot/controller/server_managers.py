@@ -36,7 +36,11 @@ from reboot.controller.settings import (
     ENVVAR_REBOOT_REPLICA_INDEX,
 )
 from reboot.naming import ensure_valid_application_id
-from reboot.routing.envoy_config import ServerAddress, ServerInfo
+from reboot.routing.envoy_config import (
+    FrontendConfig,
+    ServerAddress,
+    ServerInfo,
+)
 from reboot.run_environments import on_cloud
 from reboot.server.local_envoy import LocalEnvoy
 from reboot.server.local_envoy_factory import LocalEnvoyFactory
@@ -421,6 +425,8 @@ class RegisteredRevision:
     allowed_origins: Optional[list[str]]
     token_verifier: Optional[TokenVerifier]
     effect_validation: Optional[EffectValidation]
+    # The frontend dev server the local Envoy routes to, if any.
+    frontend: Optional[FrontendConfig]
 
 
 @dataclass(
@@ -630,6 +636,7 @@ class LocalServerManager(ServerManager):
         local_envoy_use_tls: bool,
         allowed_origins: Optional[list[str]],
         effect_validation: Optional[EffectValidation],
+        frontend: Optional[FrontendConfig] = None,
     ):
         """Save the given serviceable definitions so that we can bring up
         corresponding objects if and when a Server requires them."""
@@ -643,6 +650,7 @@ class LocalServerManager(ServerManager):
             allowed_origins=allowed_origins,
             token_verifier=token_verifier,
             effect_validation=effect_validation,
+            frontend=frontend,
         )
 
     @reboot.aio.tracing.function_span()
@@ -1241,6 +1249,7 @@ class LocalServerManager(ServerManager):
             # The paths the web framework answers, which Envoy routes
             # to it ahead of its catch-all.
             route_matches=self._revision.web_framework.route_matches(),
+            frontend=self._revision.frontend,
         )
 
         await self._local_envoy.start()

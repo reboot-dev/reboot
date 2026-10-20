@@ -1097,6 +1097,15 @@ class Application:
             'Expecting server count from `rbt dev` or `rbt serve`'
         )
 
+        # The frontend dev server for the local Envoy to route to, from
+        # `rbt dev run --frontend-url`, and whether it serves the web
+        # app, `--web-app`.
+        frontend_url: Optional[str] = None
+        web_app = False
+        if running_rbt_dev():
+            frontend_url = os.environ.get(ENVVAR_RBT_FRONTEND_URL) or None
+            web_app = os.environ.get(ENVVAR_RBT_WEB_APP) == "true"
+
         async def initialize(context: InitializeContext) -> None:
             # Construct/refresh the `Application` singleton on every
             # boot so we get latest values (`title`, `description`,
@@ -1139,6 +1148,8 @@ class Application:
             local_envoy_port=local_envoy_port,
             allowed_origins=self._allowed_origins,
             servers=int(servers),
+            frontend_url=frontend_url,
+            web_app=web_app,
         )
 
     def _get_serviceables(self) -> list[Serviceable]:

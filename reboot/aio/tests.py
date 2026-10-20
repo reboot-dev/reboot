@@ -278,6 +278,8 @@ class Reboot(reboot.aio.reboot.Reboot):
         servers: Optional[int] = None,
         effect_validation: Optional[EffectValidation] = None,
         inject_oauth: bool = True,
+        frontend_url: Optional[str] = None,
+        web_app: bool = False,
     ) -> ApplicationRevision:
         ...
 
@@ -311,6 +313,8 @@ class Reboot(reboot.aio.reboot.Reboot):
         servers: Optional[int] = None,
         effect_validation: Optional[EffectValidation] = None,
         revision: Optional[ApplicationRevision] = None,
+        frontend_url: Optional[str] = None,
+        web_app: bool = False,
     ) -> ApplicationRevision:
         ...
 
@@ -337,6 +341,8 @@ class Reboot(reboot.aio.reboot.Reboot):
         effect_validation: Optional[EffectValidation] = None,
         revision: Optional[ApplicationRevision] = None,
         inject_oauth: bool = True,
+        frontend_url: Optional[str] = None,
+        web_app: bool = False,
     ) -> ApplicationRevision:
         """Serves `application`.
 
@@ -454,6 +460,8 @@ class Reboot(reboot.aio.reboot.Reboot):
             allowed_origins=application._allowed_origins,
             servers=servers,
             effect_validation=effect_validation,
+            frontend_url=frontend_url,
+            web_app=web_app,
         )
 
         return revision

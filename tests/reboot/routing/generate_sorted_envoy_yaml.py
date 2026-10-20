@@ -83,6 +83,8 @@ async def main(path: str):
         # No web framework paths: the fixture's routes are the catch-all
         # alone.
         route_matches=[],
+        # No frontend dev server to route to.
+        frontend=None,
     )._generate_envoy_yaml()
 
     await _write_sorted_yaml(yaml_content, path)

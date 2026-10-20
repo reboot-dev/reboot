@@ -8,6 +8,7 @@ from google.protobuf.descriptor_pb2 import FileDescriptorSet
 from log.log import get_logger
 from pathlib import Path
 from reboot.aio.types import ApplicationId
+from reboot.routing.envoy_config import FrontendConfig
 from reboot.server.envoy_nanny import envoy_nanny_command
 from reboot.server.local_envoy import LocalEnvoy
 from reboot.settings import ONLY_LOCALHOST_NETWORK_ADDRESS, LocalEnvoyMode
@@ -31,6 +32,7 @@ class ExecutableLocalEnvoy(LocalEnvoy):
         debug_mode: bool,
         allowed_origins: Optional[list[str]],
         route_matches: list[route_components_pb2.RouteMatch],
+        frontend: Optional[FrontendConfig],
     ):
         self._requested_public_port = public_port
         self._public_port = 0
@@ -85,6 +87,7 @@ class ExecutableLocalEnvoy(LocalEnvoy):
             observed_dir=Path(self._tmp_envoy_dir.name),
             allowed_origins=allowed_origins,
             route_matches=route_matches,
+            frontend=frontend,
         )
 
         self._envoy_config_path = self._write_envoy_dir(
