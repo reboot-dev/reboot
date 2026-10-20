@@ -12,7 +12,34 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
-## Canonical application-RPC workflow task admission
+## Canonical ordinary reader/writer task targets (bounded)
+
+Generated DatabaseAdapter services can admit ordinary reader/writer tasks through
+their original application RPC and canonical Python schedule/UUID-trailer
+contract, using an explicitly registered existing actor. Workflow-bearing adapters
+also dispatch ordinary writer tasks through their real scheduling hook, including
+atomic same-actor successor tasks. Actual generated Reboot Python spawn and typed
+Wait clients exercise both paths against native C++ Database/RocksDB.
+
+Ordinary writer state, immutable request/response checkpoint and successor tasks
+use the existing atomic native Store; task terminal completion remains a separate
+CAS. Retained replay must return the saved result without remutation, including
+after an intervening ordinary writer. No new engine wire protocol, transaction
+task adapter or fake workflow-equivalent writer body is introduced. Original
+workflow journals, identity domains, relative target-clock capability, duplicate
+LAST schedule behavior and cancellation publication mutex are unchanged.
+
+This is **not full generic task parity**: running ordinary writer/reader bodies
+still retain actor admission, so cancellation cannot interrupt a parked body.
+Scheduled cancellation is supported; already-committed effects are not rolled
+back. Workflow reader-wait descriptors, transaction adapters/tasks, dynamic
+placement, cursor admission/GC and Python-hosted UUID allocation remain outside
+this vertical. Typed protobuf error variants are supported, not the unary-only
+rich-writer DeclaredStatus variant. Pre-checkpoint handler side effects are not
+exactly-once. Contracts and evidence boundaries:
+[generic task migration map](GENERIC-TASK-MIGRATION-MAP.md).
+
+## Canonical application-RPC workflow task admission (original checkpoint)
 
 Absolute/immediate generated Rust `_spawn` / `_task` no longer depend on the
 experimental Rust-only Spawn RPC. They use the original application method and
@@ -28,10 +55,11 @@ missing/changed UUID or uncertain owner does not authorize source continuation.
 The prior published Rust binary's Started intent and admitted target survive full
 native restart and recover through the new route without creating another child.
 
-This remains **workflow-only** admission on explicitly registered existing actors.
-Generic reader/writer and transaction task targets, cursor admission/receipt GC
-and dynamic placement remain migration barriers. Unsupported task-schedule
-metadata is rejected before those handlers run on the generated workflow adapter.
+That checkpoint qualified **workflow-only** admission on explicitly registered
+existing actors. The bounded generic extension is described above; transaction
+task targets, cursor admission/receipt GC and dynamic placement remain migration
+barriers. Unsupported workflow reader-wait/constructor task targets are rejected
+before their handlers run on the generated workflow adapter.
 Legacy absolute Spawn remains available for compatibility; relative SpawnAfter
 keeps its target-admission clock and existing identity, not Python caller-clock
 semantics. Empty canonical schedule metadata retains the legacy no-timestamp

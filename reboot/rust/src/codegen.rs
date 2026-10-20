@@ -1703,7 +1703,12 @@ fn emit_durable(
             } else {
                 (envelope, prefix, map_declared_error, precheck)
             };
-            output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n{unary_composition}{constructor_compatibility}        let handler = self.handler.clone();\n        self.store.{envelope}::<{declaration}, _, _, _>(\n            {prefix}request, move |{callback_args}| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ {precheck}handler.{callback_method}.await{map_declared_error} }})\n            }},\n        ).await\n    }}\n"));
+            let canonical_task = if matches!(**kind, DurableKind::Writer(WriterMetadata { constructor: true })) {
+                "if request.metadata().contains_key(\"x-reboot-task-schedule\") { return Err(tonic::Status::failed_precondition(\"constructors cannot be task targets\")); }".to_owned()
+            } else {
+                format!("if request.metadata().contains_key(\"x-reboot-task-schedule\") {{ let owner=self.tasks.as_ref().ok_or_else(||tonic::Status::failed_precondition(\"canonical task admission requires registered task owner\"))?; return {runtime_module}::one_shot_tasks::WorkflowSpawner::new(owner.clone(),self.authorization.clone()).schedule(\"{method_identity}\",request).await; }}")
+            };
+            output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n{canonical_task}\n{unary_composition}{constructor_compatibility}        let handler = self.handler.clone();\n        self.store.{envelope}::<{declaration}, _, _, _>(\n            {prefix}request, move |{callback_args}| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ {precheck}handler.{callback_method}.await{map_declared_error} }})\n            }},\n        ).await\n    }}\n"));
         }
         output.push_str("}\n\n");
         emit_local_readers(
@@ -1928,6 +1933,7 @@ fn emit_declared_error_enum(
         let variant = error.to_upper_camel_case();
         output.push_str(&format!("        Self::{variant}(error) => {{ let status = {runtime_module}::declared_error_status(tonic::Code::Unknown, \"declared error\", \"type.googleapis.com/{package}.{error}\", &error); {runtime_module}::one_shot_tasks::TaskHandlerError::declared(status) }},\n"));
     }
+
     let writer_conversion = if rich_writer {
         format!("fn into_declared_writer_error(self) -> {runtime_module}::runtime::DeclaredWriterError {{ if self.is_method_declared() {{ {runtime_module}::runtime::DeclaredWriterError::Declared(self.into_status()) }} else {{ {runtime_module}::runtime::DeclaredWriterError::Failed(self.into_status()) }} }}\n")
     } else { String::new() };
@@ -2123,12 +2129,17 @@ fn emit_transactional_client(
 ///
 /// Keep the generated transaction paths separate. In particular, a future
 /// shared-root promotion must not accidentally change inbound shared execution.
+fn transaction_task_schedule_guard(runtime: &str) -> String {
+    format!("if request.metadata().contains_key(\"x-reboot-task-schedule\") {{ if let Some(ticket)=request.extensions().get::<{runtime}::runtime::RegisteredLocalTicket>() {{ticket.discard();}} return Err(tonic::Status::failed_precondition(\"canonical task admission is unsupported by transaction adapters\")); }}\n")
+}
+
 fn emit_exclusive_transaction_method(output: &mut String, flow: TransactionFlow<'_>) {
+    let task_guard = transaction_task_schedule_guard(flow.runtime_module);
     // Transaction metadata selects a protocol path, not trusted identity.
     // Both fresh and validated inbound execution enforce the service policy;
     // factories authorize optional state before revealing whether it exists.
     output.push_str(&format!(
-        "    async fn {}(&self, mut request: tonic::Request<proto::{}>) -> Result<tonic::Response<proto::{}>, tonic::Status> {{\n        let headers = {}::RebootHeaders::from_request(&request).map_err(|error| {{ if let Some(ticket) = request.extensions().get::<{}::runtime::RegisteredLocalTicket>() {{ ticket.discard(); }} tonic::Status::invalid_argument(error.to_string()) }})?;\n        let inbound = headers.transaction_ids.is_some();\n",
+        "    async fn {}(&self, mut request: tonic::Request<proto::{}>) -> Result<tonic::Response<proto::{}>, tonic::Status> {{\n{task_guard}        let headers = {}::RebootHeaders::from_request(&request).map_err(|error| {{ if let Some(ticket) = request.extensions().get::<{}::runtime::RegisteredLocalTicket>() {{ ticket.discard(); }} tonic::Status::invalid_argument(error.to_string()) }})?;\n        let inbound = headers.transaction_ids.is_some();\n",
         flow.method, flow.request, flow.response, flow.runtime_module, flow.runtime_module,
     ));
     if flow.factory {
@@ -2184,11 +2195,12 @@ fn emit_exclusive_transaction_method(output: &mut String, flow: TransactionFlow<
     output.push_str("    }\n");
 }
 fn emit_shared_transaction_method(output: &mut String, flow: TransactionFlow<'_>) {
+    let task_guard = transaction_task_schedule_guard(flow.runtime_module);
     // Fail before admission/Load on unsupported shared error execution. Parsing
     // a declaration is not authorization to promote, enter children or use tasks.
     if flow.declared_error {
         output.push_str(&format!(
-            "    async fn {}(&self, request: tonic::Request<proto::{}>) -> Result<tonic::Response<proto::{}>, tonic::Status> {{\n        let headers = {}::RebootHeaders::from_request(&request).map_err(|error| {{ if let Some(ticket) = request.extensions().get::<{runtime}::runtime::RegisteredLocalTicket>() {{ ticket.discard(); }} tonic::Status::invalid_argument(error.to_string()) }})?;\n        if let Some(ticket) = request.extensions().get::<{}::runtime::RegisteredLocalTicket>() {{ ticket.discard(); return Err(tonic::Status::failed_precondition(\"local tickets exclude shared execution\")); }}\n        if headers.transaction_ids.is_some() || !self.shared_existing_writers {{ return Err(tonic::Status::failed_precondition(\"shared declared errors require registered existing-writer root opt-in; inbound and ordinary shared execution remain unsupported\")); }}\n",
+            "    async fn {}(&self, request: tonic::Request<proto::{}>) -> Result<tonic::Response<proto::{}>, tonic::Status> {{\n{task_guard}        let headers = {}::RebootHeaders::from_request(&request).map_err(|error| {{ if let Some(ticket) = request.extensions().get::<{runtime}::runtime::RegisteredLocalTicket>() {{ ticket.discard(); }} tonic::Status::invalid_argument(error.to_string()) }})?;\n        if let Some(ticket) = request.extensions().get::<{}::runtime::RegisteredLocalTicket>() {{ ticket.discard(); return Err(tonic::Status::failed_precondition(\"local tickets exclude shared execution\")); }}\n        if headers.transaction_ids.is_some() || !self.shared_existing_writers {{ return Err(tonic::Status::failed_precondition(\"shared declared errors require registered existing-writer root opt-in; inbound and ordinary shared execution remain unsupported\")); }}\n",
             flow.method, flow.request, flow.response, flow.runtime_module, flow.runtime_module,
             runtime = flow.runtime_module,
         ));
@@ -2197,7 +2209,7 @@ fn emit_shared_transaction_method(output: &mut String, flow: TransactionFlow<'_>
         return;
     }
     output.push_str(&format!(
-        "    async fn {}(&self, request: tonic::Request<proto::{}>) -> Result<tonic::Response<proto::{}>, tonic::Status> {{\n        let headers = {}::RebootHeaders::from_request(&request).map_err(|error| {{ if let Some(ticket) = request.extensions().get::<{runtime}::runtime::RegisteredLocalTicket>() {{ ticket.discard(); }} tonic::Status::invalid_argument(error.to_string()) }})?;\n        if let Some(ticket) = request.extensions().get::<{runtime}::runtime::RegisteredLocalTicket>() {{ ticket.discard(); return Err(tonic::Status::failed_precondition(\"local tickets exclude shared execution\")); }}\n        let inbound = headers.transaction_ids.is_some();\n        if inbound {{\n            // Shared inbound execution remains read-only; it never promotes.\n", flow.method, flow.request, flow.response, flow.runtime_module, runtime = flow.runtime_module
+        "    async fn {}(&self, request: tonic::Request<proto::{}>) -> Result<tonic::Response<proto::{}>, tonic::Status> {{\n{task_guard}        let headers = {}::RebootHeaders::from_request(&request).map_err(|error| {{ if let Some(ticket) = request.extensions().get::<{runtime}::runtime::RegisteredLocalTicket>() {{ ticket.discard(); }} tonic::Status::invalid_argument(error.to_string()) }})?;\n        if let Some(ticket) = request.extensions().get::<{runtime}::runtime::RegisteredLocalTicket>() {{ ticket.discard(); return Err(tonic::Status::failed_precondition(\"local tickets exclude shared execution\")); }}\n        let inbound = headers.transaction_ids.is_some();\n        if inbound {{\n            // Shared inbound execution remains read-only; it never promotes.\n", flow.method, flow.request, flow.response, flow.runtime_module, runtime = flow.runtime_module
     ));
     output.push_str("            if self.shared_existing_writers { return Err(tonic::Status::failed_precondition(\"shared existing writer roots exclude inbound execution\")); }\n");
     output.push_str("            if self.supervised_tree { return Err(tonic::Status::failed_precondition(\"tree excludes shared execution\")); }\n");
@@ -3443,7 +3455,8 @@ fn emit_transactions(
         } else {
             String::new()
         };
-        output.push_str(&format!("    async fn {method}(&self, {request_mutability}request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n{transactional_writer}{unary_composition}{constructor_compatibility}        let handler = self.handler.clone();\n        self.store.{envelope}::<{declaration}, _, _, _>(\n            {prefix}request, move |{callback_args}| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ handler.{callback_method}.await{error_map} }})\n            }},\n        ).await\n    }}\n"));
+        let task_guard = transaction_task_schedule_guard(runtime_module);
+        output.push_str(&format!("    async fn {method}(&self, {request_mutability}request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n{task_guard}{transactional_writer}{unary_composition}{constructor_compatibility}        let handler = self.handler.clone();\n        self.store.{envelope}::<{declaration}, _, _, _>(\n            {prefix}request, move |{callback_args}| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ handler.{callback_method}.await{error_map} }})\n            }},\n        ).await\n    }}\n"));
     }
     for (kind, method, request, response, method_identity) in transactions {
         let metadata = match kind {
@@ -4544,6 +4557,7 @@ mod tests {
             .content
             .unwrap();
         assert!(content.contains("pub struct CounterWritesMethodsTasks;"));
+        assert!(content.contains("WorkflowSpawner::new(owner.clone(),self.authorization.clone()).schedule(\"tests.reboot.protoc.CounterWritesMethods.Increment\",request).await"));
         assert!(content.contains("pub struct CounterWritesMethodsTasksAt;"));
         assert!(content.contains("pub struct CounterWritesMethodsTasksWait;"));
         assert!(content.contains("pub struct CounterWritesMethodsTasksWaitRouted<R>"));

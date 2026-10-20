@@ -50,6 +50,11 @@ def boundary(body):
     if 4 not in store:
         return None
     mutation = fields(store[4][0])
+    if os.environ.get('GENERIC_TASK_FAULT') == '1' and mutation.get(4) == [b'workflow.v1.Remote']:
+        if store.get(2):
+            return 'generic-spawn'
+        if store.get(1) and mutation.get(2, [b''])[0]:
+            return 'generic-writer'
     if (mutation.get(4) == [b'workflow.v1.Remote'] and
             mutation.get(8, [b''])[0].startswith(b'reboot.ordinary-writer.declared-error.v1\0')):
         assert not store.get(1) and not store.get(2), 'declared error must discard actor/task effects'

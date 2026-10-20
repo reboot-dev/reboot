@@ -207,9 +207,9 @@ impl ReaderTaskWaitService {
             return response(db::cancel_task_response::Status::NotFound);
         }
         tasks.validate(std::slice::from_ref(&task))?;
-        if !tasks.is_workflow(&task) {
+        if tasks.declaration(&task).is_none() {
             return Err(Status::failed_precondition(
-                "only registered workflows can be cancelled",
+                "only registered callable tasks can be cancelled",
             ));
         }
         // Cursor iteration/GC fencing is a distinct protocol. Preserve the old

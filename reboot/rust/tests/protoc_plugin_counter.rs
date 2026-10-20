@@ -3502,6 +3502,22 @@ async fn generated_mixed_service_mounts_and_dispatches_database_and_transaction_
     let mut factory = tonic::Request::new(proto::TransactionIncrementRequest { amount: 3 });
     *factory.metadata_mut() = reboot::RebootHeaders::new("transaction-counter").to_metadata().unwrap();
     assert_eq!(client.factory_increment(factory).await.unwrap_err().code(), tonic::Code::FailedPrecondition);
+    // Unsupported task metadata must not silently execute a unary mutation or
+    // transaction. Exercise the actual generated Tonic front doors, not a parser.
+    let scheduled = || {
+        let mut request=context.writer_with_key(proto::TransactionIncrementRequest{amount:999},Uuid::from_u128(999)).unwrap();
+        request.metadata_mut().insert("x-reboot-task-schedule","".parse().unwrap());
+        request
+    };
+    for error in [
+        client.query(scheduled()).await.unwrap_err(),
+        client.apply(scheduled()).await.unwrap_err(),
+        client.increment(scheduled()).await.unwrap_err(),
+        client.factory_increment(scheduled()).await.unwrap_err(),
+    ] {
+        assert_eq!(error.code(),tonic::Code::FailedPrecondition);
+        assert_eq!(error.message(),"canonical task admission is unsupported by transaction adapters");
+    }
     assert_eq!(
         *trace.lock().unwrap(),
         ["reader handler", "writer handler", "participant load", "handler", "coordinator DB prepare", "participant prepare", "coordinator DB prepared", "coordinator DB decision", "participant commit", "coordinator DB cleanup", "participant load", "participant abort"]

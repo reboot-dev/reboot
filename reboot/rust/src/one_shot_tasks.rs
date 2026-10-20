@@ -669,7 +669,7 @@ impl OneShotTasks {
         terminal: &db::task::ResponseOrError,
     ) -> Result<(), Status> {
         if let Some(declaration) = self.declaration(task) {
-            if declaration.workflow
+            if !declaration.constructor_scheduling && !declaration.workflow_reader_wait
                 && let db::task::ResponseOrError::Error(error) = terminal
                 && task_cancellation_status(error)?.is_some()
             {

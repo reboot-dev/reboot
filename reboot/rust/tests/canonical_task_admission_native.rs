@@ -5,6 +5,18 @@ fn canonical_python_generated_spawn_and_typed_task_retained_replay() {
 }
 
 #[test]
+#[ignore = "requires exact-source CANONICAL_TASK_BIN, reused native Database and canonical Python generator/runfiles"]
+fn canonical_python_generic_reader_writer_tasks_native() {
+    run("prove_generic_tasks.py", "GENERIC_TASK_EVIDENCE");
+}
+
+#[test]
+#[ignore = "requires exact-source CANONICAL_TASK_BIN, reused native Database and canonical Python generator/runfiles"]
+fn canonical_python_workflow_bearing_writer_tasks_native() {
+    run("prove_workflow_writer_tasks.py", "WORKFLOW_WRITER_TASK_EVIDENCE");
+}
+
+#[test]
 #[ignore = "requires pinned CANONICAL_LEGACY_BIN and source commit in addition to canonical native inputs"]
 fn legacy_started_intent_migrates_without_new_identity_or_unverified_uuid() {
     run(

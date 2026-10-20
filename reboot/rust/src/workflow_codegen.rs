@@ -240,6 +240,10 @@ mod workflow_emission_tests {
             "writer_step::<StateDurableState,proto::Q,proto::R",
             "workflow_scheduling_writer",
             "self.workflow_spawner()?.schedule(\"demo.Methods.Run\",request).await",
+            "self.workflow_spawner()?.schedule(\"demo.Methods.Apply\",request).await",
+            "admitted.execute_scheduling_outcome::<StateDurableState,proto::Q,proto::R",
+            "handler.apply_scheduled(state,request,state_ref).await",
+            "fn writer_method(&self,task:",
             "spawn_workflow_canonical::<proto::Q,proto::R>",
             "MethodsTasksWait",
             "context.finish::<StateDurableState,proto::Q,proto::R",
@@ -573,6 +577,9 @@ fn emit_workflow_service(
     let mut responses = String::new();
     let mut error_validations = String::new();
     let mut executions = String::new();
+    let mut writer_executions = String::new();
+    let mut writer_methods = String::new();
+    let mut writer_responses = String::new();
     let mut writers = String::new();
     let mut scheduling = String::new();
     let mut initializer_methods = String::new();
@@ -688,9 +695,19 @@ fn emit_workflow_service(
                 let error_descriptors=errors.iter().map(|error|format!("{runtime_module}::one_shot_tasks::DeclaredTaskError::new::<proto::{}>(\"type.googleapis.com/{package}.{error}\")",error.to_upper_camel_case())).collect::<Vec<_>>().join(",");
                 output.push_str(&format!("async fn {rust}(&self,state:&mut proto::{state},request:proto::{request})->Result<proto::{response},{handler_error}>;\nasync fn {rust}_scheduled(&self,state:&mut proto::{state},request:proto::{request},_state_ref:String)->Result<{runtime_module}::runtime::TransactionExecution<proto::{response}>,{handler_error}> {{ self.{rust}(state,request).await.map({runtime_module}::runtime::TransactionExecution::new) }}\n"));
                 declarations.push_str(&format!("{runtime_module}::one_shot_tasks::TaskMethodDeclaration::new::<{declaration},proto::{request},proto::{response}>(\"{identity}\",\"{response_type}\",vec![{error_descriptors}]).workflow_writer_step(),"));
+                validations.push_str(&format!("\"{name}\" => {{ let id=task.task_id.as_ref().ok_or_else(||tonic::Status::invalid_argument(\"missing writer task ID\"))?; {runtime_module}::runtime::writer_task_key(id,\"{identity}\")?; <proto::{request} as prost::Message>::decode(task.request.as_slice()).map_err(|_|tonic::Status::invalid_argument(\"malformed writer task request\"))?; Ok(()) }},"));
+                responses.push_str(&format!("\"{name}\" if response.type_url==\"{response_type}\" => {{ <proto::{response} as prost::Message>::decode(response.value.as_slice()).map_err(|_|tonic::Status::data_loss(\"malformed writer task response\"))?; Ok(()) }},"));
+                if declared {
+                    let validation=task_error_validation(annotation,name,package,runtime_module,"");
+                    error_validations.push_str(&format!("\"{name}\" => {{ {validation} Ok(()) }},"));
+                }
+                writer_methods.push_str(&format!("\"{name}\"=>Some(\"{identity}\"),"));
+                writer_responses.push_str(&format!("\"{name}\"=>Some(\"{response_type}\"),"));
+                let task_disposition=if declared { ".map_err(|error|error.into_task_handler_error())".to_owned() } else { format!(".map_err({runtime_module}::one_shot_tasks::TaskHandlerError::Failed)") };
+                writer_executions.push_str(&format!("\"{name}\"=>{{let handler=self.handler.clone(); admitted.execute_scheduling_outcome::<{declaration},proto::{request},proto::{response},_>(move |state,request,state_ref|Box::pin(async move {{let execution=handler.{rust}_scheduled(state,request,state_ref).await{task_disposition}?; if execution.final_state.is_some() || !execution.idempotent_mutations.is_empty() {{return Err({runtime_module}::one_shot_tasks::TaskHandlerError::Failed(tonic::Status::failed_precondition(\"workflow scheduling writer supports only local state and tasks\")));}} let mut result={runtime_module}::runtime::WriterExecution::new(execution.response); result.task_upserts=execution.task_upserts; Ok(result)}})).await}},"));
                 writers.push_str(&format!("\"{name}\" | "));
                 step_methods.push_str(&format!("pub async fn {rust}<H:{handler}>(context:&{runtime_module}::one_shot_tasks::WorkflowContext<'_>,handler:std::sync::Arc<H>,alias:&str,request:proto::{request})->Result<proto::{response},{handler_error}> {{ context.{step}::<{declaration},proto::{request},proto::{response},_>(alias,\"{identity}\",\"{response_type}\",request,move |state,request|Box::pin(async move {{handler.{rust}(state,request).await{disposition}}})).await{decode} }}\n"));
-                rpc_methods.push_str(&format!("async fn {rust}(&self,request:tonic::Request<proto::{request}>)->Result<tonic::Response<proto::{response}>,tonic::Status> {{ if request.metadata().contains_key(\"x-reboot-task-schedule\") {{ return Err(tonic::Status::failed_precondition(\"canonical task admission currently requires a workflow target\")); }} let handler=self.handler.clone(); self.store.workflow_scheduling_writer::<{declaration},_,_,_>(\"{identity}\",&self.authorization,self.tasks.as_ref(),request,move |state,request,state_ref|Box::pin(async move {{handler.{rust}_scheduled(state,request,state_ref).await{error_map}}})).await }}\n"));
+                rpc_methods.push_str(&format!("async fn {rust}(&self,request:tonic::Request<proto::{request}>)->Result<tonic::Response<proto::{response}>,tonic::Status> {{ if request.metadata().contains_key(\"x-reboot-task-schedule\") {{ return self.workflow_spawner()?.schedule(\"{identity}\",request).await; }} let handler=self.handler.clone(); self.store.workflow_scheduling_writer::<{declaration},_,_,_>(\"{identity}\",&self.authorization,self.tasks.as_ref(),request,move |state,request,state_ref|Box::pin(async move {{handler.{rust}_scheduled(state,request,state_ref).await{error_map}}})).await }}\n"));
             }
             DurableKind::Writer(WriterMetadata { constructor: true }) | DurableKind::Reader => {
                 let declared = matches!(kind, DurableKind::Reader)
@@ -756,7 +773,7 @@ fn emit_workflow_service(
             "let _ = error; match task.method.as_str(){{{error_validations}_=>Err(tonic::Status::data_loss(\"workflow method does not declare errors\"))}}"
         )
     };
-    output.push_str(&format!("struct {binding}<H>{{handler:std::sync::Arc<H>{cursor_fields}}}\n#[tonic::async_trait]\nimpl<H:{handler}> {runtime_module}::one_shot_tasks::ReaderTaskBinding for {binding}<H> {{fn validate(&self,task:&{runtime_module}::database_proto::Task)->Result<(),tonic::Status>{{match task.method.as_str(){{{validations}_=>Err(tonic::Status::invalid_argument(\"not a registered workflow target\"))}}}}\nasync fn execute(&self,_:&{runtime_module}::database_proto::Task)->Result<prost_types::Any,tonic::Status>{{Err(tonic::Status::failed_precondition(\"workflow requires private admission\"))}}\nfn validate_response(&self,task:&{runtime_module}::database_proto::Task,response:&prost_types::Any)->Result<(),tonic::Status>{{match task.method.as_str(){{{responses}_=>Err(tonic::Status::data_loss(\"wrong workflow method/result\"))}}}}\nfn validate_error(&self,task:&{runtime_module}::database_proto::Task,error:&prost_types::Any)->Result<(),tonic::Status>{{{error_dispatch}}}\nfn writer_capable(&self)->bool{{true}}\nfn is_writer(&self,task:&{runtime_module}::database_proto::Task)->bool{{matches!(task.method.as_str(),{writers})}}\nasync fn execute_workflow(&self,mut context:{runtime_module}::one_shot_tasks::WorkflowContext<'_>)->Result<{runtime_module}::one_shot_tasks::WorkflowReceipt,tonic::Status>{{match context.task().method.as_str(){{{executions}_=>Err(tonic::Status::failed_precondition(\"wrong workflow executor\"))}}}} }}\n"));
+    output.push_str(&format!("struct {binding}<H>{{handler:std::sync::Arc<H>{cursor_fields}}}\n#[tonic::async_trait]\nimpl<H:{handler}> {runtime_module}::one_shot_tasks::ReaderTaskBinding for {binding}<H> {{fn validate(&self,task:&{runtime_module}::database_proto::Task)->Result<(),tonic::Status>{{match task.method.as_str(){{{validations}_=>Err(tonic::Status::invalid_argument(\"not a registered workflow target\"))}}}}\nasync fn execute(&self,_:&{runtime_module}::database_proto::Task)->Result<prost_types::Any,tonic::Status>{{Err(tonic::Status::failed_precondition(\"workflow requires private admission\"))}}\nfn validate_response(&self,task:&{runtime_module}::database_proto::Task,response:&prost_types::Any)->Result<(),tonic::Status>{{match task.method.as_str(){{{responses}_=>Err(tonic::Status::data_loss(\"wrong workflow method/result\"))}}}}\nfn validate_error(&self,task:&{runtime_module}::database_proto::Task,error:&prost_types::Any)->Result<(),tonic::Status>{{{error_dispatch}}}\nfn writer_capable(&self)->bool{{true}}\nfn writer_method(&self,task:&{runtime_module}::database_proto::Task)->Option<&'static str>{{match task.method.as_str(){{{writer_methods}_=>None}}}}\nfn writer_response_type(&self,task:&{runtime_module}::database_proto::Task)->Option<&'static str>{{match task.method.as_str(){{{writer_responses}_=>None}}}}\nasync fn execute_writer(&self,admitted:{runtime_module}::one_shot_tasks::AdmittedWriterTask<'_>)->Result<{runtime_module}::one_shot_tasks::WriterTaskReceipt,tonic::Status>{{match admitted.task().method.as_str(){{{writer_executions}_=>Err(tonic::Status::invalid_argument(\"unknown writer task\"))}}}}\nfn is_writer(&self,task:&{runtime_module}::database_proto::Task)->bool{{matches!(task.method.as_str(),{writers})}}\nasync fn execute_workflow(&self,mut context:{runtime_module}::one_shot_tasks::WorkflowContext<'_>)->Result<{runtime_module}::one_shot_tasks::WorkflowReceipt,tonic::Status>{{match context.task().method.as_str(){{{executions}_=>Err(tonic::Status::failed_precondition(\"wrong workflow executor\"))}}}} }}\n"));
     let methods = service
         .method
         .iter()

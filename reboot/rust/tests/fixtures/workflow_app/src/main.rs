@@ -1,5 +1,6 @@
 use prost::Message;
 mod crosspath;
+mod generic;
 mod outbound;
 mod spawned;
 use reboot::{
@@ -785,6 +786,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         return Ok(());
+    }
+    if mode == "serve-generic" {
+        return generic::serve().await;
+    }
+    if mode == "generic-inspect" {
+        return generic::inspect().await;
     }
     if mode == "serve-target" {
         let store = DatabaseActorStore::connect(arg(2)).await?;

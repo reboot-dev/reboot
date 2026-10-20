@@ -2,6 +2,10 @@
 
 Base: `18175834a9df99aeda94786e6d804570c25f6083` (published lifecycle foundation).
 
+Subsequent ordinary reader/writer task work is mapped separately in
+[GENERIC-TASK-MIGRATION-MAP.md](GENERIC-TASK-MIGRATION-MAP.md). The workflow-only
+qualification below remains historical; it does not certify that extension.
+
 ## Actual Python and native contracts
 
 - `rbt/v1alpha1/tasks.proto` defines Wait/List/Cancel, **not** Spawn/CreateTask.
@@ -63,7 +67,7 @@ Python-hosted admission/UUID-allocation behavior is not qualified by these tests
 
 | Capability | Existing foundation | Still missing |
 |---|---|---|
-| Generic reader/writer task targets | Generated one-shot ReaderTaskBinding / AdmittedWriterTask, same-actor writer Store and typed terminals exist | General canonical callable admission, target-kind routing and cross-actor task execution qualification; currently rejected on this public admission path |
+| Generic reader/writer task targets | Generated one-shot ReaderTaskBinding / AdmittedWriterTask, same-actor writer Store and typed terminals exist | The generic extension adds canonical DatabaseAdapter admission and workflow-bearing ordinary writer dispatch; running-writer interruption, transaction-adapter integration and dynamic ownership remain separate gates; see its map |
 | Transaction task targets | Existing participant/coordinator and transaction envelopes | Canonical transaction-task admission/execution with correct participant ownership, atomic scheduling effects, replay and completion; no workflow/transaction equivalence claimed |
 | Cursor targets and receipt GC | Cursor-specific durable loop/binding/advancement machinery | Cross-actor cursor admission, retention and admission-receipt GC; experimental and canonical target admission both retain the cursor fence |
 | Placement | Explicit recovered OneShotTasks owner, fixed channel and ActorRef, current auth | Python channel-manager placement resolution, migration, distributed ownership/fencing and dynamic actor discovery |

@@ -10,6 +10,11 @@ impl generated::RemoteMethodsDatabaseHandler for Remote {
     ) -> Result<proto::Value, generated::RemoteMethodsRejectError> {
         event("remote-declared-handler");
         state.value += 10000; // MUST be rolled back, not persisted with the error.
+        if std::env::var_os("GENERIC_TYPED_ERROR").is_some() {
+            return Err(generated::RemoteMethodsRejectError::BelowThreshold(proto::BelowThreshold {
+                required:request.amount,observed:state.value-10000,
+            }));
+        }
         let mut status = reboot::declared_error_status(
             tonic::Code::FailedPrecondition,
             "rich declared refusal",
@@ -71,6 +76,19 @@ impl generated::RemoteMethodsDatabaseHandler for Remote {
         _: proto::Empty,
     ) -> Result<proto::Remote, tonic::Status> {
         Ok(*state)
+    }
+    async fn apply_with_tasks(
+        &self,
+        state:&mut proto::Remote,
+        request:proto::Step,
+        state_ref:String,
+    )->Result<reboot::runtime::WriterExecution<proto::Value>,tonic::Status> {
+        let response=self.apply(state,request).await?;
+        let mut execution=reboot::runtime::WriterExecution::new(response);
+        if std::env::var("GENERIC_TASK_CHAIN").as_deref()==Ok("1") && request.amount==7 {
+            execution.task_upserts.push(generated::RemoteMethodsTasks::apply(&state_ref,&proto::Step{amount:2}));
+        }
+        Ok(execution)
     }
 }
 pub struct Policy;

@@ -44,7 +44,7 @@ impl crate::workflow_spawn_proto::workflow_spawner_server::WorkflowSpawner for W
                 "relative scheduling requires SpawnAfter",
             ));
         }
-        self.admit(request).await
+        self.admit(request, false).await
     }
     async fn spawn_after(
         &self,
@@ -57,7 +57,7 @@ impl crate::workflow_spawn_proto::workflow_spawner_server::WorkflowSpawner for W
             ));
         }
         validate_relative_delay(body.relative_delay.as_ref().expect("checked delay"))?;
-        self.admit(request).await
+        self.admit(request, false).await
     }
 }
 fn validate_relative_delay(delay: &prost_types::Duration) -> Result<(), Status> {
@@ -135,8 +135,8 @@ impl WorkflowSpawner {
             .inner
             .declarations
             .iter()
-            .find(|d| d.workflow && d.method == method)
-            .ok_or_else(|| Status::permission_denied("task target is not a registered workflow"))?;
+            .find(|d| d.method == method && !d.constructor_scheduling && !d.workflow_reader_wait)
+            .ok_or_else(|| Status::permission_denied("task target is not a registered callable"))?;
         let body = crate::workflow_spawn_proto::SpawnRequest {
             method: method.into(),
             request: request.get_ref().encode_to_vec(),
@@ -149,7 +149,7 @@ impl WorkflowSpawner {
                 .collect(),
             relative_delay: None,
         };
-        let id = self.admit(request.map(|_| body)).await?.into_inner();
+        let id = self.admit(request.map(|_| body), true).await?.into_inner();
         let uuid = uuid::Uuid::from_slice(&id.task_uuid)
             .map_err(|_| Status::data_loss("invalid admitted task UUID"))?;
         let mut response = tonic::Response::new(R::default());
@@ -160,6 +160,7 @@ impl WorkflowSpawner {
     async fn admit(
         &self,
         request: tonic::Request<crate::workflow_spawn_proto::SpawnRequest>,
+        canonical_callable: bool,
     ) -> Result<tonic::Response<db::TaskId>, Status> {
         use prost::Message;
         let headers = crate::RebootHeaders::from_request(&request)
@@ -178,7 +179,8 @@ impl WorkflowSpawner {
             .inner
             .declarations
             .iter()
-            .find(|d| d.workflow && d.method == body.method)
+            .find(|d| d.method == body.method && (d.workflow || canonical_callable)
+                && !d.constructor_scheduling && !d.workflow_reader_wait)
             .ok_or_else(|| {
                 Status::permission_denied("spawn target is not a registered workflow")
             })?;
@@ -316,8 +318,11 @@ impl WorkflowSpawner {
         }
         drop(running.lock()?);
         if replay {
-            self.tasks
-                .validate_scheduling_replay(std::slice::from_ref(&task), &loaded.tasks)?;
+            if canonical_callable {
+                self.tasks.validate_ordinary_scheduling_replay(std::slice::from_ref(&task), &loaded.tasks)?;
+            } else {
+                self.tasks.validate_scheduling_replay(std::slice::from_ref(&task), &loaded.tasks)?;
+            }
             return Ok(tonic::Response::new(id));
         }
         if !loaded.tasks.is_empty() {

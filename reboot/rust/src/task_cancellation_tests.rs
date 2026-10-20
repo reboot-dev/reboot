@@ -354,8 +354,8 @@ impl ReaderTaskBinding for Binding {
     }
 }
 #[tokio::test]
-async fn cancellation_terminal_requires_workflow_and_cannot_be_fabricated_as_declared_error() {
-    let make = |workflow| {
+async fn cancellation_terminal_requires_callable_and_cannot_be_fabricated_as_declared_error() {
+    let make = |kind| {
         let declaration =
             TaskMethodDeclaration::new::<D, crate::proto::Counter, crate::proto::Counter>(
                 "tests.Service.Run",
@@ -367,10 +367,12 @@ async fn cancellation_terminal_requires_workflow_and_cannot_be_fabricated_as_dec
             D::STATE_TYPE.into(),
             "actor".into(),
             Binding,
-            vec![if workflow {
-                declaration.workflow()
-            } else {
-                declaration
+            vec![match kind {
+                "workflow"=>declaration.workflow(),
+                "writer"=>declaration.workflow_writer_step(),
+                "constructor"=>declaration.constructor_scheduling(),
+                "wait"=>declaration.workflow_reader_wait(),
+                _=>declaration,
             }],
         )
         .unwrap()
@@ -385,13 +387,18 @@ async fn cancellation_terminal_requires_workflow_and_cannot_be_fabricated_as_dec
         ..Default::default()
     };
     let terminal = cancelled_terminal("Run");
-    let workflow = make(true);
+    let workflow = make("workflow");
     assert!(workflow.validate_terminal(&task, &terminal).is_ok());
-    assert!(make(false).validate_terminal(&task, &terminal).is_err());
+    assert!(make("reader").validate_terminal(&task, &terminal).is_ok());
+    assert!(make("writer").validate_terminal(&task, &terminal).is_ok());
+    assert!(make("constructor").validate_terminal(&task, &terminal).is_err());
+    assert!(make("wait").validate_terminal(&task, &terminal).is_err());
     let db::task::ResponseOrError::Error(error) = terminal else {
         unreachable!()
     };
     assert!(workflow.validate_declared(&task, &error).is_err());
+    assert!(make("reader").validate_declared(&task, &error).is_err());
+    assert!(make("writer").validate_declared(&task, &error).is_err());
     {
         let _write = CancellationWrite {
             tasks: &workflow,
