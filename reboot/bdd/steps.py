@@ -180,6 +180,7 @@ from reboot.bdd.grammar import (
     SAVE_PATTERN,
     SEPARATOR,
     SHARED_CONTEXT,
+    STRING,
     VALUE,
     VARIABLE,
 )
@@ -1601,15 +1602,26 @@ def _almost_predicate_in_call_with() -> None:
 # two steps whose 'has' or 'with' is followed by a quoted string and
 # no clauses, '"admin" has the bearer token "..."' and 'is signed in
 # to the web app with their user id saved as <...>', are left out.
+#
+# The 'with' or 'has' that opens the list is a word of the step, so
+# what comes before it skips over whole quoted strings, variables and
+# backticked clauses rather than looking inside them: a step whose
+# text says the word, '"alice" sees "Guest has left" in the web app'
+# or 'saved as <total with tax>', is not a clause list.
 _UNBACKTICKED_CLAUSES = (
     r'(?!the bearer token ")(?!their user id saved as <)[^`]+'
 )
 _UNCLOSED_CLAUSES = r'`[^`]*(?:`[^`]*`[^`]*)*'
+_BEFORE_KEYWORD = rf'(?:[^"`<]|{STRING}|`[^`]*`|{VARIABLE})*?'
+_MISSING_BACKTICKS = (
+    rf'{_BEFORE_KEYWORD} (?:with|has) {_UNBACKTICKED_CLAUSES}$'
+)
+_UNCLOSED_BACKTICK = rf'{_BEFORE_KEYWORD} (?:with|has) {_UNCLOSED_CLAUSES}$'
 
 
-@given(parsers.re(rf'.+ (?:with|has) {_UNBACKTICKED_CLAUSES}$'))
-@when(parsers.re(rf'.+ (?:with|has) {_UNBACKTICKED_CLAUSES}$'))
-@then(parsers.re(rf'.+ (?:with|has) {_UNBACKTICKED_CLAUSES}$'))
+@given(parsers.re(_MISSING_BACKTICKS))
+@when(parsers.re(_MISSING_BACKTICKS))
+@then(parsers.re(_MISSING_BACKTICKS))
 def _almost_missing_backticks() -> None:
     raise ValueError(
         "Almost: each clause goes in backticks, e.g. `amount=50` "
@@ -1617,8 +1629,8 @@ def _almost_missing_backticks() -> None:
     )
 
 
-@given(parsers.re(rf'.+ (?:with|has) {_UNCLOSED_CLAUSES}$'))
-@when(parsers.re(rf'.+ (?:with|has) {_UNCLOSED_CLAUSES}$'))
-@then(parsers.re(rf'.+ (?:with|has) {_UNCLOSED_CLAUSES}$'))
+@given(parsers.re(_UNCLOSED_BACKTICK))
+@when(parsers.re(_UNCLOSED_BACKTICK))
+@then(parsers.re(_UNCLOSED_BACKTICK))
 def _almost_unclosed_backtick() -> None:
     raise ValueError("Almost: a backtick is unclosed")

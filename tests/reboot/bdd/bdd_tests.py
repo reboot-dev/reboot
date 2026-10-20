@@ -22,6 +22,8 @@ from reboot.bdd.grammar import (
 )
 from reboot.bdd.steps import *
 from reboot.bdd.steps import (
+    _MISSING_BACKTICKS,
+    _UNCLOSED_BACKTICK,
     Assertion,
     Containing,
     Equals,
@@ -305,6 +307,55 @@ def test_almost_steps_raise() -> None:
         _almost_missing_backticks()
     with pytest.raises(ValueError, match="backtick is unclosed"):
         _almost_unclosed_backtick()
+
+
+def test_a_with_or_has_inside_a_value_is_not_a_clause_list() -> None:
+    """The catch-alls for a clause list written without backticks, or
+    with one unclosed, find the 'with' or 'has' that opens the list
+    outside a quoted string, a variable or a backticked clause, so a
+    step whose text says the word reaches its real step."""
+    real_steps = [
+        '"alice" eventually sees "Guest has left" in the web app within '
+        '10 seconds',
+        '"alice" sees "wrong with the room" in the "Room 204" row in the '
+        'web app',
+        '"alice" does not see "Guest has left" in the web app',
+        '"alice" clicks the "Continue with Google" button in the web app',
+        '"alice" selects "Account with overdraft" in "From Account" in the '
+        'web app',
+        '"alice" fills "What is wrong with the room" in the web app with '
+        '`fine`',
+        '"alice" sees <message with a name> in the web app',
+        '"alice" sees "a \\"quoted\\" has" in the web app',
+        'as "alice", `balance` on the `Account` for <account id> has '
+        '`amount` saved as <total with tax>',
+        '"alice" does a `deposit` with `memo="pay with card"` on `Account` '
+        'of <account with overdraft>',
+        '"admin" has the bearer token "secret"',
+        '"alice" is signed in to the web app with their user id saved as '
+        '<alice user id>',
+    ]
+    for step in real_steps:
+        assert not re.fullmatch(_MISSING_BACKTICKS, step), step
+        assert not re.fullmatch(_UNCLOSED_BACKTICK, step), step
+    missing_backticks = [
+        'as "alice", `balance` on the `Account` for "a" has amount=50',
+        'as "alice", `balance` on the `Account` for "a" has amount saved '
+        'as <amount>',
+        '"alice" sees "Guest has left" in the web app with amount=50',
+        'the result has amount=50',
+    ]
+    for step in missing_backticks:
+        assert re.fullmatch(_MISSING_BACKTICKS, step), step
+        assert not re.fullmatch(_UNCLOSED_BACKTICK, step), step
+    unclosed_backtick = [
+        '"alice" does a `deposit` with `amount=50 on `Account` of "a"',
+        'as "alice", `balance` on the `Account` for "a" has `amount=50',
+        '"alice" sees "Guest has left" in the web app with `amount=50',
+    ]
+    for step in unclosed_backtick:
+        assert re.fullmatch(_UNCLOSED_BACKTICK, step), step
+        assert not re.fullmatch(_MISSING_BACKTICKS, step), step
 
 
 def test_parse_assertions() -> None:
