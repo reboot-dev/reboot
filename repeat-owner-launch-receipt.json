@@ -1,0 +1,44 @@
+{
+  "owner_pid": 861984,
+  "owner_ppid": 1,
+  "start": 1792490288.9500117,
+  "deadline_epoch": 1792504688.950012,
+  "complete": false,
+  "commands": [],
+  "children": [],
+  "failures": [],
+  "stacks": [],
+  "config": {
+    "server_id": 171353819,
+    "primary_ip_id": 156610171,
+    "ip": "2.31.73.10",
+    "labels": {
+      "owner": "jean",
+      "purpose": "reboot-tiny-repeat",
+      "ephemeral": "true",
+      "run": "tiny-repeat-20261020",
+      "expires": "2026-10-21",
+      "expiry-unix": "1792576065"
+    },
+    "expiry": "2026-10-21T09:47:45.204208+00:00",
+    "owner_seconds": 14400,
+    "client_cpu": "14",
+    "ssh_key": "/root/.ssh/tiny-repeat-ingress-20261020",
+    "control_ssh_key": "/root/.ssh/tiny-repeat-control-20261020"
+  },
+  "images": {
+    "rust": "sha256:3dcf9d9976f76a63b3a290ef6cf15329f1f6148692c72604e5dc797a237f7db4",
+    "python": "sha256:28241a509e8dbedda24bd2033ce556cc5648ddd02ef80bd349e417586fb84925",
+    "engine": "sha256:1a73705b0771f9c861d9ba96509806849423a3d8bbff140b1261da76280460cd"
+  },
+  "key": "01a158f6-25b9-7000-8000-000000000000",
+  "source_sha256": {
+    "tiny_repeat_analyze.py": "ec5ee0b57b896213a9e2ba90122699e5fbd47e4fc3849032d73bc6c27c8b5590",
+    "tiny_repeat_control.py": "fb1b8056ae652618f4d7823e12ea1e8e6c177c904d6e08a5b8ab7d87fb4528ea",
+    "tiny_repeat_owner.py": "2bae087b2de5d196bd8e64d06e16c128bc1eee21b082e816cbeb6eea317be4a6",
+    "tiny_repeat_selftest.py": "fe32c900ad208619a13d610d7b22a17c8b9da7c4a9a51520c8b636d7e07e49da",
+    "tiny_repeat_smoke.py": "4e65afdbe486c36b3e4dd3fda89beac9e37c530b51761e651937b2fefcceee60",
+    "tiny_repeat_sampler.py": "8885a38b009683bf9fa1e9eb5563706ff5568da2c853db40e726c242f252111f"
+  },
+  "gate": "awaiting-parent-timing-clearance"
+}
