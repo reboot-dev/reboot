@@ -1,0 +1,296 @@
+{
+  "source_commit": "aa44f2914ee51fc8c87876bfdeb6e9830bb10034",
+  "final_run": "final4",
+  "complete": true,
+  "native_receipts": 10,
+  "native_positive_cases": 50,
+  "original_driver_child_waits": 810,
+  "all_attempts_receipts": [
+    {
+      "path": "final1/canonical-raw/receipt.json",
+      "complete": true,
+      "cases": 11,
+      "waits": 199
+    },
+    {
+      "path": "final1/direct-raw/receipt.json",
+      "complete": true,
+      "cases": 9,
+      "waits": 60
+    },
+    {
+      "path": "final1/generic-raw/receipt.json",
+      "complete": true,
+      "cases": 12,
+      "waits": 229
+    },
+    {
+      "path": "final1/old-admission-raw/receipt.json",
+      "complete": false,
+      "cases": 0,
+      "waits": 5
+    },
+    {
+      "path": "final1/outbound-ack-raw/receipt.json",
+      "complete": true,
+      "cases": 4,
+      "waits": 95
+    },
+    {
+      "path": "final1/outbound-raw/receipt.json",
+      "complete": true,
+      "cases": 7,
+      "waits": 105
+    },
+    {
+      "path": "final1/parent-error-raw/receipt.json",
+      "complete": false,
+      "cases": 0,
+      "waits": 4
+    },
+    {
+      "path": "final1/parent-signal-raw/receipt.json",
+      "complete": false,
+      "cases": 0,
+      "waits": 4
+    },
+    {
+      "path": "final1/skip-replay-raw/receipt.json",
+      "complete": false,
+      "cases": 0,
+      "waits": 9
+    },
+    {
+      "path": "final1/transaction-raw/receipt.json",
+      "complete": true,
+      "cases": 7,
+      "waits": 100
+    },
+    {
+      "path": "final3/canonical-raw/receipt.json",
+      "complete": true,
+      "cases": 11,
+      "waits": 199
+    },
+    {
+      "path": "final3/direct-raw/receipt.json",
+      "complete": true,
+      "cases": 9,
+      "waits": 60
+    },
+    {
+      "path": "final3/generic-raw/receipt.json",
+      "complete": true,
+      "cases": 12,
+      "waits": 229
+    },
+    {
+      "path": "final3/old-admission-raw/receipt.json",
+      "complete": false,
+      "cases": 0,
+      "waits": 5
+    },
+    {
+      "path": "final3/outbound-ack-raw/receipt.json",
+      "complete": true,
+      "cases": 4,
+      "waits": 95
+    },
+    {
+      "path": "final3/outbound-raw/receipt.json",
+      "complete": true,
+      "cases": 7,
+      "waits": 105
+    },
+    {
+      "path": "final3/parent-error-raw/receipt.json",
+      "complete": false,
+      "cases": 0,
+      "waits": 4
+    },
+    {
+      "path": "final3/parent-signal-raw/receipt.json",
+      "complete": false,
+      "cases": 0,
+      "waits": 4
+    },
+    {
+      "path": "final3/skip-replay-raw/receipt.json",
+      "complete": false,
+      "cases": 0,
+      "waits": 9
+    },
+    {
+      "path": "final3/transaction-raw/receipt.json",
+      "complete": true,
+      "cases": 7,
+      "waits": 100
+    },
+    {
+      "path": "final4/canonical-raw/receipt.json",
+      "complete": true,
+      "cases": 11,
+      "waits": 199
+    },
+    {
+      "path": "final4/direct-raw/receipt.json",
+      "complete": true,
+      "cases": 9,
+      "waits": 60
+    },
+    {
+      "path": "final4/generic-raw/receipt.json",
+      "complete": true,
+      "cases": 12,
+      "waits": 229
+    },
+    {
+      "path": "final4/old-admission-raw/receipt.json",
+      "complete": false,
+      "cases": 0,
+      "waits": 5
+    },
+    {
+      "path": "final4/outbound-ack-raw/receipt.json",
+      "complete": true,
+      "cases": 4,
+      "waits": 95
+    },
+    {
+      "path": "final4/outbound-raw/receipt.json",
+      "complete": true,
+      "cases": 7,
+      "waits": 105
+    },
+    {
+      "path": "final4/parent-error-raw/receipt.json",
+      "complete": false,
+      "cases": 0,
+      "waits": 4
+    },
+    {
+      "path": "final4/parent-signal-raw/receipt.json",
+      "complete": false,
+      "cases": 0,
+      "waits": 4
+    },
+    {
+      "path": "final4/skip-replay-raw/receipt.json",
+      "complete": false,
+      "cases": 0,
+      "waits": 9
+    },
+    {
+      "path": "final4/transaction-raw/receipt.json",
+      "complete": true,
+      "cases": 7,
+      "waits": 100
+    },
+    {
+      "path": "integration1/native-raw/receipt.json",
+      "complete": true,
+      "cases": 9,
+      "waits": 60
+    },
+    {
+      "path": "smoke/success-raw/receipt.json",
+      "complete": false,
+      "cases": 0,
+      "waits": 6
+    }
+  ],
+  "gates": 25,
+  "source_inputs": 2557,
+  "source_objects": 791,
+  "artifacts": {
+    "final-app": {
+      "sha256": "8aa8eba49bcd328c696f1a19f23eaa728fd1c3b180a5d4749eb648adc801934b",
+      "bytes": 227713232,
+      "original": "/home/benchbuild/.cache/direct-transaction-20261020-evidence/final4/final-app"
+    },
+    "old-admission-app": {
+      "sha256": "e6a66286a246cbb01b84a684a45340e2ddf66bc5cdf599104029894bda67d892",
+      "bytes": 227761720,
+      "original": "/home/benchbuild/.cache/direct-transaction-20261020-evidence/final4/old-admission-app"
+    },
+    "skip-replay-app": {
+      "sha256": "b1081b12cf36f2726c061da1468543d2d7c45f287ab74b6db3ce11b40cef1fbb",
+      "bytes": 227882880,
+      "original": "/home/benchbuild/.cache/direct-transaction-20261020-evidence/final4/skip-replay-app"
+    },
+    "database": {
+      "sha256": "619002c569e9841144a8bbedf4f2ce6a753bb0e6b103af71883d91d43f413803",
+      "bytes": 66864672,
+      "original": "/home/benchbuild/.cache/hello-image-evidence/rust-context/database"
+    },
+    "prior-empty-final-app": {
+      "sha256": "d15e273bc9732bb739385b2ea438e1df0a5ccc7fa4919676166e4f9cd7a68e76",
+      "bytes": 227495240,
+      "original": "/home/benchbuild/.cache/transaction-empty-20261020-evidence/qualification2/green-app"
+    },
+    "prior-native-red-binding-app": {
+      "sha256": "a9d677d03305835e39b3f782c3bf939eabdcf436a4af87a1ecef12c3f2c71de8",
+      "bytes": 227241424,
+      "original": "/home/benchbuild/.cache/transaction-foundation-20261020-evidence/final4/mutant-missing-root-receipt-binding/app"
+    },
+    "prior-native-red-replay-app": {
+      "sha256": "bfa0164816dba61ea3bd8b40cefa244c3a2508027b551d33651ee6036faf8fb8",
+      "bytes": 227375936,
+      "original": "/home/benchbuild/.cache/transaction-foundation-20261020-evidence/final4/mutant-skip-target-receipt-replay/app"
+    },
+    "prior-foundation-final-app": {
+      "sha256": "9d3c38a6484f4143029d73271c67a4e7789ae60ef8632eb8b5a1d24b1d12df59",
+      "bytes": 227304400,
+      "original": "/home/benchbuild/.cache/transaction-foundation-20261020-evidence/final4/green-app"
+    },
+    "integration1-app": {
+      "sha256": "8860bf3db1846f45b697679fb0f4bdb6cc4066471dd22e46e6ceb1c6b52f763e",
+      "bytes": 227728488,
+      "original": "/home/benchbuild/.cache/direct-transaction-20261020-evidence/artifacts/integration1-app"
+    },
+    "superseded-final1-app": {
+      "sha256": "ea952e397dde5982fd6738f459dff981783a7d8c4c98d9e276a035f3accc7379",
+      "bytes": 227753752,
+      "original": "/home/benchbuild/.cache/direct-transaction-20261020-evidence/final1/final-app"
+    },
+    "superseded-final1-old-admission-app": {
+      "sha256": "b4f03c0c627ffcb01f220782d86f8266413d0fad54a2613ca50821f4f2a0b47a",
+      "bytes": 227716888,
+      "original": "/home/benchbuild/.cache/direct-transaction-20261020-evidence/final1/old-admission-app"
+    },
+    "superseded-final1-skip-replay-app": {
+      "sha256": "35cf28e406e2824749da957aa1c935d5a17f542d9b75563ff1716f8a3083c459",
+      "bytes": 227867320,
+      "original": "/home/benchbuild/.cache/direct-transaction-20261020-evidence/final1/skip-replay-app"
+    },
+    "superseded-final3-app": {
+      "sha256": "0958390bcbd2c922cb3278b9fba082e932c4ea91a137ac096451bf996a379856",
+      "bytes": 227726456,
+      "original": "/home/benchbuild/.cache/direct-transaction-20261020-evidence/final3/final-app"
+    },
+    "superseded-final3-old-admission-app": {
+      "sha256": "cfcda40bb1be020b85f6f8e90f98145f2a8fd74269019fc9ff8bff46561222af",
+      "bytes": 227690160,
+      "original": "/home/benchbuild/.cache/direct-transaction-20261020-evidence/final3/old-admission-app"
+    },
+    "superseded-final3-skip-replay-app": {
+      "sha256": "63544b0954b59cc97b905992e21e6932102757eff95e13ac4fe196afe3226f3b",
+      "bytes": 227789144,
+      "original": "/home/benchbuild/.cache/direct-transaction-20261020-evidence/final3/skip-replay-app"
+    }
+  },
+  "fresh_cpp_build": false,
+  "sdk": {
+    "passed": 975,
+    "ignored": 175
+  },
+  "doctests": {
+    "passed": 8,
+    "ignored": 0
+  },
+  "consumer": {
+    "passed": 1,
+    "ignored": 0
+  },
+  "original_owner": 1800451
+}

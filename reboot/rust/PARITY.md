@@ -12,6 +12,40 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Direct canonical exclusive transaction tasks (bounded)
+
+An explicitly registered `with_canonical_transaction_tasks(channel, application,
+bearer)` owner admits eligible **original transaction RPCs** using canonical
+Python `WeakReference.spawn(transaction_method)`, durable Pending identity and
+successful UUID trailers. The generated binding retains an immutable transaction
+kind, not an ordinary writer or a public workflow method. This checkpoint is
+limited to existing actors in mixed services which already carry a
+DatabaseActorStore, exclusive non-factory methods without declared transaction
+errors, and the established registered root-star composition boundary.
+
+The dispatcher releases initial canonical-reload actor admission before invoking
+the public generated root RPC. The real legacy coordinator owns atomic target
+state, response receipt and successor commit; source-journal ACK and terminal
+CompleteTask CAS remain separate. Restart retains the same target key and
+reconsults current target authorization before response replay. Arbitrary failed
+RPCs are not converted into retryable ordinary-writer outcomes.
+
+Future transaction Cancel uses canonical reload and synchronous CAS under the
+original actor gate. Due/running transactions are explicitly rejected rather
+than acknowledging cancellation of effects which may still commit. Read-only
+preview classification preserves the ordinary reader interruption path on mixed
+owners; authoritative reload also fences a newly admitted due transaction after
+an absent preview. This is not general running transaction cancellation.
+
+The actual generated Python Apply task client, real C++ Database/RocksDB,
+canonical/local Empty consumer compilation, retained native negative controls,
+strict lint and qualification custody are documented in the
+[direct-task checkpoint](tests/evidence/direct-transaction-20261020.md).
+Pure transaction-only adapters, shared/factory targets, declared transaction-error
+terminals, automatic Python retry/middleware/internal-credential parity, dynamic
+placement/migration and future successor execution remain open. Local only;
+independent parent review is required before publication.
+
 ## Workflow-to-exclusive-transaction foundation (bounded)
 
 Generated `*WorkflowTransactionRef` calls are distinct from ordinary writer
@@ -29,11 +63,12 @@ well-formed Rust receipt bytes and all published ordinary writer/spawn identitie
 are unchanged. The legacy `TransactionIdempotency::replay` helper remains available
 for explicitly compatibility-oriented callers; generated roots use `replay_bound`.
 
-**Direct canonical transaction task admission is still rejected.** This is a
-scheduled workflow calling a real transaction, not
-`WeakReference.spawn(transaction_method)` parity. Shared/factory transaction task
-targets, durable declared transaction-error replay, direct transaction-task
-cancellation ownership and general coordinator retry parity remain open. See the
+**That foundation did not admit direct canonical transaction tasks.** It proved a
+scheduled workflow calling a real transaction, not direct
+`WeakReference.spawn(transaction_method)` admission. The bounded follow-on above
+adds that direct path; shared/factory targets, declared transaction-error replay,
+running transaction cancellation and general coordinator retry parity remain
+open. See the
 [source-backed migration map](TRANSACTION-TASK-MIGRATION-MAP.md) and
 [local final4 qualification handoff](tests/evidence/transaction-foundation-20261020.md).
 Final4 freshly accepted 18 gates, including seven real transaction cases and the
@@ -3409,8 +3444,9 @@ Inbound transaction/recovery authority must not be inferred from user headers.
   task cancellation, completion races and restart are separate work.
 - **W5:** authorized task listing/streams are local; placement-aware aggregation
   is missing, not task administration itself.
-- **W6:** scheduling from transactions exists; transaction task targets and
-  general registered-actor writer/workflow recovery remain narrower.
+- **W6:** scheduling from transactions and bounded direct exclusive transaction
+  tasks exist; pure/shared/factory targets, declared transaction errors and general
+  registered-actor writer/workflow recovery remain narrower.
 - **T1:** first-touch/direct-leaf rollback and RelinquishOwnership exist; arbitrary
   ancestor/subtree snapshots and rollback-versus-Prepare are not established.
 - **T2:** sequential siblings and reusable direct participants exist; overlapping
@@ -6114,7 +6150,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: bd32339bcc8a5c60f0130b6ef161c340f513b5e796be30404fef4822cd635b3c -->
+<!-- parity-source-sha256: 61d36b0270ccf58dc4342b98c609a71be6141d7907bf4aef375208c6e6e01f12 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

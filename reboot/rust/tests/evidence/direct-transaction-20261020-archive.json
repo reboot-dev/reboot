@@ -1,0 +1,8 @@
+{
+  "path": "/home/benchbuild/.cache/direct-transaction-20261020-raw.tar.gz",
+  "sha256": "5c8e65b9f30e95d8032ef54d4cb65a5388f21e85e4648ffaf515531e0531e6c1",
+  "bytes": 711232553,
+  "members": 7484,
+  "qualification_sha256": "378c38a602ad61084b29ea57873b7d5597f2fd3cb4646ca90ae3654da8525f77",
+  "created": "2026-10-20T21:34:23.286021+00:00"
+}
