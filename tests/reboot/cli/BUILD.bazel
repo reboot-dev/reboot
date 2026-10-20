@@ -56,6 +56,7 @@ py_test(
     main = "dev_tests.py",
     deps = [
         ":mock_exit_py",
+        "//reboot:settings_py",
         "//reboot/cli/common:cli_py",
         "//reboot/cli/common:rc_py",
     ],

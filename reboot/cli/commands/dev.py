@@ -94,6 +94,7 @@ from reboot.settings import (
     ENVVAR_REBOOT_USE_TTY,
     EVERY_LOCAL_NETWORK_ADDRESS,
     RBT_APPLICATION_EXIT_CODE_BACKWARDS_INCOMPATIBILITY,
+    RBT_APPLICATION_EXIT_CODE_DO_NOT_WAIT_FOR_MODIFICATION,
     LocalEnvoyMode,
 )
 from reboot.version import REBOOT_VERSION
@@ -1130,6 +1131,13 @@ def _handle_application_exit(
     )
     if args.terminate_after_health_check:
         terminal.fail(message)
+    if application_exit_code == RBT_APPLICATION_EXIT_CODE_DO_NOT_WAIT_FOR_MODIFICATION:
+        # The application said why, above, and that no modification
+        # fixes it, so there is nothing to wait for.
+        terminal.fail(
+            'Application exited for a reason no modification fixes '
+            '(see above)'
+        )
     if application_exit_code == RBT_APPLICATION_EXIT_CODE_BACKWARDS_INCOMPATIBILITY:
         return asyncio.create_task(
             await_maybe_expunge(args, parser),

@@ -51,6 +51,7 @@ from reboot.settings import (
     ENVVAR_REBOOT_LOCAL_ENVOY,
     ENVVAR_REBOOT_LOCAL_ENVOY_PORT,
     ENVVAR_REBOOT_OAUTH_SIGNING_SECRET,
+    RBT_APPLICATION_EXIT_CODE_DO_NOT_WAIT_FOR_MODIFICATION,
 )
 from reboot.version import REBOOT_VERSION
 from typing import Optional
@@ -295,7 +296,9 @@ async def _run_dashboard(
     incompatibility after an upgrade. Its state is ours and is
     disposable, so the first failure deletes it and tries again
     without asking. A second failure is something else, and gets
-    reported once rather than silently retried forever.
+    reported once rather than silently retried forever. A failure the
+    dashboard says no retry fixes, its `--portless` name being in use
+    say, is not retried at all.
     """
     backoff = Backoff()
     failures = 0
@@ -310,6 +313,13 @@ async def _run_dashboard(
         ) as process:
             await process.wait()
             failed = process.returncode != 0
+
+        if process.returncode == RBT_APPLICATION_EXIT_CODE_DO_NOT_WAIT_FOR_MODIFICATION:
+            # The dashboard said why, above.
+            terminal.fail(
+                'The dashboard application exited for a reason no retry '
+                'fixes (see above)'
+            )
 
         if not failed:
             failures = 0

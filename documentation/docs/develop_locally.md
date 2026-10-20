@@ -292,8 +292,9 @@ behind the proxy is a free one unless `--port` says otherwise, and
 several applications run at once without colliding on `9991`. Two
 applications can't share a name, though: an application refuses to
 start while another is serving under its name (another checkout of
-the same project, say), and says which process holds it, so stop
-that one or give one of the two another `--application-name`. An
+the same project, say), and `rbt dev run` exits saying which process
+holds it, rather than wait for a modification, so stop that one or
+give one of the two another `--application-name`. An
 application removes its name when it stops; one left behind by an
 application that died is taken back by the next. It
 expects the frontend's dev server at `https://frontend.<app>.localhost`,

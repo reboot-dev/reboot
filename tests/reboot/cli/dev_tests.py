@@ -7,6 +7,9 @@ import tempfile
 import unittest
 from reboot.cli.common.directories import dot_rbt_dev_directory
 from reboot.cli.common.rc import ArgumentParser
+from reboot.settings import (
+    RBT_APPLICATION_EXIT_CODE_DO_NOT_WAIT_FOR_MODIFICATION,
+)
 from tests.reboot.cli.mock_exit import (
     MockExitException,
     mock_raise_instead_of_exit,
@@ -156,6 +159,42 @@ class RbtDevTestCase(unittest.IsolatedAsyncioTestCase):
 
             # The input is closed.
             self.assertEqual(await dev._read_line(reader), "")
+
+    async def test_dev_run_exits_when_no_modification_fixes_it(self) -> None:
+        """An application that exits saying so, e.g. for a `--portless`
+        name in use, ends `rbt dev run`; any other exit waits for a
+        modification."""
+        parser: ArgumentParser = cli.create_parser(
+            argv=[
+                'rbt',
+                'dev',
+                'run',
+                '--working-directory=.',
+                '--python',
+                '--application=some.py',
+            ]
+        )
+        args, _ = parser.parse_args()
+
+        mock_fail = Mock(side_effect=MockExitException(1, 'failed'))
+        with patch('reboot.cli.common.terminal.fail', mock_fail):
+            with self.assertRaises(MockExitException):
+                dev._handle_application_exit(
+                    args,
+                    parser,
+                    application_exit_code=
+                    RBT_APPLICATION_EXIT_CODE_DO_NOT_WAIT_FOR_MODIFICATION,
+                )
+            mock_fail.assert_called_once()
+            self.assertIn('no modification fixes', mock_fail.call_args[0][0])
+
+            mock_fail.reset_mock()
+            self.assertIsNone(
+                dev._handle_application_exit(
+                    args, parser, application_exit_code=1
+                )
+            )
+            mock_fail.assert_not_called()
 
     async def test_dev_run_await_maybe_expunge(self) -> None:
         parser: ArgumentParser = cli.create_parser(

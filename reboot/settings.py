@@ -174,8 +174,19 @@ ENVVAR_RBT_TUNNEL_URL = 'RBT_TUNNEL_URL'
 # Node.js.
 ENVVAR_RBT_FROM_NODEJS = 'RBT_FROM_NODEJS'
 
-# Known exit codes for an Application running under `rbt`.
+# Known exit codes for an Application running under `rbt`. Any other
+# exit is an application that failed, which `rbt dev run` answers by
+# waiting for a modification to the code and starting it again.
+#
+# The application's schema is backwards incompatible with its state:
+# `rbt dev run` waits for a modification, or offers to expunge the
+# state (see `--on-backwards-incompatibility`).
 RBT_APPLICATION_EXIT_CODE_BACKWARDS_INCOMPATIBILITY = 13
+# The application exited for a reason that no modification to the code
+# fixes, and said why: `rbt dev run` exits too, rather than wait for a
+# modification that can not come. E.g., its `--portless` name is in
+# use by another application.
+RBT_APPLICATION_EXIT_CODE_DO_NOT_WAIT_FOR_MODIFICATION = 14
 
 # The names of environment variables that are only present when configuring a
 # local Envoy.

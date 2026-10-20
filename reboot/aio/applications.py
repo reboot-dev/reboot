@@ -8,6 +8,7 @@ import reboot.aio.memoize
 import reboot.aio.signals
 import reboot.aio.workflows
 import reboot.application
+import reboot.portless
 import sys
 import traceback
 from log.log import get_logger
@@ -67,6 +68,7 @@ from reboot.settings import (
     ENVVAR_REBOOT_LOCAL_ENVOY,
     ENVVAR_REBOOT_LOCAL_ENVOY_PORT,
     RBT_APPLICATION_EXIT_CODE_BACKWARDS_INCOMPATIBILITY,
+    RBT_APPLICATION_EXIT_CODE_DO_NOT_WAIT_FOR_MODIFICATION,
 )
 from reboot.version import REBOOT_VERSION
 from reboot.versioning import version_less_than
@@ -169,6 +171,11 @@ def _handle_input_error(input_error: InputError) -> None:
             validation_error = validation_error.replace('\n', '\n  ')
             terminal.error(f'- {validation_error}')
         terminal.error('\n')
+        return
+
+    if isinstance(input_error, reboot.portless.NameInUse):
+        # Nothing in the application caused this; just say it.
+        terminal.error(f'{input_error}\n')
         return
 
     terminal.error(f'Caught `{type(input_error).__name__}`: {input_error}\n')
@@ -1301,6 +1308,10 @@ class Application:
             _handle_input_error(e)
             if isinstance(e, ProtoValidationError):
                 sys.exit(RBT_APPLICATION_EXIT_CODE_BACKWARDS_INCOMPATIBILITY)
+            if isinstance(e, reboot.portless.NameInUse):
+                sys.exit(
+                    RBT_APPLICATION_EXIT_CODE_DO_NOT_WAIT_FOR_MODIFICATION
+                )
         except Exception as e:
             _handle_unknown_exception(e)
         else:

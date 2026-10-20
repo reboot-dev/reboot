@@ -43,6 +43,15 @@ def dashboard_name(name: str) -> str:
     return f'dashboard.{name}'
 
 
+class NameInUse(InputError):
+    """A `--portless` name that something else is serving under right
+    now (see `alias`). No modification to the application fixes it,
+    only stopping the other one or renaming this one, so an
+    application exits for it with
+    `RBT_APPLICATION_EXIT_CODE_DO_NOT_WAIT_FOR_MODIFICATION`, and `rbt
+    dev run` exits too rather than wait for a modification."""
+
+
 async def registered_port(name: str) -> Optional[int]:
     """The local port the proxy routes `name` to, or `None` when the
     name is not registered. Asked of the `portless` CLI (`portless
@@ -132,14 +141,14 @@ async def alias(name: str, port: int) -> None:
     their address to us, so it is refused, naming them (see
     https://github.com/reboot-dev/reboot/issues/269).
 
-    Raises `InputError` for a name in use, and `RuntimeError` when the
+    Raises `NameInUse` for a name in use, and `RuntimeError` when the
     `portless` CLI can't register, saying what it said."""
     registered = await registered_port(name)
     if registered == port:
         return
     if registered is not None and await _listening(registered):
         listener = await asyncio.to_thread(_listener, registered)
-        raise InputError(
+        raise NameInUse(
             f'`https://{hostname(name)}` is in use: the portless proxy '
             f'routes it to port {registered}, where '
             f'{listener or "something"} is listening, so something else '

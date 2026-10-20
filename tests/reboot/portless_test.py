@@ -109,8 +109,9 @@ class RegisterTest(unittest.IsolatedAsyncioTestCase):
                     self._route('bank', port)
             },
         ):
-            with self.assertRaises(InputError) as raised:
+            with self.assertRaises(portless.NameInUse) as raised:
                 await portless.alias('bank', 54321)
+        self.assertIsInstance(raised.exception, InputError)
         message = str(raised.exception)
         self.assertIn('https://bank.localhost', message)
         self.assertIn(f'port {port}', message)
