@@ -15,6 +15,7 @@ from reboot.aio.internals.contextvars import use_application_id
 from reboot.aio.internals.tasks_cache import TasksCache
 from reboot.aio.tasks import TaskEffect
 from reboot.aio.types import ApplicationId
+from reboot.run_environments import is_in_test
 from reboot.time import DateTimeWithTimeZone
 from typing import Awaitable, Callable, Optional, Protocol, Tuple
 from uuid import UUID
@@ -31,6 +32,10 @@ logger.setLevel(logging.WARNING)
 DISPATCHED_TASKS_LIMIT = 1024
 
 _TASK_INITIAL_BACKOFF_SECONDS = 1
+
+# How long `stop()` waits for the tasks it cancelled to finish before
+# warning about those that have not.
+STOP_WAIT_SECONDS = 1
 
 TaskResponseOrStatus = Tuple[Optional[Message], Optional[status_pb2.Status]]
 
@@ -66,6 +71,10 @@ class TasksDispatcher:
     the TasksCache about said tasks and their status.
     """
 
+    # The task that keeps waiting for the tasks `stop()` cancelled,
+    # held so that it is not garbage collected before it is done.
+    _keep_waiting_for_cancelled_tasks_task: Optional[asyncio.Task]
+
     def __init__(
         self,
         *,
@@ -89,6 +98,8 @@ class TasksDispatcher:
         # try and garbage collect them even if they haven't finished.
         self._dispatched_tasks: dict[bytes, Tuple[asyncio.Task,
                                                   IsCancelled]] = {}
+
+        self._keep_waiting_for_cancelled_tasks_task = None
 
     async def validate(self, tasks: list[TaskEffect]) -> None:
         """Validate that the specified tasks can be dispatched.
@@ -426,31 +437,64 @@ class TasksDispatcher:
             # task is cancelled, it will be removed from _dispatched_tasks.
             task.cancel()
 
-        while len(self._dispatched_tasks) > 0:
-            # Wait for all dispatched tasks to finish. If the tasks are taking
-            # too long, we will log a warning to the user.
-
-            # NOTE: In contrast to `asyncio.wait_for`, `asyncio.wait` does not
-            # raise `TimeoutError` if the timeout is reached and does not
-            # `cancel` the `asyncio.Tasks` (again) on timeout.
-            tasks = [task for task, _ in self._dispatched_tasks.values()]
-            await asyncio.wait(
-                tasks,
-                timeout=5,
-            )
-
-            # As tasks complete, they should be removed from
-            # `_dispatched_tasks`.
-            if len(self._dispatched_tasks) == 0:
-                break
-
-            # If there are still tasks left, log a warning to the user.
-            logger.warning(
-                'We are still waiting for cancelled tasks to finish, are you '
-                'possibly catching and forgetting to propagate a CancelledError?'
-            )
-
-            for uuid in self._dispatched_tasks.keys():
-                logger.warning(
-                    f'Waiting for task with UUID {UUID(bytes=uuid)}'
+        # Wait for the cancelled tasks to finish, warning along the way
+        # about those that are taking too long.
+        #
+        # In a test, wait for as long as it takes: a task that does not
+        # come back from its cancellation is a bug in the code under
+        # test, which has to handle cancellation since an application
+        # may cancel its tasks, and the test is better stuck here,
+        # saying why, than hung silently once its event loop shuts
+        # down.
+        #
+        # Otherwise, wait only once here, and then keep waiting, and
+        # warning, in a task of our own: a task that does not come back
+        # from its cancellation must not hold up whatever else is being
+        # stopped, and the process exits once all of that has, with the
+        # task still running if it must (#278).
+        if not await self._wait_for_cancelled_tasks():
+            if is_in_test():
+                await self._keep_waiting_for_cancelled_tasks()
+            else:
+                self._keep_waiting_for_cancelled_tasks_task = asyncio.create_task(
+                    self._keep_waiting_for_cancelled_tasks(),
+                    name=f'_keep_waiting_for_cancelled_tasks() in {__name__}',
                 )
+
+    async def _wait_for_cancelled_tasks(self) -> bool:
+        """Waits up to `STOP_WAIT_SECONDS` for the tasks that `stop()`
+        cancelled to finish. Returns whether they all have, and warns
+        about those that have not."""
+        if len(self._dispatched_tasks) == 0:
+            return True
+
+        # NOTE: In contrast to `asyncio.wait_for`, `asyncio.wait` does not
+        # raise `TimeoutError` if the timeout is reached and does not
+        # `cancel` the `asyncio.Tasks` (again) on timeout.
+        tasks = [task for task, _ in self._dispatched_tasks.values()]
+        await asyncio.wait(
+            tasks,
+            timeout=STOP_WAIT_SECONDS,
+        )
+
+        # As tasks complete, they should be removed from
+        # `_dispatched_tasks`.
+        if len(self._dispatched_tasks) == 0:
+            return True
+
+        # If there are still tasks left, log a warning to the user.
+        logger.warning(
+            'We are still waiting for cancelled tasks to finish, are you '
+            'possibly catching and forgetting to propagate a CancelledError?'
+        )
+
+        for uuid in self._dispatched_tasks.keys():
+            logger.warning(f'Waiting for task with UUID {UUID(bytes=uuid)}')
+
+        return False
+
+    async def _keep_waiting_for_cancelled_tasks(self) -> None:
+        """Keeps waiting for the tasks that `stop()` cancelled to finish,
+        warning every `STOP_WAIT_SECONDS` about those that have not."""
+        while not await self._wait_for_cancelled_tasks():
+            pass
