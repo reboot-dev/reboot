@@ -80,6 +80,7 @@ py_library(
     deps = [
         ":contextvars_py",
         ":tasks_cache_py",
+        "//reboot:run_environments_py",
         "//reboot/aio:tasks_py",
         "//reboot/aio:tracing_py",
         "//reboot/aio:types_py",
