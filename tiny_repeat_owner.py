@@ -263,7 +263,7 @@ class Benchmark:
             assert network['Labels']['owner']=='tiny-repeat-20261020' and network['Internal'] is False
         else:
             self.tiny('docker','network','create','--label','owner=tiny-repeat-20261020','tinyrepeat-app-ingress')
-        self.client_id=self.local('docker','run','-d','--pull=never','--init','--name','tiny-repeat-20261020-client',
+        self.client_id=self.local('docker','run','-d','--pull=never','--init','--name',ROOT.name+'-client',
                                  '--network','host','--cpuset-cpus',self.config['client_cpu'],
                                  '--entrypoint',PY,'--no-healthcheck','-v',str(ROOT/'bench')+':/bench:ro','-v',str(self.o.directory)+':/evidence',
                                  IMAGES['python'],'-c','import time;time.sleep(18000)').strip()
@@ -278,7 +278,10 @@ class Benchmark:
                                  '-o','ServerAliveInterval=15','-o','ServerAliveCountMax=3','-N',
                                  '-L','127.0.0.1:50052:127.0.0.1:50052',self.host],'app-only-tunnel')
         time.sleep(2)
-        assert self.tunnel[1].poll() is None
+        if self.tunnel[1].poll() is not None:
+            result = self.o.join(self.tunnel)
+            detail = (self.o.directory/result['log']).read_text(errors='replace')
+            raise RuntimeError('app-only SSH tunnel exited: '+repr(result['exit'])+'; '+detail)
         self.o.save()
 
     def execute(self):
@@ -348,10 +351,13 @@ class Benchmark:
                         self.stop_stack()
             self.o.ledger['complete']=True
         except BaseException:
-            self.o.ledger['failures'].append(traceback.format_exc())
-            print(traceback.format_exc(),flush=True)
+            failure = traceback.format_exc()
+            self.o.ledger['failures'].append(failure)
+            self.o.ledger.update(failure_gate=self.o.ledger.get('gate'), gate='failed', complete=False)
+            self.o.save()  # fatal preflight is durable BEFORE cleanup can fail
+            print(failure,flush=True)
             if self.row:
-                self.row['failure']=traceback.format_exc()
+                self.row['failure']=failure
         finally:
             # Every independent cleanup attempted, even after another fails.
             self.o.begin_cleanup()
@@ -369,8 +375,21 @@ class Benchmark:
                     self.o.ledger['failures'].append(name+': '+traceback.format_exc())
                     self.o.ledger['complete']=False
                     self.o.save()
-            self.o.finish()
-        return 0 if self.o.ledger['complete'] and not self.o.ledger['failures'] else 1
+            try:
+                self.o.finish()
+            except BaseException:
+                self.o.ledger['failures'].append('finish: '+traceback.format_exc())
+                self.o.ledger['complete']=False
+            finally:
+                code = 0 if self.o.ledger['complete'] and not self.o.ledger['failures'] else 1
+                self.o.ledger.update(gate='completed' if code==0 else 'failed', exit_status=code)
+                self.o.save()
+                atomic(self.o.directory/'exit-receipt.json', dict(
+                    owner_pid=os.getpid(), exit_status=code, gate=self.o.ledger['gate'],
+                    failure_gate=self.o.ledger.get('failure_gate'), failures=self.o.ledger['failures'],
+                    end=self.o.ledger.get('end'),
+                    all_original_unix_children_joined=self.o.ledger.get('all_original_unix_children_joined',False)))
+        return code
 
     def stop_client(self):
         if self.client_id:
