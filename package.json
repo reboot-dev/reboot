@@ -17,8 +17,8 @@
     "@types/node": "26.6.4",
     "@types/react": "19.2.7",
     "@testing-library/react": "^16.3.0",
-    "@vitejs/plugin-react": "^4.7.0",
-    "@vitest/coverage-istanbul": "^3.1.2",
+    "@vitejs/plugin-react": "^6.1.2",
+    "@vitest/coverage-istanbul": "^4.1.12",
     "@types/express": "^5.0.1",
     "@types/express-serve-static-core": "^5.0.6",
     "fake-indexeddb": "^6.0.1",
@@ -42,9 +42,9 @@
     "@standard-schema/spec": "1.0.0",
     "@typescript/vfs": "*",
     "chalk": "^4.1.2",
-    "vite": "^6.3.5",
-    "vite-plugin-singlefile": "^2.0.3",
-    "vitest": "^3.2.4",
+    "vite": "^8.3.4",
+    "vite-plugin-singlefile": "^2.3.4",
+    "vitest": "^4.1.12",
     "zod": "^3.25.51 || ^4.0.0"
   },
   "peerDependencies": {

@@ -1,16 +1,22 @@
-import { TestCase } from "vitest/node";
-import { BasicReporter } from "vitest/reporters";
+import { DefaultReporter, TestCase } from "vitest/node";
 
 // Vitest, a 'modern' and powerful test framework isn't able to print
 // verbose errors out-of-the-box. Use this vitest reporter to see all
 // errors printed to the console.
-export class BetterErrorTracingReporter extends BasicReporter {
+//
+// Built on `DefaultReporter` without its summary, which is what the
+// `basic` reporter of Vitest 3 was before Vitest 4 removed it.
+export class BetterErrorTracingReporter extends DefaultReporter {
+  constructor() {
+    super({ summary: false });
+  }
+
   onTestCaseResult(testCase: TestCase) {
     if (this.isTTY) {
       return;
     }
 
-    // Let `BasicReporter` print the test case line as usual.
+    // Let `DefaultReporter` print the test case line as usual.
     super.onTestCaseResult(testCase);
 
     const result = testCase.result();
