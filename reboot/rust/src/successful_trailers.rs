@@ -413,7 +413,20 @@ pub fn stage_successful_participants<T>(
         .insert(SuccessfulParticipantMetadata::new(metadata));
 }
 
-/// A Tower layer that emits staged participant metadata in successful trailers.
+/// Canonical Python TasksStub reads this only from successful trailers.
+pub const TASK_ID_UUID_HEADER: &str = "x-reboot-task-id-uuid";
+
+#[derive(Clone, Debug)]
+struct SuccessfulTaskId(HeaderValue);
+
+/// Stage an acknowledged task identity. The server must install the trailer layer.
+pub(crate) fn stage_successful_task<T>(response: &mut tonic::Response<T>, id: uuid::Uuid) {
+    response.extensions_mut().insert(SuccessfulTaskId(
+        HeaderValue::from_str(&id.to_string()).expect("UUID is valid metadata"),
+    ));
+}
+
+/// A Tower layer that emits staged participant and task metadata in successful trailers.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SuccessfulParticipantTrailerLayer;
 
@@ -450,14 +463,14 @@ where
             let response = future.await?;
             let (mut parts, body) = response.into_parts();
             let marker = parts.extensions.remove::<SuccessfulParticipantMetadata>();
-            let body = match marker {
-                Some(SuccessfulParticipantMetadata(metadata)) => {
-                    tonic::body::boxed(ParticipantTrailerBody {
-                        inner: body,
-                        metadata,
-                    })
-                }
-                None => body,
+            let task = parts.extensions.remove::<SuccessfulTaskId>();
+            let body = match (marker, task) {
+                (None, None) => body,
+                (metadata, task) => tonic::body::boxed(ParticipantTrailerBody {
+                    inner: body,
+                    metadata: metadata.map(|marker| marker.0),
+                    task: task.map(|marker| marker.0),
+                }),
             };
             Ok(Response::from_parts(parts, body))
         })
@@ -466,7 +479,8 @@ where
 
 struct ParticipantTrailerBody {
     inner: tonic::body::BoxBody,
-    metadata: ParticipantMetadata,
+    metadata: Option<ParticipantMetadata>,
+    task: Option<HeaderValue>,
 }
 
 impl Body for ParticipantTrailerBody {
@@ -482,12 +496,17 @@ impl Body for ParticipantTrailerBody {
                 if let Some(trailers) = frame.trailers_mut()
                     && grpc_status_is_ok(trailers)
                 {
-                    trailers.append(
-                        TRANSACTION_PARTICIPANTS_HEADER,
-                        self.metadata.should_commit_header_value(),
-                    );
-                    if let Some(read_only) = self.metadata.read_only_header_value() {
-                        trailers.append(TRANSACTION_PARTICIPANTS_READ_ONLY_HEADER, read_only);
+                    if let Some(metadata) = &self.metadata {
+                        trailers.append(
+                            TRANSACTION_PARTICIPANTS_HEADER,
+                            metadata.should_commit_header_value(),
+                        );
+                        if let Some(read_only) = metadata.read_only_header_value() {
+                            trailers.append(TRANSACTION_PARTICIPANTS_READ_ONLY_HEADER, read_only);
+                        }
+                    }
+                    if let Some(task) = &self.task {
+                        trailers.append(TASK_ID_UUID_HEADER, task.clone());
                     }
                 }
                 Poll::Ready(Some(Ok(frame)))
@@ -553,6 +572,10 @@ mod terminal_status_tests {
             response
                 .extensions_mut()
                 .insert(SuccessfulParticipantMetadata::new(metadata));
+            let task = HeaderValue::from_static("550e8400-e29b-41d4-a716-446655440000");
+            response
+                .extensions_mut()
+                .insert(SuccessfulTaskId(task.clone()));
             let mut service =
                 SuccessfulParticipantTrailerLayer.layer(StagedResponse(Some(response)));
             let response = service
@@ -573,6 +596,7 @@ mod terminal_status_tests {
                 trailers.get_all("grpc-status").iter().collect::<Vec<_>>()
             );
             if statuses == ["0"] {
+                assert_eq!(observed.get(TASK_ID_UUID_HEADER), Some(&task));
                 assert_eq!(observed.get(TRANSACTION_PARTICIPANTS_HEADER), Some(&writer));
                 assert_eq!(
                     observed.get(TRANSACTION_PARTICIPANTS_READ_ONLY_HEADER),
@@ -580,6 +604,7 @@ mod terminal_status_tests {
                 );
             } else {
                 assert!(!observed.contains_key(TRANSACTION_PARTICIPANTS_HEADER));
+                assert!(!observed.contains_key(TASK_ID_UUID_HEADER));
                 assert!(!observed.contains_key(TRANSACTION_PARTICIPANTS_READ_ONLY_HEADER));
             }
         }

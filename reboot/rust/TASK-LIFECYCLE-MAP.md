@@ -2,10 +2,14 @@
 
 Base: `151c358616341203de7dfbd2809563ea704a72e8`.
 
+The subsequent [canonical application-RPC admission migration](CANONICAL-TASK-ADMISSION-MAP.md)
+removes the Rust-only admission dependency for new absolute/immediate workflow
+spawns. The lifecycle evidence below retains its original checkpoint scope.
+
 ## Actual Python/native contracts and chosen foundation
 
 - `templates/reboot.py.j2:4719-4836`: generated method Task owns canonical TaskId and context channel manager; awaiting calls canonical Tasks.Wait, unpacks the declared response or method-specific abort (including system Cancelled). It does not expose a task-instance cancel method. Retrieval accepts an existing ID.
-- `aio/internals/tasks_servicer.py:48-126,213-253`: Wait routes to the owning actor, CancelTask requires admin authorization and authoritative placement. Cancellation is not spawn admission. No canonical Tasks.Spawn RPC exists (`rbt/v1alpha1/tasks.proto`). Replacing the experimental Rust admission transport with a supposedly canonical spawn would invent a protocol.
+- `aio/internals/tasks_servicer.py:48-126,213-253`: Wait routes to the owning actor, CancelTask requires admin authorization and authoritative placement. Cancellation is not spawn admission. No canonical Tasks.Spawn RPC exists (`rbt/v1alpha1/tasks.proto`): Python admission instead uses the original application RPC with task-schedule metadata and a successful UUID trailer, as mapped in the follow-up above.
 - `aio/internals/tasks_dispatcher.py:333-364,376-400`: canonical cancellation interrupts a dispatched task and records a rich `rbt.v1alpha1.Cancelled` system terminal; host shutdown at 410-427 deliberately does not set this terminal. OK/CANCELLING/NOT_FOUND are transient administration statuses, not durable cancellation receipts.
 - `server/database.cc:2713-2862`: actual CompleteTask is synchronous pending-to-completed CAS; immutable method/request/iteration must match, timestamp is preserved. It does not revoke arbitrary remote work or provide cancellation admission receipts. Existing Store remains an upsert, so SDK actor admission and uncertainty fencing remain essential.
 - `templates/reboot.py.j2:6069-6209,6392-6558`: transactional/same-actor schedule and independently committed workflow spawn have different authority. Python computes relative schedules from its caller clock at 6523-6525. Rust now supports nonnegative relative delays resolved once at target admission, not caller-clock or negative-timedelta equivalence. Replay must retain the original persisted timestamp rather than recompute `now + delay`.

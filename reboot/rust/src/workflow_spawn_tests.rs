@@ -100,6 +100,46 @@ mod spawn_contract_tests {
         );
     }
     #[tokio::test]
+    async fn canonical_schedule_rejects_missing_malformed_and_nonworkflow_before_database() {
+        let (service, _owner, _) = task_listing_service_tests::setup(0);
+        let tasks = service.tasks.values().next().unwrap().clone();
+        let spawner = WorkflowSpawner::new(tasks, crate::auth::AuthorizationPolicy::default());
+        let missing = tonic::Request::new(db::TaskId::default());
+        assert_eq!(
+            spawner
+                .schedule::<_, db::TaskId>("demo.Methods.Read", missing)
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::PermissionDenied
+        );
+        let mut malformed = tonic::Request::new(db::TaskId::default());
+        malformed
+            .metadata_mut()
+            .insert("x-reboot-task-schedule", "tomorrow-ish".parse().unwrap());
+        assert_eq!(
+            spawner
+                .schedule::<_, db::TaskId>("demo.Methods.Read", malformed)
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::InvalidArgument
+        );
+        let mut unsupported = tonic::Request::new(db::TaskId::default());
+        unsupported
+            .metadata_mut()
+            .insert("x-reboot-task-schedule", "".parse().unwrap());
+        assert_eq!(
+            spawner
+                .schedule::<_, db::TaskId>("demo.Methods.Read", unsupported)
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::PermissionDenied
+        );
+    }
+
+    #[tokio::test]
     async fn relative_schedule_requires_distinct_rpc_before_admission_or_database() {
         use crate::workflow_spawn_proto::workflow_spawner_server::WorkflowSpawner as Service;
         let (service, _owner, _) = task_listing_service_tests::setup(0);

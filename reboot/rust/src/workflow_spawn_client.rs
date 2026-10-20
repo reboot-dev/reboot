@@ -176,6 +176,118 @@ fn decode_workflow_task_terminal<R: prost::Message + Default>(
     }
 }
 impl WorkflowContext<'_> {
+    /// Canonical application-method admission. The source intent and target UUID
+    /// deliberately match legacy absolute Spawn: transport migration must not
+    /// mint a second child or rewrite an already acknowledged operation.
+    #[doc(hidden)]
+    pub async fn spawn_workflow_canonical<Q, R>(
+        &self,
+        channel: tonic::transport::Channel,
+        target: &WorkflowWriterTarget,
+        alias: &str,
+        descriptor: WorkflowSpawnMethod,
+        request: Q,
+        timestamp: Option<prost_types::Timestamp>,
+    ) -> Result<db::TaskId, Status>
+    where
+        Q: prost::Message + Default + Send + Sync + 'static,
+        R: prost::Message + Default + Send + 'static,
+    {
+        let expected_type = target.actor.state_type().to_owned();
+        let expected_ref = target.actor.state_ref().as_str().to_owned();
+        let (service, method) = descriptor
+            .method
+            .rsplit_once('.')
+            .ok_or_else(|| Status::invalid_argument("invalid canonical workflow method"))?;
+        let path: http::uri::PathAndQuery = format!("/{service}/{method}")
+            .parse()
+            .map_err(|_| Status::invalid_argument("invalid canonical workflow RPC path"))?;
+        self.invoke_writer(
+            target,
+            alias,
+            WorkflowWriterMethod {
+                state_type: descriptor.state_type,
+                method: descriptor.method,
+                response_type: "type.googleapis.com/rbt.v1alpha1.TaskId",
+                errors: vec![],
+            },
+            crate::workflow_spawn_proto::SpawnRequest {
+                method: descriptor.method.into(),
+                request: request.encode_to_vec(),
+                timestamp,
+                relative_delay: None,
+                response_type: descriptor.response_type.into(),
+                errors: descriptor
+                    .errors
+                    .iter()
+                    .map(|error| error.type_url.to_owned())
+                    .collect(),
+            },
+            move |outbound: tonic::Request<crate::workflow_spawn_proto::SpawnRequest>| async move {
+                let key = crate::RebootHeaders::from_request(&outbound)
+                    .map_err(|e| Status::invalid_argument(e.to_string()))?
+                    .idempotency_key
+                    .ok_or_else(|| Status::internal("missing generated spawn key"))?;
+                let schedule = match outbound.get_ref().timestamp {
+                    None => String::new(),
+                    Some(value) => chrono::DateTime::from_timestamp(
+                        value.seconds,
+                        value
+                            .nanos
+                            .try_into()
+                            .map_err(|_| Status::invalid_argument("invalid workflow timestamp"))?,
+                    )
+                    .ok_or_else(|| Status::invalid_argument("invalid workflow timestamp"))?
+                    .to_rfc3339(),
+                };
+                let body = Q::decode(outbound.get_ref().request.as_slice())
+                    .map_err(|_| Status::internal("invalid generated spawn payload"))?;
+                let mut outbound = outbound.map(|_| body);
+                outbound.metadata_mut().insert(
+                    "x-reboot-task-schedule",
+                    schedule
+                        .parse()
+                        .map_err(|_| Status::invalid_argument("invalid workflow schedule"))?,
+                );
+                let mut client = tonic::client::Grpc::new(channel);
+                client
+                    .ready()
+                    .await
+                    .map_err(|error| Status::unavailable(error.to_string()))?;
+                let response: tonic::Response<R> = client
+                    .unary(outbound, path, tonic::codec::ProstCodec::default())
+                    .await?;
+                let mut values = response
+                    .metadata()
+                    .get_all(crate::successful_trailers::TASK_ID_UUID_HEADER)
+                    .iter();
+                let value = values.next().ok_or_else(|| {
+                    Status::data_loss("canonical admission omitted task UUID trailer")
+                })?;
+                let id = uuid::Uuid::parse_str(
+                    value
+                        .to_str()
+                        .map_err(|_| Status::data_loss("invalid task UUID trailer"))?,
+                )
+                .map_err(|_| Status::data_loss("invalid task UUID trailer"))?;
+                if values.next().is_some()
+                    || id.as_bytes().as_slice()
+                        != initializer_uuid("reboot.workflow-spawn.task.v1", &key.to_string())
+                {
+                    return Err(Status::data_loss(
+                        "canonical admission changed target task identity",
+                    ));
+                }
+                Ok(tonic::Response::new(db::TaskId {
+                    state_type: expected_type,
+                    state_ref: expected_ref,
+                    task_uuid: id.as_bytes().to_vec(),
+                }))
+            },
+        )
+        .await
+    }
+
     /// Wait through the canonical authorized Tasks service; only a validated
     /// durable declared terminal permits the workflow to catch and continue.
     #[doc(hidden)]

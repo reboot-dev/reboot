@@ -1,5 +1,10 @@
 # Generated callable workflow spawning
 
+Current absolute/immediate generated references use the canonical application
+RPC admission contract, including actual generated Reboot Python clients:
+[current admission map](CANONICAL-TASK-ADMISSION-MAP.md). The original experimental
+Spawn endpoint remains for compatibility; SpawnAfter retains its separate clock.
+
 This records the original spawn checkpoint. Current typed Task handles, canonical
 running-child cancellation and bounded relative scheduling are mapped separately
 in [TASK-LIFECYCLE-MAP.md](TASK-LIFECYCLE-MAP.md); its new evidence does not rewrite

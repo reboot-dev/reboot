@@ -239,7 +239,8 @@ mod workflow_emission_tests {
             "with_workflows",
             "writer_step::<StateDurableState,proto::Q,proto::R",
             "workflow_scheduling_writer",
-            "permission_denied",
+            "self.workflow_spawner()?.schedule(\"demo.Methods.Run\",request).await",
+            "spawn_workflow_canonical::<proto::Q,proto::R>",
             "MethodsTasksWait",
             "context.finish::<StateDurableState,proto::Q,proto::R",
             "unknown",
@@ -648,7 +649,7 @@ fn emit_workflow_service(
                     )
                 };
                 waits.push_str(&format!("pub async fn {rust}(channel: tonic::transport::Channel, mut request: tonic::Request<{runtime_module}::database_proto::TaskId>) -> Result<proto::{response},{handler_error}> {{ if request.get_ref().state_type != <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE {{ return Err(tonic::Status::invalid_argument(\"wrong workflow state type\"){conversion}); }}\n if request.metadata().get(\"x-reboot-state-ref\").is_none() {{ let state_ref = request.get_ref().state_ref.parse().map_err(|_| tonic::Status::invalid_argument(\"invalid workflow StateRef\"))?; request.metadata_mut().insert(\"x-reboot-state-ref\",state_ref); }} request.metadata_mut().insert(\"x-reboot-task-method\",\"{identity}\".parse().unwrap()); let terminal = {runtime_module}::database_proto::tasks_client::TasksClient::new(channel).wait(request.map(|id|{runtime_module}::database_proto::WaitRequest {{task_id:Some(id)}})).await?.into_inner(); match terminal.response_or_error.and_then(|t|t.response_or_error) {{ Some({runtime_module}::database_proto::task_response_or_error::ResponseOrError::Response(response)) if response.type_url == \"{response_type}\" => <proto::{response} as prost::Message>::decode(response.value.as_slice()).map_err(|_|tonic::Status::data_loss(\"malformed workflow result\"){conversion}), {error_terminal} _ => Err(tonic::Status::data_loss(\"wrong workflow terminal\"){conversion}) }} }}\n"));
-                rpc_methods.push_str(&format!("async fn {rust}(&self, _: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>,tonic::Status> {{ Err(tonic::Status::permission_denied(\"workflows run only through durable generated writer scheduling\")) }}\n"));
+                rpc_methods.push_str(&format!("async fn {rust}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>,tonic::Status> {{ self.workflow_spawner()?.schedule(\"{identity}\",request).await }}\n"));
             }
             DurableKind::Writer(WriterMetadata { constructor: false }) => {
                 let errors = annotation
@@ -689,7 +690,7 @@ fn emit_workflow_service(
                 declarations.push_str(&format!("{runtime_module}::one_shot_tasks::TaskMethodDeclaration::new::<{declaration},proto::{request},proto::{response}>(\"{identity}\",\"{response_type}\",vec![{error_descriptors}]).workflow_writer_step(),"));
                 writers.push_str(&format!("\"{name}\" | "));
                 step_methods.push_str(&format!("pub async fn {rust}<H:{handler}>(context:&{runtime_module}::one_shot_tasks::WorkflowContext<'_>,handler:std::sync::Arc<H>,alias:&str,request:proto::{request})->Result<proto::{response},{handler_error}> {{ context.{step}::<{declaration},proto::{request},proto::{response},_>(alias,\"{identity}\",\"{response_type}\",request,move |state,request|Box::pin(async move {{handler.{rust}(state,request).await{disposition}}})).await{decode} }}\n"));
-                rpc_methods.push_str(&format!("async fn {rust}(&self,request:tonic::Request<proto::{request}>)->Result<tonic::Response<proto::{response}>,tonic::Status> {{ let handler=self.handler.clone(); self.store.workflow_scheduling_writer::<{declaration},_,_,_>(\"{identity}\",&self.authorization,self.tasks.as_ref(),request,move |state,request,state_ref|Box::pin(async move {{handler.{rust}_scheduled(state,request,state_ref).await{error_map}}})).await }}\n"));
+                rpc_methods.push_str(&format!("async fn {rust}(&self,request:tonic::Request<proto::{request}>)->Result<tonic::Response<proto::{response}>,tonic::Status> {{ if request.metadata().contains_key(\"x-reboot-task-schedule\") {{ return Err(tonic::Status::failed_precondition(\"canonical task admission currently requires a workflow target\")); }} let handler=self.handler.clone(); self.store.workflow_scheduling_writer::<{declaration},_,_,_>(\"{identity}\",&self.authorization,self.tasks.as_ref(),request,move |state,request,state_ref|Box::pin(async move {{handler.{rust}_scheduled(state,request,state_ref).await{error_map}}})).await }}\n"));
             }
             DurableKind::Writer(WriterMetadata { constructor: true }) | DurableKind::Reader => {
                 let declared = matches!(kind, DurableKind::Reader)
@@ -737,7 +738,7 @@ fn emit_workflow_service(
                     String::new()
                 };
 
-                rpc_methods.push_str(&format!("async fn {rust}(&self,request:tonic::Request<proto::{request}>)->Result<tonic::Response<proto::{response}>,tonic::Status> {{ {unary_composition} let handler=self.handler.clone(); self.store.{envelope}::<{declaration},_,_,_>(\"{identity}\",{admission}&self.authorization,request,move |state,request|Box::pin(async move {{handler.{rust}(state,request).await{error_map}}})).await }}\n"));
+                rpc_methods.push_str(&format!("async fn {rust}(&self,request:tonic::Request<proto::{request}>)->Result<tonic::Response<proto::{response}>,tonic::Status> {{ if request.metadata().contains_key(\"x-reboot-task-schedule\") {{ return Err(tonic::Status::failed_precondition(\"canonical task admission currently requires a workflow target\")); }}\n {unary_composition} let handler=self.handler.clone(); self.store.{envelope}::<{declaration},_,_,_>(\"{identity}\",{admission}&self.authorization,request,move |state,request|Box::pin(async move {{handler.{rust}(state,request).await{error_map}}})).await }}\n"));
             }
             DurableKind::Transaction(_) => unreachable!(),
         }
@@ -790,7 +791,13 @@ fn emit_workflow_service(
         ));
     }
     emit_workflow_spawn_reference(
-        output, service, annotation, package, service_name, runtime_module, &adapter,
+        output,
+        service,
+        annotation,
+        package,
+        service_name,
+        runtime_module,
+        &adapter,
     )?;
     emit_local_readers(
         output,

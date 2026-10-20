@@ -3,7 +3,7 @@
 use std::process::Command;
 
 #[test]
-fn unchanged_legacy_emits_opaque_typed_initializer_and_denies_direct_workflow_rpc() {
+fn unchanged_legacy_emits_opaque_initializer_and_canonical_workflow_admission() {
     let directory = tempfile::tempdir().unwrap();
     let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
@@ -43,7 +43,7 @@ fn unchanged_legacy_emits_opaque_typed_initializer_and_denies_direct_workflow_rp
     assert!(content.contains("context.wait_workflow::<"));
     assert!(content.contains("hello_legacy_grpc.v1.RebootGreeterMethods.Initialize"));
     assert!(content.contains("type.googleapis.com/google.protobuf.Empty"));
-    assert!(content.contains("workflows run only through durable generated writer scheduling"));
+    assert!(content.contains("self.workflow_spawner()?.schedule(\"hello_legacy_grpc.v1.RebootGreeterMethods.Initialize\",request).await"));
     assert!(content.contains("pub struct DeprecatedGreeterAdapter"));
     assert!(content.contains("pub struct ProxyGreeterAdapter"));
     assert!(!content.contains("pub trait DeprecatedGreeterDatabaseHandler"));

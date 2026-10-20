@@ -12,6 +12,49 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Canonical application-RPC workflow task admission
+
+Absolute/immediate generated Rust `_spawn` / `_task` no longer depend on the
+experimental Rust-only Spawn RPC. They use the original application method and
+Python's actual `x-reboot-task-schedule` / successful trailing task-UUID contract.
+The same generated Rust adapter accepts actual generated Reboot Python
+WeakReference.spawn / TasksStub clients, followed by their typed Task awaiting
+code and canonical Tasks.Wait. No nonexistent Tasks.Spawn/CreateTask RPC is added.
+
+Source intent bytes, key domains, deterministic UUID and Started/Stored ACK
+discipline are preserved across transport migration. Current actor authorization
+and atomic native task/receipt Store remain authoritative. A lost native ACK,
+missing/changed UUID or uncertain owner does not authorize source continuation.
+The prior published Rust binary's Started intent and admitted target survive full
+native restart and recover through the new route without creating another child.
+
+This remains **workflow-only** admission on explicitly registered existing actors.
+Generic reader/writer and transaction task targets, cursor admission/receipt GC
+and dynamic placement remain migration barriers. Unsupported task-schedule
+metadata is rejected before those handlers run on the generated workflow adapter.
+Legacy absolute Spawn remains available for compatibility; relative SpawnAfter
+keeps its target-admission clock and existing identity, not Python caller-clock
+semantics. Empty canonical schedule metadata retains the legacy no-timestamp
+immediate form; Python's immediate stored timestamp is not claimed identical.
+Actual generated Python clients are qualified, not a Python-hosted application
+or complete middleware/placement equivalence.
+
+Contracts, execution path and remaining barriers:
+[canonical admission map](CANONICAL-TASK-ADMISSION-MAP.md).
+
+Qualification: [tested canonical admission checkpoint](tests/evidence/workflow-canonical-admission-20261020.md).
+Locked/offline all-targets passed 850 library tests (7 library ignores) and 55
+generated consumer tests; strict SDK/fixture Clippy passed. The accepted native
+runs cover 42 scenarios and 1,208 original-parent child waits, with three retained
+native source mutants and two original-parent cleanup drills. The all-target run
+listed 171 ignored entries; only the named admission/migration, lifecycle and
+spawn wrappers were explicitly requalified. Compile receipts are explicitly
+reused after two Python proof-only transport fixes with mechanically unchanged
+Rust/schema/Cargo/runtime inputs; all native gates were rerun on the final proof
+sources. Source pins, the exact reuse delta and offhost verification are retained.
+The C++ Database is reused/hash-pinned, not freshly built. Independent review and
+normal publication remain required; no full-parity or Python-hosted-server claim.
+
 ## Canonical workflow Task handles and cancellation
 
 Generated `*WorkflowRef` now supplies `_task` and `_retrieve` typed handles with
@@ -47,7 +90,8 @@ are in [TASK-LIFECYCLE-MAP.md](TASK-LIFECYCLE-MAP.md). The native gate generates
 Python Tasks stubs from the actual canonical schemas and exercises those clients,
 the generated Rust public services and two real C++ Database processes. This is
 bounded Tasks wire interoperability, **not full Python application parity**.
-Spawn admission is still Rust-only: canonical Python Tasks defines no Spawn RPC.
+This historical lifecycle gate predates the application-RPC admission migration
+above. Canonical Python Tasks itself still defines no Spawn RPC.
 No transaction integration, generic task targets, running-cursor cancellation,
 cursor admission/GC, automatic routing/migration or implicit cascading cancellation
 is claimed. The native executable is reused/hash-pinned, not freshly C++-built.
@@ -77,8 +121,9 @@ catching declared durable child errors and a subsequent parent continuation.
 Unknown ACKs/cancellation remain fail-closed, with the existing host recovery,
 generation, actor uncertainty and cursor fences intact.
 
-The transport is an explicitly **Rust-only experimental protocol**, not Python's
-generated Tasks wire service. Root/finite source scopes and non-cursor workflow
+At the original checkpoint the transport was an explicitly **Rust-only
+experimental protocol**. Absolute/immediate generated references now use the
+canonical application-RPC admission contract described above. Root/finite source scopes and non-cursor workflow
 targets on existing explicitly registered actors are supported; constructor,
 generic reader/writer spawning, transaction scheduling, automatic placement,
 cursor receipt GC are not. Typed Task handles and bounded relative schedules are

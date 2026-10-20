@@ -25,11 +25,15 @@ class Proxy(grpc.GenericRpcHandler):
         def unary(body,context):
             global sequence
             try:
-                response=call(body,metadata=context.invocation_metadata(),timeout=15)
+                response,upstream_call=call.with_call(body,metadata=context.invocation_metadata(),timeout=15)
             except grpc.RpcError as failure:
                 context.set_trailing_metadata(failure.trailing_metadata() or [])
                 context.abort(failure.code(),failure.details())
                 raise AssertionError('unreachable after gRPC abort')
+            # Admission now uses application RPC trailers too. Preserve the real
+            # upstream metadata on every pass-through path; mutate only Wait.
+            context.send_initial_metadata(upstream_call.initial_metadata() or [])
+            context.set_trailing_metadata(upstream_call.trailing_metadata() or [])
             if path!='/rbt.v1alpha1.Tasks/Wait': return response
             terminal=tasks_pb2.WaitResponse.FromString(response)
             rich=status_pb2.Status()

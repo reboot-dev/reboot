@@ -93,6 +93,66 @@ fn relative_workflow_timestamp(
     })
 }
 impl WorkflowSpawner {
+    /// Canonical Python TasksStub admission uses the application's original RPC,
+    /// the task-schedule metadata and an acknowledged UUID in successful trailers.
+    /// No method body runs during admission; no new Tasks.Spawn RPC is invented.
+    #[doc(hidden)]
+    pub async fn schedule<Q: prost::Message, R: Default>(
+        &self,
+        method: &'static str,
+        request: tonic::Request<Q>,
+    ) -> Result<tonic::Response<R>, Status> {
+        let schedule = request
+            .metadata()
+            .get("x-reboot-task-schedule")
+            .ok_or_else(|| {
+                Status::permission_denied("workflow RPC requires task schedule metadata")
+            })?
+            .to_str()
+            .map_err(|_| Status::invalid_argument("invalid task schedule metadata"))?;
+        // An empty header means immediate admission, not a newly fingerprinted
+        // clock on every retry. Explicit Python datetime/timedelta values arrive
+        // as absolute timestamps and remain bound to the original intent.
+        let timestamp = if schedule.is_empty() {
+            None
+        } else {
+            let headers = crate::RebootHeaders::from_request(&request)
+                .map_err(|error| Status::invalid_argument(error.to_string()))?;
+            let value = headers
+                .task_schedule
+                .ok_or_else(|| Status::invalid_argument("missing task timestamp"))?;
+            Some(prost_types::Timestamp {
+                seconds: value.timestamp(),
+                nanos: value.timestamp_subsec_nanos() as i32,
+            })
+        };
+        let declaration = self
+            .tasks
+            .inner
+            .declarations
+            .iter()
+            .find(|d| d.workflow && d.method == method)
+            .ok_or_else(|| Status::permission_denied("task target is not a registered workflow"))?;
+        let body = crate::workflow_spawn_proto::SpawnRequest {
+            method: method.into(),
+            request: request.get_ref().encode_to_vec(),
+            timestamp,
+            response_type: declaration.response_type.into(),
+            errors: declaration
+                .errors
+                .iter()
+                .map(|error| error.type_url.to_owned())
+                .collect(),
+            relative_delay: None,
+        };
+        let id = self.admit(request.map(|_| body)).await?.into_inner();
+        let uuid = uuid::Uuid::from_slice(&id.task_uuid)
+            .map_err(|_| Status::data_loss("invalid admitted task UUID"))?;
+        let mut response = tonic::Response::new(R::default());
+        crate::successful_trailers::stage_successful_task(&mut response, uuid);
+        Ok(response)
+    }
+
     async fn admit(
         &self,
         request: tonic::Request<crate::workflow_spawn_proto::SpawnRequest>,
