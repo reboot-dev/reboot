@@ -211,6 +211,7 @@ api = API(
                 path="clicker",
                 title="Counter Clicker",
                 description=("Interactive clicker for the Counter."),
+                display_modes=["fullscreen", "inline"],
             ),
             create=Writer(
                 request=InitializeCounterRequest,

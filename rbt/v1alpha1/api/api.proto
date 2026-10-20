@@ -161,4 +161,8 @@ message UI {
   // Was `artifact_path`; the build is always at
   // `<--mcp-app-dist-path>/<path>/index.html` now.
   reserved 6;
+
+  // The display modes the page prefers, most preferred first
+  // ("inline", "fullscreen" or "pip"); empty for inline.
+  repeated string display_modes = 7;
 }

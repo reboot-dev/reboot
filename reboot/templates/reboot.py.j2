@@ -3063,6 +3063,12 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% else %}
             result: dict = {"ids": _ids}
 {% endif %}
+{% if ui.display_modes %}
+
+            # `McpConnector` asks the host for the first of these it
+            # supports when the UI opens.
+            result["display_modes"] = {{ ui.display_modes }}
+{% endif %}
 
             # Invariant: the MCP server has a bearer token for this tool
             # call because opening a UI requires an authenticated
@@ -3136,6 +3142,12 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             }
 {% else %}
             result: dict = {"ids": _ids}
+{% endif %}
+{% if ui.display_modes %}
+
+            # `McpConnector` asks the host for the first of these it
+            # supports when the UI opens.
+            result["display_modes"] = {{ ui.display_modes }}
 {% endif %}
 
             # Invariant: the MCP server has a bearer token for this tool

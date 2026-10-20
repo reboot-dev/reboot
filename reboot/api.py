@@ -922,11 +922,19 @@ class UI(pydantic.BaseModel):
     The `request` type defines the React component's
     props. There is no `response` -- the tool triggers
     UI display and the React component handles rendering.
+
+    `display_modes` lists the modes the UI prefers, most preferred
+    first, such as `["fullscreen", "inline"]`. When the UI opens it
+    asks the host for the first one the host supports; with none of
+    them supported, the request refused, or no `display_modes`, it
+    stays inline. A host can refuse a request that no click inside the
+    UI led to, as the Claude desktop app's Code tab does.
     """
     request: Optional[typing.Type[Model]]
     path: str
     title: Optional[str] = None
     description: Optional[str] = None
+    display_modes: list[typing.Literal["inline", "fullscreen", "pip"]] = []
 
     @pydantic.field_validator('path')
     @classmethod

@@ -104,6 +104,39 @@ export default function McpConnector({
   const setBearerTokenRef = useRef(setBearerToken);
   setBearerTokenRef.current = setBearerToken;
 
+  // Ask the host for the first of the `UI(display_modes=...)` it
+  // supports. Called with the tool result only, as the tool's input
+  // arguments may hold a request field of the same name. Once, because
+  // refreshing the bearer token re-calls the tool, and its result must
+  // not undo a mode the user has since changed.
+  const displayModeRequestedRef = useRef(false);
+  const requestDisplayMode = (app: McpApp, displayModes: unknown): void => {
+    if (!Array.isArray(displayModes) || displayModeRequestedRef.current) {
+      return;
+    }
+    displayModeRequestedRef.current = true;
+    const context = app.getHostContext();
+    const mode = displayModes.find((mode) =>
+      context?.availableDisplayModes?.includes(mode)
+    );
+    if (mode === undefined || mode === context?.displayMode) {
+      return;
+    }
+    // A host refuses with an error, or by answering with the mode it
+    // keeps.
+    app.requestDisplayMode({ mode }).then(
+      (result: { mode: string }) => {
+        if (result.mode !== mode) {
+          console.warn(
+            `The host kept display mode '${result.mode}' instead of '${mode}'.`
+          );
+        }
+      },
+      (error: unknown) =>
+        console.warn(`The host refused display mode '${mode}':`, error)
+    );
+  };
+
   const { mcpApp, error } = useAppSafe({
     appInfo: {
       name: appName,
@@ -159,6 +192,7 @@ export default function McpConnector({
             if (typeof sc.bearer_token === "string") {
               setBearerTokenRef.current(sc.bearer_token);
             }
+            requestDisplayMode(createdMcpApp, sc.display_modes);
             return;
           }
         }
@@ -175,6 +209,7 @@ export default function McpConnector({
             if (typeof data.bearer_token === "string") {
               setBearerTokenRef.current(data.bearer_token);
             }
+            requestDisplayMode(createdMcpApp, data.display_modes);
 
             return;
           } catch {

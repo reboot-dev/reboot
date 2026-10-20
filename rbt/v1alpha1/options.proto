@@ -106,6 +106,9 @@ message UI {
   // Was `artifact_path`, an override for where the build is; the
   // build is always at `<--mcp-app-dist-path>/<path>/index.html` now.
   reserved 6;
+  // The display modes the UI prefers, most preferred first
+  // ("inline", "fullscreen" or "pip"); empty for inline.
+  repeated string display_modes = 7;
 }
 
 message MethodOptions {

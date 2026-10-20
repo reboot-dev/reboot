@@ -44,6 +44,7 @@ show_clicker=UI(
 | `path` | `str` | The UI's URL path under Reboot's `/__/frontend/mcp/`, such as `"clicker"` or `"shop/cart"`. In development the frontend's dev server (`--frontend-url`) serves it at `/__/frontend/mcp/clicker/`, from `mcp/clicker/` (the `mcpAppPath` of the [Vite plugin](#vite-configuration)); built, Reboot reads it from `<--mcp-app-dist-path>/clicker/index.html`. The method name, not the path, is the UI's identity. |
 | `title` | `str` or `None` | Human-readable title shown in tool listings. |
 | `description` | `str` or `None` | Description used by the AI to decide when to open this UI. Write it as instructions to the AI. |
+| `display_modes` | `list` of `"inline"`, `"fullscreen"`, `"pip"` | The modes the UI prefers, most preferred first, such as `["fullscreen", "inline"]`. When the UI opens it asks the host for the first one the host supports. The host can refuse: the Claude desktop app's Code tab, for one, changes the mode only after a click inside the UI. With none of them supported, the request refused, or no `display_modes`, the UI stays inline. To offer fullscreen in such a host, give the UI a button whose click calls `useMcpApp()?.requestDisplayMode({ mode: "fullscreen" })`. |
 
 ## Examples
 

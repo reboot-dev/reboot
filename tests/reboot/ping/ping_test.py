@@ -489,6 +489,65 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
                         f"{list(no_request_data.keys())}",
                     )
 
+    async def test_ui_tool_display_modes(self):
+        """A UI tool's result carries its `UI(display_modes=...)`, which
+        `McpConnector` asks the host for; a UI without them carries
+        none, and stays inline.
+        """
+        await self.rbt.up(
+            Application(
+                servicers=[
+                    UserServicer, CounterServicer, PingServicer, PongServicer
+                ],
+            ),
+        )
+
+        mcp_url = self.rbt.http_localhost_url("/mcp")
+        access_token = await self.rbt.make_valid_oauth_access_token()
+
+        async with httpx.AsyncClient(
+            headers={"Authorization": f"Bearer {access_token}"},
+            follow_redirects=True,
+        ) as http_client:
+            async with streamable_http_client(
+                mcp_url, http_client=http_client
+            ) as (read_stream, write_stream, _):
+                async with ClientSession(read_stream, write_stream) as session:
+                    await session.initialize()
+
+                    create_result = await session.call_tool(
+                        "create_counter",
+                        {"request": {
+                            "description": "test counter"
+                        }},
+                    )
+                    counter_id = json.loads(create_result.content[0].text
+                                           )["counter_id"]
+
+                    clicker_result = await session.call_tool(
+                        "counter_show_clicker",
+                        {
+                            "counter_id": counter_id,
+                            "request": {
+                                "primary_color": "green"
+                            },
+                        },
+                    )
+                    self.assertEqual(
+                        json.loads(clicker_result.content[0].text
+                                  )["display_modes"],
+                        ["fullscreen", "inline"],
+                    )
+
+                    pinger_result = await session.call_tool(
+                        "ping_show_pinger",
+                        {"ping_id": "my-ping"},
+                    )
+                    self.assertNotIn(
+                        "display_modes",
+                        json.loads(pinger_result.content[0].text),
+                    )
+
     async def test_ui_resource_metadata(self):
         """Verify UI resources include CSP metadata.
 

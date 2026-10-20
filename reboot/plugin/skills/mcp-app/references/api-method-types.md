@@ -46,10 +46,16 @@ directly. Omitting `mcp=` raises at codegen with
 
 `UI()` opens a React UI inside the MCP client. Takes
 `request=` (config type or `None`), `path=` (web dir relative to
-project root), `title=`, `description=`. **No servicer
-implementation needed** — the React app _is_ the implementation.
-When `request=` is a `Model`, its fields become props on the
-React component.
+project root), `title=`, `description=`, and optionally
+`display_modes=` (such as `["fullscreen", "inline"]`: the UI asks
+the host for the first one it supports, and stays inline
+otherwise). The host can refuse: the Claude desktop app's Code tab
+changes the mode only after a click inside the UI, so a UI that
+needs fullscreen there also needs a button whose click calls
+`useMcpApp()?.requestDisplayMode({ mode: "fullscreen" })`. **No
+servicer implementation needed** — the React app
+_is_ the implementation. When `request=` is a `Model`, its fields
+become props on the React component.
 
 `factory=True` on an application type's `create` Writer is the
 MCP App spelling of a constructor (see `python`'s

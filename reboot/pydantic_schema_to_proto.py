@@ -172,6 +172,11 @@ async def generate_from_schema(
                             "description: "
                             f'"{ui["description"]}"'
                         )
+                    if ui.get("display_modes"):
+                        display_modes = ", ".join(
+                            f'"{mode}"' for mode in ui["display_modes"]
+                        )
+                        ui_fields.append(f"display_modes: [{display_modes}]")
                     await proto.write(
                         f"    uis: "
                         f"{{ {', '.join(ui_fields)} }}\n"
@@ -601,6 +606,8 @@ async def generate_from_api(
                     'request_message':
                         schemas[ui.request.name].name
                         if ui.HasField('request') else None,
+                    'display_modes':
+                        list(ui.display_modes),
                 }
             )
 
