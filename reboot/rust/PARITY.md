@@ -41,6 +41,14 @@ unchanged RED root-binding/replay mutants; failed final1/final2/final3 receipts
 remain retained. This checkpoint is local only, pending independent review;
 broader ignored suites are not implied.
 
+The additive [canonical Empty correction and qualification](tests/evidence/transaction-empty-20261020.md)
+reuses validated request/response renderings and proves actual old-source compiler
+RED versus fixed generated-consumer GREEN, including a local `Empty` collision.
+Final tested source `9128343f` freshly accepted 15 affected gates, including the
+same 41 positive native controls; predecessor mutants/failures remain immutable
+and separately labelled retained evidence. Strict consumer Clippy also passes.
+This correction remains local only and requires independent parent rereview.
+
 ## Canonical ordinary reader/writer task targets (bounded)
 
 Generated DatabaseAdapter services can admit ordinary reader/writer tasks through
@@ -6106,7 +6114,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: 4bea1ccffeffde11ca366e187a2388dfcc330806ff196746a64dfd65a56ec934 -->
+<!-- parity-source-sha256: bd32339bcc8a5c60f0130b6ef161c340f513b5e796be30404fef4822cd635b3c -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,
