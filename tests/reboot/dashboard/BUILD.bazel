@@ -23,6 +23,15 @@ py_test(
 )
 
 py_test(
+    name = "pyright_tests_py",
+    srcs = ["pyright_tests.py"],
+    main = "pyright_tests.py",
+    deps = [
+        "//reboot/dashboard/backend:pyright_py",
+    ],
+)
+
+py_test(
     name = "api_reader_tests_py",
     srcs = ["api_reader_tests.py"],
     data = glob(["api/**"]),

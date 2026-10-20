@@ -19,6 +19,8 @@ import json
 import os
 import signal
 import sys
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
@@ -30,6 +32,17 @@ SHUTDOWN_SECONDS = 5
 # too small for a mid-sized application's analysis. A limit, not an
 # allocation: an analysis that needs little uses little.
 HEAP_MEGABYTES = 12288
+
+
+def filename_from_uri(uri: str) -> Path:
+    """Returns the file a `file://` URI the server answered names.
+
+    The protocol percent-encodes a URI, as `Path.as_uri()` does on
+    the way out, so a file under `project foo/` comes back as
+    `file:///.../project%20foo/...` and has to be decoded to name
+    the file again (#275).
+    """
+    return Path(urllib.request.url2pathname(urllib.parse.urlparse(uri).path))
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -478,7 +491,7 @@ class Pyright:
                 }, *_
             ] if uri.startswith('file://'):
                 return Location(
-                    filename=Path(uri[len('file://'):]),
+                    filename=filename_from_uri(uri),
                     line=line_at + 1,
                 )
 
