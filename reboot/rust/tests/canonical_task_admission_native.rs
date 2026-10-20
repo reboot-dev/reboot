@@ -34,6 +34,12 @@ fn canonical_python_running_ordinary_cancellation_native() {
     run("prove_generic_tasks.py", "RUNNING_TASK_EVIDENCE");
 }
 
+#[test]
+#[ignore = "requires exact-source CANONICAL_TASK_BIN, actual native Database and canonical Python generator/runfiles"]
+fn canonical_python_workflow_calls_exclusive_transaction_root_native() {
+    run("prove_transaction.py", "TRANSACTION_TASK_EVIDENCE");
+}
+
 fn run(script: &str, evidence_variable: &str) {
     use std::{path::PathBuf, process::Command};
     let binary = PathBuf::from(

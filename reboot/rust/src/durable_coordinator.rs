@@ -756,7 +756,7 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
     ) -> Result<(), Status> {
         if context.transaction_ids().len() != 1
             || context.mode() != TransactionMode::Exclusive
-            || context.headers().idempotency_key.is_some()
+            || (context.headers().idempotency_key.is_some() && !context.bound_root_receipt())
         {
             return Err(Status::failed_precondition(
                 "explicit root abort requires a fresh non-idempotent exclusive root",

@@ -1045,7 +1045,7 @@ impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
             .await;
         if self.handed_off
             || context.mode() != TransactionMode::Exclusive
-            || context.headers().idempotency_key.is_some()
+            || (context.headers().idempotency_key.is_some() && !context.bound_root_receipt())
             || !pending.as_ref().is_some_and(|current| {
                 current.root_id == self.transaction_id
                     && current.local_owner == Some(self.local_owner)

@@ -49,6 +49,26 @@ impl WorkflowWriterTarget {
         headers
     }
 }
+/// Explicit outbound service credentials for a generated transaction root.
+/// This is not recovered task-user identity or an internal authorization bypass.
+#[derive(Clone)]
+pub struct WorkflowTransactionTarget(WorkflowWriterTarget);
+impl WorkflowTransactionTarget {
+    pub fn new(
+        actor: crate::actor_ref::ActorRef,
+        application: crate::CallerId,
+        bearer: Option<String>,
+    ) -> Result<Self, Status> {
+        WorkflowWriterTarget::new(actor, application, bearer).map(Self)
+    }
+}
+/// Exclusive non-factory transaction descriptor. Custom callbacks remain trusted
+/// application code; this type cannot certify an arbitrary remote implementation.
+pub struct WorkflowTransactionMethod {
+    pub state_type: &'static str,
+    pub method: &'static str,
+    pub response_type: &'static str,
+}
 /// Generated ordinary writer contract. Custom callers/bindings are trusted
 /// application code; this descriptor does not certify arbitrary remote servers.
 #[derive(Clone)]
@@ -101,6 +121,61 @@ impl WorkflowContext<'_> {
         F: FnOnce(tonic::Request<Q>) -> Fut + Send,
         Fut: std::future::Future<Output = Result<tonic::Response<R>, Status>> + Send,
     {
+        self.invoke_checkpointed_mutation(target, alias, descriptor, request, invoke, false)
+            .await
+    }
+
+    /// Invoke a generated exclusive non-factory transaction root. The target's
+    /// legacy coordinator, not this journal, owns atomic participant commit.
+    /// Errors never grant catch-and-continue authority: transaction declared
+    /// errors do not carry the ordinary-writer durable-error receipt contract.
+    /// Source and target commits remain separate; an uncertain RPC poisons this
+    /// attempt until recovery retries the SAME target idempotency key.
+    pub async fn invoke_transaction<Q, R, F, Fut>(
+        &self,
+        target: &WorkflowTransactionTarget,
+        alias: &str,
+        descriptor: WorkflowTransactionMethod,
+        request: Q,
+        invoke: F,
+    ) -> Result<R, Status>
+    where
+        Q: prost::Message + Send,
+        R: prost::Message + Default + Send,
+        F: FnOnce(tonic::Request<Q>) -> Fut + Send,
+        Fut: std::future::Future<Output = Result<tonic::Response<R>, Status>> + Send,
+    {
+        self.invoke_checkpointed_mutation(
+            &target.0,
+            alias,
+            WorkflowWriterMethod {
+                state_type: descriptor.state_type,
+                method: descriptor.method,
+                response_type: descriptor.response_type,
+                errors: vec![],
+            },
+            request,
+            invoke,
+            true,
+        )
+        .await
+    }
+
+    async fn invoke_checkpointed_mutation<Q, R, F, Fut>(
+        &self,
+        target: &WorkflowWriterTarget,
+        alias: &str,
+        descriptor: WorkflowWriterMethod,
+        request: Q,
+        invoke: F,
+        transaction: bool,
+    ) -> Result<R, Status>
+    where
+        Q: prost::Message + Send,
+        R: prost::Message + Default + Send,
+        F: FnOnce(tonic::Request<Q>) -> Fut + Send,
+        Fut: std::future::Future<Output = Result<tonic::Response<R>, Status>> + Send,
+    {
         let operation = self.attempt.operation();
         if self.cursor_scope().is_some() {
             return Err(Status::failed_precondition(
@@ -144,8 +219,25 @@ impl WorkflowContext<'_> {
         // must reject, not authorize another effect after an interrupted call.
         let source = format!("{}:{}:{}", id.state_type.len(), id.state_type, id.state_ref);
         let namespace = uuid::Uuid::new_v5(&seed, source.as_bytes());
-        let namespace = uuid::Uuid::new_v5(&namespace, b"reboot.outbound.writer.v1");
-        let key = self.checkpoint_key(namespace, alias, Some("outbound-writer.v1"));
+        // Keep the published ordinary-writer domain byte-for-byte unchanged.
+        // Transaction calls cannot adopt a writer intent under an equal alias.
+        let namespace = uuid::Uuid::new_v5(
+            &namespace,
+            if transaction {
+                b"reboot.outbound.transaction.v1"
+            } else {
+                b"reboot.outbound.writer.v1"
+            },
+        );
+        let key = self.checkpoint_key(
+            namespace,
+            alias,
+            Some(if transaction {
+                "outbound-transaction.v1"
+            } else {
+                "outbound-writer.v1"
+            }),
+        );
         let contract = AtMostOnceResultContract {
             declared_writer_errors: !descriptor.errors.is_empty(),
             method: declaration.method.into(),
@@ -213,7 +305,7 @@ impl WorkflowContext<'_> {
             result = invoke(outbound) => match result {
                 Ok(response) => Ok(response.into_inner()),
                 Err(status) => {
-                    if !crate::runtime::is_durable_declared_writer_error(&status) {
+                    if transaction || !crate::runtime::is_durable_declared_writer_error(&status) {
                         return Err(status);
                     }
                     DeclaredTaskError::validate_status(&descriptor.errors, &status)?;

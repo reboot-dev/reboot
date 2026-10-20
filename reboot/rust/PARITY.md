@@ -12,6 +12,31 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Workflow-to-exclusive-transaction foundation (bounded)
+
+Generated `*WorkflowTransactionRef` calls are distinct from ordinary writer
+references. A dispatcher-owned workflow durably binds intent, invokes the public
+generated exclusive non-factory transaction RPC, then acknowledges its own result
+journal. The existing target legacy coordinator owns multi-actor atomicity; source
+and target commits remain separate. Recovery retains the same target receipt key
+and consults target authorization again. Transaction errors never inherit the
+ordinary writer's durable declared-error continuation authority.
+
+Generated root receipt replay now requires exact actor/scope and a present,
+matching method/request fingerprint. Matching malformed/unbound receipts fail
+closed on the original identity rather than granting re-execution. Existing
+well-formed Rust receipt bytes and all published ordinary writer/spawn identities
+are unchanged. The legacy `TransactionIdempotency::replay` helper remains available
+for explicitly compatibility-oriented callers; generated roots use `replay_bound`.
+
+**Direct canonical transaction task admission is still rejected.** This is a
+scheduled workflow calling a real transaction, not
+`WeakReference.spawn(transaction_method)` parity. Shared/factory transaction task
+targets, durable declared transaction-error replay, direct transaction-task
+cancellation ownership and general coordinator retry parity remain open. See the
+[source-backed migration map](TRANSACTION-TASK-MIGRATION-MAP.md) and the separately
+retained native qualification evidence; broader ignored suites are not implied.
+
 ## Canonical ordinary reader/writer task targets (bounded)
 
 Generated DatabaseAdapter services can admit ordinary reader/writer tasks through

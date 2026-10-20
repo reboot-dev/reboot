@@ -131,6 +131,25 @@ impl TransactionIdempotency {
         }
     }
 
+    /// Strict generated-root replay. The original key is retained on corrupt or
+    /// unbound receipts; rejection never authorizes a new execution identity.
+    pub fn replay_bound<Response: Message + Default>(
+        &self,
+        mutation: &database::IdempotentMutation,
+        state_type: &str,
+        state_ref: &str,
+    ) -> Result<Option<Response>, Status> {
+        if mutation.key != self.key.as_bytes() { return Ok(None); }
+        if mutation.state_type != state_type || mutation.state_ref != state_ref
+            || mutation.workflow_id.is_some() || mutation.workflow_iteration.is_some()
+            || !mutation.task_ids.is_empty()
+            || mutation.request_fingerprint.as_deref() != Some(self.request_fingerprint.as_slice())
+        {
+            return Err(Status::failed_precondition("transaction receipt actor, scope or request binding differs"));
+        }
+        self.replay(mutation)
+    }
+
     /// Decodes one completed matching mutation, rejecting a nonempty
     /// fingerprint collision before its response can be replayed.
     pub fn replay<Response: Message + Default>(
@@ -186,6 +205,7 @@ pub struct TransactionContext {
     handler_lifetime: Option<tokio::sync::watch::Receiver<bool>>,
     handler_ancestors: Arc<[tokio::sync::watch::Receiver<bool>]>,
     registered_outbound: Option<crate::registered_local::RegisteredOutboundPermission>,
+    root_receipt: Option<TransactionIdempotency>,
 }
 
 pub(crate) struct HandlerLifetimeOwner(tokio::sync::watch::Sender<bool>);
@@ -934,6 +954,9 @@ async fn transactional_outbound_request_inner<R: TransactionalChannelResolver, M
         ));
     }
     context.require_outbound_allowed()?;
+    if context.bound_root_receipt() {
+        return Err(Status::failed_precondition("receipt-bound root composition requires registered same-host dispatch"));
+    }
     if context.shared_existing_writer_root() {
         return Err(Status::failed_precondition(
             "shared writer root requires exact registered local dispatch",
@@ -998,6 +1021,7 @@ impl TransactionContext {
             handler_lifetime: None,
             handler_ancestors: Arc::from([]),
             registered_outbound: None,
+            root_receipt: None,
             doomed: Arc::new(Mutex::new(None)),
             live_leaf: false,
             supervised_tree: false,
@@ -1041,11 +1065,38 @@ impl TransactionContext {
         self.returned_participants.is_some() && self.transaction_ids().len() == 1
     }
 
+    /// Generated exclusive root-star receipt seam. Not inbound, shared,
+    /// factory, reusable, or independent multi-actor execution authority.
+    #[doc(hidden)]
+    pub fn bind_generated_root_receipt(&mut self, receipt: &TransactionIdempotency) -> Result<(), Status> {
+        if !self.is_fresh_root() || self.mode != TransactionMode::Exclusive
+            || self.headers.idempotency_key != Some(receipt.key)
+            || receipt.request_fingerprint.is_empty()
+        { return Err(Status::failed_precondition("receipt requires an exact fresh exclusive root")); }
+        self.root_receipt = Some(receipt.clone());
+        Ok(())
+    }
+    pub(crate) fn bound_root_receipt(&self) -> bool {
+        self.is_fresh_root() && self.mode == TransactionMode::Exclusive
+            && self.root_receipt.as_ref().is_some_and(|r| Some(r.key) == self.headers.idempotency_key && !r.request_fingerprint.is_empty())
+    }
+
+    pub(crate) fn validate_bound_root_effects(&self, effects: &crate::durable_participant::PendingActorEffects, state_type: &str, state_ref: &str) -> Result<(), Status> {
+        if let Some(receipt) = &self.root_receipt {
+            let valid = self.bound_root_receipt() && effects.idempotent_mutations.len() == 1 && effects.idempotent_mutations.first().is_some_and(|m|
+                m.key == receipt.key.as_bytes() && m.state_type == state_type && m.state_ref == state_ref
+                && m.request_fingerprint.as_deref() == Some(receipt.request_fingerprint.as_slice())
+                && m.workflow_id.is_none() && m.workflow_iteration.is_none() && m.task_ids.is_empty());
+            if !valid { return Err(Status::failed_precondition("root effects require the exact bound response receipt")); }
+        }
+        Ok(())
+    }
+
     // Called only after the guard installs actual root or live execution ownership.
     #[doc(hidden)]
     pub fn validate_tree_scope(&self) -> Result<(), Status> {
         if self.mode != TransactionMode::Exclusive
-            || self.headers.idempotency_key.is_some()
+            || (self.headers.idempotency_key.is_some() && !self.bound_root_receipt())
             || self.transaction_ids().len() > 32
         {
             return Err(Status::failed_precondition(
@@ -2282,6 +2333,7 @@ impl TransactionContext {
             handler_lifetime: self.handler_lifetime.clone(),
             handler_ancestors: self.handler_ancestors.clone(),
             registered_outbound: None,
+            root_receipt: None,
             doomed: Arc::clone(&self.doomed),
             live_leaf: self.live_leaf,
             supervised_tree: self.supervised_tree,
@@ -8640,6 +8692,52 @@ mod tests {
             other.replay::<proto::Text>(&mutation).unwrap_err().code(),
             tonic::Code::FailedPrecondition
         );
+    }
+
+    #[test]
+    fn bound_root_receipt_is_root_only_and_requires_its_staged_mutation() {
+        let mut headers = RebootHeaders::new("actor/42");
+        headers.idempotency_key = Some(Uuid::from_u128(42));
+        headers.transaction_ids = Some(vec![Uuid::from_u128(1)]);
+        headers.transaction_coordinator_state_type = Some("tests.Actor".into());
+        headers.transaction_coordinator_state_ref = Some("actor/42".into());
+        let mut context = TransactionContext::from_headers(headers, TransactionMode::Exclusive).unwrap().with_returned_participant_collection();
+        let receipt = context.idempotency("tests.Service.Apply", &proto::Text { content: "request".into() }).unwrap();
+        assert!(context.validate_tree_scope().is_err());
+        context.bind_generated_root_receipt(&receipt).unwrap();
+        context.validate_tree_scope().unwrap();
+        let mut effects = crate::durable_participant::PendingActorEffects::default();
+        assert!(context.validate_bound_root_effects(&effects, "tests.Actor", "actor/42").is_err());
+        effects.idempotent_mutations.push(receipt.mutation("tests.Actor", "actor/42", &proto::Text { content: "response".into() }));
+        context.validate_bound_root_effects(&effects, "tests.Actor", "actor/42").unwrap();
+        effects.idempotent_mutations[0].request_fingerprint = None;
+        assert!(context.validate_bound_root_effects(&effects, "tests.Actor", "actor/42").is_err());
+        context.headers.transaction_ids.as_mut().unwrap().push(Uuid::from_u128(2));
+        assert!(!context.bound_root_receipt());
+        assert!(context.validate_tree_scope().is_err());
+        assert!(context.bind_generated_root_receipt(&receipt).is_err());
+    }
+
+    #[test]
+    fn transaction_receipt_bound_replay_rejects_missing_identity_and_wrong_scope() {
+        let idempotency = TransactionIdempotency { key: Uuid::from_u128(42), request_fingerprint: vec![1,2,3] };
+        let mutation = idempotency.mutation("tests.Actor", "actor/42", &proto::Text { content: "original".into() });
+        assert_eq!(idempotency.replay_bound::<proto::Text>(&mutation, "tests.Actor", "actor/42").unwrap().unwrap().content, "original");
+        for case in 0..7 {
+            let mut invalid = mutation.clone();
+            match case {
+                0 => invalid.request_fingerprint = None,
+                1 => invalid.request_fingerprint = Some(vec![]),
+                2 => invalid.state_type = "other.Actor".into(),
+                3 => invalid.state_ref = "actor/other".into(),
+                4 => invalid.workflow_id = Some(vec![1;16]),
+                5 => invalid.workflow_iteration = Some(0),
+                _ => invalid.task_ids.push(database::TaskId::default()),
+            }
+            assert_eq!(idempotency.replay_bound::<proto::Text>(&invalid, "tests.Actor", "actor/42").unwrap_err().code(), tonic::Code::FailedPrecondition, "case {case}");
+        }
+        let mut other_key = mutation; other_key.key = Uuid::from_u128(43).as_bytes().to_vec();
+        assert!(idempotency.replay_bound::<proto::Text>(&other_key, "tests.Actor", "actor/42").unwrap().is_none());
     }
 
     #[test]

@@ -3,6 +3,7 @@ mod crosspath;
 mod generic;
 mod outbound;
 mod spawned;
+mod transaction;
 use reboot::{
     application_host::ApplicationHost,
     database_proto as db,
@@ -219,6 +220,10 @@ impl generated::LedgerMethodsDatabaseHandler for Ledger {
         request: proto::Step,
     ) -> Result<proto::Result, reboot::one_shot_tasks::WorkflowBodyError> {
         event("body");
+        if std::env::var("WORKFLOW_BODY_MODE").as_deref() == Ok("transaction") {
+            let response = transaction::invoke(context, request).await?;
+            return Ok(proto::Result { first: response.value, second: response.value });
+        }
         if std::env::var("WORKFLOW_BODY_MODE").as_deref() == Ok("spawn") {
             return spawned::run(context, request).await;
         }
@@ -787,6 +792,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         return Ok(());
     }
+    if mode == "serve-transaction" { return transaction::serve().await; }
     if mode == "serve-generic" {
         return generic::serve().await;
     }

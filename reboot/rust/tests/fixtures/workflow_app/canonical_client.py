@@ -21,7 +21,7 @@ async def main():
     if action=='spawn':
         when=None if not schedule else datetime.datetime.fromisoformat(schedule)
         reference=Ledger.ref('child').idempotently(key=uuid.UUID(key)).spawn(when=when)
-        task=await getattr(reference,{'Child':'child','First':'first','ScheduleWork':'schedule_work'}[method])(context,amount=int(amount))
+        task=await getattr(reference,{'Child':'child','First':'first','ScheduleWork':'schedule_work','Run':'run'}[method])(context,amount=int(amount))
         result={'task_id':task.task_id.SerializeToString().hex()}
     else:
         task=getattr(Ledger,method+'Task').retrieve(context,task_id=TaskId.FromString(bytes.fromhex(key)))

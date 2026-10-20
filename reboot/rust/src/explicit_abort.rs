@@ -418,7 +418,7 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> RegisteredRoot<C, R> {
         };
         if registered.context.is_fresh_root()
             && registered.context.mode() == crate::runtime::TransactionMode::Exclusive
-            && registered.context.headers().idempotency_key.is_none()
+            && (registered.context.headers().idempotency_key.is_none() || registered.context.bound_root_receipt())
             && let Some(owner) = owner
         {
             registered
@@ -1586,6 +1586,7 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
             .local
             .as_ref()
             .ok_or_else(|| Status::failed_precondition("execution closed"))?;
+        self.context.validate_bound_root_effects(&effects, local.actor_state_type(), local.actor_state_ref())?;
         if self.context.shared_existing_writer_member()
             && (!effects.task_upserts.is_empty() || !effects.idempotent_mutations.is_empty())
         {
