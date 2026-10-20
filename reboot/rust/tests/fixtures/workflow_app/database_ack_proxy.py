@@ -59,6 +59,15 @@ def boundary(body):
             mutation.get(8, [b''])[0].startswith(b'reboot.ordinary-writer.declared-error.v1\0')):
         assert not store.get(1) and not store.get(2), 'declared error must discard actor/task effects'
         return 'declared-target'
+    if (mutation.get(4) == [b'workflow.v1.AtomicLedger'] and
+            mutation.get(8, [b''])[0].startswith(b'reboot.transaction.aborted-result.v1\0')):
+        assert not store.get(1) and not store.get(2) and not store.get(5), 'aborted root receipt cannot commit actors/tasks/transaction'
+        return 'transaction-error-target'
+    if mutation.get(4) == [b'workflow.v1.AtomicLedger']:
+        envelope = fields(mutation[2][0])
+        if envelope.get(1) == [b'type.googleapis.com/reboot.rust.workflow.AtMostOnceResultV1']:
+            checkpoint = fields(envelope.get(2, [b''])[0])
+            return {1:'transaction-source-started',2:'transaction-source-stored'}.get(checkpoint.get(2,[0])[0])
     if mutation.get(4) == [b'workflow.v1.Remote'] and store.get(1):
         return 'target'
     if mutation.get(4) == [b'workflow.v1.Ledger']:
@@ -110,13 +119,14 @@ def main():
                     with lock:
                         drop = not claimed.is_set() and (
                             (method == 'Store' and boundary(body) == selected) or
-                            (method == 'CompleteTask' and selected in ['cancel', 'cancel-hold', 'cancel-hold-then-loss']))
+                            (method == 'CompleteTask' and selected in ['cancel', 'cancel-hold', 'cancel-hold-then-loss']) or
+                            (method == 'TransactionParticipantAbort' and selected == 'transaction-abort'))
                         second = (method == 'CompleteTask' and selected == 'cancel-hold-then-loss'
                                   and claimed.is_set() and not (root / 'second-ack-observed.json').exists())
                         if drop:
                             claimed.set()
                     if drop or second:
-                        assert fields(body).get(2 if method == 'CompleteTask' else 7) == [1], 'fault requires synchronous mutation'
+                        if method in ['Store','CompleteTask']:assert fields(body).get(2 if method == 'CompleteTask' else 7) == [1], 'fault requires synchronous mutation'
                         prefix=('second-' if second else '')+('complete-task' if method == 'CompleteTask' else 'store')
                         if method == 'CompleteTask': assert fields(response).get(1)==[1], 'native completion CAS must have won'
                         (root / f'{prefix}-request.pb').write_bytes(body)

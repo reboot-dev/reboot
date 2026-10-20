@@ -12,7 +12,26 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
-## Direct canonical exclusive transaction tasks (bounded)
+## Declared exclusive transaction-task terminals (bounded, local)
+
+Canonical transaction owners now carry their immutable declared-error schema.
+The original generated transaction RPC may return a terminal-eligible error only
+following acknowledged Abort of the original root/children and a separate synced
+aborted-result receipt under retained original actor admission. Native Abort,
+error receipt, source journal and terminal CAS are distinct ACK boundaries.
+Recovered execution reauthorizes before error receipt replay; malformed,
+transport, unknown and uncertain errors do not become declared terminals.
+Canonical terminal code is Python's ABORTED, with the original typed payload.
+Generated Python FailTask and Rust TasksWait retain typed error views. Ordinary
+workflow transaction references do not gain declared-error continuation authority.
+
+The [contract map](DECLARED-TRANSACTION-TASK-MAP.md) specifies source-backed
+conditions and the bounded native gate. Shared/factory targets and due/running
+Cancel remain rejected. Pure transaction-only adapters remain **unimplemented**:
+this checkpoint prioritizes the declared-error end-to-end vertical rather than
+adding an ordinary Store adapter disguised as a transaction coordinator.
+
+## Direct canonical exclusive transaction tasks (predecessor qualification)
 
 An explicitly registered `with_canonical_transaction_tasks(channel, application,
 bearer)` owner admits eligible **original transaction RPCs** using canonical
@@ -41,8 +60,9 @@ The actual generated Python Apply task client, real C++ Database/RocksDB,
 canonical/local Empty consumer compilation, retained native negative controls,
 strict lint and qualification custody are documented in the
 [direct-task checkpoint](tests/evidence/direct-transaction-20261020.md).
-Pure transaction-only adapters, shared/factory targets, declared transaction-error
-terminals, automatic Python retry/middleware/internal-credential parity, dynamic
+The predecessor did not qualify declared transaction-error terminals; the bounded
+follow-on above addresses that slice. Pure transaction-only adapters, shared/factory
+targets, automatic Python retry/middleware/internal-credential parity, dynamic
 placement/migration and future successor execution remain open. Local only;
 independent parent review is required before publication.
 
@@ -66,8 +86,8 @@ for explicitly compatibility-oriented callers; generated roots use `replay_bound
 **That foundation did not admit direct canonical transaction tasks.** It proved a
 scheduled workflow calling a real transaction, not direct
 `WeakReference.spawn(transaction_method)` admission. The bounded follow-on above
-adds that direct path; shared/factory targets, declared transaction-error replay,
-running transaction cancellation and general coordinator retry parity remain
+adds that direct path; the later declared-terminal slice above adds its distinct
+aborted-result receipt path. Shared/factory targets, running transaction cancellation and general coordinator retry parity remain
 open. See the
 [source-backed migration map](TRANSACTION-TASK-MIGRATION-MAP.md) and
 [local final4 qualification handoff](tests/evidence/transaction-foundation-20261020.md).

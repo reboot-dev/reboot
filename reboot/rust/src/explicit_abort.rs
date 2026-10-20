@@ -1786,6 +1786,44 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
         self.completed()
     }
 
+    /// Consume original root Abort, including every child ACK, and its separately
+    /// synchronous error-receipt ACK under retained actor admission.
+    #[doc(hidden)]
+    pub async fn abort_declared_transaction(
+        self,
+        receipt: &crate::runtime::TransactionIdempotency,
+        status: Status,
+        errors: &[crate::one_shot_tasks::DeclaredTaskError],
+    ) -> Result<Status, Status> {
+        let local = self
+            .local
+            .as_ref()
+            .ok_or_else(|| Status::failed_precondition("missing original root"))?;
+        if !self.context.matches_root_receipt(receipt) || !self.context.is_fresh_root() {
+            return Err(Status::failed_precondition(
+                "declared Abort receipt requires original bound root",
+            ));
+        }
+        if let Some(error) = self.context.doomed_status() {
+            return Err(error);
+        }
+        if self.reservation.is_some() {
+            self.context.seal_explicit_abort()?;
+        }
+        let status = crate::runtime::canonical_declared_transaction_status(status, errors)?;
+        let mutation = receipt.declared_abort_mutation(
+            local.actor_state_type(),
+            local.actor_state_ref(),
+            &status,
+            errors,
+        )?;
+        local.stage_declared_abort_receipt(mutation).await?;
+        self.abort_explicit().await?;
+        Ok(crate::runtime::acknowledged_declared_transaction_status(
+            status,
+        ))
+    }
+
     #[doc(hidden)]
     pub async fn abort_explicit(mut self) -> Result<(), Status> {
         if self

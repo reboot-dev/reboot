@@ -329,6 +329,7 @@ fn decode_declared_message<M: prost::Message + Default>(bytes: &[u8]) -> Result<
         .map_err(|_| Status::data_loss("malformed registered task payload"))
 }
 impl DeclaredTaskError {
+    pub(crate) fn type_url(&self) -> &str { self.type_url }
     /// Validate a complete non-OK rich status against this method's explicit schema.
     /// Framework errors, malformed payloads and undeclared details are not outcomes.
     pub fn validate_status(errors: &[Self], status: &Status) -> Result<(), Status> {
@@ -553,6 +554,11 @@ impl OneShotTasks {
             .store(limit, std::sync::atomic::Ordering::Release);
         Ok(())
     }
+    /// Immutable canonical transaction schema, never ordinary-writer authority.
+    #[doc(hidden)]
+    pub fn transaction_errors(&self, method: &str) -> Option<&[DeclaredTaskError]> {
+        self.inner.declarations.iter().find(|d| d.transaction && d.method == method).map(|d| d.errors.as_slice())
+    }
     pub fn new(
         store: DatabaseActorStore,
         state_type: String,
@@ -572,8 +578,8 @@ impl OneShotTasks {
     ) -> Result<Self, Status> {
         let mut methods = HashSet::new();
         for declaration in &declarations {
-            if declaration.transaction && (declaration.workflow || declaration.cursor.is_some() || declaration.workflow_writer_step || declaration.workflow_reader_wait || declaration.constructor_scheduling || !declaration.errors.is_empty()) {
-                return Err(Status::invalid_argument("transaction tasks exclude workflow, cursor, constructor, step and declared-error authority"));
+            if declaration.transaction && (declaration.workflow || declaration.cursor.is_some() || declaration.workflow_writer_step || declaration.workflow_reader_wait || declaration.constructor_scheduling) {
+                return Err(Status::invalid_argument("transaction tasks exclude workflow, cursor, constructor and step authority"));
             }
             if declaration.cursor.is_some_and(|(alias, version)| {
                 !declaration.workflow

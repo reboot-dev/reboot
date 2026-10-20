@@ -13,23 +13,92 @@ fn emit_transaction_tasks(
     let mut responses = String::new();
     let mut executions = String::new();
     let mut declarations = String::new();
+    let mut error_methods = Vec::new();
     for method in &service.method {
         let method_name = method.name.as_deref().expect("validated method");
         if !matches!(annotation.methods.get(method_name), Some(DurableKind::Transaction(metadata)) if metadata.mode == TransactionMode::Exclusive && !metadata.factory)
-            || annotation.declared_errors.get(method_name).is_some_and(|errors| !errors.is_empty()) {
+        {
             continue;
         }
-        let (rust, request, response) = method_types("transaction task", package, name, method).expect("validated method types");
+        let (rust, request, response) = method_types("transaction task", package, name, method)
+            .expect("validated method types");
+        let errors = annotation
+            .declared_errors
+            .get(method_name)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        if !errors.is_empty() {
+            error_methods.push(format!("\"{method_name}\""));
+        }
+        let schema = errors.iter().map(|error| { let variant = error.to_upper_camel_case(); format!("{runtime}::one_shot_tasks::DeclaredTaskError::new::<proto::{variant}>(\"type.googleapis.com/{package}.{error}\")") }).collect::<Vec<_>>().join(",");
+        let outcome = if errors.is_empty() {
+            ".await?".to_owned()
+        } else {
+            format!(
+                ".await; let response = match response {{ Ok(response)=>response, Err(status) if {runtime}::runtime::is_durable_declared_transaction_error(&status)=>return context.body_failed({runtime}::one_shot_tasks::WorkflowBodyError::Declared(prost_types::Any {{ type_url: \"type.googleapis.com/google.rpc.Status\".into(), value: status.details().to_vec() }})).await, Err(status)=>return Err(status) }}"
+            )
+        };
         let identity = format!("{package}.{name}.{method_name}");
-        let response_url = format!("type.googleapis.com/{}", method.output_type.as_deref().unwrap().trim_start_matches('.'));
+        let response_url = format!(
+            "type.googleapis.com/{}",
+            method
+                .output_type
+                .as_deref()
+                .unwrap()
+                .trim_start_matches('.')
+        );
+        let client_setup = if errors.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "let mut client=proto::{}_client::{}Client::new(self.target.channel.clone());",
+                snake_case(name),
+                name
+            )
+        };
+        let invocation = if errors.is_empty() {
+            format!(
+                "self.target.{rust}(&context,\"canonical-transaction-task.v1\",{request_expression})",
+                request_expression = if request == "{{google.protobuf.Empty}}" {
+                    "()"
+                } else {
+                    "request"
+                }
+            )
+        } else {
+            format!(
+                "context.invoke_transaction_declared(&self.target.target,\"canonical-transaction-task.v1\",{runtime}::one_shot_tasks::WorkflowTransactionMethod {{state_type: \"{}\",method:\"{identity}\",response_type:\"{response_url}\"}},vec![{schema}],{},move |request| async move {{client.{rust}(request).await}})",
+                annotation.state.trim_start_matches('.'),
+                if request == "{{google.protobuf.Empty}}" {
+                    "()"
+                } else {
+                    "request"
+                }
+            )
+        };
         validations.push_str(&format!("\"{method_name}\" => {{ <proto::{request} as prost::Message>::decode(task.request.as_slice()).map_err(|_|tonic::Status::invalid_argument(\"malformed transaction task\"))?; Ok(()) }},"));
         responses.push_str(&format!("\"{method_name}\" => {{ if response.type_url != \"{response_url}\" {{return Err(tonic::Status::data_loss(\"wrong transaction task response\"));}} <proto::{response} as prost::Message>::decode(response.value.as_slice()).map_err(|_|tonic::Status::data_loss(\"malformed transaction task response\"))?; Ok(()) }},"));
-        let (request_prelude, request_expression) = if request == "{{google.protobuf.Empty}}" { ("let () = request;", "()") } else { ("", "request") };
-        let (response_prelude, response_expression) = if response == "{{google.protobuf.Empty}}" { ("let () = response;", "()") } else { ("", "response") };
-        executions.push_str(&format!("\"{method_name}\" => {{ let request=<proto::{request} as prost::Message>::decode(context.task().request.as_slice()).map_err(|_|tonic::Status::data_loss(\"malformed transaction task request\"))?; {request_prelude} let response=self.target.{rust}(&context,\"canonical-transaction-task.v1\",{request_expression}).await?; {response_prelude} context.finish::<{state}DurableState,proto::{request},proto::{response}>(\"{response_url}\",{response_expression}).await }},"));
-        declarations.push_str(&format!("declarations.push({runtime}::one_shot_tasks::TaskMethodDeclaration::new::<{state}DurableState,proto::{request},proto::{response}>(\"{identity}\",\"{response_url}\",vec![]).transaction());"));
+        let request_prelude = if request == "{{google.protobuf.Empty}}" {
+            "let () = request;"
+        } else {
+            ""
+        };
+        let (response_prelude, response_expression) = if response == "{{google.protobuf.Empty}}" {
+            ("let () = response;", "()")
+        } else {
+            ("", "response")
+        };
+        executions.push_str(&format!("\"{method_name}\" => {{ let request=<proto::{request} as prost::Message>::decode(context.task().request.as_slice()).map_err(|_|tonic::Status::data_loss(\"malformed transaction task request\"))?; {request_prelude} {client_setup} let response={invocation}{outcome}; {response_prelude} context.finish::<{state}DurableState,proto::{request},proto::{response}>(\"{response_url}\",{response_expression}).await }},"));
+        declarations.push_str(&format!("declarations.push({runtime}::one_shot_tasks::TaskMethodDeclaration::new::<{state}DurableState,proto::{request},proto::{response}>(\"{identity}\",\"{response_url}\",vec![{schema}]).transaction());"));
     }
-    if declarations.is_empty() { return; }
+    if declarations.is_empty() {
+        return;
+    }
+    let error_methods = if error_methods.is_empty() {
+        "\"\"".to_owned()
+    } else {
+        error_methods.join("|")
+    };
     let binding = format!("{name}CanonicalTransactionTaskBinding");
     output.push_str(&format!(r#"
 struct {binding}<H> {{ ordinary: {name}ReaderTaskBinding<H>, target: {name}WorkflowTransactionRef }}
@@ -39,7 +108,7 @@ fn validate(&self,task:&{runtime}::database_proto::Task)->Result<(),tonic::Statu
 async fn execute(&self,task:&{runtime}::database_proto::Task)->Result<prost_types::Any,tonic::Status> {{self.ordinary.execute(task).await}}
 async fn execute_terminal(&self,task:&{runtime}::database_proto::Task)->Result<{runtime}::database_proto::task::ResponseOrError,tonic::Status> {{self.ordinary.execute_terminal(task).await}}
 fn validate_response(&self,task:&{runtime}::database_proto::Task,response:&prost_types::Any)->Result<(),tonic::Status> {{match task.method.as_str() {{{responses} _=>self.ordinary.validate_response(task,response)}}}}
-fn validate_error(&self,task:&{runtime}::database_proto::Task,error:&prost_types::Any)->Result<(),tonic::Status> {{self.ordinary.validate_error(task,error)}}
+fn validate_error(&self,task:&{runtime}::database_proto::Task,error:&prost_types::Any)->Result<(),tonic::Status> {{ if matches!(task.method.as_str(), {error_methods}) {{Ok(())}} else {{self.ordinary.validate_error(task,error)}} }}
 fn writer_capable(&self)->bool{{true}}
 async fn execute_workflow(&self,context:{runtime}::one_shot_tasks::WorkflowContext<'_>)->Result<{runtime}::one_shot_tasks::WorkflowReceipt,tonic::Status> {{match context.task().method.as_str() {{{executions} _=>Err(tonic::Status::failed_precondition("not transaction executor"))}}}}
 }}

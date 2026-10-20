@@ -674,6 +674,7 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
         crate::explicit_abort::park_after_decision().await;
         self.terminal_all(context.transaction_root_id(), &targets, false)
             .await?;
+        if local.has_declared_abort_receipt().await { context.finish_explicit_abort()?; }
         local.acknowledge_explicit_root_abort().await?;
         context.finish_explicit_abort()?;
         Ok(())
@@ -887,6 +888,7 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
             crate::explicit_abort::park_after_decision().await;
             self.terminal_all(context.transaction_root_id(), &targets, false)
                 .await?;
+            if local.has_declared_abort_receipt().await { context.finish_explicit_abort()?; }
             local.acknowledge_explicit_root_abort().await?;
             // Unknown membership stays sticky. This ACK covers only known fanout
             // and the exact local token; unknown participants own their Watch.

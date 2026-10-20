@@ -50,7 +50,7 @@ impl reboot::auth::Authorizer for Policy {
         _: &'a [u8],
     ) -> reboot::auth::AuthorizeFuture<'a> {
         Box::pin(async move {
-            if context.method.ends_with(".Apply") {
+            if context.method.ends_with(".Apply") || context.method.ends_with(".Fail") {
                 event("transaction-authorize");
                 if std::env::var_os("TRANSACTION_DENY_FILE")
                     .is_some_and(|path| std::path::Path::new(&path).exists())
@@ -131,9 +131,10 @@ impl generated::AtomicLedgerMethodsTransactionHandler for Handler {
             return Err(tonic::Status::invalid_argument("transaction rollback"));
         }
         let mut execution = TransactionExecution::new(proto::Value { value: state.value });
-        if self.child.is_some() {
+        if self.child.is_some() || r.amount == 42042 {
+            let task_actor = if self.child.is_some() { context.headers().state_ref.clone() } else { reboot::state_ref::StateRef::from_id(TYPE,"leaf").unwrap().to_string() };
             let mut task = generated::AtomicLedgerMethodsTasks::query(
-                context.headers().state_ref.as_str(),
+                &task_actor,
                 &proto::Empty {},
             );
             task.timestamp = Some(prost_types::Timestamp {
@@ -143,6 +144,14 @@ impl generated::AtomicLedgerMethodsTransactionHandler for Handler {
             execution.task_upserts.push(task);
         }
         Ok(execution)
+    }
+    async fn fail(&self, context: &TransactionContext, state: &mut proto::AtomicLedger, r: proto::Step) -> Result<TransactionExecution<proto::Value>,tonic::Status> {
+        event("transaction-declared");
+        state.value += r.amount;
+        let child = self.child.as_ref().ok_or_else(||tonic::Status::failed_precondition("Fail requires root"))?;
+        generated::AtomicLedgerMethodsClient::new(LocalOnly(child.clone())).apply(context, &generated::AtomicLedgerMethodsTarget::new(child), proto::Step { amount: 42042 }).await?;
+        event("transaction-declared-child-staged");
+        Err(reboot::declared_error_status(tonic::Code::Unknown,"declared transaction rollback", "type.googleapis.com/workflow.v1.BelowThreshold", &proto::BelowThreshold { required:4242, observed:state.value }))
     }
     async fn query(
         &self,
@@ -223,6 +232,9 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
             participants[0].actor_target(),
             watch.clone(),
         )?);
+    let (leaf, leaf_tasks) = leaf.with_one_shot_reader_tasks(&leaf_ref)?;
+    tasks.set_max_live_deliveries(512)?;
+    leaf_tasks.set_max_live_deliveries(512)?;
     let mut host = ApplicationHost::new("transaction-target-fixture");
     let (adapter, _) = host.register_local_transaction_service(root)?;
     let (leaf, _) = host.register_local_transaction_service(leaf)?;
@@ -251,11 +263,9 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     host.with_host_recovery(recovery)
         .with_host_recovery(adapter.explicit_abort_recovery_registration()?)
         .with_host_recovery(leaf.live_participant_recovery_registration()?)
-        .with_host_recovery(tasks.recovery(reboot::database_proto::RecoverRequest {
-            shard_ids: vec!["s000000000".into()],
-            state_tags_by_state_type: [(TYPE.into(), "AtomicLedger".into())].into(),
-            skip_idempotent_mutations: true,
-        }))
+        .with_host_recovery(reboot::one_shot_tasks::MultiOwnerTaskRecovery::new([tasks.clone(),leaf_tasks],reboot::database_proto::RecoverRequest {
+            shard_ids:vec!["s000000000".into()],state_tags_by_state_type:[(TYPE.into(),"AtomicLedger".into())].into(),skip_idempotent_mutations:true,
+        })?)
         .add_legacy_control_service(adapter.legacy_participant_control_service())
         .add_legacy_control_service(
             adapter.legacy_coordinator_control_service(TYPE, actor().state_ref().as_str())?,

@@ -40,6 +40,10 @@ mod canonical_transaction_task_codegen_tests {
         assert!(code.contains("proto::Empty"));
         assert!(!code.contains("execute_writer"));
         assert!(!code.contains("handler.apply"));
-        for forbidden in ["\"Factory\" =>","\"Shared\" =>","\"Declared\" =>"] { assert!(!code.contains(forbidden)); }
+        assert!(code.contains("invoke_transaction_declared"));
+        assert!(code.contains("is_durable_declared_transaction_error"));
+        assert!(code.contains("WorkflowBodyError::Declared"));
+        assert!(code.contains("DeclaredTaskError::new::<proto::Error>"));
+        for forbidden in ["\"Factory\" =>","\"Shared\" =>"] { assert!(!code.contains(forbidden)); }
     }
 }

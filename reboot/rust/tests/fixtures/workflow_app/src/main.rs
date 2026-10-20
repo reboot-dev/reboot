@@ -808,6 +808,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         return Ok(());
     }
+    if mode == "wait-declared-transaction" {
+        let actor=transaction::actor();
+        let channel=tonic::transport::Endpoint::from_shared(arg(2))?.connect().await?;
+        let mut request=tonic::Request::new(db::TaskId { state_type:actor.state_type().into(),state_ref:actor.state_ref().as_str().into(),task_uuid:uuid::Uuid::parse_str(&arg(3))?.as_bytes().to_vec() });
+        request.metadata_mut().insert("authorization","Bearer task-admin".parse()?);
+        match generated::AtomicLedgerMethodsTasksWait::fail(channel,request).await {
+            Err(generated::AtomicLedgerMethodsFailError::BelowThreshold(error)) if error.required==4242 && error.observed==7 => println!("typed-declared:4242:7"),
+            other=>return Err(format!("wrong typed transaction Wait: {other:?}").into()),
+        }
+        return Ok(());
+    }
     if mode == "serve-transaction" { return transaction::serve().await; }
     if mode == "serve-generic" {
         return generic::serve().await;

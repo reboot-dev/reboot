@@ -22,6 +22,8 @@ use crate::{
     runtime::{ActorGate, ExclusiveActorLease, SharedActorLease, TransactionMode},
 };
 
+include!("declared_transaction_receipts.rs");
+
 const STATE_REF_HEADER: &str = "x-reboot-state-ref";
 
 type SidecarFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, Status>> + Send + 'a>>;
@@ -521,6 +523,8 @@ struct Pending {
     reusable: Option<ReusableCalls>,
     execution_active: bool,
     terminal_attempted: bool,
+    // Root-only post-Abort receipt; never part of successful staged effects.
+    abort_receipt: Option<database::IdempotentMutation>,
     no_terminal_retry: bool,
     local_owner: Option<Uuid>,
     root_id: Uuid,
@@ -2081,6 +2085,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             execution_active: reusable
                 || (mode == ParticipantStartMode::SharedUpgradeable && local_owner.is_some()),
             terminal_attempted: false,
+            abort_receipt: None,
             no_terminal_retry: false,
             local_owner,
             root_id: start.transaction_ids[0],
@@ -3061,6 +3066,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
             reusable: None,
             execution_active: false,
             terminal_attempted: false,
+            abort_receipt: None,
             no_terminal_retry: false,
             local_owner: None,
             root_id,
@@ -3297,6 +3303,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                 "native ACK uncertain; ownership retained until sidecar restart/recovery",
             ));
         }
+        if commit && current.abort_receipt.is_some() { return Err(Status::failed_precondition("declared Abort receipt cannot Commit")); }
         if (live || current.constructor_child) && commit && !current.prepared {
             return Err(Status::failed_precondition(
                 "live Commit requires exact prepared ownership",
@@ -3367,7 +3374,7 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
         // This branch can only own an actual exclusive lease. Keep it across
         // actor-only I/O and every ambiguous response, even pre-Prepare Abort.
         current.native_control_started = true;
-        current.terminal_attempted = current.no_terminal_retry || current.native_started;
+        current.terminal_attempted = current.no_terminal_retry || current.native_started || current.abort_receipt.is_some();
         // Wake a parked live Watch even when the terminal ACK is lost. Its
         // ownership check waits on this mutex until the attempt has resolved;
         // it must not retain a silent RPC/permit or retry uncertain delivery.
@@ -3395,6 +3402,19 @@ impl<C: ParticipantSidecar> DurableActorParticipant<C> {
                     state_ref: self.state_ref.clone(),
                 })
                 .await?;
+        }
+        if let Some(receipt) = &current.abort_receipt {
+            // All child Abort ACKs precede this local terminal call. Retain the
+            // original actor lease until the separate synchronous receipt ACK;
+            // duplicate/ordinary writers cannot enter the release gap.
+            current.terminal_attempted = true;
+            let attempt = self.lock.gate().commit_attempt();
+            self.sidecar.store(database::StoreRequest {
+                actor_upserts:vec![],task_upserts:vec![],colocated_upserts:vec![],
+                transaction:None,ensure_state_types_created:vec![],sync:true,
+                idempotent_mutation:Some(receipt.clone()),
+            }).await?;
+            attempt.acknowledged();
         }
         // Only an acknowledged terminal RPC makes release truthful.
         *pending = None;

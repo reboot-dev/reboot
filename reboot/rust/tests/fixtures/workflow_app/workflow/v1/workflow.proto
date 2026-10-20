@@ -8,6 +8,7 @@ service EmptyTransactionMethods {
  option (rbt.v1alpha1.service) = { state: "workflow.v1.EmptyTransactionState" };
  rpc Create(google.protobuf.Empty) returns (google.protobuf.Empty) { option (rbt.v1alpha1.method).transaction = { constructor: {} exclusive: {} }; }
  rpc Apply(google.protobuf.Empty) returns (google.protobuf.Empty) { option (rbt.v1alpha1.method).transaction = { exclusive: {} }; }
+ rpc Reject(google.protobuf.Empty) returns (google.protobuf.Empty) { option (rbt.v1alpha1.method) = { transaction: { exclusive: {} } errors: ["BelowThreshold"] }; }
  rpc Local(Empty) returns (Empty) { option (rbt.v1alpha1.method).transaction = { exclusive: {} }; }
  rpc Query(Empty) returns (Empty) { option (rbt.v1alpha1.method).reader = {}; }
 }
@@ -39,6 +40,7 @@ service AtomicLedgerMethods {
  option (rbt.v1alpha1.service) = { state: "workflow.v1.AtomicLedger" };
  rpc Create(Step) returns (Value) { option (rbt.v1alpha1.method).transaction = { constructor: {} exclusive: {} }; }
  rpc Apply(Step) returns (Value) { option (rbt.v1alpha1.method).transaction = { exclusive: {} }; }
+ rpc Fail(Step) returns (Value) { option (rbt.v1alpha1.method) = { transaction: { exclusive: {} } errors: ["BelowThreshold"] }; }
  rpc Query(Empty) returns (AtomicLedger) { option (rbt.v1alpha1.method).reader = {}; }
 }
 message Remote { option (rbt.v1alpha1.state) = { implements: ["workflow.v1.RemoteMethods"] }; int64 value = 1; }

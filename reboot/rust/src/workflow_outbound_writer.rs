@@ -161,6 +161,19 @@ impl WorkflowContext<'_> {
         .await
     }
 
+    /// Canonical transaction-task only: acknowledged Abort and target error receipt
+    /// precede the separate source result-journal ACK and terminal CAS.
+    #[doc(hidden)]
+    pub async fn invoke_transaction_declared<Q, R, F, Fut>(&self, target: &WorkflowTransactionTarget, alias: &str, descriptor: WorkflowTransactionMethod, errors: Vec<DeclaredTaskError>, request: Q, invoke: F) -> Result<R, Status>
+    where Q: prost::Message + Send, R: prost::Message + Default + Send,
+          F: FnOnce(tonic::Request<Q>) -> Fut + Send,
+          Fut: std::future::Future<Output=Result<tonic::Response<R>,Status>> + Send {
+        if !self.tasks.declaration(&self.task).is_some_and(|d| d.transaction && d.method == descriptor.method && d.state_type == descriptor.state_type && d.response_type == descriptor.response_type && d.errors.iter().map(|e|e.type_url).eq(errors.iter().map(|e|e.type_url))) {
+            return Err(Status::failed_precondition("declared transaction outcomes require canonical transaction task"));
+        }
+        self.invoke_checkpointed_mutation(&target.0, alias, WorkflowWriterMethod { state_type: descriptor.state_type, method: descriptor.method, response_type: descriptor.response_type, errors }, request, invoke, true).await
+    }
+
     async fn invoke_checkpointed_mutation<Q, R, F, Fut>(
         &self,
         target: &WorkflowWriterTarget,
@@ -305,7 +318,7 @@ impl WorkflowContext<'_> {
             result = invoke(outbound) => match result {
                 Ok(response) => Ok(response.into_inner()),
                 Err(status) => {
-                    if transaction || !crate::runtime::is_durable_declared_writer_error(&status) {
+                    if if transaction { descriptor.errors.is_empty() || !crate::runtime::is_durable_declared_transaction_error(&status) } else { !crate::runtime::is_durable_declared_writer_error(&status) } {
                         return Err(status);
                     }
                     DeclaredTaskError::validate_status(&descriptor.errors, &status)?;

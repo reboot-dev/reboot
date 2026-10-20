@@ -100,6 +100,9 @@ pub struct TransactionIdempotency {
     request_fingerprint: Vec<u8>,
 }
 
+include!("declared_transaction_store.rs");
+include!("declared_transaction_tests.rs");
+
 impl TransactionIdempotency {
     /// The validated idempotency UUID from Reboot metadata.
     pub fn key(&self) -> Uuid {
@@ -1076,6 +1079,7 @@ impl TransactionContext {
         self.root_receipt = Some(receipt.clone());
         Ok(())
     }
+    pub(crate) fn matches_root_receipt(&self, receipt: &TransactionIdempotency) -> bool { self.root_receipt.as_ref() == Some(receipt) && self.bound_root_receipt() }
     pub(crate) fn bound_root_receipt(&self) -> bool {
         self.is_fresh_root() && self.mode == TransactionMode::Exclusive
             && self.root_receipt.as_ref().is_some_and(|r| Some(r.key) == self.headers.idempotency_key && !r.request_fingerprint.is_empty())
