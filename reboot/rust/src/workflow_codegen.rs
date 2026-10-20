@@ -1,3 +1,4 @@
+include!("workflow_spawn_codegen.rs");
 #[cfg(test)]
 #[path = "../tests/fixtures/workflow_cursor_emission_tests.rs"]
 mod workflow_cursor_emission_tests;
@@ -776,6 +777,7 @@ fn emit_workflow_service(
                 | "with_reader_registry"
                 | "with_legacy_unary_roots"
                 | "with_workflows"
+                | "workflow_spawner"
                 | "with_authorization"
         )
     }) {
@@ -783,6 +785,9 @@ fn emit_workflow_service(
             "{service_name}: method collides with reserved local reader helper"
         ));
     }
+    emit_workflow_spawn_reference(
+        output, service, annotation, package, service_name, runtime_module, &adapter,
+    )?;
     emit_local_readers(
         output,
         service_name,

@@ -12,6 +12,41 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Generated workflow-to-workflow spawn (bounded foundation)
+
+Workflow-bearing generated adapters now expose `workflow_spawner()` and typed
+`*WorkflowRef` methods: `_spawn`, `_wait`, and their composed callable workflow.
+This is actual public gRPC admission and execution, not an identity-only wrapper.
+A dispatcher-owned source durably binds its immutable intent before dispatch;
+the target atomically stores the stable pending task and fingerprinted admission
+receipt before ACK. Current target authorization precedes replay disclosure;
+source Stored ACK precedes returning the task ID. Canonical typed Wait permits
+catching declared durable child errors and a subsequent parent continuation.
+Unknown ACKs/cancellation remain fail-closed, with the existing host recovery,
+generation, actor uncertainty and cursor fences intact.
+
+The transport is an explicitly **Rust-only experimental protocol**, not Python's
+generated Tasks wire service. Root/finite source scopes and non-cursor workflow
+targets on existing explicitly registered actors are supported; constructor,
+generic reader/writer spawning, transaction scheduling, automatic placement,
+relative schedules, cursor receipt GC and Python-style Task objects are not.
+Python itself excludes constructors from schedule/spawn. New native qualification
+uses two hosts/two real C++ Databases, retained restart, immutable-contract and
+authorization negatives, concurrency, typed error continuation, cancellation,
+future scheduling and actual lost Store ACKs. Detailed source contracts and
+evidence boundaries: [WORKFLOW-SPAWN-MAP.md](WORKFLOW-SPAWN-MAP.md).
+Qualification: locked offline all-targets (842 library passes, 7 library ignores;
+55 downstream generated-consumer passes), strict SDK/generated-fixture Clippy,
+and the separately exercised native gate (16 scenarios, 397 original-parent
+waited children). The all-target run left 168 entries ignored; it did not qualify
+those native/other gates. The new spawn gate was then explicitly run, not counted
+as an ignored success. Native RED randomized only the dispatch key and observed
+21 across three target tasks; restored GREEN retained 7 once. All 376 final
+source-input hashes match. Receipts, original owner waits, preliminary failures,
+raw lost-ACK protobufs and manifest are in
+[workflow-spawn-20261020.json](tests/evidence/workflow-spawn-20261020.json) and its
+raw archive; prior proof and the closed benchmark remain unchanged.
+
 ## Generated callable workflow writers (bounded external unary)
 
 Pure database services now generate `*WorkflowWriterRef` for ordinary non-constructor
@@ -5905,7 +5940,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: df33fe132fc23fdfe050637cd8c635fdd110f7e4da5cec76483546d2a34ead90 -->
+<!-- parity-source-sha256: b34a145ed4244ee7c7bb5ccb66bc1c7f21c8a951be900e8f84f1fd04b404f649 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,

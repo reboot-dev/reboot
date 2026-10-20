@@ -1,0 +1,233 @@
+// Included in one_shot_tasks. The generated adapter provides the exact recovered
+// owner and policy; this transport cannot discover/adopt actors or mint authority.
+fn spawn_fingerprint(
+    task: &db::Task,
+    request: &crate::workflow_spawn_proto::SpawnRequest,
+) -> Vec<u8> {
+    use prost::Message;
+    use sha2::{Digest, Sha256};
+    let mut hash = Sha256::new();
+    hash.update(b"reboot.workflow-spawn.contract.v1\0");
+    for bytes in [task.encode_to_vec(), request.encode_to_vec()] {
+        hash.update((bytes.len() as u64).to_be_bytes());
+        hash.update(bytes);
+    }
+    hash.finalize().to_vec()
+}
+#[derive(Clone)]
+pub struct WorkflowSpawner {
+    tasks: OneShotTasks,
+    authorization: crate::auth::AuthorizationPolicy,
+}
+impl WorkflowSpawner {
+    #[doc(hidden)]
+    pub fn new(tasks: OneShotTasks, authorization: crate::auth::AuthorizationPolicy) -> Self {
+        Self {
+            tasks,
+            authorization,
+        }
+    }
+    pub fn into_service(
+        self,
+    ) -> crate::workflow_spawn_proto::workflow_spawner_server::WorkflowSpawnerServer<Self> {
+        crate::workflow_spawn_proto::workflow_spawner_server::WorkflowSpawnerServer::new(self)
+    }
+}
+#[tonic::async_trait]
+impl crate::workflow_spawn_proto::workflow_spawner_server::WorkflowSpawner for WorkflowSpawner {
+    async fn spawn(
+        &self,
+        request: tonic::Request<crate::workflow_spawn_proto::SpawnRequest>,
+    ) -> Result<tonic::Response<db::TaskId>, Status> {
+        use prost::Message;
+        let headers = crate::RebootHeaders::from_request(&request)
+            .map_err(|error| Status::invalid_argument(error.to_string()))?;
+        let key = headers
+            .idempotency_key
+            .ok_or_else(|| Status::invalid_argument("workflow spawn requires idempotency key"))?;
+        if headers.state_ref != self.tasks.inner.state_ref || headers.transaction_ids.is_some() {
+            return Err(Status::permission_denied(
+                "workflow spawn requires exact nontransactional owner",
+            ));
+        }
+        let body = request.get_ref();
+        let declaration = self
+            .tasks
+            .inner
+            .declarations
+            .iter()
+            .find(|d| d.workflow && d.method == body.method)
+            .ok_or_else(|| {
+                Status::permission_denied("spawn target is not a registered workflow")
+            })?;
+        if body.request.len() > 1048576 {
+            return Err(Status::resource_exhausted(
+                "workflow spawn request exceeds 1MiB",
+            ));
+        }
+        (declaration.decode_request)(&body.request)?;
+        if body.response_type != declaration.response_type
+            || body.errors
+                != declaration
+                    .errors
+                    .iter()
+                    .map(|error| error.type_url.to_owned())
+                    .collect::<Vec<_>>()
+        {
+            return Err(Status::failed_precondition(
+                "spawn result/error schema changed",
+            ));
+        }
+        let (context, auth) = self
+            .authorization
+            .verify(headers, &self.tasks.inner.state_type, declaration.method)
+            .await?;
+        self.authorization.require_authorizer()?;
+        let running = self.tasks.workflow_running_admission()?;
+        let id = db::TaskId {
+            state_type: self.tasks.inner.state_type.clone(),
+            state_ref: self.tasks.inner.state_ref.clone(),
+            task_uuid: initializer_uuid("reboot.workflow-spawn.task.v1", &key.to_string()),
+        };
+        let task = db::Task {
+            task_id: Some(id.clone()),
+            method: body.method.rsplit('.').next().unwrap_or("").into(),
+            request: body.request.clone(),
+            timestamp: body.timestamp,
+            iteration: 0,
+            status: db::task::Status::Pending as i32,
+            response_or_error: None,
+        };
+        self.tasks.validate(std::slice::from_ref(&task))?;
+        // Cursor admission has an additional binding journal. Do not silently
+        // bypass that foundation, or promise cross-actor cursor receipt GC.
+        if self.tasks.cursor_declaration(&task).is_some() {
+            return Err(Status::failed_precondition(
+                "spawn does not support cursor workflow targets",
+            ));
+        }
+        let store = &self.tasks.inner.store;
+        let gate = store.actor_gate(&id.state_type, &id.state_ref);
+        let _lease = gate.exclusive().await;
+        if gate.committed_revisions().borrow().1 {
+            return Err(Status::unavailable(
+                "spawn actor commit outcome uncertain; restart host",
+            ));
+        }
+        drop(running.lock()?);
+        let loaded = store
+            .task_database()
+            .load(db::LoadRequest {
+                actors: vec![db::Actor {
+                    state_type: id.state_type.clone(),
+                    state_ref: id.state_ref.clone(),
+                    state: None,
+                }],
+                task_ids: vec![id.clone()],
+            })
+            .await?
+            .into_inner();
+        drop(running.lock()?);
+        if loaded.actors.len() != 1
+            || loaded.actors[0].state_type != id.state_type
+            || loaded.actors[0].state_ref != id.state_ref
+        {
+            return Err(Status::permission_denied(
+                "spawn authorization state unavailable",
+            ));
+        }
+        self.authorization
+            .authorize(
+                &context,
+                auth.as_ref(),
+                loaded.actors[0].state.as_deref(),
+                &body.request,
+            )
+            .await?;
+        drop(running.lock()?);
+        if loaded.actors[0].state.is_none() {
+            return Err(Status::failed_precondition("spawn requires existing actor"));
+        }
+        let mut stream = store
+            .task_database()
+            .recover_idempotent_mutations(db::RecoverIdempotentMutationsRequest {
+                state_type: id.state_type.clone(),
+                state_ref: id.state_ref.clone(),
+                idempotency_key: Some(key.as_bytes().to_vec()),
+                workflow_id: None,
+                workflow_iteration: None,
+            })
+            .await?
+            .into_inner();
+        let mut replay = false;
+        while let Some(batch) = stream.message().await? {
+            drop(running.lock()?);
+            for record in batch.idempotent_mutations {
+                if replay {
+                    return Err(Status::data_loss("duplicate workflow spawn receipt"));
+                }
+                if record.state_type != id.state_type
+                    || record.state_ref != id.state_ref
+                    || record.key != key.as_bytes()
+                    || record.workflow_id.is_some()
+                    || record.workflow_iteration.is_some()
+                    || record.task_ids != vec![id.clone()]
+                    || record.request_fingerprint.as_deref()
+                        != Some(spawn_fingerprint(&task, body).as_slice())
+                    || record.response != task.encode_to_vec()
+                {
+                    return Err(Status::failed_precondition(
+                        "spawn key reused with changed task/payload/schedule/schema contract",
+                    ));
+                }
+                replay = true;
+            }
+        }
+        drop(running.lock()?);
+        if replay {
+            self.tasks
+                .validate_scheduling_replay(std::slice::from_ref(&task), &loaded.tasks)?;
+            return Ok(tonic::Response::new(id));
+        }
+        if !loaded.tasks.is_empty() {
+            return Err(Status::failed_precondition(
+                "spawn task exists without atomic admission receipt",
+            ));
+        }
+        let admission = self
+            .tasks
+            .validate_staged_admission(std::slice::from_ref(&task))
+            .await?;
+        let mut handoff = self.tasks.own_root_handoff();
+        drop(running.lock()?);
+        drop(admission.lock()?);
+        let commit = gate.commit_attempt();
+        store
+            .task_database()
+            .store(db::StoreRequest {
+                actor_upserts: vec![],
+                task_upserts: vec![task.clone()],
+                idempotent_mutation: Some(db::IdempotentMutation {
+                    state_type: id.state_type.clone(),
+                    state_ref: id.state_ref.clone(),
+                    key: key.as_bytes().to_vec(),
+                    response: task.encode_to_vec(),
+                    task_ids: vec![id.clone()],
+                    request_fingerprint: Some(spawn_fingerprint(&task, body)),
+                    workflow_id: None,
+                    workflow_iteration: None,
+                }),
+                colocated_upserts: vec![],
+                transaction: None,
+                ensure_state_types_created: vec![],
+                sync: true,
+            })
+            .await?;
+        commit.checkpoint_acknowledged();
+        drop(admission.lock()?);
+        drop(running.lock()?);
+        handoff.completed();
+        self.tasks.dispatch_committed(vec![task]);
+        Ok(tonic::Response::new(id))
+    }
+}

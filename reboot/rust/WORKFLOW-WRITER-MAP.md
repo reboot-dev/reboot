@@ -1,5 +1,10 @@
 # Callable workflow writer: bounded external-unary vertical
 
+The separate executable workflow-to-workflow spawn foundation is mapped in
+[WORKFLOW-SPAWN-MAP.md](WORKFLOW-SPAWN-MAP.md). It reuses this immutable source
+intent/ACK discipline but adds actual target task admission and typed canonical
+Wait; the ordinary-writer reference's historical scope below is unchanged.
+
 ## Source map (before implementation)
 
 - Python `aio/contexts.py:1364-1520`: dispatcher-owned WorkflowContext, task UUID seed, loop/seed-scoped deterministic keys. `templates/reboot.py.j2:1960-2008` constructs generated references from context, explicitly does NOT inherit bearer credentials, derives caller application identity, and resolves state channels. `:2226-2254` wraps each writer in context.idempotently (target/type/method/request), then passes key/per-iteration/always to the real RPC via `aio/stubs.py:504`. Python's trusted caller-auth propagation, automatic routing/retry and transaction machinery are broader than this slice.

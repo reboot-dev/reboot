@@ -1,0 +1,16 @@
+syntax = "proto3";
+package reboot.rust.workflow.v1;
+import "rbt/v1alpha1/tasks.proto";
+import "google/protobuf/timestamp.proto";
+// Experimental Rust workflow admission transport, not Python Tasks wire parity.
+// Identity comes exclusively from validated idempotency metadata.
+message SpawnRequest {
+  string method = 1;
+  bytes request = 2;
+  google.protobuf.Timestamp timestamp = 3;
+  string response_type = 4;
+  repeated string errors = 5;
+}
+service WorkflowSpawner {
+  rpc Spawn(SpawnRequest) returns (rbt.v1alpha1.TaskId);
+}

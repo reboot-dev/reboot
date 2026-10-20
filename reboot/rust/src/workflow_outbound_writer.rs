@@ -1,7 +1,8 @@
 // Included in one_shot_tasks: only dispatcher-minted contexts can invoke this path.
 /// Explicit host-owned external-unary destination. Credentials are outbound
 /// service credentials, NOT recovered workflow-user credentials. One fixed
-/// application/channel; no placement, transactions, scheduling or internal bypass.
+/// application/channel; no placement, transactions or internal bypass. Also used
+/// as the explicit identity/credential binding for generated workflow spawning.
 #[derive(Clone)]
 pub struct WorkflowWriterTarget {
     actor: crate::actor_ref::ActorRef,

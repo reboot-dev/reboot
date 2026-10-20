@@ -18,6 +18,7 @@ service LedgerMethods {
  rpc First(Step) returns (Value) { option (rbt.v1alpha1.method).writer = {}; }
  rpc Second(Step) returns (Value) { option (rbt.v1alpha1.method).writer = {}; }
  rpc Run(Step) returns (Result) { option (rbt.v1alpha1.method).workflow = {}; }
+ rpc Child(Step) returns (Value) { option (rbt.v1alpha1.method) = { workflow: {} errors: ["BelowThreshold"] }; }
 }
 message Remote { option (rbt.v1alpha1.state) = { implements: ["workflow.v1.RemoteMethods"] }; int64 value = 1; }
 service RemoteMethods {

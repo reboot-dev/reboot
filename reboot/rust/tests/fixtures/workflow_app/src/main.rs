@@ -1,6 +1,7 @@
 use prost::Message;
 mod crosspath;
 mod outbound;
+mod spawned;
 use reboot::{
     application_host::ApplicationHost,
     database_proto as db,
@@ -49,6 +50,33 @@ async fn database_pause() {
 }
 #[tonic::async_trait]
 impl generated::LedgerMethodsDatabaseHandler for Ledger {
+    async fn child(
+        &self,
+        context: &WorkflowContext<'_>,
+        request: proto::Step,
+    ) -> Result<proto::Value, generated::LedgerMethodsChildError> {
+        event("child-body");
+        if request.amount < 0 {
+            return Err(generated::LedgerMethodsChildError::BelowThreshold(
+                proto::BelowThreshold {
+                    required: 0,
+                    observed: request.amount,
+                },
+            ));
+        }
+        if request.amount == 999 {
+            event("child-parked");
+            std::future::pending::<()>().await;
+        }
+        generated::LedgerMethodsWorkflowSteps::first(
+            context,
+            Arc::new(self.clone()),
+            "child-effect",
+            request,
+        )
+        .await
+        .map_err(generated::LedgerMethodsChildError::Grpc)
+    }
     async fn create(
         &self,
         _: &mut proto::Ledger,
@@ -166,6 +194,9 @@ impl generated::LedgerMethodsDatabaseHandler for Ledger {
         request: proto::Step,
     ) -> Result<proto::Result, reboot::one_shot_tasks::WorkflowBodyError> {
         event("body");
+        if std::env::var("WORKFLOW_BODY_MODE").as_deref() == Ok("spawn") {
+            return spawned::run(context, request).await;
+        }
         if std::env::var("WORKFLOW_BODY_MODE").as_deref() == Ok("outbound") {
             return outbound::run(context, request).await;
         }
@@ -541,7 +572,24 @@ impl reboot::auth::Authorizer for SchedulingPolicy {
         _: &'a [u8],
     ) -> reboot::auth::AuthorizeFuture<'a> {
         Box::pin(async move {
-            if context.method.ends_with(".ScheduleWork")
+            if context.method.ends_with(".Child") {
+                event("spawn-authorize");
+                if context.headers.bearer_token.as_deref() != Some("spawn-service")
+                    || context
+                        .headers
+                        .caller_id
+                        .as_ref()
+                        .map(|caller| caller.application_id())
+                        != Some("a0000000001")
+                {
+                    return reboot::auth::AuthorizationDecision::PermissionDenied {
+                        message: "spawn service credential denied".into(),
+                    };
+                }
+            }
+            if (context.method.ends_with(".ScheduleWork")
+                || context.method.ends_with(".Child")
+                || context.method.ends_with(".Wait"))
                 && std::fs::read_to_string(&self.path).unwrap().trim() == "deny"
             {
                 reboot::auth::AuthorizationDecision::PermissionDenied {
@@ -559,6 +607,11 @@ fn arg(index: usize) -> String {
 }
 fn reference() -> String {
     use reboot::state_ref::StateRef;
+    if let Ok(id) = std::env::var("WORKFLOW_REFERENCE_ID") {
+        return StateRef::from_id("workflow.v1.Ledger", &id)
+            .unwrap()
+            .to_string();
+    }
     match std::env::var("WORKFLOW_REFERENCE_KIND").as_deref() {
         Ok("escaped") => StateRef::from_id("workflow.v1.Ledger", "ledger/escaped")
             .unwrap()
@@ -649,6 +702,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )?;
         return Ok(());
     }
+    if mode == "spawn-inspect" {
+        return spawned::inspect().await;
+    }
+    if mode == "spawn-probe" {
+        return spawned::probe().await;
+    }
     if mode == "serve-target" {
         let store = DatabaseActorStore::connect(arg(2)).await?;
         ApplicationHost::new(application())
@@ -684,14 +743,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             generated::LedgerMethodsDatabaseAdapter::new(store.clone(), Ledger::default())
                 .with_authorization(policy)
                 .with_workflows(&reference())?;
+        let spawner = adapter.workflow_spawner()?.into_service();
         if let Ok(limit) = std::env::var("CONTROL_MAX_LIVE") {
             tasks.set_max_live_deliveries(limit.parse()?)?;
         }
+        let wait_policy = match std::env::var("WORKFLOW_WAIT_POLICY") {
+            Ok(path) => reboot::auth::AuthorizationPolicy::new(
+                None,
+                Some(Arc::new(SchedulingPolicy { path: path.into() })),
+            ),
+            Err(_) => reboot::auth::AuthorizationPolicy::permissive_for_development(),
+        };
         let wait = tasks.wait_service_with_policy(
             reboot::legacy_placement::LegacyApplicationId::new(application())?,
             "server",
             plan(address.port()),
-            reboot::auth::AuthorizationPolicy::permissive_for_development(),
+            wait_policy,
         );
         ApplicationHost::new(application())
             .with_host_recovery(tasks.recovery(db::RecoverRequest {
@@ -713,6 +780,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ),
             )
             .add_public_service(wait)
+            .add_public_service(spawner)
             .serve_with_shutdown(address, async {
                 while !std::path::Path::new(&arg(4)).exists() {
                     tokio::time::sleep(std::time::Duration::from_millis(10)).await;

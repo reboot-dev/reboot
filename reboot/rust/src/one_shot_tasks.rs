@@ -21,6 +21,9 @@ include!("workflow_outbound_writer.rs");
 include!("task_listing.rs");
 include!("task_cancellation.rs");
 include!("initializer_admission.rs");
+include!("workflow_spawn.rs");
+include!("workflow_spawn_client.rs");
+include!("workflow_spawn_tests.rs");
 include!("initializer_admission_tests.rs");
 #[cfg(test)]
 #[path = "participant_bound_task_binding_tests.rs"]

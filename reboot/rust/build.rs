@@ -34,6 +34,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 std::path::PathBuf::from("."),
             ],
         )?;
+    let spawn_output = output.join("workflow_spawn_proto");
+    std::fs::create_dir_all(&spawn_output)?;
+    tonic_build::configure()
+        .out_dir(spawn_output)
+        .extern_path(".rbt.v1alpha1", "crate::database_proto")
+        .compile_protos(
+            &[std::path::PathBuf::from("workflow_spawn.proto")],
+            &[
+                repository.clone(),
+                vendored_include.clone(),
+                std::path::PathBuf::from("."),
+            ],
+        )?;
     tonic_build::configure()
         .build_client(true)
         .build_server(true)

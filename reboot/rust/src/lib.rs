@@ -39,6 +39,13 @@ pub mod legacy_placement;
 pub mod live_participant;
 pub mod native_2pc;
 pub mod one_shot_tasks;
+/// Experimental Rust-only workflow admission protocol; not Python Tasks wire parity.
+pub mod workflow_spawn_proto {
+    include!(concat!(
+        env!("OUT_DIR"),
+        "/workflow_spawn_proto/reboot.rust.workflow.v1.rs"
+    ));
+}
 pub mod placement;
 /// Canonical PlacementPlanner transport DTOs and generated Tonic client/server
 /// bindings. The application host owns the bounded stream lifecycle.

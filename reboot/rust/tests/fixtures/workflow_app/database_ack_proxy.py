@@ -57,6 +57,8 @@ def boundary(body):
         return 'target'
     if mutation.get(4) == [b'workflow.v1.Ledger']:
         envelope = fields(mutation[2][0])
+        if store.get(2) and envelope.get(2) == [b'Child'] and envelope.get(3) == [1]:
+            return 'spawn'
         if store.get(1) and envelope.get(1) == [7]:
             # Taskless store_type retains the raw Value response, not Any.
             return 'taskless'
