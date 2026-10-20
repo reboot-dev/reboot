@@ -475,7 +475,7 @@ the `world` fixture, get a context for the user the step names
 with `world.context(user)`, which carries that user's token, and
 call the generated clients:
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../tests/reboot/bdd/bdd_tests.py&lines=73-93) -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../tests/reboot/bdd/bdd_tests.py&lines=75-95) -->
 <!-- The below code snippet is automatically added from ../../tests/reboot/bdd/bdd_tests.py -->
 
 ```py
