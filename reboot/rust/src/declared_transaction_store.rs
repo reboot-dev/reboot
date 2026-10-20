@@ -8,6 +8,12 @@ pub fn is_durable_declared_transaction_error(status: &Status) -> bool {
         .get(DECLARED_TRANSACTION)
         .is_some_and(|v| v == "v1")
 }
+/// Handler/framework failures cannot forward another target's receipt ACK.
+#[doc(hidden)]
+pub fn without_declared_transaction_ack(mut status: Status) -> Status {
+    status.metadata_mut().remove(DECLARED_TRANSACTION);
+    status
+}
 pub(crate) fn acknowledged_declared_transaction_status(mut status: Status) -> Status {
     status
         .metadata_mut()

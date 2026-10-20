@@ -22,6 +22,17 @@ mod declared_transaction_receipt_tests {
         )
     }
     #[test]
+    fn forwarded_grpc_error_cannot_forge_this_root_receipt_ack() {
+        let original = error();
+        let bytes = original.details().to_vec();
+        let forged = acknowledged_declared_transaction_status(original);
+        assert!(is_durable_declared_transaction_error(&forged));
+        let failed = without_declared_transaction_ack(forged);
+        assert!(!is_durable_declared_transaction_error(&failed));
+        assert_eq!(failed.code(), tonic::Code::Unknown);
+        assert_eq!(failed.details(), bytes);
+    }
+    #[test]
     fn canonical_transaction_error_uses_python_aborted_code_without_changing_typed_payload() {
         let error = error();
         let original = crate::declared_error_details(&error).unwrap().unwrap();

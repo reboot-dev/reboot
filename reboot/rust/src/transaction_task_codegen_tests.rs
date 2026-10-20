@@ -11,6 +11,7 @@ mod canonical_transaction_task_codegen_tests {
                 factory:false,default_root:false,declared_error:false,writer,inbound:TransactionInbound::Dynamic,
                 shared_root_ownership_seam:false,authorize_after_load:true,
             });
+            assert!(code.contains("without_declared_transaction_ack"));
             assert_eq!(code.contains("canonical transaction task requires registered owner"),!writer);
             assert_eq!(code.contains("canonical task admission is unsupported by transaction adapters"),writer);
         }
