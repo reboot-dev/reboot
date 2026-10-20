@@ -3509,14 +3509,14 @@ async fn generated_mixed_service_mounts_and_dispatches_database_and_transaction_
         request.metadata_mut().insert("x-reboot-task-schedule","".parse().unwrap());
         request
     };
-    for error in [
-        client.query(scheduled()).await.unwrap_err(),
-        client.apply(scheduled()).await.unwrap_err(),
-        client.increment(scheduled()).await.unwrap_err(),
-        client.factory_increment(scheduled()).await.unwrap_err(),
+    for (error, expected) in [
+        (client.query(scheduled()).await.unwrap_err(), "canonical task admission is unsupported by transaction adapters"),
+        (client.apply(scheduled()).await.unwrap_err(), "canonical task admission is unsupported by transaction adapters"),
+        (client.increment(scheduled()).await.unwrap_err(), "canonical transaction task requires registered owner"),
+        (client.factory_increment(scheduled()).await.unwrap_err(), "canonical task admission is unsupported by transaction adapters"),
     ] {
         assert_eq!(error.code(),tonic::Code::FailedPrecondition);
-        assert_eq!(error.message(),"canonical task admission is unsupported by transaction adapters");
+        assert_eq!(error.message(),expected);
     }
     assert_eq!(
         *trace.lock().unwrap(),
