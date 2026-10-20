@@ -488,6 +488,28 @@ async fn cancellation_terminal_requires_callable_and_cannot_be_fabricated_as_dec
 }
 
 #[tokio::test]
+async fn transaction_preview_does_not_wait_for_an_ordinary_body_actor_lease() {
+    let (service, _service_owner, task) = task_listing_service_tests::setup(0);
+    let (endpoint, database, server) = crate::runtime::test_support::start_database().await;
+    database.seed_task(task.clone());
+    let store = DatabaseActorStore::connect(&endpoint).await.unwrap();
+    let id = task.task_id.as_ref().unwrap();
+    let tasks = OneShotTasks::new(store.clone(), id.state_type.clone(), id.state_ref.clone(), Binding).unwrap();
+    let _owner = DispatchOwner::claim(tasks.clone()).unwrap();
+    tasks.inner.active.store(true, std::sync::atomic::Ordering::Release);
+    *tasks.inner.recovery_request.lock().unwrap() = Some(db::RecoverRequest::default());
+    let admission = tasks.workflow_running_admission().unwrap();
+    let gate = store.actor_gate(&id.state_type, &id.state_ref);
+    let lease = gate.shared().await;
+    let result = tokio::time::timeout(std::time::Duration::from_secs(2), service.cancel_scheduled_transaction(&admission, id)).await;
+    drop(lease);
+    server.abort();
+    let _ = server.await;
+    assert!(result.expect("classification must not wait behind the body lease").unwrap().is_none());
+    assert!(!*tasks.inner.uncertain.borrow());
+    assert!(tasks.inner.ordinary_cancellations.lock().unwrap().is_empty());
+}
+#[tokio::test]
 async fn ordinary_registration_retains_generation_and_does_not_remove_a_replacement() {
     let (service, _owner, task) = task_listing_service_tests::setup(0);
     let tasks = service.tasks.values().next().unwrap();

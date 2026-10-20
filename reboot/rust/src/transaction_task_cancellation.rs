@@ -7,6 +7,22 @@ impl ReaderTaskWaitService {
         id: &db::TaskId,
     ) -> Result<Option<tonic::Response<db::CancelTaskResponse>>, Status> {
         let tasks = &admission.tasks;
+        // Classification is read-only and MUST precede actor admission: an
+        // ordinary reader on this mixed owner may retain a shared body lease
+        // until the ordinary cancellation path publishes its handoff signal.
+        { let _owner = admission.lock()?; }
+        let preview = tasks.inner.store.task_database().load(db::LoadRequest {
+            actors: vec![], task_ids: vec![id.clone()],
+        }).await?.into_inner();
+        self.require_authority(&id.state_ref)?;
+        { let _owner = admission.lock()?; }
+        if preview.tasks.len() != 1 { return Ok(None); }
+        if preview.tasks[0].task_id.as_ref() != Some(id) {
+            return Err(Status::data_loss("transaction cancellation preview identity mismatch"));
+        }
+        if !tasks.declaration(&preview.tasks[0]).is_some_and(|d| d.transaction) {
+            return Ok(None);
+        }
         let _serial = tasks.inner.cancellation_serial.lock().await;
         let gate = tasks.inner.store.actor_gate(&id.state_type, &id.state_ref);
         let _lease = gate.exclusive().await;

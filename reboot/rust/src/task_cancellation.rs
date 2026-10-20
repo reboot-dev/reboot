@@ -451,6 +451,11 @@ impl ReaderTaskWaitService {
             return response(db::cancel_task_response::Status::NotFound);
         }
         tasks.validate(std::slice::from_ref(&task))?;
+        // A preview which saw absence/another method must never turn a newly
+        // admitted due transaction into an acknowledged ordinary cancellation.
+        if tasks.declaration(&task).is_some_and(|d| d.transaction) && schedule_due(&task)? {
+            return Err(Status::failed_precondition("due or running transaction tasks cannot be cancelled"));
+        }
         if tasks.declaration(&task).is_none() {
             return Err(Status::failed_precondition(
                 "only registered callable tasks can be cancelled",
