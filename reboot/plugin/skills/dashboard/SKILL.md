@@ -88,7 +88,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 Where the dashboard serves depends on `.rbtrc`. With
 `dashboard --default-config=portless` (every `.rbtrc` these skills
 write has it; see `../python/references/lifecycle-rbtrc.md`) it is
-`https://dashboard.<app>.localhost/`, `<app>` being the `.rbtrc`'s
+`https://dashboard-<app>.localhost/`, `<app>` being the `.rbtrc`'s
 `dev run --application-name`, through the portless proxy, which
 must be running: check on it, and start it, as the run skill's
 "Named URLs with portless" section says, before Step 4. Without
@@ -97,7 +97,7 @@ Either forwards to
 wherever its page is. Probe it:
 
 ```sh
-curl -sf -o /dev/null --max-time 2 https://dashboard.<app>.localhost/
+curl -sf -o /dev/null --max-time 2 https://dashboard-<app>.localhost/
 ```
 
 If that succeeds, a dashboard is already up — do not start a second
@@ -147,7 +147,7 @@ gives the developer two tabs.
 
 Tell the user the dashboard is up and what it is for — e.g.
 "Developer dashboard (watch the API as I build it) at
-https://dashboard.<app>.localhost/. It can also open in Claude or
+https://dashboard-<app>.localhost/. It can also open in Claude or
 ChatGPT; I'll give you the steps once the app is built." — and get on
 with the build.
 
@@ -173,7 +173,7 @@ starts themselves, in their own shell; do not start one for them.
 after the dashboard's URL: by name under portless, by port with
 `--config=ports`. The dashboard is a Reboot application of its own
 with its own `/mcp`, so the tunnel goes to the dashboard's address
-(`dashboard.<app>.localhost`, or port 9871), never to the user's
+(`dashboard-<app>.localhost`, or port 9871), never to the user's
 application (`<app>.localhost`), whose `/mcp` is the application's.
 Read the command from the shell it runs in and give the user these,
 with the command verbatim:

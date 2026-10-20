@@ -80,7 +80,7 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(env['RBT_APPLICATION'], 'backend/src/main.py')
 
     async def test_portless_takes_the_name_from_dev_run(self) -> None:
-        """`https://dashboard.<name>.localhost` beside `rbt dev run
+        """`https://dashboard-<name>.localhost` beside `rbt dev run
         --portless`'s `https://<name>.localhost`: one name, read
         where `rbt dev run` already needs it."""
         with tempfile.TemporaryDirectory() as state_directory:
@@ -98,7 +98,7 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(dashboard._application_name(parser), 'bank')
             self.assertEqual(
-                reboot.portless.dashboard_name('bank'), 'dashboard.bank'
+                reboot.portless.dashboard_name('bank'), 'dashboard-bank'
             )
 
     async def test_the_configs_are_named_like_dev_runs(self) -> None:

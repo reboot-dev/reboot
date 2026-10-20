@@ -57,7 +57,7 @@ the Reboot plugin installed, its skills know Reboot best.
   `uv run rbt dev run --config=ports` and `npm run dev:ports`; the app
   is at http://localhost:9991.
 - **Dashboard** (the domain model, the features and their rules):
-  `uv run rbt dashboard`, at https://dashboard.<project>.localhost/
+  `uv run rbt dashboard`, at https://dashboard-<project>.localhost/
   (without portless, `--config=ports`, at http://127.0.0.1:9871/).
 - **Generate** after any change under `api/`: `uv run rbt generate`.
 - **Test:** `uv run pytest`, then `uv run mypy backend/ tests/`.

@@ -16,9 +16,9 @@ cd frontend && npm install && cd ..
 uv run rbt generate
 
 # Terminal 1: Start Vite dev server (for Hot Module Replacement), as
-# https://frontend.mcp-app-counter-dashboard.localhost via portless
+# https://frontend-mcp-app-counter-dashboard.localhost via portless
 # (https://github.com/vercel-labs/portless): `npm run dev` is
-# `portless frontend.mcp-app-counter-dashboard vite`, portless being a dev dependency. The
+# `portless frontend-mcp-app-counter-dashboard vite`, portless being a dev dependency. The
 # backend needs the `portless` CLI too (`npm install -g portless`
 # once) and its proxy (`portless proxy start`).
 cd frontend && npm run dev

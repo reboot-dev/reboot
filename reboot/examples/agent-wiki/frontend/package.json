@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "npm run dev:portless",
-    "dev:portless": "portless frontend.agent-wiki vite",
+    "dev:portless": "portless frontend-agent-wiki vite",
     "dev:ports": "vite",
     "build": "tsc -b && node build.mjs"
   },

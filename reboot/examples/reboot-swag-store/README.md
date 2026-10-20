@@ -168,8 +168,8 @@ cd frontend && npm run dev
 ```
 
 This starts the Vite dev server with hot module replacement, as
-`https://frontend.reboot-swag-store.localhost`: `npm run dev` is
-`portless frontend.reboot-swag-store vite`, portless being a dev dependency
+`https://frontend-reboot-swag-store.localhost`: `npm run dev` is
+`portless frontend-reboot-swag-store vite`, portless being a dev dependency
 (`npm run dev:ports` for plain ports, with `--config=ports`). The
 backend proxies UI requests to Vite via Envoy.
 

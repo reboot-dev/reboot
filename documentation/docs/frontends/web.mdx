@@ -187,7 +187,7 @@ cd frontend && npm run dev
 `rbt dev run` generates the React client before it starts, so the dev
 server always has an up-to-date `frontend/api/`. The frontend's
 `package.json` mirrors the `.rbtrc` configs below: `npm run dev` is
-the default, `dev:portless` (`portless frontend.<app> vite`, with `portless` as
+the default, `dev:portless` (`portless frontend-<app> vite`, with `portless` as
 a dev dependency), and `dev:ports` is plain `vite`; see
 [Named local URLs](/develop_locally#named-local-urls-with---portless).
 
@@ -197,12 +197,12 @@ origin, and so `UI` methods work — tell it where the frontend is in
 
 ```
 # Named URLs via portless: Vite, run as the frontend's `npm run dev:portless`
-# (`portless frontend.<app> vite`), is at https://frontend.<app>.localhost; Envoy
+# (`portless frontend-<app> vite`), is at https://frontend-<app>.localhost; Envoy
 # proxies `/__/frontend/**` there, and `/` too, where it serves the web app.
 dev run --default-config=portless
 
 dev run:portless --portless
-dev run:portless --frontend-url=https://frontend.<app>.localhost
+dev run:portless --frontend-url=https://frontend-<app>.localhost
 dev run:portless --mcp-app
 dev run:portless --web-app
 
@@ -215,7 +215,7 @@ dev run:ports --web-app
 dev run:dist --mcp-app-dist-path=frontend/dist/mcp
 dev run:dist --web-app-dist-path=frontend/dist/web
 
-# The developer dashboard too: https://dashboard.<app>.localhost.
+# The developer dashboard too: https://dashboard-<app>.localhost.
 dashboard --default-config=portless
 dashboard:portless --portless
 dashboard:ports --no-portless

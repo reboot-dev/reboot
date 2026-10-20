@@ -16,11 +16,11 @@ class AllowedOriginsTest(unittest.TestCase):
             os.environ,
             {
                 ENVVAR_RBT_DEV: 'true',
-                ENVVAR_RBT_FRONTEND_URL: 'https://frontend.bank.localhost',
+                ENVVAR_RBT_FRONTEND_URL: 'https://frontend-bank.localhost',
             },
         ):
             self.assertEqual(
-                frontend_dev_origin(), 'https://frontend.bank.localhost'
+                frontend_dev_origin(), 'https://frontend-bank.localhost'
             )
 
     def test_no_frontend_dev_server_origin_without_a_frontend_url(
@@ -33,7 +33,7 @@ class AllowedOriginsTest(unittest.TestCase):
     def test_no_frontend_dev_server_origin_outside_rbt_dev(self) -> None:
         with patch.dict(
             os.environ,
-            {ENVVAR_RBT_FRONTEND_URL: 'https://frontend.bank.localhost'},
+            {ENVVAR_RBT_FRONTEND_URL: 'https://frontend-bank.localhost'},
         ):
             os.environ.pop(ENVVAR_RBT_DEV, None)
             self.assertIsNone(frontend_dev_origin())
@@ -44,13 +44,13 @@ class AllowedOriginsTest(unittest.TestCase):
         with patch.dict(os.environ, {ENVVAR_RBT_DEV: 'true'}):
             self.assertFalse(
                 is_allowed_origin(
-                    'https://frontend.bank.localhost', allowed_origins=[]
+                    'https://frontend-bank.localhost', allowed_origins=[]
                 )
             )
             self.assertTrue(
                 is_allowed_origin(
-                    'https://frontend.bank.localhost',
-                    allowed_origins=['https://frontend.bank.localhost'],
+                    'https://frontend-bank.localhost',
+                    allowed_origins=['https://frontend-bank.localhost'],
                 )
             )
             self.assertTrue(

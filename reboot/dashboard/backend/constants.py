@@ -32,7 +32,7 @@ MCP_APP_DIRECTORY = Path(dashboard_rbt.__file__).parent
 # WildFly, 9993 ZeroTier, 9997 Splunk), clear of
 # 9000/9090/9200/9222/9229, hard to confuse with 9991 when reading
 # logs, and outside the Linux ephemeral range. Under `--portless` the
-# dashboard's address is its name, `https://dashboard.<app>.localhost`,
+# dashboard's address is its name, `https://dashboard-<app>.localhost`,
 # and the port behind the proxy is a free one.
 DEFAULT_DASHBOARD_PORT = 9871
 

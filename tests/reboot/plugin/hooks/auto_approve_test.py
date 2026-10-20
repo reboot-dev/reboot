@@ -812,7 +812,7 @@ REBOOT_DEV_CASES: list[tuple[str, str, Where, Decision]] = [
     (
         # `run` skill starts the frontend dev server under portless
         # through the frontend's `dev:portless` script, which runs
-        # `portless frontend.<name> vite` (portless is a dev dependency).
+        # `portless frontend-<name> vite` (portless is a dev dependency).
         "dev: npm run dev:portless",
         "npm run dev:portless",
         Where.PROJECT,

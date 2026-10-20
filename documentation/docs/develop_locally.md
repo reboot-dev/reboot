@@ -224,7 +224,7 @@ dev run --default-config=ports
 | `dev run --web-app` | Serve the application's web app from `--frontend-url`, which it requires: Envoy sends `/`, and every path the application doesn't answer, to the dev server, which serves the web app at its `/`. Mutually exclusive with `--web-app-dist-path`. Python applications only. |
 | `dev run --mcp-app-dist-path=<dir>` | Dist: serve the built MCP Apps from `<dir>` (e.g. `frontend/dist/mcp`) on disk under `/__/frontend/mcp/`, each `UI(path=...)` from `<dir>/<path>/index.html`; mutually exclusive with `--frontend-url` and `--mcp-app`. |
 | `dev run --web-app-dist-path=<dir>` | Serve the built web app from `<dir>` (e.g. `frontend/dist/web`) at `/`, with its `index.html` answering any path the app has no route or file for. Without it, `/` is Reboot's page. Python applications only: with `--nodejs` it is an error. |
-| `dev run --portless` | Serve under a named URL via [portless](https://github.com/vercel-labs/portless): the backend becomes `https://<app>.localhost`, on a free port unless `--port` is given, serving the web app at `/` and the MCP Apps from the frontend dev server, which runs under portless as `https://frontend.<app>.localhost` (its `npm run dev:portless`) and is trusted as a browser origin too. See [Named local URLs](#named-local-urls-with---portless). |
+| `dev run --portless` | Serve under a named URL via [portless](https://github.com/vercel-labs/portless): the backend becomes `https://<app>.localhost`, on a free port unless `--port` is given, serving the web app at `/` and the MCP Apps from the frontend dev server, which runs under portless as `https://frontend-<app>.localhost` (its `npm run dev:portless`) and is trusted as a browser origin too. See [Named local URLs](#named-local-urls-with---portless). |
 | `dev run --tunnel-url=<url>` | The public URL this application is reachable at through a tunnel (e.g. `https://<name>.trycloudflare.com`). The setup wizard shows and verifies it; without it, the wizard asks ngrok and cloudflared, through their local APIs on their default ports, for a tunnel of their own. |
 | `dev run --default-config=<name>` | Sets the default configuration profile when `--config` is not specified. |
 | `dev run:ports` / `dev run:dist` | Named configurations. Flags prefixed with `dev run:<name>` only apply when `--config=<name>` is used. |
@@ -290,14 +290,14 @@ $ rbt dev run --portless --application-name=bank
 `https://<app>.localhost`. The name is the address, so the port
 behind the proxy is a free one unless `--port` says otherwise, and
 several applications run at once without colliding on `9991`. It
-expects the frontend's dev server at `https://frontend.<app>.localhost`,
+expects the frontend's dev server at `https://frontend-<app>.localhost`,
 which is what running it under portless with that name gives you.
 The frontend's `package.json` carries that as scripts mirroring the
 `.rbtrc` configs below, with `portless` as a dev dependency:
 
 ```json
 "dev": "npm run dev:portless",
-"dev:portless": "portless frontend.bank vite",
+"dev:portless": "portless frontend-bank vite",
 "dev:ports": "vite"
 ```
 
@@ -310,7 +310,7 @@ server, so the whole app is at `https://<app>.localhost`, one origin,
 and no `VITE_REBOOT_URL` is needed. The backend also trusts exactly
 the dev server's origin for credentialed requests (a frontend
 registered under any other name is refused, so the two names cannot
-drift apart), so the web app opened at `https://frontend.<app>.localhost`
+drift apart), so the web app opened at `https://frontend-<app>.localhost`
 works as well, cross-origin. Point `--frontend-url` at the named dev
 server, typically as a config that `.rbtrc` makes the default:
 
@@ -319,7 +319,7 @@ dev run --application-name=bank
 dev run --default-config=portless
 
 dev run:portless --portless
-dev run:portless --frontend-url=https://frontend.bank.localhost
+dev run:portless --frontend-url=https://frontend-bank.localhost
 dev run:portless --mcp-app
 dev run:portless --web-app
 
@@ -329,7 +329,7 @@ dashboard:ports --no-portless
 ```
 
 `rbt dashboard --portless` serves the developer dashboard the same
-way, as `https://dashboard.<app>.localhost` on a free port the proxy
+way, as `https://dashboard-<app>.localhost` on a free port the proxy
 routes to (the name is the `.rbtrc`'s `dev run --application-name`).
 The dashboard's configs are named like `rbt dev run`'s, so
 `rbt dashboard --config=ports` goes with `rbt dev run --config=ports`:
@@ -351,7 +351,7 @@ conversation: the whole dashboard, for the changelog, the call graph
 or the features as a whole, and a card of one feature or one state
 type, inline, when you ask about a specific one. The dashboard is a
 Reboot application of its own, with its own `/mcp`: the tunnel goes
-to the dashboard's address, `https://dashboard.<app>.localhost` or
+to the dashboard's address, `https://dashboard-<app>.localhost` or
 `http://127.0.0.1:9871`, not to your application's. The dashboard
 serves your machine alone, so a host in the cloud reaches it through
 a tunnel you start yourself; `rbt dashboard` prints the command for
@@ -362,8 +362,8 @@ dashboard by name, the way you would at an application:
 ```sh
 cloudflared tunnel \
     --url https://127.0.0.1:443 \
-    --http-host-header dashboard.<app>.localhost \
-    --origin-server-name dashboard.<app>.localhost \
+    --http-host-header dashboard-<app>.localhost \
+    --origin-server-name dashboard-<app>.localhost \
     --origin-ca-pool ~/.portless/ca.pem
 ```
 

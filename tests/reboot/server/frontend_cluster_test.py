@@ -114,7 +114,7 @@ class FrontendClusterTest(unittest.TestCase):
                 os.environ,
                 {
                     ENVVAR_RBT_DEV: 'true',
-                    ENVVAR_RBT_FRONTEND_URL: 'https://frontend.bank.localhost',
+                    ENVVAR_RBT_FRONTEND_URL: 'https://frontend-bank.localhost',
                 },
             ):
                 os.environ.pop(ENVVAR_RBT_PORTLESS_NAME, None)

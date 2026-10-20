@@ -147,13 +147,13 @@ the command line:
 ```sh
 # Default config: named URLs via portless (https://github.com/vercel-labs/portless).
 # The app is https://<app>.localhost; Vite, run as the frontend's
-# `npm run dev:portless` (`portless frontend.<app> vite`), is
-# https://frontend.<app>.localhost, which the MCP Apps and the web app
+# `npm run dev:portless` (`portless frontend-<app> vite`), is
+# https://frontend-<app>.localhost, which the MCP Apps and the web app
 # are served from.
 dev run --default-config=portless
 
 dev run:portless --portless
-dev run:portless --frontend-url=https://frontend.<app>.localhost
+dev run:portless --frontend-url=https://frontend-<app>.localhost
 dev run:portless --mcp-app
 # A dual-frontend app also serves its web app from the dev server, at `/`:
 # dev run:portless --web-app
@@ -169,7 +169,7 @@ dev run:dist --mcp-app-dist-path=frontend/dist/mcp
 # A dual-frontend app also serves its built web app at `/`:
 # dev run:dist --web-app-dist-path=frontend/dist/web
 
-# The developer dashboard (`rbt dashboard`) too: https://dashboard.<app>.localhost
+# The developer dashboard (`rbt dashboard`) too: https://dashboard-<app>.localhost
 # by default, or the plain port with `rbt dashboard --config=ports`.
 dashboard --default-config=portless
 dashboard:portless --portless
@@ -181,11 +181,11 @@ Run with `rbt dev run` (uses `--default-config=portless`), or
 requires `--application-name` (the name is the hostname), the
 `portless` CLI, and its proxy running (`portless proxy start`).
 `dashboard:portless --portless` has `rbt dashboard` serve as
-`https://dashboard.<app>.localhost`, on a free port the proxy
+`https://dashboard-<app>.localhost`, on a free port the proxy
 routes to, so the dashboards of several applications run at once;
 its configs are named like `rbt dev run`'s, so
 `rbt dashboard --config=ports` is the plain `http://127.0.0.1:9871/`.
 The frontend's `package.json` mirrors these configs as scripts:
 `dev` is the default, `dev:portless`, which runs
-`portless frontend.<app> vite` with `portless` as a dev dependency, and
+`portless frontend-<app> vite` with `portless` as a dev dependency, and
 `dev:ports` is plain `vite`.

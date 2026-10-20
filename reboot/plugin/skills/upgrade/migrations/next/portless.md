@@ -3,9 +3,9 @@
 A Reboot application now runs under
 [portless](https://github.com/vercel-labs/portless) by default:
 `rbt dev run` serves the app as `https://<app>.localhost`, the Vite
-dev server runs at `https://frontend.<app>.localhost`, which Envoy serves
+dev server runs at `https://frontend-<app>.localhost`, which Envoy serves
 the web app and the MCP Apps from, and `rbt dashboard` serves
-as `https://dashboard.<app>.localhost`, each on a free port the proxy
+as `https://dashboard-<app>.localhost`, each on a free port the proxy
 routes to, so several applications run at once. The web app is on the
 backend's own origin, so no `VITE_REBOOT_URL` is needed in
 development. `<app>` is the `.rbtrc`'s
@@ -45,7 +45,7 @@ case make the changes below anyway and leave them running with
    dev run --default-config=portless
 
    dev run:portless --portless
-   dev run:portless --frontend-url=https://frontend.<app>.localhost
+   dev run:portless --frontend-url=https://frontend-<app>.localhost
    dev run:portless --mcp-app
    dev run:portless --web-app
 
@@ -66,7 +66,7 @@ case make the changes below anyway and leave them running with
    ```json
    "scripts": {
      "dev": "npm run dev:portless",
-     "dev:portless": "portless frontend.<app> vite",
+     "dev:portless": "portless frontend-<app> vite",
      "dev:ports": "vite"
    },
    "devDependencies": {
@@ -88,11 +88,11 @@ case make the changes below anyway and leave them running with
    application (started before this upgrade, on
    `http://127.0.0.1:9871/`), stop it and start it again with
    `uv run rbt dashboard`, which now reads `--portless` from its
-   `.rbtrc` configs and serves as `https://dashboard.<app>.localhost/`;
+   `.rbtrc` configs and serves as `https://dashboard-<app>.localhost/`;
    the `dashboard` skill says how.
 
 5. **READMEs and scripts** that tell a developer to run
    `portless <app> npm run dev`, or to visit `http://localhost:9991`
    or `http://127.0.0.1:9871/`, say `npm run dev`,
-   `https://<app>.localhost` and `https://dashboard.<app>.localhost/`
+   `https://<app>.localhost` and `https://dashboard-<app>.localhost/`
    instead, with the plain-port form as the `--config=ports` alternative.

@@ -544,7 +544,7 @@ portless (`cd frontend && npm run dev`, whose default is the
 `dev:portless` script, beside `rbt dev run --portless`), or
 `http://localhost:9991/` from `npm run dev:ports`, same-origin either
 way, so the Reboot client needs no URL. Open it there, not at the
-dev server's own origin (`https://frontend.<app>.localhost` or
+dev server's own origin (`https://frontend-<app>.localhost` or
 `http://localhost:5173/`), where the client would take Vite's origin
 for the backend. Built,
 it lands in `frontend/dist/web/` with `base: "/"`, which a static
