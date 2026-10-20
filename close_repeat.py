@@ -1,4 +1,8 @@
-"""Read-only independent closure audit. Never edits raw evidence or acceptance rules."""
+"""Regenerate derived closure JSON files in repeat-results-20261020 (overwrites them).
+
+This is a writing report-generation command, not a read-only verifier. It does
+not edit raw evidence or change strict acceptance rules.
+"""
 import collections,datetime,hashlib,json,math,statistics,subprocess
 from pathlib import Path
 import tiny_repeat_analyze as strict
