@@ -7,6 +7,7 @@ import subprocess
 import weakref
 from contextlib import asynccontextmanager
 from reboot.cli.common.terminal import fail
+from reboot.wait_for_tasks import wait_for_tasks
 from typing import AsyncIterator, Optional
 
 _subprocesses: Optional[weakref.ReferenceType[Subprocesses]] = None
@@ -74,8 +75,9 @@ class Subprocesses:
             stderr=stderr,
             # NOTE: we always start a new session so the process gets
             # into its own process group. Ensuring we have a separate
-            # process group enables us to call `_terminate()` without
-            # killing processes that we don't want to kill.
+            # process group enables us to terminate it, and all of its
+            # descendants, without killing processes that we don't want
+            # to kill.
             #
             # TODO(benh): look into using `process_group=` instead
             # of `start_new_session` once we require Python 3.11
@@ -124,8 +126,9 @@ class Subprocesses:
                 stderr=stderr,
                 # NOTE: we always start a new session so the process gets
                 # into its own process group. Ensuring we have a separate
-                # process group enables us to call `_terminate()` without
-                # killing processes that we don't want to kill.
+                # process group enables us to terminate it, and all of its
+                # descendants, without killing processes that we don't
+                # want to kill.
                 #
                 # TODO(benh): look into using `process_group=` instead
                 # of `start_new_session` once we require Python 3.11
@@ -151,7 +154,8 @@ class Subprocesses:
         process: asyncio.subprocess.Process,
     ):
         """Helper for updating state to track which processes we expect and
-        shouldn't unintendedly terminate."""
+        shouldn't unintendedly terminate, and for terminating `process`,
+        and all of its descendants, once the `async with` exits."""
         pgid: Optional[int] = None
 
         try:
@@ -165,6 +169,157 @@ class Subprocesses:
 
         self._processes.add(process)
 
+        async def terminate():
+            """Terminates the process and all of its descendants.
+
+            This is non-trivial to do as processes may have double forked
+            and are no longer part of the process tree, but there are a
+            handful of different mechanisms that we document extensively
+            within the implementation for how we try and kill all possible
+            descendants of a process.
+            """
+            assert process not in self._processes
+            assert pgid is None or pgid not in self._pgids
+
+            while True:
+                # Try and get all the processes descendants first, before we
+                # try and terminate it and lose the process tree.
+                descendants = set()
+
+                # (1) Add processes with same PGID as 'process'.
+                #
+                # This gets all processes that 'process' created that did not
+                # create a new process group, even if they double forked and
+                # are no longer direct descendants of 'process'.
+                if pgid is not None:
+                    for p in psutil.process_iter():
+                        try:
+                            if os.getpgid(p.pid) == pgid:
+                                descendants.add(p)
+                        except ProcessLookupError:
+                            # Process might have already exited, e.g., because it
+                            # crashed, or we already killed it.
+                            pass
+
+                # (2) Add descendants of 'process'.
+                #
+                # This gets processes that might have changed their process
+                # group but are still descendants of 'process'.
+                try:
+                    parent = psutil.Process(process.pid)
+                    for p in parent.children(recursive=True):
+                        descendants.add(p)
+                except psutil.NoSuchProcess:
+                    # Process 'process' might have already exited, e.g.,
+                    # because it crashed, or we already killed it.
+                    pass
+
+                # Send SIGTERM to the process _but not_ the descendants, and
+                # give it time to stop on its own. A process asked to stop
+                # stops what it started, e.g., an application its servers
+                # and Envoy, and cleans up after itself, and some of that
+                # cleanup starts processes of its own, e.g., removing a
+                # name from the portless proxy runs the `portless` CLI, a
+                # Node.js process that takes a while to start. Terminating
+                # everything in its process group a tenth of a second
+                # later, and killing it all a second after that, as we
+                # used to, killed that cleanup more often than not (see
+                # https://github.com/reboot-dev/reboot/issues/268).
+                # Whatever the process leaves behind, and a process that
+                # ignores the signal, is terminated and then killed below.
+                try:
+                    process.terminate()
+                except ProcessLookupError:
+                    # Process might have already exited, e.g., because it
+                    # crashed, or we already killed it.
+                    pass
+
+                try:
+                    await asyncio.wait_for(
+                        process.wait(),
+                        timeout=TERMINATE_GRACE_SECONDS,
+                    )
+                except asyncio.TimeoutError:
+                    # Still running: it gets terminated again, with its
+                    # descendants, and killed, below.
+                    pass
+
+                # (3) Add _our_ descendants that are not expected, i.e.,
+                # _not_ processes that we've created via `exec()` or
+                # `shell()` and still want to be running.
+                #
+                # On Linux when we enable the subreaper any process that
+                # has both changed its process group and tried to double
+                # fork (so that they were no longer a descendant of
+                # 'process') should now be a descendant of us, however,
+                # they will be in a different process group than us which
+                # we will now kill (if it is not expected).
+                #
+                # While we are doing this it's possible that we'll get new
+                # children re-parented to us thanks to the Linux subreaper
+                # and we need to try this all again if that occurs.
+                might_have_new_children = False
+
+                for p in psutil.Process(os.getpid()).children():
+                    # Skip if it's one of our processes.
+                    if any(
+                        p.pid == process.pid for process in self._processes
+                    ):
+                        continue
+                    try:
+                        # Skip this process if it is in the process group
+                        # of one of our processes (it must have
+                        # double-forked and got reparented to us thanks to
+                        # the Linux subreaper).
+                        if os.getpgid(p.pid) in self._pgids:
+                            continue
+                    except ProcessLookupError:
+                        # Process 'p' must now have exited, e.g., because
+                        # it crashed or we already killed it (but it
+                        # actually exited after it was determined one of
+                        # our children).
+                        #
+                        # On Linux with the subreaper this might mean we
+                        # get new children re-parented to us.
+                        might_have_new_children = True
+                    else:
+                        # Ok, it's not one of our processes nor is it in
+                        # the process group of one of our processes, let's
+                        # kill this process.
+                        descendants.add(p)
+
+                        # And all of it's children!
+                        descendants |= set(p.children(recursive=True))
+
+                # We should never accidently try and terminate ourselves.
+                assert not any(
+                    descendant.pid == os.getpid() for descendant in descendants
+                )
+
+                if len(descendants) == 0 and not might_have_new_children:
+                    break
+
+                for descendant in descendants:
+                    try:
+                        descendant.terminate()
+                    except psutil.NoSuchProcess:
+                        # Process might have already exited, e.g., because it
+                        # crashed, or we already killed it.
+                        pass
+
+                _, alive = psutil.wait_procs(descendants, timeout=1)
+
+                for descendant in alive:
+                    try:
+                        descendant.kill()
+                    except psutil.NoSuchProcess:
+                        # Process might have already exited, e.g., because
+                        # it crashed, or we already killed it.
+                        pass
+
+                # Can't wait forever here because a process can't ignore kill.
+                psutil.wait_procs(alive)
+
         try:
             yield
         finally:
@@ -173,156 +328,18 @@ class Subprocesses:
 
             self._processes.remove(process)
 
-            await self._terminate(process, pgid)
-
-    async def _terminate(
-        self,
-        process: asyncio.subprocess.Process,
-        pgid: Optional[int],
-    ):
-        """Helper for terminating a process and all of its descendants.
-
-        This is non-trivial to do as processes may have double forked and
-        are no longer part of the process tree, but there are a handful of
-        different mechanisms that we document extensively within the
-        implementation for how we try and kill all possible descendants of
-        a process.
-        """
-        assert process not in self._processes
-        assert pgid is None or pgid not in self._pgids
-
-        while True:
-            # Try and get all the processes descendants first, before we
-            # try and terminate it and lose the process tree.
-            descendants = set()
-
-            # (1) Add processes with same PGID as 'process'.
-            #
-            # This gets all processes that 'process' created that did not
-            # create a new process group, even if they double forked and
-            # are no longer direct descendants of 'process'.
-            if pgid is not None:
-                for p in psutil.process_iter():
-                    try:
-                        if os.getpgid(p.pid) == pgid:
-                            descendants.add(p)
-                    except ProcessLookupError:
-                        # Process might have already exited, e.g., because it
-                        # crashed, or we already killed it.
-                        pass
-
-            # (2) Add descendants of 'process'.
-            #
-            # This gets processes that might have changed their process
-            # group but are still descendants of 'process'.
-            try:
-                for p in psutil.Process(process.pid).children(recursive=True):
-                    descendants.add(p)
-            except psutil.NoSuchProcess:
-                # Process 'process' might have already exited, e.g.,
-                # because it crashed, or we already killed it.
-                pass
-
-            # Send SIGTERM to the process _but not_ the descendants, and
-            # give it time to stop on its own. A process asked to stop
-            # stops what it started, e.g., an application its servers
-            # and Envoy, and cleans up after itself, and some of that
-            # cleanup starts processes of its own, e.g., removing a
-            # name from the portless proxy runs the `portless` CLI, a
-            # Node.js process that takes a while to start. Terminating
-            # everything in its process group a tenth of a second
-            # later, and killing it all a second after that, as we
-            # used to, killed that cleanup more often than not (see
-            # https://github.com/reboot-dev/reboot/issues/268).
-            # Whatever the process leaves behind, and a process that
-            # ignores the signal, is terminated and then killed below.
-            try:
-                process.terminate()
-            except ProcessLookupError:
-                # Process might have already exited, e.g., because it
-                # crashed, or we already killed it.
-                pass
-
-            try:
-                await asyncio.wait_for(
-                    process.wait(),
-                    timeout=TERMINATE_GRACE_SECONDS,
-                )
-            except asyncio.TimeoutError:
-                # Still running: it gets terminated again, with its
-                # descendants, and killed, below.
-                pass
-
-            # (3) Add _our_ descendants that are not expected, i.e.,
-            # _not_ processes that we've created via `exec()` or
-            # `shell()` and still want to be running.
-            #
-            # On Linux when we enable the subreaper any process that
-            # has both changed its process group and tried to double
-            # fork (so that they were no longer a descendant of
-            # 'process') should now be a descendant of us, however,
-            # they will be in a different process group than us which
-            # we will now kill (if it is not expected).
-            #
-            # While we are doing this it's possible that we'll get new
-            # children re-parented to us thanks to the Linux subreaper
-            # and we need to try this all again if that occurs.
-            might_have_new_children = False
-
-            for p in psutil.Process(os.getpid()).children():
-                # Skip if it's one of our processes.
-                if any(p.pid == process.pid for process in self._processes):
-                    continue
-                try:
-                    # Skip this process if it is in the process group
-                    # of one of our processes (it must have
-                    # double-forked and got reparented to us thanks to
-                    # the Linux subreaper).
-                    if os.getpgid(p.pid) in self._pgids:
-                        continue
-                except ProcessLookupError:
-                    # Process 'p' must now have exited, e.g., because
-                    # it crashed or we already killed it (but it
-                    # actually exited after it was determined one of
-                    # our children).
-                    #
-                    # On Linux with the subreaper this might mean we
-                    # get new children re-parented to us.
-                    might_have_new_children = True
-                else:
-                    # Ok, it's not one of our processes nor is it in
-                    # the process group of one of our processes, let's
-                    # kill this process.
-                    descendants.add(p)
-
-                    # And all of it's children!
-                    descendants |= set(p.children(recursive=True))
-
-            # We should never accidently try and terminate ourselves.
-            assert not any(
-                descendant.pid == os.getpid() for descendant in descendants
+            # Terminating runs to its end even if we are cancelled while
+            # it does, e.g., by a signal to `rbt dev run` during the
+            # grace it gives an application it is restarting: a
+            # cancellation that cut it short left that application, and
+            # everything it had started, running (#278). So it runs as a
+            # task of its own, which `wait_for_tasks()` waits for through
+            # a cancellation, and the cancellation propagates once the
+            # task is done.
+            terminate_task = asyncio.create_task(
+                terminate(),
+                name=f'terminate() in {__name__}',
             )
-
-            if len(descendants) == 0 and not might_have_new_children:
-                break
-
-            for descendant in descendants:
-                try:
-                    descendant.terminate()
-                except psutil.NoSuchProcess:
-                    # Process might have already exited, e.g., because it
-                    # crashed, or we already killed it.
-                    pass
-
-            _, alive = psutil.wait_procs(descendants, timeout=1)
-
-            for descendant in alive:
-                try:
-                    descendant.kill()
-                except psutil.NoSuchProcess:
-                    # Process might have already exited, e.g., because
-                    # it crashed, or we already killed it.
-                    pass
-
-            # Can't wait forever here because a process can't ignore kill.
-            psutil.wait_procs(alive)
+            await wait_for_tasks([terminate_task], cancel=False)
+            # Raises whatever `terminate()` raised, if it did.
+            terminate_task.result()

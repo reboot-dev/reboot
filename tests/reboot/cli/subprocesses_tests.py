@@ -1,5 +1,6 @@
 import asyncio
 import gc
+import psutil
 import unittest
 from reboot.cli.common import subprocesses
 from unittest.mock import patch
@@ -64,6 +65,46 @@ class TerminateTest(unittest.IsolatedAsyncioTestCase):
             ) as process:
                 await self._ready(process)
         self.assertNotEqual(process.returncode, 0)
+
+    async def test_a_cancellation_does_not_cut_terminating_short(
+        self,
+    ) -> None:
+        """A cancellation that lands while the process is being
+        terminated, e.g., a signal to `rbt dev run` during the grace it
+        gives an application it is restarting, propagates once the
+        process is gone, not before, so that a process that ignores
+        the signal still gets killed."""
+        process_future = asyncio.get_running_loop().create_future()
+
+        async def run() -> None:
+            async with self.subprocesses.exec(
+                'sh',
+                '-c',
+                # Says on stderr that it was asked to stop, and then
+                # ignores that; stdout is closed by then.
+                self._script('echo terminated >&2'),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            ) as process:
+                process_future.set_result(process)
+                await self._ready(process)
+
+        with patch.object(subprocesses, 'TERMINATE_GRACE_SECONDS', 0.5):
+            task = asyncio.create_task(run())
+            process = await process_future
+            # Once the process has been asked to stop, terminating it
+            # is in its grace wait: nothing is awaited in between.
+            assert process.stderr is not None
+            line = await asyncio.wait_for(
+                process.stderr.readline(),
+                timeout=10.0,
+            )
+            self.assertEqual(line, b'terminated\n')
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+
+        self.assertFalse(psutil.pid_exists(process.pid))
 
 
 if __name__ == '__main__':
