@@ -119,7 +119,8 @@ try:
         run('create',tu,str(uuid.uuid4()),target=True)
         if case=='target-contract':
             initial=inspect(); key=str(uuid.uuid4())
-            for probe in ['constructor','writer','wrong-schema','bad-request','bad-schedule']:
+            for probe in ['constructor','writer','wrong-schema','bad-request','bad-schedule',
+                          'relative-legacy','relative-missing','relative-both','relative-negative','relative-nanos','relative-overflow']:
                 output=run('spawn-probe',tu,probe,key,target=True,good=False)
                 assert 'Error' in output and inspect()==initial
             child_id=run('spawn-probe',tu,'valid',key,target=True)

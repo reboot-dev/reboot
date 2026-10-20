@@ -12,7 +12,59 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
-## Generated workflow-to-workflow spawn (bounded foundation)
+## Canonical workflow Task handles and cancellation
+
+Generated `*WorkflowRef` now supplies `_task` and `_retrieve` typed handles with
+canonical `TaskId`, explicit destination/credentials and descriptor-derived
+response/error contracts. Handles are cloneable, do not retain an old workflow
+attempt and do not cancel on Drop. `wait(context)` acknowledges only validated
+durable success, declared error or canonical system Cancelled; a parent may catch
+those outcomes and commit a continuation. `wait_external()` uses the same decoder
+without granting workflow-attempt authority. Malformed terminals and transport
+errors do not acknowledge the attempt; catching a rich-looking RPC CANCELLED
+cannot admit a subsequent writer through the failed-attempt scope fence.
+
+Explicit administrative `cancel()` uses actual `rbt.v1alpha1.Tasks.CancelTask`.
+The target requires the existing separate admin verifier/authorizer and original
+placement/generation. Scheduled and running **non-cursor workflow** tasks complete
+through the real synchronous Database CAS under actor admission. Only its ACK
+notifies the original supervised body; no detached cancellation worker exists.
+Wait disclosure is fenced while that ACK is pending. ACK loss/drop preserves
+sticky uncertainty and requires recovery, not a guessed successful cancellation.
+Previously acknowledged effects are retained. Host shutdown remains distinct
+from canonical child cancellation. The transient administrative statuses are
+**not** a journaled workflow decision or replay-stable cancellation receipt.
+
+`_task_after` / `_spawn_after` support a nonnegative `std::time::Duration`. The
+target computes its absolute timestamp **once**, stores it atomically with the
+task/admission receipt and validates/adopts those exact bytes on replay. A
+distinct experimental `SpawnAfter` RPC fences older servers before they can
+ignore the delay. This is target-admission-clock scheduling, not equivalence to
+Python's caller-clock `now() + timedelta`, nor support for negative timedeltas.
+
+The canonical Python/native map, qualification commands and remaining boundaries
+are in [TASK-LIFECYCLE-MAP.md](TASK-LIFECYCLE-MAP.md). The native gate generates
+Python Tasks stubs from the actual canonical schemas and exercises those clients,
+the generated Rust public services and two real C++ Database processes. This is
+bounded Tasks wire interoperability, **not full Python application parity**.
+Spawn admission is still Rust-only: canonical Python Tasks defines no Spawn RPC.
+No transaction integration, generic task targets, running-cursor cancellation,
+cursor admission/GC, automatic routing/migration or implicit cascading cancellation
+is claimed. The native executable is reused/hash-pinned, not freshly C++-built.
+
+Qualification: [native lifecycle checkpoint](tests/evidence/workflow-task-lifecycle-20261020.md)
+and [machine receipt](tests/evidence/workflow-task-lifecycle-20261020.json).
+The final locked offline all-target run passed 849 library tests (7 library
+ignores), its generated-consumer suite passed 55, and strict SDK/fixture Clippy
+passed. Separately enabled native gates passed 19 canonical Task scenarios and
+16 spawn regressions, with 1,066 original-parent child waits. The all-target run
+reported 169 ignored entries; other ignored gates were not requalified. Four
+native source mutants, one refreshed publication-lock unit mutant and two real
+parent cleanup drills were retained. All 379 final executable/schema/Cargo input
+hashes match the tested source; exact source objects and the raw archive were
+independently verified offhost. This remains a bounded checkpoint, not full parity.
+
+## Generated workflow-to-workflow spawn (original admission foundation)
 
 Workflow-bearing generated adapters now expose `workflow_spawner()` and typed
 `*WorkflowRef` methods: `_spawn`, `_wait`, and their composed callable workflow.
@@ -29,7 +81,9 @@ The transport is an explicitly **Rust-only experimental protocol**, not Python's
 generated Tasks wire service. Root/finite source scopes and non-cursor workflow
 targets on existing explicitly registered actors are supported; constructor,
 generic reader/writer spawning, transaction scheduling, automatic placement,
-relative schedules, cursor receipt GC and Python-style Task objects are not.
+cursor receipt GC are not. Typed Task handles and bounded relative schedules are
+now provided by the lifecycle foundation above; the original evidence below
+qualifies only its original spawn checkpoint.
 Python itself excludes constructors from schedule/spawn. New native qualification
 uses two hosts/two real C++ Databases, retained restart, immutable-contract and
 authorization negatives, concurrency, typed error continuation, cancellation,

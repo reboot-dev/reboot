@@ -1,5 +1,11 @@
 # Generated callable workflow spawning
 
+This records the original spawn checkpoint. Current typed Task handles, canonical
+running-child cancellation and bounded relative scheduling are mapped separately
+in [TASK-LIFECYCLE-MAP.md](TASK-LIFECYCLE-MAP.md); its new evidence does not rewrite
+the original proof boundaries or retrospectively turn source shutdown into
+canonical child cancellation.
+
 ## Python contract map
 
 Mapped against the source at base `091b42d093bc2a92026322053227f81196e34f85`:

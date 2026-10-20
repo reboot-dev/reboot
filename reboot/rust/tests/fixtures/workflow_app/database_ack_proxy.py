@@ -1,4 +1,4 @@
-"""Transparent raw-wire Database proxy: drop only an observed real Store ACK.
+"""Transparent raw-wire Database proxy: drop only an observed real mutation ACK.
 No generated database substitute, state seeding, mutation retry, or fake response.
 Requires grpcio in the invoking Python environment. Fixture-only wire inspection
 uses the canonical StoreRequest/IdempotentMutation/Any/checkpoint field numbers.
@@ -6,6 +6,7 @@ uses the canonical StoreRequest/IdempotentMutation/Any/checkpoint field numbers.
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
+import os
 from pathlib import Path
 import signal
 import sys
@@ -102,22 +103,30 @@ def main():
                     # Fault is strictly AFTER the upstream real RPC succeeded.
                     response = call(body)
                     with lock:
-                        drop = method == 'Store' and not claimed.is_set() and boundary(body) == selected
+                        drop = not claimed.is_set() and (
+                            (method == 'Store' and boundary(body) == selected) or
+                            (method == 'CompleteTask' and selected == 'cancel'))
                         if drop:
                             claimed.set()
                     if drop:
-                        assert fields(body).get(7) == [1], 'fault requires synchronous Store'
-                        (root / 'store-request.pb').write_bytes(body)
-                        (root / 'store-response.pb').write_bytes(response)
-                        (root / 'ack-observed.json').write_text(json.dumps({
-                            'boundary': selected, 'real_store_ack_observed': True,
+                        assert fields(body).get(2 if method == 'CompleteTask' else 7) == [1], 'fault requires synchronous mutation'
+                        prefix='complete-task' if method == 'CompleteTask' else 'store'
+                        if method == 'CompleteTask': assert fields(response).get(1)==[1], 'native completion CAS must have won'
+                        (root / f'{prefix}-request.pb').write_bytes(body)
+                        (root / f'{prefix}-response.pb').write_bytes(response)
+                        marker=root / 'ack-observed.json.tmp'
+                        marker.write_text(json.dumps({
+                            'boundary': selected, 'real_store_ack_observed': method == 'Store',
+                            'method': method, 'real_native_ack_observed': True,
                             'request_sha256': hashlib.sha256(body).hexdigest(),
                             'response_sha256': hashlib.sha256(response).hexdigest(),
                             'downstream_success_delivered': False,
                         }, indent=2))
+                        with marker.open('rb') as f: os.fsync(f.fileno())
+                        os.replace(marker,root / 'ack-observed.json')
                         while not (root / 'release').exists() and not stopping.wait(.01) and context.is_active():
                             pass
-                        context.abort(grpc.StatusCode.UNAVAILABLE, 'injected lost real Store ACK')
+                        context.abort(grpc.StatusCode.UNAVAILABLE, 'injected lost real native ACK')
                     return response
                 except grpc.RpcError as error:
                     context.set_trailing_metadata(error.trailing_metadata() or [])

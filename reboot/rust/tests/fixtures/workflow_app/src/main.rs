@@ -64,9 +64,33 @@ impl generated::LedgerMethodsDatabaseHandler for Ledger {
                 },
             ));
         }
-        if request.amount == 999 {
+        if request.amount == 998 {
+            generated::LedgerMethodsWorkflowSteps::first(
+                context,
+                Arc::new(self.clone()),
+                "child-before-cancel",
+                proto::Step { amount: 5 },
+            )
+            .await
+            .map_err(generated::LedgerMethodsChildError::Grpc)?;
+            event("child-checkpoint-acked");
+        }
+        if request.amount == 999 || request.amount == 998 {
+            struct ParkedBody;
+            impl Drop for ParkedBody {
+                fn drop(&mut self) {
+                    event("child-body-retired");
+                }
+            }
+            let _body = ParkedBody;
             event("child-parked");
-            std::future::pending::<()>().await;
+            if let Ok(path) = std::env::var("CHILD_PARK_RELEASE") {
+                while !std::path::Path::new(&path).exists() {
+                    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                }
+            } else {
+                std::future::pending::<()>().await;
+            }
         }
         generated::LedgerMethodsWorkflowSteps::first(
             context,
@@ -563,6 +587,26 @@ impl generated::LedgerMethodsDatabaseHandler for Ledger {
 struct SchedulingPolicy {
     path: std::path::PathBuf,
 }
+struct TaskAdminVerifier;
+impl reboot::auth::TokenVerifier for TaskAdminVerifier {
+    fn verify<'a>(
+        &'a self,
+        _: &'a reboot::auth::AuthorizationContext,
+        token: Option<&'a str>,
+    ) -> reboot::auth::VerifyFuture<'a> {
+        Box::pin(async move {
+            if token == Some("task-admin") {
+                reboot::auth::TokenVerification::Authenticated(reboot::auth::Auth::new(
+                    "task-admin".into(),
+                ))
+            } else {
+                reboot::auth::TokenVerification::Unauthenticated {
+                    message: "task admin token required".into(),
+                }
+            }
+        })
+    }
+}
 impl reboot::auth::Authorizer for SchedulingPolicy {
     fn authorize<'a>(
         &'a self,
@@ -589,7 +633,8 @@ impl reboot::auth::Authorizer for SchedulingPolicy {
             }
             if (context.method.ends_with(".ScheduleWork")
                 || context.method.ends_with(".Child")
-                || context.method.ends_with(".Wait"))
+                || context.method.ends_with(".Wait")
+                || context.method.ends_with(".CancelTask"))
                 && std::fs::read_to_string(&self.path).unwrap().trim() == "deny"
             {
                 reboot::auth::AuthorizationDecision::PermissionDenied {
@@ -708,6 +753,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if mode == "spawn-probe" {
         return spawned::probe().await;
     }
+    if mode == "task-cancel" || mode == "task-handle-wait" {
+        let actor = reboot::actor_ref::ActorRef::from_id("workflow.v1.Ledger", "child")?;
+        let reference = generated::LedgerMethodsWorkflowRef::new(
+            tonic::transport::Endpoint::from_shared(arg(2))?
+                .connect()
+                .await?,
+            actor.clone(),
+            reboot::CallerId::new("a0000000001", None)?,
+            Some("task-admin".into()),
+        )?;
+        let task = reference.child_retrieve(db::TaskId {
+            state_type: actor.state_type().into(),
+            state_ref: actor.state_ref().as_str().into(),
+            task_uuid: uuid::Uuid::parse_str(&arg(3))?.as_bytes().to_vec(),
+        })?;
+        if mode == "task-cancel" {
+            println!("{:?}", task.cancel().await?);
+        } else {
+            match task.wait_external().await {
+                Ok(value) => println!("success:{}", value.value),
+                Err(generated::LedgerMethodsChildError::BelowThreshold(error)) => {
+                    println!("below:{}", error.observed)
+                }
+                Err(generated::LedgerMethodsChildError::Grpc(error)) => {
+                    if error.code() != tonic::Code::Cancelled {
+                        return Err(error.into());
+                    }
+                    println!("cancelled");
+                }
+            }
+        }
+        return Ok(());
+    }
     if mode == "serve-target" {
         let store = DatabaseActorStore::connect(arg(2)).await?;
         ApplicationHost::new(application())
@@ -754,12 +832,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             ),
             Err(_) => reboot::auth::AuthorizationPolicy::permissive_for_development(),
         };
-        let wait = tasks.wait_service_with_policy(
+        let mut wait = reboot::one_shot_tasks::ReaderTaskWaitService::new(
+            [tasks.clone()],
             reboot::legacy_placement::LegacyApplicationId::new(application())?,
             "server",
             plan(address.port()),
-            wait_policy,
-        );
+        )?
+        .with_wait_policy(wait_policy);
+        if let Ok(path) = std::env::var("WORKFLOW_TASK_ADMIN_POLICY") {
+            wait = wait.with_admin_authorization(
+                Arc::new(TaskAdminVerifier),
+                Arc::new(SchedulingPolicy { path: path.into() }),
+            );
+        }
+        let wait = db::tasks_server::TasksServer::new(wait);
         ApplicationHost::new(application())
             .with_host_recovery(tasks.recovery(db::RecoverRequest {
                 state_tags_by_state_type: [("workflow.v1.Ledger".into(), "Ledger".into())].into(),

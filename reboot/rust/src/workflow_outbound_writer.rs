@@ -51,6 +51,7 @@ impl WorkflowWriterTarget {
 }
 /// Generated ordinary writer contract. Custom callers/bindings are trusted
 /// application code; this descriptor does not certify arbitrary remote servers.
+#[derive(Clone)]
 pub struct WorkflowWriterMethod {
     pub state_type: &'static str,
     pub method: &'static str,

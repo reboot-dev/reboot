@@ -39,6 +39,64 @@ impl crate::workflow_spawn_proto::workflow_spawner_server::WorkflowSpawner for W
         &self,
         request: tonic::Request<crate::workflow_spawn_proto::SpawnRequest>,
     ) -> Result<tonic::Response<db::TaskId>, Status> {
+        if request.get_ref().relative_delay.is_some() {
+            return Err(Status::invalid_argument(
+                "relative scheduling requires SpawnAfter",
+            ));
+        }
+        self.admit(request).await
+    }
+    async fn spawn_after(
+        &self,
+        request: tonic::Request<crate::workflow_spawn_proto::SpawnRequest>,
+    ) -> Result<tonic::Response<db::TaskId>, Status> {
+        let body = request.get_ref();
+        if body.relative_delay.is_none() || body.timestamp.is_some() {
+            return Err(Status::invalid_argument(
+                "SpawnAfter requires only a relative delay",
+            ));
+        }
+        validate_relative_delay(body.relative_delay.as_ref().expect("checked delay"))?;
+        self.admit(request).await
+    }
+}
+fn validate_relative_delay(delay: &prost_types::Duration) -> Result<(), Status> {
+    if delay.seconds < 0
+        || delay.seconds > 315_576_000_000
+        || !(0..1_000_000_000).contains(&delay.nanos)
+    {
+        return Err(Status::invalid_argument(
+            "relative workflow delay is out of range",
+        ));
+    }
+    Ok(())
+}
+fn relative_workflow_timestamp(
+    delay: &prost_types::Duration,
+    now: std::time::Duration,
+) -> Result<prost_types::Timestamp, Status> {
+    validate_relative_delay(delay)?;
+    let absolute = now
+        .checked_add(std::time::Duration::new(
+            delay.seconds as u64,
+            delay.nanos as u32,
+        ))
+        .ok_or_else(|| Status::invalid_argument("relative workflow timestamp overflow"))?;
+    if absolute.as_secs() > 253_402_300_799 {
+        return Err(Status::invalid_argument(
+            "relative workflow timestamp exceeds protobuf range",
+        ));
+    }
+    Ok(prost_types::Timestamp {
+        seconds: absolute.as_secs() as i64,
+        nanos: absolute.subsec_nanos() as i32,
+    })
+}
+impl WorkflowSpawner {
+    async fn admit(
+        &self,
+        request: tonic::Request<crate::workflow_spawn_proto::SpawnRequest>,
+    ) -> Result<tonic::Response<db::TaskId>, Status> {
         use prost::Message;
         let headers = crate::RebootHeaders::from_request(&request)
             .map_err(|error| Status::invalid_argument(error.to_string()))?;
@@ -89,7 +147,7 @@ impl crate::workflow_spawn_proto::workflow_spawner_server::WorkflowSpawner for W
             state_ref: self.tasks.inner.state_ref.clone(),
             task_uuid: initializer_uuid("reboot.workflow-spawn.task.v1", &key.to_string()),
         };
-        let task = db::Task {
+        let mut task = db::Task {
             task_id: Some(id.clone()),
             method: body.method.rsplit('.').next().unwrap_or("").into(),
             request: body.request.clone(),
@@ -166,6 +224,15 @@ impl crate::workflow_spawn_proto::workflow_spawner_server::WorkflowSpawner for W
                 if replay {
                     return Err(Status::data_loss("duplicate workflow spawn receipt"));
                 }
+                if body.relative_delay.is_some() {
+                    let saved = db::Task::decode(record.response.as_slice())
+                        .map_err(|_| Status::data_loss("malformed relative scheduling receipt"))?;
+                    task.timestamp =
+                        Some(saved.timestamp.ok_or_else(|| {
+                            Status::data_loss("relative receipt omitted timestamp")
+                        })?);
+                    self.tasks.validate(std::slice::from_ref(&task))?;
+                }
                 if record.state_type != id.state_type
                     || record.state_ref != id.state_ref
                     || record.key != key.as_bytes()
@@ -193,6 +260,15 @@ impl crate::workflow_spawn_proto::workflow_spawner_server::WorkflowSpawner for W
             return Err(Status::failed_precondition(
                 "spawn task exists without atomic admission receipt",
             ));
+        }
+        if let Some(delay) = &body.relative_delay {
+            // Resolve only for fresh admission under the actor lease. On replay
+            // adopt only the timestamp validated against the atomic receipt.
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|_| Status::internal("system clock is before Unix epoch"))?;
+            task.timestamp = Some(relative_workflow_timestamp(delay, now)?);
+            self.tasks.validate(std::slice::from_ref(&task))?;
         }
         let admission = self
             .tasks

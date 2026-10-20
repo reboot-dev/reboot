@@ -316,6 +316,7 @@ pub struct TaskMethodDeclaration {
     workflow_reader_wait: bool,
     constructor_scheduling: bool,
 }
+#[derive(Clone)]
 pub struct DeclaredTaskError {
     type_url: &'static str,
     decode: fn(&[u8]) -> Result<(), Status>,
@@ -462,6 +463,9 @@ struct Inner {
     // Weak avoids a cycle: the host supervisor retains the exact shared scope.
     shared_recovery: Mutex<Option<std::sync::Weak<SharedTaskScope>>>,
     running_owner: Mutex<Option<Arc<()>>>,
+    // Execution-owned notifications, never a substitute for canonical terminal CAS.
+    workflow_cancellations: Mutex<std::collections::HashMap<Vec<u8>, tokio::sync::watch::Sender<bool>>>,
+    cancellation_in_flight: std::sync::atomic::AtomicBool,
     // Read/write only while running_owner is locked. Bound to the cancellation
     // actually supplied to OneShotTaskRecovery::start, never an erased wrapper.
     recovery_owner: Mutex<Option<RecoveryCancellation>>,
@@ -592,6 +596,8 @@ impl OneShotTasks {
                 recovery_request: Mutex::new(None),
                 shared_recovery: Mutex::new(None),
                 running_owner: Mutex::new(None),
+                workflow_cancellations: Mutex::new(std::collections::HashMap::new()),
+                cancellation_in_flight: false.into(),
                 recovery_owner: Mutex::new(None),
                 uncertain: tokio::sync::watch::channel(false).0,
                 max_live: std::sync::atomic::AtomicUsize::new(MAX_TASKS),
@@ -3175,9 +3181,10 @@ impl ReaderTaskWaitService {
     /// Default is deny; listing/stream/cancellation do not alter Wait authorization.
     /// Both application-owned policies are required. Authorization gets the encoded
     /// RPC request, exact method, no actor state and server-owned identity.
-    /// CancelTask accepts only not-yet-due workflows still SCHEDULED in this owner
-    /// generation. It synchronously persists a system Cancelled terminal without
-    /// rolling back submission state; running/ordinary task cancellation is rejected.
+    /// CancelTask synchronously persists a system Cancelled terminal for scheduled
+    /// or running non-cursor workflows, then notifies the original supervised body.
+    /// It never rolls back acknowledged effects. Running cursors and ordinary task
+    /// cancellation are rejected. Administrative statuses are not durable receipts.
     /// Listing is pending-only and eventually refreshed by canonical singleton
     /// scans; phase timestamps and retry counts are local to this generation.
     /// The stream rechecks policy and original owner authority on each 200ms pulled
@@ -3379,7 +3386,7 @@ impl db::tasks_server::Tasks for ReaderTaskWaitService {
         &self,
         request: tonic::Request<db::CancelTaskRequest>,
     ) -> Result<tonic::Response<db::CancelTaskResponse>, Status> {
-        self.cancel_scheduled_workflow(request).await
+        self.cancel_workflow_task(request).await
     }
 }
 
@@ -3551,7 +3558,7 @@ impl ReaderTaskWaitService {
             if let Some(entry) = &live_entry {
                 entry.host.check_reader_admission()?;
             }
-            {
+            'disclosure: {
                 // Revocation and terminal disclosure share this exact entry lock.
                 let _live_publication = live_entry.as_ref().map(|entry| entry.check()).transpose()?;
                 // Retain the original owner through the synchronous disclosure decision.
@@ -3570,6 +3577,21 @@ impl ReaderTaskWaitService {
                 // Loading can await while a newer plan moves this actor. Never
                 // return a result under the authority checked before that await.
                 self.require_authority(&id.state_ref)?;
+                if tasks.inner.cancellation_in_flight.load(std::sync::atomic::Ordering::Acquire) {
+                    #[cfg(feature = "test-support")]
+                    if let Some(path) = std::env::var_os("REBOOT_TEST_TASK_WAIT_CANCEL_PENDING") {
+                        let path = std::path::Path::new(&path);
+                        if !path.exists() {
+                            std::fs::write(path, b"actual authorized Wait loaded task; cancellation ACK still fenced")
+                                .map_err(|error| Status::internal(error.to_string()))?;
+                        }
+                    }
+                    // Keep a healthy concurrent Wait pending, not failed. Drop
+                    // publication locks before the normal bounded poll delay.
+                    // Lost ACK will atomically publish sticky uncertainty and
+                    // make the next original-owner check fail closed.
+                    break 'disclosure;
+                }
                 if loaded.tasks.is_empty() {
                     return Err(Status::not_found("task not found"));
                 }

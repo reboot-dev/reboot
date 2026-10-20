@@ -552,6 +552,10 @@ fn emit_workflow_service(
             rust.clone(),
             format!("{rust}_spawn"),
             format!("{rust}_wait"),
+            format!("{rust}_task"),
+            format!("{rust}_retrieve"),
+            format!("{rust}_spawn_after"),
+            format!("{rust}_task_after"),
         ] {
             if let Some(previous) = initializer_names.insert(helper.clone(), name) {
                 return Err(format!(

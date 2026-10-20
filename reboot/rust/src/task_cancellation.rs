@@ -1,8 +1,59 @@
-// Bounded local cancellation: scheduled workflow bodies which have not started.
-// Running bodies and ordinary task targets are intentionally not interrupted.
+// Canonical local workflow cancellation. CompleteTask owns the terminal; only
+// its synchronous ACK may notify the supervised body. Shutdown is not CancelTask.
 use prost::Message;
 
 const CANCELLED_TYPE: &str = "type.googleapis.com/rbt.v1alpha1.Cancelled";
+
+// The original execution owns registration lifetime, including cancellation and
+// supervisor abort. No detached body and no request-owned replacement token.
+struct WorkflowCancellationRegistration {
+    tasks: OneShotTasks,
+    id: Vec<u8>,
+    signal: tokio::sync::watch::Sender<bool>,
+}
+impl WorkflowCancellationRegistration {
+    fn new(tasks: &OneShotTasks, task: &db::Task) -> Result<Self, Status> {
+        let id = task
+            .task_id
+            .as_ref()
+            .ok_or_else(|| Status::data_loss("missing workflow ID"))?
+            .task_uuid
+            .clone();
+        let signal = tokio::sync::watch::channel(false).0;
+        let mut registrations = tasks
+            .inner
+            .workflow_cancellations
+            .lock()
+            .expect("workflow cancellation mutex poisoned");
+        if registrations.contains_key(&id) {
+            return Err(Status::failed_precondition(
+                "workflow already has an execution owner",
+            ));
+        }
+        registrations.insert(id.clone(), signal.clone());
+        Ok(Self {
+            tasks: tasks.clone(),
+            id,
+            signal,
+        })
+    }
+}
+impl Drop for WorkflowCancellationRegistration {
+    fn drop(&mut self) {
+        let mut registrations = self
+            .tasks
+            .inner
+            .workflow_cancellations
+            .lock()
+            .expect("workflow cancellation mutex poisoned");
+        if registrations
+            .get(&self.id)
+            .is_some_and(|signal| signal.same_channel(&self.signal))
+        {
+            registrations.remove(&self.id);
+        }
+    }
+}
 
 /// Recognize the exact canonical system cancellation terminal, not a bare code.
 /// Non-cancellation terminals return None and still need method-scoped validation.
@@ -27,7 +78,7 @@ fn cancelled_terminal(method: &str) -> db::task::ResponseOrError {
         type_url: "type.googleapis.com/google.rpc.Status".into(),
         value: googleapis_tonic_google_rpc::google::rpc::Status {
             code: tonic::Code::Cancelled as i32,
-            message: format!("the scheduled workflow running '{method}' was cancelled"),
+            message: format!("the workflow running '{method}' was cancelled"),
             details: vec![prost_types::Any {
                 type_url: CANCELLED_TYPE.into(),
                 value: db::Cancelled {}.encode_to_vec(),
@@ -44,13 +95,26 @@ struct CancellationWrite<'a> {
 }
 impl Drop for CancellationWrite<'_> {
     fn drop(&mut self) {
+        // Wait retains this mutex from its uncertainty check through disclosure.
+        // Publish uncertainty + clearing the pending-ACK fence under that same
+        // lock: otherwise Wait can read clean-before-drop and clear-after-drop.
+        let _publication = self
+            .tasks
+            .inner
+            .running_owner
+            .lock()
+            .expect("task owner mutex poisoned");
         if !self.acknowledged {
             self.tasks.inner.uncertain.send_replace(true);
         }
+        self.tasks
+            .inner
+            .cancellation_in_flight
+            .store(false, std::sync::atomic::Ordering::Release);
     }
 }
 impl ReaderTaskWaitService {
-    async fn cancel_scheduled_workflow(
+    async fn cancel_workflow_task(
         &self,
         request: tonic::Request<db::CancelTaskRequest>,
     ) -> Result<tonic::Response<db::CancelTaskResponse>, Status> {
@@ -143,19 +207,34 @@ impl ReaderTaskWaitService {
             return response(db::cancel_task_response::Status::NotFound);
         }
         tasks.validate(std::slice::from_ref(&task))?;
-        if !tasks.is_workflow(&task)
-            || schedule_due(&task)?
-            || !tasks.inner.listing.snapshot().iter().any(|info| {
-                info.task_id.as_ref() == Some(id)
-                    && info.status == db::task_info::Status::Scheduled as i32
-            })
+        if !tasks.is_workflow(&task) {
+            return Err(Status::failed_precondition(
+                "only registered workflows can be cancelled",
+            ));
+        }
+        // Cursor iteration/GC fencing is a distinct protocol. Preserve the old
+        // unstarted-only boundary rather than claiming running cursor support.
+        if tasks.cursor_declaration(&task).is_some()
+            && (schedule_due(&task)?
+                || !tasks.inner.listing.snapshot().iter().any(|info| {
+                    info.task_id.as_ref() == Some(id)
+                        && info.status == db::task_info::Status::Scheduled as i32
+                }))
         {
             return Err(Status::failed_precondition(
-                "only not-yet-due, unstarted workflows can be cancelled",
+                "running cursor workflows cannot be cancelled",
             ));
         }
         task.status = db::task::Status::Completed as i32;
         task.response_or_error = Some(cancelled_terminal(&task.method));
+        {
+            // Linearize the disclosure fence with Wait's original-owner lock.
+            let _owner = admission.lock()?;
+            tasks
+                .inner
+                .cancellation_in_flight
+                .store(true, std::sync::atomic::Ordering::Release);
+        }
         let mut write = CancellationWrite {
             tasks,
             acknowledged: false,
@@ -172,9 +251,9 @@ impl ReaderTaskWaitService {
             .into_inner()
             .completed;
         self.require_authority(&id.state_ref)?;
-        {
-            let _owner = admission.lock()?;
-        }
+        // Retain the original generation through notification and the synchronous
+        // response decision; never notify a replacement execution allocation.
+        let _owner = admission.lock()?;
         if !won {
             // Under the local actor lease, another terminal is unexpected. Keep
             // uncertainty sticky instead of adopting a response or retrying CAS.
@@ -183,6 +262,15 @@ impl ReaderTaskWaitService {
             ));
         }
         write.acknowledged = true;
+        if let Some(signal) = tasks
+            .inner
+            .workflow_cancellations
+            .lock()
+            .expect("workflow cancellation mutex poisoned")
+            .get(&id.task_uuid)
+        {
+            signal.send_replace(true);
+        }
         tasks.inner.sender.try_send(()).ok(); // hint only; canonical rescan owns pruning
         response(db::cancel_task_response::Status::Ok)
     }

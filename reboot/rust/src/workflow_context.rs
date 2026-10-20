@@ -2769,6 +2769,9 @@ impl<'a> WorkflowContext<'a> {
         })
     }
     pub(crate) async fn validate_scope(&self) -> Result<(), Status> {
+        if self.attempt.failed.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(Status::failed_precondition("failed framework operation fences workflow scope"));
+        }
         let operation = self.attempt.scope_operation();
         if !self.tasks.is_workflow(&self.task)
             || (self.task.iteration != 0 && self.tasks.cursor_declaration(&self.task).is_none())
@@ -3195,6 +3198,19 @@ impl OneShotTasks {
             .is_some_and(|declaration| declaration.workflow)
     }
     async fn execute_workflow_task(
+        &self,
+        task: db::Task,
+        cancel: &RecoveryCancellation,
+    ) -> Result<(), Status> {
+        let registration = WorkflowCancellationRegistration::new(self, &task)?;
+        let mut cancelled = registration.signal.subscribe();
+        tokio::select! {
+            biased;
+            _ = cancelled.wait_for(|value| *value) => Ok(()),
+            result = self.execute_registered_workflow_task(task, cancel) => result,
+        }
+    }
+    async fn execute_registered_workflow_task(
         &self,
         task: db::Task,
         cancel: &RecoveryCancellation,

@@ -1,0 +1,250 @@
+{
+  "actual_lost_ack_bytes": [
+    {
+      "case": "relative-ack-loss",
+      "method": "Store",
+      "request_sha256": "934b9413a6baa8392bd98d05619cdd8c5137693cf2f4835ab209ce7020265a0c",
+      "response_sha256": "f040e071525d901dc5fd70cdd43fb6d4632000b517395ab26ceca1775e3ecbe8"
+    },
+    {
+      "case": "cancel-ack-loss",
+      "method": "CompleteTask",
+      "request_sha256": "31942f993f379f742fdb60add37c3df3784b86e3663742850d461ce49becf495",
+      "response_sha256": "4a324dde4cd94d5175920c65fc4409e5ca08c60b98eaaa6c28a4f260ac03d0fd"
+    },
+    {
+      "case": "unknown-spawn",
+      "method": "Store",
+      "request_sha256": "564f566dce766cd3eefa7a643ce056f76b9409dac6b4702e3d630f53c3171c8f",
+      "response_sha256": "f0498ad88bc9a095807a192fd0b45ee3e954ed849cd7aedb023facc537794e01"
+    },
+    {
+      "case": "unknown-started",
+      "method": "Store",
+      "request_sha256": "de199aba5d5e7d2bb87279a924f33a7e94200e47534bc1bf2b971daa5a26a3dc",
+      "response_sha256": "a5861b4a2dfc0cc8431a56103ec97bd421ee730fef52a4b810c810d51ba48292"
+    },
+    {
+      "case": "unknown-stored",
+      "method": "Store",
+      "request_sha256": "607b57fecb8d2c2b1eefe7252249620945c39d588861b8cf129082e4f2d5e289",
+      "response_sha256": "586c4949061066d921bda70c6200a22d834b87ec1e5ad8869f1f1ccb1789d1c9"
+    }
+  ],
+  "all_target_reported_ignored_entries": 169,
+  "authorized_existing_host": {
+    "address": "2.29.27.53",
+    "authorized_class": "CCX43",
+    "expires": "2026-10-20T20:46:13+02:00",
+    "extension": false,
+    "server_id": 171072439
+  },
+  "base_commit": "151c358616341203de7dfbd2809563ea704a72e8",
+  "exclusions": [
+    "RocksDB directories; exact task/receipt snapshots retained in receipts",
+    "Cargo caches, generated temporary compile trees and large binaries; executables hash-pinned"
+  ],
+  "explicitly_exercised_ignored_gates": [
+    "workflow_task_native",
+    "workflow_spawn_native"
+  ],
+  "final_source_unchanged": true,
+  "final_systemd_readback": {
+    "task-lifecycle-final-green3": {
+      "ActiveState": "inactive",
+      "ExecMainStatus": "0",
+      "MainPID": "0",
+      "Result": "success"
+    },
+    "task-lifecycle-final3-mutants": {
+      "ActiveState": "inactive",
+      "ExecMainStatus": "0",
+      "MainPID": "0",
+      "Result": "success"
+    }
+  },
+  "fresh_cpp_build": false,
+  "full_python_parity": false,
+  "library_ignored": 7,
+  "library_passed": 849,
+  "mapped_python_and_native_source_pins": {
+    "rbt/v1alpha1/database.proto": "7a41109aa4dfce4b58fcb0fdb4e5ba586845cd43f696628f19129c90a967a0d0",
+    "rbt/v1alpha1/errors.proto": "f7a0affb29f4c4123d0a469c7f2e53b3790acfc241f6471973dc1e89f86266a0",
+    "rbt/v1alpha1/tasks.proto": "165158e65cdd131a20d938a80ed1632119e11be2a658609ed2da12cede0489af",
+    "reboot/aio/contexts.py": "bf6d31775f73957833b1235cc054a15afd6982dddb28438e620d9b1a5857a73f",
+    "reboot/aio/internals/tasks_dispatcher.py": "f114bfbbdd568a2aa3b9ff7d859e0420b1a0e685ea5f494b7197573bc52e321a",
+    "reboot/aio/internals/tasks_servicer.py": "c13b3fc7d2c07eff74bb9213a562bdd3f4979073d791e01ff0215744d944b9b4",
+    "reboot/aio/tasks.py": "20a0f837fe9434883d21d179e7de854b94eb64e4d6741e93c6ecbd33fcd809c2",
+    "reboot/server/database.cc": "79404e6ed4f8b227aa0f56505eab04908d03adaae68a7af0f8d11348a45549c1",
+    "reboot/server/database.h": "1e350014adf3546df53ed4baaf9011fedaa85503df782201f75bd61b27d7de9f",
+    "reboot/templates/reboot.py.j2": "af8a11b80e68f9a26accd5bec081452d54803f4b1988b1369cbd89ddec79110b"
+  },
+  "mutation_controls": [
+    {
+      "exact_source_objects_retained": true,
+      "failure": "AssertionError('bounded observation timeout')",
+      "final_native_and_runtime_inputs_match": true,
+      "kind": "native-red",
+      "name": "skip-notification-final3",
+      "original_parent_waited_children": 18,
+      "returncode": 1,
+      "source_unchanged": true,
+      "unit_fixture_only_followup": "reboot/rust/src/task_cancellation_tests.rs"
+    },
+    {
+      "exact_source_objects_retained": true,
+      "failure": "AssertionError('Error: RecoveryTask(Status { code: FailedPrecondition, message: \"failed framework operation fences workflow scope\", source: None })\\n')",
+      "final_native_and_runtime_inputs_match": true,
+      "kind": "native-red",
+      "name": "poison-catch-final3",
+      "original_parent_waited_children": 19,
+      "returncode": 1,
+      "source_unchanged": true,
+      "unit_fixture_only_followup": "reboot/rust/src/task_cancellation_tests.rs"
+    },
+    {
+      "exact_source_objects_retained": true,
+      "failure": "AssertionError('canonical Wait disclosed before cancellation ACK')",
+      "final_native_and_runtime_inputs_match": true,
+      "kind": "native-red",
+      "name": "leak-pending-ack-final3",
+      "original_parent_waited_children": 21,
+      "returncode": 1,
+      "source_unchanged": true,
+      "unit_fixture_only_followup": "reboot/rust/src/task_cancellation_tests.rs"
+    },
+    {
+      "exact_source_objects_retained": true,
+      "failure": "AssertionError('Error: RecoveryTask(Status { code: FailedPrecondition, message: \"spawn key reused with changed task/payload/schedule/schema contract\", metadata: MetadataMap { headers: {\"content-type\": \"application/grpc\", \"date\": \"Tue, 20 Oct 2026 13:26:20 GMT\", \"content-length\": \"0\"} }, source: None })\\n')",
+      "final_native_and_runtime_inputs_match": true,
+      "kind": "native-red",
+      "name": "recompute-relative-clock-final3",
+      "original_parent_waited_children": 25,
+      "returncode": 1,
+      "source_unchanged": true,
+      "unit_fixture_only_followup": "reboot/rust/src/task_cancellation_tests.rs"
+    },
+    {
+      "exact_source_objects_retained": true,
+      "final_source_differs_only_at_intended_mutation": true,
+      "kind": "unit-red",
+      "name": "nonlinear-ack-fence-final4",
+      "returncode": 101,
+      "source_unchanged": true
+    }
+  ],
+  "native": {
+    "spawn": {
+      "binary_sha256": "85a2c214a4bb78279ea6cd54d51c305ccbbf992f95fadd9a3998d487c644b42d",
+      "cases": [
+        "target-contract",
+        "basic",
+        "direct-call",
+        "concurrent",
+        "declared-error",
+        "ack-crash",
+        "payload-reject",
+        "destination-reject",
+        "schedule-reject",
+        "authorization-reject",
+        "wait-authorization-reject",
+        "cancel",
+        "future-schedule",
+        "unknown-spawn",
+        "unknown-started",
+        "unknown-stored"
+      ],
+      "database_sha256": "619002c569e9841144a8bbedf4f2ce6a753bb0e6b103af71883d91d43f413803",
+      "original_parent_waited_children": 408,
+      "parent_pid": 1033065
+    },
+    "tasks": {
+      "binary_sha256": "85a2c214a4bb78279ea6cd54d51c305ccbbf992f95fadd9a3998d487c644b42d",
+      "cases": [
+        "success",
+        "declared-error",
+        "running-cancel",
+        "scheduled-cancel",
+        "rust-handle-cancel",
+        "cancel-revocation",
+        "wait-revocation",
+        "cancel-ack-loss",
+        "cancel-catch-replay",
+        "cancel-retains-effects",
+        "cancel-race",
+        "terminal-wrong-code",
+        "terminal-malformed-detail",
+        "terminal-rpc-cancelled",
+        "relative-schedule",
+        "relative-concurrent",
+        "relative-replay",
+        "relative-ack-loss",
+        "relative-cancel"
+      ],
+      "database_sha256": "619002c569e9841144a8bbedf4f2ce6a753bb0e6b103af71883d91d43f413803",
+      "original_parent_waited_children": 658,
+      "parent_pid": 1017616
+    }
+  },
+  "native_artifact_reused": true,
+  "native_artifact_source_build_attestation": false,
+  "new_vm_install_registry_or_deploy": false,
+  "no_remaining_owned_native_processes": true,
+  "ordered_gates": [
+    "package-clean",
+    "all-targets",
+    "sdk-clippy",
+    "fixture-clippy",
+    "fixture-build",
+    "native-tasks",
+    "native-spawn",
+    "all-complete"
+  ],
+  "original_owner_joined": true,
+  "other_ignored_gates_not_requalified": true,
+  "parent_heavy_cargo": false,
+  "preliminary_green_superseded_by": "atomic cancellation ACK publication repair and healthy pending Wait",
+  "previous_spawn_original_children_waited": 397,
+  "previous_spawn_retired_before_first_new_owner": true,
+  "python_packages": {
+    "grpcio": "1.64.3",
+    "grpcio-tools": "1.64.3",
+    "protobuf": "5.29.3"
+  },
+  "python_runtime": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+  "qualified": true,
+  "real_parent_failure_and_signal_cleanup": [
+    {
+      "exact_source_objects_retained": true,
+      "failure": "RuntimeError('injected lifecycle parent failure after real hosts started')",
+      "final_native_and_runtime_inputs_match": true,
+      "kind": "native-cleanup-drill",
+      "name": "cleanup-error-final3",
+      "original_parent_waited_children": 12,
+      "returncode": 1,
+      "source_unchanged": true,
+      "unit_fixture_only_followup": "reboot/rust/src/task_cancellation_tests.rs"
+    },
+    {
+      "exact_source_objects_retained": true,
+      "failure": "InterruptedError('native lifecycle parent termination')",
+      "final_native_and_runtime_inputs_match": true,
+      "kind": "native-cleanup-drill",
+      "name": "cleanup-signal-final3",
+      "original_parent_waited_children": 12,
+      "returncode": 1,
+      "source_unchanged": true,
+      "unit_fixture_only_followup": "reboot/rust/src/task_cancellation_tests.rs"
+    }
+  ],
+  "remaining_boundaries": [
+    "Rust-only spawn admission; canonical Python Tasks has no Spawn RPC",
+    "no transaction integration or arbitrary reader/writer targets",
+    "no running cursor cancellation, cursor spawn/receipt GC or dynamic placement",
+    "nonnegative target-admission-clock relative scheduling, not Python caller-clock/negative-timedelta equivalence",
+    "administrative CancelTask status timing is not Python async-CANCELLING equivalence; raw admin responses are not journaled workflow decisions",
+    "no Python-hosted application or full middleware interoperability claim"
+  ],
+  "source_input_count": 379,
+  "source_manifest_sha256": "0baf707d1c52abe669e2e367c8f285806e44e6ca283e967bb9df65f09c3833ad"
+}

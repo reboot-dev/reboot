@@ -18,12 +18,13 @@ mod spawn_contract_tests {
             method: "demo.Methods.Child".into(),
             request: task.request.clone(),
             timestamp: None,
+            relative_delay: None,
             response_type: "type.googleapis.com/demo.Result".into(),
             errors: vec!["type.googleapis.com/demo.Failed".into()],
         };
         let fingerprint = spawn_fingerprint(&task, &request);
         assert_eq!(fingerprint, spawn_fingerprint(&task, &request));
-        for changed in 0..8 {
+        for changed in 0..9 {
             let mut task = task.clone();
             let mut request = request.clone();
             match changed {
@@ -39,7 +40,13 @@ mod spawn_contract_tests {
                     })
                 }
                 6 => request.response_type = "type.googleapis.com/demo.OtherResult".into(),
-                _ => request.errors.clear(),
+                7 => request.errors.clear(),
+                _ => {
+                    request.relative_delay = Some(prost_types::Duration {
+                        seconds: 1,
+                        nanos: 0,
+                    })
+                }
             }
             assert_ne!(
                 fingerprint,
@@ -47,5 +54,94 @@ mod spawn_contract_tests {
                 "changed field {changed}"
             );
         }
+    }
+    #[test]
+    fn relative_schedule_checks_normalization_carry_and_absolute_range() {
+        let delay = prost_types::Duration {
+            seconds: 0,
+            nanos: 1,
+        };
+        assert_eq!(
+            relative_workflow_timestamp(&delay, std::time::Duration::new(10, 999_999_999)).unwrap(),
+            prost_types::Timestamp {
+                seconds: 11,
+                nanos: 0
+            }
+        );
+        for delay in [
+            prost_types::Duration {
+                seconds: -1,
+                nanos: 0,
+            },
+            prost_types::Duration {
+                seconds: 0,
+                nanos: -1,
+            },
+            prost_types::Duration {
+                seconds: 0,
+                nanos: 1_000_000_000,
+            },
+            prost_types::Duration {
+                seconds: 315_576_000_001,
+                nanos: 0,
+            },
+        ] {
+            assert!(relative_workflow_timestamp(&delay, std::time::Duration::ZERO).is_err());
+        }
+        assert!(
+            relative_workflow_timestamp(
+                &prost_types::Duration {
+                    seconds: 1,
+                    nanos: 0
+                },
+                std::time::Duration::from_secs(253_402_300_799)
+            )
+            .is_err()
+        );
+    }
+    #[tokio::test]
+    async fn relative_schedule_requires_distinct_rpc_before_admission_or_database() {
+        use crate::workflow_spawn_proto::workflow_spawner_server::WorkflowSpawner as Service;
+        let (service, _owner, _) = task_listing_service_tests::setup(0);
+        let tasks = service.tasks.values().next().unwrap().clone();
+        let spawner = WorkflowSpawner::new(tasks, crate::auth::AuthorizationPolicy::default());
+        let relative = crate::workflow_spawn_proto::SpawnRequest {
+            relative_delay: Some(prost_types::Duration {
+                seconds: 1,
+                nanos: 0,
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            spawner
+                .spawn(tonic::Request::new(relative.clone()))
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::InvalidArgument
+        );
+        assert_eq!(
+            spawner
+                .spawn_after(tonic::Request::new(
+                    crate::workflow_spawn_proto::SpawnRequest::default()
+                ))
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::InvalidArgument
+        );
+        assert_eq!(
+            spawner
+                .spawn_after(tonic::Request::new(
+                    crate::workflow_spawn_proto::SpawnRequest {
+                        timestamp: Some(prost_types::Timestamp::default()),
+                        ..relative
+                    }
+                ))
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::InvalidArgument
+        );
     }
 }

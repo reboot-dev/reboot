@@ -137,6 +137,208 @@ fn canonical_cancellation_is_distinct_from_business_or_bare_status_errors() {
     );
 }
 struct D;
+#[tokio::test]
+async fn lost_cancellation_ack_publication_cannot_cross_a_wait_disclosure_lock() {
+    let (service, _owner, _) = task_listing_service_tests::setup(0);
+    let tasks = service.tasks.values().next().unwrap().clone();
+    tasks
+        .inner
+        .cancellation_in_flight
+        .store(true, std::sync::atomic::Ordering::Release);
+    let publication = tasks.inner.running_owner.lock().unwrap();
+    let copy = tasks.clone();
+    let (entered, entered_rx) = std::sync::mpsc::channel();
+    let (finished, finished_rx) = std::sync::mpsc::channel();
+    let dropper = std::thread::spawn(move || {
+        entered.send(()).unwrap();
+        drop(CancellationWrite {
+            tasks: &copy,
+            acknowledged: false,
+        });
+        finished.send(()).unwrap();
+    });
+    // Thread startup is not the property under test. Do not impose a one-second
+    // scheduler deadline when the full library runs concurrently; the finite
+    // outer acceptance owner supplies the overall execution deadline.
+    let entered = entered_rx.recv();
+    let blocked = finished_rx
+        .recv_timeout(std::time::Duration::from_millis(50))
+        .is_err();
+    let pending_under_disclosure = tasks
+        .inner
+        .cancellation_in_flight
+        .load(std::sync::atomic::Ordering::Acquire);
+    let clean_under_disclosure = !*tasks.inner.uncertain.borrow();
+    // Always release the held admission and join the original thread before any
+    // assertion, including RED, so a failed proof cannot strand its children.
+    drop(publication);
+    dropper.join().unwrap();
+    assert!(
+        entered.is_ok() && blocked && pending_under_disclosure && clean_under_disclosure,
+        "entered={entered:?} blocked={blocked} pending={pending_under_disclosure} clean={clean_under_disclosure}"
+    );
+    assert!(*tasks.inner.uncertain.borrow());
+    assert!(
+        !tasks
+            .inner
+            .cancellation_in_flight
+            .load(std::sync::atomic::Ordering::Acquire)
+    );
+}
+
+#[tokio::test]
+async fn execution_owns_exact_cancellation_registration_and_drop_releases_it() {
+    let (service, _owner, task) = task_listing_service_tests::setup(0);
+    let tasks = service.tasks.values().next().unwrap();
+    let registration = WorkflowCancellationRegistration::new(tasks, &task).unwrap();
+    assert!(WorkflowCancellationRegistration::new(tasks, &task).is_err());
+    let mut receiver = registration.signal.subscribe();
+    tasks
+        .inner
+        .workflow_cancellations
+        .lock()
+        .unwrap()
+        .get(&task.task_id.as_ref().unwrap().task_uuid)
+        .unwrap()
+        .send_replace(true);
+    assert!(*receiver.wait_for(|value| *value).await.unwrap());
+    drop(registration);
+    assert!(
+        tasks
+            .inner
+            .workflow_cancellations
+            .lock()
+            .unwrap()
+            .is_empty()
+    );
+    let next = WorkflowCancellationRegistration::new(tasks, &task).unwrap();
+    assert!(!*next.signal.borrow());
+    drop(next);
+    assert!(
+        tasks
+            .inner
+            .workflow_cancellations
+            .lock()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn typed_handle_retrieval_binds_actor_uuid_and_does_not_own_task_cancellation() {
+    let actor = crate::actor_ref::ActorRef::from_id("demo.State", "child").unwrap();
+    let target = WorkflowWriterTarget::new(
+        actor.clone(),
+        crate::CallerId::new("a0000000001", None).unwrap(),
+        None,
+    )
+    .unwrap();
+    let id = db::TaskId {
+        state_type: "demo.State".into(),
+        state_ref: actor.state_ref().as_str().into(),
+        task_uuid: uuid::Uuid::new_v4().as_bytes().to_vec(),
+    };
+    let descriptor = WorkflowWriterMethod {
+        state_type: "demo.State",
+        method: "demo.Methods.Child",
+        response_type: "type.googleapis.com/demo.Result",
+        errors: vec![],
+    };
+    let channel = tonic::transport::Endpoint::from_static("http://127.0.0.1:1").connect_lazy();
+    let retrieve = |id| {
+        WorkflowTask::<crate::proto::Counter>::retrieve(
+            channel.clone(),
+            target.clone(),
+            id,
+            descriptor.clone(),
+            |status| status,
+        )
+    };
+    let handle = retrieve(id.clone()).unwrap();
+    assert_eq!(handle.clone().task_id(), &id);
+    drop(handle); // No remote cancellation or detached IO on handle drop.
+    for field in 0..4 {
+        let mut changed = id.clone();
+        match field {
+            0 => changed.state_type = "other.State".into(),
+            1 => changed.state_ref = "other".into(),
+            2 => changed.task_uuid.clear(),
+            _ => {
+                changed.task_uuid = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, b"v5")
+                    .as_bytes()
+                    .to_vec()
+            }
+        }
+        assert!(retrieve(changed).is_err());
+    }
+}
+
+#[test]
+fn only_validated_canonical_outcomes_cross_the_task_terminal_boundary() {
+    let descriptor = WorkflowWriterMethod {
+        state_type: "tests.Counter",
+        method: "tests.Service.Run",
+        response_type: "type.googleapis.com/tests.Counter",
+        errors: vec![],
+    };
+    let terminal = |value| db::WaitResponse {
+        response_or_error: Some(db::TaskResponseOrError {
+            response_or_error: Some(value),
+        }),
+    };
+    let db::task::ResponseOrError::Error(error) = cancelled_terminal("Run") else {
+        unreachable!()
+    };
+    let valid = terminal(db::task_response_or_error::ResponseOrError::Error(
+        error.clone(),
+    ));
+    let outcome =
+        decode_workflow_task_terminal::<crate::proto::Counter>(valid, &descriptor).unwrap();
+    assert_eq!(outcome.unwrap_err().code(), tonic::Code::Cancelled);
+    for changed in 0..4 {
+        let mut error = error.clone();
+        let mut rich = decode_task_error(&error).unwrap();
+        match changed {
+            0 => rich.code = tonic::Code::Unknown as i32,
+            1 => rich.details[0].value = vec![255],
+            2 => rich.details.push(rich.details[0].clone()),
+            _ => error.type_url = "type.googleapis.com/foreign.Status".into(),
+        }
+        error.value = rich.encode_to_vec();
+        assert!(
+            decode_workflow_task_terminal::<crate::proto::Counter>(
+                terminal(db::task_response_or_error::ResponseOrError::Error(error)),
+                &descriptor
+            )
+            .is_err()
+        );
+    }
+    for (url, bytes) in [
+        ("type.googleapis.com/wrong.Result", vec![]),
+        (descriptor.response_type, vec![255]),
+    ] {
+        assert!(
+            decode_workflow_task_terminal::<crate::proto::Counter>(
+                terminal(db::task_response_or_error::ResponseOrError::Response(
+                    prost_types::Any {
+                        type_url: url.into(),
+                        value: bytes
+                    }
+                )),
+                &descriptor
+            )
+            .is_err()
+        );
+    }
+    assert!(
+        decode_workflow_task_terminal::<crate::proto::Counter>(
+            db::WaitResponse::default(),
+            &descriptor
+        )
+        .is_err()
+    );
+}
+
 impl DurableStateDeclaration for D {
     type State = crate::proto::Counter;
     const STATE_TYPE: &'static str = "tests.Counter";

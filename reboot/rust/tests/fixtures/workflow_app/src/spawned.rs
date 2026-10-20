@@ -31,6 +31,9 @@ pub async fn run(
             nanos: 0,
         });
     let request = proto::Step { amount };
+    let delay = std::env::var("SPAWN_AFTER_MILLIS")
+        .ok()
+        .map(|value| std::time::Duration::from_millis(value.parse().unwrap()));
     if std::env::var("SPAWN_COMPOSED").as_deref() == Ok("1") {
         let value =
             reference
@@ -56,25 +59,46 @@ pub async fn run(
         });
     }
     let id = if std::env::var("SPAWN_CONCURRENT").as_deref() == Ok("1") {
-        let (a, b) = tokio::join!(
-            reference.child_spawn(context, "child", request, timestamp),
-            reference.child_spawn(context, "child", request, timestamp)
-        );
+        let (a, b) = if let Some(delay) = delay {
+            tokio::join!(
+                reference.child_spawn_after(context, "child", request, delay),
+                reference.child_spawn_after(context, "child", request, delay)
+            )
+        } else {
+            tokio::join!(
+                reference.child_spawn(context, "child", request, timestamp),
+                reference.child_spawn(context, "child", request, timestamp)
+            )
+        };
         let a = a?;
         assert_eq!(a, b?);
         a
+    } else if let Some(delay) = delay {
+        reference
+            .child_task_after(context, "child", request, delay)
+            .await?
+            .task_id()
+            .clone()
     } else {
         reference
-            .child_spawn(context, "child", request, timestamp)
+            .child_task(context, "child", request, timestamp)
             .await?
+            .task_id()
+            .clone()
     };
     event(&format!(
         "spawn-ack:{}",
         uuid::Uuid::from_slice(&id.task_uuid).unwrap()
     ));
-    let again = reference
-        .child_spawn(context, "child", request, timestamp)
-        .await?;
+    let again = if let Some(delay) = delay {
+        reference
+            .child_spawn_after(context, "child", request, delay)
+            .await?
+    } else {
+        reference
+            .child_spawn(context, "child", request, timestamp)
+            .await?
+    };
     assert_eq!(id, again);
     if let Ok(path) = std::env::var("SPAWN_BEFORE_WAIT") {
         std::fs::write(&path, b"both spawn acknowledgements observed").unwrap();
@@ -82,13 +106,40 @@ pub async fn run(
             tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         }
     }
-    let value = match reference.child_wait(context, id).await {
+    let task = reference.child_retrieve(id)?;
+    let value = match task.clone().wait(context).await {
         Ok(value) => value.value,
         Err(generated::LedgerMethodsChildError::BelowThreshold(error)) => {
             event("child-error-caught");
             error.observed
         }
-        Err(generated::LedgerMethodsChildError::Grpc(error)) => return Err(error.into()),
+        Err(generated::LedgerMethodsChildError::Grpc(error)) => {
+            let terminal = prost_types::Any {
+                type_url: "type.googleapis.com/google.rpc.Status".into(),
+                value: error.details().to_vec(),
+            };
+            if std::env::var_os("SPAWN_CATCH_CANCEL").is_some()
+                && reboot::one_shot_tasks::task_cancellation_status(&terminal)
+                    .ok()
+                    .flatten()
+                    .is_some()
+            {
+                event("child-cancellation-caught");
+                if let Ok(path) = std::env::var("SPAWN_AFTER_CANCEL_CATCH") {
+                    std::fs::write(
+                        &path,
+                        b"validated durable cancellation acknowledged; no continuation yet",
+                    )
+                    .unwrap();
+                    while !std::path::Path::new(&format!("{path}.release")).exists() {
+                        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                    }
+                }
+                -999
+            } else {
+                return Err(error.into());
+            }
+        }
     };
     let continuation = generated::LedgerMethodsWorkflowSteps::second(
         context,
@@ -185,6 +236,7 @@ pub async fn probe() -> Result<(), Box<dyn std::error::Error>> {
         }),
         response_type: "type.googleapis.com/workflow.v1.Value".into(),
         errors: vec!["type.googleapis.com/workflow.v1.BelowThreshold".into()],
+        relative_delay: None,
     };
     match arg(3).as_str() {
         "valid" => {}
@@ -195,6 +247,30 @@ pub async fn probe() -> Result<(), Box<dyn std::error::Error>> {
         "writer" => body.method = "workflow.v1.LedgerMethods.First".into(),
         "bad-request" => body.request = vec![0xff],
         "bad-schedule" => body.timestamp.as_mut().unwrap().nanos = -1,
+        "relative-legacy" | "relative-negative" | "relative-nanos" | "relative-overflow" => {
+            body.timestamp = None;
+            body.relative_delay = Some(prost_types::Duration {
+                seconds: if arg(3) == "relative-negative" {
+                    -1
+                } else if arg(3) == "relative-overflow" {
+                    315_576_000_000
+                } else {
+                    1
+                },
+                nanos: if arg(3) == "relative-nanos" {
+                    1_000_000_000
+                } else {
+                    0
+                },
+            });
+        }
+        "relative-both" => {
+            body.relative_delay = Some(prost_types::Duration {
+                seconds: 1,
+                nanos: 0,
+            })
+        }
+        "relative-missing" => body.timestamp = None,
         other => panic!("unknown probe {other}"),
     }
     let mut request = tonic::Request::new(body);
@@ -203,12 +279,16 @@ pub async fn probe() -> Result<(), Box<dyn std::error::Error>> {
     headers.caller_id = Some(reboot::CallerId::new("a0000000001", None)?);
     headers.bearer_token = Some("spawn-service".into());
     *request.metadata_mut() = headers.to_metadata()?;
-    let id = reboot::workflow_spawn_proto::workflow_spawner_client::WorkflowSpawnerClient::connect(
-        arg(2),
-    )
-    .await?
-    .spawn(request)
-    .await?
+    let mut client =
+        reboot::workflow_spawn_proto::workflow_spawner_client::WorkflowSpawnerClient::connect(arg(
+            2,
+        ))
+        .await?;
+    let id = if arg(3).starts_with("relative-") && arg(3) != "relative-legacy" {
+        client.spawn_after(request).await?
+    } else {
+        client.spawn(request).await?
+    }
     .into_inner();
     println!("{}", uuid::Uuid::from_slice(&id.task_uuid)?);
     Ok(())
