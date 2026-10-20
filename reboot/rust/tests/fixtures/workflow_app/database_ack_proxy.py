@@ -110,16 +110,19 @@ def main():
                     with lock:
                         drop = not claimed.is_set() and (
                             (method == 'Store' and boundary(body) == selected) or
-                            (method == 'CompleteTask' and selected == 'cancel'))
+                            (method == 'CompleteTask' and selected in ['cancel', 'cancel-hold', 'cancel-hold-then-loss']))
+                        second = (method == 'CompleteTask' and selected == 'cancel-hold-then-loss'
+                                  and claimed.is_set() and not (root / 'second-ack-observed.json').exists())
                         if drop:
                             claimed.set()
-                    if drop:
+                    if drop or second:
                         assert fields(body).get(2 if method == 'CompleteTask' else 7) == [1], 'fault requires synchronous mutation'
-                        prefix='complete-task' if method == 'CompleteTask' else 'store'
+                        prefix=('second-' if second else '')+('complete-task' if method == 'CompleteTask' else 'store')
                         if method == 'CompleteTask': assert fields(response).get(1)==[1], 'native completion CAS must have won'
                         (root / f'{prefix}-request.pb').write_bytes(body)
                         (root / f'{prefix}-response.pb').write_bytes(response)
-                        marker=root / 'ack-observed.json.tmp'
+                        stem='second-' if second else ''
+                        marker=root / f'{stem}ack-observed.json.tmp'
                         marker.write_text(json.dumps({
                             'boundary': selected, 'real_store_ack_observed': method == 'Store',
                             'method': method, 'real_native_ack_observed': True,
@@ -128,9 +131,12 @@ def main():
                             'downstream_success_delivered': False,
                         }, indent=2))
                         with marker.open('rb') as f: os.fsync(f.fileno())
-                        os.replace(marker,root / 'ack-observed.json')
-                        while not (root / 'release').exists() and not stopping.wait(.01) and context.is_active():
+                        os.replace(marker,root / f'{stem}ack-observed.json')
+                        while not (root / f'{stem}release').exists() and not stopping.wait(.01) and context.is_active():
                             pass
+                        if selected in ['cancel-hold', 'cancel-hold-then-loss'] and not second:
+                            (root / 'ack-delivered').write_text('original native response released unchanged')
+                            return response
                         context.abort(grpc.StatusCode.UNAVAILABLE, 'injected lost real native ACK')
                     return response
                 except grpc.RpcError as error:

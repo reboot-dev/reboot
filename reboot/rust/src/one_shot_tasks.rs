@@ -1235,7 +1235,13 @@ impl OneShotTasks {
         if self.ordinary_interruption_pending(task.task_id.as_ref().expect("validated task identity")) {
             return Ok(());
         }
-        let registration = OrdinaryCancellationRegistration::new(self, &task, &admission)?;
+        #[cfg(feature = "test-support")]
+        ordinary_registration_test_barrier(task.task_id.as_ref().expect("validated task identity")).await?;
+        let Some(registration) = OrdinaryCancellationRegistration::new(self, &task, &admission)? else {
+            #[cfg(feature = "test-support")]
+            ordinary_race_test_marker(task.task_id.as_ref().expect("validated task identity"), "suppressed")?;
+            return Ok(());
+        };
         let mut attempt = 0u32;
         loop {
             admission.check_execution()?;
@@ -1483,6 +1489,9 @@ impl OneShotTasks {
         }
 
         let response = {
+            #[cfg(feature = "test-support")]
+            let _lease = ordinary_reader_test_lease(&gate, &id).await?;
+            #[cfg(not(feature = "test-support"))]
             let _lease = gate.shared().await;
             cancel.public_ready().await?;
             // Actor admission may have waited while the wall clock moved back.

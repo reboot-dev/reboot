@@ -138,6 +138,65 @@ fn canonical_cancellation_is_distinct_from_business_or_bare_status_errors() {
 }
 struct D;
 #[tokio::test]
+async fn absent_execution_intent_is_linearized_before_cancellation_serial_wait() {
+    use std::future::Future;
+    let (service, _owner, task) = task_listing_service_tests::setup(0);
+    let tasks = service.tasks.values().next().unwrap();
+    let admission = tasks.local_execution_admission().unwrap();
+    let serial = tasks.inner.cancellation_serial.lock().await;
+    let id = task.task_id.as_ref().unwrap();
+    assert!(!tasks.ordinary_interruption_pending(id));
+    let mut cancellation = Box::pin(service.cancel_task(request(&task, true)));
+    tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        std::future::poll_fn(|cx| {
+            assert!(cancellation.as_mut().poll(cx).is_pending());
+            if tasks.ordinary_interruption_pending(id) {
+                std::task::Poll::Ready(())
+            } else {
+                std::task::Poll::Pending
+            }
+        }),
+    )
+    .await
+    .unwrap();
+    assert!(
+        OrdinaryCancellationRegistration::new(tasks, &task, &admission)
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        tasks
+            .inner
+            .cancellation_writes
+            .load(std::sync::atomic::Ordering::Acquire),
+        1
+    );
+    // Dropping an absent-owner request still fences Wait and the next writer:
+    // its intent may already have suppressed a canonical due delivery.
+    drop(cancellation);
+    drop(serial);
+    assert!(*tasks.inner.uncertain.borrow());
+    assert!(tasks.ordinary_interruption_pending(id));
+    assert_eq!(
+        tasks
+            .inner
+            .cancellation_writes
+            .load(std::sync::atomic::Ordering::Acquire),
+        0
+    );
+    assert!(admission.check_execution().is_err());
+    assert!(
+        tasks
+            .inner
+            .store
+            .actor_gate(&id.state_type, &id.state_ref)
+            .committed_revisions()
+            .borrow()
+            .1
+    );
+}
+#[tokio::test]
 async fn lost_cancellation_ack_publication_cannot_cross_a_wait_disclosure_lock() {
     let (service, _owner, _) = task_listing_service_tests::setup(0);
     let tasks = service.tasks.values().next().unwrap().clone();
@@ -430,7 +489,9 @@ async fn ordinary_registration_retains_generation_and_does_not_remove_a_replacem
     let (service, _owner, task) = task_listing_service_tests::setup(0);
     let tasks = service.tasks.values().next().unwrap();
     let admission = tasks.local_execution_admission().unwrap();
-    let registration = OrdinaryCancellationRegistration::new(tasks, &task, &admission).unwrap();
+    let registration = OrdinaryCancellationRegistration::new(tasks, &task, &admission)
+        .unwrap()
+        .unwrap();
     assert!(OrdinaryCancellationRegistration::new(tasks, &task, &admission).is_err());
     let id = task.task_id.as_ref().unwrap().task_uuid.clone();
     let next = tokio::sync::watch::channel(false).0;
@@ -463,7 +524,9 @@ async fn dropped_ordinary_handoff_retains_uncertainty_and_pending_signal() {
     let (service, _owner, task) = task_listing_service_tests::setup(0);
     let tasks = service.tasks.values().next().unwrap();
     let admission = tasks.local_execution_admission().unwrap();
-    let registration = OrdinaryCancellationRegistration::new(tasks, &task, &admission).unwrap();
+    let registration = OrdinaryCancellationRegistration::new(tasks, &task, &admission)
+        .unwrap()
+        .unwrap();
     tasks
         .inner
         .cancellation_in_flight
@@ -543,7 +606,9 @@ async fn retired_ordinary_body_keeps_a_tombstone_until_exact_cancellation_ack() 
     let (service, _owner, task) = task_listing_service_tests::setup(0);
     let tasks = service.tasks.values().next().unwrap();
     let admission = tasks.local_execution_admission().unwrap();
-    let registration = OrdinaryCancellationRegistration::new(tasks, &task, &admission).unwrap();
+    let registration = OrdinaryCancellationRegistration::new(tasks, &task, &admission)
+        .unwrap()
+        .unwrap();
     registration.signal.send_replace(true);
     let signal = registration.signal.clone();
     let id = task.task_id.as_ref().unwrap();

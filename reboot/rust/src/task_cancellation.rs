@@ -74,7 +74,7 @@ impl OrdinaryCancellationRegistration {
         tasks: &OneShotTasks,
         task: &db::Task,
         admission: &RunningTaskAdmission,
-    ) -> Result<Self, Status> {
+    ) -> Result<Option<Self>, Status> {
         let _owner = admission.lock_result()?;
         let id = task
             .task_id
@@ -88,7 +88,18 @@ impl OrdinaryCancellationRegistration {
             .ordinary_cancellations
             .lock()
             .expect("ordinary cancellation mutex poisoned");
-        if registrations.contains_key(&id) {
+        if let Some(owner) = registrations.get(&id) {
+            if !std::sync::Arc::ptr_eq(&owner.generation, &admission.generation) {
+                return Err(Status::failed_precondition(
+                    "ordinary cancellation generation changed",
+                ));
+            }
+            // Cancellation publishes even in the absence of an execution. The
+            // same mutex linearizes that intent with registration: never turn
+            // an absent-owner cancellation into a new, unsignalled body.
+            if *owner.signal.borrow() {
+                return Ok(None);
+            }
             return Err(Status::failed_precondition(
                 "ordinary task already has an execution owner",
             ));
@@ -100,11 +111,11 @@ impl OrdinaryCancellationRegistration {
                 signal: signal.clone(),
             },
         );
-        Ok(Self {
+        Ok(Some(Self {
             tasks: tasks.clone(),
             id,
             signal,
-        })
+        }))
     }
 }
 impl Drop for OrdinaryCancellationRegistration {
@@ -127,6 +138,60 @@ impl Drop for OrdinaryCancellationRegistration {
 async fn ordinary_interrupted(signal: &tokio::sync::watch::Sender<bool>) {
     let mut receiver = signal.subscribe();
     let _ = receiver.wait_for(|cancelled| *cancelled).await;
+}
+
+// Process-only barriers observe the real registration/admission path. They do
+// not seed records, supply responses, or change actor-gate ordering.
+#[cfg(feature = "test-support")]
+fn ordinary_race_test_root(id: &db::TaskId) -> Option<std::path::PathBuf> {
+    let root =
+        std::path::PathBuf::from(std::env::var_os("REBOOT_TEST_ORDINARY_REGISTRATION_RACE")?);
+    let selected = std::fs::read_to_string(root.join("target")).ok()?;
+    (uuid::Uuid::from_slice(&id.task_uuid).ok()?.to_string() == selected.trim()).then_some(root)
+}
+#[cfg(feature = "test-support")]
+fn ordinary_race_test_marker(id: &db::TaskId, stage: &str) -> Result<(), Status> {
+    if let Some(root) = ordinary_race_test_root(id) {
+        std::fs::write(
+            root.join(stage),
+            b"original execution/cancellation observation",
+        )
+        .map_err(|error| Status::internal(error.to_string()))?;
+    }
+    Ok(())
+}
+#[cfg(feature = "test-support")]
+async fn ordinary_registration_test_barrier(id: &db::TaskId) -> Result<(), Status> {
+    if let Some(root) = ordinary_race_test_root(id) {
+        ordinary_race_test_marker(id, "before-registration")?;
+        tokio::time::timeout(std::time::Duration::from_secs(30), async {
+            while !root.join("register-release").exists() {
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .map_err(|_| Status::deadline_exceeded("ordinary registration test barrier"))?;
+    }
+    Ok(())
+}
+#[cfg(feature = "test-support")]
+async fn ordinary_reader_test_lease(
+    gate: &crate::runtime::ActorGate,
+    id: &db::TaskId,
+) -> Result<crate::runtime::SharedActorLease, Status> {
+    use std::future::Future;
+    let lease = gate.shared();
+    tokio::pin!(lease);
+    std::future::poll_fn(|cx| {
+        let result = lease.as_mut().poll(cx);
+        if result.is_pending()
+            && let Err(error) = ordinary_race_test_marker(id, "shared-queued")
+        {
+            return std::task::Poll::Ready(Err(error));
+        }
+        result.map(Ok)
+    })
+    .await
 }
 
 /// Recognize the exact canonical system cancellation terminal, not a bare code.
@@ -291,37 +356,46 @@ impl ReaderTaskWaitService {
         };
         {
             let _owner = admission.lock()?;
-            let registrations = tasks
+            let mut registrations = tasks
                 .inner
                 .ordinary_cancellations
                 .lock()
                 .expect("ordinary cancellation mutex poisoned");
-            if let Some(execution) = registrations.get(&id.task_uuid) {
-                if !std::sync::Arc::ptr_eq(&execution.generation, &admission.generation) {
-                    return Err(Status::failed_precondition(
-                        "ordinary cancellation generation changed",
-                    ));
-                }
-                tasks
-                    .inner
-                    .cancellation_in_flight
-                    .store(true, std::sync::atomic::Ordering::Release);
-                write.actor = Some(
-                    tasks
-                        .inner
-                        .store
-                        .actor_gate(&id.state_type, &id.state_ref)
-                        .commit_attempt(),
-                );
-                tasks
-                    .inner
-                    .cancellation_writes
-                    .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
-                write.acknowledged = false;
-                write.ordinary = Some((id.task_uuid.clone(), execution.signal.clone()));
-                execution.signal.send_replace(true);
+            // Publish an intent even if the due delivery has not registered yet.
+            // Registration and signalling share this mutex and original-owner
+            // publication lock, before any wait on terminal CAS serialization.
+            let execution = registrations
+                .entry(id.task_uuid.clone())
+                .or_insert_with(|| OrdinaryCancellationOwner {
+                    generation: admission.generation.clone(),
+                    signal: tokio::sync::watch::channel(false).0,
+                });
+            if !std::sync::Arc::ptr_eq(&execution.generation, &admission.generation) {
+                return Err(Status::failed_precondition(
+                    "ordinary cancellation generation changed",
+                ));
             }
+            tasks
+                .inner
+                .cancellation_in_flight
+                .store(true, std::sync::atomic::Ordering::Release);
+            write.actor = Some(
+                tasks
+                    .inner
+                    .store
+                    .actor_gate(&id.state_type, &id.state_ref)
+                    .commit_attempt(),
+            );
+            tasks
+                .inner
+                .cancellation_writes
+                .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+            write.acknowledged = false;
+            write.ordinary = Some((id.task_uuid.clone(), execution.signal.clone()));
+            execution.signal.send_replace(true);
         }
+        #[cfg(feature = "test-support")]
+        ordinary_race_test_marker(id, "intent-published")?;
         // Every requested body must receive its handoff before CAS serialization:
         // two shared readers must not wait for each other while holding admission.
         // The counted publication fence remains armed until every handoff retires.
@@ -355,6 +429,9 @@ impl ReaderTaskWaitService {
             }))
         };
         if loaded.tasks.is_empty() {
+            // The authoritative lookup proves there is no execution to quiesce.
+            // Clear this request's exact intent without manufacturing uncertainty.
+            write.acknowledged = true;
             return response(db::cancel_task_response::Status::NotFound);
         }
         if loaded.tasks.len() != 1 || loaded.tasks[0].task_id.as_ref() != Some(id) {

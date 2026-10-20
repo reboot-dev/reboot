@@ -44,7 +44,7 @@ fn run(script: &str, evidence_variable: &str) {
     let evidence = std::env::var_os(evidence_variable).expect("set fresh retained evidence path");
     let mut command = Command::new(python);
     if evidence_variable == "RUNNING_TASK_EVIDENCE" {
-        command.env("GENERIC_NATIVE_CASES", "running-writer,running-reader,running-readers-two,running-cancel-ack-loss,running-after-store,running-cancel-drop");
+        command.env("GENERIC_NATIVE_CASES", "running-writer,running-reader,running-readers-two,running-cancel-ack-loss,running-after-store,running-cancel-drop,running-absent-owner,running-absent-ack-loss,running-absent-drop");
     }
     assert!(
         command
