@@ -5,6 +5,7 @@ from pathlib import Path
 from reboot.aio.servicers import Routable
 from reboot.aio.types import ApplicationId
 from reboot.helpers import generate_proto_descriptor_set
+from reboot.routing.envoy_config import FrontendConfig
 from reboot.server.docker_local_envoy import DockerLocalEnvoy
 from reboot.server.executable_local_envoy import ExecutableLocalEnvoy
 from reboot.server.local_envoy import LocalEnvoy
@@ -74,7 +75,11 @@ class LocalEnvoyFactory:
         routables: list[Routable],
         allowed_origins: Optional[list[str]],
         route_matches: list[route_components_pb2.RouteMatch],
+        frontend: Optional[FrontendConfig],
     ) -> LocalEnvoy:
+        """Creates a local Envoy for the application. `frontend` is the
+        dev server it routes `/__/frontend/**` (and the web app at
+        `/`, when the server serves one) to, if any."""
         file_descriptor_set = generate_proto_descriptor_set(routables)
 
         certificate_path = os.environ.get(
@@ -102,6 +107,7 @@ class LocalEnvoyFactory:
                 debug_mode=REBOOT_LOCAL_ENVOY_DEBUG,
                 allowed_origins=allowed_origins,
                 route_matches=route_matches,
+                frontend=frontend,
             )
 
         assert mode is LocalEnvoyMode.EXECUTABLE
@@ -115,4 +121,5 @@ class LocalEnvoyFactory:
             debug_mode=REBOOT_LOCAL_ENVOY_DEBUG,
             allowed_origins=allowed_origins,
             route_matches=route_matches,
+            frontend=frontend,
         )

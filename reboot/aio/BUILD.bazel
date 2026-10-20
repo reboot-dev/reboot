@@ -363,6 +363,7 @@ py_library(
         "//reboot/controller:config_extractor_py",
         "//reboot/controller:placement_planner_py",
         "//reboot/controller:server_managers_py",
+        "//reboot/routing:envoy_config_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:placement_planner_py_proto",
     ],
 )

@@ -56,6 +56,7 @@ def _routes(
         key_path=Path("unused.key"),
         allowed_origins=allowed_origins,
         route_matches=[],
+        frontend=None,
     )
     public = next(
         listener for listener in listeners if listener.name == "public"

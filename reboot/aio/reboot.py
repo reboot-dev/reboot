@@ -37,6 +37,7 @@ from reboot.controller.server_managers import LocalServerManager
 from reboot.controller.servers import ServerSpec
 from reboot.controller.settings import ENVVAR_REBOOT_APPLICATION_ID
 from reboot.naming import get_local_application_id
+from reboot.routing import envoy_config
 from reboot.run_environments import on_cloud
 from reboot.server.database import DatabaseServer, DatabaseServerFailed
 from reboot.settings import (
@@ -320,6 +321,8 @@ class Reboot:
         allowed_origins: Optional[list[str]] = None,
         servers: Optional[int] = None,
         effect_validation: Optional[EffectValidation] = None,
+        frontend_url: Optional[str] = None,
+        web_app: bool = False,
     ) -> ApplicationRevision:
         ...
 
@@ -344,6 +347,8 @@ class Reboot:
         allowed_origins: Optional[list[str]] = None,
         servers: Optional[int] = None,
         effect_validation: Optional[EffectValidation] = None,
+        frontend_url: Optional[str] = None,
+        web_app: bool = False,
         revision: Optional[ApplicationRevision] = None,
     ) -> ApplicationRevision:
         """
@@ -362,6 +367,11 @@ class Reboot:
 
         local_envoy_port: port on which to connect to Envoy, defaults to 0
         (picked dynamically by the OS).
+
+        frontend_url: a frontend dev server for the local Envoy to route
+        `/__/frontend/**` to, the way `rbt dev run --frontend-url` does,
+        and, with `web_app`, the web app at `/` and every path the
+        application doesn't answer (`--web-app`).
 
         effect_validation: sets EffectValidation for these servicers. By
         default, effect validation is:
@@ -507,6 +517,12 @@ class Reboot:
                 local_envoy_use_tls=self._local_envoy_tls or False,
                 allowed_origins=allowed_origins,
                 effect_validation=effect_validation,
+                frontend=(
+                    envoy_config.frontend_config(
+                        frontend_url,
+                        web_app=web_app,
+                    ) if frontend_url is not None else None
+                ),
             )
 
             config = self._config_extractor.config_from_serviceables(

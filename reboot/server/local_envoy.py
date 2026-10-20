@@ -23,7 +23,7 @@ from pathlib import Path
 from reboot.aio.headers import SERVER_ID_HEADER
 from reboot.aio.types import ApplicationId, ServerId
 from reboot.routing import envoy_config
-from reboot.routing.envoy_config import ServerInfo
+from reboot.routing.envoy_config import FrontendConfig, ServerInfo
 from reboot.routing.xds_server import AggregatedDiscoveryServiceServicer
 from reboot.settings import LocalEnvoyMode
 from reboot.ssl.localhost import (
@@ -67,6 +67,7 @@ class LocalEnvoy(ABC):
         observed_dir: Path,
         allowed_origins: Optional[list[str]],
         route_matches: list[route_components_pb2.RouteMatch],
+        frontend: Optional[FrontendConfig],
     ):
         self._admin_listen_host = admin_listen_host
         self._admin_port = admin_port
@@ -97,6 +98,9 @@ class LocalEnvoy(ABC):
         # The paths the application's web framework answers, which
         # Envoy routes to it ahead of its catch-all.
         self._route_matches = route_matches
+        # The frontend dev server to route `/__/frontend/**` to, and
+        # the web app at `/` when it serves one; `None` for none.
+        self._frontend = frontend
 
         self._grpc_server = grpc.aio.server()
         self._register_xds_port()
@@ -110,6 +114,7 @@ class LocalEnvoy(ABC):
                 application_id=self._application_id,
                 servers=[],
                 local_envoy_mode=self._mode,
+                frontend=self._frontend,
             ),
             listeners=self._get_listeners_from_servers([]),
         )
@@ -176,6 +181,7 @@ class LocalEnvoy(ABC):
                 application_id=self._application_id,
                 servers=servers,
                 local_envoy_mode=self._mode,
+                frontend=self._frontend,
             ),
             listeners=self._get_listeners_from_servers(servers),
             # NOTE: when using a `LocalEnvoy` we're expecting only _one_
@@ -227,6 +233,7 @@ class LocalEnvoy(ABC):
             key_path=self._observed_dir / KEY_FILENAME,
             allowed_origins=self._allowed_origins,
             route_matches=self._route_matches,
+            frontend=self._frontend,
         )
 
     def _generate_envoy_yaml(self) -> str:

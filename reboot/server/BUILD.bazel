@@ -125,6 +125,7 @@ py_library(
         "//reboot/aio:servicers_py",
         "//reboot/aio:signals_py",
         "//reboot/aio:types_py",
+        "//reboot/routing:envoy_config_py",
         "//reboot/templates:tools_py",
         "@com_github_reboot_dev_reboot//log:log_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:react_py_proto",
