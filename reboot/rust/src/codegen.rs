@@ -2156,7 +2156,7 @@ fn transaction_task_schedule_guard(runtime: &str) -> String {
 }
 
 fn emit_exclusive_transaction_method(output: &mut String, flow: TransactionFlow<'_>) {
-    let task_guard = if !flow.factory && !flow.declared_error {
+    let task_guard = if !flow.factory && !flow.writer && !flow.declared_error {
         let runtime = flow.runtime_module;
         let identity = flow.method_identity;
         format!(

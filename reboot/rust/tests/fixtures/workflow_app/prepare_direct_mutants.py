@@ -4,7 +4,7 @@ from pathlib import Path
 root,out=map(lambda p:Path(p).resolve(),sys.argv[1:3])
 out.mkdir(parents=True,exist_ok=False)
 source=root/'reboot/rust/src/codegen.rs';before=source.read_text()
-start=before.index('    let task_guard = if !flow.factory && !flow.declared_error {',before.index('fn emit_exclusive_transaction_method'))
+start=before.index('    let task_guard = if ',before.index('fn emit_exclusive_transaction_method'))
 end=before.index('    // Transaction metadata selects',start)
 old='if let Some(idempotency) = &automatic_idempotency {{ let replay_after_admission'
 assert before.count(old)==1
