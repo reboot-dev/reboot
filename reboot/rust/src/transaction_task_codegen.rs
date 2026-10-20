@@ -89,7 +89,7 @@ fn emit_transaction_tasks(
             ("", "response")
         };
         executions.push_str(&format!("\"{method_name}\" => {{ let request=<proto::{request} as prost::Message>::decode(context.task().request.as_slice()).map_err(|_|tonic::Status::data_loss(\"malformed transaction task request\"))?; {request_prelude} {client_setup} let response={invocation}{outcome}; {response_prelude} context.finish::<{state}DurableState,proto::{request},proto::{response}>(\"{response_url}\",{response_expression}).await }},"));
-        declarations.push_str(&format!("declarations.push({runtime}::one_shot_tasks::TaskMethodDeclaration::new::<{state}DurableState,proto::{request},proto::{response}>(\"{identity}\",\"{response_url}\",vec![{schema}]).transaction());"));
+        declarations.push_str(&format!("{runtime}::one_shot_tasks::TaskMethodDeclaration::new::<{state}DurableState,proto::{request},proto::{response}>(\"{identity}\",\"{response_url}\",vec![{schema}]).transaction(),"));
     }
     if declarations.is_empty() {
         return;
@@ -103,6 +103,11 @@ fn emit_transaction_tasks(
         .methods
         .values()
         .all(|kind| matches!(kind, DurableKind::Transaction(_)));
+    let declaration_init = if pure {
+        format!("vec![{declarations}]")
+    } else {
+        format!("{base_declarations}.into_iter().chain([{declarations}]).collect()")
+    };
     let generic = if pure {
         String::new()
     } else {
@@ -180,7 +185,7 @@ let actor=self.participant.actor_target();
 self.participant.validate_task_owner(&{store},<{state}DurableState as {runtime}::runtime::DurableStateDeclaration>::STATE_TYPE,&actor.state_ref)?;
 if self.coordinator.sidecar().database_endpoint()!=Some({store}.database_endpoint()) {{return Err(Box::new(tonic::Status::failed_precondition("task owner and coordinator Database endpoints differ")));}}
 let target={name}WorkflowTransactionRef::new(channel,{runtime}::actor_ref::ActorRef::new(actor.state_type.clone(),{runtime}::state_ref::StateRef::from_maybe_readable(&actor.state_ref).map_err(|error|tonic::Status::invalid_argument(error.to_string()))?),application,bearer)?;
-let mut declarations={base_declarations}; {declarations}
+let declarations={declaration_init};
 let tasks={runtime}::one_shot_tasks::OneShotTasks::new_with_participant_declarations({store}.clone(),actor.state_type,actor.state_ref,{runtime}::one_shot_tasks::ParticipantBoundTaskBinding::new(self.participant.clone(),{binding}{{{ordinary_init}target}}),declarations)?;
 self.local_registration=None;self.local_incarnation=std::sync::Arc::new(());self.tasks=Some(tasks.clone());Ok((self,tasks))
 }}
