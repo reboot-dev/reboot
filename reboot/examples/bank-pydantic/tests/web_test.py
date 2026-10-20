@@ -2,13 +2,10 @@
 scenarios include a browser, run through `reboot.bdd`'s web app steps.
 Their backend scenarios run here too, against the same application.
 
-The app is served the way it is deployed: from its own origin, here a
-Vite dev server on `localhost` started for each scenario, calling the
-backend cross-origin at its `127.0.0.1` Envoy address. The browser
-treats those as different sites, so the session cookie,
-`/__/oauth/whoami`, and Envoy's CORS allow-list are all exercised the
-way production exercises them. Run `cd frontend && npm install`
-first.
+The app is served the way it is deployed: at the backend's own
+origin, from which it calls the backend. Each scenario starts a Vite
+dev server for it, which the backend's Envoy routes to, as `rbt dev
+run --web-app` does. Run `cd frontend && npm install` first.
 """
 
 import pytest
@@ -50,9 +47,7 @@ class AccountServicerWithNoInterest(AccountServicer):
 
 
 @pytest.fixture
-def application(frontend: Frontend) -> Application:
-    # A web app calls the backend from its own origin.
-    assert frontend.origin is not None
+def application() -> Application:
     development = Development()
     return Application(
         servicers=[
@@ -65,14 +60,14 @@ def application(frontend: Frontend) -> Application:
         # Signing in constructs the user's `User`, which signs them up
         # with the bank `initialize` creates.
         initialize=initialize,
-        # The app's origin is the only one Envoy lets read `/whoami`
-        # cross-origin, as a deployment would list its web host.
         oauth=OAuth(
             provider=OAuthProviderByEnvironment(
                 dev=development,
                 prod=development,
             ),
-            allowed_origins=[frontend.origin],
+            # The web app is served at the backend's own origin, so
+            # no other origin may act on its session cookie.
+            allowed_origins=[],
         ),
     )
 

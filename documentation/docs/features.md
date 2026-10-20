@@ -399,7 +399,7 @@ To serve the app, add `playwright` and `pytest-playwright` to your
 dev dependencies, run `playwright install chromium` once, and give
 the test module a `frontend` fixture. For a Vite project:
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../reboot/examples/bank-pydantic/tests/web_test.py&lines=36-39) -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../reboot/examples/bank-pydantic/tests/web_test.py&lines=33-36) -->
 <!-- The below code snippet is automatically added from ../../reboot/examples/bank-pydantic/tests/web_test.py -->
 
 ```py
@@ -411,19 +411,18 @@ def frontend() -> Iterator[Frontend]:
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
 
-The app is served from its own origin, calling the backend
-cross-origin, so the session cookie and CORS are exercised the way
-a deployment exercises them; the `application` fixture takes the
-`frontend` and allows its origin:
+The app is served at the backend's own origin, the way `rbt dev run
+--web-app` serves it and a deployment does: the backend's Envoy
+routes to the dev server (which needs Vite 8 or later), so the
+session cookie is exercised the way a deployment exercises it, and
+the `application` fixture lists no other origin:
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../reboot/examples/bank-pydantic/tests/web_test.py&lines=52-80) -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../reboot/examples/bank-pydantic/tests/web_test.py&lines=49-75) -->
 <!-- The below code snippet is automatically added from ../../reboot/examples/bank-pydantic/tests/web_test.py -->
 
 ```py
 @pytest.fixture
-def application(frontend: Frontend) -> Application:
-    # A web app calls the backend from its own origin.
-    assert frontend.origin is not None
+def application() -> Application:
     development = Development()
     return Application(
         servicers=[
@@ -436,14 +435,14 @@ def application(frontend: Frontend) -> Application:
         # Signing in constructs the user's `User`, which signs them up
         # with the bank `initialize` creates.
         initialize=initialize,
-        # The app's origin is the only one Envoy lets read `/whoami`
-        # cross-origin, as a deployment would list its web host.
         oauth=OAuth(
             provider=OAuthProviderByEnvironment(
                 dev=development,
                 prod=development,
             ),
-            allowed_origins=[frontend.origin],
+            # The web app is served at the backend's own origin, so
+            # no other origin may act on its session cookie.
+            allowed_origins=[],
         ),
     )
 
