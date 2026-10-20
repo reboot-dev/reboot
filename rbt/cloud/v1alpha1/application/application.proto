@@ -5,6 +5,7 @@ package rbt.cloud.v1alpha1.application;
 import "google/protobuf/timestamp.proto";
 
 import "rbt/cloud/v1alpha1/logs/logs.proto";
+import "rbt/cloud/v1alpha1/custom_domain/custom_domain.proto";
 import "rbt/v1alpha1/options.proto";
 
 /////////////////////////////////////////////////////////////////////////
@@ -116,6 +117,11 @@ message Application {
   // readability. No other writers or workflows should edit the state if
   // this field is non-emtpy.
   optional bytes locked_for_workflow_task_uuid = 12;
+
+  // The custom hostnames registered for this application, in the
+  // order they were added. Each one's lifecycle lives in the
+  // `CustomDomain` state whose ID is the hostname.
+  repeated string custom_domains = 13;
 }
 
 ///////////////////////////////////////////////////////////////////////
@@ -254,6 +260,50 @@ service ApplicationMethods {
     option (rbt.v1alpha1.method) = {
       workflow: {},
       errors: [ "InvalidInputError" ],
+    };
+  }
+
+  // Register a custom hostname (e.g. `api.example.com`) for this
+  // application. Returns at once with the DNS record the user must
+  // create; a workflow then waits for that record, obtains a
+  // certificate and activates the hostname. The application must be
+  // up. Only subdomains are accepted: an apex domain cannot carry a
+  // CNAME record.
+  rpc AddCustomDomain(AddCustomDomainRequest)
+      returns (AddCustomDomainResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: { exclusive: {} },
+      errors: [ "InvalidInputError" ],
+    };
+  }
+
+  // Stop serving a custom hostname and release it so that it can be
+  // registered again, by any application.
+  rpc RemoveCustomDomain(RemoveCustomDomainRequest)
+      returns (RemoveCustomDomainResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: { exclusive: {} },
+      errors: [ "InvalidInputError" ],
+    };
+  }
+
+  // The custom hostnames registered for this application, with their
+  // current status.
+  rpc ListCustomDomains(ListCustomDomainsRequest)
+      returns (ListCustomDomainsResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+
+  // Drives one custom hostname from `WAITING_FOR_DNS` to `ACTIVE`:
+  // waits for the user's DNS record, hands the hostname to the
+  // cluster, waits for its certificate. Scheduled by
+  // `AddCustomDomain`.
+  rpc CustomDomainWorkflow(CustomDomainWorkflowRequest)
+      returns (CustomDomainWorkflowResponse) {
+    option (rbt.v1alpha1.method) = {
+      workflow: {},
     };
   }
 }
@@ -438,6 +488,55 @@ message DeleteSecretsRequest {
   repeated string names = 1;
 }
 message DeleteSecretsResponse {}
+
+//////////////////////////////////////////////////////////////////////
+
+message AddCustomDomainRequest {
+  // The hostname to register, e.g. `api.example.com`.
+  string hostname = 1;
+}
+
+message AddCustomDomainResponse {
+  string hostname = 1;
+  // The hostname the user must point a CNAME record at.
+  string cname_target = 2;
+  rbt.cloud.v1alpha1.custom_domain.CustomDomain.Status status = 3;
+}
+
+//////////////////////////////////////////////////////////////////////
+
+message RemoveCustomDomainRequest {
+  string hostname = 1;
+}
+
+message RemoveCustomDomainResponse {}
+
+//////////////////////////////////////////////////////////////////////
+
+message CustomDomainInfo {
+  string hostname = 1;
+  rbt.cloud.v1alpha1.custom_domain.CustomDomain.Status status = 2;
+  // The hostname the user must point a CNAME record at.
+  string cname_target = 3;
+  // What the last DNS check saw, in words the user can act on.
+  string dns_observation = 4;
+  // Set when `status` is `CUSTOM_DOMAIN_FAILED`.
+  string failure_reason = 5;
+}
+
+message ListCustomDomainsRequest {}
+
+message ListCustomDomainsResponse {
+  repeated CustomDomainInfo domains = 1;
+}
+
+//////////////////////////////////////////////////////////////////////
+
+message CustomDomainWorkflowRequest {
+  string hostname = 1;
+}
+
+message CustomDomainWorkflowResponse {}
 
 //////////////////////////////////////////////////////////////////////
 

@@ -6,6 +6,7 @@ py_library(
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
+        ":domain_py",
         ":down_py",
         ":logs_py",
         ":secrets_py",
@@ -85,6 +86,21 @@ py_library(
         "@com_github_reboot_dev_reboot//reboot/aio:aborted_py",
         "@com_github_reboot_dev_reboot//reboot/aio:external_py",
         "@com_github_reboot_dev_reboot//reboot/aio/backoff:python",
+    ],
+)
+
+py_library(
+    name = "domain_py",
+    srcs = ["domain.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common_py",
+        "//reboot/cli/common:rc_py",
+        "//reboot/cli/common:terminal_py",
+        "@com_github_reboot_dev_reboot//rbt/cloud/v1alpha1/application:application_py_reboot",
+        "@com_github_reboot_dev_reboot//reboot/aio:aborted_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
     ],
 )
 

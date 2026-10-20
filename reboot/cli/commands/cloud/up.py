@@ -12,6 +12,7 @@ from rbt.cloud.v1alpha1.application.application_pb2 import (
     Status,
 )
 from rbt.cloud.v1alpha1.application.application_rbt import Application
+from rbt.cloud.v1alpha1.custom_domain.custom_domain_pb2 import CustomDomain
 from rbt.v1alpha1.errors_pb2 import (
     PermissionDenied,
     StateAlreadyConstructed,
@@ -239,6 +240,16 @@ async def cloud_up(args: argparse.Namespace) -> int:
                 ApplicationId(up_response.application_id),
                 args.cloud_url,
             )
+            custom_urls = [
+                f"https://{domain.hostname}"
+                for domain in (await application.list_custom_domains(context)
+                              ).domains
+                if domain.status == CustomDomain.Status.ACTIVE
+            ]
+            custom_lines = "".join(
+                f"  Also available at:             {custom_url}\n"
+                for custom_url in custom_urls
+            )
             terminal.info(
                 f"✅\n"
                 "\n"
@@ -246,6 +257,7 @@ async def cloud_up(args: argparse.Namespace) -> int:
                 "available:\n"
                 "\n"
                 f"  Your API is available at:      {url}\n"
+                f"{custom_lines}"
                 f"  MCP clients can connect at:    {url}/mcp\n"
                 "  You can inspect your state at: "
                 f"{url}/__/inspect\n"
