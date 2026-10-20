@@ -29,7 +29,7 @@ the next section. Matches
 verbatim:
 
 ```dockerfile
-FROM ghcr.io/reboot-dev/reboot-base:1.6.0
+FROM ghcr.io/reboot-dev/reboot-base:1.7.0
 
 WORKDIR /app
 
