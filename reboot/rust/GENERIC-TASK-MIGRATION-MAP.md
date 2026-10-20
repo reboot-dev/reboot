@@ -18,6 +18,8 @@ Admission receipt/identity domains, workflow journal, duplicate-LAST metadata, i
 
 ## Required proof
 
+Executed qualification: [native ordinary-task checkpoint](tests/evidence/generic-reader-writer-tasks-20261020.md).
+
 Actual generated Python WeakReference.spawn/TasksStub/typed Wait, native C++ Database/RocksDB, same-key concurrency, replay authorization, declared typed errors with private-state discard, exact absolute schedule, canonical cancellation, native admission/Store/completion ACK loss, state+checkpoint retained before terminal, restart replay after intervening unary writer, and no duplicate body/effect. Retain source mutants with bytes/diffs, frozen GREEN, strict all-target SDK/fixture Clippy, original finite parent cleanup under failure and real SIGTERM, and offhost compact evidence.
 
 ## Next necessary foundation: running ordinary task cancellation

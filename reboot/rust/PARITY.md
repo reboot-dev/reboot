@@ -39,6 +39,9 @@ rich-writer DeclaredStatus variant. Pre-checkpoint handler side effects are not
 exactly-once. Contracts and evidence boundaries:
 [generic task migration map](GENERIC-TASK-MIGRATION-MAP.md).
 
+Qualification and explicit remaining gaps:
+[native ordinary-task checkpoint](tests/evidence/generic-reader-writer-tasks-20261020.md).
+
 ## Canonical application-RPC workflow task admission (original checkpoint)
 
 Absolute/immediate generated Rust `_spawn` / `_task` no longer depend on the
