@@ -51,6 +51,7 @@ What a cleanup handler is, and is not:
   `async with` around `await application.run()` is **not** a way to
   clean up on a signal: the process is gone before it runs.
 - Only the first signal is handled; a second Ctrl-C from an impatient
-  developer is ignored rather than interrupting the cleanup.
+  developer ends the process right there, by that signal, without
+  running the cleanup handlers again.
 
 `uninstall_cleanup()` removes a handler installed this way.
