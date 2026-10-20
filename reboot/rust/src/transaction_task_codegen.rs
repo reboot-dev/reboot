@@ -24,9 +24,9 @@ fn emit_transaction_tasks(
         let response_url = format!("type.googleapis.com/{}", method.output_type.as_deref().unwrap().trim_start_matches('.'));
         validations.push_str(&format!("\"{method_name}\" => {{ <proto::{request} as prost::Message>::decode(task.request.as_slice()).map_err(|_|tonic::Status::invalid_argument(\"malformed transaction task\"))?; Ok(()) }},"));
         responses.push_str(&format!("\"{method_name}\" => {{ if response.type_url != \"{response_url}\" {{return Err(tonic::Status::data_loss(\"wrong transaction task response\"));}} <proto::{response} as prost::Message>::decode(response.value.as_slice()).map_err(|_|tonic::Status::data_loss(\"malformed transaction task response\"))?; Ok(()) }},"));
-        let request_expression = if request == "{{google.protobuf.Empty}}" { "{ let () = request; () }" } else { "request" };
-        let response_expression = if response == "{{google.protobuf.Empty}}" { "{ let () = response; () }" } else { "response" };
-        executions.push_str(&format!("\"{method_name}\" => {{ let request=<proto::{request} as prost::Message>::decode(context.task().request.as_slice()).map_err(|_|tonic::Status::data_loss(\"malformed transaction task request\"))?; let response=self.target.{rust}(&context,\"canonical-transaction-task.v1\",{request_expression}).await?; context.finish::<{state}DurableState,proto::{request},proto::{response}>(\"{response_url}\",{response_expression}).await }},"));
+        let (request_prelude, request_expression) = if request == "{{google.protobuf.Empty}}" { ("let () = request;", "()") } else { ("", "request") };
+        let (response_prelude, response_expression) = if response == "{{google.protobuf.Empty}}" { ("let () = response;", "()") } else { ("", "response") };
+        executions.push_str(&format!("\"{method_name}\" => {{ let request=<proto::{request} as prost::Message>::decode(context.task().request.as_slice()).map_err(|_|tonic::Status::data_loss(\"malformed transaction task request\"))?; {request_prelude} let response=self.target.{rust}(&context,\"canonical-transaction-task.v1\",{request_expression}).await?; {response_prelude} context.finish::<{state}DurableState,proto::{request},proto::{response}>(\"{response_url}\",{response_expression}).await }},"));
         declarations.push_str(&format!("declarations.push({runtime}::one_shot_tasks::TaskMethodDeclaration::new::<{state}DurableState,proto::{request},proto::{response}>(\"{identity}\",\"{response_url}\",vec![]).transaction());"));
     }
     if declarations.is_empty() { return; }
