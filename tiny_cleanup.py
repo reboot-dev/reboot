@@ -12,9 +12,14 @@ def req(path,method='GET'):
   with urllib.request.urlopen(q,timeout=40) as r:
    body=r.read();status=r.status;data=json.loads(body) if body else None
  except urllib.error.HTTPError as e:
-  if e.code!=404:raise
-  status=404;data=json.loads(e.read())
- receipt['requests'].append({'path':path,'method':method,'status':status,'data':data,'time':time.time()});return status,data
+  status=e.code;body=e.read()
+  try:data=json.loads(body)
+  except ValueError:data={'body':body.decode(errors='replace')}
+ receipt['requests'].append({'path':path,'method':method,'status':status,'data':data,'time':time.time()})
+ # Preserve each actual request, including errors, before the next action.
+ with (R/'tiny-cleanup-attempts.jsonl').open('a') as f:f.write(json.dumps(receipt['requests'][-1])+'\n')
+ if status not in [200,201,202,204,404]:raise RuntimeError({'path':path,'method':method,'status':status,'data':data})
+ return status,data
 status,data=req('servers/171335411')
 if status!=404:
  s=data['server'];assert s['id']==171335411 and s['labels']==identity['labels'] and s['server_type']['name']=='cpx02' and s['location']['name']=='fsn1' and s['public_net']['ipv4']['ip']=='2.31.73.10' and s['public_net']['ipv4']['id']==156588567
