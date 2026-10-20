@@ -430,6 +430,7 @@ async fn cancellation_terminal_requires_callable_and_cannot_be_fabricated_as_dec
             Binding,
             vec![match kind {
                 "workflow" => declaration.workflow(),
+                "transaction" => declaration.transaction(),
                 "writer" => declaration.workflow_writer_step(),
                 "constructor" => declaration.constructor_scheduling(),
                 "wait" => declaration.workflow_reader_wait(),
@@ -451,6 +452,8 @@ async fn cancellation_terminal_requires_callable_and_cannot_be_fabricated_as_dec
     let workflow = make("workflow");
     assert!(workflow.validate_terminal(&task, &terminal).is_ok());
     assert!(make("reader").validate_terminal(&task, &terminal).is_ok());
+    assert!(make("transaction").validate_terminal(&task, &terminal).is_ok());
+    assert!(make("transaction").validate_scheduling_replay(std::slice::from_ref(&task), std::slice::from_ref(&task)).is_err());
     assert!(make("writer").validate_terminal(&task, &terminal).is_ok());
     assert!(
         make("constructor")

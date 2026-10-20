@@ -2773,7 +2773,7 @@ impl<'a> WorkflowContext<'a> {
             return Err(Status::failed_precondition("failed framework operation fences workflow scope"));
         }
         let operation = self.attempt.scope_operation();
-        if !self.tasks.is_workflow(&self.task)
+        if !self.tasks.is_journal_task(&self.task)
             || (self.task.iteration != 0 && self.tasks.cursor_declaration(&self.task).is_none())
             || self.task.status != db::task::Status::Pending as i32
             || self.task.response_or_error.is_some()
@@ -3127,7 +3127,7 @@ impl<'a> WorkflowContext<'a> {
             .tasks
             .declaration(&self.task)
             .ok_or_else(|| Status::failed_precondition("unregistered workflow"))?;
-        if !declaration.workflow {
+        if !declaration.journal_executor() {
             return Err(Status::failed_precondition("not workflow authority"));
         }
         let operation = self.attempt.operation();
@@ -3174,7 +3174,7 @@ impl<'a> WorkflowContext<'a> {
             .tasks
             .declaration(&self.task)
             .ok_or_else(|| Status::failed_precondition("unregistered workflow"))?;
-        if !declaration.workflow {
+        if !declaration.journal_executor() {
             return Err(Status::failed_precondition("not workflow authority"));
         }
         self.tasks
@@ -3193,15 +3193,18 @@ impl<'a> WorkflowContext<'a> {
     }
 }
 impl OneShotTasks {
-    fn is_workflow(&self, task: &db::Task) -> bool {
+    fn is_journal_task(&self, task: &db::Task) -> bool {
         self.declaration(task)
-            .is_some_and(|declaration| declaration.workflow)
+            .is_some_and(|declaration| declaration.journal_executor())
     }
     async fn execute_workflow_task(
         &self,
         task: db::Task,
         cancel: &RecoveryCancellation,
     ) -> Result<(), Status> {
+        if self.declaration(&task).is_some_and(|d| d.transaction) {
+            return self.execute_registered_workflow_task(task, cancel).await;
+        }
         let registration = WorkflowCancellationRegistration::new(self, &task)?;
         let mut cancelled = registration.signal.subscribe();
         tokio::select! {

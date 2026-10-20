@@ -209,7 +209,7 @@ impl WorkflowContext<'_> {
         let declaration = self
             .tasks
             .declaration(&self.task)
-            .filter(|d| d.workflow)
+            .filter(|d| d.workflow || (transaction && d.transaction))
             .ok_or_else(|| Status::failed_precondition("writer requires a registered workflow"))?;
         (declaration.decode_request)(&self.task.request)?;
         let seed = uuid::Uuid::from_slice(&id.task_uuid)

@@ -345,6 +345,11 @@ impl ReaderTaskWaitService {
             let _owner = admission.lock()?;
         }
         let tasks = &admission.tasks;
+        if tasks.inner.declarations.iter().any(|d| d.transaction)
+            && let Some(response) = self.cancel_scheduled_transaction(&admission, id).await?
+        {
+            return Ok(response);
+        }
         // Count each execution handoff independently of CAS serialization. Drop after a
         // body-interruption request publishes sticky uncertainty before releasing
         // the fence. Wait uses the same original-owner publication mutex.

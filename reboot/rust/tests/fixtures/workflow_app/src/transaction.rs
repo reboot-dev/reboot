@@ -166,7 +166,7 @@ impl generated::AtomicLedgerInitMethodsDatabaseHandler for Initialize {
 }
 pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     let endpoint = arg(2);
-    let address = arg(3).parse()?;
+    let address: std::net::SocketAddr = arg(3).parse()?;
     let shutdown = arg(4);
     let store = DatabaseActorStore::connect(&endpoint).await?;
     let leaf_ref = reboot::state_ref::StateRef::from_id(TYPE, "leaf")?.to_string();
@@ -207,9 +207,16 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         .with_external_constructors()
         .with_sequential_root_star()
     };
-    let (root, tasks) = make(0)
-        .with_explicit_abort_owner(reboot::explicit_abort::ExplicitAbortOwner::new(4)?)
-        .with_one_shot_reader_tasks(actor().state_ref().as_str())?;
+    let root = make(0).with_explicit_abort_owner(reboot::explicit_abort::ExplicitAbortOwner::new(4)?);
+    let (root,tasks) = if std::env::var_os("DIRECT_TRANSACTION_TASKS").is_some() {
+        root.with_canonical_transaction_tasks(
+            tonic::transport::Endpoint::from_shared(std::env::var("TRANSACTION_TASK_ENDPOINT").unwrap_or_else(|_|format!("http://{address}")))?.connect_lazy(),
+            reboot::CallerId::new("a0000000001",None)?,None)?
+    } else { root.with_one_shot_reader_tasks(actor().state_ref().as_str())? };
+    let wait = reboot::one_shot_tasks::ReaderTaskWaitService::new(
+        [tasks.clone()], reboot::legacy_placement::LegacyApplicationId::new(crate::application())?, "server", crate::plan(address.port()))?
+        .with_wait_policy(AuthorizationPolicy::new(None,Some(Arc::new(Policy))))
+        .with_admin_authorization(Arc::new(crate::TaskAdminVerifier),Arc::new(Policy));
     let leaf =
         make(1).with_live_participant_owner(reboot::live_participant::LiveParticipantOwner::new(
             4,
@@ -262,6 +269,7 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         .add_public_service(
             proto::atomic_ledger_methods_server::AtomicLedgerMethodsServer::new(adapter),
         )
+        .add_public_service(reboot::database_proto::tasks_server::TasksServer::new(wait))
         .serve_with_shutdown(address, async move {
             while !std::path::Path::new(&shutdown).exists() {
                 tokio::time::sleep(std::time::Duration::from_millis(5)).await;

@@ -14,6 +14,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 include!("workflow_codegen.rs");
 include!("workflow_transaction_codegen.rs");
+include!("transaction_task_codegen.rs");
+include!("transaction_task_codegen_tests.rs");
 #[cfg(test)]
 #[path = "workflow_writer_codegen_tests.rs"]
 mod workflow_writer_codegen_tests;
@@ -1704,10 +1706,15 @@ fn emit_durable(
             } else {
                 (envelope, prefix, map_declared_error, precheck)
             };
-            let canonical_task = if matches!(**kind, DurableKind::Writer(WriterMetadata { constructor: true })) {
+            let canonical_task = if matches!(
+                **kind,
+                DurableKind::Writer(WriterMetadata { constructor: true })
+            ) {
                 "if request.metadata().contains_key(\"x-reboot-task-schedule\") { return Err(tonic::Status::failed_precondition(\"constructors cannot be task targets\")); }".to_owned()
             } else {
-                format!("if request.metadata().contains_key(\"x-reboot-task-schedule\") {{ let owner=self.tasks.as_ref().ok_or_else(||tonic::Status::failed_precondition(\"canonical task admission requires registered task owner\"))?; return {runtime_module}::one_shot_tasks::WorkflowSpawner::new(owner.clone(),self.authorization.clone()).schedule(\"{method_identity}\",request).await; }}")
+                format!(
+                    "if request.metadata().contains_key(\"x-reboot-task-schedule\") {{ let owner=self.tasks.as_ref().ok_or_else(||tonic::Status::failed_precondition(\"canonical task admission requires registered task owner\"))?; return {runtime_module}::one_shot_tasks::WorkflowSpawner::new(owner.clone(),self.authorization.clone()).schedule(\"{method_identity}\",request).await; }}"
+                )
             };
             output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n{canonical_task}\n{unary_composition}{constructor_compatibility}        let handler = self.handler.clone();\n        self.store.{envelope}::<{declaration}, _, _, _>(\n            {prefix}request, move |{callback_args}| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ {precheck}handler.{callback_method}.await{map_declared_error} }})\n            }},\n        ).await\n    }}\n"));
         }
@@ -1783,7 +1790,14 @@ fn emit_durable(
             package,
         );
     }
-    emit_workflow_transaction_reference(output, service, service_name, runtime_module, annotation, &methods);
+    emit_workflow_transaction_reference(
+        output,
+        service,
+        service_name,
+        runtime_module,
+        annotation,
+        &methods,
+    );
     emit_transactions(
         output,
         service,
@@ -1937,8 +1951,12 @@ fn emit_declared_error_enum(
     }
 
     let writer_conversion = if rich_writer {
-        format!("fn into_declared_writer_error(self) -> {runtime_module}::runtime::DeclaredWriterError {{ if self.is_method_declared() {{ {runtime_module}::runtime::DeclaredWriterError::Declared(self.into_status()) }} else {{ {runtime_module}::runtime::DeclaredWriterError::Failed(self.into_status()) }} }}\n")
-    } else { String::new() };
+        format!(
+            "fn into_declared_writer_error(self) -> {runtime_module}::runtime::DeclaredWriterError {{ if self.is_method_declared() {{ {runtime_module}::runtime::DeclaredWriterError::Declared(self.into_status()) }} else {{ {runtime_module}::runtime::DeclaredWriterError::Failed(self.into_status()) }} }}\n"
+        )
+    } else {
+        String::new()
+    };
     output.push_str(&format!("        other => {runtime_module}::one_shot_tasks::TaskHandlerError::Failed(other.into_status()),\n    }} }}\n{writer_conversion}}}\nimpl From<tonic::Status> for {error_type} {{ fn from(status: tonic::Status) -> Self {{ Self::Grpc(status) }} }}\n\n"));
 }
 
@@ -2132,11 +2150,21 @@ fn emit_transactional_client(
 /// Keep the generated transaction paths separate. In particular, a future
 /// shared-root promotion must not accidentally change inbound shared execution.
 fn transaction_task_schedule_guard(runtime: &str) -> String {
-    format!("if request.metadata().contains_key(\"x-reboot-task-schedule\") {{ if let Some(ticket)=request.extensions().get::<{runtime}::runtime::RegisteredLocalTicket>() {{ticket.discard();}} return Err(tonic::Status::failed_precondition(\"canonical task admission is unsupported by transaction adapters\")); }}\n")
+    format!(
+        "if request.metadata().contains_key(\"x-reboot-task-schedule\") {{ if let Some(ticket)=request.extensions().get::<{runtime}::runtime::RegisteredLocalTicket>() {{ticket.discard();}} return Err(tonic::Status::failed_precondition(\"canonical task admission is unsupported by transaction adapters\")); }}\n"
+    )
 }
 
 fn emit_exclusive_transaction_method(output: &mut String, flow: TransactionFlow<'_>) {
-    let task_guard = transaction_task_schedule_guard(flow.runtime_module);
+    let task_guard = if !flow.factory && !flow.declared_error {
+        let runtime = flow.runtime_module;
+        let identity = flow.method_identity;
+        format!(
+            "if request.metadata().contains_key(\"x-reboot-task-schedule\") {{ if let Some(ticket)=request.extensions().get::<{runtime}::runtime::RegisteredLocalTicket>() {{ticket.discard();return Err(tonic::Status::failed_precondition(\"transaction task admission excludes local tickets\"));}} let owner=self.tasks.as_ref().ok_or_else(||tonic::Status::failed_precondition(\"canonical transaction task requires registered owner\"))?; return {runtime}::one_shot_tasks::WorkflowSpawner::new(owner.clone(),self.authorization.clone()).schedule(\"{identity}\",request).await; }}\n"
+        )
+    } else {
+        transaction_task_schedule_guard(flow.runtime_module)
+    };
     // Transaction metadata selects a protocol path, not trusted identity.
     // Both fresh and validated inbound execution enforce the service policy;
     // factories authorize optional state before revealing whether it exists.
@@ -2473,7 +2501,9 @@ fn emit_transaction_flow(output: &mut String, flow: TransactionFlow<'_>) {
     output.push_str(&format!("{prefix}// A duplicate may have waited for local actor admission while the original\n{prefix}// root transaction committed. Re-check durable replay before invoking the handler.\n{prefix}if let Some(idempotency) = &automatic_idempotency {{ let replay_after_admission = async {{ let recovered = self.participant.sidecar().recover_idempotent_mutations({runtime_module}::database_proto::RecoverIdempotentMutationsRequest {{ state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone(), idempotency_key: Some(idempotency.key().as_bytes().to_vec()), workflow_id: None, workflow_iteration: None }}).await?; for recovered in recovered {{ for mutation in recovered.idempotent_mutations {{ if let Some(response) = idempotency.replay_bound::<proto::{response}>(&mutation, <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE, &context.headers().state_ref)? {{ return Ok(Some(response)); }} }} }} Ok::<Option<proto::{response}>, tonic::Status>(None) }}.await; match replay_after_admission {{ Ok(Some(response)) => {{ {runtime_module}::runtime::boxed_generated_future(|| local.abort_local()).await?; return Ok(tonic::Response::new(response)); }}, Ok(None) => {{}}, Err(error) => {{ {runtime_module}::runtime::boxed_generated_future(|| local.abort_local()).await?; return Err(error); }} }} }}\n"));
     // Default construction is only a fresh exclusive root capability. Inbound
     // existing-writer and shared paths retain their original absence refusal.
-    let default_creation = if default_root && mode == "Exclusive" && !factory
+    let default_creation = if default_root
+        && mode == "Exclusive"
+        && !factory
         && matches!(inbound, TransactionInbound::Dynamic)
     {
         "!inbound && context.transaction_ids().len() == 1"
@@ -2664,21 +2694,10 @@ fn emit_task_apis(
     output.push_str(&format!("/// Immediate same-actor reader/writer task scheduling; method views come from RPC descriptors, not task annotations.\npub struct {scheduler};\nimpl {scheduler} {{\n"));
     for method in &service.method {
         let name = method.name.as_deref().unwrap();
-        if !matches!(
-            annotation.methods.get(name),
-            Some(DurableKind::Reader | DurableKind::Writer(WriterMetadata { constructor: false }))
-        ) {
-            continue;
-        }
-        let rust_name = snake_case(name);
-        let request = method
-            .input_type
-            .as_ref()
-            .unwrap()
-            .rsplit('.')
-            .next()
-            .unwrap()
-            .to_upper_camel_case();
+        let transaction = matches!(annotation.methods.get(name), Some(DurableKind::Transaction(metadata)) if metadata.mode == TransactionMode::Exclusive && !metadata.factory)
+            && !annotation.declared_errors.get(name).is_some_and(|errors| !errors.is_empty());
+        if !transaction && !matches!(annotation.methods.get(name), Some(DurableKind::Reader | DurableKind::Writer(WriterMetadata { constructor: false }))) { continue; }
+        let (rust_name, request, response) = method_types("task API",package,service_name,method).expect("validated task method");
         output.push_str(&format!("    pub fn {rust_name}(state_ref: &str, request: &proto::{request}) -> {runtime_module}::database_proto::Task {{ {runtime_module}::database_proto::Task {{ task_id: Some({runtime_module}::database_proto::TaskId {{ state_type: <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: state_ref.to_owned(), task_uuid: uuid::Uuid::new_v4().as_bytes().to_vec() }}), method: \"{name}\".to_owned(), status: {runtime_module}::database_proto::task::Status::Pending as i32, request: <proto::{request} as prost::Message>::encode_to_vec(request), timestamp: None, iteration: 0, response_or_error: None }} }}\n"));
         scheduled_methods.push_str(&format!("    /// Schedule at a canonical absolute UTC protobuf timestamp.\n    pub fn {rust_name}(state_ref: &str, request: &proto::{request}, schedule: {runtime_module}::TaskScheduleTimestamp) -> {runtime_module}::database_proto::Task {{ let mut task = {scheduler}::{rust_name}(state_ref, request); task.timestamp = Some(schedule); task }}\n"));
         let response_full = method
@@ -2686,11 +2705,6 @@ fn emit_task_apis(
             .as_deref()
             .unwrap()
             .trim_start_matches('.');
-        let response = response_full
-            .rsplit('.')
-            .next()
-            .unwrap()
-            .to_upper_camel_case();
         let errors = annotation
             .declared_errors
             .get(name)
@@ -2719,7 +2733,7 @@ fn emit_task_apis(
             )
         } else {
             format!(
-                "Some({runtime_module}::database_proto::task_response_or_error::ResponseOrError::Error(_)) => Err(tonic::Status::data_loss(\"task method does not declare errors\"))"
+                "Some({runtime_module}::database_proto::task_response_or_error::ResponseOrError::Error(error)) => Err({runtime_module}::one_shot_tasks::task_cancellation_status(&error)?.unwrap_or_else(||tonic::Status::data_loss(\"task method does not declare errors\")))"
             )
         };
         wait_methods.push_str(&format!("    /// Wait via the canonical public Tasks RPC. Request metadata/deadline is preserved.\n    pub async fn {rust_name}(channel: tonic::transport::Channel, mut request: tonic::Request<{runtime_module}::database_proto::TaskId>) -> Result<proto::{response}, {wait_error}> {{  if request.get_ref().state_type != <{state}DurableState as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE {{ return Err(tonic::Status::invalid_argument(\"task state type does not match generated method\"){conversion}); }}\n if request.metadata().get(\"x-reboot-state-ref\").is_none() {{ let state_ref = request.get_ref().state_ref.parse().map_err(|_| tonic::Status::invalid_argument(\"invalid routed task state ref\"))?; request.metadata_mut().insert(\"x-reboot-state-ref\", state_ref); }} request.metadata_mut().insert(\"x-reboot-task-method\", \"{package}.{service_name}.{name}\".parse().unwrap()); let result = {runtime_module}::database_proto::tasks_client::TasksClient::new(channel).wait(request.map(|task_id| {runtime_module}::database_proto::WaitRequest {{ task_id: Some(task_id) }})).await{rpc_error_map}?.into_inner(); match result.response_or_error.and_then(|result| result.response_or_error) {{ Some({runtime_module}::database_proto::task_response_or_error::ResponseOrError::Response(response)) if response.type_url == \"type.googleapis.com/{response_full}\" => <proto::{response} as prost::Message>::decode(response.value.as_slice()).map_err(|_| tonic::Status::data_loss(\"malformed typed task response\"){conversion}), {error_arm}, _ => Err(tonic::Status::data_loss(\"missing or mismatched typed task response\"){conversion}) }}  }}\n"));
@@ -3034,6 +3048,17 @@ fn emit_reader_tasks(
         declarations.push_str(&format!("{runtime_module}::one_shot_tasks::TaskMethodDeclaration::new::<{state}DurableState, proto::{request}, proto::{response}>(\"{package}.{service_name}.{name}\", \"type.googleapis.com/{response_full}\", {errors}){constructor_marker},"));
     }
     declarations.push(']');
+    if mixed {
+        emit_transaction_tasks(
+            output,
+            service,
+            annotation,
+            state,
+            runtime_module,
+            &declarations,
+            package,
+        );
+    }
     if !mixed {
         output.push_str(&format!(
             "impl<H: {handler}> {service_name}DatabaseAdapter<H> {{\n"
@@ -3095,11 +3120,24 @@ fn emit_transactions(
             "{service_name}: method collides with reserved local reader helper"
         ));
     }
-    if methods.iter().any(|(_, method, _, _, _)| method == "with_taskless_constructor_children") {
-        return Err(format!("{service_name}: method collides with reserved taskless constructor child helper"));
+    if methods.iter().any(|(_, method, _, _, _)| method == "with_canonical_transaction_tasks") {
+        return Err(format!("{service_name}: method collides with reserved canonical transaction task helper"));
     }
-    if methods.iter().any(|(_, method, _, _, _)| method == "with_external_constructors") {
-        return Err(format!("{service_name}: method collides with reserved external constructor routing helper"));
+    if methods
+        .iter()
+        .any(|(_, method, _, _, _)| method == "with_taskless_constructor_children")
+    {
+        return Err(format!(
+            "{service_name}: method collides with reserved taskless constructor child helper"
+        ));
+    }
+    if methods
+        .iter()
+        .any(|(_, method, _, _, _)| method == "with_external_constructors")
+    {
+        return Err(format!(
+            "{service_name}: method collides with reserved external constructor routing helper"
+        ));
     }
     // RPCs and synthesized hooks share one Rust trait-method namespace. In
     // particular, Foo's typed transaction hook can collide with writer FooTyped.
@@ -3140,10 +3178,15 @@ fn emit_transactions(
         }
     }
     for (kind, method, _, _, _) in methods {
-        if matches!(kind, DurableKind::Writer(WriterMetadata { constructor: true })) {
+        if matches!(
+            kind,
+            DurableKind::Writer(WriterMetadata { constructor: true })
+        ) {
             let hook = format!("{method}_constructor_child");
             if !handler_methods.insert(hook.clone()) {
-                return Err(format!("{service_name}: taskless constructor child hook `{hook}` collides"));
+                return Err(format!(
+                    "{service_name}: taskless constructor child hook `{hook}` collides"
+                ));
             }
         }
     }
@@ -3433,8 +3476,13 @@ fn emit_transactions(
             DurableKind::Writer(WriterMetadata { constructor: true })
         ) {
             emit_registered_constructor_child_flow(
-                &mut transactional_writer, method, request, state,
-                method_identity, runtime_module, error_map,
+                &mut transactional_writer,
+                method,
+                request,
+                state,
+                method_identity,
+                runtime_module,
+                error_map,
             );
         }
         let request_mutability = if transactional_writer.is_empty() {
@@ -3989,12 +4037,21 @@ mod tests {
     #[test]
     fn constructorless_default_creation_is_fresh_exclusive_root_only() {
         let flow = TransactionFlow {
-            method: "sign_up", request: "SignUpRequest", response: "SignUpResponse",
-            method_identity: "bank.v1.BankMethods.SignUp", state: "Bank",
-            declaration: "BankDurableState", runtime_module: "reboot",
-            mode: "Exclusive", factory: false, default_root: true,
-            declared_error: false, writer: false, inbound: TransactionInbound::Dynamic,
-            shared_root_ownership_seam: false, authorize_after_load: true,
+            method: "sign_up",
+            request: "SignUpRequest",
+            response: "SignUpResponse",
+            method_identity: "bank.v1.BankMethods.SignUp",
+            state: "Bank",
+            declaration: "BankDurableState",
+            runtime_module: "reboot",
+            mode: "Exclusive",
+            factory: false,
+            default_root: true,
+            declared_error: false,
+            writer: false,
+            inbound: TransactionInbound::Dynamic,
+            shared_root_ownership_seam: false,
+            authorize_after_load: true,
         };
         let mut output = String::new();
         emit_exclusive_transaction_method(&mut output, flow);
@@ -4005,10 +4062,18 @@ mod tests {
         let fresh = output.rfind("let registered_root =").unwrap();
         let default = output.find(root_default).unwrap();
         assert!(fresh + output[fresh..].find("authorize_handler_entry").unwrap() < default);
-        assert!(fresh + output[fresh..].find("self.authorization.authorize(").unwrap() < default);
+        assert!(
+            fresh
+                + output[fresh..]
+                    .find("self.authorization.authorize(")
+                    .unwrap()
+                < default
+        );
         let admission = output.find("local.authorize_default_root(").unwrap();
         assert!(default < admission);
-        assert!(admission < output[admission..].find("proto::Bank::default()").unwrap() + admission);
+        assert!(
+            admission < output[admission..].find("proto::Bank::default()").unwrap() + admission
+        );
         assert!(output.contains("execution.final_state.clone().or_else(|| Some(<proto::Bank as prost::Message>::encode_to_vec(&state)))"));
         assert!(output.contains("start_local_reusable_preallow"));
         assert!(output.contains("local.complete_root("));
@@ -6891,8 +6956,13 @@ mod tests {
         assert!(content.contains("pub fn with_authorization("));
         assert!(content.contains("self.authorization.verify(headers.clone()"));
         assert!(content.contains("self.authorization.authorize(&authorization_context"));
-        let authorization = content.find("self.authorization.authorize(&authorization_context").unwrap();
-        let recovery = content[authorization..].find("recover_idempotent_mutations(").map(|offset| authorization + offset).unwrap();
+        let authorization = content
+            .find("self.authorization.authorize(&authorization_context")
+            .unwrap();
+        let recovery = content[authorization..]
+            .find("recover_idempotent_mutations(")
+            .map(|offset| authorization + offset)
+            .unwrap();
         let denial = &content[authorization..recovery];
         assert!(denial.contains("reboot_rust_schema::runtime::boxed_generated_future(|| local.abort_local_after_denial()).await?; return Err(error);"));
         assert!(!denial.contains("local.abort_local()"));
@@ -7098,7 +7168,9 @@ mod tests {
         assert!(content.contains("external_constructors: false"));
         assert!(content.contains("external_constructors: self.external_constructors"));
         assert!(content.contains("pub fn with_external_constructors(mut self) -> Self { self.local_registration = None; self.local_incarnation = std::sync::Arc::new(()); self.reader_registry = None; self.legacy_reader_roots.clear(); self.reader_binding_id = std::sync::Arc::new(()); self.external_constructors = true; self }"));
-        assert!(content.contains("if self.external_constructors || self.taskless_constructor_children"));
+        assert!(
+            content.contains("if self.external_constructors || self.taskless_constructor_children")
+        );
         // Public routing membership is not a constructor-child capability.
         assert!(content.contains("if !self.taskless_constructor_children || headers.transaction_ids.is_none() || headers.idempotency_key.is_some() || self.tasks.is_some()"));
         assert!(content.contains("pub fn with_taskless_constructor_children(mut self)"));
@@ -7107,10 +7179,14 @@ mod tests {
         assert!(content.contains("Some(entry), &context"));
         assert!(content.contains("Some((binding.clone(), configuration.clone()))"));
         assert!(content.contains("state: Some(encoded_state), ..Default::default()"));
-        assert!(content.contains("inbound_participant_metadata(configuration.target.clone(), false)"));
+        assert!(
+            content.contains("inbound_participant_metadata(configuration.target.clone(), false)")
+        );
         assert!(content.contains("guard.finish_generated_inbound().await?"));
         assert!(content.contains("constructor child requires registered local ticket"));
-        assert!(content.contains("taskless constructor child excludes tasks, idempotency and returned participants"));
+        assert!(content.contains(
+            "taskless constructor child excludes tasks, idempotency and returned participants"
+        ));
         assert!(content.contains(".constructor_scheduling()"));
         assert!(!content.contains("construct_local_precheck"));
         let mut external_collision = value.clone();

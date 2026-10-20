@@ -20,6 +20,7 @@ include!("workflow_context.rs");
 include!("workflow_outbound_writer.rs");
 include!("task_listing.rs");
 include!("task_cancellation.rs");
+include!("transaction_task_cancellation.rs");
 include!("initializer_admission.rs");
 include!("workflow_spawn.rs");
 include!("workflow_spawn_client.rs");
@@ -311,6 +312,7 @@ pub struct TaskMethodDeclaration {
     decode_response: fn(&[u8]) -> Result<(), Status>,
     errors: Vec<DeclaredTaskError>,
     workflow: bool,
+    transaction: bool,
     cursor: Option<(&'static str, u32)>,
     workflow_writer_step: bool,
     workflow_reader_wait: bool,
@@ -387,6 +389,7 @@ impl TaskMethodDeclaration {
             decode_response: decode_declared_message::<R>,
             errors,
             workflow: false,
+            transaction: false,
             cursor: None,
             workflow_writer_step: false,
             workflow_reader_wait: false,
@@ -398,9 +401,18 @@ impl TaskMethodDeclaration {
         self.constructor_scheduling = true;
         self
     }
+    /// Coordinator-backed transaction task; journal execution without an actor
+    /// lease across the generated RPC. Not an ordinary writer or legacy workflow.
+    pub fn transaction(mut self) -> Self {
+        self.transaction = true;
+        self.workflow = false;
+        self
+    }
+    fn journal_executor(&self) -> bool { self.workflow || self.transaction }
     /// Immutable explicit workflow kind; never inferred from a reader binding.
     pub fn workflow(mut self) -> Self {
         self.workflow = true;
+        self.transaction = false;
         self.workflow_writer_step = false;
         self.workflow_reader_wait = false;
         self
@@ -560,6 +572,9 @@ impl OneShotTasks {
     ) -> Result<Self, Status> {
         let mut methods = HashSet::new();
         for declaration in &declarations {
+            if declaration.transaction && (declaration.workflow || declaration.cursor.is_some() || declaration.workflow_writer_step || declaration.workflow_reader_wait || declaration.constructor_scheduling || !declaration.errors.is_empty()) {
+                return Err(Status::invalid_argument("transaction tasks exclude workflow, cursor, constructor, step and declared-error authority"));
+            }
             if declaration.cursor.is_some_and(|(alias, version)| {
                 !declaration.workflow
                     || alias.is_empty()
@@ -725,7 +740,7 @@ impl OneShotTasks {
         expected: &[db::Task],
         loaded: &[db::Task],
     ) -> Result<(), Status> {
-        if expected.iter().any(|task| !self.is_workflow(task)) {
+        if expected.iter().any(|task| !self.declaration(task).is_some_and(|d| d.workflow)) {
             return Err(Status::failed_precondition("workflow successor required"));
         }
         self.validate_ordinary_scheduling_replay(expected, loaded)
@@ -827,7 +842,7 @@ impl OneShotTasks {
             .find(|d| d.method == method)
             .ok_or_else(|| Status::failed_precondition("unregistered scheduling writer"))?;
         if !self.inner.binding.writer_capable()
-            || declaration.workflow
+            || declaration.journal_executor()
             || declaration.constructor_scheduling
             || declaration.response_type != response_type
             || declaration.declaration != std::any::TypeId::of::<D>()
@@ -864,7 +879,7 @@ impl OneShotTasks {
             .ok_or_else(|| Status::failed_precondition("unregistered scheduling constructor"))?;
         if !self.inner.binding.writer_capable()
             || !declaration.constructor_scheduling
-            || declaration.workflow
+            || declaration.journal_executor()
             || declaration.workflow_writer_step
             || declaration.workflow_reader_wait
             || declaration.state_type != D::STATE_TYPE
@@ -899,7 +914,7 @@ impl OneShotTasks {
     pub fn contains_writer(&self, tasks: &[db::Task]) -> bool {
         tasks
             .iter()
-            .any(|task| self.inner.binding.is_writer(task) || self.is_workflow(task))
+            .any(|task| self.inner.binding.is_writer(task) || self.is_journal_task(task))
     }
     /// Validate the whole staged set before the participant stages any data.
     pub(crate) fn cursor_declaration(&self, task: &db::Task) -> Option<(&'static str, u32)> {
@@ -963,7 +978,7 @@ impl OneShotTasks {
                     "reader wait descriptor cannot be scheduled as a task",
                 ));
             }
-            if self.is_workflow(task) {
+            if self.is_journal_task(task) {
                 if !self.inner.binding.writer_capable() {
                     return Err(Status::failed_precondition(
                         "reader-only owner cannot admit workflow",
@@ -1225,7 +1240,7 @@ impl OneShotTasks {
             .get(&id.task_uuid).is_some_and(|owner| *owner.signal.borrow())
     }
     async fn execute(&self, task: db::Task, cancel: &RecoveryCancellation) -> Result<(), Status> {
-        if self.is_workflow(&task) {
+        if self.is_journal_task(&task) {
             return self.execute_workflow_task(task, cancel).await;
         }
         let admission = self.local_execution_admission()?;
