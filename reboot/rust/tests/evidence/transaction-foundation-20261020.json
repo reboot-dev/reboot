@@ -1,0 +1,241 @@
+{
+  "verification": {
+    "accepted": true,
+    "archive_sha256": "5428d231fee7acbeafc1b8ce0207912ec19737c4b96885e55cd016f90c2fcb2d",
+    "archive_bytes": 9543039,
+    "archive_files": 3627,
+    "native_transaction_cases": 7,
+    "retained_native_receipts": 34,
+    "retained_original_child_waits": 1615,
+    "source_inputs": 732,
+    "locally_checked_inputs": 434,
+    "sdk_all_targets_passed": 972,
+    "sdk_all_targets_ignored": 175,
+    "mutants": 2,
+    "source_commit": "50da3fe53a821d1c11b449e9e8c6bf4de24cdf21",
+    "fresh_cpp_build": false
+  },
+  "final_run": "final4",
+  "final_native_receipts": [
+    {
+      "path": "final4/generic-raw/receipt.json",
+      "complete": true,
+      "children": 229,
+      "cases": 12,
+      "binary_sha256": "9d3c38a6484f4143029d73271c67a4e7789ae60ef8632eb8b5a1d24b1d12df59"
+    },
+    {
+      "path": "final4/outbound-ack-raw/receipt.json",
+      "complete": true,
+      "children": 95,
+      "cases": 4,
+      "binary_sha256": "9d3c38a6484f4143029d73271c67a4e7789ae60ef8632eb8b5a1d24b1d12df59"
+    },
+    {
+      "path": "final4/canonical-raw/receipt.json",
+      "complete": true,
+      "children": 199,
+      "cases": 11,
+      "binary_sha256": "9d3c38a6484f4143029d73271c67a4e7789ae60ef8632eb8b5a1d24b1d12df59"
+    },
+    {
+      "path": "final4/mutant-skip-target-receipt-replay-raw/receipt.json",
+      "complete": false,
+      "children": 16,
+      "cases": 0,
+      "binary_sha256": "bfa0164816dba61ea3bd8b40cefa244c3a2508027b551d33651ee6036faf8fb8"
+    },
+    {
+      "path": "final4/outbound-raw/receipt.json",
+      "complete": true,
+      "children": 105,
+      "cases": 7,
+      "binary_sha256": "9d3c38a6484f4143029d73271c67a4e7789ae60ef8632eb8b5a1d24b1d12df59"
+    },
+    {
+      "path": "final4/native-transaction-raw/receipt.json",
+      "complete": true,
+      "children": 100,
+      "cases": 7,
+      "binary_sha256": "9d3c38a6484f4143029d73271c67a4e7789ae60ef8632eb8b5a1d24b1d12df59"
+    },
+    {
+      "path": "final4/parent-signal-raw/receipt.json",
+      "complete": false,
+      "children": 9,
+      "cases": 0,
+      "binary_sha256": "9d3c38a6484f4143029d73271c67a4e7789ae60ef8632eb8b5a1d24b1d12df59"
+    },
+    {
+      "path": "final4/parent-error-raw/receipt.json",
+      "complete": false,
+      "children": 9,
+      "cases": 0,
+      "binary_sha256": "9d3c38a6484f4143029d73271c67a4e7789ae60ef8632eb8b5a1d24b1d12df59"
+    },
+    {
+      "path": "final4/mutant-missing-root-receipt-binding-raw/receipt.json",
+      "complete": false,
+      "children": 11,
+      "cases": 0,
+      "binary_sha256": "a9d677d03305835e39b3f782c3bf939eabdcf436a4af87a1ecef12c3f2c71de8"
+    }
+  ],
+  "positive_native_cases": 41,
+  "final_native_child_waits": 773,
+  "gate_count": 18,
+  "doctests_passed": 8,
+  "fixture_tests_passed": 0,
+  "source_commit": "50da3fe53a821d1c11b449e9e8c6bf4de24cdf21",
+  "base_commit": "f6d47955a75999a120790bff0c14db617d87c62c",
+  "source_manifest_sha256": "18c88c159997f7a57b5c81c3bb9ee8768fb80a43d249bda61fe99260b4700ebe",
+  "database_sha256": "619002c569e9841144a8bbedf4f2ce6a753bb0e6b103af71883d91d43f413803",
+  "application_sha256": "9d3c38a6484f4143029d73271c67a4e7789ae60ef8632eb8b5a1d24b1d12df59",
+  "source_objects": 716,
+  "deadline_drill": {
+    "complete": true,
+    "original_parent_pid": 1676682,
+    "started": "2026-10-20T19:56:08.448814+00:00",
+    "child_pid": 1676683,
+    "real_wait_timeout": true,
+    "requested_signal": "SIGTERM",
+    "waited_by_original_parent": true,
+    "wait_returncode": 1,
+    "all_original_grandchildren_absent": true,
+    "original_grandchild_waits": 9,
+    "finished": "2026-10-20T19:56:11.201508+00:00"
+  },
+  "outer_retirement": {
+    "observed": "2026-10-20T19:56:22.952065+00:00",
+    "unit": "MainPID=0\nResult=success\nExecMainStatus=0\nActiveState=inactive\n",
+    "owner_proc_absent": true,
+    "note": "systemd terminal readback plus timestamped absence; not a manufactured external original-parent wait"
+  },
+  "custody_readback": {
+    "observed": "2026-10-20T19:56:22.967418+00:00",
+    "receipts": [
+      {
+        "path": "final4/generic-raw/receipt.json",
+        "children": 229,
+        "all_absent": true
+      },
+      {
+        "path": "final4/outbound-ack-raw/receipt.json",
+        "children": 95,
+        "all_absent": true
+      },
+      {
+        "path": "final4/canonical-raw/receipt.json",
+        "children": 199,
+        "all_absent": true
+      },
+      {
+        "path": "final4/mutant-skip-target-receipt-replay-raw/receipt.json",
+        "children": 16,
+        "all_absent": true
+      },
+      {
+        "path": "final4/outbound-raw/receipt.json",
+        "children": 105,
+        "all_absent": true
+      },
+      {
+        "path": "final4/native-transaction-raw/receipt.json",
+        "children": 100,
+        "all_absent": true
+      },
+      {
+        "path": "final4/parent-signal-raw/receipt.json",
+        "children": 9,
+        "all_absent": true
+      },
+      {
+        "path": "final4/parent-error-raw/receipt.json",
+        "children": 9,
+        "all_absent": true
+      },
+      {
+        "path": "final4/mutant-missing-root-receipt-binding-raw/receipt.json",
+        "children": 11,
+        "all_absent": true
+      }
+    ],
+    "all_gate_pids_absent": true,
+    "cache_locks_acquired": true,
+    "scope": "Post-run exact original-child absence and lock availability; not an external wait of systemd owner"
+  },
+  "prior_registration_readback": {
+    "observed": "2026-10-20T19:56:23.070256+00:00",
+    "rows": [
+      {
+        "name": "running",
+        "cases": 9,
+        "waits": 188
+      },
+      {
+        "name": "generic",
+        "cases": 12,
+        "waits": 229
+      },
+      {
+        "name": "workflow-writer",
+        "cases": 2,
+        "waits": 49
+      },
+      {
+        "name": "canonical",
+        "cases": 11,
+        "waits": 199
+      },
+      {
+        "name": "migration",
+        "cases": 1,
+        "waits": 30
+      },
+      {
+        "name": "lifecycle",
+        "cases": 19,
+        "waits": 657
+      },
+      {
+        "name": "spawn",
+        "cases": 16,
+        "waits": 409
+      }
+    ],
+    "owner_proc_absent": true,
+    "note": "Exact latest registration owner checked after this run launched. Pre-launch fresh check covered older ordinary greenfinal5 owner; cache locks were acquired before work. Do not represent this later absence observation as a pre-launch observation."
+  },
+  "chronology": [
+    {
+      "run": "final1",
+      "accepted": false,
+      "failure": "fixture strict Clippy exit 101; boxed fixture status in 1e27135f without allowances"
+    },
+    {
+      "run": "final2",
+      "accepted": false,
+      "failure": "stale Store ACK text assertion; proxy emitted native ACK"
+    },
+    {
+      "run": "final3",
+      "accepted": false,
+      "failure": "exact native ACK equality ignored existing sidecar error context"
+    },
+    {
+      "run": "final4",
+      "accepted": true,
+      "fix": "50da3fe5 matches precise inner native ACK marker and typed UNAVAILABLE; all 18 gates freshly rerun"
+    }
+  ],
+  "limitations": [
+    "Scheduled Python workflow -> generated exclusive transaction root; direct spawn(transaction) remains rejected",
+    "Registered same-host root-star participants and legacy C++ 2PC only",
+    "Target state/response receipt/future reader successor staged transactionally; source journal and terminal CompleteTask CAS remain separate",
+    "Explicit outbound service credentials; no recovered user-identity/private-token parity",
+    "Declared transaction errors do not gain durable ordinary-writer declared-error replay authority",
+    "Reused existing native C++ Database; not a fresh hermetic C++ build",
+    "Raw archive retains sources/generated bindings/logs/wire bytes/hash manifests, but excludes executable bytes and RocksDB directories; those remain on expiring validation host",
+    "Systemd owner retirement is terminal API plus timestamped absence, not an external original-parent wait; gate and driver children have actual original-parent joins"
+  ]
+}

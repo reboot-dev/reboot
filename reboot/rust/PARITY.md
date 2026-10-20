@@ -34,8 +34,12 @@ scheduled workflow calling a real transaction, not
 `WeakReference.spawn(transaction_method)` parity. Shared/factory transaction task
 targets, durable declared transaction-error replay, direct transaction-task
 cancellation ownership and general coordinator retry parity remain open. See the
-[source-backed migration map](TRANSACTION-TASK-MIGRATION-MAP.md) and the separately
-retained native qualification evidence; broader ignored suites are not implied.
+[source-backed migration map](TRANSACTION-TASK-MIGRATION-MAP.md) and
+[local final4 qualification handoff](tests/evidence/transaction-foundation-20261020.md).
+Final4 freshly accepted 18 gates, including seven real transaction cases and the
+unchanged RED root-binding/replay mutants; failed final1/final2/final3 receipts
+remain retained. This checkpoint is local only, pending independent review;
+broader ignored suites are not implied.
 
 ## Canonical ordinary reader/writer task targets (bounded)
 
@@ -6102,7 +6106,7 @@ and the checker itself; it is not a full toolchain/dependency lock or native bin
 certificate. If relevant implementation changes, re-audit claims and appropriate
 acceptance before refreshing it; do not merely regenerate the number.
 
-<!-- parity-source-sha256: b34a145ed4244ee7c7bb5ccb66bc1c7f21c8a951be900e8f84f1fd04b404f649 -->
+<!-- parity-source-sha256: 4bea1ccffeffde11ca366e187a2388dfcc330806ff196746a64dfd65a56ec934 -->
 
 New feature work updates this ledger in the same verified commit, not another
 candidate/status file. Status is by public use case and safe admitted shapes,
