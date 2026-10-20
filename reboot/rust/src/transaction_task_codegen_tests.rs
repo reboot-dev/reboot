@@ -35,6 +35,12 @@ mod canonical_transaction_task_codegen_tests {
         let mut code=String::new();
         emit_transaction_tasks(&mut code,&service,&annotation,"State","reboot","vec![]","rpc");
         assert!(code.contains("MethodsWorkflowTransactionRef"));
+        assert!(code.contains("mut self,store:reboot::runtime::DatabaseActorStore,"));
+        assert!(code.contains("self.participant.validate_task_owner(&store"));
+        assert!(code.contains("self.coordinator.sidecar().database_endpoint()!=Some(store.database_endpoint())"));
+        assert!(!code.contains("ReaderTaskBinding<H>"));
+        assert!(!code.contains("self.store"));
+        assert!(code.contains("pure transaction requires coordinator execution"));
         assert!(code.contains(".transaction()"));
         assert!(code.contains("\"rpc.Methods.Apply\""));
         assert!(code.contains("google.protobuf.Empty"));

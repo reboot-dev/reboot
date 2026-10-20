@@ -21,7 +21,7 @@ use reboot::{
 use std::sync::Arc;
 const TYPE: &str = "workflow.v1.AtomicLedger";
 pub fn actor() -> reboot::actor_ref::ActorRef {
-    reboot::actor_ref::ActorRef::from_id(TYPE, "atomic").unwrap()
+    reboot::actor_ref::ActorRef::from_id(TYPE, &std::env::var("PURE_TRANSACTION_ACTOR").unwrap_or_else(|_| "atomic".into())).unwrap()
 }
 struct Starts;
 impl RootTransactionStartFactory for Starts {
@@ -153,6 +153,7 @@ impl generated::AtomicLedgerMethodsTransactionHandler for Handler {
         event("transaction-declared-child-staged");
         Err(reboot::declared_error_status(tonic::Code::Unknown,"declared transaction rollback", "type.googleapis.com/workflow.v1.BelowThreshold", &proto::BelowThreshold { required:4242, observed:state.value }))
     }
+    #[cfg(not(feature = "pure-transactions"))]
     async fn query(
         &self,
         state: &proto::AtomicLedger,
@@ -160,10 +161,16 @@ impl generated::AtomicLedgerMethodsTransactionHandler for Handler {
     ) -> Result<proto::AtomicLedger, tonic::Status> {
         Ok(*state)
     }
+    #[cfg(feature = "pure-transactions")]
+    async fn query(&self, _: &TransactionContext, state: &mut proto::AtomicLedger, _: proto::Empty) -> Result<TransactionExecution<proto::AtomicLedger>, tonic::Status> {
+        Ok(TransactionExecution::new(*state))
+    }
 }
 struct Initialize;
 #[tonic::async_trait]
 impl generated::AtomicLedgerInitMethodsDatabaseHandler for Initialize {
+    #[cfg(feature = "pure-transactions")]
+    async fn probe(&self, state: &proto::AtomicLedger, _: proto::Empty) -> Result<proto::AtomicLedger, tonic::Status> { Ok(*state) }
     async fn open(
         &self,
         state: &mut proto::AtomicLedger,
@@ -178,7 +185,8 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     let address: std::net::SocketAddr = arg(3).parse()?;
     let shutdown = arg(4);
     let store = DatabaseActorStore::connect(&endpoint).await?;
-    let leaf_ref = reboot::state_ref::StateRef::from_id(TYPE, "leaf")?.to_string();
+    let leaf_id = if std::env::var("PURE_TRANSACTION_ACTOR").as_deref() == Ok("leaf") { "atomic" } else { "leaf" };
+    let leaf_ref = reboot::state_ref::StateRef::from_id(TYPE, leaf_id)?.to_string();
     let sidecar = Arc::new(TonicParticipantSidecar::connect(&endpoint).await?);
     let participants =
         [actor().state_ref().as_str().to_owned(), leaf_ref.clone()].map(|reference| {
@@ -197,13 +205,14 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     ))?);
     let coordinator = DurableRootCoordinator::new(
         Arc::new(TonicCoordinatorSidecar::connect(&endpoint).await?),
-        resolver,
+        resolver.clone(),
     );
     let watch = Arc::new(TonicCoordinatorWatchEndpoint::lazy(format!(
         "http://{address}"
     ))?);
     let make = |i: usize| {
         generated::AtomicLedgerMethodsTransactionAdapter::new(
+            #[cfg(not(feature = "pure-transactions"))]
             store.clone(),
             participants[i].clone(),
             coordinator.clone(),
@@ -214,14 +223,47 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         )
         .with_authorization(AuthorizationPolicy::new(None, Some(Arc::new(Policy))))
         .with_external_constructors()
-        .with_sequential_root_star()
     };
+    let make = |i| {
+        let adapter = make(i);
+        if std::env::var_os("PURE_TRANSACTION_BOOTSTRAP").is_some() { adapter } else { adapter.with_sequential_root_star() }
+    };
+    #[cfg(feature = "pure-transactions")]
+    {
+        let channel = tonic::transport::Endpoint::from_shared(format!("http://{address}"))?.connect_lazy();
+        let caller = reboot::CallerId::new("a0000000001", None)?;
+        let wrong_store = DatabaseActorStore::connect_lazy("http://127.0.0.1:1")?;
+        match make(0).with_canonical_transaction_tasks(wrong_store, channel.clone(), caller.clone(), None) {
+            Err(status) => assert_eq!(status.code(), tonic::Code::FailedPrecondition),
+            Ok(_) => panic!("pure owner accepted a foreign store"),
+        }
+        let wrong_coordinator = DurableRootCoordinator::new(
+            Arc::new(TonicCoordinatorSidecar::connect(endpoint.replacen("127.0.0.1", "localhost", 1)).await?), resolver.clone());
+        let wrong = generated::AtomicLedgerMethodsTransactionAdapter::new(participants[0].clone(), wrong_coordinator, Starts, Handler { child: None });
+        match wrong.with_canonical_transaction_tasks(store.clone(), channel.clone(), caller.clone(), None) {
+            Err(status) => assert_eq!(status.code(), tonic::Code::FailedPrecondition),
+            Ok(_) => panic!("pure owner accepted a foreign coordinator endpoint"),
+        }
+        let unbound = DurableActorParticipant::new(sidecar.clone(), TYPE, actor().state_ref().as_str());
+        let wrong = generated::AtomicLedgerMethodsTransactionAdapter::new(unbound, coordinator.clone(), Starts, Handler { child: None });
+        match wrong.with_canonical_transaction_tasks(store.clone(), channel, caller, None) {
+            Err(status) => assert_eq!(status.code(), tonic::Code::FailedPrecondition),
+            Ok(_) => panic!("pure owner silently rebound an unbound participant"),
+        }
+        event("pure-owner-validation");
+    }
     let root = make(0).with_explicit_abort_owner(reboot::explicit_abort::ExplicitAbortOwner::new(4)?);
     let (root,tasks) = if std::env::var_os("DIRECT_TRANSACTION_TASKS").is_some() {
         root.with_canonical_transaction_tasks(
-            tonic::transport::Endpoint::from_shared(std::env::var("TRANSACTION_TASK_ENDPOINT").unwrap_or_else(|_|format!("http://{address}")))?.connect_lazy(),
+            #[cfg(feature = "pure-transactions")]
+            store.clone(),            tonic::transport::Endpoint::from_shared(std::env::var("TRANSACTION_TASK_ENDPOINT").unwrap_or_else(|_|format!("http://{address}")))?.connect_lazy(),
             reboot::CallerId::new("a0000000001",None)?,None)?
-    } else { root.with_one_shot_reader_tasks(actor().state_ref().as_str())? };
+    } else {
+        #[cfg(not(feature = "pure-transactions"))]
+        { root.with_one_shot_reader_tasks(actor().state_ref().as_str())? }
+        #[cfg(feature = "pure-transactions")]
+        { return Err("pure fixture requires DIRECT_TRANSACTION_TASKS".into()); }
+    };
     let wait = reboot::one_shot_tasks::ReaderTaskWaitService::new(
         [tasks.clone()], reboot::legacy_placement::LegacyApplicationId::new(crate::application())?, "server", crate::plan(address.port()))?
         .with_wait_policy(AuthorizationPolicy::new(None,Some(Arc::new(Policy))))
@@ -232,7 +274,10 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
             participants[0].actor_target(),
             watch.clone(),
         )?);
+    #[cfg(not(feature = "pure-transactions"))]
     let (leaf, leaf_tasks) = leaf.with_one_shot_reader_tasks(&leaf_ref)?;
+    #[cfg(feature = "pure-transactions")]
+    let (leaf, leaf_tasks) = leaf.with_canonical_transaction_tasks(store.clone(), tonic::transport::Endpoint::from_shared(format!("http://{address}"))?.connect_lazy(), reboot::CallerId::new("a0000000001",None)?, None)?;
     tasks.set_max_live_deliveries(512)?;
     leaf_tasks.set_max_live_deliveries(512)?;
     let mut host = ApplicationHost::new("transaction-target-fixture");

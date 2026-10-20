@@ -3,6 +3,8 @@ name = "generated-workflow-app"
 version = "0.0.0"
 edition = "2024"
 publish = false
+[features]
+pure-transactions = []
 [build-dependencies]
 reboot = { package = "reboot-rust-schema", path = "../../../", features = ["build", "test-support"] }
 [dependencies]

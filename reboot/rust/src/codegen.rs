@@ -1789,6 +1789,9 @@ fn emit_durable(
             runtime_module,
             package,
         );
+    } else if database_methods.is_empty() {
+        emit_task_apis(output, service, annotation, service_name, &state, runtime_module, package);
+        emit_transaction_tasks(output, service, annotation, &state, runtime_module, "vec![]", package);
     }
     emit_workflow_transaction_reference(
         output,

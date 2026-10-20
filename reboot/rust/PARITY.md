@@ -12,6 +12,24 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Pure transaction-service task owners (bounded, local)
+
+Pure transaction-only adapters now expose a separate explicit
+`with_canonical_transaction_tasks(store, channel, application, bearer)` capability.
+The store is a validated task journal, not an ordinary writer adapter: generated
+bindings have no ordinary handler/store delegate and dispatch through the original
+public transaction RPC. Participant actor identity, prebound actor gate, and both
+participant/coordinator Database endpoints must match. Recovery registration is
+still host-owned. The target receipt domains, authorization-before-replay,
+retained Abort/receipt admission, source-journal ACK and terminal CAS boundaries
+are unchanged. Shared/factory tasks and due/running Cancel remain rejected.
+
+See the [pure-adapter map](PURE-TRANSACTION-TASK-MAP.md). The feature fixture uses
+an actual all-transaction service and independently generated canonical Python
+bindings. Existing exclusive factory construction is exercised in separate
+factory-only bootstrap hosts before the registered root-star hosts start; this
+neither enables factories on registered trees nor introduces shared factories.
+
 ## Declared exclusive transaction-task terminals (bounded, local)
 
 Canonical transaction owners now carry their immutable declared-error schema.
@@ -27,9 +45,8 @@ workflow transaction references do not gain declared-error continuation authorit
 
 The [contract map](DECLARED-TRANSACTION-TASK-MAP.md) specifies source-backed
 conditions and the bounded native gate. Shared/factory targets and due/running
-Cancel remain rejected. Pure transaction-only adapters remain **unimplemented**:
-this checkpoint prioritizes the declared-error end-to-end vertical rather than
-adding an ordinary Store adapter disguised as a transaction coordinator.
+Cancel remain rejected. The pure-adapter follow-on above supplies its distinct
+validated journal ownership without an ordinary Store coordinator disguise.
 
 ## Direct canonical exclusive transaction tasks (predecessor qualification)
 
@@ -61,8 +78,8 @@ canonical/local Empty consumer compilation, retained native negative controls,
 strict lint and qualification custody are documented in the
 [direct-task checkpoint](tests/evidence/direct-transaction-20261020.md).
 The predecessor did not qualify declared transaction-error terminals; the bounded
-follow-on above addresses that slice. Pure transaction-only adapters, shared/factory
-targets, automatic Python retry/middleware/internal-credential parity, dynamic
+follow-on above addresses that slice; the later pure-adapter follow-on extends
+validated ownership. Shared/factory targets, automatic Python retry/middleware/internal-credential parity, dynamic
 placement/migration and future successor execution remain open. Local only;
 independent parent review is required before publication.
 

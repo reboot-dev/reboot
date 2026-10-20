@@ -99,16 +99,74 @@ fn emit_transaction_tasks(
     } else {
         error_methods.join("|")
     };
+    let pure = annotation
+        .methods
+        .values()
+        .all(|kind| matches!(kind, DurableKind::Transaction(_)));
+    let generic = if pure {
+        String::new()
+    } else {
+        "<H>".to_owned()
+    };
+    let bound = if pure {
+        String::new()
+    } else {
+        format!("<H:{name}TransactionHandler>")
+    };
+    let ordinary_field = if pure {
+        String::new()
+    } else {
+        format!("ordinary: {name}ReaderTaskBinding<H>,")
+    };
+    let ordinary_init = if pure {
+        String::new()
+    } else {
+        format!(
+            "ordinary:{name}ReaderTaskBinding{{handler:self.handler.clone(),store:self.store.clone(),writers:false}},"
+        )
+    };
+    let store_argument = if pure {
+        format!("store:{runtime}::runtime::DatabaseActorStore,")
+    } else {
+        String::new()
+    };
+    let store = if pure { "store" } else { "self.store" };
+    let fallback_validate = if pure {
+        "Err(tonic::Status::invalid_argument(\"unknown pure transaction task\"))"
+    } else {
+        "self.ordinary.validate(task)"
+    };
+    let fallback_response = if pure {
+        "Err(tonic::Status::data_loss(\"unknown pure transaction response\"))"
+    } else {
+        "self.ordinary.validate_response(task,response)"
+    };
+    let fallback_error = if pure {
+        "Err(tonic::Status::data_loss(\"undeclared pure transaction error\"))"
+    } else {
+        "self.ordinary.validate_error(task,error)"
+    };
+    let execute = if pure {
+        "let _ = task; Err(tonic::Status::failed_precondition(\"pure transaction requires coordinator execution\"))"
+    } else {
+        "self.ordinary.execute(task).await"
+    };
+    let execute_terminal = if pure {
+        execute
+    } else {
+        "self.ordinary.execute_terminal(task).await"
+    };
+    let unused_error = if pure { "let _ = error;" } else { "" };
     let binding = format!("{name}CanonicalTransactionTaskBinding");
     output.push_str(&format!(r#"
-struct {binding}<H> {{ ordinary: {name}ReaderTaskBinding<H>, target: {name}WorkflowTransactionRef }}
+struct {binding}{generic} {{ {ordinary_field} target: {name}WorkflowTransactionRef }}
 #[tonic::async_trait]
-impl<H:{name}TransactionHandler> {runtime}::one_shot_tasks::ReaderTaskBinding for {binding}<H> {{
-fn validate(&self,task:&{runtime}::database_proto::Task)->Result<(),tonic::Status> {{ match task.method.as_str() {{ {validations} _=>self.ordinary.validate(task) }} }}
-async fn execute(&self,task:&{runtime}::database_proto::Task)->Result<prost_types::Any,tonic::Status> {{self.ordinary.execute(task).await}}
-async fn execute_terminal(&self,task:&{runtime}::database_proto::Task)->Result<{runtime}::database_proto::task::ResponseOrError,tonic::Status> {{self.ordinary.execute_terminal(task).await}}
-fn validate_response(&self,task:&{runtime}::database_proto::Task,response:&prost_types::Any)->Result<(),tonic::Status> {{match task.method.as_str() {{{responses} _=>self.ordinary.validate_response(task,response)}}}}
-fn validate_error(&self,task:&{runtime}::database_proto::Task,error:&prost_types::Any)->Result<(),tonic::Status> {{ if matches!(task.method.as_str(), {error_methods}) {{Ok(())}} else {{self.ordinary.validate_error(task,error)}} }}
+impl{bound} {runtime}::one_shot_tasks::ReaderTaskBinding for {binding}{generic} {{
+fn validate(&self,task:&{runtime}::database_proto::Task)->Result<(),tonic::Status> {{ match task.method.as_str() {{ {validations} _=>{fallback_validate} }} }}
+async fn execute(&self,task:&{runtime}::database_proto::Task)->Result<prost_types::Any,tonic::Status> {{{execute}}}
+async fn execute_terminal(&self,task:&{runtime}::database_proto::Task)->Result<{runtime}::database_proto::task::ResponseOrError,tonic::Status> {{{execute_terminal}}}
+fn validate_response(&self,task:&{runtime}::database_proto::Task,response:&prost_types::Any)->Result<(),tonic::Status> {{match task.method.as_str() {{{responses} _=>{fallback_response}}}}}
+fn validate_error(&self,task:&{runtime}::database_proto::Task,error:&prost_types::Any)->Result<(),tonic::Status> {{ {unused_error} if matches!(task.method.as_str(), {error_methods}) {{Ok(())}} else {{{fallback_error}}} }}
 fn writer_capable(&self)->bool{{true}}
 async fn execute_workflow(&self,context:{runtime}::one_shot_tasks::WorkflowContext<'_>)->Result<{runtime}::one_shot_tasks::WorkflowReceipt,tonic::Status> {{match context.task().method.as_str() {{{executions} _=>Err(tonic::Status::failed_precondition("not transaction executor"))}}}}
 }}
@@ -116,13 +174,14 @@ impl<H,P,C,R,F> {name}TransactionAdapter<H,P,C,R,F> where H:{name}TransactionHan
 /// Register canonical exclusive non-factory transaction targets on the original
 /// participant. Route must reach this actor's generated public transaction RPC.
 /// Due/running cancellation is deliberately unsupported; future Cancel is CAS.
-pub fn with_canonical_transaction_tasks(mut self,channel:tonic::transport::Channel,application:{runtime}::CallerId,bearer:Option<String>)->Result<(Self,{runtime}::one_shot_tasks::OneShotTasks),Box<tonic::Status>> {{
+pub fn with_canonical_transaction_tasks(mut self,{store_argument}channel:tonic::transport::Channel,application:{runtime}::CallerId,bearer:Option<String>)->Result<(Self,{runtime}::one_shot_tasks::OneShotTasks),Box<tonic::Status>> {{
 if self.tasks.is_some() {{return Err(Box::new(tonic::Status::failed_precondition("task owner already attached")));}}
 let actor=self.participant.actor_target();
-self.participant.validate_task_owner(&self.store,<{state}DurableState as {runtime}::runtime::DurableStateDeclaration>::STATE_TYPE,&actor.state_ref)?;
+self.participant.validate_task_owner(&{store},<{state}DurableState as {runtime}::runtime::DurableStateDeclaration>::STATE_TYPE,&actor.state_ref)?;
+if self.coordinator.sidecar().database_endpoint()!=Some({store}.database_endpoint()) {{return Err(Box::new(tonic::Status::failed_precondition("task owner and coordinator Database endpoints differ")));}}
 let target={name}WorkflowTransactionRef::new(channel,{runtime}::actor_ref::ActorRef::new(actor.state_type.clone(),{runtime}::state_ref::StateRef::from_maybe_readable(&actor.state_ref).map_err(|error|tonic::Status::invalid_argument(error.to_string()))?),application,bearer)?;
 let mut declarations={base_declarations}; {declarations}
-let tasks={runtime}::one_shot_tasks::OneShotTasks::new_with_participant_declarations(self.store.clone(),actor.state_type,actor.state_ref,{runtime}::one_shot_tasks::ParticipantBoundTaskBinding::new(self.participant.clone(),{binding}{{ordinary:{name}ReaderTaskBinding{{handler:self.handler.clone(),store:self.store.clone(),writers:false}},target}}),declarations)?;
+let tasks={runtime}::one_shot_tasks::OneShotTasks::new_with_participant_declarations({store}.clone(),actor.state_type,actor.state_ref,{runtime}::one_shot_tasks::ParticipantBoundTaskBinding::new(self.participant.clone(),{binding}{{{ordinary_init}target}}),declarations)?;
 self.local_registration=None;self.local_incarnation=std::sync::Arc::new(());self.tasks=Some(tasks.clone());Ok((self,tasks))
 }}
 }}

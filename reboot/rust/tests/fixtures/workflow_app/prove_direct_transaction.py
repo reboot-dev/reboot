@@ -46,7 +46,7 @@ def listening(p,n):
 save()
 try:
  overlay=ROOT/'python-protos';overlay.mkdir();runfiles=Path(os.environ['CANONICAL_PYTHON_RUNFILES']).resolve();plugin=Path(os.environ['CANONICAL_PYTHON_PLUGIN']).resolve()
- p=spawn([sys.executable,'-m','grpc_tools.protoc',f'-I{SOURCE}',f'-I{Path(__file__).parent}',f'-I{Path(grpc_tools.__file__).parent/"_proto"}',f'--python_out={overlay}',f'--grpc_python_out={overlay}',f'--plugin=protoc-gen-reboot_python={plugin}',f'--reboot_python_out={overlay}','workflow/v1/workflow.proto'],os.environ.copy()|dict(RUNFILES_DIR=str(runfiles.parent)))
+ p=spawn([sys.executable,'-m','grpc_tools.protoc',f'-I{SOURCE}',f'-I{Path(__file__).parent / "pure" if os.environ.get("PURE_TRANSACTION_FIXTURE") else Path(__file__).parent}',f'-I{Path(grpc_tools.__file__).parent/"_proto"}',f'--python_out={overlay}',f'--grpc_python_out={overlay}',f'--plugin=protoc-gen-reboot_python={plugin}',f'--reboot_python_out={overlay}','workflow/v1/workflow.proto'],os.environ.copy()|dict(RUNFILES_DIR=str(runfiles.parent)))
  wait(p);assert p.returncode==0,Path(row(p)['log']).read_text()
  sys.path[:0]=[str(overlay),str(runfiles)]
  from workflow.v1 import workflow_pb2 as app,workflow_pb2_grpc as ag
@@ -67,10 +67,10 @@ try:
   def txn(method,body,key=None,reference=ref):
    metadata=[('x-reboot-state-ref',reference)]
    if key:metadata.append(('x-reboot-idempotency-key',str(key)))
-   stub=ag.AtomicLedgerInitMethodsStub if method=='Open' else ag.AtomicLedgerMethodsStub
+   stub=ag.AtomicLedgerInitMethodsStub if method in ['Open','Probe'] else ag.AtomicLedgerMethodsStub
    return getattr(stub(grpc.insecure_channel(f'127.0.0.1:{tp}')),method)(body,metadata=metadata,timeout=5)
   def ready():
-   try:txn('Query',app.Empty());return True
+   try:txn('Probe' if os.environ.get('PURE_TRANSACTION_FIXTURE') else 'Query',app.Empty());return True
    except grpc.RpcError as e:
     from google.rpc import status_pb2
     rich=next((status_pb2.Status.FromString(v) for k,v in (e.trailing_metadata() or []) if k=='grpc-status-details-bin'),None)
@@ -91,9 +91,15 @@ try:
   proxy=None;ack=work/'lost-ack.json'
   if case=='target-ack-loss':
    pp=port();proxy=spawn([sys.executable,str(Path(__file__).parent/'transaction_ack_proxy.py'),f'127.0.0.1:{pp}',f'127.0.0.1:{tp}',ack],role='proxy');listening(proxy,pp);extra['TRANSACTION_TASK_ENDPOINT']=f'http://127.0.0.1:{pp}'
+  if os.environ.get('PURE_TRANSACTION_FIXTURE'):
+   for identity,reference in [('atomic',ref),('leaf',leaf)]:
+    bootstrap,bs=target(dict(PURE_TRANSACTION_BOOTSTRAP='1',PURE_TRANSACTION_ACTOR=identity))
+    assert txn('Create',app.Step(amount=0),uuid.uuid4(),reference).value==0
+    stop(bootstrap,bs)
   t,ts=target(extra)
-  assert txn('Open',app.Step(amount=0),uuid.uuid4()).value==0
-  assert txn('Open',app.Step(amount=0),uuid.uuid4(),leaf).value==0
+  if not os.environ.get('PURE_TRANSACTION_FIXTURE'):
+   assert txn('Open',app.Step(amount=0),uuid.uuid4()).value==0
+   assert txn('Open',app.Step(amount=0),uuid.uuid4(),leaf).value==0
   fault=os.environ.get('DIRECT_TRANSACTION_FAULT')
   if fault=='error':raise RuntimeError('requested original parent error drill')
   if fault=='signal':os.kill(os.getpid(),signal.SIGTERM)
