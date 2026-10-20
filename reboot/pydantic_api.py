@@ -65,6 +65,7 @@ def api_of(api: API, *, filename: str) -> api_pb2.API:
                     ),
                     title=ui_method.title,
                     description=ui_method.description,
+                    display_modes=ui_method.display_modes,
                 )
             )
 

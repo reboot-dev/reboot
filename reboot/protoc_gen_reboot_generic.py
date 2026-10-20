@@ -257,6 +257,7 @@ class ProtoUI:
     description: Optional[str]
     path: str
     request_message: Optional[str]
+    display_modes: list[str]
 
 
 @dataclass
@@ -742,6 +743,7 @@ class RebootProtocPlugin(ProtocPlugin):
                     path=ui.path,
                     request_message=ui.request_message
                     if ui.HasField('request_message') else None,
+                    display_modes=list(ui.display_modes),
                 )
             )
 

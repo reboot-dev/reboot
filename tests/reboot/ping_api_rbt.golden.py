@@ -2,7 +2,7 @@
 # isort: skip_file
 # ruff: noqa
 # mypy: disable-error-code="func-returns-value"
-# Generated from an API digesting to 62dfd8efc520ac6d59b15a65a99013a7eec6ba428b4ea31455d43ccbc7b61c20.
+# Generated from an API digesting to d2024b795ef7d66f61c95edb80115907261148a8bfbc148abbda5e5536cb15eb.
 
 
 
@@ -18981,6 +18981,10 @@ class CounterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                     request.model_dump(mode="json")
                 ),
             }
+
+            # `McpConnector` asks the host for the first of these it
+            # supports when the UI opens.
+            result["display_modes"] = ['fullscreen', 'inline']
 
             # Invariant: the MCP server has a bearer token for this tool
             # call because opening a UI requires an authenticated
