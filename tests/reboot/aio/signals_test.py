@@ -394,31 +394,65 @@ class SignalsTest(unittest.TestCase):
             ),
         )
 
-    def test_only_first_signal_is_handled(self) -> None:
+    def test_second_signal_terminates_at_once(self) -> None:
+        # A second Ctrl-C from a user who is tired of waiting for the
+        # cleanup that the first signal started ends the process right
+        # there, by that signal, without running the cleanup handlers
+        # again.
         self._assert_run(
             '''
             signals.initialize()
-
-            def cleanup():
-                print("cleanup", flush=True)
-                # A further signal while cleaning up.
-                os.kill(os.getpid(), signal.SIGINT)
-
-            signals.install_cleanup([signal.SIGTERM, signal.SIGINT], cleanup)
+            signals.install_cleanup(
+                [signal.SIGTERM, signal.SIGINT],
+                lambda: print("cleanup", flush=True),
+            )
 
             async def main():
                 async with cancel_on_signal_then_reraise_after_cancellation(
                     [signal.SIGTERM, signal.SIGINT]
                 ):
                     os.kill(os.getpid(), signal.SIGTERM)
+                    try:
+                        await asyncio.sleep(60)
+                    finally:
+                        # A further signal while unwinding.
+                        os.kill(os.getpid(), signal.SIGINT)
+                        await asyncio.sleep(60)
+                        print("not reached", flush=True)
+
+            asyncio.run(main())
+            ''',
+            stdout="cleanup\n",
+            returncode=-signal.SIGINT,
+            stderr="",
+        )
+
+    def test_second_signal_is_not_handled_again(self) -> None:
+        # A second signal that does not terminate the process by
+        # default, raised again with its default handler, leaves the
+        # process to finish the cleanup that the first signal started,
+        # without running the cleanup handlers again or cancelling the
+        # task again.
+        self._assert_run(
+            '''
+            signals.initialize()
+            signals.install_cleanup(
+                [signal.SIGTERM, signal.SIGWINCH],
+                lambda: print("cleanup", flush=True),
+            )
+
+            async def main():
+                async with cancel_on_signal_then_reraise_after_cancellation(
+                    [signal.SIGTERM, signal.SIGWINCH]
+                ):
                     os.kill(os.getpid(), signal.SIGTERM)
                     try:
                         await asyncio.sleep(60)
                     finally:
-                        # Further signals while unwinding must not
+                        # A further signal while unwinding must not
                         # interrupt this.
-                        os.kill(os.getpid(), signal.SIGINT)
-                        await asyncio.sleep(0.1)
+                        os.kill(os.getpid(), signal.SIGWINCH)
+                        await asyncio.sleep(0)
                         print("unwound", flush=True)
 
             asyncio.run(main())

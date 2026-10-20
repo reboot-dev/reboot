@@ -32,6 +32,14 @@ from typing import Any, AsyncIterator, Callable, Optional
 # when the signal was raised. A cleanup handler that needs anything
 # else, e.g., to run on an event loop, arranges that itself.
 #
+# Only the first signal is handled. A further one, e.g., a second
+# Ctrl-C from a user who is tired of waiting, or the SIGTERM that
+# `rbt` sends an application that has not stopped within its grace
+# period, terminates the process at once, with that signal's default
+# handler, the way it would have without us: whatever the first
+# signal started has had its chance. The cleanup handlers do not run
+# again.
+#
 # NOTE: this is not a generic signal handler mechanism. After all of
 # the cleanup handlers are executed one of two things happens:
 #
@@ -93,7 +101,8 @@ _signals_available: bool = os.environ.get(
 
 def raised_signal() -> Optional[int]:
     """Returns the first signal that has been raised, which is the only
-    one that gets handled, or None if no signal has been raised."""
+    one that gets handled, since any further one terminates the process,
+    or None if no signal has been raised."""
     global _raised_signal
     return _raised_signal
 
@@ -113,12 +122,17 @@ def _signal_handler(signum, frame):
     global _raised_signal
     global _task_to_cancel
 
-    # Only the first signal is handled. Any further signal, e.g., a
-    # second Ctrl-C from a user who is tired of waiting, would
-    # otherwise execute the cleanup handlers again, and cancel the
-    # task again, interrupting the cleanup that the first signal
-    # started.
+    # Only the first signal is handled. A further signal, e.g., a
+    # second Ctrl-C from a user who is tired of waiting, or the
+    # SIGTERM that `rbt` sends an application that has not stopped
+    # within its grace period, terminates the process at once, with
+    # its default handler, rather than executing the cleanup handlers
+    # again and cancelling the task again, which would interrupt the
+    # cleanup that the first signal started, and rather than being
+    # dropped, which left a process whose cleanup never finished with
+    # nothing but SIGKILL to end it (#278).
     if _raised_signal is not None:
+        _raise_with_default_handler(signum)
         return
 
     _raised_signal = signum
