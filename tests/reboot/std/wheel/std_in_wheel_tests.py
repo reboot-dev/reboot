@@ -28,7 +28,8 @@ NO_PYTHON_WRAPPER = {
 def libraries(names: list[str], pattern: re.Pattern[str]) -> set[str]:
     return {
         match.group("library")
-        for match in map(pattern.match, names) if match is not None
+        for match in map(pattern.match, names)
+        if match is not None
     }
 
 
