@@ -465,6 +465,9 @@ struct Inner {
     running_owner: Mutex<Option<Arc<()>>>,
     // Execution-owned notifications, never a substitute for canonical terminal CAS.
     workflow_cancellations: Mutex<std::collections::HashMap<Vec<u8>, tokio::sync::watch::Sender<bool>>>,
+    ordinary_cancellations: Mutex<std::collections::HashMap<Vec<u8>, OrdinaryCancellationOwner>>,
+    cancellation_serial: tokio::sync::Mutex<()>,
+    cancellation_writes: std::sync::atomic::AtomicUsize,
     cancellation_in_flight: std::sync::atomic::AtomicBool,
     // Read/write only while running_owner is locked. Bound to the cancellation
     // actually supplied to OneShotTaskRecovery::start, never an erased wrapper.
@@ -597,6 +600,9 @@ impl OneShotTasks {
                 shared_recovery: Mutex::new(None),
                 running_owner: Mutex::new(None),
                 workflow_cancellations: Mutex::new(std::collections::HashMap::new()),
+                ordinary_cancellations: Mutex::new(std::collections::HashMap::new()),
+                cancellation_serial: tokio::sync::Mutex::new(()),
+                cancellation_writes: 0.into(),
                 cancellation_in_flight: false.into(),
                 recovery_owner: Mutex::new(None),
                 uncertain: tokio::sync::watch::channel(false).0,
@@ -1214,17 +1220,28 @@ impl OneShotTasks {
         admission.check_execution()?;
         Ok(admission)
     }
+    fn ordinary_interruption_pending(&self, id: &db::TaskId) -> bool {
+        self.inner.ordinary_cancellations.lock().expect("ordinary cancellation mutex poisoned")
+            .get(&id.task_uuid).is_some_and(|owner| *owner.signal.borrow())
+    }
     async fn execute(&self, task: db::Task, cancel: &RecoveryCancellation) -> Result<(), Status> {
         if self.is_workflow(&task) {
             return self.execute_workflow_task(task, cancel).await;
         }
         let admission = self.local_execution_admission()?;
+        // The retired body's signalled registration remains a handoff tombstone
+        // until cancellation ACK (or restart on uncertainty). Never redispatch
+        // the still-Pending canonical record through a replacement body.
+        if self.ordinary_interruption_pending(task.task_id.as_ref().expect("validated task identity")) {
+            return Ok(());
+        }
+        let registration = OrdinaryCancellationRegistration::new(self, &task, &admission)?;
         let mut attempt = 0u32;
         loop {
             admission.check_execution()?;
             cancel.public_ready().await?;
             admission.check_execution()?;
-            match self.execute_once(task.clone(), cancel, &admission).await? {
+            match self.execute_once(task.clone(), cancel, &admission, &registration.signal).await? {
                 None => return Ok(()),
                 Some(error) => {
                     // execute_once returned and dropped the exclusive actor lease.
@@ -1253,6 +1270,7 @@ impl OneShotTasks {
         mut task: db::Task,
         cancel: &RecoveryCancellation,
         admission: &RunningTaskAdmission,
+        interruption: &tokio::sync::watch::Sender<bool>,
     ) -> Result<Option<Status>, Status> {
         // Retry attempts retain the execution's original generation as well.
         admission.check_execution()?;
@@ -1336,7 +1354,26 @@ impl OneShotTasks {
                 tasks: self,
             };
             self.inner.listing.started(&task);
-            let receipt = match self.inner.binding.execute_writer(admitted).await {
+            // Only the execution owner drops its body. Once durable() starts,
+            // retain the future and exclusive actor authority through its ACK;
+            // cancellation must not abandon a possibly submitted Store.
+            let receipt = {
+                let execution = self.inner.binding.execute_writer(admitted);
+                tokio::pin!(execution);
+                tokio::select! {
+                    biased;
+                    _ = ordinary_interrupted(interruption) => {
+                        if started.load(std::sync::atomic::Ordering::Acquire) {
+                            execution.await
+                        } else {
+                            whole_execution.acknowledged();
+                            return Ok(None);
+                        }
+                    }
+                    result = &mut execution => result,
+                }
+            };
+            let receipt = match receipt {
                 Ok(response) => response,
                 Err(error) => {
                     self.inner.uncertain.send_replace(true);
@@ -1366,6 +1403,12 @@ impl OneShotTasks {
                 }
             };
             self.validate_terminal(&task, &terminal)?;
+            if *interruption.borrow() {
+                // State/checkpoint/successors are already acknowledged atomically.
+                // Terminal cancellation is a separate CAS by the waiting canceller.
+                whole_execution.acknowledged();
+                return Ok(None);
+            }
             #[cfg(feature = "test-support")]
             if let Some(path) = std::env::var_os("REBOOT_TEST_TASK_BEFORE_COMPLETE") {
                 std::fs::write(path, b"handler returned; before completion CAS")
@@ -1486,10 +1529,16 @@ impl OneShotTasks {
                 return Ok(None);
             }
             self.inner.listing.started(&task);
-            self.inner.binding.execute_terminal(&task).await?
+            tokio::select! {
+                biased;
+                _ = ordinary_interrupted(interruption) => return Ok(None),
+                result = self.inner.binding.execute_terminal(&task) => result?,
+            }
         };
         let _lease = gate.exclusive().await;
         cancel.public_ready().await?;
+        admission.check_execution()?;
+        if *interruption.borrow() { return Ok(None); }
         self.validate_terminal(&task, &response)?;
         task.status = db::task::Status::Completed as i32;
         task.response_or_error = Some(response.clone());
@@ -2095,7 +2144,7 @@ impl HostRecovery for OneShotTaskRecovery {
                         // all scheduling; no detached timer is created.
                         let id = task.task_id.clone().ok_or_else(|| Status::data_loss("pending task lacks ID"))?;
                         let key = id.task_uuid.clone();
-                        if schedule_due(&task)? && !inflight.contains(&key) {
+                        if schedule_due(&task)? && !inflight.contains(&key) && !tasks.ordinary_interruption_pending(&id) {
                             if deliveries.len() >= max_live { continue; }
                             inflight.insert(key.clone());
                             let tasks = tasks.clone();

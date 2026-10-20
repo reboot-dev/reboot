@@ -1,5 +1,7 @@
-// Canonical local workflow cancellation. CompleteTask owns the terminal; only
-// its synchronous ACK may notify the supervised body. Shutdown is not CancelTask.
+// Canonical local cancellation. Workflow bodies receive post-CAS notification;
+// ordinary bodies require an execution-owned pre-CAS quiescence handoff because
+// they retain actor admission. Only synchronous terminal ACK authorizes a result.
+// Shutdown is not CancelTask.
 use prost::Message;
 
 const CANCELLED_TYPE: &str = "type.googleapis.com/rbt.v1alpha1.Cancelled";
@@ -55,6 +57,78 @@ impl Drop for WorkflowCancellationRegistration {
     }
 }
 
+// Ordinary tasks need a pre-CAS quiescence handoff: their bodies hold actor
+// admission. This registration is owned by the original dispatcher execution,
+// and channel identity plus the retained generation prevent replacement ABA.
+struct OrdinaryCancellationOwner {
+    generation: std::sync::Arc<()>,
+    signal: tokio::sync::watch::Sender<bool>,
+}
+struct OrdinaryCancellationRegistration {
+    tasks: OneShotTasks,
+    id: Vec<u8>,
+    signal: tokio::sync::watch::Sender<bool>,
+}
+impl OrdinaryCancellationRegistration {
+    fn new(
+        tasks: &OneShotTasks,
+        task: &db::Task,
+        admission: &RunningTaskAdmission,
+    ) -> Result<Self, Status> {
+        let _owner = admission.lock_result()?;
+        let id = task
+            .task_id
+            .as_ref()
+            .ok_or_else(|| Status::data_loss("missing ordinary task ID"))?
+            .task_uuid
+            .clone();
+        let signal = tokio::sync::watch::channel(false).0;
+        let mut registrations = tasks
+            .inner
+            .ordinary_cancellations
+            .lock()
+            .expect("ordinary cancellation mutex poisoned");
+        if registrations.contains_key(&id) {
+            return Err(Status::failed_precondition(
+                "ordinary task already has an execution owner",
+            ));
+        }
+        registrations.insert(
+            id.clone(),
+            OrdinaryCancellationOwner {
+                generation: admission.generation.clone(),
+                signal: signal.clone(),
+            },
+        );
+        Ok(Self {
+            tasks: tasks.clone(),
+            id,
+            signal,
+        })
+    }
+}
+impl Drop for OrdinaryCancellationRegistration {
+    fn drop(&mut self) {
+        let mut registrations = self
+            .tasks
+            .inner
+            .ordinary_cancellations
+            .lock()
+            .expect("ordinary cancellation mutex poisoned");
+        if !*self.signal.borrow()
+            && registrations
+                .get(&self.id)
+                .is_some_and(|owner| owner.signal.same_channel(&self.signal))
+        {
+            registrations.remove(&self.id);
+        }
+    }
+}
+async fn ordinary_interrupted(signal: &tokio::sync::watch::Sender<bool>) {
+    let mut receiver = signal.subscribe();
+    let _ = receiver.wait_for(|cancelled| *cancelled).await;
+}
+
 /// Recognize the exact canonical system cancellation terminal, not a bare code.
 /// Non-cancellation terminals return None and still need method-scoped validation.
 pub fn task_cancellation_status(error: &prost_types::Any) -> Result<Option<Status>, Status> {
@@ -90,6 +164,8 @@ fn cancelled_terminal(method: &str) -> db::task::ResponseOrError {
 // Arm before the only mutating RPC. Cancellation/transport/ACK uncertainty must
 // fail the supervised owner before actor admission is released. No detached retry.
 struct CancellationWrite<'a> {
+    ordinary: Option<(Vec<u8>, tokio::sync::watch::Sender<bool>)>,
+    actor: Option<crate::runtime::ActorCommitAttempt>,
     tasks: &'a OneShotTasks,
     acknowledged: bool,
 }
@@ -104,13 +180,49 @@ impl Drop for CancellationWrite<'_> {
             .running_owner
             .lock()
             .expect("task owner mutex poisoned");
+        let published = self.actor.is_some();
+        if self.acknowledged
+            && let Some((id, signal)) = &self.ordinary
+        {
+            let mut registrations = self
+                .tasks
+                .inner
+                .ordinary_cancellations
+                .lock()
+                .expect("ordinary cancellation mutex poisoned");
+            if registrations
+                .get(id)
+                .is_some_and(|owner| owner.signal.same_channel(signal))
+            {
+                registrations.remove(id);
+            }
+        }
         if !self.acknowledged {
             self.tasks.inner.uncertain.send_replace(true);
+            // Retire uncertainty before the actor lease can be released.
+            drop(self.actor.take());
+        } else if let Some(actor) = self.actor.take() {
+            actor.checkpoint_acknowledged();
         }
+        let pending = if published {
+            let previous = self
+                .tasks
+                .inner
+                .cancellation_writes
+                .fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+            debug_assert!(previous > 0);
+            previous > 1
+        } else {
+            self.tasks
+                .inner
+                .cancellation_writes
+                .load(std::sync::atomic::Ordering::Acquire)
+                > 0
+        };
         self.tasks
             .inner
             .cancellation_in_flight
-            .store(false, std::sync::atomic::Ordering::Release);
+            .store(pending, std::sync::atomic::Ordering::Release);
     }
 }
 impl ReaderTaskWaitService {
@@ -168,8 +280,57 @@ impl ReaderTaskWaitService {
             let _owner = admission.lock()?;
         }
         let tasks = &admission.tasks;
+        // Count each execution handoff independently of CAS serialization. Drop after a
+        // body-interruption request publishes sticky uncertainty before releasing
+        // the fence. Wait uses the same original-owner publication mutex.
+        let mut write = CancellationWrite {
+            ordinary: None,
+            tasks,
+            actor: None,
+            acknowledged: true,
+        };
+        {
+            let _owner = admission.lock()?;
+            let registrations = tasks
+                .inner
+                .ordinary_cancellations
+                .lock()
+                .expect("ordinary cancellation mutex poisoned");
+            if let Some(execution) = registrations.get(&id.task_uuid) {
+                if !std::sync::Arc::ptr_eq(&execution.generation, &admission.generation) {
+                    return Err(Status::failed_precondition(
+                        "ordinary cancellation generation changed",
+                    ));
+                }
+                tasks
+                    .inner
+                    .cancellation_in_flight
+                    .store(true, std::sync::atomic::Ordering::Release);
+                write.actor = Some(
+                    tasks
+                        .inner
+                        .store
+                        .actor_gate(&id.state_type, &id.state_ref)
+                        .commit_attempt(),
+                );
+                tasks
+                    .inner
+                    .cancellation_writes
+                    .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+                write.acknowledged = false;
+                write.ordinary = Some((id.task_uuid.clone(), execution.signal.clone()));
+                execution.signal.send_replace(true);
+            }
+        }
+        // Every requested body must receive its handoff before CAS serialization:
+        // two shared readers must not wait for each other while holding admission.
+        // The counted publication fence remains armed until every handoff retires.
+        let _serial = tasks.inner.cancellation_serial.lock().await;
         let gate = tasks.inner.store.actor_gate(&id.state_type, &id.state_ref);
         let _lease = gate.exclusive().await;
+        // Move the armed guard after the lease: failure must publish uncertainty
+        // before another writer can obtain actor authority.
+        let mut write = write;
         self.require_authority(&id.state_ref)?;
         {
             let _owner = admission.lock()?;
@@ -204,6 +365,7 @@ impl ReaderTaskWaitService {
         let mut task = loaded.tasks[0].clone();
         if task.status == db::task::Status::Completed as i32 {
             // No dispatch remains to cancel; do not replace any winner.
+            write.acknowledged = true;
             return response(db::cancel_task_response::Status::NotFound);
         }
         tasks.validate(std::slice::from_ref(&task))?;
@@ -228,17 +390,21 @@ impl ReaderTaskWaitService {
         task.status = db::task::Status::Completed as i32;
         task.response_or_error = Some(cancelled_terminal(&task.method));
         {
-            // Linearize the disclosure fence with Wait's original-owner lock.
+            // Linearize the counted disclosure fence with Wait's owner lock.
             let _owner = admission.lock()?;
+            if write.actor.is_none() {
+                write.actor = Some(gate.commit_attempt());
+                tasks
+                    .inner
+                    .cancellation_writes
+                    .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+            }
             tasks
                 .inner
                 .cancellation_in_flight
                 .store(true, std::sync::atomic::Ordering::Release);
         }
-        let mut write = CancellationWrite {
-            tasks,
-            acknowledged: false,
-        };
+        write.acknowledged = false;
         let won = tasks
             .inner
             .store

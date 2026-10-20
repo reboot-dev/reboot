@@ -67,6 +67,12 @@ impl generated::RemoteMethodsDatabaseHandler for Remote {
             event("remote-parked");
             std::future::pending::<()>().await;
         }
+        if let Some(path) = std::env::var_os("GENERIC_RUNNING_WRITER")
+            && request.amount == 7
+        {
+            state.value += 10000; // Private mutation must be discarded.
+            parked_ordinary(path, "ordinary-writer").await;
+        }
         state.value += request.amount;
         Ok(proto::Value { value: state.value })
     }
@@ -75,6 +81,11 @@ impl generated::RemoteMethodsDatabaseHandler for Remote {
         state: &proto::Remote,
         _: proto::Empty,
     ) -> Result<proto::Remote, tonic::Status> {
+        if let Some(path) = std::env::var_os("GENERIC_RUNNING_READER")
+            && std::path::PathBuf::from(&path).with_extension("arm").exists()
+        {
+            parked_ordinary(path, "ordinary-reader").await;
+        }
         Ok(*state)
     }
     async fn apply_with_tasks(
@@ -325,4 +336,19 @@ pub async fn command(
         );
     }
     Ok(())
+}
+
+// Fixture-only cooperative async body, not a runtime cancellation substitute.
+// The release permits a RED old runtime to finish; GREEN must drop this future.
+async fn parked_ordinary(path: std::ffi::OsString, label: &'static str) {
+    struct Retired(&'static str);
+    impl Drop for Retired { fn drop(&mut self) { event(self.0); } }
+    let _retired = Retired(if label == "ordinary-writer" { "ordinary-writer-retired" } else { "ordinary-reader-retired" });
+    let path = std::path::PathBuf::from(path);
+    event(if label == "ordinary-writer" { "ordinary-writer-entered" } else { "ordinary-reader-entered" });
+    std::fs::write(&path, b"user body entered with actor admission").unwrap();
+    while !path.with_extension("release").exists() {
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    event("ordinary-body-escaped");
 }

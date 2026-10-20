@@ -106,6 +106,8 @@ try:
     state_ref=StateRef.from_id('workflow.v1.Remote','target').to_str()
     selected=os.environ.get('GENERIC_NATIVE_CASES','success,concurrent,declared-error,framework-error,future-cancel,auth,admission-ack-loss,writer-ack-loss,completion-ack-loss,checkpoint-restart,chain-checkpoint-restart,reader').split(',')
     for case in selected:
+        running=case.startswith('running-');running_reader=case in ['running-reader','running-readers-two'];after_store=case=='running-after-store';cancel_drop=case=='running-cancel-drop';cancel_fault=case in ['running-cancel-drop','running-cancel-ack-loss']
+        base_value=7 if after_store else 0
         chain=case=='chain-checkpoint-restart';checkpoint=case.endswith('checkpoint-restart')
         expected_value=12 if chain else 10 if checkpoint else 7
         expected_calls=3 if chain else 2 if checkpoint else 1
@@ -150,17 +152,22 @@ try:
         def completed():
             data=inspect();return bool(data['tasks']) and all(t.status==database_pb.Task.COMPLETED for t in decoded(data))
         database_process=database();proxy=None
-        if case in ['admission-ack-loss','writer-ack-loss','completion-ack-loss']:
-            pp=port();selected_fault={'admission-ack-loss':'generic-spawn','writer-ack-loss':'generic-writer','completion-ack-loss':'cancel'}[case]
+        if case in ['admission-ack-loss','writer-ack-loss','completion-ack-loss','running-cancel-ack-loss','running-cancel-drop']:
+            pp=port();selected_fault={'admission-ack-loss':'generic-spawn','writer-ack-loss':'generic-writer','completion-ack-loss':'cancel','running-cancel-ack-loss':'cancel','running-cancel-drop':'cancel'}[case]
             proxy=spawn([sys.executable,Path(__file__).with_name('database_ack_proxy.py'),f'127.0.0.1:{dp}',f'127.0.0.1:{pp}',selected_fault,work],os.environ.copy()|{'GENERIC_TASK_FAULT':'1'});listening(proxy,pp);target=f'http://127.0.0.1:{pp}'
         if checkpoint:extra={'REBOOT_TEST_WRITER_AFTER_STORE':str(work/'stored')}
         application,shutdown=host();wire_proxy=spawn([sys.executable,Path(__file__).with_name('canonical_wire_proxy.py'),f'127.0.0.1:{ap}',f'127.0.0.1:{fp}',work]);listening(wire_proxy,fp)
         channel,stub,task_stub=fresh_channel();stub.Create(app.Empty(),metadata=metadata(str(uuid.uuid4())),timeout=5)
+        if running:
+            stop(application,shutdown);extra={'REBOOT_TEST_WRITER_AFTER_STORE' if after_store else 'GENERIC_RUNNING_READER' if running_reader else 'GENERIC_RUNNING_WRITER':str(work/'body')}
+            application,shutdown=host();channel.close();channel,stub,task_stub=fresh_channel()
         fault=os.environ.get('GENERIC_NATIVE_FAULT_AFTER_START')
         if fault=='signal':os.kill(os.getpid(),signal.SIGTERM)
         if fault=='error':raise RuntimeError('injected generic parent failure after native hosts started')
+        if running_reader:(work/'body.arm').touch()
         key=str(uuid.uuid4());schedule='2030-01-01T00:00:00+00:00' if case in ['future-cancel','admission-ack-loss'] else ''
-        method='Reject' if case=='declared-error' else 'Query' if case=='reader' else 'Apply'
+        if case=='running-readers-two':schedule=(datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(seconds=4)).isoformat()
+        method='Reject' if case=='declared-error' else 'Query' if case=='reader' or running_reader else 'Apply'
         if case=='admission-ack-loss':
             pending=stub.Apply.future(app.Step(amount=7),metadata=metadata(key,schedule),timeout=12)
             until((work/'ack-observed.json').exists,application)
@@ -184,6 +191,46 @@ try:
         else:
             result=client('spawn',key,method,amount=amount,schedule=schedule)
             task_id=tasks.TaskId.FromString(bytes.fromhex(result['task_id']))
+        if case=='running-readers-two':
+            second=client('spawn',str(uuid.uuid4()),'Query',schedule=schedule)
+            second_id=tasks.TaskId.FromString(bytes.fromhex(second['task_id']))
+        if running:
+            until((work/'body').exists,application)
+            before=inspect();assert before['value']==base_value and decoded(before)[0].status==database_pb.Task.PENDING
+            error(grpc.StatusCode.UNAUTHENTICATED,lambda:task_stub.CancelTask(tasks.CancelTaskRequest(task_id=task_id),metadata=(('x-reboot-state-ref',state_ref),),timeout=1))
+            if case=='running-readers-two':
+                until(lambda:lines().count('ordinary-reader-entered')==2,application)
+            pending=task_stub.CancelTask.future(tasks.CancelTaskRequest(task_id=task_id),metadata=(('x-reboot-state-ref',state_ref),('authorization','Bearer task-admin')),timeout=8)
+            if case=='running-readers-two':
+                second_cancel=task_stub.CancelTask.future(tasks.CancelTaskRequest(task_id=second_id),metadata=(('x-reboot-state-ref',state_ref),('authorization','Bearer task-admin')),timeout=8)
+                assert second_cancel.result(timeout=4).status==tasks.CancelTaskResponse.OK
+                second_wait=client('wait',second['task_id'],'Query')
+                assert status_pb2.Status.FromString(bytes.fromhex(second_wait['error'])).code==1
+            if after_store:
+                assert not pending.done() # Cancellation cannot drop a started Store/ACK envelope.
+                (work/'body.release').touch()
+            if cancel_fault:
+                until((work/'ack-observed.json').exists,application)
+                assert inspect()['value']==0 and decoded(inspect())[0].status==database_pb.Task.COMPLETED
+                error(grpc.StatusCode.DEADLINE_EXCEEDED,lambda:task_stub.Wait(tasks.WaitRequest(task_id=task_id),metadata=(('x-reboot-state-ref',state_ref),('authorization','Bearer task-admin')),timeout=2))
+                blocked_writer=stub.Apply.future(app.Step(amount=3),metadata=metadata(str(uuid.uuid4())),timeout=5)
+                if cancel_drop:
+                    assert pending.cancel()
+                    (work/'release').touch()
+                else:
+                    (work/'release').touch();error(grpc.StatusCode.UNAVAILABLE,lambda:pending.result(timeout=5))
+                error(grpc.StatusCode.UNAVAILABLE,lambda:blocked_writer.result(timeout=5))
+                wait(application);assert application.returncode!=0
+                stop(proxy);proxy=None;stop(database_process);database_process=database();target=du;extra={}
+                application,shutdown=host();channel.close();channel,stub,task_stub=fresh_channel()
+            else:
+                assert pending.result(timeout=4).status==tasks.CancelTaskResponse.OK
+            if not after_store:assert ('ordinary-reader-retired' if running_reader else 'ordinary-writer-retired') in lines()
+            (work/'body.release').touch();time.sleep(.1)
+            assert 'ordinary-body-escaped' not in lines() and inspect()['value']==base_value
+            # A new ordinary writer must serialize after the winning Cancel ACK.
+            assert stub.Apply(app.Step(amount=3),metadata=metadata(str(uuid.uuid4())),timeout=5).value==base_value+3
+            expected_calls=1 if running_reader else 2
         if case in ['writer-ack-loss','completion-ack-loss']:
             until((work/'ack-observed.json').exists,application)
             before=inspect();assert before['value']==7 and len(before['tasks'])==1 and lines().count('remote-handler')==1
@@ -204,11 +251,15 @@ try:
             stop(application,shutdown);stop(database_process);database_process=database();extra={};application,shutdown=host();channel.close();channel,stub,task_stub=fresh_channel()
         if case=='framework-error':
             wait(application);assert application.returncode!=0
-            before=inspect();assert before['value']==0 and decoded(before)[0].status==database_pb.Task.PENDING and not decoded(before)[0].HasField('error') and lines().count('remote-handler')==1
+            before=inspect();assert before['value']==base_value and decoded(before)[0].status==database_pb.Task.PENDING and not decoded(before)[0].HasField('error') and lines().count('remote-handler')==1
             stop(database_process);database_process=database();assert inspect()==before
             extra={'REBOOT_TEST_TASK_DEFER_METHOD':'Apply','REBOOT_TEST_TASK_DEFER_MARKER':str(work/'deferred')}
             application,shutdown=host();until((work/'deferred').exists,application);channel.close();channel,stub,task_stub=fresh_channel()
-        if case in ['future-cancel','admission-ack-loss','framework-error']:
+        if running:
+            waited=client('wait',result['task_id'],method)
+            rich=status_pb2.Status.FromString(bytes.fromhex(waited['error']));assert rich.code==1 and rich.details[0].type_url=='type.googleapis.com/rbt.v1alpha1.Cancelled'
+            assert inspect()['value']==base_value+3 and 'ordinary-body-escaped' not in lines()
+        elif case in ['future-cancel','admission-ack-loss','framework-error']:
             before=inspect();assert before['value']==0 and lines().count('remote-handler')==(1 if case=='framework-error' else 0)
             if case=='future-cancel':
                 assert decoded(before)[0].timestamp.seconds==1893456000
@@ -239,7 +290,7 @@ try:
         assert client('spawn',key,method,amount=amount,schedule=schedule)==result
         assert client('wait',result['task_id'],method)==waited
         assert inspect()==snapshot
-        if case not in ['future-cancel','admission-ack-loss','declared-error','reader']:assert lines().count('remote-handler')==expected_calls
+        if not running and case not in ['future-cancel','admission-ack-loss','declared-error','reader']:assert lines().count('remote-handler')==expected_calls
         stop(wire_proxy);stop(application,shutdown);stop(database_process)
         records=[json.loads(line) for line in (work/'application-wire.jsonl').read_text().splitlines()]
         admissions=[r for r in records if r['phase']=='response' and any(k=='x-reboot-task-schedule' for k,v in r['request_metadata'])]

@@ -1,0 +1,207 @@
+{
+  "verified": true,
+  "verified_at": "2026-10-20T17:49:10.875576+00:00",
+  "archive_sha256": "a71f48e9de4441df1ecf13991699cb91087bca1b0a265ad6e4ef860315691652",
+  "archive_bytes": 7740651,
+  "members_verified": 7030,
+  "local_source_inputs_verified": 430,
+  "archived_source_objects_verified": 701,
+  "native_cases": 67,
+  "original_native_child_waits": 1694,
+  "all_targets": {
+    "generated_consumer_passed": 55,
+    "library_ignored": 7,
+    "library_passed": 854,
+    "suite_results": [
+      [
+        "ok",
+        "854",
+        "0",
+        "7"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "22",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "5"
+      ],
+      [
+        "ok",
+        "1",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "2",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "5",
+        "0",
+        "130"
+      ],
+      [
+        "ok",
+        "8",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "1",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "1"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "4",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "5",
+        "0",
+        "8"
+      ],
+      [
+        "ok",
+        "1",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "55",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "5",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "5"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "4"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "3"
+      ],
+      [
+        "ok",
+        "5",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "2"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "5"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "2"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "1"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "1"
+      ]
+    ],
+    "total_ignored": 174,
+    "total_passed": 968
+  },
+  "native_red_mutants": [
+    {
+      "name": "old-parked-body5",
+      "exact_parent_source": true,
+      "source_differences": [
+        "reboot/rust/src/local_retry_tests.rs",
+        "reboot/rust/src/one_shot_tasks.rs",
+        "reboot/rust/src/task_cancellation.rs",
+        "reboot/rust/src/task_cancellation_tests.rs"
+      ],
+      "native_red_cases": [
+        "running-writer",
+        "running-reader"
+      ]
+    }
+  ],
+  "all_original_children_retired": true,
+  "native_cpp_reused": true,
+  "large_executables_included": false
+}

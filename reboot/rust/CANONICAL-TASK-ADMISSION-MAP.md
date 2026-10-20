@@ -67,7 +67,7 @@ Python-hosted admission/UUID-allocation behavior is not qualified by these tests
 
 | Capability | Existing foundation | Still missing |
 |---|---|---|
-| Generic reader/writer task targets | Generated one-shot ReaderTaskBinding / AdmittedWriterTask, same-actor writer Store and typed terminals exist | The generic extension adds canonical DatabaseAdapter admission and workflow-bearing ordinary writer dispatch; running-writer interruption, transaction-adapter integration and dynamic ownership remain separate gates; see its map |
+| Generic reader/writer task targets | Generated one-shot ReaderTaskBinding / AdmittedWriterTask, same-actor writer Store and typed terminals exist | Canonical DatabaseAdapter admission and workflow-bearing ordinary writer dispatch are followed by bounded execution-owned running reader/writer interruption; transaction-adapter integration and dynamic ownership remain separate gates; see GENERIC-TASK-MIGRATION-MAP.md |
 | Transaction task targets | Existing participant/coordinator and transaction envelopes | Canonical transaction-task admission/execution with correct participant ownership, atomic scheduling effects, replay and completion; no workflow/transaction equivalence claimed |
 | Cursor targets and receipt GC | Cursor-specific durable loop/binding/advancement machinery | Cross-actor cursor admission, retention and admission-receipt GC; experimental and canonical target admission both retain the cursor fence |
 | Placement | Explicit recovered OneShotTasks owner, fixed channel and ActorRef, current auth | Python channel-manager placement resolution, migration, distributed ownership/fencing and dynamic actor discovery |

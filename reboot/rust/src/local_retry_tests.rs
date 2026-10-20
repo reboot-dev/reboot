@@ -475,7 +475,7 @@ async fn local_retry_attempt_cannot_resnapshot_replacement_authority() {
     invalidate(&f, &cancel, true);
     assert_eq!(
         f.tasks
-            .execute_once(task, &cancel, &admission)
+            .execute_once(task, &cancel, &admission, &tokio::sync::watch::channel(false).0)
             .await
             .unwrap_err()
             .code(),

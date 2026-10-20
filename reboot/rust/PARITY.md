@@ -29,10 +29,16 @@ task adapter or fake workflow-equivalent writer body is introduced. Original
 workflow journals, identity domains, relative target-clock capability, duplicate
 LAST schedule behavior and cancellation publication mutex are unchanged.
 
-This is **not full generic task parity**: running ordinary writer/reader bodies
-still retain actor admission, so cancellation cannot interrupt a parked body.
-Scheduled cancellation is supported; already-committed effects are not rolled
-back. Workflow reader-wait descriptors, transaction adapters/tasks, dynamic
+This is **not full generic task parity**. The next bounded migration adds
+execution-owned cooperative interruption for running ordinary reader/writer
+bodies: canonical Cancel requests a generation-bound handoff before waiting for
+actor admission, drops a pre-Store body under its original lease, and waits for
+started writer checkpoint work rather than abandoning a possible durable Store.
+Cancellation terminal ACK follows body quiescence and a separate native CAS;
+already-committed state/checkpoints/successors are retained. Lost Cancel ACK or
+request drop retains both terminal-disclosure and ordinary-writer uncertainty
+until restart. Synchronous code and already-submitted remote effects cannot be
+revoked. Workflow reader-wait descriptors, transaction adapters/tasks, dynamic
 placement, cursor admission/GC and Python-hosted UUID allocation remain outside
 this vertical. Typed protobuf error variants are supported, not the unary-only
 rich-writer DeclaredStatus variant. Pre-checkpoint handler side effects are not
@@ -40,7 +46,8 @@ exactly-once. Contracts and evidence boundaries:
 [generic task migration map](GENERIC-TASK-MIGRATION-MAP.md).
 
 Qualification and explicit remaining gaps:
-[native ordinary-task checkpoint](tests/evidence/generic-reader-writer-tasks-20261020.md).
+[prior native ordinary-task checkpoint](tests/evidence/generic-reader-writer-tasks-20261020.md),
+followed by the [running ordinary cancellation checkpoint](tests/evidence/ordinary-running-cancellation-20261020.md).
 
 ## Canonical application-RPC workflow task admission (original checkpoint)
 

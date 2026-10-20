@@ -152,6 +152,8 @@ async fn lost_cancellation_ack_publication_cannot_cross_a_wait_disclosure_lock()
     let dropper = std::thread::spawn(move || {
         entered.send(()).unwrap();
         drop(CancellationWrite {
+            ordinary: None,
+            actor: None,
             tasks: &copy,
             acknowledged: false,
         });
@@ -368,11 +370,11 @@ async fn cancellation_terminal_requires_callable_and_cannot_be_fabricated_as_dec
             "actor".into(),
             Binding,
             vec![match kind {
-                "workflow"=>declaration.workflow(),
-                "writer"=>declaration.workflow_writer_step(),
-                "constructor"=>declaration.constructor_scheduling(),
-                "wait"=>declaration.workflow_reader_wait(),
-                _=>declaration,
+                "workflow" => declaration.workflow(),
+                "writer" => declaration.workflow_writer_step(),
+                "constructor" => declaration.constructor_scheduling(),
+                "wait" => declaration.workflow_reader_wait(),
+                _ => declaration,
             }],
         )
         .unwrap()
@@ -391,7 +393,11 @@ async fn cancellation_terminal_requires_callable_and_cannot_be_fabricated_as_dec
     assert!(workflow.validate_terminal(&task, &terminal).is_ok());
     assert!(make("reader").validate_terminal(&task, &terminal).is_ok());
     assert!(make("writer").validate_terminal(&task, &terminal).is_ok());
-    assert!(make("constructor").validate_terminal(&task, &terminal).is_err());
+    assert!(
+        make("constructor")
+            .validate_terminal(&task, &terminal)
+            .is_err()
+    );
     assert!(make("wait").validate_terminal(&task, &terminal).is_err());
     let db::task::ResponseOrError::Error(error) = terminal else {
         unreachable!()
@@ -401,6 +407,8 @@ async fn cancellation_terminal_requires_callable_and_cannot_be_fabricated_as_dec
     assert!(make("writer").validate_declared(&task, &error).is_err());
     {
         let _write = CancellationWrite {
+            ordinary: None,
+            actor: None,
             tasks: &workflow,
             acknowledged: true,
         };
@@ -408,9 +416,159 @@ async fn cancellation_terminal_requires_callable_and_cannot_be_fabricated_as_dec
     assert!(!*workflow.inner.uncertain.borrow());
     {
         let _write = CancellationWrite {
+            ordinary: None,
+            actor: None,
             tasks: &workflow,
             acknowledged: false,
         };
     }
     assert!(*workflow.inner.uncertain.borrow());
+}
+
+#[tokio::test]
+async fn ordinary_registration_retains_generation_and_does_not_remove_a_replacement() {
+    let (service, _owner, task) = task_listing_service_tests::setup(0);
+    let tasks = service.tasks.values().next().unwrap();
+    let admission = tasks.local_execution_admission().unwrap();
+    let registration = OrdinaryCancellationRegistration::new(tasks, &task, &admission).unwrap();
+    assert!(OrdinaryCancellationRegistration::new(tasks, &task, &admission).is_err());
+    let id = task.task_id.as_ref().unwrap().task_uuid.clone();
+    let next = tokio::sync::watch::channel(false).0;
+    tasks.inner.ordinary_cancellations.lock().unwrap().insert(
+        id.clone(),
+        OrdinaryCancellationOwner {
+            generation: std::sync::Arc::new(()),
+            signal: next.clone(),
+        },
+    );
+    drop(registration);
+    assert!(
+        tasks
+            .inner
+            .ordinary_cancellations
+            .lock()
+            .unwrap()
+            .get(&id)
+            .unwrap()
+            .signal
+            .same_channel(&next)
+    );
+    // A stale execution cannot manufacture a replacement registration.
+    *tasks.inner.running_owner.lock().unwrap() = Some(std::sync::Arc::new(()));
+    assert!(OrdinaryCancellationRegistration::new(tasks, &task, &admission).is_err());
+}
+
+#[tokio::test]
+async fn dropped_ordinary_handoff_retains_uncertainty_and_pending_signal() {
+    let (service, _owner, task) = task_listing_service_tests::setup(0);
+    let tasks = service.tasks.values().next().unwrap();
+    let admission = tasks.local_execution_admission().unwrap();
+    let registration = OrdinaryCancellationRegistration::new(tasks, &task, &admission).unwrap();
+    tasks
+        .inner
+        .cancellation_in_flight
+        .store(true, std::sync::atomic::Ordering::Release);
+    registration.signal.send_replace(true);
+    ordinary_interrupted(&registration.signal).await;
+    let id = task.task_id.as_ref().unwrap();
+    let gate = tasks.inner.store.actor_gate(&id.state_type, &id.state_ref);
+    tasks
+        .inner
+        .cancellation_writes
+        .store(1, std::sync::atomic::Ordering::Release);
+    drop(CancellationWrite {
+        ordinary: None,
+        tasks,
+        actor: Some(gate.commit_attempt()),
+        acknowledged: false,
+    });
+    assert!(gate.committed_revisions().borrow().1);
+    assert!(*registration.signal.borrow());
+    assert!(admission.check_execution().is_err());
+    assert!(
+        !tasks
+            .inner
+            .cancellation_in_flight
+            .load(std::sync::atomic::Ordering::Acquire)
+    );
+}
+
+#[tokio::test]
+async fn concurrent_handoffs_keep_wait_fenced_until_the_last_ack_or_uncertainty() {
+    let (service, _owner, task) = task_listing_service_tests::setup(0);
+    let tasks = service.tasks.values().next().unwrap();
+    let id = task.task_id.as_ref().unwrap();
+    let gate = tasks.inner.store.actor_gate(&id.state_type, &id.state_ref);
+    tasks
+        .inner
+        .cancellation_writes
+        .store(2, std::sync::atomic::Ordering::Release);
+    tasks
+        .inner
+        .cancellation_in_flight
+        .store(true, std::sync::atomic::Ordering::Release);
+    let first = CancellationWrite {
+        ordinary: None,
+        tasks,
+        actor: Some(gate.commit_attempt()),
+        acknowledged: true,
+    };
+    let second = CancellationWrite {
+        ordinary: None,
+        tasks,
+        actor: Some(gate.commit_attempt()),
+        acknowledged: false,
+    };
+    drop(first);
+    assert!(
+        tasks
+            .inner
+            .cancellation_in_flight
+            .load(std::sync::atomic::Ordering::Acquire)
+    );
+    assert!(!*tasks.inner.uncertain.borrow());
+    drop(second);
+    assert!(
+        !tasks
+            .inner
+            .cancellation_in_flight
+            .load(std::sync::atomic::Ordering::Acquire)
+    );
+    assert!(*tasks.inner.uncertain.borrow());
+    assert!(gate.committed_revisions().borrow().1);
+}
+
+#[tokio::test]
+async fn retired_ordinary_body_keeps_a_tombstone_until_exact_cancellation_ack() {
+    let (service, _owner, task) = task_listing_service_tests::setup(0);
+    let tasks = service.tasks.values().next().unwrap();
+    let admission = tasks.local_execution_admission().unwrap();
+    let registration = OrdinaryCancellationRegistration::new(tasks, &task, &admission).unwrap();
+    registration.signal.send_replace(true);
+    let signal = registration.signal.clone();
+    let id = task.task_id.as_ref().unwrap();
+    drop(registration);
+    assert!(tasks.ordinary_interruption_pending(id));
+    let gate = crate::runtime::ActorGate::new();
+    tasks
+        .inner
+        .cancellation_writes
+        .store(1, std::sync::atomic::Ordering::Release);
+    tasks
+        .inner
+        .cancellation_in_flight
+        .store(true, std::sync::atomic::Ordering::Release);
+    drop(CancellationWrite {
+        tasks,
+        ordinary: Some((id.task_uuid.clone(), signal)),
+        actor: Some(gate.commit_attempt()),
+        acknowledged: true,
+    });
+    assert!(!tasks.ordinary_interruption_pending(id));
+    assert!(
+        !tasks
+            .inner
+            .cancellation_in_flight
+            .load(std::sync::atomic::Ordering::Acquire)
+    );
 }
