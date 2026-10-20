@@ -112,6 +112,10 @@ impl generated::AtomicLedgerMethodsTransactionHandler for Handler {
         } else {
             "transaction-child"
         });
+        if r.amount == 11 && std::env::var_os("TRANSACTION_SUCCESSOR_PROOF").is_some() {
+            let started = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+            event(&format!("transaction-successor-enter:{started}"));
+        }
         state.value += r.amount;
         if let Some(child) = &self.child {
             let client = generated::AtomicLedgerMethodsClient::new(LocalOnly(child.clone()));

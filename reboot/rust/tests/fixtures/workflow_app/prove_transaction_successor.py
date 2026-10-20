@@ -54,7 +54,7 @@ try:
  from reboot.aio.types import StateRef
  ref=StateRef.from_id('workflow.v1.AtomicLedger','atomic').to_str();leaf=StateRef.from_id('workflow.v1.AtomicLedger','leaf').to_str()
  clientenv=os.environ.copy()|dict(PYTHONPATH=str(overlay)+':'+str(runfiles))
- for case in os.environ.get('DIRECT_TRANSACTION_CASES','live,restart').split(','):
+ for case in os.environ.get('DIRECT_TRANSACTION_CASES','live,restart,successor-ack-restart').split(','):
   work=ROOT/case;work.mkdir();events=work/'events';deny=work/'deny';dp,tp=port(),port();du,tu=f'http://127.0.0.1:{dp}',f'http://127.0.0.1:{tp}'
   run('info',work/'info.pb')
   def database():
@@ -118,7 +118,19 @@ try:
    assert snapshot(task)==staged
    t,ts=target()
    assert time.time()<due and snapshot(task)==staged
+  interrupted_successor=None
+  if case=='successor-ack-restart':
+   stop(t,ts);barrier=work/'successor-after-target'
+   t,ts=target(dict(REBOOT_TEST_OUTBOUND_WRITER_AFTER_TARGET_ACK=str(barrier)))
+   until(barrier.exists,t)
+   interrupted_successor=snapshot(child)
+   assert interrupted_successor['values']==[18,18] and len(interrupted_successor['pending'])==1
+   assert db.Task.FromString(bytes.fromhex(interrupted_successor['tasks'][0])).status==db.Task.PENDING
+   stop(t);stop(d);d=database();assert snapshot(child)==interrupted_successor
+   t,ts=target()
   assert canonical('wait',child.SerializeToString().hex())=={'response':{'value':'18'}}
+  starts=[int(line.split(':')[1]) for line in lines() if line.startswith('transaction-successor-enter:')]
+  assert len(starts)==2 and all(start>=due for start in starts),starts
   assert time.time()>=due
   completed=snapshot(child);parent=snapshot(task)
   assert completed['values']==[18,18] and not completed['pending']
@@ -136,7 +148,19 @@ try:
    target_records=[db.IdempotentMutation.FromString(bytes.fromhex(raw)) for raw in completed['receipts']]
    matching=[m for m in target_records if m.key==scoped[0].key]
    assert len(matching)==1 and not matching[0].HasField('workflow_id')
-   assert matching[0].response==scoped[0].response and len(scoped[0].request_fingerprint)==32
+   from google.protobuf import any_pb2, descriptor_pb2, descriptor_pool, message_factory
+   envelope=any_pb2.Any.FromString(scoped[0].response)
+   assert envelope.type_url=='type.googleapis.com/reboot.rust.workflow.AtMostOnceResultV1'
+   schema=descriptor_pb2.FileDescriptorProto(name='successor_checkpoint.proto',package='proof',dependency=['google/protobuf/any.proto'])
+   message=schema.message_type.add(name='Checkpoint')
+   for name,number,kind,type_name in [('format',1,13,''),('phase',2,13,''),('result',3,11,'.google.protobuf.Any'),('declared_writer_error',4,8,'')]:
+    field=message.field.add(name=name,number=number,type=kind)
+    if type_name:field.type_name=type_name
+   pool=descriptor_pool.DescriptorPool();pool.AddSerializedFile(any_pb2.DESCRIPTOR.serialized_pb);pool.Add(schema)
+   checkpoint=message_factory.GetMessageClass(pool.FindMessageTypeByName('proof.Checkpoint')).FromString(envelope.value)
+   assert checkpoint.format==1 and checkpoint.phase==2 and not checkpoint.declared_writer_error
+   assert checkpoint.result.type_url=='type.googleapis.com/workflow.v1.Value'
+   assert matching[0].response==checkpoint.result.value and len(scoped[0].request_fingerprint)==32
    checkpoints.append(scoped[0].SerializeToString().hex())
   stop(t,ts);stop(d);d=database();assert snapshot(child)==completed and snapshot(task)==parent
   t,ts=target()
@@ -146,7 +170,7 @@ try:
   assert snapshot(child)==completed and snapshot(task)==parent
   assert lines().count('transaction-apply')==2 and lines().count('transaction-child')==2
   stop(t,ts);stop(d)
-  cases.append(dict(case=case,admission=admitted,staged=staged,successor=successor.SerializeToString().hex(),completed=completed,parent=parent,source_checkpoints=checkpoints,events=lines()));save()
+  cases.append(dict(case=case,admission=admitted,staged=staged,interrupted_successor=interrupted_successor,successor=successor.SerializeToString().hex(),completed=completed,parent=parent,source_checkpoints=checkpoints,events=lines()));save()
  rec['complete']=True
 except BaseException as e:
  rec['error']=repr(e)
