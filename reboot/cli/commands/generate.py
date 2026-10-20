@@ -1215,12 +1215,11 @@ async def generate_direct(
         proto_files,
         subprocesses,
     ) -> int:
-        command_list = [
-            # Ignore the deprecation warning from `grpc_tools.protoc`.
-            'PYTHONWARNINGS=ignore::DeprecationWarning:',
-            f'{sys.executable}',
-            '-m',
-        ]
+        # Run `protoc` as an argument list, not a shell command
+        # string, so that a path with a space in it, such as the
+        # interpreter's under a project's `.venv`, or a plugin's,
+        # stays one argument (#279).
+        command_list = [sys.executable, '-m']
 
         protoc_tasks = []
 
@@ -1232,14 +1231,12 @@ async def generate_direct(
                 terminal.verbose('protoc')
                 # Skip the args from 'command_list' and change
                 # 'grpc_tools.protoc' to 'protoc'.
-                for arg in command_list_for_plugin[4:]:
+                for arg in command_list_for_plugin[3:]:
                     terminal.verbose(f'  {arg}')
 
-            command = ' '.join(command_list_for_plugin)
-
             async def __invoke_protoc(command, env):
-                async with subprocesses.shell(
-                    command=command,
+                async with subprocesses.exec(
+                    *command,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.STDOUT,
                     env=env,
@@ -1261,16 +1258,23 @@ async def generate_direct(
 
             env = os.environ.copy()
 
+            # Ignore the deprecation warning from `grpc_tools.protoc`.
+            env['PYTHONWARNINGS'] = 'ignore::DeprecationWarning:'
+
             # When generating Reboot Python code we might need to get
             # access to the Pydantic schema. To make it available to
             # import these files we set the 'PYTHONPATH' to include
             # all of the proto directories, where the schema files are
             # located.
-            if 'PYTHONPATH' not in env and '--reboot_python_out' in command:
+            if 'PYTHONPATH' not in env and any(
+                arg.startswith('--reboot_python_out') for arg in args
+            ):
                 env['PYTHONPATH'] = os.pathsep.join(proto_directories)
 
             protoc_tasks.append(
-                asyncio.create_task(__invoke_protoc(command, env))
+                asyncio.create_task(
+                    __invoke_protoc(command_list_for_plugin, env)
+                )
             )
 
         result = await asyncio.gather(*protoc_tasks)
