@@ -13,18 +13,22 @@ def validate(r,expected):
  return {k:r[k] for k in ['requests','errors','seconds','successful_rps','p50_ms','p95_ms','p99_ms']}
 def analyze():
  d=json.loads((E/'owner.json').read_text());assert d['complete'] and len(d['qualified'])==2
- runs=[r for r in d['stacks'] if r['label'].startswith('perf-')];assert len(runs)==6 and all(r.get('complete') for r in runs)
- resources=[json.loads(l) for l in (E/'per-container-resources.jsonl').read_text().splitlines()]
- events=[json.loads(l) for l in (E/'client-exec-events.jsonl').read_text().splitlines()]
- starts=[e for e in events if e['Action'].startswith('exec_start')]
- dies={e['Actor']['Attributes'].get('execID'):e for e in events if e['Action'].startswith('exec_die')}
+ Q=ROOT/'tiny-retry-results';retry=json.loads((Q/'owner.json').read_text());assert retry['complete'] and retry['key']==d['key']
+ failed=[r for r in d['stacks'] if r['label']=='perf-1-python'];assert len(failed)==1 and 'TimeoutExpired' in failed[0]['failure']
+ runs=[(E,r) for r in d['stacks'] if r['label'].startswith(('perf-2-','perf-3-'))]+[(Q,r) for r in retry['stacks']]
+ assert len(runs)==6 and all(r.get('complete') for base,r in runs)
+ all_resources={base:[json.loads(l) for l in (base/'per-container-resources.jsonl').read_text().splitlines()] for base in [E,Q]}
+ all_events={base:[json.loads(l) for l in (base/'client-exec-events.jsonl').read_text().splitlines()] for base in [E,Q]}
  counts={'reader':10000,'single_send':1000,'many_send':2000,'replay':10000};rows=[]
- for run in runs:
+ for base,run in runs:
+  resources=all_resources[base];events=all_events[base]
+  starts=[e for e in events if e['Action'].startswith('exec_start')]
+  dies={e['Actor']['Attributes'].get('execID'):e for e in events if e['Action'].startswith('exec_die')}
   initial=[r for r in run['containers'] if not r.get('restart') and not r['name'].endswith('-config')]
   ids=[r['id'] for r in initial];begin=max(stamp(r['initial']['State']['StartedAt']) for r in initial);end=min(stamp(r['terminal']['State']['FinishedAt']) for r in initial)
-  host=[json.loads(l) for l in (E/(run['label']+'-resources.jsonl')).read_text().splitlines()]
+  host=[json.loads(l) for l in (base/(run['label']+'-resources.jsonl')).read_text().splitlines()]
   for case,count in counts.items():
-   p=E/(run['label']+'-'+case+'.json');r=json.loads(p.read_text());row=validate(r,count)
+   p=base/(run['label']+'-'+case+'.json');r=json.loads(p.read_text());row=validate(r,count)
    row.update(language=run['language'],repetition=int(run['label'].split('-')[1]),case=case)
    matching=[e for e in starts if begin<=e['timeNano']/1e9<=end and e['Action'].rstrip().endswith(' '+d['key']) and (' perf-'+str(row['repetition'])+' '+case+' ') in e['Action']]
    assert len(matching)==1,(run['label'],case,matching,starts[:2])
@@ -42,7 +46,7 @@ def analyze():
   for case in counts:
    rr=[r for r in rows if r['language']==lang and r['case']==case];assert len(rr)==3
    aggregates.append({'language':lang,'case':case,**{k:statistics.median(r[k] for r in rr) for k in ['successful_rps','p50_ms','p95_ms','p99_ms','max_sampled_stack_cgroup_bytes','max_sampled_stack_rss_sum_bytes']},'rps_min':min(r['successful_rps'] for r in rr),'rps_max':max(r['successful_rps'] for r in rr)})
- out={'verified':True,'images':d['images'],'correctness':d['comparison'],'rows':rows,'aggregates':aggregates,'percentile':'nearest rank; aggregates are medians of three per-run percentiles, not pooled','resource_interval':'250ms sampling; exact-container sums; interval uses external Docker exec start/die timestamps and includes client import/initialization; clocks checked separately'}
+ out={'verified':True,'accepted_pairs':[2,3,4],'excluded_pair_1_reason':'Python replay exceeded 240-second command deadline under severe whole-host memory pressure; no OOM kill observed; entire first pair excluded, including successful Rust timing','failed_first_python_attempt':{'failure':failed[0]['failure'],'completed_cases':failed[0]['cases']},'images':d['images'],'correctness':d['comparison'],'rows':rows,'aggregates':aggregates,'percentile':'nearest rank; aggregates are medians of three per-run percentiles, not pooled','resource_interval':'250ms sampling; exact-container sums; interval uses external Docker exec start/die timestamps and includes client import/initialization; clocks checked separately'}
  (E/'summary.json').write_text(json.dumps(out,indent=2));print(json.dumps(aggregates,indent=2));return out
 if __name__=='__main__':
  if '--self-test' in sys.argv:
