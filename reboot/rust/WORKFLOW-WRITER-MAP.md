@@ -10,7 +10,7 @@
 
 ## Chosen seam
 
-Generate a separate typed workflow writer reference for ordinary, non-constructor database writers. Host explicitly supplies one fixed channel, canonical ActorRef, application CallerId and optional outbound bearer credential (not recovered original user auth). No endpoint discovery, trusted internal-call bypass, cross-application forwarding, transactions, scheduling or spawn. Each call uses a named scope key derived from the actual workflow identity. A source-owned intent contract binds application/actor/method/payload before outbound dispatch. Replay re-dispatches the SAME key through the generated target adapter, whose current authorization and durable receipt arbitrate effects. A successful source journal checkpoint follows the target ACK and its own ACK. Different intent is rejected even after a crash between target ACK and source completion. Any error/cancellation is nonretryable within an attempt; a later recovered task can retry the same immutable intent. Atomic multi-actor commit is explicitly NOT provided.
+Generate a separate typed workflow writer reference for ordinary, non-constructor database writers. Host explicitly supplies one fixed channel, canonical ActorRef, application CallerId and optional outbound bearer credential (not recovered original user auth). No endpoint discovery, trusted internal-call bypass, cross-application forwarding, transactions, scheduling or spawn. Each call uses a named scope key derived from the actual workflow identity. A source-owned intent contract binds application/actor/method/payload before outbound dispatch. Replay re-dispatches the SAME key through the generated target adapter, whose current authorization and durable receipt arbitrate effects. A successful source journal checkpoint follows the target ACK and its own ACK. Different intent is rejected even after a crash between target ACK and source completion. Undeclared errors/cancellation are nonretryable within an attempt; a later recovered task can retry the same immutable intent. Explicit durable declared errors can be caught after both ACKs. Atomic multi-actor commit is explicitly NOT provided.
 
 ## Python error/retry contracts and checkpoint boundary
 
@@ -18,7 +18,7 @@ Generate a separate typed workflow writer reference for ordinary, non-constructo
 - `aio/idempotency.py:400-501`: `idempotently` binds mutation identity, propagates backend aborts without treating them as unknown mutations, and tracks uncertainty for other failures. It does **not** itself pickle/memoize arbitrary exception values.
 - `aio/aborted.py:473-519`: only a declared error or an explicitly recognized framework/backend error establishes known backend provenance; a network error is not proof of a declared application outcome.
 - `templates/reboot.py.j2:1149-1233`: retryable aborts propagate; declared errors are translated to this method's own declared type; unrelated/unhandled errors become Unknown. `:939-946` completes a task only for its own declared error. These are different from success-only memoization in `aio/memoize.py:211-246,291-303` (at-most-once failures retain diagnostic failure information; success Store pickles the actual result).
-- Rust generated writer handler errors currently leave only Started, poison the attempt, and are not durable business outcomes. This checkpoint deliberately does **not** invent generic Status caching: declared target-error recognition, a durable full status/details envelope, replay authorization, and non-poisoning caught declared errors remain unimplemented. Python's provenance distinctions must guide that follow-up rather than treating any gRPC code/detail shape as declared authority.
+- The declared-error vertical now distinguishes generated explicit typed variants from `Grpc`/System failures. Only workflow-bearing ordinary calls persist failed read-only target receipts. An explicit `DeclaredStatus` variant supports full raw rich-status bytes; generated schema validation runs before provenance conversion. The target emits a durable outcome marker only after Store ACK/replay; the source validates its generated schema, saves a distinct error-marked Stored journal and acknowledges the operation before returning `WorkflowWriterError<E>::Declared { error, status }`. Generic callback failures and unknown ACKs remain poisoned. This is not Python exception pickling or generic Status caching.
 
 ## Native lost-ACK checkpoint
 
@@ -44,11 +44,23 @@ source inputs match all 363 manifest entries; locked offline all-targets and
 strict SDK/fixture Clippy pass. Receipts and failed formatting-check attempt are
 in `tests/evidence/workflow-crosspath-uncertainty-20261019.{json,tar.gz}`.
 
-Plan status: bounded correctness repair and evidence complete; **parent review,
-then PAUSE unpublished**. No declared-error memoization or further feature work.
+Prior checkpoint status: bounded correctness repair and evidence complete. Its
+pause was superseded by the requested declared-error extension; no prior evidence
+was rewritten or recounted as new qualification.
 Prior 291 native joins, three loss boundaries and seven regression cases retain
 their original bounded meaning; they are not replaced or recounted here.
 
 ## Acceptance
+
+Declared error extension: generated explicit typed/`DeclaredStatus` branches use a
+separate ordinary-writer disposition, not `TaskHandlerError`: canonical task errors
+permit one detail, while this unary contract retains multiple ordered details plus
+unknown status fields byte-for-byte. Inspect validated RPC workflow metadata before
+the authorization-context copy strips workflow/transaction headers. Authorization
+still uses only its sanitized copy. Default external errors remain non-memoized.
+
+Final qualification and review/publication limits are recorded in the declared
+target-error subsection of `PARITY.md` and
+`tests/evidence/workflow-declared-errors-20261020.json`.
 
 Generated two-actor native Database/RocksDB path, crash after target ACK and before source result journal, retained DB/host restart and replay, exact handler count/state/receipt, payload/destination mismatch denial, authorization/error/cancellation and uncertainty gates; Rust library and generator consumer gates on exact final source. No fresh C++ compile claim for reused native binary.

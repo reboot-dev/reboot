@@ -24,5 +24,6 @@ service RemoteMethods {
  option (rbt.v1alpha1.service) = { state: "workflow.v1.Remote" };
  rpc Create(Empty) returns (Empty) { option (rbt.v1alpha1.method).writer = { constructor: {} }; }
  rpc Apply(Step) returns (Value) { option (rbt.v1alpha1.method).writer = {}; }
+ rpc Reject(Step) returns (Value) { option (rbt.v1alpha1.method) = { writer: {} errors: ["BelowThreshold"] }; }
  rpc Query(Empty) returns (Remote) { option (rbt.v1alpha1.method).reader = {}; }
 }

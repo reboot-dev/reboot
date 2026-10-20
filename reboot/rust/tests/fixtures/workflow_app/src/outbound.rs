@@ -3,6 +3,45 @@ use super::*;
 pub struct Remote;
 #[tonic::async_trait]
 impl generated::RemoteMethodsDatabaseHandler for Remote {
+    async fn reject(
+        &self,
+        state: &mut proto::Remote,
+        request: proto::Step,
+    ) -> Result<proto::Value, generated::RemoteMethodsRejectError> {
+        event("remote-declared-handler");
+        state.value += 10000; // MUST be rolled back, not persisted with the error.
+        let mut status = reboot::declared_error_status(
+            tonic::Code::FailedPrecondition,
+            "rich declared refusal",
+            "type.googleapis.com/workflow.v1.BelowThreshold",
+            &proto::BelowThreshold {
+                required: request.amount,
+                observed: state.value - 10000,
+            },
+        );
+        // Preserve unknown protobuf fields in the rich envelope, not just a
+        // decode/re-encode approximation of its known fields.
+        let mut details = status.details().to_vec();
+        let extra = prost_types::Any {
+            type_url: "type.googleapis.com/workflow.v1.Value".into(),
+            value: proto::Value { value: 99 }.encode_to_vec(),
+        }
+        .encode_to_vec();
+        assert!(extra.len() < 128);
+        details.extend_from_slice(&[0x1a, extra.len() as u8]);
+        details.extend_from_slice(&extra);
+        details.extend_from_slice(&[0xa0, 0x06, 0x07]);
+        status =
+            tonic::Status::with_details(status.code(), status.message().to_owned(), details.into());
+        if std::env::var("OUTBOUND_UNDECLARED_STATUS").as_deref() == Ok("1") {
+            // Even a forged outcome marker on a Grpc variant must be stripped.
+            status
+                .metadata_mut()
+                .insert("x-reboot-durable-declared-writer", "v1".parse().unwrap());
+            return Err(generated::RemoteMethodsRejectError::Grpc(status));
+        }
+        Err(generated::RemoteMethodsRejectError::DeclaredStatus(status))
+    }
     async fn create(
         &self,
         _: &mut proto::Remote,
@@ -44,7 +83,7 @@ impl reboot::auth::Authorizer for Policy {
         _: &'a [u8],
     ) -> reboot::auth::AuthorizeFuture<'a> {
         Box::pin(async move {
-            if context.method.ends_with(".Apply") {
+            if context.method.ends_with(".Apply") || context.method.ends_with(".Reject") {
                 event("remote-authorize");
                 if context.headers.application_id.as_deref() != Some("a0000000001")
                     || context
@@ -95,6 +134,52 @@ pub async fn run(
         .ok()
         .map(|s| s.parse().unwrap())
         .unwrap_or(request.amount);
+
+    if std::env::var("OUTBOUND_DECLARED").as_deref() == Ok("1") {
+        for _ in 0..if std::env::var("OUTBOUND_REPEAT_DECLARED").as_deref() == Ok("1") {
+            2
+        } else {
+            1
+        } {
+            match target
+                .reject(context, "target-reject", proto::Step { amount })
+                .await
+            {
+                Err(reboot::one_shot_tasks::WorkflowWriterError::Declared {
+                    error: generated::RemoteMethodsRejectError::BelowThreshold(error),
+                    status,
+                }) => {
+                    assert_eq!(error.required, amount);
+                    assert_eq!(error.observed, 0);
+                    assert_eq!(status.code(), tonic::Code::FailedPrecondition);
+                    assert_eq!(status.message(), "rich declared refusal");
+                    event(&format!(
+                        "caught-declared:{}",
+                        status
+                            .details()
+                            .iter()
+                            .map(|b| format!("{b:02x}"))
+                            .collect::<String>()
+                    ));
+                    if let Ok(path) = std::env::var("OUTBOUND_CAUGHT_BARRIER") {
+                        std::fs::write(&path, b"caught after source Stored ACK").unwrap();
+                        while !std::path::Path::new(&format!("{path}.release")).exists() {
+                            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                        }
+                    }
+                }
+                Err(reboot::one_shot_tasks::WorkflowWriterError::Failed(status)) => {
+                    return Err(status.into());
+                }
+                other => {
+                    return Err(tonic::Status::internal(format!(
+                        "unexpected declared outcome {other:?}"
+                    ))
+                    .into());
+                }
+            }
+        }
+    }
     let result = target
         .apply(context, "target-apply", proto::Step { amount })
         .await?;

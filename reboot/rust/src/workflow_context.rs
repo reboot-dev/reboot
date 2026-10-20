@@ -3505,6 +3505,7 @@ impl WorkflowContext<'_> {
             return Err(Status::invalid_argument("invalid cursor declaration"));
         }
         Ok(AtMostOnceResultContract {
+            declared_writer_errors: false,
             method: self
                 .tasks
                 .declaration(&self.task)

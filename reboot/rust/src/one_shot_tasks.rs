@@ -323,6 +323,33 @@ fn decode_declared_message<M: prost::Message + Default>(bytes: &[u8]) -> Result<
         .map_err(|_| Status::data_loss("malformed registered task payload"))
 }
 impl DeclaredTaskError {
+    /// Validate a complete non-OK rich status against this method's explicit schema.
+    /// Framework errors, malformed payloads and undeclared details are not outcomes.
+    pub fn validate_status(errors: &[Self], status: &Status) -> Result<(), Status> {
+        let rich = crate::declared_error_details(status)
+            .ok()
+            .flatten()
+            .filter(|rich| {
+                (1..=16).contains(&rich.code)
+                    && !matches!(rich.code, 1 | 4 | 14)
+                    && !rich.details.is_empty()
+            })
+            .ok_or_else(|| Status::data_loss("invalid declared writer status"))?;
+        if status.details().len() > 1048576
+            || rich
+                .details
+                .iter()
+                .any(|d| !d.type_url.starts_with("type.googleapis.com/"))
+        {
+            return Err(Status::data_loss("invalid declared writer details"));
+        }
+        let detail = &rich.details[0];
+        let error = errors
+            .iter()
+            .find(|error| error.type_url == detail.type_url)
+            .ok_or_else(|| Status::failed_precondition("undeclared writer error"))?;
+        (error.decode)(&detail.value)
+    }
     pub fn new<M: prost::Message + Default>(type_url: &'static str) -> Self {
         Self {
             type_url,

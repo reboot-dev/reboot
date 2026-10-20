@@ -1,0 +1,13 @@
+{
+  "checked_at": "2026-10-20T10:03:50.996255+00:00",
+  "host": "2.29.27.53",
+  "recorded_final_owner_and_command_pids": [835103,835104,835659,835660,837819,837820,840964,840965,843043,843044,855942,855943,856249,856250,858948,858949],
+  "live_recorded_final_owners_or_commands": [],
+  "acceptance_cache_locks": [],
+  "cargo_target": "/home/benchbuild/reboot-rust/.cargo-target-acceptance",
+  "cargo_home": "/home/benchbuild/.cargo",
+  "no_further_heavy_batches_until_parent_benchmark_clearance": true,
+  "benchmark_owner_861984_not_modified": true,
+  "local_incremental_caches_not_used_or_needed_by_this_task": ["/tmp/reboot-rust-cursor-local-target/debug/incremental", "/home/openclaw/.hermes/profiles/jean/cache/scratch/q6-native-target/debug/incremental"],
+  "deletions_performed": false
+}

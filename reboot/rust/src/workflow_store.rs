@@ -387,6 +387,9 @@ impl DatabaseActorStore {
                     let checkpoint = AtMostOnceResultCheckpoint::decode(any.value.as_slice())
                         .map_err(|_| Status::data_loss("malformed at-most-once checkpoint"))?;
                     checkpoint.validate()?;
+                    if checkpoint.declared_writer_error && !contract.declared_writer_errors {
+                        return Err(Status::data_loss("declared error outside outbound writer"));
+                    }
                     if checkpoint
                         .result
                         .as_ref()
@@ -1089,6 +1092,7 @@ impl DatabaseActorStore {
             .map_err(|_| Status::data_loss("cursor invalid UUID"))?;
         let key = Uuid::new_v5(&seed, b"reboot.workflow.cursor.binding.v1");
         let contract = AtMostOnceResultContract {
+            declared_writer_errors: false,
             method: method.into(),
             request: task.request.clone(),
             alias: alias.into(),

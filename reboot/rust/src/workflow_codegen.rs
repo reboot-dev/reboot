@@ -508,7 +508,7 @@ fn emit_workflow_service(
                 package,
                 errors,
                 runtime_module,
-                false,
+                (false, false),
             );
         }
     }

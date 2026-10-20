@@ -3937,6 +3937,8 @@ pub fn writer_task_key(id: &database::TaskId, method_identity: &str) -> Result<U
 
 include!("workflow_store.rs");
 include!("ordinary_writer_store.rs");
+include!("declared_writer_store.rs");
+include!("declared_writer_tests.rs");
 
 impl DatabaseActorStore {
     /// Connects to an existing Reboot Database sidecar.

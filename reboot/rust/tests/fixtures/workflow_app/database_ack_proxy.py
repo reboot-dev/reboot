@@ -49,6 +49,10 @@ def boundary(body):
     if 4 not in store:
         return None
     mutation = fields(store[4][0])
+    if (mutation.get(4) == [b'workflow.v1.Remote'] and
+            mutation.get(8, [b''])[0].startswith(b'reboot.ordinary-writer.declared-error.v1\0')):
+        assert not store.get(1) and not store.get(2), 'declared error must discard actor/task effects'
+        return 'declared-target'
     if mutation.get(4) == [b'workflow.v1.Remote'] and store.get(1):
         return 'target'
     if mutation.get(4) == [b'workflow.v1.Ledger']:

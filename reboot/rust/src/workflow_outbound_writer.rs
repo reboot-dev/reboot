@@ -54,6 +54,14 @@ pub struct WorkflowWriterMethod {
     pub state_type: &'static str,
     pub method: &'static str,
     pub response_type: &'static str,
+    pub errors: Vec<DeclaredTaskError>,
+}
+/// A caught declared outcome retains both the generated typed error and the
+/// exact acknowledged wire status. Failed never grants permission to continue.
+#[derive(Debug)]
+pub enum WorkflowWriterError<E> {
+    Declared { error: E, status: Status },
+    Failed(Status),
 }
 #[derive(Clone, prost::Message)]
 struct OutboundWriterContract {
@@ -67,14 +75,16 @@ struct OutboundWriterContract {
     method: String,
     #[prost(bytes = "vec", tag = "5")]
     request: Vec<u8>,
+    #[prost(string, repeated, tag = "6")]
+    errors: Vec<String>,
 }
 impl WorkflowContext<'_> {
     /// Invoke one generated ordinary writer with durable intent and the SAME
     /// target receipt key on recovery. Always consult target authorization on
     /// replay; do not disclose a cached result before the target authorizes it.
     /// Both target Store ACK and source journal ACK precede success. No automatic
-    /// in-attempt transport retry, atomic multi-actor commit or declared-error
-    /// memoization. Dropped/error operations poison this attempt as usual.
+    /// in-attempt transport retry or atomic multi-actor commit. Only explicitly
+    /// declared, durable target outcomes can be caught without poisoning.
     pub async fn invoke_writer<Q, R, F, Fut>(
         &self,
         target: &WorkflowWriterTarget,
@@ -135,6 +145,7 @@ impl WorkflowContext<'_> {
         let namespace = uuid::Uuid::new_v5(&namespace, b"reboot.outbound.writer.v1");
         let key = self.checkpoint_key(namespace, alias, Some("outbound-writer.v1"));
         let contract = AtMostOnceResultContract {
+            declared_writer_errors: !descriptor.errors.is_empty(),
             method: declaration.method.into(),
             request: self.task.request.clone(),
             alias: self.checkpoint_alias(alias),
@@ -148,6 +159,11 @@ impl WorkflowContext<'_> {
                 actor_ref: target.actor.state_ref().as_str().into(),
                 method: descriptor.method.into(),
                 request: request.encode_to_vec(),
+                errors: descriptor
+                    .errors
+                    .iter()
+                    .map(|e| e.type_url.to_owned())
+                    .collect(),
             }
             .encode_to_vec(),
         };
@@ -192,9 +208,22 @@ impl WorkflowContext<'_> {
         let result = tokio::select! {
             biased;
             _ = self.cancel.cancelled() => return Err(Status::cancelled("workflow writer cancelled")),
-            result = invoke(outbound) => result?.into_inner(),
+            result = invoke(outbound) => match result {
+                Ok(response) => Ok(response.into_inner()),
+                Err(status) => {
+                    if !crate::runtime::is_durable_declared_writer_error(&status) {
+                        return Err(status);
+                    }
+                    DeclaredTaskError::validate_status(&descriptor.errors, &status)?;
+                    Err(status)
+                }
+            },
         };
-        if result.encoded_len() > 1048576 {
+        let bytes = match &result {
+            Ok(response) => response.encode_to_vec(),
+            Err(status) => status.details().to_vec(),
+        };
+        if bytes.len() > 1048576 {
             return Err(Status::resource_exhausted("writer result exceeds 1MiB"));
         }
         #[cfg(feature = "test-support")]
@@ -207,10 +236,8 @@ impl WorkflowContext<'_> {
                 .workflow_at_most_once_result_load(self, key, &contract)
                 .await?
                 .ok_or_else(|| Status::data_loss("writer intent disappeared"))?;
-            let saved = AtMostOnceResultCheckpoint::stored(
-                descriptor.response_type,
-                result.encode_to_vec(),
-            );
+            let mut saved = AtMostOnceResultCheckpoint::stored(descriptor.response_type, bytes);
+            saved.declared_writer_error = result.is_err();
             if prior.phase == 2 && prior != saved {
                 return Err(Status::data_loss(
                     "target writer replay changed acknowledged result",
@@ -224,6 +251,6 @@ impl WorkflowContext<'_> {
             self.validate_scope().await?;
         }
         operation.acknowledged();
-        Ok(result)
+        result
     }
 }

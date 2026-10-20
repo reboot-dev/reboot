@@ -43,14 +43,13 @@ fn protoc_plugin_emits_durable_counter_adapters() {
     assert!(content.contains("const STATE_TYPE: &'static str = \"tests.reboot.protoc.Counter\";"));
     assert!(content.contains("authorization: reboot::auth::AuthorizationPolicy"));
     assert!(content.contains("pub fn with_authorization("));
-    assert!(
-        content
-            .contains("store.scheduling_writer_async_for_method_authorized::<CounterDurableState")
-    );
+    assert!(content.contains(
+        "store.declared_scheduling_writer_async_for_method_authorized::<CounterDurableState"
+    ));
     assert!(
         content.contains("store.reader_async_for_with_admission_authorized::<CounterDurableState")
     );
-    assert!(content.contains("\"tests.reboot.protoc.CounterWritesMethods.Increment\", \"type.googleapis.com/tests.reboot.protoc.CounterValue\", reboot::runtime::StateAdmission::DefaultOnAbsent), &self.authorization, self.tasks.as_ref(), request"));
+    assert!(content.contains("\"tests.reboot.protoc.CounterWritesMethods.Increment\", \"type.googleapis.com/tests.reboot.protoc.CounterValue\", reboot::runtime::StateAdmission::DefaultOnAbsent), &self.authorization, (self.tasks.as_ref(), &[reboot::one_shot_tasks::DeclaredTaskError::new::<proto::CounterSecondaryExceeded>(\"type.googleapis.com/tests.reboot.protoc.CounterSecondaryExceeded\"),reboot::one_shot_tasks::DeclaredTaskError::new::<proto::CounterLimitExceeded>(\"type.googleapis.com/tests.reboot.protoc.CounterLimitExceeded\")]), request"));
     assert!(content.contains("let handler = self.handler.clone();"));
     assert!(content.contains("Box::pin(async move"));
     assert!(content.contains("reboot::runtime::DatabaseActorStore"));

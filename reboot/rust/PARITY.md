@@ -31,8 +31,10 @@ atomically stores target state plus its fingerprinted response. Target Store ACK
 and source Stored-journal ACK precede return. Stored-source replay still consults
 target authorization and its saved response; it cannot bypass policy by disclosing
 a source memo. A clean explicit local workflow retry can replay an acknowledged
-writer without repeating its effects. Error/cancellation poisons the attempt;
-transport/commit uncertainty is not retried inside that attempt.
+writer without repeating its effects. Explicit method-declared target failures
+now use the bounded durable outcome path described below; all other errors and
+cancellation poison the attempt. Transport/commit uncertainty is not retried
+inside that attempt.
 
 **Boundaries:** this is independently committed calls, NOT atomic multi-actor
 transactions or distributed ownership. No routing/placement refresh, migration,
@@ -43,8 +45,9 @@ ordinary target receipts currently live in the target's non-workflow receipt sco
 so cross-actor cursor receipt GC/retention is not implemented. Root and bounded
 finite scopes are supported. Credentials are not included in persisted contracts
 and may rotate; application/caller identity and destination are contract-bound.
-Declared target errors may be decoded but are not durable business-error checkpoints;
-no error can be swallowed into a successful workflow completion.
+Only generated ordinary target writers with explicit error declarations can
+produce durable catchable errors. System/backend aborts and declared-looking
+`Grpc` statuses do not qualify.
 
 Source map: [WORKFLOW-WRITER-MAP.md](WORKFLOW-WRITER-MAP.md). Acceptance:
 `tests/fixtures/workflow_app/prove_outbound.py` and the ignored explicit native gate
@@ -84,7 +87,7 @@ See `tests/evidence/workflow-store-ack-loss-20261019.json` and its raw archive
 Earlier failed/setup attempts remain archived as such; the previous callable
 writer's initial native1 still has no qualified historical custody.
 
-**Final correctness follow-up / pause:** review found that the separate
+**Prior correctness follow-up:** review found that the separate
 `workflow_scheduling_writer` ordinary-writer path checked dispatcher/task
 uncertainty but not sticky actor uncertainty. It now checks the actor latch
 immediately after exclusive admission, before handler or Store. The extended
@@ -106,16 +109,58 @@ match the delivered tree. Evidence:
 (SHA-256 `6dbaff32d56e7141676ff0eaa0bc39b96cd9ad4045d6ef17987f183965566864`).
 The earlier formatting-only failed check remains archived separately. Clean gates
 remain weak; uncertain gates are retained per identity until restart, not under a
-hard global memory cap. **Disposition: stop for parent review, then pause;
-unpublished, with no broader feature continuation.**
+hard global memory cap. The prior pause was superseded by the explicitly requested
+declared target-error vertical; its frozen receipts remain unchanged.
 
-**Still missing:** declared typed target errors are not memoized/replayed as
-durable business outcomes. Status/detail-preserving typed outcome envelopes,
-source/target receipt arbitration and catching a declared error without poisoning
-the workflow remain a separate implementation gap. Transport errors are never
-reclassified as declared errors. Private fake tests remain useful uncertainty
-coverage, not native fault evidence. This checkpoint reuses the pinned C++ binary,
-not freshly compiled C++ qualification. Broader Rust SDK parity remains open.
+### Declared target-error outcomes
+
+Generated pure-database ordinary writer targets now preserve explicitly declared
+failures as synchronous read-only receipts when invoked with workflow identity.
+The failed handler's mutated state and staged effects are discarded. Full raw
+`google.rpc.Status` bytes (including unknown protobuf fields), code and message
+survive target replay and the source Stored checkpoint. A schema-bound generated
+`WorkflowWriterError<E>::Declared { error, status }` is returned only after both
+ACKs, so catching it can continue the workflow or explicitly retry locally.
+Same-alias replay rechecks current target authorization, rejects payload/schema
+changes, and does not reenter the target handler. Source Stored does not bypass
+the target. Ordinary non-workflow external errors retain their prior behavior.
+
+`Grpc`/System variants, malformed or undeclared details, cancellation/deadline/
+Unavailable codes, transport failures and unknown Store ACKs are not outcomes.
+The durable marker is emitted only after a known target receipt ACK (or validated
+receipt replay), stripped from failed handler statuses, and requires the exact
+generated schema at the source. Unknown ACKs still poison their actor/attempt;
+there is no automatic retry or speculative cleanup. This is a trusted generated
+adapter contract, not authentication of arbitrary remote servers.
+
+New native proofs: `workflow_app/prove_declared.py` and
+`workflow_app/prove_declared_ack_loss.py`. The ordinary target scope, fixed-channel
+routing, ownership, cursor and transaction limits above remain. Generic
+at-most-once callback failures still remain unresolved; Python's `memoize` stores
+successful values and diagnostic failures, not arbitrary exception objects.
+New declared-schema source contracts reject older same-alias contracts rather
+than silently redispatching under a new key. This reuses the pinned native binary;
+it is not a fresh C++ compilation or full Rust SDK parity claim.
+
+Qualification on the approved CCX43 cache: locked offline all-targets **944 passed,
+0 failed, 165 ignored** (including the generated downstream tests), strict SDK and
+generated-fixture Clippy, **7** declared-outcome cases, **3** declared-error native
+ACK-loss boundaries, and the unchanged **7 + 4** callable/extended-ACK regressions.
+The four final native receipts contain **417** actual parent-waited children.
+All **1168** recorded source-input hashes match the delivered tree and raw archive;
+all 417 archived child-log hashes were verified. Removing only target error receipt
+replay reproduces handler reentry and fails the native proof; restored source passes.
+All **18** pinned reference files verify locally and remotely. Failed/setup attempts
+remain archived with their actual limitations, not counted as final qualification.
+
+Evidence: `tests/evidence/workflow-declared-errors-20261020.json` and full raw archive
+`workflow-declared-errors-20261020.tar.gz`, SHA-256
+`fac30a6eaab5d4d2672ae2d6da86cb8827f6e03032aa717322b871cba5276ece`.
+The archive is verified off the expiring host and includes the exact generated
+fixture executable, tested source, retained RocksDB files, logs and custody receipts.
+**Publication remains gated on independent parent-arranged review:** attempted
+Codex CLI review failed expired-token refresh; Claude CLI review was unauthenticated.
+No review success, push, deployment or broader parity is claimed.
 
 ## Bounded transitive generated reader composition (2026-10-19)
 

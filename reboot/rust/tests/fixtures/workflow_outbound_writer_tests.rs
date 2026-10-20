@@ -13,6 +13,7 @@ fn outbound_method() -> WorkflowWriterMethod {
         state_type: D::STATE_TYPE,
         method: "tests.Target.Apply",
         response_type: "type.googleapis.com/tests.reboot.protoc.Counter",
+        errors: vec![],
     }
 }
 #[tokio::test]

@@ -270,6 +270,7 @@ mod at_most_once_unit_behavior_tests {
             Some("at-most-once.result.v1"),
         );
         let contract = AtMostOnceResultContract {
+            declared_writer_errors: false,
             method: "tests.Effects.Initialize".into(),
             request: context.task.request.clone(),
             alias: context.checkpoint_alias("remote"),
@@ -526,6 +527,8 @@ pub(crate) struct AtMostOnceResultCheckpoint {
     pub phase: u32,
     #[prost(message, optional, tag = "3")]
     pub result: Option<prost_types::Any>,
+    #[prost(bool, tag = "4")]
+    pub declared_writer_error: bool,
 }
 impl AtMostOnceResultCheckpoint {
     fn started() -> Self {
@@ -533,6 +536,7 @@ impl AtMostOnceResultCheckpoint {
             format: 1,
             phase: 1,
             result: None,
+            declared_writer_error: false,
         }
     }
     fn stored(url: &str, bytes: Vec<u8>) -> Self {
@@ -543,11 +547,12 @@ impl AtMostOnceResultCheckpoint {
                 type_url: url.into(),
                 value: bytes,
             }),
+            declared_writer_error: false,
         }
     }
     pub(crate) fn validate(&self) -> Result<(), Status> {
         if self.format != 1
-            || !(self.phase == 1 && self.result.is_none()
+            || !(self.phase == 1 && self.result.is_none() && !self.declared_writer_error
                 || self.phase == 2
                     && self.result.as_ref().is_some_and(|r| {
                         !r.type_url.is_empty()
@@ -562,6 +567,8 @@ impl AtMostOnceResultCheckpoint {
 }
 #[derive(prost::Message)]
 pub(crate) struct AtMostOnceResultContract {
+    #[prost(bool, tag = "9")]
+    pub declared_writer_errors: bool,
     #[prost(string, tag = "1")]
     pub method: String,
     #[prost(bytes = "vec", tag = "2")]
@@ -650,6 +657,7 @@ impl WorkflowContext<'_> {
             Some("at-most-once.result.v1"),
         );
         let contract = AtMostOnceResultContract {
+            declared_writer_errors: false,
             method: declaration.method.into(),
             request: self.task.request.clone(),
             alias: self.checkpoint_alias(alias),
@@ -812,6 +820,7 @@ impl WorkflowContext<'_> {
             Some("at-most-once.result.v1"),
         );
         let contract = AtMostOnceResultContract {
+            declared_writer_errors: false,
             method: declaration.method.into(),
             request: self.task.request.clone(),
             alias: self.checkpoint_alias(alias),
@@ -1039,7 +1048,11 @@ impl WorkflowContext<'_> {
                 version,
                 result_type,
                 b"reboot.until-changes.v1",
-                || async { Err(Status::failed_precondition("missing previous until_changes memo")) },
+                || async {
+                    Err(Status::failed_precondition(
+                        "missing previous until_changes memo",
+                    ))
+                },
             )
             .await?;
         let result = if equals(&previous, &current) {
@@ -1082,9 +1095,7 @@ impl WorkflowContext<'_> {
                 version,
                 result_type,
                 callable,
-                move |previous, current| {
-                    !is_truthy(previous) && !is_truthy(current)
-                },
+                move |previous, current| !is_truthy(previous) && !is_truthy(current),
             )
             .await?;
         match result {

@@ -113,6 +113,7 @@ impl DatabaseActorStore {
             .await?
             .into_inner();
         let mut replay = None;
+        let mut declared = None;
         // Retain generation authority through the remainder of recovery, not
         // merely through each individual successor Load.
         let mut scheduling_replay = false;
@@ -122,6 +123,7 @@ impl DatabaseActorStore {
             }
             for mutation in batch.idempotent_mutations {
                 if replay.is_some()
+                    || declared.is_some()
                     || mutation.state_type != D::STATE_TYPE
                     || mutation.state_ref != state_ref
                     || mutation.key != key.as_bytes()
@@ -132,7 +134,15 @@ impl DatabaseActorStore {
                         "ordinary writer checkpoint scope collision",
                     ));
                 }
-                if mutation.request_fingerprint.as_deref()
+                if !constructor
+                    && mutation.request_fingerprint.as_deref()
+                        == Some(declared_writer_fingerprint(fingerprint).as_slice())
+                {
+                    if !mutation.task_ids.is_empty() {
+                        return Err(Status::data_loss("declared writer error has tasks"));
+                    }
+                    declared = Some(durable_declared_status(&mutation.response)?);
+                } else if mutation.request_fingerprint.as_deref()
                     == Some(scheduling_fingerprint.as_slice())
                 {
                     let checkpoint =
@@ -201,6 +211,9 @@ impl DatabaseActorStore {
         }
         if scheduling_replay {
             let _owner = retained_running.expect("retained generation").lock()?;
+        }
+        if let Some(status) = declared {
+            return Err(status);
         }
         Ok(replay)
     }
@@ -306,15 +319,53 @@ impl DatabaseActorStore {
             Box<dyn Future<Output = Result<WriterExecution<R>, Status>> + Send + 'a>,
         >,
     {
+        self.declared_scheduling_writer_async_for_method_authorized::<D, Q, R, _>(
+            identity,
+            authorization,
+            (owner, &[]),
+            request,
+            move |state, request, reference| {
+                let future = invoke(state, request, reference);
+                Box::pin(async move { future.await.map_err(DeclaredWriterError::Failed) })
+            },
+        )
+        .await
+    }
+
+    /// Explicitly declared ordinary writer failures are durable read-only outcomes.
+    /// Only generated typed variants may enter the Declared branch. Failed/transport
+    /// statuses are never recorded and cannot carry the durable-outcome marker.
+    pub async fn declared_scheduling_writer_async_for_method_authorized<D, Q, R, F>(
+        &self,
+        identity: (&str, &str, StateAdmission),
+        authorization: &crate::auth::AuthorizationPolicy,
+        declaration: (
+            Option<&crate::one_shot_tasks::OneShotTasks>,
+            &[crate::one_shot_tasks::DeclaredTaskError],
+        ),
+        request: Request<Q>,
+        invoke: F,
+    ) -> Result<Response<R>, Status>
+    where
+        D: DurableStateDeclaration + 'static,
+        Q: Message + Send + 'static,
+        R: Message + Default + Clone + Send + 'static,
+        F: for<'a> FnOnce(
+            &'a mut D::State,
+            Q,
+            String,
+        ) -> Pin<
+            Box<dyn Future<Output = Result<WriterExecution<R>, DeclaredWriterError>> + Send + 'a>,
+        >,
+    {
+        let (owner, errors) = declaration;
         let (method, response_type, admission) = identity;
-        let (context, auth) = authorization
-            .verify(
-                crate::RebootHeaders::from_request(&request)
-                    .map_err(|error| Status::invalid_argument(error.to_string()))?,
-                D::STATE_TYPE,
-                method,
-            )
-            .await?;
+        let headers = crate::RebootHeaders::from_request(&request)
+            .map_err(|error| Status::invalid_argument(error.to_string()))?;
+        // Authorization receives an intentionally sanitized metadata copy. Keep
+        // workflow scope from the validated RPC headers, never from that copy.
+        let workflow_call = headers.workflow_id.is_some() && headers.transaction_ids.is_none();
+        let (context, auth) = authorization.verify(headers, D::STATE_TYPE, method).await?;
         authorization.require_authorizer()?;
         let fingerprint = request_fingerprint(method, request.get_ref());
         let state_ref = required_metadata(&request, STATE_REF_HEADER)?;
@@ -354,22 +405,51 @@ impl DatabaseActorStore {
                 &request.get_ref().encode_to_vec(),
             )
             .await?;
-        if let Some(response) = self
+        // Add the current method schema before disclosing a stored error too.
+        let replay = self
             .replay_ordinary_writer::<D, Q, R>(
                 (&state_ref, method, response_type),
                 key,
                 &fingerprint,
                 owner,
             )
-            .await?
+            .await;
+        if let Err(status) = &replay
+            && is_durable_declared_writer_error(status)
         {
+            crate::one_shot_tasks::DeclaredTaskError::validate_status(errors, status)?;
+        }
+        if let Some(response) = replay? {
             return Ok(Response::new(response));
         }
         let mut state = admit_state(
             decode_persisted_state::<D::State>(snapshot, D::STATE_TYPE)?,
             admission,
         )?;
-        let execution = invoke(&mut state, request.into_inner(), state_ref.clone()).await?;
+        let execution = match invoke(&mut state, request.into_inner(), state_ref.clone()).await {
+            Ok(execution) => execution,
+            Err(DeclaredWriterError::Failed(mut status)) => {
+                status.metadata_mut().remove(DURABLE_DECLARED_WRITER);
+                return Err(status);
+            }
+            Err(DeclaredWriterError::Declared(status)) => {
+                crate::one_shot_tasks::DeclaredTaskError::validate_status(errors, &status)?;
+                // Preserve ordinary external writer error behavior. Durable errors
+                // are the generated callable-workflow contract, not generic memoize.
+                if !workflow_call {
+                    return Err(status);
+                }
+                self.persist_declared_writer_error(
+                    D::STATE_TYPE,
+                    &state_ref,
+                    key,
+                    &fingerprint,
+                    &status,
+                )
+                .await?;
+                return Err(durable_declared_status(status.details())?);
+            }
+        };
         if !execution.task_upserts.is_empty() {
             let _owner = initial_running
                 .as_ref()

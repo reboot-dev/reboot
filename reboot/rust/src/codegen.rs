@@ -1516,7 +1516,13 @@ fn emit_durable(
                     package,
                     declared_errors,
                     runtime_module,
-                    true,
+                    (
+                        true,
+                        matches!(
+                            **kind,
+                            DurableKind::Writer(WriterMetadata { constructor: false })
+                        ),
+                    ),
                 );
             }
         }
@@ -1683,6 +1689,20 @@ fn emit_durable(
             } else {
                 String::new()
             };
+            let declared = declared_database_errors(annotation, kind, method_identity);
+            let typed_writer = matches!(
+                **kind,
+                DurableKind::Writer(WriterMetadata { constructor: false })
+            ) && !declared.is_empty();
+            let (envelope, prefix, map_declared_error, precheck) = if typed_writer {
+                let schema = declared.iter().map(|name| {
+                    let variant = name.to_upper_camel_case();
+                    format!("{runtime_module}::one_shot_tasks::DeclaredTaskError::new::<proto::{variant}>(\"type.googleapis.com/{package}.{name}\")")
+                }).collect::<Vec<_>>().join(",");
+                ("declared_scheduling_writer_async_for_method_authorized", prefix.replace("self.tasks.as_ref(),", &format!("(self.tasks.as_ref(), &[{schema}]),")), ".map_err(|error| error.into_declared_writer_error())".to_owned(), precheck.replace("error.into_status()", &format!("{runtime_module}::runtime::DeclaredWriterError::Failed(error.into_status())")))
+            } else {
+                (envelope, prefix, map_declared_error, precheck)
+            };
             output.push_str(&format!("    async fn {method}(&self, request: tonic::Request<proto::{request}>) -> Result<tonic::Response<proto::{response}>, tonic::Status> {{\n{unary_composition}{constructor_compatibility}        let handler = self.handler.clone();\n        self.store.{envelope}::<{declaration}, _, _, _>(\n            {prefix}request, move |{callback_args}| {{\n                let handler = handler.clone();\n                Box::pin(async move {{ {precheck}handler.{callback_method}.await{map_declared_error} }})\n            }},\n        ).await\n    }}\n"));
         }
         output.push_str("}\n\n");
@@ -1706,7 +1726,7 @@ fn emit_durable(
                     package,
                     errors,
                     runtime_module,
-                    true,
+                    (true, false),
                 );
             }
         }
@@ -1721,7 +1741,7 @@ fn emit_durable(
                 package,
                 declared_errors,
                 runtime_module,
-                true,
+                (true, false),
             );
         }
     }
@@ -1847,8 +1867,9 @@ fn emit_declared_error_enum(
     package: &str,
     declared_errors: &[String],
     runtime_module: &str,
-    include_system_aborts: bool,
+    flags: (bool, bool),
 ) {
+    let (include_system_aborts, rich_writer) = flags;
     let error_type = declared_error_type(service_name, method);
     output.push_str(&format!("/// Declared errors for `{service_name}.{method}`, in `.proto` declaration order.\n#[derive(Debug)]\npub enum {error_type} {{\n"));
     for declared_error in declared_errors {
@@ -1859,6 +1880,9 @@ fn emit_declared_error_enum(
         output.push_str(&format!(
             "    /// A source-defined Reboot backend abort with its rich status message.\n    System({runtime_module}::SystemAbort),\n"
         ));
+    }
+    if rich_writer {
+        output.push_str("    /// Explicit declared rich status; the durable writer validates its schema.\n    DeclaredStatus(tonic::Status),\n");
     }
     output.push_str("    /// A non-declared transport failure.\n    Grpc(tonic::Status),\n}\n");
     output.push_str(&format!(
@@ -1873,11 +1897,15 @@ fn emit_declared_error_enum(
             "        Self::System(system) => system.error.into_status(system.message),\n",
         );
     }
+    if rich_writer {
+        output.push_str("        Self::DeclaredStatus(status) => status,\n");
+    }
     output.push_str("        Self::Grpc(status) => status,\n    } }\n");
     if include_system_aborts {
         let variants = declared_errors
             .iter()
             .map(|name| format!("Self::{}(_)", name.to_upper_camel_case()))
+            .chain(rich_writer.then(|| "Self::DeclaredStatus(_)".to_owned()))
             .collect::<Vec<_>>()
             .join(" | ");
         output.push_str(&format!("    #[allow(dead_code)]\n    fn is_method_declared(&self) -> bool {{ matches!(self, {variants}) }}\n"));
@@ -1900,7 +1928,10 @@ fn emit_declared_error_enum(
         let variant = error.to_upper_camel_case();
         output.push_str(&format!("        Self::{variant}(error) => {{ let status = {runtime_module}::declared_error_status(tonic::Code::Unknown, \"declared error\", \"type.googleapis.com/{package}.{error}\", &error); {runtime_module}::one_shot_tasks::TaskHandlerError::declared(status) }},\n"));
     }
-    output.push_str(&format!("        other => {runtime_module}::one_shot_tasks::TaskHandlerError::Failed(other.into_status()),\n    }} }}\n}}\nimpl From<tonic::Status> for {error_type} {{ fn from(status: tonic::Status) -> Self {{ Self::Grpc(status) }} }}\n\n"));
+    let writer_conversion = if rich_writer {
+        format!("fn into_declared_writer_error(self) -> {runtime_module}::runtime::DeclaredWriterError {{ if self.is_method_declared() {{ {runtime_module}::runtime::DeclaredWriterError::Declared(self.into_status()) }} else {{ {runtime_module}::runtime::DeclaredWriterError::Failed(self.into_status()) }} }}\n")
+    } else { String::new() };
+    output.push_str(&format!("        other => {runtime_module}::one_shot_tasks::TaskHandlerError::Failed(other.into_status()),\n    }} }}\n{writer_conversion}}}\nimpl From<tonic::Status> for {error_type} {{ fn from(status: tonic::Status) -> Self {{ Self::Grpc(status) }} }}\n\n"));
 }
 
 fn emit_external_client(
@@ -2014,12 +2045,24 @@ fn emit_workflow_writer_reference(
         } else {
             declared_error_type(service, method)
         };
+        let schema = errors.iter().map(|name| {
+            let variant = name.to_upper_camel_case();
+            let package = identity.rsplit_once('.').unwrap().0.rsplit_once('.').unwrap().0;
+            format!("{runtime}::one_shot_tasks::DeclaredTaskError::new::<proto::{variant}>(\"type.googleapis.com/{package}.{name}\")")
+        }).collect::<Vec<_>>().join(",");
+        let result_error = if errors.is_empty() {
+            error.clone()
+        } else {
+            format!("{runtime}::one_shot_tasks::WorkflowWriterError<{error}>")
+        };
         let map = if errors.is_empty() {
             String::new()
         } else {
-            format!(".map_err({error}::from_status)")
+            format!(
+                ".map_err(|status| if {runtime}::runtime::is_durable_declared_writer_error(&status) {{ {runtime}::one_shot_tasks::WorkflowWriterError::Declared {{ error: {error}::from_status(status.clone()), status }} }} else {{ {runtime}::one_shot_tasks::WorkflowWriterError::Failed(status) }})"
+            )
         };
-        output.push_str(&format!("pub async fn {method}(&self, context: &{runtime}::one_shot_tasks::WorkflowContext<'_>, alias: &str, request: proto::{request}) -> Result<proto::{response}, {error}> {{ let mut client = proto::{module}::{service}Client::new(self.channel.clone()); context.invoke_writer(&self.target, alias, {runtime}::one_shot_tasks::WorkflowWriterMethod {{ state_type: \"{state_type}\", method: \"{identity}\", response_type: \"type.googleapis.com/{response_type}\" }}, request, move |request| async move {{ client.{method}(request).await }}).await{map} }}\\n").replace("\\n", "\n"));
+        output.push_str(&format!("pub async fn {method}(&self, context: &{runtime}::one_shot_tasks::WorkflowContext<'_>, alias: &str, request: proto::{request}) -> Result<proto::{response}, {result_error}> {{ let mut client = proto::{module}::{service}Client::new(self.channel.clone()); context.invoke_writer(&self.target, alias, {runtime}::one_shot_tasks::WorkflowWriterMethod {{ state_type: \"{state_type}\", method: \"{identity}\", response_type: \"type.googleapis.com/{response_type}\", errors: vec![{schema}] }}, request, move |request| async move {{ client.{method}(request).await }}).await{map} }}\\n").replace("\\n", "\n"));
     }
     output.push_str("}\n\n");
 }
@@ -3420,7 +3463,10 @@ fn emit_transactions(
                 TransactionMode::Shared => "Shared",
             },
             factory: metadata.factory,
-            default_root: !requires_constructor && !annotation.methods.values().any(|kind| matches!(kind, DurableKind::Transaction(metadata) if metadata.factory)),
+            default_root: !requires_constructor
+                && !annotation.methods.values().any(
+                    |kind| matches!(kind, DurableKind::Transaction(metadata) if metadata.factory),
+                ),
             declared_error: !declared_root_errors(annotation, kind, method_identity).is_empty(),
             writer: false,
             inbound: TransactionInbound::Dynamic,
@@ -3874,7 +3920,11 @@ mod tests {
             (true, false, "true"),
             (true, true, "true"),
             (false, false, "false"),
-            (false, true, "!inbound && context.transaction_ids().len() == 1"),
+            (
+                false,
+                true,
+                "!inbound && context.transaction_ids().len() == 1",
+            ),
         ] {
             let mut output = String::new();
             emit_exclusive_transaction_method(
@@ -3941,7 +3991,13 @@ mod tests {
         assert!(output.contains("local.complete_root("));
         assert!(!output.contains("create_actor("));
         let mut explicit = String::new();
-        emit_exclusive_transaction_method(&mut explicit, TransactionFlow { default_root: false, ..flow });
+        emit_exclusive_transaction_method(
+            &mut explicit,
+            TransactionFlow {
+                default_root: false,
+                ..flow
+            },
+        );
         assert!(!explicit.contains(root_default));
         let mut shared = String::new();
         emit_shared_transaction_method(
@@ -6728,7 +6784,7 @@ mod tests {
             "bank.v1",
             &["OverdraftError".to_owned()],
             "reboot_rust_schema",
-            true,
+            (true, false),
         );
         assert!(typed.contains("OverdraftError(proto::OverdraftError)"));
         assert!(typed.contains("\"type.googleapis.com/bank.v1.OverdraftError\", &error"));
