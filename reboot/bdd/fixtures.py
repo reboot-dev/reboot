@@ -145,6 +145,12 @@ class World:
     # The scenario's name; every context's name begins with it.
     name: Optional[str] = None
 
+    # Where a browser opens the web app: the backend's Envoy, which
+    # serves it and answers its calls at that one origin; `None`
+    # until the application is up, and for a scenario without a
+    # `frontend`.
+    web_app_url: Optional[str] = None
+
     # The context every call shares, once a 'Given a shared context'
     # step has created it; while `None`, each call runs on a fresh
     # context, the way each external call in production arrives with

@@ -162,8 +162,8 @@ Recommended sequence:
    `python/references/testing-harness.md` ("Identity Wiring in
    Tests"): omit `oauth=` for backend scenarios, and for scenarios
    that open the web app use `Development()` for both arms plus
-   `allowed_origins=[frontend.origin]`, as
-   `python/references/testing-web-app.md` shows.
+   `allowed_origins=[]`, as `python/references/testing-web-app.md`
+   shows.
 
 3. **Public, unauthenticated endpoints** (health checks, public
    sign-up, public catalog reads): mark these explicitly with

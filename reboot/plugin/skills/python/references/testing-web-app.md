@@ -90,9 +90,7 @@ def frontend() -> Iterator[Frontend]:
 
 
 @pytest.fixture
-def application(frontend: Frontend) -> Application:
-    # A web app calls the backend from its own origin.
-    assert frontend.origin is not None
+def application() -> Application:
     development = Development()
     return Application(
         servicers=[...],
@@ -103,9 +101,9 @@ def application(frontend: Frontend) -> Application:
                 dev=development,
                 prod=development,
             ),
-            # The app's origin is the only one Envoy lets read
-            # `/whoami` cross-origin, as a deployment lists its host.
-            allowed_origins=[frontend.origin],
+            # The web app is served at the backend's own origin, so
+            # no other origin may act on its session cookie.
+            allowed_origins=[],
         ),
     )
 
@@ -113,13 +111,17 @@ def application(frontend: Frontend) -> Application:
 scenarios('opening_accounts.feature', 'transfers.feature', 'sign_in.feature')
 ```
 
-The app is served the way it is deployed: from its own origin (a
-Vite dev server on `localhost`), calling the backend cross-origin at
-its `127.0.0.1` address. The browser treats those as different
-sites, so the session cookie, the `whoami` probe, and Envoy's CORS
-allow-list are exercised the way production exercises them. The
-`application` fixture takes `frontend` so the app can allow that
-origin.
+The app is served the way it is deployed: at the backend's own
+origin, from which it calls the backend. 'Given the application is
+up' starts the Vite dev server on a free port of the OS's choosing
+(which needs Vite 8 or later in the frontend; `vite(...)` refuses an
+older one) and brings the backend up routing to it, the way
+`rbt dev run --frontend-url=... --web-app` does, so the browser
+opens the backend's origin and the session cookie and the `whoami`
+probe are exercised the way a deployment exercises them. The app
+finds the backend at the page's origin, as it does under
+`rbt dev run --web-app`; `VITE_REBOOT_URL` is only for a web app
+served from another origin, in `.env.production`.
 
 A project that serves its web app some other way defines
 `frontend` against its own `Frontend` subclass. A mobile app or an

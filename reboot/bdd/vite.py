@@ -8,12 +8,18 @@ directory holding `.rbtrc`, defines its `frontend` fixture with
     def frontend() -> Iterator[Frontend]:
         with vite(directory='frontend') as frontend:
             yield frontend
+
+The dev server takes a free port of the OS's choosing (Vite's
+`--port 0`) before the scenario's backend comes up, and the backend's
+Envoy then routes `/__/frontend/**` and the web app to it, so a
+browser opens the app at the backend's own origin, where the app
+finds the backend too.
 """
 import aiohttp
 import asyncio
 import os
+import re
 import signal
-import socket
 import subprocess
 import tempfile
 import time
@@ -22,70 +28,79 @@ from pathlib import Path
 from reboot.bdd.frontend import Frontend
 from reboot.bdd.loop import run
 from reboot.mcp.ui import find_project_root_from
-from reboot.settings import ONLY_LOCALHOST_NETWORK_ADDRESS
+from reboot.settings import EVERY_LOCAL_NETWORK_ADDRESS
 from typing import Iterator, Optional, Union
 
-
-# TODO: pass `--port 0` and read the port Vite prints, 'Local:
-# http://localhost:PORT/', instead of reserving one here. That works
-# from Vite 8: through 7, the CLI drops the 0 and binds its default,
+# The oldest Vite whose `--port 0` takes a free port of the OS's
+# choosing: through 7, the CLI drops the 0 and binds its default,
 # 5173, so two servers started at once collide.
-def _reserve_port() -> socket.socket:
-    """A socket bound to a free port on the loopback address, which
-    keeps the port from anything else until the socket is closed.
-    Bound with `SO_REUSEADDR` and never listening, so that a server
-    that also sets `SO_REUSEADDR`, as Node does, can bind the port
-    while the reservation still holds it: there is no moment at which
-    the port is free for something else to take."""
-    reservation = socket.socket()
-    reservation.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    # Only connections from this machine are expected to the Vite
-    # server that takes over this port, so the loopback is enough.
-    reservation.bind((ONLY_LOCALHOST_NETWORK_ADDRESS, 0))
-    return reservation
+MINIMUM_VITE_MAJOR = 8
 
+# The line the dev server prints once it listens, '  ➜  Local:
+# http://localhost:PORT/', which says the URL it took.
+_LOCAL_URL = re.compile(rb'Local:\s*(https?://[^/\s]+)')
+
+# The escape sequences Vite styles its output with when colors are
+# on, which land anywhere in a line, between the host and the port of
+# the URL included.
+_ANSI_ESCAPE = re.compile(rb'\x1b\[[0-9;]*[A-Za-z]')
 
 # How long a Vite dev server that has not exited gets to answer
 # before serving is given up on: a cold start that pre-bundles
 # dependencies can take tens of seconds on a slow machine.
 SERVING_DEADLINE_SECONDS = 60
 
+# What `vite --version` prints: 'vite/8.3.4 linux-x64 node-v22.22.0'.
+_VERSION = re.compile(r'vite/(\S+)')
 
-# TODO: serve the frontend through the scenario's Envoy, the way
-# `rbt dev run --frontend-url=... --web-app` does, instead of having
-# the browser open the dev server directly: the test harness's Envoy
-# would route `/` and `/__/frontend/**` to the dev server (a
-# `frontend_url`/`web_app` on `Reboot.up()`, not the `RBT_DEV`-gated
-# environment variables), the browser would open the backend's own
-# origin, and the app would find the backend by the page's origin.
-# That is how an app is run in development and deployed (same
-# origin), so it is what to test; `VITE_REBOOT_URL`, `serve()`'s
-# `backend_url` and `Frontend.origin` go, and with them a project's
-# `allowed_origins=[frontend.origin]` fixture. It also makes MCP App
-# scenarios simple: an MCP App is at `/__/frontend/mcp/<path>/` on
-# that same origin, served from the same dev server by the same
-# route, so a step that opens one needs no second server and no
-# second origin. The cross-origin (static host) deployment stays
-# covered by the ping SPA test, which drives the built app on
-# `localhost` against the API on `127.0.0.1` with `?rebootUrl`.
+
+def _vite_version(directory: Path) -> str:
+    """The version of the Vite that `npx vite` runs in the directory,
+    asked of it; raises when there is none to ask, since `npx` is
+    told not to fetch one, with what `npx` said."""
+    command = ['npx', '--no-install', 'vite', '--version']
+    result = subprocess.run(
+        command,
+        cwd=directory,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"The frontend's dependencies are not installed in {directory}, "
+            "or its Vite does not run; `npm install` there is what makes "
+            f"Vite available. `{' '.join(command)}` exited with status "
+            f"{result.returncode}; its output:\n{result.stdout}{result.stderr}"
+        )
+    match = _VERSION.search(result.stdout)
+    if match is None:
+        raise RuntimeError(
+            f"Could not tell the version of the Vite in {directory} from "
+            f"what `{' '.join(command)}` printed:\n{result.stdout}"
+        )
+    return match.group(1)
+
+
 class ViteFrontend(Frontend):
     """A web app a Vite dev server serves from the given directory on
-    a port reserved when the frontend is made, started with
-    `VITE_REBOOT_URL` naming the backend so the app calls it the way
-    it calls the one `.env.development` names under `rbt dev run`."""
+    a free port of the OS's choosing, for the backend's Envoy to
+    route to; the app finds the backend at the page's own origin."""
 
     def __init__(self, directory: Path) -> None:
-        # Holds the port until the server has bound it.
-        self._reservation: Optional[socket.socket] = _reserve_port()
-        port = self._reservation.getsockname()[1]
-        super().__init__(f'http://localhost:{port}')
         self._directory = directory
-        self._port = port
+        # Known once the server says which port it took.
+        self._url: Optional[str] = None
         self._server: Optional[asyncio.subprocess.Process] = None
-        # What the server writes, to say why when it fails to serve.
+        # What the server writes: the port it took, and why when it
+        # fails to serve.
         self._output: Optional[Path] = None
 
-    async def serve(self, *, backend_url: str) -> None:
+    @property
+    def url(self) -> str:
+        assert self._url is not None, 'not ready; `ready()` first'
+        return self._url
+
+    async def serve(self) -> None:
         assert self._server is None, 'already serving'
         self._output = Path(
             tempfile.NamedTemporaryFile(
@@ -98,13 +113,20 @@ class ViteFrontend(Frontend):
             self._server = await asyncio.create_subprocess_exec(
                 'npx',
                 'vite',
+                # A free port of the OS's choosing, read back from
+                # the output, so that a server starting beside other
+                # dev servers, or two starting at once, never collide.
                 '--port',
-                str(self._port),
-                '--strictPort',
+                '0',
+                # Every IPv4 interface, which is where Envoy reaches
+                # the dev server: as `localhost` from an Envoy
+                # executable, which Node left to itself may bind as
+                # `::1` alone, and as `host.docker.internal` from an
+                # Envoy in Docker, which the loopback alone would not
+                # reach.
+                '--host',
+                EVERY_LOCAL_NETWORK_ADDRESS,
                 cwd=self._directory,
-                env={
-                    **os.environ, 'VITE_REBOOT_URL': backend_url
-                },
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 # Its own process group, so that stopping it also
@@ -116,11 +138,32 @@ class ViteFrontend(Frontend):
         assert self._server is not None and self._output is not None, (
             'not serving; `serve()` first'
         )
-        # The app is at the root; in a dual-surface layout the dev
+        deadline = time.monotonic() + SERVING_DEADLINE_SECONDS
+        # First the URL, which the server prints once it listens.
+        while self._url is None:
+            match = _LOCAL_URL.search(
+                _ANSI_ESCAPE.sub(b'', self._output.read_bytes())
+            )
+            if match is not None:
+                self._url = match.group(1).decode()
+                break
+            if self._server.returncode is not None:
+                raise RuntimeError(
+                    f"The Vite dev server exited with status "
+                    f"{self._server.returncode} before saying which port "
+                    f"it took; its output:\n{self._output.read_text()}"
+                )
+            if time.monotonic() > deadline:
+                raise RuntimeError(
+                    f"The Vite dev server did not say which port it took "
+                    f"within {SERVING_DEADLINE_SECONDS} seconds; its "
+                    f"output:\n{self._output.read_text()}"
+                )
+            await asyncio.sleep(0.2)
+        # Then the app at the root; in a dual-surface layout the dev
         # server serves it there itself (see `serveWebAppAtRoot` in
         # Reboot's Vite plugin).
-        url = f'{self.origin}/'
-        deadline = time.monotonic() + SERVING_DEADLINE_SECONDS
+        url = f'{self._url}/'
         last: Optional[str] = None
         async with aiohttp.ClientSession(
             timeout=aiohttp.ClientTimeout(total=1),
@@ -129,7 +172,6 @@ class ViteFrontend(Frontend):
                 try:
                     async with session.get(url) as response:
                         if response.status == 200:
-                            self._release()
                             return
                         last = f'{response.status} {response.reason}'
                 except (aiohttp.ClientError, asyncio.TimeoutError) as error:
@@ -150,8 +192,7 @@ class ViteFrontend(Frontend):
                 await asyncio.sleep(0.2)
 
     def stop(self) -> None:
-        """Stops serving, if serving, and releases the port."""
-        self._release()
+        """Stops serving, if serving."""
         if self._server is not None:
             # A server that failed to start has already exited, and
             # its process group with it.
@@ -163,28 +204,26 @@ class ViteFrontend(Frontend):
             self._output.unlink(missing_ok=True)
             self._output = None
 
-    def _release(self) -> None:
-        if self._reservation is not None:
-            self._reservation.close()
-            self._reservation = None
-
 
 @contextmanager
 def vite(*, directory: Union[str, Path]) -> Iterator[Frontend]:
     """A web app to be served from the given directory, relative to
     the project root unless absolute, by a Vite dev server on a free
     port, stopped when the context ends. Fails when the directory's
-    dependencies are not installed, since `npm install` there is what
-    makes Vite available."""
+    Vite does not run, which `npm install` there is what makes it do,
+    and when it is older than `MINIMUM_VITE_MAJOR`."""
     path = Path(directory)
     if not path.is_absolute():
         path = find_project_root_from(Path.cwd()) / path
     if not path.is_dir():
         raise RuntimeError(f"No directory {path}")
-    if not (path / 'node_modules' / '.bin' / 'vite').exists():
+    version = _vite_version(path)
+    if int(version.split('.')[0]) < MINIMUM_VITE_MAJOR:
         raise RuntimeError(
-            f"The frontend's dependencies are not installed in {path}; "
-            "run `npm install` there"
+            f"The frontend in {path} has Vite {version}, but serving it "
+            f"needs Vite {MINIMUM_VITE_MAJOR} or later, whose `--port 0` "
+            "takes a free port of the OS's choosing; upgrade it there, "
+            "e.g. `npm install -D vite@latest @vitejs/plugin-react@latest`"
         )
     frontend = ViteFrontend(path)
     try:

@@ -186,10 +186,11 @@ signing in.
 - **Scenarios that open the web app** need a real sign-in flow, so
   they pass `oauth=` with `Development()` for both arms of
   `OAuthProviderByEnvironment` (a test is neither `rbt dev run` nor
-  `rbt serve`) and `allowed_origins=[frontend.origin]`; see
-  `testing-web-app.md`. Outside `rbt dev run`, an `oauth=` without
-  `allowed_origins` refuses to start, which is why a test does not
-  reuse the `Application(...)` of `main.py`.
+  `rbt serve`) and `allowed_origins=[]` (the web app is served at
+  the backend's own origin); see `testing-web-app.md`. Outside
+  `rbt dev run`, an `oauth=` without `allowed_origins` refuses to
+  start, which is why a test does not reuse the `Application(...)`
+  of `main.py`.
 
 - **App with a production `token_verifier=`** (e.g. a web app
   verifying an external IdP's tokens): keep the `token_verifier=`

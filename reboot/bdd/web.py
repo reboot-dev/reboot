@@ -14,7 +14,7 @@ button', or a field by its label, never by a selector; the one step
 that reads a value out of the app, 'saves the text of the
 "account-id" element', names it by its test id.
 
-The web app is the scenario's `frontend` fixture, served against the
+The web app is the scenario's `frontend` fixture, served through the
 scenario's backend since 'the application is up'. The steps are plain
 `def`s: Playwright's sync API runs on pytest's main thread, while the
 backend steps run on the scenario's event loop.
@@ -30,7 +30,7 @@ from pytest_playwright.pytest_playwright import CreateContextCallback
 from reboot.aio.auth import SESSION_COOKIE_NAME, WHOAMI_PATH
 from reboot.bdd import given, recordings, then, when
 from reboot.bdd.fixtures import World
-from reboot.bdd.frontend import Frontend, backend_url
+from reboot.bdd.frontend import Frontend
 from reboot.bdd.grammar import (
     CHECKS_IN_WEB_APP,
     CLICKS_IN_WEB_APP,
@@ -45,11 +45,24 @@ from reboot.bdd.grammar import (
     SEES_WEB_APP_AT,
     SELECTS_IN_WEB_APP,
 )
-from reboot.bdd.loop import run
 from reboot.bdd.recording import VIDEO_SIZE, Recording
 from reboot.bdd.steps import _parsed_seconds, _parsed_value, _string
 from typing import Any, Iterator, Literal, Optional, cast
 from urllib.parse import urlparse
+
+
+def _web_app_url(world: World) -> str:
+    """The web app's URL, once 'Given the application is up' has
+    served a `frontend`; raises for a scenario that has none."""
+    assert world.rbt is not None, (
+        "The application is not up; start the scenario with "
+        "'Given the application is up'"
+    )
+    assert world.web_app_url is not None, (
+        "The application has no web app; give the scenario a "
+        "`frontend` fixture"
+    )
+    return world.web_app_url
 
 
 @dataclass
@@ -80,16 +93,9 @@ class WebApp:
         """Opens the app at the given path in a browser of the user's
         own, in the given color scheme, as the user: their token,
         minted when the scenario declared them, becomes the session
-        cookie on the backend's host, which the app's
-        `/__/oauth/whoami` call turns back into its bearer."""
-        assert self.world.rbt is not None, (
-            "The application is not up; start the scenario with "
-            "'Given the application is up'"
-        )
-        assert self.frontend.origin is not None, (
-            'The frontend has no origin for a browser to load it from'
-        )
-        run(self.frontend.ready())
+        cookie on the app's host, which the app's `/__/oauth/whoami`
+        call turns back into its bearer."""
+        url = _web_app_url(self.world)
         context = self.new_context(
             record_video_dir=str(self.recording.directory),
             record_video_size=VIDEO_SIZE,
@@ -97,10 +103,10 @@ class WebApp:
         )
         token = self.world.token(user)
         if token is not None:
-            host = urlparse(backend_url(self.world.rbt)).hostname
+            host = urlparse(url).hostname
             assert host is not None
-            # The attributes the backend's own cookie has, so that the
-            # browser sends it cross-site. Set by domain, not URL:
+            # The attributes the backend's own cookie has. Set by
+            # domain, not URL:
             # Chromium keeps a `Secure` cookie for the loopback host
             # but drops one added for an `http://` URL without a word.
             context.add_cookies(
@@ -117,7 +123,7 @@ class WebApp:
                 ]
             )
         page = context.new_page()
-        page.goto(self.frontend.origin + path)
+        page.goto(url + path)
         self.pages[user] = page
         return page
 
@@ -137,11 +143,10 @@ class WebApp:
         """The backend's answer to `/__/oauth/whoami` for the user's
         browser session, fetched from inside their page with the
         session cookie the way the app fetches it."""
-        assert self.world.rbt is not None
         return self.page(user=user).evaluate(
             "(url) => fetch(url, {credentials: 'include'})"
             ".then((response) => response.json())",
-            backend_url(self.world.rbt) + WHOAMI_PATH,
+            _web_app_url(self.world) + WHOAMI_PATH,
         )
 
     def page(self, *, user: str) -> Page:
@@ -422,10 +427,8 @@ def _sees_web_app_at(
     path: str,
 ) -> None:
     user = _string(world, user, error_prefix='The user')
-    assert web_app.frontend.origin is not None
     expect(web_app.page(user=user)).to_have_url(
-        web_app.frontend.origin +
-        _string(world, path, error_prefix='The path'),
+        _web_app_url(world) + _string(world, path, error_prefix='The path'),
     )
 
 
@@ -450,12 +453,10 @@ def _is_signed_in_to_web_app(
     here on, and whose id is saved under the given name, if any."""
     user = _string(world, user, error_prefix='The user')
     page = web_app.page(user=user)
-    origin = web_app.frontend.origin
-    assert origin is not None
     # Signing in ends in redirects back to the app; the session is
     # settled once the browser is back on the app's origin.
     expect(page).to_have_url(
-        re.compile('^' + re.escape(origin)),
+        re.compile('^' + re.escape(_web_app_url(world))),
         timeout=_SESSION_CHANGE_TIMEOUT_MILLISECONDS,
     )
     session = web_app.whoami(user=user)

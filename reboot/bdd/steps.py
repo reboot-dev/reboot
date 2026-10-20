@@ -147,7 +147,7 @@ from reboot.bdd.fixtures import (
 from reboot.bdd.fixtures import rbt as rbt
 from reboot.bdd.fixtures import reboot_event_loop as reboot_event_loop
 from reboot.bdd.fixtures import world as world
-from reboot.bdd.frontend import Frontend, backend_url
+from reboot.bdd.frontend import Frontend
 from reboot.bdd.grammar import (
     ABORTS_WITH,
     APPLICATION_IS_UP,
@@ -864,24 +864,29 @@ async def _the_application_is_up(
             f"Expecting the `{fixture}` fixture to return an "
             f"`Application`, but it returned {application!r}"
         )
-    await rbt.up(application)
-    world.client_types = client_types_by_name(application)
-    world.rbt = rbt
-    world.name = request.node.name
-
-    # A scenario with a frontend has it served against the backend
-    # from here, so that it comes up while the steps before the one
-    # that opens it run.
+    # A scenario with a frontend has it served first, so that the
+    # backend's Envoy can route to it, the way `rbt dev run
+    # --frontend-url=... --web-app` does.
+    frontend: Optional[Frontend] = None
     try:
         frontend = request.getfixturevalue('frontend')
     except pytest.FixtureLookupError:
-        return
-    if not isinstance(frontend, Frontend):
-        raise ValueError(
-            "Expecting the `frontend` fixture to return a `Frontend`, "
-            f"but it returned {frontend!r}"
-        )
-    await frontend.serve(backend_url=backend_url(rbt))
+        pass
+    if frontend is not None:
+        if not isinstance(frontend, Frontend):
+            raise ValueError(
+                "Expecting the `frontend` fixture to return a "
+                f"`Frontend`, but it returned {frontend!r}"
+            )
+        await frontend.serve()
+        await frontend.ready()
+        await rbt.up(application, frontend_url=frontend.url, web_app=True)
+        world.web_app_url = f'http://localhost:{rbt.envoy_port()}'
+    else:
+        await rbt.up(application)
+    world.client_types = client_types_by_name(application)
+    world.rbt = rbt
+    world.name = request.node.name
 
 
 @given(parsers.re(IS_AN_AUTHENTICATED_USER))
