@@ -1805,7 +1805,7 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
             ));
         }
         if let Some(error) = self.context.doomed_status() {
-            return Err(error);
+            return Err(crate::runtime::without_declared_transaction_ack(error));
         }
         if self.reservation.is_some() {
             self.context.seal_explicit_abort()?;
