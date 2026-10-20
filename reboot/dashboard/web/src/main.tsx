@@ -760,49 +760,75 @@ const WithToken: FC<{ children: ReactNode }> = ({ children }) => {
 // window, or in a small window of its own.
 type DisplayMode = "inline" | "fullscreen" | "pip";
 
-// Asks an MCP host for fullscreen: an inline frame is small for a whole
-// page. Keeps the `mcp-host-sized` class on `html`, which
+// Returns a function that asks an MCP host for fullscreen, or
+// `undefined` unless the page is inline and the host offers fullscreen. Keeps the `mcp-host-sized` class on `html`, which
 // `dashboard.css` reads, equal to whether the host gives the frame its
 // height.
-const useFullscreenInHost = (): void => {
+const useFullscreenInHost = (): (() => void) | undefined => {
   const mcpApp = useMcpApp();
+  const [mode, setMode] = useState<DisplayMode>();
+  const [available, setAvailable] = useState<DisplayMode[]>();
   useEffect(() => {
     if (mcpApp === null || MCP_CARD !== undefined) {
       return;
     }
-    const sized = (mode: DisplayMode | undefined): void => {
-      document.documentElement.classList.toggle(
-        "mcp-host-sized",
-        mode === "fullscreen" || mode === "pip"
-      );
-    };
     // The host sends the whole context on connecting and only what
     // changed afterwards.
-    const changed = (context: { displayMode?: DisplayMode }): void => {
-      if (context.displayMode !== undefined) {
-        sized(context.displayMode);
-      }
-    };
-    const context: {
+    const changed = (context: {
       displayMode?: DisplayMode;
       availableDisplayModes?: DisplayMode[];
-    } = mcpApp.getHostContext() ?? {};
-    changed(context);
+    }): void => {
+      if (context.displayMode !== undefined) {
+        setMode(context.displayMode);
+      }
+      if (context.availableDisplayModes !== undefined) {
+        setAvailable(context.availableDisplayModes);
+      }
+    };
+    changed(mcpApp.getHostContext() ?? {});
     mcpApp.addEventListener("hostcontextchanged", changed);
-    // A host that does not list its modes may still offer fullscreen.
-    if (context.availableDisplayModes?.includes("fullscreen") ?? true) {
-      mcpApp.requestDisplayMode({ mode: "fullscreen" }).then(
-        (result) => sized(result.mode),
-        (error) => console.warn("The host refused fullscreen:", error)
-      );
-    }
     return () => mcpApp.removeEventListener("hostcontextchanged", changed);
   }, [mcpApp]);
+  useEffect(() => {
+    document.documentElement.classList.toggle(
+      "mcp-host-sized",
+      mode === "fullscreen" || mode === "pip"
+    );
+  }, [mode]);
+  const request = useCallback((): void => {
+    mcpApp?.requestDisplayMode({ mode: "fullscreen" }).then(
+      (result: { mode: DisplayMode }) => setMode(result.mode),
+      (error: unknown) => console.warn("The host refused fullscreen:", error)
+    );
+  }, [mcpApp]);
+  // Only offered when the host says the page is inline and lists
+  // fullscreen; a host that does not say either may not support it.
+  if (
+    mcpApp === null ||
+    MCP_CARD !== undefined ||
+    mode !== "inline" ||
+    available?.includes("fullscreen") !== true
+  ) {
+    return undefined;
+  }
+  return request;
 };
 
-const RebootBrand: FC<{ live: boolean }> = ({ live }) => (
+const RebootBrand: FC<{
+  live: boolean;
+  onFullscreen: (() => void) | undefined;
+}> = ({ live, onFullscreen }) => (
   <div className="brand">
     <img className="brand-logo" src={logo} alt="Reboot logo" />
+    {onFullscreen !== undefined && (
+      <button
+        type="button"
+        className="fullscreen-button"
+        onClick={onFullscreen}
+      >
+        Fullscreen
+      </button>
+    )}
     <Connection live={live} />
   </div>
 );
@@ -3617,6 +3643,8 @@ const Overview: FC<{
   onSeen: (seen: Seen) => void;
   callGraphLayout: CallGraphLayout;
   onCallGraphLayoutChange: (layout: CallGraphLayout) => void;
+  // Asks an MCP host for fullscreen; `undefined` when it cannot.
+  onFullscreen: (() => void) | undefined;
 }> = ({
   page,
   navWidth,
@@ -3630,6 +3658,7 @@ const Overview: FC<{
   onSeen,
   callGraphLayout,
   onCallGraphLayoutChange,
+  onFullscreen,
 }) => {
   // `Panel` reads `defaultSize` once, when it mounts, and the stored
   // width arrives from the application later. The effect below resizes
@@ -4182,7 +4211,7 @@ const Overview: FC<{
           ) : (
             <>
               <nav>
-                <RebootBrand live={live} />
+                <RebootBrand live={live} onFullscreen={onFullscreen} />
                 <PageSelector isNew={isNew} search={carriedSearch} />
                 {page === "features" && (
                   <NavLinks
@@ -4434,7 +4463,7 @@ const App: FC = () => {
   });
   const { response } = useGet();
 
-  useFullscreenInHost();
+  const onFullscreen = useFullscreenInHost();
 
   const onSeen = useCallback(
     (seen: Seen): void => {
@@ -4534,6 +4563,7 @@ const App: FC = () => {
                   onSeen={onSeen}
                   callGraphLayout={callGraphLayout}
                   onCallGraphLayoutChange={onCallGraphLayoutChange}
+                  onFullscreen={onFullscreen}
                 />
               }
               key={page}
