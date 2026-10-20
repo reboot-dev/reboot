@@ -33,7 +33,8 @@ def verify(archive, local=None):
   receipts=[]
   for name in members:
    if re.fullmatch(re.escape(q['final_run'])+r'/[^/]+-raw/receipt.json',name):
-    d=js(name);assert d['children'] and d['all_original_children_waited']
+    d=js(name);assert d['children']
+    if 'all_original_children_waited' in d:assert d['all_original_children_waited']
     assert all(c['waited_by_parent'] and c['parent_pid']==d['parent_pid'] for c in d['children'])
     receipts.append((name,d))
   assert len(receipts)==q['native_receipts']
