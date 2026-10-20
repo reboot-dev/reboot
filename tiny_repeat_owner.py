@@ -30,7 +30,8 @@ class Benchmark:
         assert config['labels']['run'] == 'tiny-repeat-20261020'
         assert config['ip'] != '2.29.27.53'  # provider may recycle the deleted VM's address
         self.host = 'root@'+config['ip']
-        self.o = Owner(ROOT/config.get('results_name','results'), config['owner_seconds'])
+        self.o = Owner(ROOT/config.get('results_name','results'), config['owner_seconds'],
+                       outer_deadline_epoch=config.get('outer_deadline_epoch'))
         self.o.ledger.update(config=config, images=IMAGES, key=self.key(),
                              source_sha256={p.name:hashlib.sha256(p.read_bytes()).hexdigest()
                                             for p in ROOT.glob('tiny_repeat_*.py')})
@@ -65,13 +66,18 @@ class Benchmark:
                         '--cgroup-parent=tinyrepeat.slice',
                         '--label','owner=tiny-repeat-20261020','--name',name,*extra,image,*command).strip()
         # Persist exact ID before any later operation can fail.
-        r = dict(name=name,id=cid,role=role)
+        r = dict(name=name,id=cid,role=role,custody='UNRESOLVED',original_wait_qualified=False)
         self.row['containers'].append(r)
+        self.active.append((r, None))
         self.o.save()
         self.arm(r)
         return cid
 
     def arm(self, r):
+        if not any(a is r for a,c in self.active):
+            r.update(custody='UNRESOLVED', original_wait_qualified=False)
+            self.active.append((r, None))
+            self.o.save()
         i = self.inspect(r['id'])
         assert i['State']['StartedAt'] != '0001-01-01T00:00:00Z'
         assert i['Image'] == IMAGES['engine' if r['role']=='engine' else self.row['language']]
@@ -79,7 +85,8 @@ class Benchmark:
         r['initial'] = i
         child = self.o.spawn(self.tiny_argv(['docker','wait',r['id']]), 'wait-'+str(len(self.o.children)))
         r['wait_child_name'] = child[0]['name']
-        self.active.append((r, child))
+        self.active = [(a,child if a is r else c) for a,c in self.active]
+        r.update(custody='ARMED', original_wait_qualified=True)
         self.o.save()
 
     def retire(self):
@@ -87,22 +94,30 @@ class Benchmark:
         failures = []
         order = {'config':0,'app':1,'engine':2}
         for r, child in sorted(self.active, key=lambda rc:order[rc[0]['role']]):
-            if r['role']=='engine' and any(a['role']=='app' and not a.get('retired') for a,c in self.active):
+            if r['role']=='engine' and any(a['role']=='app' and not a.get('stopped_confirmed') for a,c in self.active):
                 failures.append('engine retained because application retirement is unresolved')
                 continue
             try:
                 i = self.inspect(r['id'])
                 if i['State']['Running']:
                     self.tiny('docker','stop','-t','30',r['id'],timeout=90)
-                result = self.o.join(child, timeout=90)
                 terminal = self.inspect(r['id'])
                 r['terminal'] = terminal
+                assert not terminal['State']['Running'] and terminal['State']['Pid']==0
+                r['stopped_confirmed'] = True
+                if child is None:
+                    r.update(custody='STOPPED_UNQUALIFIED', original_wait_qualified=False,
+                             retired=True, original_wait_unqualified_reason='arm failed before original wait existed')
+                    self.o.event('container_stopped_unqualified',id=r['id'],role=r['role'])
+                    continue
+                result = self.o.join(child, timeout=90)
                 r['original_wait'] = dict(result)
                 r['wait_output'] = (self.o.directory/result['log']).read_text().strip()
                 assert result['exit']==0 and not result.get('join_timeout')
                 assert int(r['wait_output']) == terminal['State']['ExitCode']
                 assert not terminal['State']['Running'] and terminal['State']['Pid']==0
                 r['retired'] = True
+                r['custody'] = 'RETIRED'
                 r['log_file'] = 'container-'+r['id']+'.log'
                 self.tiny('docker','logs',r['id'],name=r['log_file'][:-4],check=False)
                 self.o.event('container_retired',id=r['id'],role=r['role'])
@@ -194,9 +209,12 @@ class Benchmark:
         self.retire()
         # Start engine before app, the inverse of orderly stop.
         for r in sorted(rows,key=lambda r:r['role']!='engine'):
-            self.tiny('docker','start',r['id'])
             new=dict(name=r['name'],id=r['id'],role=r['role'],restart=True)
             self.row['containers'].append(new)
+            self.active.append((new,None))
+            new.update(custody='UNRESOLVED',original_wait_qualified=False)
+            self.o.save()
+            self.tiny('docker','start',r['id'])
             self.arm(new)
         self.ready(label)
 
@@ -271,6 +289,7 @@ class Benchmark:
             # Parent coordinates worker47180e96's exclusive heavy-cache/native
             # suite. No workload starts merely because one process snapshot is quiet.
             while not (ROOT/'TIMING-CLEARANCE.json').exists():
+                self.o.allowance(2)
                 time.sleep(2)
             clearance=json.loads((ROOT/'TIMING-CLEARANCE.json').read_text())
             assert clearance['heavy_owner_retired'] is True
@@ -335,6 +354,14 @@ class Benchmark:
                 self.row['failure']=traceback.format_exc()
         finally:
             # Every independent cleanup attempted, even after another fails.
+            self.o.begin_cleanup()
+            for attempt in range(3):
+                if not self.active:
+                    break
+                try:
+                    self.retire()
+                except BaseException:
+                    self.o.event('cleanup_retry',attempt=attempt,traceback=traceback.format_exc())
             for name, action in [('stack',self.stop_stack),('external-client',self.stop_client),('tunnel',self.stop_tunnel)]:
                 try:
                     action()

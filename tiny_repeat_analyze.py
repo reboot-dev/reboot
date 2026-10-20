@@ -64,24 +64,9 @@ def host_memory(text):
     return result
 
 
-def validate_resource(r):
-    require(isinstance(r,dict),'resource not object')
-    number(r.get('time'));number(r.get('monotonic_ns'))
-    require(isinstance(r.get('containers'),dict) and isinstance(r.get('errors'),list),'incomplete resource record')
-    host_memory(r.get('host_meminfo'))
-    for cid,v in r['containers'].items():
-        require(len(cid)==64 and all(c in '0123456789abcdef' for c in cid),'malformed container ID')
-        require(isinstance(v,dict),'container resource not object')
-        for name in ['memory.current','memory.peak','memory.swap.current']:
-            require(isinstance(v.get(name),str) and v[name].strip().isdigit(),'malformed '+name)
-        require(int(v['memory.swap.current'])==0,'container swap in use')
-        require(isinstance(v.get('rss_sum_bytes'),int) and v['rss_sum_bytes']>=0,'malformed RSS')
-        require('usage_usec' in counters(v.get('cpu.stat')),'missing CPU usage')
-        require(counters(v.get('memory.events')).get('oom_kill')==0,'OOM kill')
-    if 'stack' in r:
-        require(counters(r['stack']['memory.events']).get('oom_kill')==0,'whole-stack OOM kill')
-        require(int(r['stack']['memory.swap.current'])==0 and r['stack']['memory.swap.max'].strip()=='0','stack no-swap guard missing')
-    return r
+def validate_resource(r, boundary=False):
+    from tiny_repeat_schema import validate as strict_validate
+    return strict_validate(r, boundary)
 
 
 def read_jsonl(path):
@@ -114,8 +99,41 @@ def analyze(directory):
     offset_lo=max(x['offset_lo'] for x in clocks);offset_hi=min(x['offset_hi'] for x in clocks)
     require(offset_lo<=offset_hi,'clock bounds do not intersect')
     rows=[]
+    phase_resources=[]
+    # Validate every phase, including qualification/soak and restart boundaries.
+    for run in d['stacks']:
+        resources=[validate_resource(r, boundary=True) for r in read_jsonl(E/(run['label']+'-resources.log'))]
+        require(len(resources)>=2,'empty phase resource coverage')
+        require(all(0<b['time']-a['time']<2 and b['monotonic_ns']>a['monotonic_ns'] for a,b in zip(resources,resources[1:])), 'phase resource gap/order')
+        starts=[e for e in events if e['kind']=='client_start' and e.get('label','').startswith(run['label']) and '-boot-' not in e['label'] and '-restart-ready-' not in e['label']]
+        require(bool(starts),'missing qualification/performance client intervals')
+        ids={c['id'] for c in run['containers'] if c['role']!='config'}
+        for start in starts:
+            ends=[e for e in events if e['kind']=='client_end' and e.get('label')==start['label']]
+            require(len(ends)==1,'incomplete phase interval')
+            lo=start['time']+offset_hi;hi=ends[0]['time']+offset_lo
+            # Include nearest bracketing samples for sub-250ms correctness calls.
+            before=[s for s in resources if s['time']<=lo]
+            after=[s for s in resources if s['time']>=hi]
+            require(before and after,'unbracketed phase interval')
+            samples=[before[-1]]+[s for s in resources if lo<s['time']<hi]+[after[0]]
+            require(lo-samples[0]['time']<2 and samples[-1]['time']-hi<2,'phase boundary gap')
+            require(all(ids<=s['containers'].keys() for s in samples),'phase exact-container coverage')
+            for s in samples:validate_resource(s)
+        if run in qualification:
+            soak=[s for s in starts if '-soak-' in s['label']]
+            require(len(soak)==run['soak_iterations'] and len(soak)>=2,'soak interval count')
+            ends=[e['time'] for e in events if e['kind']=='client_end' and e.get('label') in {s['label'] for s in soak}]
+            require(max(ends)-min(s['time'] for s in soak)>=300,'short soak')
+        active=[s for s in resources if ids<=s['containers'].keys()]
+        require(active,'missing active phase resources')
+        phase_resources.append(dict(label=run['label'],samples=len(resources),
+            max_sampled_whole_stack_bytes=max(int(s['stack']['memory.current']) for s in active),
+            max_sampled_services_bytes=max(sum(int(v['memory.current']) for v in s['system_services'].values()) for s in active),
+            min_host_memavailable_bytes=min(host_memory(s['host_meminfo'])['MemAvailable'] for s in active),
+            whole_stack_growth_bytes=int(active[-1]['stack']['memory.current'])-int(active[0]['stack']['memory.current'])))
     for run in perf:
-        resources=[validate_resource(r) for r in read_jsonl(E/(run['label']+'-resources.log'))]
+        resources=[validate_resource(r, boundary=True) for r in read_jsonl(E/(run['label']+'-resources.log'))]
         ids=[c['id'] for c in run['containers'] if c['role']!='config' and not c.get('restart')]
         for case,count in COUNTS.items():
             label=run['label']+'-'+case
@@ -152,7 +170,7 @@ def analyze(directory):
             require(len(rr)==3,'three repetitions required')
             keys=['successful_rps','p50_ms','p95_ms','p99_ms','max_sampled_stack_cgroup_bytes','max_sampled_stack_rss_sum_bytes','max_sampled_host_used_bytes']
             aggregates.append(dict(language=lang,case=case,**{k:statistics.median(r[k] for r in rr) for k in keys},rps_min=min(r['successful_rps'] for r in rr),rps_max=max(r['successful_rps'] for r in rr)))
-    return dict(verified=True,images=d['images'],comparison=d['comparison'],rows=rows,aggregates=aggregates,
+    return dict(verified=True,images=d['images'],comparison=d['comparison'],rows=rows,aggregates=aggregates,phase_resources=phase_resources,
                 percentile='nearest rank, median of per-run percentiles; not pooled',
                 resources='250ms nominal sampled maxima; resource interval includes client initialization, RPC denominator does not; RSS can double count shared pages; footprint not minimum RAM',
                 clock_offset_bounds=[offset_lo,offset_hi])

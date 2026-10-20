@@ -1,0 +1,149 @@
+{
+  "waiting_owner": {
+    "owner_pid": 863395,
+    "owner_ppid": 1,
+    "start": 1792491233.7953897,
+    "deadline_epoch": 1792504448.950012,
+    "outer_deadline_epoch": 1792504688.950012,
+    "cleanup_reserved_seconds": 240,
+    "complete": false,
+    "commands": [],
+    "children": [],
+    "failures": [],
+    "stacks": [],
+    "config": {
+      "server_id": 171353819,
+      "primary_ip_id": 156610171,
+      "ip": "2.31.73.10",
+      "labels": {
+        "owner": "jean",
+        "purpose": "reboot-tiny-repeat",
+        "ephemeral": "true",
+        "run": "tiny-repeat-20261020",
+        "expires": "2026-10-21",
+        "expiry-unix": "1792576065"
+      },
+      "expiry": "2026-10-21T09:47:45.204208+00:00",
+      "owner_seconds": 14400,
+      "client_cpu": "14",
+      "ssh_key": "/root/.ssh/tiny-repeat-ingress-20261020",
+      "control_ssh_key": "/root/.ssh/tiny-repeat-control-20261020",
+      "outer_deadline_epoch": 1792504688.950012
+    },
+    "images": {
+      "rust": "sha256:3dcf9d9976f76a63b3a290ef6cf15329f1f6148692c72604e5dc797a237f7db4",
+      "python": "sha256:28241a509e8dbedda24bd2033ce556cc5648ddd02ef80bd349e417586fb84925",
+      "engine": "sha256:1a73705b0771f9c861d9ba96509806849423a3d8bbff140b1261da76280460cd"
+    },
+    "key": "01a15904-9084-7000-8000-000000000000",
+    "source_sha256": {
+      "tiny_repeat_analyze.py": "cee54186666e7bb431ec2b2f980ad9c07a7634de9fd21758148a7ea67d37e5f7",
+      "tiny_repeat_control.py": "3741d8dc70d2695cfc15941960dfe166b388bbdab2c95897588fd636751f9470",
+      "tiny_repeat_schema.py": "9c46938021e61cc131a18862e0c4985a5700a77179628e6e4375c36610466cc9",
+      "tiny_repeat_owner.py": "9795811c173f64640d340b146aee96a57ee29979560e8b48d8f363c4d4a2e245",
+      "tiny_repeat_provider.py": "e918301aac227235f6894ff384d1b8325edfd522026a526d89fa4da02e5fe00b",
+      "tiny_repeat_faulttest.py": "d59391a44554079b88fefdd534db16fc9c09bd62aa9367563201f9f5bbd1acc2",
+      "tiny_repeat_selftest.py": "fe32c900ad208619a13d610d7b22a17c8b9da7c4a9a51520c8b636d7e07e49da",
+      "tiny_repeat_smoke.py": "508e4653c642feebbb00f57d427bc5d076abe9e9e6c8bf8f76662a4a8385f1d0",
+      "tiny_repeat_sampler.py": "8885a38b009683bf9fa1e9eb5563706ff5568da2c853db40e726c242f252111f"
+    },
+    "gate": "awaiting-parent-timing-clearance"
+  },
+  "service": "RuntimeMaxUSec=3h 44min 15s\nMainPID=863395\nActiveState=active\nInvocationID=0c284a68bbfa4fa19ca67c7127ebbf59\n",
+  "tests": [
+    {
+      "test": "fault-inspect",
+      "owner_pid": 863554,
+      "owner_ppid": 863551,
+      "containers": [
+        {
+          "id": "e2004135404cf15693852cdc4e79daa1df15e192efb545813746ec8ca74c8b9a",
+          "role": "config",
+          "exit": 0,
+          "original_wait_qualified": true
+        },
+        {
+          "id": "dcef4dd6b8ffdfdc98cf8c03e4340216a904b38d3b0b6fdc0d6a8f7fb3638056",
+          "role": "engine",
+          "exit": 0,
+          "original_wait_qualified": true
+        },
+        {
+          "id": "15a50dcc16121684d9600268e40ae833490f887608eb9e02062b40c259db64ec",
+          "role": "app",
+          "exit": 0,
+          "original_wait_qualified": false
+        }
+      ],
+      "all_original_children_joined": true
+    },
+    {
+      "test": "fault-spawn",
+      "owner_pid": 863650,
+      "owner_ppid": 863551,
+      "containers": [
+        {
+          "id": "1cc78ddee2f02265d36e7442857ed9d2bba77cfd304b3d7e628587a2ed5912d7",
+          "role": "config",
+          "exit": 0,
+          "original_wait_qualified": true
+        },
+        {
+          "id": "c2b5fedc3e460176d48eb93fd56616bd0f4f58868afacc76dac974095dac9298",
+          "role": "engine",
+          "exit": 0,
+          "original_wait_qualified": true
+        },
+        {
+          "id": "b53ba34270bbddafcab0dfa763f8431dcd0686b56b6bf0e7acedbe473389209d",
+          "role": "app",
+          "exit": 0,
+          "original_wait_qualified": false
+        }
+      ],
+      "all_original_children_joined": true
+    },
+    {
+      "test": "fault-deadline",
+      "owner_pid": 863733,
+      "owner_ppid": 863551,
+      "containers": [
+        {
+          "id": "45ebf65634e6513cd5cb3d4eeada98a32f43137715d246f145843b30db913d1b",
+          "role": "app",
+          "exit": 137,
+          "original_wait_qualified": true
+        }
+      ],
+      "all_original_children_joined": true
+    },
+    {
+      "test": "results-smoke",
+      "owner_pid": 863801,
+      "owner_ppid": 863551,
+      "containers": [
+        {
+          "id": "1d0bded2bd0041fdc36e67f99eb7fa5b87a4fca2da93ac4986bd0ff227fb90b5",
+          "role": "config",
+          "exit": 0,
+          "original_wait_qualified": true
+        },
+        {
+          "id": "ef6426ba192364de8a4ad8fc57427b2d8bc3913902fd112c4f717db1ce9480a9",
+          "role": "engine",
+          "exit": 0,
+          "original_wait_qualified": true
+        },
+        {
+          "id": "25e9c577f483edd17f7844dbb792d42b7fc531010357dd6dcbb291d6f37ae5a2",
+          "role": "app",
+          "exit": 0,
+          "original_wait_qualified": true
+        }
+      ],
+      "all_original_children_joined": true
+    }
+  ],
+  "all_exact_containers_stopped": true,
+  "no_clearance": true
+}

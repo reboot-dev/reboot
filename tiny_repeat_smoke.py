@@ -14,8 +14,9 @@ try:
     for image in IMAGES.values():
         assert json.loads(b.tiny('docker','image','inspect',image))[0]['Id']==image
     assert len(b.tiny('cat','/proc/swaps').splitlines())==1
-    b.tiny('docker','network','create','--label','owner=tiny-repeat-20261020','tinyrepeat-app-ingress')
-    b.stack('rust','repeat-controller-smoke-rust')
+    network=json.loads(b.tiny('docker','network','inspect','tinyrepeat-app-ingress'))[0]
+    assert network['Labels']['owner']=='tiny-repeat-20261020'
+    b.stack('rust',ROOT.name+'-smoke-rust')
     time.sleep(3)
     assert all(b.inspect(r['id'])['State']['Running'] for r,c in b.active)
     b.o.ledger['expected_workload_failure']='injected after real engine and application start'
@@ -24,6 +25,7 @@ except RuntimeError as error:
     if str(error)!='expected injected smoke failure':
         b.o.ledger['failures'].append(traceback.format_exc())
 finally:
+    b.o.begin_cleanup()
     try:
         b.stop_stack()
     except BaseException:

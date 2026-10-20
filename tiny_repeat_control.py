@@ -27,27 +27,49 @@ def atomic(path, value):
 
 
 class Owner:
-    def __init__(self, directory, seconds):
+    def __init__(self, directory, seconds, cleanup_seconds=240, outer_deadline_epoch=None):
         self.directory = Path(directory)
         self.directory.mkdir(parents=True, exist_ok=False)
-        self.deadline = time.monotonic() + seconds
+        now = time.time()
+        # Reserve cleanup inside the existing outer bound, not after it.
+        outer = outer_deadline_epoch if outer_deadline_epoch is not None else now + seconds
+        seconds = min(seconds, outer-now)
+        reserve = min(cleanup_seconds, seconds/2)
+        self.outer_deadline = time.monotonic() + seconds
+        self.deadline = self.outer_deadline - reserve
+        self.cleaning = False
         self.lock = threading.RLock()
         self.children = []
         self.ledger: dict[str, Any] = dict(owner_pid=os.getpid(), owner_ppid=os.getppid(),
-                           start=time.time(), deadline_epoch=time.time()+seconds,
+                           start=now, deadline_epoch=now+seconds-reserve,
+                           outer_deadline_epoch=now+seconds, cleanup_reserved_seconds=reserve,
                            complete=False, commands=[], children=[], failures=[], stacks=[])
         self.save()
-        self.timer = threading.Timer(seconds, self.expire)
+        self.timer = threading.Timer(seconds-reserve, self.expire)
         self.timer.daemon = True
         self.timer.start()
         signal.signal(signal.SIGTERM, self.interrupted)
         signal.signal(signal.SIGINT, self.interrupted)
 
     def interrupted(self, number, frame):
+        self.begin_cleanup()
         raise TimeoutError('owner interrupted: signal '+str(number))
 
     def expire(self):
         os.kill(os.getpid(), signal.SIGTERM)
+
+    def begin_cleanup(self):
+        self.cleaning = True
+        self.timer.cancel()
+        self.ledger['cleanup_started'] = time.time()
+        self.save()
+
+    def allowance(self, requested):
+        bound = self.outer_deadline if self.cleaning else self.deadline
+        remaining = bound-time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError('cleanup deadline' if self.cleaning else 'workload deadline')
+        return min(requested, remaining)
 
     def save(self):
         with self.lock:
@@ -63,6 +85,7 @@ class Owner:
         return row
 
     def spawn(self, argv, name, input_pipe=False):
+        self.allowance(1)
         # Retain output immediately: even timeout/failure has an exact log.
         path = self.directory/(name+'.log')
         f = path.open('wb')
@@ -94,11 +117,11 @@ class Owner:
         if stop and p.poll() is None:
             os.killpg(p.pid, signal.SIGTERM)
         try:
-            code = p.wait(timeout=timeout)
+            code = p.wait(timeout=0 if p.poll() is not None else self.allowance(timeout))
         except sp.TimeoutExpired:
             row['join_timeout'] = True
             os.killpg(p.pid, signal.SIGKILL)
-            code = p.wait(timeout=30)
+            code = p.wait(timeout=max(.01,min(5,self.outer_deadline-time.monotonic())))
         f.close()
         row.update(joined=True, exit=code, ended=time.time())
         self.event('join', name=row['name'], pid=p.pid, exit=code)
@@ -106,13 +129,13 @@ class Owner:
         return row
 
     def run(self, argv, name=None, timeout: float=300, check=True):
+        allowance = self.allowance(timeout)
         if name is None:
             name = 'command-'+str(len(self.ledger['commands']))
         row = dict(name=name, argv=argv, started=time.time())
         self.ledger['commands'].append(row)
         self.save()
         child = self.spawn(argv, name)
-        allowance = min(timeout, max(1, self.deadline-time.monotonic()))
         result = self.join(child, timeout=allowance)
         output = (self.directory/result['log']).read_text(errors='replace')
         row.update(ended=time.time(), exit=result['exit'], log=result['log'])
@@ -126,6 +149,8 @@ class Owner:
     def finish(self):
         # Call after app-before-engine cleanup; this is an emergency final join,
         # not a substitute for exact Docker terminal-state verification.
+        if not self.cleaning:
+            self.begin_cleanup()
         self.timer.cancel()
         failures = []
         for child in reversed(self.children):
