@@ -37,6 +37,7 @@ message Dashboard {
                      "There is one dashboard: pass 'dashboard' as "
                      "dashboard_id.",
         path: "dashboard/ui",
+        display_modes: [ "fullscreen", "inline" ],
       },
       {
         name: "show_feature",
@@ -49,6 +50,7 @@ message Dashboard {
                      "dashboard_list) or its name as feature.",
         path: "dashboard/feature",
         request_message: "ShowFeatureRequest",
+        display_modes: [ "inline" ],
       },
       {
         name: "show_state_type",
@@ -62,6 +64,7 @@ message Dashboard {
                      "dashboard_list) or its name as state_type.",
         path: "dashboard/state_type",
         request_message: "ShowStateTypeRequest",
+        display_modes: [ "inline" ],
       }
     ],
   };

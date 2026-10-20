@@ -462,6 +462,23 @@ nav a .nav-name {
   padding: 0 10px 14px;
 }
 
+/* Sits beside the live indicator, at the end of the row. */
+.fullscreen-button {
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) - 2px);
+  background: hsl(var(--card));
+  color: hsl(var(--muted-foreground));
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.fullscreen-button:hover {
+  color: hsl(var(--primary));
+}
+
 /* Small: it says whose this is, which only has to be read once. */
 .brand-logo {
   display: block;

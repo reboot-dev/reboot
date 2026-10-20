@@ -132,6 +132,11 @@ class McpTest(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(shown.isError)
             # The App takes its access token from the tool's result.
             self.assertIn(token, str(shown))
+            # The whole dashboard asks the host for fullscreen.
+            self.assertEqual(
+                json.loads(shown.content[0].text)['display_modes'],
+                ['fullscreen', 'inline'],
+            )
             uri = tools['dashboard_show'].meta['ui']['resourceUri']
             (content,) = (await session.read_resource(uri)).contents
             # The page itself, not an iframe of it; it calls back on the
@@ -212,6 +217,11 @@ class McpTest(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(shown.isError, tool)
                 self.assertIn(token, str(shown))
                 self.assertIn('"x"', str(shown))
+                # A card stays inline.
+                self.assertEqual(
+                    json.loads(shown.content[0].text)['display_modes'],
+                    ['inline'],
+                )
                 uri = tools[tool].meta['ui']['resourceUri']
                 (content,) = (await session.read_resource(uri)).contents
                 self.assertIn(
