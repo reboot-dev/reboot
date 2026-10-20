@@ -2593,7 +2593,15 @@ fn emit_transaction_flow(output: &mut String, flow: TransactionFlow<'_>) {
                 "{runtime_module}::runtime::boxed_generated_future(|| local.complete_root({runtime_module}::durable_coordinator::RootCoordinatorStart {{ transaction_ids: context.transaction_ids().to_vec(), coordinator_state_type: context.transaction_coordinator_state_type().to_owned(), coordinator_state_ref: context.transaction_coordinator_state_ref().to_owned(), participant: {runtime_module}::durable_coordinator::ParticipantTarget {{ state_type: <{declaration} as {runtime_module}::runtime::DurableStateDeclaration>::STATE_TYPE.to_owned(), state_ref: context.headers().state_ref.clone() }}, mode: {runtime_module}::runtime::TransactionMode::{mode}, read_only: {read_only}, factory: {factory}, placement_requested: false }}, returned_participants)).await?;"
             ),
         );
-    output.push_str(&format!("{prefix}let mut response = tonic::Response::new(execution.response);\n{prefix}// Consuming guard seals and hands off before any potentially durable RPC.\n{prefix}let mut uncertainty = {uncertainty};\n{prefix}{completion}\n{prefix}if let Some(owner) = &mut uncertainty {{ owner.completed(); }}\n{prefix}// Inbound success only stages effects; canonical host scans own remote delivery after terminal ACK.\n{prefix}{dispatch_tasks}\n{prefix}Ok(response)\n"));
+    // Prost renders canonical Empty as unit. Evaluate the returned field before
+    // constructing its response, without passing a unit-valued expression as an
+    // argument (which fails strict generated-consumer Clippy).
+    let response_expression = if response == "{{google.protobuf.Empty}}" {
+        "{ let () = execution.response; tonic::Response::new(()) }"
+    } else {
+        "tonic::Response::new(execution.response)"
+    };
+    output.push_str(&format!("{prefix}let mut response = {response_expression};\n{prefix}// Consuming guard seals and hands off before any potentially durable RPC.\n{prefix}let mut uncertainty = {uncertainty};\n{prefix}{completion}\n{prefix}if let Some(owner) = &mut uncertainty {{ owner.completed(); }}\n{prefix}// Inbound success only stages effects; canonical host scans own remote delivery after terminal ACK.\n{prefix}{dispatch_tasks}\n{prefix}Ok(response)\n"));
 }
 
 fn task_error_validation(
