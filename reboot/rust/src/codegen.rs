@@ -1783,7 +1783,7 @@ fn emit_durable(
             package,
         );
     }
-    emit_workflow_transaction_reference(output, service, service_name, runtime_module, annotation, package);
+    emit_workflow_transaction_reference(output, service, service_name, runtime_module, annotation, &methods);
     emit_transactions(
         output,
         service,

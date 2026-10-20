@@ -21,6 +21,22 @@ pub mod proto {
 pub mod generated {
     include!(concat!(env!("OUT_DIR"), "/workflow/v1/workflow.reboot.rs"));
 }
+#[test]
+fn generated_transaction_canonical_empty_and_local_collision_compile() {
+    // These are the actual generated methods, not a substitute emitter or stub.
+    // Calling each builds its future without polling or making a network request.
+    fn check(reference: &generated::EmptyTransactionMethodsWorkflowTransactionRef,
+             context: &WorkflowContext<'_>) {
+        fn unit_future(_: impl Future<Output = Result<(), tonic::Status>>) {}
+        fn local_future(_: impl Future<Output = Result<proto::Empty, tonic::Status>>) {}
+        unit_future(reference.apply(context, "canonical", ()));
+        local_future(reference.local(context, "local", proto::Empty {}));
+    }
+    let _ = check;
+    let emitted = include_str!(concat!(env!("OUT_DIR"), "/workflow/v1/workflow.reboot.rs"));
+    assert!(emitted.contains("type.googleapis.com/google.protobuf.Empty"));
+    assert!(emitted.contains("type.googleapis.com/workflow.v1.Empty"));
+}
 #[derive(Clone, Default)]
 struct Ledger {
     attempts: Arc<std::sync::atomic::AtomicUsize>,
