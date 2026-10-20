@@ -273,7 +273,7 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
 pub async fn invoke(
     context: &reboot::one_shot_tasks::WorkflowContext<'_>,
     request: proto::Step,
-) -> Result<proto::Value, tonic::Status> {
+) -> Result<proto::Value, Box<tonic::Status>> {
     let endpoint = std::env::var("TRANSACTION_ENDPOINT")
         .map_err(|_| tonic::Status::failed_precondition("missing transaction target"))?;
     let channel = tonic::transport::Endpoint::from_shared(endpoint)

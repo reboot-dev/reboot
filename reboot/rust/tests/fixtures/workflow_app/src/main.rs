@@ -221,7 +221,7 @@ impl generated::LedgerMethodsDatabaseHandler for Ledger {
     ) -> Result<proto::Result, reboot::one_shot_tasks::WorkflowBodyError> {
         event("body");
         if std::env::var("WORKFLOW_BODY_MODE").as_deref() == Ok("transaction") {
-            let response = transaction::invoke(context, request).await?;
+            let response = transaction::invoke(context, request).await.map_err(|error| *error)?;
             return Ok(proto::Result { first: response.value, second: response.value });
         }
         if std::env::var("WORKFLOW_BODY_MODE").as_deref() == Ok("spawn") {
