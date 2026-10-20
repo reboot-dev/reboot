@@ -41,7 +41,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             }),
         ).await.unwrap_err();
         assert_eq!(error.code(), tonic::Code::Unavailable);
-        assert!(error.message().contains("injected lost real Store ACK"));
+        assert_eq!(error.message(), "injected lost real native ACK", "{error:?}");
     }
     // All taskless store/adapter/actor-gate handles have now disappeared.
     event("taskless-handles-dropped");
