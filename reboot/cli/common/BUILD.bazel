@@ -110,6 +110,7 @@ py_library(
     deps = [
         requirement("psutil"),
         ":terminal_py",
+        "//reboot:wait_for_tasks_py",
     ],
 )
 
