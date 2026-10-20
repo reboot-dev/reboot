@@ -30,7 +30,9 @@ capacity, sticky uncertainty and atomic task/receipt Store. Replay authorization
 still precedes disclosure. No workflow body manufactures an admission ACK.
 Empty schedule metadata retains the legacy no-timestamp immediate form, rather
 than fingerprinting a fresh clock on retry; Python's persisted immediate-clock
-representation is not claimed byte-identical.
+representation is not claimed byte-identical. Duplicate schedule metadata uses
+its **last** value for both immediate/absolute selection and timestamp parsing,
+matching `RebootHeaders::from_metadata` and Python's `dict(metadata)`.
 
 The host's successful-trailer layer emits the UUID only after admission ACK and
 only with a unique successful terminal gRPC status. It does not put the UUID in
@@ -92,3 +94,6 @@ qualification limits are retained in the checkpoint evidence, not inferred from
 wire-shape equivalence. Historical lifecycle/spawn archives remain unchanged.
 
 Executed results: [canonical admission checkpoint](tests/evidence/workflow-canonical-admission-20261020.md).
+
+Duplicate-schedule correction and additive native RED/GREEN qualification:
+[last-value schedule blocker fix](tests/evidence/workflow-canonical-duplicate-schedule-20261020.md).

@@ -104,7 +104,11 @@ impl WorkflowSpawner {
     ) -> Result<tonic::Response<R>, Status> {
         let schedule = request
             .metadata()
-            .get("x-reboot-task-schedule")
+            // Match RebootHeaders::from_metadata and Python: the last value
+            // determines both immediate/absolute admission and its timestamp.
+            .get_all("x-reboot-task-schedule")
+            .iter()
+            .next_back()
             .ok_or_else(|| {
                 Status::permission_denied("workflow RPC requires task schedule metadata")
             })?

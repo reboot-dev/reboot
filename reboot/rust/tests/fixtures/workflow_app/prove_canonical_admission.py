@@ -105,7 +105,7 @@ try:
     from rbt.v1alpha1 import tasks_pb2 as tasks, tasks_pb2_grpc
     from database_ack_proxy import fields
     import datetime
-    selected=os.environ.get('CANONICAL_NATIVE_CASES','success,declared-error,concurrent,future-cancel,admission-auth,admission-ack-loss').split(',')
+    selected=os.environ.get('CANONICAL_NATIVE_CASES','success,declared-error,concurrent,future-cancel,admission-auth,admission-ack-loss,schedule-empty-future,schedule-future-empty,schedule-empty-single,schedule-empty-repeated,schedule-future-repeated').split(',')
     for case in selected:
         work=ROOT/case; work.mkdir(); events=work/'events'
         policy=work/'policy'; policy.write_text('allow')
@@ -175,6 +175,80 @@ try:
             task_id=tasks.TaskId(state_type='workflow.v1.Ledger',state_ref=state_ref,task_uuid=uuid.UUID(task_headers[0]).bytes)
             task_stub=tasks_pb2_grpc.TasksStub(channel)
             assert task_stub.CancelTask(tasks.CancelTaskRequest(task_id=task_id),metadata=(('x-reboot-state-ref',state_ref),('authorization','Bearer task-admin')),timeout=5).status==tasks.CancelTaskResponse.OK
+            snapshot=inspect(); channel.close()
+        elif case.startswith('schedule-'):
+            # A generated raw Python application stub preserves duplicate wire
+            # metadata exactly; TasksStub normally emits only a single value.
+            from reboot.aio.types import StateRef
+            state_ref=StateRef.from_id('workflow.v1.Ledger','child').to_str()
+            future_schedule='2030-01-01T00:00:00+00:00'
+            values={
+                'schedule-empty-future':['',future_schedule],
+                'schedule-future-empty':[future_schedule,''],
+                'schedule-empty-single':[''],
+                'schedule-empty-repeated':['',''],
+                'schedule-future-repeated':[future_schedule,future_schedule],
+            }[case]
+            immediate=values[-1]==''
+            key=str(uuid.uuid4())
+            base=(('x-reboot-state-ref',state_ref),('x-reboot-idempotency-key',key),('authorization','Bearer spawn-service'),('x-reboot-caller-id','application_id=a0000000001'))
+            metadata=base+tuple(('x-reboot-task-schedule',value) for value in values)
+            channel=grpc.insecure_channel(f'127.0.0.1:{ap}')
+            stub=app_grpc.LedgerMethodsStub(channel)
+            rpc_records=[]
+            receipt['active_schedule_probe']=dict(case=case,values=values,rpc_records=rpc_records)
+            save()
+            def admit_wire(md):
+                attempt=dict(metadata=list(md),request=app.Step(amount=7).SerializeToString().hex())
+                rpc_records.append(attempt); save()
+                try:
+                    response,call=stub.Child.with_call(app.Step(amount=7),metadata=md,timeout=5)
+                except grpc.RpcError as failure:
+                    attempt.update(code=failure.code().name,details=failure.details()); save(); raise
+                trailers=list(call.trailing_metadata())
+                ids=[value for name,value in trailers if name=='x-reboot-task-id-uuid']
+                assert len(ids)==1 and not any(name=='x-reboot-task-id-uuid' for name,value in call.initial_metadata())
+                attempt.update(code='OK',response=response.SerializeToString().hex(),trailing_metadata=trailers); save()
+                return ids[0]
+            task_uuid=admit_wire(metadata)
+            task_id=tasks.TaskId(state_type='workflow.v1.Ledger',state_ref=state_ref,task_uuid=uuid.UUID(task_uuid).bytes)
+            if immediate:
+                waited=client('wait',task_id.SerializeToString().hex())
+                assert waited['response']=={'value':'7'}
+            snapshot=inspect()
+            receipt['active_schedule_probe']['admission_snapshot']=snapshot; save()
+            assert len(snapshot['tasks'])==1
+            if not immediate:
+                assert snapshot['first']==0 and 'child-body' not in lines(), 'last future schedule dispatched immediately'
+                stamp=timestamp_pb2.Timestamp.FromString(fields(bytes.fromhex(snapshot['tasks'][0]['wire']))[5][0])
+                assert stamp.ToDatetime(datetime.timezone.utc)==datetime.datetime.fromisoformat(future_schedule)
+            else:
+                assert snapshot['first']==7 and lines().count('child-body')==1
+            # Empty effective metadata must not sample a fresh clock on replay.
+            time.sleep(.02)
+            assert admit_wire(metadata)==task_uuid
+            assert inspect()==snapshot
+            changed=base+(('x-reboot-task-schedule',future_schedule if immediate else ''),)
+            error(grpc.StatusCode.FAILED_PRECONDITION,lambda:stub.Child(app.Step(amount=7),metadata=changed,timeout=3))
+            error(grpc.StatusCode.FAILED_PRECONDITION,lambda:stub.Child(app.Step(amount=8),metadata=metadata,timeout=3))
+            assert inspect()==snapshot
+            channel.close()
+            stop(application,shutdown); stop(database_process)
+            database_process=database(); assert inspect()==snapshot
+            application,shutdown=host()
+            channel=grpc.insecure_channel(f'127.0.0.1:{ap}')
+            grpc.channel_ready_future(channel).result(timeout=5)
+            stub=app_grpc.LedgerMethodsStub(channel)
+            assert admit_wire(metadata)==task_uuid
+            error(grpc.StatusCode.FAILED_PRECONDITION,lambda:stub.Child(app.Step(amount=7),metadata=changed,timeout=3))
+            assert inspect()==snapshot
+            if not immediate:
+                task_stub=tasks_pb2_grpc.TasksStub(channel)
+                assert task_stub.CancelTask(tasks.CancelTaskRequest(task_id=task_id),metadata=(('x-reboot-state-ref',state_ref),('authorization','Bearer task-admin')),timeout=5).status==tasks.CancelTaskResponse.OK
+                waited=client('wait',task_id.SerializeToString().hex())
+                assert status_pb2.Status.FromString(bytes.fromhex(waited['error'])).details[0].type_url=='type.googleapis.com/rbt.v1alpha1.Cancelled'
+            else:
+                assert client('wait',task_id.SerializeToString().hex())==waited
             snapshot=inspect(); channel.close()
         else:
             amount=-1 if case=='declared-error' else 7
