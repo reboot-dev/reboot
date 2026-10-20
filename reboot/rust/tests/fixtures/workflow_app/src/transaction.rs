@@ -131,7 +131,19 @@ impl generated::AtomicLedgerMethodsTransactionHandler for Handler {
             return Err(tonic::Status::invalid_argument("transaction rollback"));
         }
         let mut execution = TransactionExecution::new(proto::Value { value: state.value });
-        if self.child.is_some() || r.amount == 42042 {
+        if std::env::var_os("TRANSACTION_SUCCESSOR_PROOF").is_some() {
+            if r.amount != 11 && (self.child.is_some() || r.amount == 42042) {
+                // Keep successors in the participant's actor scope. The future
+                // root task runs the same registered exclusive root-star path.
+                let mut task = generated::AtomicLedgerMethodsTasks::apply(
+                    &context.headers().state_ref,
+                    &proto::Step { amount: 11 },
+                );
+                let seconds: i64 = std::env::var("TRANSACTION_SUCCESSOR_AT").unwrap().parse().unwrap();
+                task.timestamp = Some(prost_types::Timestamp { seconds, nanos: 0 });
+                execution.task_upserts.push(task);
+            }
+        } else if self.child.is_some() || r.amount == 42042 {
             let task_actor = if self.child.is_some() { context.headers().state_ref.clone() } else { reboot::state_ref::StateRef::from_id(TYPE,"leaf").unwrap().to_string() };
             let mut task = generated::AtomicLedgerMethodsTasks::query(
                 &task_actor,
