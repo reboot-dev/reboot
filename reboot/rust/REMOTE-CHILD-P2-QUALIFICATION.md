@@ -235,3 +235,77 @@ new original-parent custody and fresh four-lock/retirement preflight, followed b
 complete receipt/native RocksDB/executable/source association and verified offhost
 retention. Parent rereview remains required. **No seven-case PASS, publication
 clearance or full pre-handoff ACK convergence is claimed.**
+
+## Additive legacy regression qualification — seven cases completed
+
+The preceding resource blocker and missing-gate status are historical. After
+explicit user approval, only the latest proposed incremental directory
+`/home/benchbuild/.cache/hello-image-target/debug/incremental` was removed on
+2026-10-21 at 03:15:19 UTC. Exact device 2049/inode 1698641/uid 1000, all
+5,265 descendant manifest entries, compiler-object/RSIC provenance, 36 cache
+locks, four task locks, frozen source/executable identities, prior custody and a
+237-process inode-aware fd/maps snapshot were revalidated first. No other cache,
+source, executable, Database, RocksDB, proof or archive was deleted.
+
+Actual `df -B1` available bytes changed **7,540,912,128 -> 13,120,499,712**:
+net filesystem recovery **5,579,587,584 bytes**, not the prospective estimate.
+Path absence was read back. The approval is consumed, not pending. Record:
+`approved-incremental-cleanup-20261021.json` in the existing remote evidence root.
+
+The first exact owner8/parent8 continuation (`legacy7-20261021-restore1`) stopped
+before launching any gate: owner8 encountered the distinct `pack-parent.json`
+archive-custody schema and raised `KeyError('owner_waited')`. Its original parent
+2290360 waited owner 2290361, exit 1; its empty output stage and receipts remain.
+This is zero-case harness failure, not a runtime test failure or a pass.
+
+A new additive `owner9.py`/`parent9.py` pair retains owner8/parent8 unchanged.
+The sole owner change handles exactly the pack-parent receipt by asserting its
+original archive-child wait/exit 0 and fresh absence of both original PIDs, then
+records that distinct custody schema. The parent only names owner9 instead of
+owner8. No test assertion, 1,200s owner/1,500s parent deadline, four-lock custody,
+source verification or strict **>8,589,934,592-byte** live floor was relaxed.
+
+`legacy7-20261021-restore2` then actually completed the unchanged default matrix:
+`success`, `concurrent-root`, `ack-restart`, `target-ack-loss`, `payload-reject`,
+`authorization-reject`, `rollback`. Receipt `complete=true`, **7 cases**, **100
+original driver children joined**. Original parent **2290458** waited owner
+**2290459** exit 0; owner waited driver **2290461** exit 0. Fresh postflight
+verified all 103 recorded PIDs absent and all four task locks available. Available
+space after the run was **12,021,477,376 bytes**, above the original native floor.
+The preflight reserved 2 GiB new output plus 1 GiB safety; no Cargo/rustc rebuild,
+installation, deployment, capacity acquisition or retention extension occurred.
+
+All 491 frozen source inputs matched final1, and the unchanged driver, mixed app
+and native Database hashes above match both receipt and retained file bytes.
+Each case's source and target RocksDB CURRENT/MANIFEST storage is retained.
+The legacy source receipt's `b12ec096...` source-commit label remains its original
+frozen-build provenance, not a claim that the qualification-only Git HEAD was
+compiled. The runtime checkpoint remains `a3d9858a`; this addition changes no SDK,
+generator, fixture runtime, original driver or earlier acceptance receipts.
+
+Offhost evidence beside the prior immutable archive:
+
+- `legacy7-restore2-additive.tar.gz`, **115,362,358 bytes**, SHA-256
+  `4894428866a069ce7dee9f8ac3387f2939979de748d22255248a3a0479af7c04`.
+- `legacy7-restore2-archive-manifest.json`, `legacy7-offhost-verification.json`,
+  `legacy7-offhost-pack-parent.json`, `legacy7-restore2-postflight.json`.
+- All **840 archive members** were read and hash/size verified offhost, including
+  491 source inputs, frozen app/binding, Database executable, native storage,
+  original receipts/waits and additive custody scripts. Packaging SSH child was
+  waited by its original local parent, exit 0. Archive was streamed directly
+  offhost without making a new on-runner archive copy.
+
+Reproduce the read-only offhost verification (no extraction/build):
+
+```sh
+python3 reboot/rust/tests/fixtures/workflow_app/verify_legacy7_additive.py \
+  /home/openclaw/.hermes/profiles/jean/cache/scratch/remote-authority-recovery-20261021
+```
+
+It returned `complete=true, cases=7, driver_children=100, members=840,
+frozen_inputs=491, no_rebuild=true`. Historical final3/restore1 failures remain
+immutable failures; no historical zero-case run has become a pass. The missing
+legacy gate is now qualified, but **publication still requires independent parent
+rereview** of this additive qualification. No push was performed. Full pre-handoff
+child-ACK convergence remains out of scope/blocked as documented above; these
+seven legacy cases do not establish it. Existing expiry is unchanged.
