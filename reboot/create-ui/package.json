@@ -1,6 +1,6 @@
 {
   "name": "@reboot-dev/create-ui",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "description": "Scaffold React implementation for Reboot MCP Apps",
   "type": "commonjs",
   "bin": {

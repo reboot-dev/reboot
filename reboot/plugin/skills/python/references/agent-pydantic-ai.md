@@ -150,7 +150,7 @@ Add the `anthropic` extra to the project's `reboot` requirement in
 
 ```toml
 dependencies = [
-    "reboot[anthropic]==1.7.0",
+    "reboot[anthropic]==1.7.1",
     # ...
 ]
 ```
