@@ -9,6 +9,7 @@ else:
     wait(t); assert t.returncode != 0
 before = snapshot(task)
 intent = inspect_root_intent(before, db, task)
+rec.setdefault('startup_attempts', []).append(dict(case=requested_case, phase='before-restart', intent=intent, native=before)); save()
 assert intent['zero_timestamp_verified'] and len(bytes.fromhex(intent['receipt_key'])) == 16
 assert not intent['recovery_claimed'] and not intent['recovery_retired']
 assert len(intent['members']) == 1 and intent['members'][0]['state_ref'] == leaf
@@ -25,13 +26,17 @@ for restart in range(2):
     pre = work/f'before-source-dispatch-{restart}'
     t, ts = host(False, dict(REBOOT_TEST_CANONICAL_STARTUP_OWNED=str(owned),
         REBOOT_TEST_OUTBOUND_WRITER_BEFORE_DISPATCH=str(pre)), wait_ready=False)
-    listening(t, tp); until(owned.exists, t); until(pre.exists, t)
+    listening(t, tp); until(owned.exists, t)
+    # Source journal admission may itself queue on the retained original actor
+    # lease, before its outbound pre-dispatch seam. That is ownership, not a
+    # readiness requirement; do not wait for a seam behind the lease we test.
     recovered = snapshot(task)
     current = inspect_root_intent(recovered, db, task)
+    rec.setdefault('startup_attempts', []).append(dict(case=requested_case, phase='after-startup-claim', restart=restart, intent=current, native=recovered)); save()
     assert owned.read_text() == intent['root'] == current['root'], 'startup replaced original root UUID'
     assert current['receipt_key'] == intent['receipt_key']
     assert current['members'] == intent['members']
-    assert current['zero_timestamp_verified'] and current['recovery_claimed'] and not current['recovery_retired']
+    assert current['zero_timestamp_verified'] and current['recovery_claimed'] and not current['recovery_retired'], 'startup recovery claim missing from durable intent'
     # A new public writer must queue on the actual original actor lease. A
     # mutation oracle inspects the real durable result regardless of RPC status.
     writer_status = 'returned'
