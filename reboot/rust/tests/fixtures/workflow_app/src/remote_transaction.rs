@@ -68,6 +68,11 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         adapter.with_sequential_root_star()
     };
+    let adapter = if std::env::var_os("DURABLE_CANONICAL_ROOT_ATTEMPTS").is_some() {
+        adapter.with_durable_canonical_root_attempts()
+    } else {
+        adapter
+    };
     let adapter = adapter
         .with_explicit_abort_owner(reboot::explicit_abort::ExplicitAbortOwner::new(4)?)
         .with_live_participant_owner(reboot::live_participant::LiveParticipantOwner::new(

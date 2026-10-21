@@ -62,6 +62,7 @@ try:
     from workflow.v1 import workflow_pb2 as app, workflow_pb2_grpc as ag
     from rbt.v1alpha1 import database_pb2 as db,database_pb2_grpc as dg,tasks_pb2 as tasks,placement_planner_pb2 as pp
     from reboot.aio.types import StateRef
+    from canonical_root_intent_inspector import inspect as inspect_root_intent
     ref=StateRef.from_id('workflow.v1.AtomicLedger','atomic').to_str(); leaf=StateRef.from_id('workflow.v1.AtomicLedger','leaf').to_str()
     env=os.environ.copy()|dict(PYTHONPATH=str(overlay)+':'+str(runfiles))
     for case in os.environ.get('REMOTE_TRANSACTION_CASES','success,terminal,ack-restart,error-ack-restart,authorization-reject,payload-reject,target-ack-loss,error-target-ack-loss,crossactor,receipt-ack-loss,abort-ack-loss,source-ack-loss,terminal-ack-loss,child-ack-loss').split(','):
@@ -134,6 +135,8 @@ try:
         barrier=work/'after-target'; extra=dict(REBOOT_TEST_OUTBOUND_WRITER_AFTER_TARGET_ACK=str(barrier)) if case in ['ack-restart','error-ack-restart','authorization-reject','payload-reject'] else {}
         proxy=None;ack=work/'lost-ack.json'
         if case=='child-ack-loss':extra['REMOTE_CHILD_CATCH_ERROR']='1'
+        if case=='root-binding-restart':extra['REBOOT_TEST_CANONICAL_ROOT_BOUND']=str(work/'root-bound-first')
+        if case=='remote-intent-restart':extra['REBOOT_TEST_CANONICAL_REMOTE_INTENT']=str(work/'remote-intent')
         if case in ['target-ack-loss','error-target-ack-loss']:
             pn=port();proxy=spawn([sys.executable,FIXTURE/('declared_transaction_ack_proxy.py' if declared else 'transaction_ack_proxy.py'),f'127.0.0.1:{pn}',f'127.0.0.1:{tp}',ack],role='proxy');listening(proxy,pn);extra['TRANSACTION_TASK_ENDPOINT']=f'http://127.0.0.1:{pn}'
         t,ts=host(False,extra)
@@ -146,6 +149,40 @@ try:
             exec(compile((FIXTURE/'remote_terminal_recovery_case.py').read_text(), str(FIXTURE/'remote_terminal_recovery_case.py'), 'exec'))
             continue
         key=str(uuid.uuid4());admitted=canonical('spawn',key);task=tasks.TaskId.FromString(bytes.fromhex(admitted['task_id']));before=None
+        if case=='remote-intent-restart':
+            until((work/'remote-intent').exists,t)
+            before=snapshot(task);intent=inspect_root_intent(before,db,task)
+            assert intent['root']==(work/'remote-intent').read_text()
+            assert len(intent['members'])==1 and intent['members'][0]['state_ref']==leaf
+            assert [x['value'] for x in before]==[0,0] and lines().count('transaction-child')==0
+            counts=lines();stop(t);stop(c);stop(d);stop(ld);d,ld=database(),database(True);c,cs=host(True)
+            # Run actual recovered target admission; no handler may reexecute.
+            t,ts=host(False,wait_ready=False);wait(t);assert t.returncode!=0
+            final=snapshot(task)
+            rec.setdefault('remote_intent_restarts',[]).append(dict(original=intent,recovered=inspect_root_intent(final,db,task),before=before,final=final,events=lines()));save()
+            assert final==before and lines().count('transaction-apply')==counts.count('transaction-apply')==1
+            assert lines().count('transaction-child')==0
+            assert 'original canonical root has unresolved remote membership' in Path(row(t)['log']).read_text()
+            assert db.Task.FromString(bytes.fromhex(final[0]['tasks'][0])).status==db.Task.PENDING
+            stop(c);stop(d);stop(ld);stop(planner)
+            cases.append(dict(case=case,admission=admitted,before=before,final=final,expected='failed-closed-durable-remote-intent',events=lines(),plan=plan.SerializeToString().hex()));save();continue
+        if case=='root-binding-restart':
+            until((work/'root-bound-first').exists,t)
+            original_root=(work/'root-bound-first').read_text()
+            before=snapshot(task)
+            assert [x['value'] for x in before]==[0,0] and lines().count('transaction-child')==0
+            intent=inspect_root_intent(before,db,task)
+            assert intent['root']==original_root and not intent['members']
+            stop(t);stop(c);stop(d);stop(ld);d,ld=database(),database(True);c,cs=host(True)
+            second=work/'root-bound-second';t,ts=host(False,dict(REBOOT_TEST_CANONICAL_ROOT_BOUND=str(second)))
+            until(second.exists,t)
+            recovered=snapshot(task)
+            rec.setdefault('root_binding_restarts',[]).append(dict(original_root=original_root,recovered_root=second.read_text(),before=before,recovered=recovered));save()
+            assert second.read_text()==original_root,'recovery replaced original root UUID'
+            assert recovered==before and lines().count('transaction-child')==0
+            second.with_suffix('.release').touch()
+            before=None
+            extra={}
         if case=='child-ack-loss':
             until(child_ack.exists,t);wait(t);assert t.returncode!=0
             final=snapshot(task)
@@ -155,6 +192,27 @@ try:
             observed=json.loads(child_ack.read_text());metadata=dict(observed['request_metadata'])
             assert 'x-reboot-idempotency-key' not in metadata
             assert metadata['x-reboot-transaction-coordinator-state-ref']==ref
+            if os.environ.get('DURABLE_CANONICAL_ROOT_ATTEMPTS'):
+                intent=inspect_root_intent(final,db,task)
+                assert intent['root']==json.loads(metadata['x-reboot-transaction-ids'])[0]
+                assert len(intent['members'])==1 and intent['members'][0]['state_ref']==leaf
+                counts=lines()
+                stop(c);stop(d);stop(ld);d,ld=database(),database(True)
+                # The root dispatcher is parked BEFORE target replay. This lets
+                # recovery inspect retained storage without inventing authority.
+                pre=work/'restart-before-dispatch';t,ts=host(False,dict(REBOOT_TEST_OUTBOUND_WRITER_BEFORE_DISPATCH=str(pre)))
+                until(pre.exists,t)
+                c,cs=host(True,wait_ready=False)
+                retained=snapshot(task)
+                assert retained==final and inspect_root_intent(retained,db,task)==intent
+                assert lines()==counts
+                pre.with_suffix('.release').touch()
+                wait(t);assert t.returncode!=0
+                after_replay=snapshot(task)
+                assert after_replay==retained and lines().count('transaction-child')==1 and lines().count('transaction-apply')==1
+                assert 'original canonical root has unresolved remote membership' in Path(row(t)['log']).read_text()
+                rec.setdefault('child_ack_root_intents',[]).append(dict(intent=intent,retained=retained,after_replay=after_replay,original_root=intent['root'],child_restart_exit=c.poll()))
+                save()
             assert not any(db.IdempotentMutation.FromString(bytes.fromhex(raw)).request_fingerprint.startswith(b'reboot.transaction.aborted-result.v1\0') for raw in final[0]['receipts'])
             # A caught transport failure grants neither commit continuation nor
             # an acknowledged task terminal. Preserve this failed attempt;

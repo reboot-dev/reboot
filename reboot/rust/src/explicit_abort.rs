@@ -933,6 +933,17 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
         self.local.as_mut().unwrap().disarm_after_durable_prepare();
         Ok(self)
     }
+    /// Bind only the admitted original local owner; the guard retains its
+    /// cancellation/registration lifetime across the intent Store ACK.
+    #[doc(hidden)]
+    pub async fn bind_canonical_root_attempt(
+        &self, context: &mut TransactionContext,
+        errors: &[crate::one_shot_tasks::DeclaredTaskError],
+    ) -> Result<(), Status> {
+        self.local.as_ref().ok_or_else(|| Status::failed_precondition("canonical root guard consumed"))?
+            .bind_canonical_root_attempt(context, errors).await
+    }
+
     /// Installs host-only builtin authority after real root/cancellation admission.
     /// No inbound or public metadata can enable this capability.
     #[doc(hidden)]

@@ -2,6 +2,23 @@
 // on the exact original exclusive root, and persisted AFTER acknowledged native
 // Abort, while that same participant still retains actor admission.
 impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
+    /// Persist canonical root intent only after generated current-state policy
+    /// and cached terminal replay, while retaining this exact exclusive owner.
+    #[doc(hidden)]
+    pub async fn bind_canonical_root_attempt(
+        &self, context: &mut crate::runtime::TransactionContext,
+        errors: &[crate::one_shot_tasks::DeclaredTaskError],
+    ) -> Result<(), Status> {
+        let pending = self.participant.pending.lock_root(self.transaction_id).await;
+        let current = pending.as_ref().ok_or_else(|| Status::failed_precondition("canonical root owner missing"))?;
+        if current.local_owner != Some(self.local_owner) || current.root_id != context.transaction_root_id()
+            || current.transaction_ids.len() != 1 || current.lock.is_shared() || current.factory
+            || current.staged || current.prepared || current.native_started || current.native_uncertain
+            || current.terminal_attempted || self.was_handed_off() {
+            return Err(Status::failed_precondition("canonical root intent requires clean original owner"));
+        }
+        context.install_canonical_root_attempt(self.participant.sidecar.clone(), errors).await
+    }
     pub(crate) async fn has_declared_abort_receipt(&self) -> bool {
         self.participant
             .pending

@@ -102,6 +102,8 @@ pub struct TransactionIdempotency {
 
 include!("declared_transaction_store.rs");
 include!("declared_transaction_tests.rs");
+include!("canonical_root_attempt.rs");
+include!("canonical_root_attempt_tests.rs");
 
 impl TransactionIdempotency {
     /// The validated idempotency UUID from Reboot metadata.
@@ -209,6 +211,7 @@ pub struct TransactionContext {
     handler_ancestors: Arc<[tokio::sync::watch::Receiver<bool>]>,
     registered_outbound: Option<crate::registered_local::RegisteredOutboundPermission>,
     root_receipt: Option<TransactionIdempotency>,
+    canonical_root_attempt: Option<Arc<CanonicalRootAttemptJournal>>,
 }
 
 pub(crate) struct HandlerLifetimeOwner(tokio::sync::watch::Sender<bool>);
@@ -743,6 +746,11 @@ where
     )
     .await?;
     let (channel, terminal_evidence) = terminal_capture::TerminalCaptureChannel::new(channel);
+    if let Some(journal) = &context.canonical_root_attempt {
+        journal.before_remote(&target, &method).await?;
+        context.validate_outbound_scope_admission(scope)?;
+        context.require_outbound_allowed()?;
+    }
     consume_generated_transactional_unary(
         channel,
         terminal_evidence,
@@ -1046,6 +1054,7 @@ impl TransactionContext {
             handler_ancestors: Arc::from([]),
             registered_outbound: None,
             root_receipt: None,
+            canonical_root_attempt: None,
             doomed: Arc::new(Mutex::new(None)),
             live_leaf: false,
             supervised_tree: false,
@@ -2359,6 +2368,7 @@ impl TransactionContext {
             handler_ancestors: self.handler_ancestors.clone(),
             registered_outbound: None,
             root_receipt: None,
+            canonical_root_attempt: None,
             doomed: Arc::clone(&self.doomed),
             live_leaf: self.live_leaf,
             supervised_tree: self.supervised_tree,
