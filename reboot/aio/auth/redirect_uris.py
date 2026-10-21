@@ -15,7 +15,8 @@ skip that question.
 
 import re
 from reboot.run_environments import running_rbt_dev
-from typing import Sequence
+from typing import Optional, Sequence
+from urllib.parse import urlparse
 
 # Full-string regexes for the redirect URIs that skip the consent
 # screen automatically under `rbt dev run`. Expo (React Native's
@@ -83,19 +84,50 @@ def validate_redirect_uris(
             )
 
 
+def _origin(uri: str) -> Optional[tuple[str, str, int]]:
+    """The scheme, host and port that `uri` names, with the scheme's
+    default port filled in, or `None` when `uri` is not an `http(s)`
+    URI with a host."""
+    parsed = urlparse(uri)
+    scheme = parsed.scheme.lower()
+    if scheme not in ("http", "https") or not parsed.hostname:
+        return None
+    try:
+        port = parsed.port
+    except ValueError:
+        return None
+    if port is None:
+        port = 443 if scheme == "https" else 80
+    return (scheme, parsed.hostname.lower(), port)
+
+
 def skips_consent(
     redirect_uri: str,
     *,
     skip_consent_for_redirect_uris: Sequence[str],
+    resource: Optional[str] = None,
 ) -> bool:
     """Whether a client receiving its authorization code at
     `redirect_uri` signs users in without a consent screen: an exact
     match against the explicit allow-list
-    `skip_consent_for_redirect_uris`, or — under `rbt dev run` — a
+    `skip_consent_for_redirect_uris`; a `redirect_uri` with the same
+    scheme, host and port as `resource`, the RFC 8707 resource the
+    client asked for a token for; or — under `rbt dev run` — a
     development redirect URI whose shape only a local toolchain
-    produces."""
+    produces.
+
+    The resource rule is safe because the code, and so the token, can
+    only reach the very host the token is for: a token for another
+    resource is good there and nowhere else, so the confused-deputy
+    attack the consent screen guards against — a registered client
+    harvesting a token for this application at a redirect URI of its
+    own — gains nothing."""
     if redirect_uri in skip_consent_for_redirect_uris:
         return True
+    if resource is not None:
+        origin = _origin(redirect_uri)
+        if origin is not None and origin == _origin(resource):
+            return True
     if running_rbt_dev():
         return any(
             re.fullmatch(regex, redirect_uri) is not None

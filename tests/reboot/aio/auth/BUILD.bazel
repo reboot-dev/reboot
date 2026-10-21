@@ -13,6 +13,17 @@ py_test(
 )
 
 py_test(
+    name = "redirect_uris_test_py",
+    size = "small",
+    srcs = ["redirect_uris_test.py"],
+    main = "redirect_uris_test.py",
+    deps = [
+        "//reboot:settings_py",
+        "//reboot/aio/auth:redirect_uris_py",
+    ],
+)
+
+py_test(
     name = "oauth_providers_test_py",
     size = "small",
     timeout = "long",
@@ -153,6 +164,55 @@ py_test(
         "//reboot/aio/auth:oauth_providers_py",
         "//reboot/aio/auth:oauth_server_py",
         requirement("fastapi"),
+        requirement("httpx"),
+    ],
+)
+
+py_test(
+    name = "oauth_resource_test_py",
+    size = "small",
+    timeout = "short",
+    srcs = ["oauth_resource_test.py"],
+    main = "oauth_resource_test.py",
+    deps = [
+        ":oauth_server_harness_py",
+        "//reboot:settings_py",
+        "//reboot/aio/auth:oauth_providers_py",
+        "//reboot/aio/auth:oauth_server_py",
+    ],
+)
+
+py_test(
+    name = "oauth_resource_hook_test_py",
+    size = "small",
+    timeout = "short",
+    srcs = ["oauth_resource_hook_test.py"],
+    main = "oauth_resource_hook_test.py",
+    deps = [
+        ":oauth_server_harness_py",
+        "//reboot:settings_py",
+        "//reboot/aio/auth:oauth_providers_py",
+        "//reboot/aio/auth:oauth_py",
+        "//reboot/aio/auth:oauth_server_py",
+    ],
+)
+
+py_test(
+    name = "access_test_py",
+    size = "small",
+    timeout = "short",
+    srcs = ["access_test.py"],
+    main = "access_test.py",
+    deps = [
+        ":oauth_server_harness_py",
+        "//reboot:settings_py",
+        "//reboot/aio/auth:__init___py",
+        "//reboot/aio/auth:access_py",
+        "//reboot/aio/auth:oauth_py",
+        "//reboot/aio/auth:oauth_providers_py",
+        "//reboot/aio/auth:oauth_server_py",
+        "//reboot/aio/auth:token_verifiers_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:errors_py_proto",
         requirement("httpx"),
     ],
 )

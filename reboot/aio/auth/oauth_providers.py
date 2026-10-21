@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from jinja2 import Template
 from log.log import get_logger, log_at_most_once_per
 from rbt.std.oauth.v1.oauth_rbt import OAuthTokens
+from reboot.aio.auth.oauth_client import OAuthClient
 from reboot.aio.exceptions import InputError
 from reboot.aio.external import ExternalContext
 from reboot.aio.http import (
@@ -439,6 +440,23 @@ class RegisteredOAuthProvider(OAuthProvider):
                 scopes.append(scope)
         return scopes
 
+    def _oauth_client(
+        self,
+        *,
+        authorization_endpoint: str,
+        token_endpoint: str,
+    ) -> OAuthClient:
+        """An `OAuthClient` of this provider with the registered
+        credentials; `validate()` has established they are present by
+        the time a flow runs."""
+        assert self._client_id is not None
+        return OAuthClient(
+            authorization_endpoint=authorization_endpoint,
+            token_endpoint=token_endpoint,
+            client_id=self._client_id,
+            client_secret=self._client_secret,
+        )
+
     def validate(self) -> None:
         if not self._client_id:
             raise InputError(
@@ -500,20 +518,23 @@ class Google(RegisteredOAuthProvider):
         state: str,
         redirect_uri: str,
     ) -> str:
-        params = {
-            "client_id": self._client_id,
-            "redirect_uri": redirect_uri,
-            "response_type": "code",
-            "scope": " ".join(self._requested_scopes()),
-            "state": state,
+        return self._client().authorization_url(
+            redirect_uri=redirect_uri,
+            state=state,
+            scopes=self._requested_scopes(),
             # `offline` asks Google for a refresh token. Google only
             # returns one on the *first* consent (not on later sign-ins),
             # so the token store carries the existing refresh token
             # forward rather than us forcing the consent screen every
             # time with `prompt=consent` (see `OAuthServer._store_oauth_tokens`).
-            "access_type": "offline",
-        }
-        return f"{self._AUTHORIZATION_ENDPOINT}?{urlencode(params)}"
+            extra={"access_type": "offline"},
+        )
+
+    def _client(self) -> OAuthClient:
+        return self._oauth_client(
+            authorization_endpoint=self._AUTHORIZATION_ENDPOINT,
+            token_endpoint=self._TOKEN_ENDPOINT,
+        )
 
     async def exchange_code(
         self,
@@ -523,20 +544,10 @@ class Google(RegisteredOAuthProvider):
         """
         Exchange the Google auth code for a user ID (and tokens).
         """
-        data = {
-            "code": code,
-            "client_id": self._client_id,
-            "client_secret": self._client_secret,
-            "redirect_uri": redirect_uri,
-            "grant_type": "authorization_code",
-        }
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                self._TOKEN_ENDPOINT,
-                data=data,
-            ) as response:
-                response.raise_for_status()
-                token_response = await response.json()
+        token_response = await self._client().exchange_code(
+            code=code,
+            redirect_uri=redirect_uri,
+        )
 
         id_token = token_response.get("id_token")
         if id_token is None:
@@ -913,14 +924,17 @@ class Auth0(RegisteredOAuthProvider):
         # user for offline access we'd never use.
         if self._store_tokens and self._OFFLINE_ACCESS_SCOPE not in scopes:
             scopes = scopes + [self._OFFLINE_ACCESS_SCOPE]
-        params = {
-            "client_id": self._client_id,
-            "redirect_uri": redirect_uri,
-            "response_type": "code",
-            "scope": " ".join(scopes),
-            "state": state,
-        }
-        return f"{self._authorization_endpoint}?{urlencode(params)}"
+        return self._client().authorization_url(
+            redirect_uri=redirect_uri,
+            state=state,
+            scopes=scopes,
+        )
+
+    def _client(self) -> OAuthClient:
+        return self._oauth_client(
+            authorization_endpoint=self._authorization_endpoint,
+            token_endpoint=self._token_endpoint,
+        )
 
     async def exchange_code(
         self,
@@ -930,49 +944,40 @@ class Auth0(RegisteredOAuthProvider):
         """
         Exchange the Auth0 auth code for a user ID (and tokens).
         """
-        data = {
-            "grant_type": "authorization_code",
-            "client_id": self._client_id,
-            "client_secret": self._client_secret,
-            "code": code,
-            "redirect_uri": redirect_uri,
-        }
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                self._token_endpoint,
-                data=data,
-            ) as response:
-                response.raise_for_status()
-                token_response = await response.json()
+        token_response = await self._client().exchange_code(
+            code=code,
+            redirect_uri=redirect_uri,
+        )
 
-            decoded = _decoded_id_token(token_response.get("id_token"))
-            user_id = decoded.get("sub") if decoded is not None else None
-            # The ID token carries the requested identity claims (we
-            # requested the scopes they need); surface whichever are
-            # present, under their presented names.
-            claims = self._presented_claims(decoded or {})
-            if user_id is None:
-                # No ID token (shouldn't happen with the `openid`
-                # scope, but be defensive): fall back to `/userinfo`,
-                # which returns the same `sub` for the access token.
-                access_token = token_response.get("access_token")
-                if access_token is None:
-                    raise ValueError(
-                        "Auth0 token response contained neither an "
-                        "'id_token' nor an 'access_token'; cannot "
-                        "resolve the user's identity."
-                    )
+        decoded = _decoded_id_token(token_response.get("id_token"))
+        user_id = decoded.get("sub") if decoded is not None else None
+        # The ID token carries the requested identity claims (we
+        # requested the scopes they need); surface whichever are
+        # present, under their presented names.
+        claims = self._presented_claims(decoded or {})
+        if user_id is None:
+            # No ID token (shouldn't happen with the `openid`
+            # scope, but be defensive): fall back to `/userinfo`,
+            # which returns the same `sub` for the access token.
+            access_token = token_response.get("access_token")
+            if access_token is None:
+                raise ValueError(
+                    "Auth0 token response contained neither an "
+                    "'id_token' nor an 'access_token'; cannot "
+                    "resolve the user's identity."
+                )
+            async with aiohttp.ClientSession() as session:
                 async with session.get(
                     self._userinfo_endpoint,
                     headers={"Authorization": f"Bearer {access_token}"},
                 ) as response:
                     response.raise_for_status()
                     user_info = await response.json()
-                user_id = user_info.get("sub")
-                # `/userinfo` responses use the same standard claim
-                # names as the ID token, and the TLS round-trip to
-                # Auth0 makes them a verified source too.
-                claims = self._presented_claims(user_info)
+            user_id = user_info.get("sub")
+            # `/userinfo` responses use the same standard claim
+            # names as the ID token, and the TLS round-trip to
+            # Auth0 makes them a verified source too.
+            claims = self._presented_claims(user_info)
 
         if user_id is None:
             raise ValueError(
@@ -1350,14 +1355,17 @@ class Ory(RegisteredOAuthProvider):
         # avoid asking the user for offline access we'd never use.
         if self._store_tokens and self._OFFLINE_ACCESS_SCOPE not in scopes:
             scopes = scopes + [self._OFFLINE_ACCESS_SCOPE]
-        params = {
-            "client_id": self._client_id,
-            "redirect_uri": redirect_uri,
-            "response_type": "code",
-            "scope": " ".join(scopes),
-            "state": state,
-        }
-        return f"{self._authorization_endpoint}?{urlencode(params)}"
+        return self._client().authorization_url(
+            redirect_uri=redirect_uri,
+            state=state,
+            scopes=scopes,
+        )
+
+    def _client(self) -> OAuthClient:
+        return self._oauth_client(
+            authorization_endpoint=self._authorization_endpoint,
+            token_endpoint=self._token_endpoint,
+        )
 
     async def exchange_code(
         self,
@@ -1367,27 +1375,17 @@ class Ory(RegisteredOAuthProvider):
         """
         Exchange the Ory auth code for a user ID (and tokens).
         """
-        data = {
-            "grant_type": "authorization_code",
-            "client_id": self._client_id,
-            "client_secret": self._client_secret,
-            "code": code,
-            "redirect_uri": redirect_uri,
-        }
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                self._token_endpoint,
-                data=data,
-            ) as response:
-                response.raise_for_status()
-                token_response = await response.json()
+        token_response = await self._client().exchange_code(
+            code=code,
+            redirect_uri=redirect_uri,
+        )
 
-            decoded = _decoded_id_token(token_response.get("id_token"))
-            user_id = decoded.get("sub") if decoded is not None else None
-            # The ID token carries the requested identity claims (we
-            # requested the scopes they need); surface whichever are
-            # present, under their presented names.
-            claims = self._presented_claims(decoded or {})
+        decoded = _decoded_id_token(token_response.get("id_token"))
+        user_id = decoded.get("sub") if decoded is not None else None
+        # The ID token carries the requested identity claims (we
+        # requested the scopes they need); surface whichever are
+        # present, under their presented names.
+        claims = self._presented_claims(decoded or {})
 
         if user_id is None:
             raise ValueError(

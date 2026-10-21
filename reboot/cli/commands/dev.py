@@ -30,7 +30,8 @@ from reboot.aio.exceptions import InputError
 from reboot.cli.commands.generate import generate_direct
 # We import the whole `terminal` module (as opposed to the methods it contains)
 # to allow us to mock these methods out in tests.
-from reboot.cli.common import portless, terminal
+from reboot.cli.common import credentials, portless, terminal
+from reboot.cli.common.credentials import DEFAULT_REBOOT_CLOUD_URL
 from reboot.cli.common.dev_extra import dev_extra_installed, missing_dev_extra
 from reboot.cli.common.directories import (
     add_working_directory_options,
@@ -86,6 +87,8 @@ from reboot.settings import (
     ENVVAR_RBT_TUNNEL_URL,
     ENVVAR_RBT_WEB_APP,
     ENVVAR_RBT_WEB_APP_DIST_PATH,
+    ENVVAR_REBOOT_ACCESS_ISSUER,
+    ENVVAR_REBOOT_ACCESS_POLICY,
     ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
     ENVVAR_REBOOT_EXPECTED_VERSION,
     ENVVAR_REBOOT_LOCAL_ENVOY,
@@ -311,6 +314,28 @@ def _register_dev_run(parser: ArgumentParser):
         'setup wizard shows and verifies; without it the wizard asks '
         'ngrok and cloudflared, through their local APIs on their '
         'default ports, for a tunnel of their own',
+    )
+
+    parser.subcommand('dev run').add_argument(
+        '--access',
+        type=str,
+        choices=['user', 'public'],
+        help=(
+            "who may reach the application: `user` lets in only you, "
+            "signed in through the Reboot Cloud (`rbt login`), on every "
+            "address it is served at, localhost included, and MCP "
+            "clients and browsers you sign in with; `public` lets in "
+            "anyone. Without it, `user` when `--tunnel-url` is given and "
+            "you are signed in, else `public`"
+        ),
+    )
+    parser.subcommand('dev run').add_argument(
+        '--cloud-url',
+        type=str,
+        help=
+        "the URL of the Reboot Cloud that `--access=user` signs in through",
+        default=DEFAULT_REBOOT_CLOUD_URL,
+        non_empty_string=True,
     )
 
     parser.subcommand('dev run').add_argument(
@@ -643,6 +668,7 @@ async def _check_local_envoy_status(
     nodejs: bool,
     portless_name: Optional[str],
     web_app: bool,
+    access_user_id: Optional[str],
 ) -> None:
     """Checks if the application is up and running, by the gRPC health
     check on its port. Under `--portless` the port is the application's
@@ -781,11 +807,17 @@ async def _check_local_envoy_status(
                     f"  Your web app is at:            {url}/\n"
                     if web_app else ""
                 )
+                access_line = (
+                    "  Only you can reach it: sign in through the Reboot "
+                    f"Cloud as {access_user_id} once per browser.\n"
+                    if access_user_id is not None else ""
+                )
                 terminal.info(
                     f"  Your API is available at:      {url}\n"
                     f"{mcp_line}"
                     f"{web_line}"
-                    f"  You can inspect your state at: {url}/__/inspect\n",
+                    f"  You can inspect your state at: {url}/__/inspect\n"
+                    f"{access_line}",
                     color=Fore.WHITE,
                 )
                 if tracing == Tracing.JAEGER:
@@ -1144,6 +1176,39 @@ def _handle_application_exit(
 
 
 @reboot.aio.tracing.function_span()
+async def _resolve_access(args: argparse.Namespace) -> Optional[str]:
+    """Who `--access` lets in: the id of the signed-in Reboot Cloud
+    user for `user`, `None` for `public`. Without the flag, `user`
+    when `--tunnel-url` is given and there is a sign-in (said so), else
+    `public` (and, with a tunnel URL, said so too)."""
+    if args.access == 'public':
+        return None
+    if args.access == 'user':
+        kept = await credentials.fresh(args.cloud_url)
+        if kept is None:
+            terminal.fail(
+                "`--access=user` needs a sign-in to the Reboot Cloud at "
+                f"{args.cloud_url}: run `rbt login` first."
+            )
+        return kept.user_id
+    if not args.tunnel_url:
+        return None
+    kept = await credentials.fresh(args.cloud_url)
+    if kept is None:
+        terminal.warn(
+            f"Anyone can reach your application at {args.tunnel_url}. To "
+            "let in only you, run `rbt login` (and `--access=user` to "
+            "insist on it).\n"
+        )
+        return None
+    terminal.info(
+        f"Only you can reach your application at {args.tunnel_url}: you "
+        f"are signed in to the Reboot Cloud as {kept.user_id}. Pass "
+        "`--access=public` to let in anyone.\n"
+    )
+    return kept.user_id
+
+
 async def dev_run(
     args,
     *,
@@ -1595,6 +1660,11 @@ async def __dev_run(
             )
         env[ENVVAR_RBT_TUNNEL_URL] = args.tunnel_url.rstrip('/')
 
+    access_user_id = await _resolve_access(args)
+    if access_user_id is not None:
+        env[ENVVAR_REBOOT_ACCESS_POLICY] = f"user:{access_user_id}"
+        env[ENVVAR_REBOOT_ACCESS_ISSUER] = args.cloud_url.rstrip('/')
+
     health_check_task: Optional[asyncio.Task] = None
 
     # Pick the mode in which we'll run a local Envoy proxy and check
@@ -1634,6 +1704,7 @@ async def __dev_run(
             nodejs=bool(args.nodejs),
             portless_name=(args.application_name if args.portless else None),
             web_app=bool(args.web_app or args.web_app_dist_path),
+            access_user_id=access_user_id,
         ),
         name=f'_check_local_envoy_status(...) in {__name__}',
     )

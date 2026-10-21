@@ -130,3 +130,10 @@ oauth=OAuth(
     allowed_origins=["https://<your-frontend-tunnel>"],
 )
 ```
+
+### Keeping the tunnel to yourself
+
+A tunnel makes your development instance reachable by anyone who
+finds its URL. To let in only you, sign in to the Reboot Cloud with
+`rbt login` and run `rbt dev run --access=user`; see
+[Access policy](/users/access).

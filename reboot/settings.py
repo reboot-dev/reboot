@@ -169,6 +169,13 @@ ENVVAR_RBT_PORTLESS_NAME = 'RBT_PORTLESS_NAME'
 # shows and verifies instead of asking ngrok or cloudflared for one
 # (`rbt dev run --tunnel-url`).
 ENVVAR_RBT_TUNNEL_URL = 'RBT_TUNNEL_URL'
+# The access policy in front of this application (see
+# `reboot.aio.auth.access`), e.g. "user:<id>" to let in one user of
+# the issuer and nobody else, and the issuer, the origin of the OAuth
+# authorization server that says who a visitor is (Reboot Cloud for
+# `rbt dev run --access`). Unset when the application is open.
+ENVVAR_REBOOT_ACCESS_POLICY = 'REBOOT_ACCESS_POLICY'
+ENVVAR_REBOOT_ACCESS_ISSUER = 'REBOOT_ACCESS_ISSUER'
 
 # Environment variable indicating that `rbt` is being invoked from
 # Node.js.

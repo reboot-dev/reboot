@@ -14,8 +14,10 @@ from log.log import get_logger
 from mcp.server.fastmcp import FastMCP
 from pathlib import Path
 from rbt.v1alpha1.application.application_pb2 import ExamplePrompt
+from reboot.aio.auth import SESSION_COOKIE_NAME
+from reboot.aio.auth.access import Access, AppSignIn
 from reboot.aio.auth.allowed_origins import frontend_dev_origin
-from reboot.aio.auth.oauth import OAuth
+from reboot.aio.auth.oauth import AuthorizeResource, OAuth
 from reboot.aio.auth.oauth_server import OAuthServer
 from reboot.aio.auth.token_verifiers import (
     CompoundTokenVerifier,
@@ -462,6 +464,8 @@ class Application:
         # without credentials (see `reboot/routing/envoy_config.py`).
         self._allowed_origins: Optional[list[str]] = None
         self._skip_consent_for_redirect_uris: list[str] = []
+        self._authorize_resource: Optional[AuthorizeResource] = None
+        self._accepted_audiences: list[str] = []
         if oauth is not None:
             self._allowed_origins = list(oauth.allowed_origins or [])
             # Under `rbt dev run`, the frontend dev server's origin too:
@@ -475,6 +479,8 @@ class Application:
             self._skip_consent_for_redirect_uris = list(
                 oauth.skip_consent_for_redirect_uris
             )
+            self._authorize_resource = oauth.authorize_resource
+            self._accepted_audiences = list(oauth.accepted_audiences)
         self._title = title or application_name()
         self._description = description
         self._example_prompts = example_prompts or []
@@ -682,11 +688,38 @@ class Application:
         auto_construct_state_type_full_names = self._mount_oauth(
             self._servicers or []
         )
+        self._mount_access()
         self._mount_mcp(
             self._servicers or [],
             auto_construct_state_type_full_names,
         )
         self._mount_web_app()
+
+    def _mount_access(self) -> None:
+        """Put the access policy the environment imposes, if any, in
+        front of every route and every RPC. After `_mount_oauth`, so
+        that the policy knows the application's own sign-in (whose
+        credentials it honors) and wraps the token verifier that
+        sign-in composed."""
+        app_sign_in = None
+        if self._oauth_server is not None:
+            app_sign_in = AppSignIn(
+                session_cookie_name=SESSION_COOKIE_NAME,
+                is_access_token=self._oauth_server.is_access_token,
+                protected_resources=[_MCP_PATH],
+            )
+        try:
+            access = Access.from_environment(
+                app=app_sign_in,
+                client_name=self._title,
+            )
+        except ValueError as e:
+            raise InputError(reason=str(e))
+        if access is None:
+            return
+        assert isinstance(self._web_framework, PythonWebFramework)
+        self._web_framework.access = access
+        self._token_verifier = access.wrapping(self._token_verifier)
 
     def _mount_oauth(
         self,
@@ -734,6 +767,8 @@ class Application:
                 skip_consent_for_redirect_uris=(
                     self._skip_consent_for_redirect_uris
                 ),
+                authorize_resource=self._authorize_resource,
+                accepted_audiences=self._accepted_audiences,
             )
             self._oauth_server = oauth_server
             self.http.verify_oauth_token_with(oauth_server.verify_token)
@@ -1377,6 +1412,22 @@ class NodeApplication(Application):
                 "Reboot application."
             )
         return []
+
+    def _mount_access(self) -> None:
+        # The access policy is enforced by the Python web framework,
+        # which a Node.js application does not run; refuse rather
+        # than run open under a policy the environment asked for.
+        try:
+            access = Access.from_environment()
+        except ValueError as e:
+            raise InputError(reason=str(e))
+        if access is not None:
+            raise InputError(
+                reason=(
+                    "An access policy is not yet supported for Node.js "
+                    "applications."
+                ),
+            )
 
     def _mount_mcp(
         self,

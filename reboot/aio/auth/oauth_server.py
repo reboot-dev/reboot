@@ -29,6 +29,13 @@ from reboot.aio.auth.allowed_origins import (
     OAUTH_PATH_PREFIX,
     is_allowed_origin,
 )
+from reboot.aio.auth.oauth import (
+    Allow,
+    AuthorizeResource,
+    Deny,
+    ResourceDecision,
+    ResourceRequest,
+)
 from reboot.aio.auth.oauth_providers import (
     ClaimsChanged,
     OAuthProvider,
@@ -51,7 +58,7 @@ from starlette.responses import (
     Response,
 )
 from typing import Any, Awaitable, Callable, Mapping, Optional, Sequence
-from urllib.parse import urlencode, urlparse
+from urllib.parse import urlencode, urlparse, urlunparse
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +76,11 @@ _ALGORITHM = "HS256"
 
 # Audience claim for access tokens.
 _AUDIENCE = "reboot-mcp"
+
+# Access-token claims `Allow.claims` may not override.
+_RESERVED_ACCESS_TOKEN_CLAIMS = frozenset(
+    ["type", "sub", "iss", "aud", "iat", "exp"]
+)
 
 # OAuth endpoint paths. Prefixed with `__/oauth/` to avoid collisions
 # with developer-specified routes. The `/.well-known/` discovery paths
@@ -225,15 +237,61 @@ def _oauth_error(
     )
 
 
+def _parse_resource(
+    values: Sequence[str],
+    *,
+    own_origin: str,
+) -> Optional[str]:
+    """The protected resource a client asked for a token for (RFC
+    8707 `resource`), normalized, or `None` when the client asked for
+    none or named this server's own origin, which is what a token is
+    for by default. Raises `ValueError`, worded for the client, when
+    the request is malformed: more than one distinct resource, or one
+    that is not an absolute `http(s)` URI without a fragment."""
+    distinct = list(dict.fromkeys(value for value in values if value))
+    if not distinct:
+        return None
+    if len(distinct) > 1:
+        raise ValueError("Only one 'resource' may be requested.")
+    resource = distinct[0]
+    parsed = urlparse(resource)
+    if (
+        parsed.scheme.lower() not in ("http", "https") or not parsed.netloc or
+        parsed.fragment
+    ):
+        raise ValueError(
+            "The 'resource' must be an absolute http(s) URI without a "
+            "fragment."
+        )
+    origin = f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
+    if origin == own_origin.lower():
+        return None
+    return urlunparse(
+        parsed._replace(
+            scheme=parsed.scheme.lower(), netloc=parsed.netloc.lower()
+        )
+    )
+
+
 class OAuthTokenVerifier(TokenVerifier):
     """Verifies access tokens minted by the `OAuthServer`.
 
     Decodes the HS256 JWT and checks `type`, `aud`, and `exp`.
     Returns `Auth(user_id=...)` on success, `None` otherwise.
+
+    `audiences` are the `aud` values that authenticate here: the
+    server's own and `OAuth(accepted_audiences=...)`. A token minted
+    for another resource (`OAuth(authorize_resource=...)`) has that
+    resource as its `aud` and is rejected, by design.
     """
 
-    def __init__(self, signing_secret: bytes):
+    def __init__(
+        self,
+        signing_secret: bytes,
+        audiences: Optional[Sequence[str]] = None,
+    ):
         self._signing_secret = signing_secret
+        self._audiences = list(audiences or [_AUDIENCE])
 
     async def verify_token(
         self,
@@ -247,7 +305,7 @@ class OAuthTokenVerifier(TokenVerifier):
                 token,
                 self._signing_secret,
                 algorithms=[_ALGORITHM],
-                audience=_AUDIENCE,
+                audience=self._audiences,
             )
             if decoded.get("type") != "access":
                 return None
@@ -284,8 +342,13 @@ class MCPSDKOAuthTokenVerifier:
     signature, audience, and type.
     """
 
-    def __init__(self, signing_secret: bytes):
+    def __init__(
+        self,
+        signing_secret: bytes,
+        audiences: Optional[Sequence[str]] = None,
+    ):
         self._signing_secret = signing_secret
+        self._audiences = list(audiences or [_AUDIENCE])
 
     async def verify_token(  # type: ignore[override]
         self, token: str
@@ -295,7 +358,7 @@ class MCPSDKOAuthTokenVerifier:
                 token,
                 self._signing_secret,
                 algorithms=[_ALGORITHM],
-                audience=_AUDIENCE,
+                audience=self._audiences,
                 # Don't verify expiry here — let the MCP SDK's
                 # `BearerAuthBackend` check `expires_at` so it returns a
                 # proper 401 with `WWW-Authenticate`.
@@ -390,6 +453,8 @@ class OAuthServer:
         claims_changed: Optional[ClaimsChanged] = None,
         allowed_origins: Optional[Sequence[str]] = None,
         skip_consent_for_redirect_uris: Optional[Sequence[str]] = None,
+        authorize_resource: Optional[AuthorizeResource] = None,
+        accepted_audiences: Optional[Sequence[str]] = None,
     ):
         """`authenticated`, if given, runs right after each fresh
         access token is minted for a user, receiving an app-internal
@@ -418,6 +483,13 @@ class OAuthServer:
         the redirect URIs whose clients the application already
         trusts; a client registering only such URIs skips the
         consent screen.
+
+        `authorize_resource` and `accepted_audiences` are
+        `OAuth(authorize_resource=...)` and
+        `OAuth(accepted_audiences=...)`: the decision on a request
+        for a token for another resource (RFC 8707), and the token
+        audiences, besides this server's own, that its verifiers
+        accept.
         """
         self._provider = provider
         self._protected_resources = protected_resources
@@ -436,7 +508,14 @@ class OAuthServer:
         # if `REBOOT_CRYPTO_ROOT_KEYS` is unset/malformed (fail fast at
         # construction rather than per-request).
         self._signing_secret = signing_secret()
-        self._token_verifier = OAuthTokenVerifier(self._signing_secret)
+        self._authorize_resource = authorize_resource
+        self._audiences = [_AUDIENCE] + [
+            audience for audience in (accepted_audiences or [])
+            if audience != _AUDIENCE
+        ]
+        self._token_verifier = OAuthTokenVerifier(
+            self._signing_secret, self._audiences
+        )
         # The consent page template, compiled lazily on first render so
         # only apps that actually serve an OAuth flow pay for it.
         self._consent_page_template: Optional[Template] = None
@@ -459,6 +538,11 @@ class OAuthServer:
         """
         return self._token_verifier
 
+    def is_access_token(self, token: str) -> bool:
+        """Whether `token` is a live access token this server minted
+        for itself (not one for another resource)."""
+        return self._verify_jwt(token, "access") is not None
+
     @property
     def mcp_sdk_token_verifier(self) -> MCPSDKOAuthTokenVerifier:
         """
@@ -467,7 +551,7 @@ class OAuthServer:
         For use with the SDK's `BearerAuthBackend` /
         `RequireAuthMiddleware`.
         """
-        return MCPSDKOAuthTokenVerifier(self._signing_secret)
+        return MCPSDKOAuthTokenVerifier(self._signing_secret, self._audiences)
 
     def mount_routes(self, http: PythonWebFramework.HTTP) -> None:
         """Register all OAuth endpoints on `http`."""
@@ -538,10 +622,17 @@ class OAuthServer:
         base: str,
         context: ExternalContext,
         claims: Optional[Mapping[str, Any]] = None,
+        resource: Optional[str] = None,
+        decision: Optional[Allow] = None,
     ) -> dict[str, Any]:
         """Mint a fresh access/refresh token pair for `user_id` and
         return the standard OAuth token response body (`access_token`,
-        `token_type`, `expires_in`, `refresh_token`).
+        `token_type`, `expires_in`, `refresh_token`). `resource` is the
+        RFC 8707 resource the grant was issued for, if any; the refresh
+        token records it so refreshed tokens are for the same one, and
+        `decision` is `authorize_resource`'s `Allow` for it, which sets
+        the access token's audience and may add claims; without a
+        decision (no hook configured) the token is for this server.
 
         Every JWT this server hands out is minted here: using a Reboot
         app always requires the user to authenticate, and this is the
@@ -563,12 +654,22 @@ class OAuthServer:
         `authenticated` runs is trusted app code rather than a call
         made as the (not-yet-existent) user.
         """
+        audience = _AUDIENCE
+        extra_claims: dict[str, Any] = {}
+        if resource is not None and decision is not None:
+            audience = decision.audience or resource
+            extra_claims = {
+                name: value
+                for name, value in decision.claims.items()
+                if name not in _RESERVED_ACCESS_TOKEN_CLAIMS
+            }
         access_token = self._make_jwt(
             {
+                **extra_claims,
                 "type": "access",
                 "sub": user_id,
                 "iss": base,
-                "aud": _AUDIENCE,
+                "aud": audience,
             },
             ttl_seconds=self._access_token_ttl_seconds,
         )
@@ -577,6 +678,9 @@ class OAuthServer:
                 "type": "refresh",
                 "sub": user_id,
                 "client_id": client_id,
+                **({
+                    "resource": resource
+                } if resource is not None else {}),
             },
             ttl_seconds=_REFRESH_TOKEN_TTL_SECONDS,
         )
@@ -587,12 +691,19 @@ class OAuthServer:
         # we propagate it.
         if self._authenticated is not None:
             await self._authenticated(context, user_id, claims)
-        return {
+        response = {
             "access_token": access_token,
             "token_type": "bearer",
             "expires_in": self._access_token_ttl_seconds,
             "refresh_token": refresh_token,
         }
+        if resource is not None and decision is not None:
+            # A token for another resource is opaque to the client
+            # that holds it, which cannot verify this server's
+            # signature; the response, which arrives over TLS from
+            # this server, tells it who signed in.
+            response["sub"] = user_id
+        return response
 
     def _set_session_cookies(
         self,
@@ -722,10 +833,13 @@ class OAuthServer:
         redirect_uri: str,
         code_challenge: str,
         state: str,
+        resource: Optional[str] = None,
     ) -> RedirectResponse:
         """Mint a short-lived authorization-code JWT for `user_id` and
         302 the client to `redirect_uri` carrying the `code` (plus the
-        client's opaque `state`, echoed verbatim per RFC 6749)."""
+        client's opaque `state`, echoed verbatim per RFC 6749). The
+        code records the `resource` it was issued for, if any, so the
+        token endpoint can hold the client to it."""
         auth_code = self._make_jwt(
             {
                 "type": "code",
@@ -733,6 +847,9 @@ class OAuthServer:
                 "client_id": client_id,
                 "redirect_uri": redirect_uri,
                 "code_challenge": code_challenge,
+                **({
+                    "resource": resource
+                } if resource is not None else {}),
             },
             ttl_seconds=_AUTH_CODE_TTL_SECONDS,
         )
@@ -756,7 +873,7 @@ class OAuthServer:
             # Access tokens have an `aud` claim; others don't.
             kwargs: dict[str, Any] = {}
             if "access" in expected_types:
-                kwargs["audience"] = _AUDIENCE
+                kwargs["audience"] = self._audiences
             else:
                 kwargs["options"] = {"verify_aud": False}
 
@@ -864,6 +981,7 @@ class OAuthServer:
         code_challenge: str,
         code_challenge_method: str,
         mcp_state: str,
+        resource: Optional[str] = None,
     ) -> RedirectResponse:
         """Mint the `pending` state JWT and redirect the user to the
         identity provider to sign in. Reached only after the user
@@ -893,6 +1011,9 @@ class OAuthServer:
                 "code_challenge": code_challenge,
                 "code_challenge_method": code_challenge_method,
                 "mcp_state": mcp_state,
+                **({
+                    "resource": resource
+                } if resource is not None else {}),
             },
             ttl_seconds=_PENDING_STATE_TTL_SECONDS,
         )
@@ -905,6 +1026,33 @@ class OAuthServer:
             redirect_uri=callback_uri,
         )
         return RedirectResponse(url=idp_url, status_code=302)
+
+    async def _decide_resource(
+        self,
+        request: Request,
+        *,
+        user_id: UserId,
+        resource: Optional[str],
+        client_id: str,
+        redirect_uri: str,
+    ) -> Optional[ResourceDecision]:
+        """Whether `user_id` may have a token for `resource`: `None`
+        when none was requested or no `authorize_resource` is
+        configured (the token is then for this server, as always),
+        else whatever the hook decides. Runs where the request's
+        context is app-internal (the callback, the token endpoint),
+        so the hook can read the application's state."""
+        if resource is None or self._authorize_resource is None:
+            return None
+        return await self._authorize_resource(
+            external_context(request),
+            ResourceRequest(
+                resource=resource,
+                user_id=user_id,
+                client_id=client_id,
+                redirect_uri=redirect_uri,
+            ),
+        )
 
     async def _store_oauth_tokens(
         self,
@@ -1187,22 +1335,44 @@ class OAuthServer:
 
         mcp_state = params.get("state", "")
 
-        # Two kinds of client skip the consent screen, both of them the
-        # application's own. The browser client minted by
-        # `/__/oauth/start` is server-minted with a fixed, same-origin
-        # `redirect_uri`. A native client is one whose every registered
-        # redirect URI the application claimed via
-        # `OAuth(skip_consent_for_redirect_uris=...)`, checked at
-        # registration and carried in the signed `client_id`. Either
-        # way the authorization code can only land somewhere the
-        # application already trusts, so the confused-deputy attack the
-        # consent screen guards against — an attacker registering a
-        # client with their own `redirect_uri` — can't arise. Go
-        # straight to the browser-flow behavior: reuse an existing
-        # session if there is one, otherwise sign in at the IdP.
+        # RFC 8707: the resource the client wants the token for. Rides
+        # through the consent, pending, code and refresh tokens so the
+        # token endpoint knows what the code was issued for.
+        try:
+            resource = _parse_resource(
+                params.getlist("resource"),
+                own_origin=origin_from_request(request),
+            )
+        except ValueError as e:
+            return _oauth_error(
+                error="invalid_target",
+                description=str(e),
+                status_code=400,
+            )
+
+        # Three kinds of request skip the consent screen. The browser
+        # client minted by `/__/oauth/start` is server-minted with a
+        # fixed, same-origin `redirect_uri`. A native client is one
+        # whose every registered redirect URI the application claimed
+        # via `OAuth(skip_consent_for_redirect_uris=...)`, checked at
+        # registration and carried in the signed `client_id`. And a
+        # request for a token for another resource (RFC 8707) whose
+        # code goes to that resource's own origin. In each case the
+        # authorization code can only land somewhere the token it buys
+        # is meant for, so the confused-deputy attack the consent
+        # screen guards against — an attacker registering a client
+        # with their own `redirect_uri` — can't arise. Go straight to
+        # the browser-flow behavior: reuse an existing session if there
+        # is one, otherwise sign in at the IdP.
         if (
             client_data.get("type") == _BROWSER_CLIENT_TYPE or
-            client_data.get("first_party") is True
+            client_data.get("first_party") is True or (
+                resource is not None and skips_consent(
+                    redirect_uri,
+                    skip_consent_for_redirect_uris=[],
+                    resource=resource,
+                )
+            )
         ):
             existing_user_id = self._verify_session_cookie(request)
             if existing_user_id is not None:
@@ -1212,6 +1382,7 @@ class OAuthServer:
                     redirect_uri=redirect_uri,
                     code_challenge=str(code_challenge),
                     state=mcp_state,
+                    resource=resource,
                 )
             return self._redirect_to_idp(
                 request=request,
@@ -1220,6 +1391,7 @@ class OAuthServer:
                 code_challenge=code_challenge,
                 code_challenge_method=code_challenge_method,
                 mcp_state=mcp_state,
+                resource=resource,
             )
 
         # Don't redirect to the identity provider yet: show a consent
@@ -1247,6 +1419,9 @@ class OAuthServer:
                 "code_challenge_method": code_challenge_method,
                 "mcp_state": mcp_state,
                 "nonce": nonce,
+                **({
+                    "resource": resource
+                } if resource is not None else {}),
             },
             ttl_seconds=_PENDING_STATE_TTL_SECONDS,
         )
@@ -1363,6 +1538,7 @@ class OAuthServer:
 
         redirect_uri = consent_data["redirect_uri"]
         mcp_state = consent_data.get("mcp_state", "")
+        resource = consent_data.get("resource")
 
         if form.get("action") != "approve":
             # Anything that isn't an explicit approval — the "Cancel"
@@ -1392,6 +1568,7 @@ class OAuthServer:
                 redirect_uri=redirect_uri,
                 code_challenge=str(consent_data["code_challenge"]),
                 state=mcp_state,
+                resource=resource,
             )
             sso.delete_cookie(_CONSENT_CSRF_COOKIE, path=_CONSENT_PATH)
             return sso
@@ -1403,6 +1580,7 @@ class OAuthServer:
             code_challenge=consent_data["code_challenge"],
             code_challenge_method=consent_data["code_challenge_method"],
             mcp_state=mcp_state,
+            resource=resource,
         )
         response.delete_cookie(_CONSENT_CSRF_COOKIE, path=_CONSENT_PATH)
         return response
@@ -1499,6 +1677,30 @@ class OAuthServer:
 
         user_id = result.user_id
 
+        # A request for a token for another resource is decided now,
+        # the first moment the user is known, so that someone it
+        # refuses never gets a code. The token endpoint decides again
+        # when the code is exchanged.
+        decision = await self._decide_resource(
+            request,
+            user_id=user_id,
+            resource=pending.get("resource"),
+            client_id=str(pending["client_id"]),
+            redirect_uri=str(pending["redirect_uri"]),
+        )
+        if isinstance(decision, Deny):
+            query = urlencode(
+                {
+                    "error": "access_denied",
+                    "error_description": decision.reason,
+                    "state": pending.get("mcp_state", ""),
+                }
+            )
+            return RedirectResponse(
+                url=f"{pending['redirect_uri']}?{query}",
+                status_code=302,
+            )
+
         # If the provider captured the identity provider's tokens
         # (`store_tokens=True`), persist them, encrypted, so the app can
         # use them to call the provider's API.
@@ -1511,6 +1713,7 @@ class OAuthServer:
             redirect_uri=str(pending["redirect_uri"]),
             code_challenge=str(pending["code_challenge"]),
             state=pending.get("mcp_state", ""),
+            resource=pending.get("resource"),
         )
         # MCP→web SSO: also set the browser session cookies on the
         # callback response. The callback is reached via a top-level
@@ -1631,13 +1834,69 @@ class OAuthServer:
         user_id: UserId = UserId(code_data["sub"])
         base = origin_from_request(request)
 
+        resource = code_data.get("resource")
+        mismatch = self._resource_mismatch(form, resource, own_origin=base)
+        if mismatch is not None:
+            return mismatch
+        decision = await self._decide_resource(
+            request,
+            user_id=user_id,
+            resource=resource,
+            client_id=str(client_id),
+            redirect_uri=str(redirect_uri),
+        )
+        if isinstance(decision, Deny):
+            return self._denied_resource(decision)
+
         tokens = await self._mint_tokens_for_user(
             user_id=user_id,
             client_id=str(client_id),
             base=base,
             context=external_context(request),
+            resource=resource,
+            decision=decision,
         )
         return JSONResponse(tokens, headers=_CORS_HEADERS)
+
+    def _denied_resource(self, decision: Deny) -> JSONResponse:
+        """The token endpoint's answer when `authorize_resource`
+        refuses the grant's resource (RFC 8707 2.2)."""
+        return _oauth_error(
+            error="invalid_target",
+            description=decision.reason,
+            status_code=400,
+        )
+
+    def _resource_mismatch(
+        self,
+        form: Any,
+        resource: Optional[str],
+        *,
+        own_origin: str,
+    ) -> Optional[JSONResponse]:
+        """An `invalid_target` error when the `resource` a token
+        request names differs from `resource`, the one its code or
+        refresh token was issued for (RFC 8707 2.2); `None` when they
+        agree or the request names none, which keeps the issued one."""
+        try:
+            requested = _parse_resource(
+                [str(value) for value in form.getlist("resource")],
+                own_origin=own_origin,
+            )
+        except ValueError as e:
+            return _oauth_error(
+                error="invalid_target",
+                description=str(e),
+                status_code=400,
+            )
+        if requested is not None and requested != resource:
+            return _oauth_error(
+                error="invalid_target",
+                description="The 'resource' does not match the one this "
+                "grant was issued for.",
+                status_code=400,
+            )
+        return None
 
     async def _token_refresh(
         self,
@@ -1682,12 +1941,31 @@ class OAuthServer:
         user_id: UserId = UserId(refresh_data["sub"])
         base = origin_from_request(request)
 
+        resource = refresh_data.get("resource")
+        mismatch = self._resource_mismatch(form, resource, own_origin=base)
+        if mismatch is not None:
+            return mismatch
+        # Decided again on every refresh, so a decision can be
+        # withdrawn; the refresh token does not say where the code
+        # went, and the hook gets the client instead.
+        decision = await self._decide_resource(
+            request,
+            user_id=user_id,
+            resource=resource,
+            client_id=str(client_id),
+            redirect_uri="",
+        )
+        if isinstance(decision, Deny):
+            return self._denied_resource(decision)
+
         return JSONResponse(
             await self._mint_tokens_for_user(
                 user_id=user_id,
                 client_id=str(client_id),
                 base=base,
                 context=external_context(request),
+                resource=resource,
+                decision=decision,
             ),
             headers=_CORS_HEADERS,
         )

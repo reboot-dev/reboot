@@ -23,7 +23,7 @@ more than the command itself.
 | `rbt task list` / `rbt task cancel` | List and cancel an application's [tasks](/tasks). |
 | `rbt export` / `rbt import` | Export application data to, or import it from, JSON-lines files. |
 | `rbt serve run` | Run your application in production on [your own infrastructure](/deploy_on_your_own). |
-| `rbt login` / `rbt logout` | Sign in to, or out of, [Reboot Cloud](/deploy_on_reboot_cloud#sign-in), for the `rbt cloud` commands. |
+| `rbt login` / `rbt logout` | Sign in to, or out of, [Reboot Cloud](/deploy_on_reboot_cloud#sign-in), for the `rbt cloud` commands and [`rbt dev run --access=user`](/users/access). |
 | `rbt cloud up` / `rbt cloud down` | Deploy to, or terminate on, [Reboot Cloud](/deploy_on_reboot_cloud). |
 | `rbt cloud logs` | Stream a deployed application's logs. |
 | `rbt cloud secret set` / `list` / `delete` | Manage a deployed application's [secrets](/secrets). |

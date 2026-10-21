@@ -1,10 +1,52 @@
 """How an application signs its users in."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from reboot.aio.auth.oauth_providers import OAuthProviderSelector
 from reboot.aio.auth.redirect_uris import validate_redirect_uris
-from typing import Optional, Sequence
+from reboot.aio.external import ExternalContext
+from typing import Any, Awaitable, Callable, Mapping, Optional, Sequence
 from urllib.parse import urlparse
+
+
+@dataclass(frozen=True)
+class ResourceRequest:
+    """A client's request, on behalf of a signed-in user, for a token
+    for a protected resource other than this application (RFC 8707
+    `resource`), as handed to `OAuth.authorize_resource`."""
+    # The requested resource, an absolute `http(s)` URI, normalized.
+    resource: str
+    # The user who signed in.
+    user_id: str
+    # The client asking, as its (opaque) `client_id`.
+    client_id: str
+    # Where the client receives its authorization code.
+    redirect_uri: str
+
+
+@dataclass(frozen=True)
+class Allow:
+    """Grant the token. `audience` is the token's `aud` claim and
+    defaults to the resource itself, so the token is good for that
+    place and nowhere else; `claims` are extra claims to put in the
+    access token (reserved claims cannot be overridden)."""
+    audience: Optional[str] = None
+    claims: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class Deny:
+    """Refuse the token. `reason` is shown to the person signing in,
+    and sent to the client as the error description."""
+    reason: str
+
+
+ResourceDecision = Allow | Deny
+
+# Decides whether a signed-in user may have a token for a resource
+# other than this application, given an app-internal `ExternalContext`
+# and the request; see `OAuth.authorize_resource`.
+AuthorizeResource = Callable[[ExternalContext, ResourceRequest],
+                             Awaitable[ResourceDecision]]
 
 
 @dataclass(frozen=True)
@@ -63,6 +105,28 @@ class OAuth:
           sign-in. The default-`None` case almost always means "the
           developer forgot", and we'd rather raise loudly than
           silently CORS-block every sign-in attempt in production.
+    :param authorize_resource: decides whether a signed-in user may
+        have a token for a protected resource other than this
+        application, when a client asks for one with RFC 8707's
+        `resource` parameter. Called with an app-internal
+        `ExternalContext` and a `ResourceRequest` at the moment both
+        the user and the resource are known: after the identity
+        provider has signed the user in, again when the code is
+        exchanged, and on every refresh, so a decision can be
+        withdrawn. Returns `Allow` (the token's `aud` becomes the
+        resource, or `Allow.audience`) or `Deny`. Without one, a
+        foreign `resource` is ignored and the token is for this
+        application, as before. A `resource` on this application's
+        own origin, which is what MCP clients send, never reaches
+        the hook: it is the default.
+    :param accepted_audiences: the token audiences, besides this
+        application's own, that authenticate Reboot calls and `/mcp`.
+        A token whose `aud` is a resource granted by
+        `authorize_resource` is otherwise good only at that
+        resource: this application rejects it, which is the point of
+        binding a token to a place. List a resource here when it is
+        one of this application's own places (an API host of its
+        own, say) rather than somewhere else.
     :param skip_consent_for_redirect_uris: exact-match list of the
         redirect URIs whose clients sign a user in directly, with no
         consent screen — the same treatment the browser SPA gets.
@@ -108,6 +172,8 @@ class OAuth:
     provider: OAuthProviderSelector
     allowed_origins: Optional[Sequence[str]] = None
     skip_consent_for_redirect_uris: Sequence[str] = ()
+    authorize_resource: Optional[AuthorizeResource] = None
+    accepted_audiences: Sequence[str] = ()
 
     def __post_init__(self) -> None:
         # Copy both sequences into tuples so that `frozen=True` means
@@ -125,6 +191,17 @@ class OAuth:
             "skip_consent_for_redirect_uris",
             tuple(self.skip_consent_for_redirect_uris),
         )
+        object.__setattr__(
+            self,
+            "accepted_audiences",
+            tuple(self.accepted_audiences),
+        )
+        for audience in self.accepted_audiences:
+            if not isinstance(audience, str) or not audience:
+                raise ValueError(
+                    "`accepted_audiences` must be a list of non-empty "
+                    f"strings; got {audience!r}"
+                )
         # Light validation: surface obvious typos at construction
         # rather than waiting for a browser to silently fail a CORS
         # preflight at runtime.

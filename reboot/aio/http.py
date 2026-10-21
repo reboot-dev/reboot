@@ -8,6 +8,10 @@ from envoy.config.route.v3 import route_components_pb2
 from envoy.type.matcher.v3 import regex_pb2
 from fastapi import Depends, FastAPI  # type: ignore[import]
 from pathlib import Path
+from reboot.aio.auth.access import CALLBACK_PATH as ACCESS_CALLBACK_PATH
+from reboot.aio.auth.access import SIGNOUT_PATH as ACCESS_SIGNOUT_PATH
+from reboot.aio.auth.access import Access
+from reboot.aio.auth.origin import origin_from_request
 from reboot.aio.caller_id import CallerID
 from reboot.aio.exceptions import InputError
 from reboot.aio.external import ExternalContext
@@ -159,24 +163,6 @@ def _route_match(
     return route_components_pb2.RouteMatch(
         safe_regex=regex_pb2.RegexMatcher(regex=_route_regex(api_route.path)),
     )
-
-
-def origin_from_request(request: Request) -> str:
-    """
-    Derive the server's origin (`scheme://host`) from request headers.
-
-    Respects `X-Forwarded-Proto` and `X-Forwarded-Host` when behind a
-    reverse proxy.
-    """
-    scheme = request.headers.get(
-        "x-forwarded-proto",
-        request.url.scheme,
-    )
-    host = request.headers.get(
-        "x-forwarded-host",
-        request.headers.get("host", "localhost"),
-    )
-    return f"{scheme}://{host}"
 
 
 class _MountRoot:
@@ -437,6 +423,10 @@ class PythonWebFramework(WebFramework):
 
     def __init__(self):
         self._http = PythonWebFramework.HTTP()
+        # The access policy in front of every route, if the application
+        # has one; its routes are below, among Reboot's own, and answer
+        # 404 without it.
+        self.access: Optional[Access] = None
         # Reboot's own routes: the root page's assets and the install
         # wizard's probe. Not in `self._http`, so that they don't count
         # as the application's (see `has_http_routes_or_mounts`), but
@@ -453,6 +443,16 @@ class PythonWebFramework(WebFramework):
                 endpoint=probe,
                 kwargs=dict(methods=["GET"], include_in_schema=False),
             ),
+            PythonWebFramework.APIRoute(
+                path=ACCESS_CALLBACK_PATH,
+                endpoint=self._access_callback,
+                kwargs=dict(methods=["GET"], include_in_schema=False),
+            ),
+            PythonWebFramework.APIRoute(
+                path=ACCESS_SIGNOUT_PATH,
+                endpoint=self._access_signout,
+                kwargs=dict(methods=["GET"], include_in_schema=False),
+            ),
         ]
 
         self._servers: dict[
@@ -463,6 +463,16 @@ class PythonWebFramework(WebFramework):
     @property
     def http(self) -> HTTP:
         return self._http
+
+    async def _access_callback(self, request: Request) -> Response:
+        if self.access is None:
+            raise HTTPException(status_code=404)
+        return await self.access.callback(request)
+
+    async def _access_signout(self, request: Request) -> Response:
+        if self.access is None:
+            raise HTTPException(status_code=404)
+        return await self.access.signout(request)
 
     async def start(
         self,
@@ -571,6 +581,11 @@ class PythonWebFramework(WebFramework):
                     headers={"WWW-Authenticate": challenge},
                 )
             return await call_next(request)
+
+        if self.access is not None:
+            # Registered last, so that it runs first: in front of every
+            # route and mount, and of the other middleware.
+            fastapi.middleware("http")(self.access.middleware)
 
         # Reboot's own routes first, so that a catch-all mount can't
         # swallow them.
