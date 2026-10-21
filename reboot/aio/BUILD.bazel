@@ -194,6 +194,7 @@ py_library(
         ":headers_py",
         ":types_py",
         "//reboot/aio/backoff:python",
+        "//reboot/grpc:options_py",
         "//reboot/ssl:localhost_py",
     ],
 )

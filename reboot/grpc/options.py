@@ -1,5 +1,54 @@
+import ipaddress
 import json
+import urllib.parse
 from typing import Any, Optional, Tuple
+
+# gRPC sends a channel's connection through the proxy named by the
+# `grpc_proxy`, `https_proxy` or `http_proxy` environment variable,
+# unless `no_grpc_proxy` or `no_proxy` names the channel's target. A
+# channel from Reboot to one of its own processes (the placement
+# planner, the database, a server, the local Envoy) must never take
+# that detour: such a proxy does not answer for a loopback or
+# in-cluster address, so the channel waits for it forever. Shells
+# behind a corporate proxy, and sandboxes that route all egress
+# through a local one, set those variables without a `no_proxy`.
+# See https://github.com/reboot-dev/reboot/issues/288.
+NO_HTTP_PROXY_OPTIONS: list[tuple[str, Any]] = [
+    ('grpc.enable_http_proxy', 0),
+]
+
+
+def is_loopback_target(target: str) -> bool:
+    """Whether the gRPC `target`, a `host:port` optionally prefixed by
+    `http://`, `https://` or `dns:///`, names this machine."""
+    target = target.removeprefix('dns:///')
+    if '://' not in target:
+        target = '//' + target
+    try:
+        host = urllib.parse.urlsplit(target).hostname
+    except ValueError:
+        return False
+    if host is None:
+        return False
+    if (
+        host == 'localhost' or host.endswith('.localhost') or
+        # `localhost.direct` and its subdomains resolve to 127.0.0.1;
+        # `rbt dev` serves TLS on `dev.localhost.direct`.
+        host == 'localhost.direct' or host.endswith('.localhost.direct')
+    ):
+        return True
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return address.is_loopback or address.is_unspecified
+
+
+def http_proxy_options(target: str) -> list[tuple[str, Any]]:
+    """Channel options for a channel to `target`, which may be outside
+    Reboot: it honors the proxy environment variables unless `target` is
+    on this machine, where no proxy can help."""
+    return NO_HTTP_PROXY_OPTIONS if is_loopback_target(target) else []
 
 
 def make_channel_options(

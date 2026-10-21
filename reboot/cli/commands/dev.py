@@ -63,6 +63,7 @@ from reboot.cli.common.type_check import (
 )
 from reboot.cli.common.watch import FileWatcher, file_watcher
 from reboot.controller.plan_makers import validate_num_servers
+from reboot.grpc.options import NO_HTTP_PROXY_OPTIONS
 from reboot.server.local_envoy_factory import LocalEnvoyFactory
 from reboot.settings import (
     DEFAULT_SECURE_PORT,
@@ -711,15 +712,21 @@ async def _check_local_envoy_status(
         address: str,
         root_certificate: Optional[bytes],
     ):
+        # The application is always on this machine, even when `host`
+        # is a certificate's domain, so never dial it through a proxy.
         if root_certificate is not None:
             return grpc.aio.secure_channel(
                 address,
                 grpc.ssl_channel_credentials(
                     root_certificates=root_certificate,
                 ),
+                options=NO_HTTP_PROXY_OPTIONS,
             )
         else:
-            return grpc.aio.insecure_channel(address)
+            return grpc.aio.insecure_channel(
+                address,
+                options=NO_HTTP_PROXY_OPTIONS,
+            )
 
     was_application_serving = False
 

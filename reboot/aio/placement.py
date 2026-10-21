@@ -18,7 +18,10 @@ from reboot.aio.types import (
     StateRef,
     StateTypeName,
 )
-from reboot.grpc.options import make_retry_channel_options
+from reboot.grpc.options import (
+    NO_HTTP_PROXY_OPTIONS,
+    make_retry_channel_options,
+)
 from typing import Iterable, Optional
 
 logger = get_logger(__name__)
@@ -420,7 +423,7 @@ class PlanOnlyPlacementClient(PlacementClient):
         """
         async with grpc.aio.insecure_channel(
             self._placement_planner_address,
-            options=make_retry_channel_options()
+            options=make_retry_channel_options() + NO_HTTP_PROXY_OPTIONS,
         ) as channel:
             stub = placement_planner_pb2_grpc.PlacementPlannerStub(channel)
             request = placement_planner_pb2.ListenForPlanRequest()

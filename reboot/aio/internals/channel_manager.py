@@ -20,6 +20,7 @@ from reboot.aio.types import (
     StateRef,
     StateTypeName,
 )
+from reboot.grpc.options import NO_HTTP_PROXY_OPTIONS, http_proxy_options
 from reboot.settings import GRPC_CLIENT_OPTIONS
 from reboot.ssl.localhost import LOCALHOST_CRT_DATA, is_localhost
 from typing import Optional
@@ -36,13 +37,24 @@ class _ChannelManager:
     """
     _resolver: ActorResolver
 
-    def __init__(self, resolver: ActorResolver, secure: bool):
+    def __init__(
+        self,
+        resolver: ActorResolver,
+        secure: bool,
+        *,
+        external: bool = False,
+    ):
         """
             resolver: gives addresses for each service/actor.
             secure: whether to use SSL when constructing channels.
+            external: whether the addresses may be outside Reboot's own
+                processes, as for an `ExternalContext` given a URL. Such
+                channels honor the proxy environment variables unless
+                their target is on this machine; all others ignore them.
         """
         self._resolver = resolver
         self._secure = secure
+        self._external = external
 
         self._channels_by_address: dict[RoutableAddress, grpc.aio.Channel] = {}
 
@@ -116,11 +128,15 @@ class _ChannelManager:
         """
         Creates a channel for the given address.
         """
+        options = GRPC_CLIENT_OPTIONS + (
+            http_proxy_options(address)
+            if self._external else NO_HTTP_PROXY_OPTIONS
+        )
         result: Optional[grpc.aio.Channel] = None
         if self._secure:
             result = grpc.aio.secure_channel(
                 target=address,
-                options=GRPC_CLIENT_OPTIONS,
+                options=options,
                 credentials=grpc.ssl_channel_credentials(
                     root_certificates=LOCALHOST_CRT_DATA
                     if is_localhost(address) else None,
@@ -130,7 +146,7 @@ class _ChannelManager:
         else:
             result = grpc.aio.insecure_channel(
                 target=address,
-                options=GRPC_CLIENT_OPTIONS,
+                options=options,
                 interceptors=aio_client_interceptors(),
             )
 
