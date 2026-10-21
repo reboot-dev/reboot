@@ -509,6 +509,14 @@ RUN if [ "${TARGETARCH}" = "amd64" ]; then \
     && DEBIAN_FRONTEND=noninteractive apt-get install -qqy google-chrome-stable; \
     fi
 
+# Install the shared libraries that Playwright's Chromium needs, on every
+# architecture: the browser scenarios of `reboot.bdd` (e.g. the bank
+# example's) download it with `playwright install chromium`, which does not
+# install these, and Chrome above brings them along on amd64 only. Playwright
+# itself knows the list for this distribution, so have it install them.
+RUN npx --yes playwright install-deps chromium \
+    && rm -rf /var/lib/apt/lists/* /root/.npm
+
 # Install the AWS command line tool. AWS apparently does not provide different
 # packages for their specific CLI versions, but they guarantee backwards
 # compatibility throughout the major version:
