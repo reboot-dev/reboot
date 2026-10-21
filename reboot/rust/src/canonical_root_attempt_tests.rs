@@ -328,6 +328,86 @@ mod canonical_root_attempt_tests {
     }
 
     #[tokio::test]
+    async fn startup_claim_blocks_empty_membership_reentry_without_replacement_or_write() {
+        for retired in [false, true] {
+            let memory = Arc::new(Memory::default());
+            let factory = Factory(std::sync::atomic::AtomicUsize::new(0));
+            let mut first = start(headers(), &memory, &factory).await.unwrap();
+            bind(&mut first);
+            first
+                .install_canonical_root_attempt(memory.clone(), &[])
+                .await
+                .unwrap();
+            {
+                let mut rows = memory.rows.lock().unwrap();
+                let mut record =
+                    CanonicalRootAttemptRecord::decode(rows[0].response.as_slice()).unwrap();
+                assert_eq!(
+                    record.receipt_key,
+                    headers().idempotency_key.unwrap().as_bytes()
+                );
+                record.recovery_claimed = true;
+                record.recovery_retired = retired;
+                rows[0].response = record.encode_to_vec();
+            }
+            let original = memory.rows.lock().unwrap().clone();
+            let writes = memory.writes.load(std::sync::atomic::Ordering::SeqCst);
+            let mut recovered = start(headers(), &memory, &factory).await.unwrap();
+            assert_eq!(first.transaction_root_id(), recovered.transaction_root_id());
+            bind(&mut recovered);
+            assert!(
+                recovered
+                    .install_canonical_root_attempt(memory.clone(), &[])
+                    .await
+                    .unwrap_err()
+                    .message()
+                    .contains("owned by startup recovery")
+            );
+            assert_eq!(*memory.rows.lock().unwrap(), original);
+            assert_eq!(
+                memory.writes.load(std::sync::atomic::Ordering::SeqCst),
+                writes
+            );
+            assert_eq!(factory.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn startup_receipt_key_and_retirement_without_claim_fail_closed() {
+        for wrong_key in [false, true] {
+            let memory = Arc::new(Memory::default());
+            let factory = Factory(std::sync::atomic::AtomicUsize::new(0));
+            let mut context = start(headers(), &memory, &factory).await.unwrap();
+            bind(&mut context);
+            context
+                .install_canonical_root_attempt(memory.clone(), &[])
+                .await
+                .unwrap();
+            {
+                let mut rows = memory.rows.lock().unwrap();
+                let mut record =
+                    CanonicalRootAttemptRecord::decode(rows[0].response.as_slice()).unwrap();
+                if wrong_key {
+                    record.receipt_key = Uuid::new_v4().as_bytes().to_vec();
+                } else {
+                    record.recovery_retired = true;
+                }
+                rows[0].response = record.encode_to_vec();
+            }
+            let original = memory.rows.lock().unwrap().clone();
+            assert_eq!(
+                start(headers(), &memory, &factory)
+                    .await
+                    .unwrap_err()
+                    .code(),
+                tonic::Code::DataLoss
+            );
+            assert_eq!(*memory.rows.lock().unwrap(), original);
+            assert_eq!(factory.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+        }
+    }
+
+    #[tokio::test]
     async fn duplicate_remote_intent_and_duplicate_rows_fail_closed() {
         let memory = Arc::new(Memory::default());
         let factory = Factory(std::sync::atomic::AtomicUsize::new(0));

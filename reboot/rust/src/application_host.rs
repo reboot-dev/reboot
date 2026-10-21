@@ -570,6 +570,7 @@ where
     coordinator: DurableRootCoordinator<C, R>,
     metadata: LegacyRecoveryMetadata,
     watch: Arc<W>,
+    canonical_root_attempt_recovery: bool,
 }
 
 impl<P, C, R, W> LegacyDurableRecovery<P, C, R, W>
@@ -596,7 +597,16 @@ where
             coordinator,
             metadata,
             watch,
+            canonical_root_attempt_recovery: false,
         })
+    }
+
+    /// Opt in to original-identity canonical intent ownership after native
+    /// recovery. Unknown authority stays Pending under original actor admission;
+    /// native Abort retires persisted remote members, never the source Task.
+    pub fn with_canonical_root_attempt_recovery(mut self) -> Self {
+        self.canonical_root_attempt_recovery = true;
+        self
     }
 
     /// Add an exact host-injected participant to the restoration barrier.
@@ -634,9 +644,18 @@ where
 {
     async fn start(
         &self,
-        _supervisor: &mut JoinSet<Result<(), tonic::Status>>,
+        supervisor: &mut JoinSet<Result<(), tonic::Status>>,
         cancel: RecoveryCancellation,
     ) -> Result<(), tonic::Status> {
+        if self.canonical_root_attempt_recovery
+            && (self.participant.actor_target().state_ref
+                != self.metadata.coordinator.coordinator_state_ref
+                || !self.additional_participants.is_empty())
+        {
+            return Err(tonic::Status::failed_precondition(
+                "canonical startup requires the exact single original root participant",
+            ));
+        }
         // Validate/bind the complete participant graph BEFORE any Recover IO:
         // restored durable Pending cannot safely be adopted after publication.
         if let Some(binding) = ParticipantCleanupBinding::current() {
@@ -714,6 +733,15 @@ where
             Ok::<(), tonic::Status>(())
         };
         tokio::try_join!(coordinator_recovery, participant_watches)?;
+        if self.canonical_root_attempt_recovery {
+            crate::runtime::start_canonical_root_recovery(
+                &self.participant,
+                &self.coordinator,
+                supervisor,
+                cancel,
+            )
+            .await?;
+        }
         Ok(())
     }
 }
@@ -1103,7 +1131,10 @@ impl ApplicationHost {
         O: Send + Sync + 'static,
     {
         self.local_registry.late_service_family(
-            fixed, capacity, self.participant_cleanup.clone(), factory,
+            fixed,
+            capacity,
+            self.participant_cleanup.clone(),
+            factory,
         )
     }
     #[doc(hidden)]

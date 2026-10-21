@@ -6,7 +6,7 @@ member=f.message_type.add(name='Member')
 for name,number in [('state_type',1),('state_ref',2),('method',3)]:
     member.field.add(name=name,number=number,type=9,label=1)
 record=f.message_type.add(name='Record')
-for name,number,kind,label in [('root',1,12,1),('workflow',2,12,1),('iteration',3,3,1),('members',4,11,3),('errors',5,9,3)]:
+for name,number,kind,label in [('root',1,12,1),('workflow',2,12,1),('iteration',3,3,1),('members',4,11,3),('errors',5,9,3),('zero_timestamp_verified',6,8,1),('receipt_key',7,12,1),('recovery_claimed',8,8,1),('recovery_retired',9,8,1)]:
     field=record.field.add(name=name,number=number,type=kind,label=label)
     if name=='members':field.type_name='.inspection.Member'
 pool=descriptor_pool.DescriptorPool();pool.Add(f)
@@ -23,4 +23,4 @@ def inspect(snapshot, db, task):
     members=[dict(state_type=m.state_type,state_ref=m.state_ref,method=m.method) for m in record.members]
     assert members==sorted(members,key=lambda m:(m['state_type'],m['state_ref'],m['method']))
     assert len({tuple(m.values()) for m in members})==len(members)
-    return dict(root=str(uuid.UUID(bytes=record.root)),workflow=record.workflow.hex(),members=members,errors=list(record.errors),mutation=row.SerializeToString().hex())
+    return dict(root=str(uuid.UUID(bytes=record.root)),workflow=record.workflow.hex(),members=members,errors=list(record.errors),zero_timestamp_verified=record.zero_timestamp_verified,receipt_key=record.receipt_key.hex(),recovery_claimed=record.recovery_claimed,recovery_retired=record.recovery_retired,mutation=row.SerializeToString().hex())

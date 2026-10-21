@@ -103,6 +103,7 @@ pub struct TransactionIdempotency {
 include!("declared_transaction_store.rs");
 include!("declared_transaction_tests.rs");
 include!("canonical_root_attempt.rs");
+include!("canonical_root_startup_recovery.rs");
 include!("canonical_root_attempt_tests.rs");
 
 impl TransactionIdempotency {

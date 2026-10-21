@@ -16,6 +16,14 @@ struct CanonicalRootAttemptRecord {
     // Legacy records did not bind a timestamp and cannot safely be recovered.
     #[prost(bool, tag = "6")]
     zero_timestamp_verified: bool,
+    // Startup recovery must reconstruct and validate the domain-separated key.
+    #[prost(bytes = "vec", tag = "7")]
+    receipt_key: Vec<u8>,
+    // Recovery intent is never a Task result or native terminal decision.
+    #[prost(bool, tag = "8")]
+    recovery_claimed: bool,
+    #[prost(bool, tag = "9")]
+    recovery_retired: bool,
 }
 #[derive(Clone, PartialEq, prost::Message)]
 struct CanonicalRootAttemptMember {
@@ -91,7 +99,14 @@ async fn load_root_attempt(
         }
         let root = Uuid::from_slice(&record.root)
             .map_err(|_| Status::data_loss("malformed original root UUID"))?;
-        if root.is_nil()
+        if (!record.receipt_key.is_empty()
+            && record.receipt_key
+                != headers
+                    .idempotency_key
+                    .map(|id| id.as_bytes().to_vec())
+                    .unwrap_or_default())
+            || (record.recovery_retired && !record.recovery_claimed)
+            || root.is_nil()
             || record.workflow
                 != headers
                     .workflow_id
@@ -263,6 +278,11 @@ impl TransactionContext {
                         "original canonical root binding changed during admission",
                     ));
                 }
+                if record.recovery_claimed {
+                    return Err(Status::unavailable(
+                        "original canonical root is owned by startup recovery",
+                    ));
+                }
                 if !record.members.is_empty() {
                     // Intent is not Commit/Abort or an acknowledged response.
                     // Recovery needs an outcome bridge before reexecution is safe.
@@ -283,6 +303,9 @@ impl TransactionContext {
                 members: vec![],
                 errors: schema,
                 zero_timestamp_verified: true,
+                receipt_key: receipt.key().as_bytes().to_vec(),
+                recovery_claimed: false,
+                recovery_retired: false,
             },
         };
         let journal = Arc::new(CanonicalRootAttemptJournal {

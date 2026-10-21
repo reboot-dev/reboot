@@ -84,6 +84,15 @@ outcome_deadline = time.monotonic() + 20
 while not pre.exists() and t.poll() is None and time.monotonic() < outcome_deadline:
     time.sleep(.02)
 recovered = authority_readback(original_root)
+if requested_case == 'startup-authority-abort':
+    until((work/'startup-retired').exists, t)
+    recovered = authority_readback(original_root)
+    startup_intent = inspect_root_intent(recovered['state'], db, task)
+    rec.setdefault('startup_retirement', []).append(dict(intent=startup_intent, readback=recovered,
+        owned=(work/'startup-owned').read_text(), retired=(work/'startup-retired').read_text())); save()
+    assert startup_intent['root'] == original_root == (work/'startup-owned').read_text() == (work/'startup-retired').read_text()
+    assert startup_intent['zero_timestamp_verified'] and startup_intent['recovery_claimed'] and startup_intent['recovery_retired'], 'startup did not persist acknowledged original-membership retirement'
+    assert len(startup_intent['members']) == 1 and startup_intent['members'][0]['state_ref'] == leaf
 rec.setdefault('authority_attempts', []).append(dict(case=case, phase='restarted-terminal-recovery', readback=recovered,
     denied_decisions=(dbfault/'denied-decisions.jsonl').read_text() if (dbfault/'denied-decisions.jsonl').exists() else '')); save()
 # These exact native assertions are the RED oracle, not a Wait timeout.
@@ -135,7 +144,7 @@ else:
 stop(d); stop(ld)
 dbproxy.terminate(); wait(dbproxy); assert dbproxy.returncode == 0
 stop(planner)
-cases.append(dict(case=case, admission=admitted, original_root_transaction_id=original_root,
+cases.append(dict(case=requested_case, admission=admitted, original_root_transaction_id=original_root,
     lost_ack=lost_ack, recovered=recovered, final=final, result=result,
     events=lines(), plan=plan.SerializeToString().hex()))
 save()

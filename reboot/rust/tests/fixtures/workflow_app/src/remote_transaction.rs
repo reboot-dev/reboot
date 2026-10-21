@@ -125,6 +125,11 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         },
         watch,
     )?;
+    let recovery = if std::env::var_os("CANONICAL_ROOT_STARTUP_RECOVERY").is_some() {
+        recovery.with_canonical_root_attempt_recovery()
+    } else {
+        recovery
+    };
     host.with_host_recovery(recovery)
         .with_host_recovery(adapter.explicit_abort_recovery_registration()?)
         .with_host_recovery(adapter.live_participant_recovery_registration()?)
