@@ -74,4 +74,3 @@ application host processes, two native Database/RocksDB processes, original IDs,
 ACK loss and retained-storage restart. Their exact-base-coordinator REDs use the
 same final placement/recovery/task topology and assert a wrongly retained original
 coordinator record, not merely a timeout. See `REMOTE-CHILD-P2-QUALIFICATION.md`.
-
