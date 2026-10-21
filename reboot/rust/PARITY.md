@@ -12,6 +12,31 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Durable future transaction successor execution (bounded, local)
+
+Eligible exclusive transaction successors now have actual mixed/pure public/native
+execution evidence, not staging-only qualification. The runtime/generator already
+provided this seam; the new integrated proof schedules a future transaction that
+mutates both existing registered root-star actors, awaits canonical typed Python
+Wait, restarts pending and completed storage, and crashes after successor target
+ACK before source-journal ACK/terminal CAS without duplicate effects. Declared
+Abort proof crosses the staged child's original deadline after retained restart
+with no escaped task or successor handler entry.
+
+Eight new adapter/scenario vectors pass (six successor executions and two Abort
+nonescape cases). The final affected batch has 87 positive native case executions;
+SDK all-targets reports 980 pass executions and 175 ignored tests, plus 8 doctests,
+strict SDK/mixed/pure consumer Clippy and both consumer all-target suites. Ignored
+tests are not native passes. Existing shared/factory-target and due/running-Cancel
+fences remain unchanged. This does not establish arbitrary external-effect
+exactly-once behavior, remote-child composition or universal transaction parity.
+
+See the [contract map](TRANSACTION-SUCCESSOR-EXECUTION-MAP.md) and
+[verified source/native/archive report](tests/evidence/transaction-successor-20261021.md).
+Frozen implementation/proof source is e4a570a8; subsequent ledger/verifier/report
+changes are evidence-only. The report distinguishes the reused native Database
+binary from a fresh hermetic C++ build and preserves failed inspector attempts.
+
 ## Pure transaction-service task owners (bounded, local)
 
 Pure transaction-only adapters now expose a separate explicit
