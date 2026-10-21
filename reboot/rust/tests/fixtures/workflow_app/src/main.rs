@@ -4,6 +4,7 @@ mod generic;
 mod outbound;
 mod spawned;
 mod transaction;
+mod remote_transaction;
 use reboot::{
     application_host::ApplicationHost,
     database_proto as db,

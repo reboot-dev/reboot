@@ -23,7 +23,7 @@ const TYPE: &str = "workflow.v1.AtomicLedger";
 pub fn actor() -> reboot::actor_ref::ActorRef {
     reboot::actor_ref::ActorRef::from_id(TYPE, &std::env::var("PURE_TRANSACTION_ACTOR").unwrap_or_else(|_| "atomic".into())).unwrap()
 }
-struct Starts;
+pub(super) struct Starts;
 impl RootTransactionStartFactory for Starts {
     fn next_root_transaction(&self) -> Result<RootTransactionStart, tonic::Status> {
         Ok(RootTransactionStart {
@@ -40,7 +40,7 @@ impl InboundTransactionStartFactory for Starts {
         Ok(uuid::Uuid::new_v4())
     }
 }
-struct Policy;
+pub(super) struct Policy;
 impl reboot::auth::Authorizer for Policy {
     fn authorize<'a>(
         &'a self,
@@ -78,14 +78,23 @@ impl reboot::runtime::TransactionalChannelResolver for LocalOnly {
                 "unexpected local transaction destination",
             ));
         }
+        if std::env::var_os("REMOTE_TRANSACTION_PLANNER").is_some() {
+            return Ok(reboot::runtime::TransactionalRoute::Network);
+        }
         Ok(reboot::runtime::TransactionalRoute::RegisteredSameHost)
     }
-    async fn resolve(&self, _: &str, _: &str) -> Result<tonic::transport::Channel, tonic::Status> {
+    async fn resolve(&self, state: &str, target: &str) -> Result<tonic::transport::Channel, tonic::Status> {
+        if std::env::var_os("REMOTE_TRANSACTION_PLANNER").is_some() {
+            return reboot::legacy_placement::LegacyApplicationResolver::new(
+                reboot::legacy_placement::LegacyApplicationId::new("workflow-app")?,
+                crate::remote_transaction::placement(),
+            ).resolve(state, target).await;
+        }
         Err(tonic::Status::failed_precondition("no network fallback"))
     }
 }
-struct Handler {
-    child: Option<String>,
+pub(super) struct Handler {
+    pub(super) child: Option<String>,
 }
 #[tonic::async_trait]
 impl generated::AtomicLedgerMethodsTransactionHandler for Handler {
@@ -182,7 +191,7 @@ impl generated::AtomicLedgerMethodsTransactionHandler for Handler {
         Ok(TransactionExecution::new(*state))
     }
 }
-struct Initialize;
+pub(super) struct Initialize;
 #[tonic::async_trait]
 impl generated::AtomicLedgerInitMethodsDatabaseHandler for Initialize {
     #[cfg(feature = "pure-transactions")]
@@ -197,6 +206,9 @@ impl generated::AtomicLedgerInitMethodsDatabaseHandler for Initialize {
     }
 }
 pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
+    if std::env::var_os("REMOTE_TRANSACTION_PLANNER").is_some() {
+        return crate::remote_transaction::serve().await;
+    }
     let endpoint = arg(2);
     let address: std::net::SocketAddr = arg(3).parse()?;
     let shutdown = arg(4);

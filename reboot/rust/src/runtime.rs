@@ -513,7 +513,7 @@ where
             "tree outbound requires counted generated scope",
         ));
     }
-    transactional_outbound_request_inner(resolver, context, state_type, state_ref, message).await
+    transactional_outbound_request_inner(resolver, context, None, state_type, state_ref, message).await
 }
 
 /// Builds a request under a caller-retained counted scope from the same branch.
@@ -559,7 +559,7 @@ pub async fn scoped_transactional_outbound_request<R: TransactionalChannelResolv
         ));
     }
     let routed =
-        transactional_outbound_request_inner(resolver, context, state_type, state_ref, message)
+        transactional_outbound_request_inner(resolver, context, Some(scope), state_type, state_ref, message)
             .await?;
     context.validate_outbound_scope_admission(scope)?;
     Ok(routed)
@@ -947,6 +947,7 @@ fn settle_terminal_scope(
 async fn transactional_outbound_request_inner<R: TransactionalChannelResolver, Message>(
     resolver: &R,
     context: &TransactionContext,
+    scope: Option<&TransactionalOutboundScope>,
     state_type: &str,
     state_ref: &str,
     message: Message,
@@ -957,8 +958,20 @@ async fn transactional_outbound_request_inner<R: TransactionalChannelResolver, M
         ));
     }
     context.require_outbound_allowed()?;
-    if context.bound_root_receipt() {
-        return Err(Status::failed_precondition("receipt-bound root composition requires registered same-host dispatch"));
+    let receipt_bound_child = context.bound_root_receipt();
+    if receipt_bound_child {
+        // The receipt belongs exclusively to the original root actor/RPC. A
+        // remote child is a participant of that transaction, not another
+        // independently replayable call using the root's receipt identity.
+        // Only an admitted registered root and its counted, target-bound scope
+        // may cross this boundary. Raw metadata is not composition authority.
+        context.require_registered_outbound()?;
+        if !context.sequential_root_star || context.admitted_actor.is_none()
+            || scope.is_none_or(|scope| scope.binding.as_ref().is_none_or(|(target, _)|
+                target.state_type != state_type || target.state_ref != state_ref))
+        {
+            return Err(Status::failed_precondition("receipt-bound remote child requires registered target-bound root-star execution"));
+        }
     }
     if context.shared_existing_writer_root() {
         return Err(Status::failed_precondition(
@@ -967,6 +980,9 @@ async fn transactional_outbound_request_inner<R: TransactionalChannelResolver, M
     }
     let mut headers = context.headers().clone();
     headers.state_ref = state_ref.to_owned();
+    if receipt_bound_child {
+        headers.idempotency_key = None;
+    }
     let metadata = headers
         .to_metadata()
         .map_err(|error| Status::invalid_argument(error.to_string()))?;
