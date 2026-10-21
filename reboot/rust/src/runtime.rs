@@ -558,9 +558,10 @@ pub async fn scoped_transactional_outbound_request<R: TransactionalChannelResolv
             "tree actors must be distinct and non-reentrant",
         ));
     }
-    let routed =
-        transactional_outbound_request_inner(resolver, context, Some(scope), state_type, state_ref, message)
-            .await?;
+    let routed = transactional_outbound_request_inner(
+        resolver, context, Some(scope), state_type, state_ref, message,
+    )
+    .await?;
     context.validate_outbound_scope_admission(scope)?;
     Ok(routed)
 }
@@ -966,9 +967,13 @@ async fn transactional_outbound_request_inner<R: TransactionalChannelResolver, M
         // Only an admitted registered root and its counted, target-bound scope
         // may cross this boundary. Raw metadata is not composition authority.
         context.require_registered_outbound()?;
-        if !context.sequential_root_star || context.admitted_actor.is_none()
-            || scope.is_none_or(|scope| scope.binding.as_ref().is_none_or(|(target, _)|
-                target.state_type != state_type || target.state_ref != state_ref))
+        if !context.sequential_root_star
+            || context.admitted_actor.is_none()
+            || scope.is_none_or(|scope| {
+                scope.binding.as_ref().is_none_or(|(target, _)| {
+                    target.state_type != state_type || target.state_ref != state_ref
+                })
+            })
         {
             return Err(Status::failed_precondition("receipt-bound remote child requires registered target-bound root-star execution"));
         }
