@@ -67,7 +67,7 @@ try:
     env=os.environ.copy()|dict(PYTHONPATH=str(overlay)+':'+str(runfiles))
     for case in os.environ.get('REMOTE_TRANSACTION_CASES','success,terminal,ack-restart,error-ack-restart,authorization-reject,payload-reject,target-ack-loss,error-target-ack-loss,crossactor,receipt-ack-loss,abort-ack-loss,source-ack-loss,terminal-ack-loss,child-ack-loss').split(','):
         requested_case=case
-        case={'startup-predispatch':'remote-intent-restart','startup-child-ack':'child-ack-loss','startup-authority-abort':'authority-abort-ack-loss'}.get(case,case)
+        case={'startup-root-binding':'root-binding-restart','startup-predispatch':'remote-intent-restart','startup-child-ack':'child-ack-loss','startup-authority-abort':'authority-abort-ack-loss'}.get(case,case)
         work=ROOT/requested_case;work.mkdir(); events=work/'events'; deny=work/'deny'
         dp,lp,tp,cp,pp_port=[port() for _ in range(5)]
         addresses=[f'http://127.0.0.1:{n}' for n in [dp,lp,tp,cp,pp_port]]
@@ -153,7 +153,7 @@ try:
             exec(compile((FIXTURE/'remote_terminal_recovery_case.py').read_text(), str(FIXTURE/'remote_terminal_recovery_case.py'), 'exec'))
             continue
         key=str(uuid.uuid4());admitted=canonical('spawn',key);task=tasks.TaskId.FromString(bytes.fromhex(admitted['task_id']));before=None
-        if requested_case in ['startup-predispatch','startup-child-ack']:
+        if requested_case in ['startup-root-binding','startup-predispatch','startup-child-ack']:
             startup_case = 'canonical_startup_child_ack_case.py' if requested_case == 'startup-child-ack' else 'canonical_startup_recovery_case.py'
             exec(compile((FIXTURE/startup_case).read_text(),str(FIXTURE/startup_case),'exec'))
             continue

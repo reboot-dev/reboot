@@ -45,6 +45,7 @@ for restart in range(2):
     assert readback == authority, 'startup changed original native authority'
     assert [x['value'] for x in current] == [0, 0]
     assert not any(x['participants'] for x in current) and not current[1]['pending']
+    assert len(current[0]['pending']) == 1, 'native Abort leaked staged successors'
     source = db.Task.FromString(bytes.fromhex(current[0]['tasks'][0]))
     assert source.status == db.Task.PENDING and not source.HasField('response') and not source.HasField('error')
     assert lines().count('transaction-apply') == lines().count('transaction-child') == 1

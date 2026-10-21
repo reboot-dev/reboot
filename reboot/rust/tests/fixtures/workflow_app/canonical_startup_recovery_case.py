@@ -2,7 +2,9 @@
 Unknown authority remains Pending, but now has an actual startup admission owner.
 No native decision, receipt, error or source Task terminal is fabricated here.
 """
-if case == 'remote-intent-restart':
+if case == 'root-binding-restart':
+    until((work/'root-bound-first').exists, t)
+elif case == 'remote-intent-restart':
     until((work/'remote-intent').exists, t)
 else:
     until(child_ack.exists, t)
@@ -12,10 +14,15 @@ intent = inspect_root_intent(before, db, task)
 rec.setdefault('startup_attempts', []).append(dict(case=requested_case, phase='before-restart', intent=intent, native=before)); save()
 assert intent['zero_timestamp_verified'] and len(bytes.fromhex(intent['receipt_key'])) == 16
 assert not intent['recovery_claimed'] and not intent['recovery_retired']
-assert len(intent['members']) == 1 and intent['members'][0]['state_ref'] == leaf
+if case == 'root-binding-restart':
+    assert not intent['members'] and intent['root'] == (work/'root-bound-first').read_text()
+else:
+    assert len(intent['members']) == 1 and intent['members'][0]['state_ref'] == leaf
+    assert intent['root'] == (work/'remote-intent').read_text()
 assert [x['value'] for x in before] == [0, 0]
-expected_child_entries = 0 if case == 'remote-intent-restart' else 1
-assert lines().count('transaction-apply') == 1
+expected_child_entries = 0
+expected_root_entries = 0 if case == 'root-binding-restart' else 1
+assert lines().count('transaction-apply') == expected_root_entries
 assert lines().count('transaction-child') == expected_child_entries
 stop(t); stop(c); stop(d); stop(ld)
 observations = []
@@ -55,12 +62,13 @@ for restart in range(2):
     assert not any(x['participants'] for x in durable)
     pending = db.Task.FromString(bytes.fromhex(durable[0]['tasks'][0]))
     assert pending.status == db.Task.PENDING and not pending.HasField('response') and not pending.HasField('error')
+    assert len(durable[0]['pending']) == 1 and not durable[1]['pending'], 'unresolved root leaked staged successors'
     native = dg.DatabaseStub(grpc.insecure_channel(f'127.0.0.1:{dp}')).TransactionCoordinatorDecisionGet(
         db.TransactionCoordinatorDecisionGetRequest(root_transaction_id=uuid.UUID(intent['root']).bytes,
             coordinator_state_ref=ref), timeout=5)
     assert not native.HasField('decision'), 'startup inferred Abort from absent authority'
     observation['native_authority'] = native.SerializeToString().hex(); save()
-    assert lines().count('transaction-apply') == 1 and lines().count('transaction-child') == expected_child_entries
+    assert lines().count('transaction-apply') == expected_root_entries and lines().count('transaction-child') == expected_child_entries
     pre.with_suffix('.release').touch()
     # Do not wait for a terminal which this bounded owner is not allowed to mint.
     # The original target delivery queues on the same owned admission.
