@@ -19,3 +19,59 @@ Integrated proof must use independent application processes, independent real na
 ## Foundation limit to retain explicitly
 
 Rust's live root registration is not a crash-durable pre-membership registration. Immutable DecisionPut and placement do not authorize absence-to-Abort. A root crash before durable coordinator handoff with unknown remote membership remains a failed/unknown attempt, not an acknowledged declared terminal or permission to retry with a new identity. This slice must not claim arbitrary pre-Prepare recovery, Python coordinator retry equivalence, moving ownership or submitted-effect revocation. Post-commit receipt replay and post-handoff recovery are separate, testable contracts.
+
+## ACK-uncertainty follow-on: selected native-authority seam
+
+Starting from reviewed `048223cf764ed19f0cca7bdbcace5aaecd013dce`, the bounded
+follow-on is **post-handoff original-decision reconciliation**, not full unknown
+remote-child convergence. `durable_coordinator.rs::adopt_recovery_snapshot` now
+loads `TransactionCoordinatorDecisionGet` using the original recovered root UUID
+and coordinator reference. Existing authority is validated before participant
+control: Abort carries no participants; Commit requires a prepared coordinator
+and exactly its writable terminal membership, excluding read-only members.
+It then sends original-ID Abort/Commit and cleans the original coordinator only
+after successful terminal RPCs. Read errors remain errors. Absence of a decision
+falls through to the established definitive Prepare protocol, never to guessed Abort.
+
+Source contracts checked directly:
+
+- Python `aio/state_managers.py:5602-5666,5668-5815` durably records membership,
+  retries non-definitive Prepare failures, and distinguishes definitive votes.
+  `5872-5983` uses its own live coordinator future/cleanup/Watch contract for
+  Abort; `6996-7069` re-prepares an already durably enumerated coordinator.
+  Python's absence semantics must not be grafted onto Rust's immutable-decision
+  Watch implementation, where missing authority is explicitly Unavailable.
+- Native `server/database.cc:3351-3556` stages/prepares/commits/rolls back the real
+  RocksDB transaction. Native Commit and Abort are actor-addressed, with no
+  transaction UUID in their request; arbitrary transport retry is not a safe
+  replacement for retaining the exact application participant owner.
+- Native `database.cc:3764-3844` stores the first immutable terminal decision with
+  GetForUpdate and reads it by original root UUID plus coordinator. A missing key
+  returns no decision, not an abort receipt. This existing authority is sufficient
+  to resume an already-decided original coordinator without another DecisionPut.
+- Rust `runtime.rs:2423-2469` consumes a host-supplied fresh root identity, while
+  `workflow_outbound_writer.rs:228-298` binds a Started source checkpoint to the
+  target receipt key/call contract, **not** to a durable original root UUID and
+  recursive pre-dispatch membership. Receipt-key reuse is not original-attempt
+  recovery. `durable_participant.rs:3045-3158` restores native ownership without
+  restoring an unprepared handler's state/response; its acknowledged native Abort
+  does not mint a declared error receipt or source Task terminal.
+
+### Precise remaining foundation
+
+Full pre-handoff child-ACK uncertainty still needs a durable task-to-original-root
+attempt binding and complete pre-dispatch membership/recovery ownership (including
+any admitted descendants), before a remote effect can be submitted. It also needs
+an authoritative recoverable outcome/receipt contract that bridges original native
+Abort to the source's allowed terminal schema. Neither a fresh UUID, an empty
+Recover scan, a missing decision, nor actor-only native Abort may fill those gaps.
+This checkpoint does not introduce either contract. Original unknown-child
+`child-ack-loss` remains 0/0 with the original Task Pending, and the new post-handoff
+Abort case resolves native ownership while likewise retaining Task Pending.
+
+The two new scenarios run with actual generated public Python admission, two
+application host processes, two native Database/RocksDB processes, original IDs,
+ACK loss and retained-storage restart. Their exact-base-coordinator REDs use the
+same final placement/recovery/task topology and assert a wrongly retained original
+coordinator record, not merely a timeout. See `REMOTE-CHILD-P2-QUALIFICATION.md`.
+

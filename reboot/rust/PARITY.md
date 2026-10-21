@@ -12,6 +12,25 @@ applications are **not a requirement or a parity gap**. Existing canonical
 protocols are implementation contracts, not an interoperability certification.
 No overall percentage is asserted.
 
+## Post-handoff immutable-decision recovery (bounded)
+
+Recovery now consults the native immutable decision for the **original recovered
+root UUID and coordinator** before issuing Prepare or republishing a decision.
+A validated existing Abort/Commit resumes original-ID terminal delivery and
+coordinator cleanup. Missing or unreadable authority never becomes Abort;
+Commit requires exact prepared writable membership. The native decision, target
+receipt, source journal and terminal Task CAS remain separate authorities.
+
+This closes a post-handoff ACK-loss recovery seam, not the pre-handoff remote
+child uncertainty gap. The new native Commit case reaches typed canonical Wait
+without rerunning either body; the native Abort case resolves the original
+transaction but deliberately leaves the source Task Pending. Existing unknown
+child ACK-loss remains failed-closed Pending. No new retry identity, synthetic
+receipt, absence-to-Abort rule, shared/factory support or running Cancel is added.
+
+See [contract/foundation map](REMOTE-CHILD-TRANSACTION-MAP.md) and
+[bounded qualification and remaining limits](REMOTE-CHILD-P2-QUALIFICATION.md).
+
 ## Durable future transaction successor execution (bounded, local)
 
 Eligible exclusive transaction successors now have actual mixed/pure public/native
