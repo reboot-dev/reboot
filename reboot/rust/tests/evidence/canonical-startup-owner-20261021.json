@@ -356,15 +356,20 @@
   },
   "archive_parent": {
     "parent_pid": 2547852,
-    "child_waited": false,
-    "complete": false,
+    "child_waited": true,
+    "complete": true,
     "started": "2026-10-21T08:14:06.463197+00:00",
-    "child_pid": 2547853
+    "child_pid": 2547853,
+    "child_exit": 0,
+    "finished": "2026-10-21T08:19:25.676667+00:00"
   },
+  "retention_receipts": "canonical-startup-owner-retention-20261021.json",
+  "archive_sha256": "af82cc8ab1f87755d5c69a62d8f118d8a081cd1b3c2165998a24e6838ba5a8a4",
+  "archive_bytes": 1002551616,
+  "archive_members": 9806,
+  "full_archive_verifier_complete": true,
   "publication_hold": [
-    "archive operation active",
-    "offhost full-byte transfer and independent verifier not run",
-    "independent parent source review required"
+    "independent parent review of complete 11c5d309-to-final-local-HEAD chain required; parent publishes then pauses loop"
   ],
   "host_expiry_utc": "2026-10-21T18:46:13Z"
 }

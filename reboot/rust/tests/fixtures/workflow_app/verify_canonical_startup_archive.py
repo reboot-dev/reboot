@@ -171,4 +171,42 @@ logs=blob('evidence/restored8/all-targets.log').decode();results=[tuple(map(int,
 assert results and all(failed==0 for passed,failed,ignored in results)
 for name in ['sdk-clippy','mixed-clippy','pure-clippy']:
  child=next(c for c in owners['restored8']['children'] if c['name']==name);assert '-D' in child['args'] and 'warnings' in child['args'] and child['exit']==0
-print(json.dumps(dict(complete=True,archive_sha256=manifest['archive_sha256'],members=len(rows),source_commit=commit,frozen_inputs=len(base['inputs']),final_runtime_causal_RED=2,restored_matrix_executions=restored_matrix_executions,additional_opted_Commit_replay_executions=case_executions-restored_matrix_executions,final_native_case_executions=case_executions,final_driver_child_joins=joins,SDK_pass_executions=sum(p for p,f,i in results),SDK_ignored=sum(i for p,f,i in results),automatic_original_startup_admission=True,known_native_Abort_membership_retirement=True,unknown_authority='owned Pending',source_Abort_Task_bridge=False),indent=2))
+# Independently bind generated object inventories, explicit reference/doc/consumer
+# gates and the archived postflight ledger (a historical absence observation,
+# not a fabricated external wait or a new native execution).
+bindings=0
+for path in rows:
+ if path.startswith('evidence/') and path.endswith('-binding/inputs.json'):
+  prefix=path.rsplit('/',1)[0];inputs=obj(path);assert 'application' in inputs
+  for key,value in inputs.items():
+   retained=rows[prefix+'/objects/'+value['sha256']]
+   assert retained['sha256']==value['sha256'] and retained['bytes']==value['bytes']
+   # Content-addressed objects are write_bytes copies; only app uses copy2
+   # and preserves the executable mode recorded from the original build.
+  app=inputs['application'];assert app['executable'] and rows[prefix+'/app']['sha256']==app['sha256'] and rows[prefix+'/app']['mode']&0o111
+  bindings+=1
+assert bindings>=4 and rows['native/database']['mode']&0o111
+for stage,name in [('restored8','doctests'),('restored8','mixed-build'),('restored8','pure-build'),('restored8','mixed-consumer-tests'),('restored8','pure-consumer-tests'),('restored10','reference')]:
+ child=next(c for c in owners[stage]['children'] if c['name']==name)
+ assert child['waited_by_owner'] and child['exit']==0
+assert b'test result: ok. 8 passed; 0 failed;' in blob('evidence/restored8/doctests.log')
+reference=blob('evidence/restored10/reference.log');assert b'Ran 2 tests' in reference and reference.rstrip().endswith(b'OK')
+post=obj('evidence/restored10-postflight.json');pids=set()
+assert post['complete'] and post['four_locks_available'] and post['unique_absent_pids']==1680
+assert len(post['owners'])==len(post['parents'])==10 and len(post['drivers'])==21
+for item in post['owners']:
+ path='evidence/'+item['path'].split('-evidence/',1)[1];r=obj(path)
+ assert rows[path]['sha256']==item['sha256'] and r['complete']==item['complete']
+ pids.add(r['owner_pid'])
+ for child in r['children']:assert child['waited_by_owner'];pids.add(child['pid'])
+for item in post['parents']:
+ path='evidence/'+item['path'].split('-evidence/',1)[1];r=obj(path)
+ assert r['owner_waited'] and r['owner_wait_returncode']==item['exit']
+ pids.update([r['owner_pid'],r['parent_pid']])
+for item in post['drivers']:
+ path='evidence/'+item['path'].split('-evidence/',1)[1];r=obj(path)
+ assert r['all_original_children_waited'] and r['complete']==item['complete']
+ assert len(r['cases'])==item['cases'] and len(r['children'])==item['children']
+ for child in r['children']:assert child['waited_by_parent'];pids.add(child['pid'])
+assert len(pids)==post['unique_absent_pids']
+print(json.dumps(dict(complete=True,reference_tests=2,doctests=8,generated_binding_inventories=bindings,postflight_unique_absent_pids=len(pids),postflight_four_locks_available=True,archive_sha256=manifest['archive_sha256'],members=len(rows),source_commit=commit,frozen_inputs=len(base['inputs']),final_runtime_causal_RED=2,restored_matrix_executions=restored_matrix_executions,additional_opted_Commit_replay_executions=case_executions-restored_matrix_executions,final_native_case_executions=case_executions,final_driver_child_joins=joins,SDK_pass_executions=sum(p for p,f,i in results),SDK_ignored=sum(i for p,f,i in results),automatic_original_startup_admission=True,known_native_Abort_membership_retirement=True,unknown_authority='owned Pending',source_Abort_Task_bridge=False),indent=2))

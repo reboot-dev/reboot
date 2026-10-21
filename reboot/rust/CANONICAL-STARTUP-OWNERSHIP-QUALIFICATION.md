@@ -105,19 +105,56 @@ parents, 21 drivers and 1,680 unique PIDs absent, all four locks available, and
 16,439,083,008 bytes free. Exact receipts and per-gate executable hashes are indexed
 in `tests/evidence/canonical-startup-owner-20261021.json`.
 
-**Publication HOLD: the additive full-byte archive is active; offhost transfer,
-complete independent archive verification, and parent source review remain.**
-The native matrices are complete; the archive verifier has only had its raw
-protobuf/key decoder exercised against the two actual RED readbacks so far. Do
-not call the full archive verified before its actual complete execution.
+**Retention and full-archive verification gates CLOSED. Publication remains held
+only for independent parent review of the entire `11c5d309` → final local HEAD
+implementation/evidence chain. No push or next-feature work was performed.**
 
-At custody transfer, archive parent **2547852** owns child **2547853** under the
-original 600-second child deadline. Local custodian handle: `proc_cf0866dd816a`.
-The parent agent must collect the real archive/SSH waits, then use the retained
-diskless transfer script and run `verify_canonical_startup_archive.py` against
-actual archive bytes, manifest and the already-retained source Git repository.
-Never terminate or detach this work merely because this implementation delegate
-has reached its checkpoint budget.
+The original archive parent **2547852** waited child **2547853**, exit **0**;
+`proc_cf0866dd816a` collected the original SSH exit **0**. Both remote PIDs were
+then observed absent. The completed lossless archive is **1,002,551,616 bytes**,
+**9,806 members**, **6,247 unique full-byte objects**, SHA-256:
+`af82cc8ab1f87755d5c69a62d8f118d8a081cd1b3c2165998a24e6838ba5a8a4`.
+
+Diskless transfer to the authorized Omarchy destination waited both original SSH
+children with exit **0** and independently matched destination bytes and SHA-256.
+The original archived verifier passed the entire actual archive. An additive
+verifier then explicitly checked all seven generated binding inventories,
+reference **2**, doctests **8**, both consumer build/test gates, and reconstructed
+the **1,680-PID**, ten-owner/ten-parent/21-driver postflight ledger and four-lock
+observation. Full-byte/Git/native/causal checks still passed: **501** Git inputs,
+**2** final REDs, **61** positive executions, **1,096** joins, SDK **996** passed /
+**175** ignored. No native workloads were rerun.
+
+One additive inspector attempt incorrectly expected executable permissions on
+content-addressed `write_bytes` object copies. Its exact failed verifier, stderr,
+parent wait **1** and original SSH failure remain retained unchanged. The capture
+contract preserves executable mode on the separate `copy2` application, not its
+object duplicate. The corrected verifier checked that contract against unchanged
+archive bytes and passed under original finite parent **3043585**, child
+**3043586**, child wait **0**, SSH wait **0**; both PIDs were observed absent.
+The corrected verifier SHA-256 is
+`f47deac2405961bc0d7f463ea49e7717aa34e4d904565b76d339b8023d7d4b24`.
+Actual receipts are retained in
+`tests/evidence/canonical-startup-owner-retention-20261021.json`; original and
+failed verification files remain beside the archive. Reproduce the final pass:
+
+```sh
+cd /home/ladin/.cache/canonical-startup-owner-20261021-retained
+python3 verify_canonical_startup_archive_full2.py proof.tar.xz manifest.json source.git
+```
+
+Fresh validator observation at `2026-10-21T08:31:11.513946+00:00` verified the
+unchanged **501** frozen source inputs, **1,680** absent PIDs, four available locks
+and **15,432,683,520** available bytes. This later absence observation is distinct
+from the retained actual original wait receipts. No extra cleanup was necessary.
+
+Prior immutable archives were rehashed unchanged against their original manifests:
+
+| Archive | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `remote-authority-recovery-20261021.tar.gz` | 618,045,372 | `9ca6647845053424b091f9f2bc5cdcbc2ed554435e57564920131f393148f75a` |
+| `original-root-intent-20261021-proof.tar.xz` | 804,033,484 | `8ca98a121ca976c0e1a5e2ce38d4d363e76e6a99c90092fb8c30acefce14777e` |
+| `original-root-intent-20261021-final-causal-proof.tar.xz` | 390,833,016 | `438e929548899a961989406dad9615dd670786a9433dcf95a4023cdcf6a5e843` |
 
 ## Evidence handles and resource custody
 
