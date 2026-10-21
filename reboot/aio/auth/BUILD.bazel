@@ -84,6 +84,34 @@ py_library(
 )
 
 py_library(
+    name = "origin_py",
+    srcs = ["origin.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("starlette"),
+    ],
+)
+
+py_library(
+    name = "access_py",
+    srcs = ["access.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":oauth_client_py",
+        ":origin_py",
+        ":token_verifiers_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:errors_py_proto",
+        "//reboot/aio:contexts_py",
+        "//reboot/crypto:root_keys_py",
+        "@com_github_reboot_dev_reboot//log:log_py",
+        requirement("pyjwt"),
+        requirement("starlette"),
+    ],
+)
+
+py_library(
     name = "oauth_client_py",
     srcs = ["oauth_client.py"],
     srcs_version = "PY3",

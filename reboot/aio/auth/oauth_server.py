@@ -538,6 +538,11 @@ class OAuthServer:
         """
         return self._token_verifier
 
+    def is_access_token(self, token: str) -> bool:
+        """Whether `token` is a live access token this server minted
+        for itself (not one for another resource)."""
+        return self._verify_jwt(token, "access") is not None
+
     @property
     def mcp_sdk_token_verifier(self) -> MCPSDKOAuthTokenVerifier:
         """

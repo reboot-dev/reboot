@@ -19,12 +19,13 @@ import re
 import secrets
 import socket
 import uvicorn
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from fastapi import FastAPI
 from reboot.aio.http import PythonWebFramework
 from reboot.settings import ENVVAR_REBOOT_CRYPTO_ROOT_KEYS
 from starlette.requests import Request
-from typing import Any, AsyncIterator
+from starlette.responses import Response
+from typing import Any, AsyncIterator, Optional
 from urllib.parse import parse_qs, urlencode, urlparse
 
 # What the harness hands in for `redirect_uri` unless a test says
@@ -50,10 +51,15 @@ class _FakeExternalContext:
         self.request = request
 
 
-def serve(mount: Callable[[PythonWebFramework.HTTP], None]) -> FastAPI:
+def serve(
+    mount: Callable[[PythonWebFramework.HTTP], None],
+    *,
+    middleware: Optional[Callable[..., Awaitable[Response]]] = None,
+) -> FastAPI:
     """A FastAPI app serving the routes `mount` registers (e.g.
     `OAuthServer.mount_routes`), with the per-request context the web
-    framework provides."""
+    framework provides, and `middleware` in front of every route as
+    the web framework would put it."""
     http = PythonWebFramework.HTTP()
     mount(http)
     fastapi = FastAPI()
@@ -62,6 +68,9 @@ def serve(mount: Callable[[PythonWebFramework.HTTP], None]) -> FastAPI:
     async def context_middleware(request: Request, call_next):
         request.state.reboot_external_context = _FakeExternalContext(request)
         return await call_next(request)
+
+    if middleware is not None:
+        fastapi.middleware("http")(middleware)
 
     for http_mount in http._mounts:
         fastapi.mount(

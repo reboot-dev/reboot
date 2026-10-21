@@ -196,3 +196,23 @@ py_test(
         "//reboot/aio/auth:oauth_server_py",
     ],
 )
+
+py_test(
+    name = "access_test_py",
+    size = "small",
+    timeout = "short",
+    srcs = ["access_test.py"],
+    main = "access_test.py",
+    deps = [
+        ":oauth_server_harness_py",
+        "//reboot:settings_py",
+        "//reboot/aio/auth:__init___py",
+        "//reboot/aio/auth:access_py",
+        "//reboot/aio/auth:oauth_py",
+        "//reboot/aio/auth:oauth_providers_py",
+        "//reboot/aio/auth:oauth_server_py",
+        "//reboot/aio/auth:token_verifiers_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:errors_py_proto",
+        requirement("httpx"),
+    ],
+)
