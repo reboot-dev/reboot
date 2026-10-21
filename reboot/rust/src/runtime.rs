@@ -8738,6 +8738,41 @@ mod tests {
         assert!(context.bind_generated_root_receipt(&receipt).is_err());
     }
 
+    #[tokio::test]
+    async fn receipt_bound_remote_child_rejects_metadata_only_authority_before_routing() {
+        struct NeverRoute;
+        #[tonic::async_trait]
+        impl TransactionalChannelResolver for NeverRoute {
+            async fn resolve(&self, _: &str, _: &str) -> Result<tonic::transport::Channel, Status> {
+                panic!("unowned receipt context reached routing")
+            }
+        }
+        let mut headers = RebootHeaders::new("actor/42");
+        headers.idempotency_key = Some(Uuid::from_u128(42));
+        let mut context = RootTransactionContext::start(
+            headers, "tests.Actor", TransactionMode::Exclusive,
+            Uuid::from_u128(1), prost_types::Timestamp::default(),
+        ).unwrap().transaction().clone();
+        let message = proto::Text { content: "request".into() };
+        let receipt = context.idempotency("tests.Service.Apply", &message).unwrap();
+        context.bind_generated_root_receipt(&receipt).unwrap();
+        for claimed_admission in [false, true] {
+            if claimed_admission {
+                // Even fabricated shape flags do not install a host/guard grant.
+                context.sequential_root_star = true;
+                context.admitted_actor = Some(crate::durable_coordinator::ParticipantTarget {
+                    state_type: "tests.Actor".into(), state_ref: "actor/42".into(),
+                });
+            }
+            let error = transactional_outbound_request_inner(
+                &NeverRoute, &context, None, "tests.Actor", "child/7", message.clone(),
+            ).await.unwrap_err();
+            assert_eq!(error.code(), tonic::Code::FailedPrecondition);
+            assert_eq!(context.headers().idempotency_key, Some(receipt.key()));
+            assert!(context.bound_root_receipt());
+        }
+    }
+
     #[test]
     fn transaction_receipt_bound_replay_rejects_missing_identity_and_wrong_scope() {
         let idempotency = TransactionIdempotency { key: Uuid::from_u128(42), request_fingerprint: vec![1,2,3] };

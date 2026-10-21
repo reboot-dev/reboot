@@ -56,7 +56,7 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         [tasks.clone()], application, std::env::var("REMOTE_TRANSACTION_SERVER")?, plan.clone(),
     )?.with_wait_policy(AuthorizationPolicy::new(None, Some(Arc::new(Policy))))
         .with_admin_authorization(Arc::new(crate::TaskAdminVerifier), Arc::new(Policy));
-    let mut host = ApplicationHost::new("remote-transaction-fixture")
+    let mut host = ApplicationHost::new("workflow-app")
         .with_legacy_placement_readiness(plan.clone())
         .with_host_recovery(PlacementPlannerRecovery::new(std::env::var("REMOTE_TRANSACTION_PLANNER")?, plan)?);
     let (adapter, _) = host.register_local_transaction_service(adapter)?;

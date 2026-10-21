@@ -64,7 +64,7 @@ try:
     from reboot.aio.types import StateRef
     ref=StateRef.from_id('workflow.v1.AtomicLedger','atomic').to_str(); leaf=StateRef.from_id('workflow.v1.AtomicLedger','leaf').to_str()
     env=os.environ.copy()|dict(PYTHONPATH=str(overlay)+':'+str(runfiles))
-    for case in os.environ.get('REMOTE_TRANSACTION_CASES','success,terminal,ack-restart,error-ack-restart,authorization-reject,payload-reject,target-ack-loss').split(','):
+    for case in os.environ.get('REMOTE_TRANSACTION_CASES','success,terminal,ack-restart,error-ack-restart,authorization-reject,payload-reject,target-ack-loss,error-target-ack-loss,crossactor').split(','):
         work=ROOT/case;work.mkdir(); events=work/'events'; deny=work/'deny'
         dp,lp,tp,cp,pp_port=[port() for _ in range(5)]
         addresses=[f'http://127.0.0.1:{n}' for n in [dp,lp,tp,cp,pp_port]]
@@ -105,7 +105,7 @@ try:
                 receipts=[m.SerializeToString().hex() for page in c.RecoverIdempotentMutations(db.RecoverIdempotentMutationsRequest(state_type='workflow.v1.AtomicLedger',state_ref=r),timeout=5) for m in page.idempotent_mutations]
                 result.append(dict(value=app.AtomicLedger.FromString(loaded.actors[0].state).value,receipts=receipts,pending=[t.SerializeToString().hex() for page in recovered for t in page.pending_tasks],participants=[t.SerializeToString().hex() for page in recovered for t in page.participant_transactions],tasks=[t.SerializeToString().hex() for t in loaded.tasks]))
             return result
-        declared=case in ['terminal','error-ack-restart']
+        declared=case in ['terminal','error-ack-restart','error-target-ack-loss']
         def canonical(action,key,amount=7,schedule='',good=True):
             out=work/f'python-{len(children)}.json'
             p=spawn([sys.executable,FIXTURE/('declared_transaction_client.py' if declared else 'direct_transaction_client.py'),action,tu,key,str(amount),schedule,out],env);wait(p)
@@ -119,8 +119,8 @@ try:
         c,cs=host(True)
         barrier=work/'after-target'; extra=dict(REBOOT_TEST_OUTBOUND_WRITER_AFTER_TARGET_ACK=str(barrier)) if case in ['ack-restart','error-ack-restart','authorization-reject','payload-reject'] else {}
         proxy=None;ack=work/'lost-ack.json'
-        if case=='target-ack-loss':
-            pn=port();proxy=spawn([sys.executable,FIXTURE/'transaction_ack_proxy.py',f'127.0.0.1:{pn}',f'127.0.0.1:{tp}',ack],role='proxy');listening(proxy,pn);extra['TRANSACTION_TASK_ENDPOINT']=f'http://127.0.0.1:{pn}'
+        if case in ['target-ack-loss','error-target-ack-loss']:
+            pn=port();proxy=spawn([sys.executable,FIXTURE/('declared_transaction_ack_proxy.py' if declared else 'transaction_ack_proxy.py'),f'127.0.0.1:{pn}',f'127.0.0.1:{tp}',ack],role='proxy');listening(proxy,pn);extra['TRANSACTION_TASK_ENDPOINT']=f'http://127.0.0.1:{pn}'
         t,ts=host(False,extra)
         if not os.environ.get('PURE_TRANSACTION_FIXTURE'):
             assert txn('Open',app.Step(amount=0),uuid.uuid4()).value==0
@@ -129,7 +129,7 @@ try:
         if os.environ.get('REMOTE_TRANSACTION_FAULT')=='signal':os.kill(os.getpid(),signal.SIGTERM)
         key=str(uuid.uuid4());admitted=canonical('spawn',key);task=tasks.TaskId.FromString(bytes.fromhex(admitted['task_id']));before=None
         if extra:
-            if case=='target-ack-loss':until(ack.exists,t);wait(t);assert t.returncode!=0
+            if case in ['target-ack-loss','error-target-ack-loss']:until(ack.exists,t);wait(t);assert t.returncode!=0
             else:until(barrier.exists,t)
             before=snapshot(task);assert [x['value'] for x in before]==([0,0] if declared else [7,7]),before
             stop(t);stop(c);stop(d);stop(ld);d,ld=database(),database(True)
@@ -159,6 +159,15 @@ try:
         if declared:assert bound[0].request_fingerprint.startswith(b'reboot.transaction.aborted-result.v1\0') and bound[0].response.hex()==result['error'] and not final[1]['pending']
         else:assert len(bound[0].request_fingerprint)==32 and app.Value.FromString(bound[0].response).value==7
         checkpoint=[m.SerializeToString().hex() for m in scoped]
+        if case=='crossactor':
+            original_key=uuid.UUID(bytes=scoped[0].key)
+            assert txn('Apply',app.Step(amount=2),original_key,True).value==9
+            assert txn('Apply',app.Step(amount=7),original_key).value==7
+            for method,amount in [('Apply',8),('Fail',7)]:
+                try:txn(method,app.Step(amount=amount),original_key);raise AssertionError('root receipt accepted changed RPC/payload')
+                except grpc.RpcError as error:assert error.code()==grpc.StatusCode.FAILED_PRECONDITION,error
+            final=snapshot(task)
+            assert [x['value'] for x in final]==[7,9]
         assert canonical('spawn',key)==admitted
         assert canonical('spawn',key,8,good=False).get('exit')!=0
         changed_schedule=(datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(hours=1)).isoformat()
