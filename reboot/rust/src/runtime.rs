@@ -212,6 +212,7 @@ pub struct TransactionContext {
     registered_outbound: Option<crate::registered_local::RegisteredOutboundPermission>,
     root_receipt: Option<TransactionIdempotency>,
     canonical_root_attempt: Option<Arc<CanonicalRootAttemptJournal>>,
+    canonical_zero_timestamp_verified: bool,
 }
 
 pub(crate) struct HandlerLifetimeOwner(tokio::sync::watch::Sender<bool>);
@@ -1055,6 +1056,7 @@ impl TransactionContext {
             registered_outbound: None,
             root_receipt: None,
             canonical_root_attempt: None,
+            canonical_zero_timestamp_verified: false,
             doomed: Arc::new(Mutex::new(None)),
             live_leaf: false,
             supervised_tree: false,
@@ -2369,6 +2371,7 @@ impl TransactionContext {
             registered_outbound: None,
             root_receipt: None,
             canonical_root_attempt: None,
+            canonical_zero_timestamp_verified: false,
             doomed: Arc::clone(&self.doomed),
             live_leaf: self.live_leaf,
             supervised_tree: self.supervised_tree,

@@ -85,6 +85,101 @@ mod canonical_root_attempt_tests {
             })
         }
     }
+    struct TimestampFactory(prost_types::Timestamp);
+    impl RootTransactionStartFactory for TimestampFactory {
+        fn next_root_transaction(&self) -> Result<RootTransactionStart, Status> {
+            Ok(RootTransactionStart {
+                transaction_id: Uuid::from_u128(42),
+                timestamp: self.0,
+            })
+        }
+    }
+    #[tokio::test]
+    async fn nonzero_host_timestamps_refuse_before_intent_store() {
+        for timestamp in [
+            prost_types::Timestamp {
+                seconds: 1,
+                nanos: 0,
+            },
+            prost_types::Timestamp {
+                seconds: 0,
+                nanos: 1,
+            },
+            prost_types::Timestamp {
+                seconds: -1,
+                nanos: 0,
+            },
+        ] {
+            let memory = Memory::default();
+            let error = start_canonical_root_transaction(
+                headers(),
+                "test.Root",
+                "test.Root.Apply",
+                &(),
+                &TimestampFactory(timestamp),
+                &memory,
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(error.code(), tonic::Code::FailedPrecondition);
+            assert!(
+                error
+                    .message()
+                    .contains("nonzero timestamp recovery is unsupported")
+            );
+            assert_eq!(memory.writes.load(std::sync::atomic::Ordering::SeqCst), 0);
+            assert!(memory.rows.lock().unwrap().is_empty());
+        }
+    }
+    #[tokio::test]
+    async fn unversioned_intent_refuses_without_replacement_factory_or_write() {
+        let memory = Arc::new(Memory::default());
+        let factory = Factory(std::sync::atomic::AtomicUsize::new(0));
+        let mut first = start(headers(), &memory, &factory).await.unwrap();
+        bind(&mut first);
+        first
+            .install_canonical_root_attempt(memory.clone(), &[])
+            .await
+            .unwrap();
+        {
+            let mut rows = memory.rows.lock().unwrap();
+            let mut record =
+                CanonicalRootAttemptRecord::decode(rows[0].response.as_slice()).unwrap();
+            record.zero_timestamp_verified = false;
+            rows[0].response = record.encode_to_vec();
+        }
+        let before = memory.rows.lock().unwrap().clone();
+        let error = start(headers(), &memory, &factory).await.unwrap_err();
+        assert_eq!(error.code(), tonic::Code::FailedPrecondition);
+        assert!(error.message().contains("no verified timestamp"));
+        assert_eq!(factory.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(memory.writes.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(*memory.rows.lock().unwrap(), before);
+    }
+    #[tokio::test]
+    async fn arbitrary_root_context_cannot_certify_zero_timestamp_intent() {
+        let memory = Arc::new(Memory::default());
+        let mut context = RootTransactionContext::start(
+            headers(),
+            "test.Root",
+            TransactionMode::Exclusive,
+            Uuid::from_u128(42),
+            prost_types::Timestamp {
+                seconds: 1,
+                nanos: 0,
+            },
+        )
+        .unwrap()
+        .transaction()
+        .clone();
+        bind(&mut context);
+        let error = context
+            .install_canonical_root_attempt(memory.clone(), &[])
+            .await
+            .unwrap_err();
+        assert_eq!(error.code(), tonic::Code::FailedPrecondition);
+        assert!(memory.rows.lock().unwrap().is_empty());
+    }
     fn headers() -> RebootHeaders {
         let mut h = RebootHeaders::new("root");
         h.idempotency_key = Some(Uuid::from_u128(8));

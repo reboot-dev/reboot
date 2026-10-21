@@ -13,6 +13,9 @@ struct CanonicalRootAttemptRecord {
     members: Vec<CanonicalRootAttemptMember>,
     #[prost(string, repeated, tag = "5")]
     errors: Vec<String>,
+    // Legacy records did not bind a timestamp and cannot safely be recovered.
+    #[prost(bool, tag = "6")]
+    zero_timestamp_verified: bool,
 }
 #[derive(Clone, PartialEq, prost::Message)]
 struct CanonicalRootAttemptMember {
@@ -81,6 +84,11 @@ async fn load_root_attempt(
         }
         let record = CanonicalRootAttemptRecord::decode(mutation.response.as_slice())
             .map_err(|_| Status::data_loss("malformed canonical root intent"))?;
+        if !record.zero_timestamp_verified {
+            return Err(Status::failed_precondition(
+                "legacy canonical root intent has no verified timestamp; recovery refused",
+            ));
+        }
         let root = Uuid::from_slice(&record.root)
             .map_err(|_| Status::data_loss("malformed original root UUID"))?;
         if root.is_nil()
@@ -141,19 +149,31 @@ where
             transaction_id: Uuid::from_slice(&record.root)
                 .map_err(|_| Status::data_loss("invalid original root"))?,
             // Original identity is recovered, never replaced by a fresh factory
-            // ID. This legacy path does not use restart-detection timestamps.
+            // ID. This bounded opt-in path admits only zero-timestamp hosts;
+            // nonzero host starts are refused below before any intent is saved.
             timestamp: prost_types::Timestamp::default(),
         },
         None => factory.next_root_transaction()?,
     };
-    RootTransactionContext::start(
+    // This bounded opt-in journal predates timestamp persistence. Never admit a
+    // host incarnation we cannot faithfully restore: zero is the only supported
+    // timestamp, not a replacement for an arbitrary host-supplied timestamp.
+    // Refuse before actor admission, intent Store, or handler entry.
+    if start.timestamp != prost_types::Timestamp::default() {
+        return Err(Status::failed_precondition(
+            "canonical root intent requires a zero host timestamp; nonzero timestamp recovery is unsupported",
+        ));
+    }
+    let mut context = RootTransactionContext::start(
         headers,
         state_type,
         TransactionMode::Exclusive,
         start.transaction_id,
         start.timestamp,
     )
-    .map_err(|e| Status::failed_precondition(e.to_string()))
+    .map_err(|e| Status::failed_precondition(e.to_string()))?;
+    context.transaction.canonical_zero_timestamp_verified = true;
+    Ok(context)
 }
 impl CanonicalRootAttemptJournal {
     async fn persist(&self, record: &CanonicalRootAttemptRecord) -> Result<(), Status> {
@@ -220,6 +240,11 @@ impl TransactionContext {
         sidecar: Arc<P>,
         errors: &[crate::one_shot_tasks::DeclaredTaskError],
     ) -> Result<(), Status> {
+        if !self.canonical_zero_timestamp_verified {
+            return Err(Status::failed_precondition(
+                "canonical root intent requires verified zero-timestamp admission",
+            ));
+        }
         let receipt = self
             .root_receipt
             .as_ref()
@@ -257,6 +282,7 @@ impl TransactionContext {
                 iteration: self.headers.workflow_iteration,
                 members: vec![],
                 errors: schema,
+                zero_timestamp_verified: true,
             },
         };
         let journal = Arc::new(CanonicalRootAttemptJournal {
