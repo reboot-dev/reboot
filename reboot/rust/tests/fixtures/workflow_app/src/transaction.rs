@@ -129,7 +129,7 @@ impl generated::AtomicLedgerMethodsTransactionHandler for Handler {
         if let Some(child) = &self.child {
             let client = generated::AtomicLedgerMethodsClient::new(LocalOnly(child.clone()));
             let target = generated::AtomicLedgerMethodsTarget::new(child);
-            client
+            let child_result = client
                 .apply(
                     context,
                     &target,
@@ -137,7 +137,12 @@ impl generated::AtomicLedgerMethodsTransactionHandler for Handler {
                         amount: r.amount.abs(),
                     },
                 )
-                .await?;
+                .await;
+            if child_result.is_err() && std::env::var_os("REMOTE_CHILD_CATCH_ERROR").is_some() {
+                event("transaction-child-caught-error");
+            } else {
+                child_result?;
+            }
             event("transaction-child-staged");
         }
         if r.amount < 0 {

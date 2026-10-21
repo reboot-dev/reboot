@@ -69,9 +69,10 @@ try:
         dp,lp,tp,cp,pp_port=[port() for _ in range(5)]
         addresses=[f'http://127.0.0.1:{n}' for n in [dp,lp,tp,cp,pp_port]]
         du,lu,tu,cu,pu=addresses
+        child_proxy_port=port() if case=='child-ack-loss' else cp
         p=spawn([BIN,'info',work/'info.pb']);wait(p);assert p.returncode==0
         # SHA-1 predecessor routing uses the raw first StateRef component.
-        keyed=sorted([(hashlib.sha1(r.split('/')[0].encode()).digest(),sid,n) for r,sid,n in [(ref,'root',tp),(leaf,'child',cp)]])
+        keyed=sorted([(hashlib.sha1(r.split('/')[0].encode()).digest(),sid,n) for r,sid,n in [(ref,'root',tp),(leaf,'child',child_proxy_port)]])
         assert keyed[0][0]!=keyed[1][0]
         plan=pp.ListenForPlanResponse(plan=pp.Plan(version=1,applications=[pp.Plan.Application(id='workflow-app',services=[pp.Plan.Application.Service(full_name=s,state_type_full_name='workflow.v1.AtomicLedger') for s in ['workflow.v1.AtomicLedgerMethods','workflow.v1.AtomicLedgerInitMethods','rbt.v1alpha1.Tasks']],shards=[pp.Plan.Application.Shard(id=f's{i:09d}',range=pp.Plan.Application.Shard.KeyRange(first_key=b'' if i==0 else key),server_id=sid,replica_index=0) for i,(key,sid,n) in enumerate(keyed)])]),servers=[pp.Server(id=sid,application_id='workflow-app',address=pp.Server.Address(host='127.0.0.1',port=n)) for key,sid,n in keyed])
         (work/'plan.pb').write_bytes(plan.SerializeToString())
@@ -114,6 +115,9 @@ try:
             if good:assert p.returncode==0,Path(row(p)['log']).read_text()
             return json.loads(out.read_text()) if p.returncode==0 else dict(exit=p.returncode,log=Path(row(p)['log']).read_text())
         d,ld=database(),database(True)
+        child_proxy=None;child_ack=work/'lost-child-ack.json'
+        if case=='child-ack-loss':
+            child_proxy=spawn([sys.executable,FIXTURE/'remote_child_ack_proxy.py',f'127.0.0.1:{child_proxy_port}',f'127.0.0.1:{cp}',child_ack],role='proxy');listening(child_proxy,child_proxy_port)
         if os.environ.get('PURE_TRANSACTION_FIXTURE'):
             for child in [True,False]:
                 b,bs=host(child,dict(PURE_TRANSACTION_BOOTSTRAP='1'))
@@ -126,6 +130,7 @@ try:
         c,cs=host(True)
         barrier=work/'after-target'; extra=dict(REBOOT_TEST_OUTBOUND_WRITER_AFTER_TARGET_ACK=str(barrier)) if case in ['ack-restart','error-ack-restart','authorization-reject','payload-reject'] else {}
         proxy=None;ack=work/'lost-ack.json'
+        if case=='child-ack-loss':extra['REMOTE_CHILD_CATCH_ERROR']='1'
         if case in ['target-ack-loss','error-target-ack-loss']:
             pn=port();proxy=spawn([sys.executable,FIXTURE/('declared_transaction_ack_proxy.py' if declared else 'transaction_ack_proxy.py'),f'127.0.0.1:{pn}',f'127.0.0.1:{tp}',ack],role='proxy');listening(proxy,pn);extra['TRANSACTION_TASK_ENDPOINT']=f'http://127.0.0.1:{pn}'
         t,ts=host(False,extra)
@@ -135,6 +140,21 @@ try:
         if os.environ.get('REMOTE_TRANSACTION_FAULT')=='error':raise RuntimeError('requested remote parent error drill')
         if os.environ.get('REMOTE_TRANSACTION_FAULT')=='signal':os.kill(os.getpid(),signal.SIGTERM)
         key=str(uuid.uuid4());admitted=canonical('spawn',key);task=tasks.TaskId.FromString(bytes.fromhex(admitted['task_id']));before=None
+        if case=='child-ack-loss':
+            until(child_ack.exists,t);wait(t);assert t.returncode!=0
+            final=snapshot(task)
+            assert [x['value'] for x in final]==[0,0] and not any(x['pending'] for x in final[1:])
+            assert db.Task.FromString(bytes.fromhex(final[0]['tasks'][0])).status==db.Task.PENDING
+            assert lines().count('transaction-child')==1 and lines().count('transaction-child-caught-error')==1
+            observed=json.loads(child_ack.read_text());metadata=dict(observed['request_metadata'])
+            assert 'x-reboot-idempotency-key' not in metadata
+            assert metadata['x-reboot-transaction-coordinator-state-ref']==ref
+            assert not any(db.IdempotentMutation.FromString(bytes.fromhex(raw)).request_fingerprint.startswith(b'reboot.transaction.aborted-result.v1\0') for raw in final[0]['receipts'])
+            # A caught transport failure grants neither commit continuation nor
+            # an acknowledged task terminal. Preserve this failed attempt;
+            # this does not infer absence-to-Abort authority after root death.
+            stop(c);stop(d);stop(ld);child_proxy.terminate();wait(child_proxy);assert child_proxy.returncode==0;stop(planner)
+            cases.append(dict(case=case,expected='failed-closed-unknown-child',admission=admitted,final=final,observed_child_ack=observed,events=lines(),plan=plan.SerializeToString().hex()));save();continue
         if case in database_faults:
             until((dbfault/'ack-observed.json').exists,t)
             observed=snapshot(task)
