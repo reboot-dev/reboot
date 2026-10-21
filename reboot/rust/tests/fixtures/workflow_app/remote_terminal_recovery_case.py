@@ -74,7 +74,7 @@ stop(c); stop(d); stop(ld)
 # and original membership/terminal RPCs rather than require DecisionPut again.
 (dbfault/'deny-decision-put').touch()
 d, ld = database(), database(True)
-c, cs = host(True)
+c, cs = host(True, wait_ready=False); listening(c, cp)
 pre = work/'recovered-source-before-dispatch'
 t, ts = host(False, dict(REBOOT_TEST_OUTBOUND_WRITER_BEFORE_DISPATCH=str(pre)), wait_ready=False)
 until(lambda: pre.exists() or t.poll() is not None)
