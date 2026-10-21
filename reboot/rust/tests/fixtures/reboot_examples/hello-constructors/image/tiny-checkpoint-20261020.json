@@ -1,0 +1,124 @@
+{
+  "source": "d3b0642d0cb9962c839cfb57ebfd33f2a3cca389",
+  "python_example": "5c332a2910122d6035799bfaf2a314bf1de830b8",
+  "sdk_native": "8574ccb0df9893274e69d1a19eca469dad56d779",
+  "commands": [
+    {
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--manifest-path",
+        "/home/benchbuild/.cache/tiny-current-src/reboot/rust/tests/fixtures/reboot_examples/hello-constructors/backend/Cargo.toml",
+        "--test",
+        "application",
+        "--",
+        "--test-threads=1"
+      ],
+      "pid": 754615,
+      "start": 1792482866.398437,
+      "exit": 0,
+      "end": 1792482889.1443908
+    },
+    {
+      "argv": [
+        "cargo",
+        "build",
+        "--release",
+        "--locked",
+        "--offline",
+        "--manifest-path",
+        "/home/benchbuild/.cache/tiny-current-src/reboot/rust/tests/fixtures/reboot_examples/hello-constructors/backend/Cargo.toml",
+        "--bins"
+      ],
+      "pid": 756176,
+      "start": 1792482889.146775,
+      "exit": 0,
+      "end": 1792482910.8504217
+    },
+    {
+      "argv": [
+        "docker",
+        "build",
+        "--pull=false",
+        "--network=none",
+        "--label",
+        "org.opencontainers.image.revision=d3b0642d0cb9962c839cfb57ebfd33f2a3cca389",
+        "-t",
+        "hello-rust:tiny-current",
+        "/home/benchbuild/.cache/tiny-current-evidence/rust-context"
+      ],
+      "pid": 756472,
+      "start": 1792482910.8745031,
+      "exit": 0,
+      "end": 1792482912.1907046
+    },
+    {
+      "argv": [
+        "docker",
+        "build",
+        "--pull=false",
+        "--network=none",
+        "--label",
+        "org.opencontainers.image.revision=d3b0642d0cb9962c839cfb57ebfd33f2a3cca389",
+        "--label",
+        "reboot.python-example=5c332a2910122d6035799bfaf2a314bf1de830b8",
+        "--label",
+        "reboot.sdk-native=8574ccb0df9893274e69d1a19eca469dad56d779",
+        "-t",
+        "hello-python:tiny-current",
+        "/home/benchbuild/.cache/tiny-current-evidence/python-context"
+      ],
+      "pid": 756570,
+      "start": 1792482919.195289,
+      "exit": 0,
+      "end": 1792482923.591403
+    }
+  ],
+  "complete": true,
+  "source_frozen": true,
+  "rust_binary_hashes": {
+    "probe": "23828381bb01b96c7f76ea9d1db8dde699e3aac38f6e6dfc29d0c70a427c7bd6",
+    "app": "e094b75b5c9559c42c8f100bf159d3a9a7aeeb02710aa728c79b9aebf3a75410",
+    "Dockerfile": "83ac3d18e5cf4f5700ba75e806e98a2b0d42560826b52a8790d6fd0fb9e84c20",
+    "libgcc_s.so.1": "d93224d2b0dab4247598be683adca02f5cf00586f99c187579cd7e92058fb7cb"
+  },
+  "images": [
+    {
+      "Id": "sha256:3dcf9d9976f76a63b3a290ef6cf15329f1f6148692c72604e5dc797a237f7db4",
+      "RepoTags": [
+        "hello-rust:tiny-current"
+      ],
+      "Labels": {
+        "org.opencontainers.image.revision": "d3b0642d0cb9962c839cfb57ebfd33f2a3cca389",
+        "org.opencontainers.image.version": "24.04"
+      }
+    },
+    {
+      "Id": "sha256:28241a509e8dbedda24bd2033ce556cc5648ddd02ef80bd349e417586fb84925",
+      "RepoTags": [
+        "hello-python:tiny-current"
+      ],
+      "Labels": {
+        "org.opencontainers.image.revision": "d3b0642d0cb9962c839cfb57ebfd33f2a3cca389",
+        "org.opencontainers.image.version": "24.04",
+        "reboot.python-example": "5c332a2910122d6035799bfaf2a314bf1de830b8",
+        "reboot.sdk-native": "8574ccb0df9893274e69d1a19eca469dad56d779"
+      }
+    },
+    {
+      "Id": "sha256:1a73705b0771f9c861d9ba96509806849423a3d8bbff140b1261da76280460cd",
+      "RepoTags": [
+        "hello-database:qualification"
+      ],
+      "Labels": {
+        "org.opencontainers.image.version": "24.04"
+      }
+    }
+  ],
+  "runtime_tested": false,
+  "runtime_blocker": "pending tool approval: no-swap cgroup system config",
+  "durable_images_sha256": "f444904864b2c2bc0ca658ff4ffa4df40ad4de7838f2aee1827fb9f16b2b0349",
+  "durable_build_proof_sha256": "28f9449617acecb2f304f664372ff53a21de759ac5d10e95db73e38b53691e66"
+}

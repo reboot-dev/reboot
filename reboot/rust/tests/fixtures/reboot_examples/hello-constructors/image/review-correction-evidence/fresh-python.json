@@ -1,0 +1,237 @@
+{
+  "endpoint": "localhost:9991",
+  "cases": {
+    "startup": {
+      "ok": true,
+      "response": {
+        "messages": [
+          "Welcome! This message was sent by a constructor.",
+          "This message was sent after construction!"
+        ]
+      }
+    },
+    "missing-reader": {
+      "ok": false,
+      "code": "ABORTED",
+      "message": "",
+      "details": [
+        {
+          "type_url": "type.googleapis.com/rbt.v1alpha1.StateNotConstructed",
+          "value_hex": ""
+        }
+      ],
+      "rich_code": 10,
+      "rich_message": ""
+    },
+    "missing-send": {
+      "ok": false,
+      "code": "ABORTED",
+      "message": "",
+      "details": [
+        {
+          "type_url": "type.googleapis.com/rbt.v1alpha1.StateNotConstructed",
+          "value_hex": "0801"
+        }
+      ],
+      "rich_code": 10,
+      "rich_message": ""
+    },
+    "create": {
+      "ok": true,
+      "response": {}
+    },
+    "create-replay": {
+      "ok": true,
+      "response": {}
+    },
+    "duplicate-constructor": {
+      "ok": false,
+      "code": "ABORTED",
+      "message": "",
+      "details": [
+        {
+          "type_url": "type.googleapis.com/rbt.v1alpha1.StateAlreadyConstructed",
+          "value_hex": ""
+        }
+      ],
+      "rich_code": 10,
+      "rich_message": ""
+    },
+    "send": {
+      "ok": true,
+      "response": {}
+    },
+    "send-replay": {
+      "ok": true,
+      "response": {}
+    },
+    "changed-payload": {
+      "ok": false,
+      "code": "FAILED_PRECONDITION",
+      "message": "Idempotency key was reused with a different request",
+      "details": [
+        {
+          "type_url": "type.googleapis.com/rbt.v1alpha1.FailedPrecondition",
+          "value_hex": ""
+        }
+      ],
+      "rich_code": 9,
+      "rich_message": "Idempotency key was reused with a different request"
+    },
+    "wrong-method": {
+      "ok": false,
+      "code": "FAILED_PRECONDITION",
+      "message": "Idempotency key was reused with a different request",
+      "details": [
+        {
+          "type_url": "type.googleapis.com/rbt.v1alpha1.FailedPrecondition",
+          "value_hex": ""
+        }
+      ],
+      "rich_code": 9,
+      "rich_message": "Idempotency key was reused with a different request"
+    },
+    "fidelity-0": {
+      "ok": true,
+      "response": {}
+    },
+    "fidelity-1": {
+      "ok": true,
+      "response": {}
+    },
+    "fidelity-2": {
+      "ok": true,
+      "response": {}
+    },
+    "fidelity-3": {
+      "ok": true,
+      "response": {}
+    },
+    "fidelity-4": {
+      "ok": true,
+      "response": {}
+    },
+    "messages": {
+      "ok": true,
+      "response": {
+        "messages": [
+          "first message",
+          "second message",
+          "",
+          "duplicate",
+          "duplicate",
+          "雪 🦀",
+          "  whitespace\n"
+        ]
+      }
+    },
+    "reader-repeat": {
+      "ok": true,
+      "response": {
+        "messages": [
+          "first message",
+          "second message",
+          "",
+          "duplicate",
+          "duplicate",
+          "雪 🦀",
+          "  whitespace\n"
+        ]
+      }
+    },
+    "supplied-token": {
+      "ok": true,
+      "response": {
+        "messages": [
+          "first message",
+          "second message",
+          "",
+          "duplicate",
+          "duplicate",
+          "雪 🦀",
+          "  whitespace\n"
+        ]
+      }
+    },
+    "other-create": {
+      "ok": true,
+      "response": {}
+    },
+    "concurrent-responses": [
+      {
+        "ok": true,
+        "response": {}
+      },
+      {
+        "ok": true,
+        "response": {}
+      },
+      {
+        "ok": true,
+        "response": {}
+      },
+      {
+        "ok": true,
+        "response": {}
+      },
+      {
+        "ok": true,
+        "response": {}
+      },
+      {
+        "ok": true,
+        "response": {}
+      },
+      {
+        "ok": true,
+        "response": {}
+      },
+      {
+        "ok": true,
+        "response": {}
+      }
+    ],
+    "isolation": {
+      "ok": true,
+      "response": {
+        "messages": [
+          "",
+          "concurrent-0",
+          "concurrent-1",
+          "concurrent-2",
+          "concurrent-3",
+          "concurrent-4",
+          "concurrent-5",
+          "concurrent-6",
+          "concurrent-7"
+        ]
+      }
+    },
+    "final-original": {
+      "ok": true,
+      "response": {
+        "messages": [
+          "first message",
+          "second message",
+          "",
+          "duplicate",
+          "duplicate",
+          "雪 🦀",
+          "  whitespace\n"
+        ]
+      }
+    }
+  },
+  "complete": true,
+  "concurrency_raw_messages": [
+    "",
+    "concurrent-0",
+    "concurrent-1",
+    "concurrent-2",
+    "concurrent-3",
+    "concurrent-4",
+    "concurrent-5",
+    "concurrent-6",
+    "concurrent-7"
+  ]
+}

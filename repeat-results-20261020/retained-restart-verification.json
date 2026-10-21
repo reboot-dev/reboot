@@ -1,0 +1,38 @@
+[
+  {
+    "before": "repeat-perf-1-python-verify-before.log",
+    "after": "repeat-perf-1-python-verify-after.log",
+    "exact_equal": true,
+    "sha256": "dc435037b17fc4a226372a00f5ec29fb818cf105c5c8dbea25364af1798b112d"
+  },
+  {
+    "before": "repeat-perf-1-rust-verify-before.log",
+    "after": "repeat-perf-1-rust-verify-after.log",
+    "exact_equal": true,
+    "sha256": "dc435037b17fc4a226372a00f5ec29fb818cf105c5c8dbea25364af1798b112d"
+  },
+  {
+    "before": "repeat-perf-2-python-verify-before.log",
+    "after": "repeat-perf-2-python-verify-after.log",
+    "exact_equal": true,
+    "sha256": "dc435037b17fc4a226372a00f5ec29fb818cf105c5c8dbea25364af1798b112d"
+  },
+  {
+    "before": "repeat-perf-2-rust-verify-before.log",
+    "after": "repeat-perf-2-rust-verify-after.log",
+    "exact_equal": true,
+    "sha256": "dc435037b17fc4a226372a00f5ec29fb818cf105c5c8dbea25364af1798b112d"
+  },
+  {
+    "before": "repeat-perf-3-python-verify-before.log",
+    "after": "repeat-perf-3-python-verify-after.log",
+    "exact_equal": true,
+    "sha256": "dc435037b17fc4a226372a00f5ec29fb818cf105c5c8dbea25364af1798b112d"
+  },
+  {
+    "before": "repeat-perf-3-rust-verify-before.log",
+    "after": "repeat-perf-3-rust-verify-after.log",
+    "exact_equal": true,
+    "sha256": "dc435037b17fc4a226372a00f5ec29fb818cf105c5c8dbea25364af1798b112d"
+  }
+]

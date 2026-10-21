@@ -1,0 +1,53 @@
+syntax = "proto3";
+package workflow.v1;
+import "rbt/v1alpha1/options.proto";
+import "google/protobuf/empty.proto";
+// Compile-only consumer regression: canonical Empty is unit even with local Empty.
+message EmptyTransactionState { option (rbt.v1alpha1.state) = { implements: ["workflow.v1.EmptyTransactionMethods"] }; }
+service EmptyTransactionMethods {
+ option (rbt.v1alpha1.service) = { state: "workflow.v1.EmptyTransactionState" };
+ rpc Create(google.protobuf.Empty) returns (google.protobuf.Empty) { option (rbt.v1alpha1.method).transaction = { constructor: {} exclusive: {} }; }
+ rpc Apply(google.protobuf.Empty) returns (google.protobuf.Empty) { option (rbt.v1alpha1.method).transaction = { exclusive: {} }; }
+ rpc Reject(google.protobuf.Empty) returns (google.protobuf.Empty) { option (rbt.v1alpha1.method) = { transaction: { exclusive: {} } errors: ["BelowThreshold"] }; }
+ rpc Local(Empty) returns (Empty) { option (rbt.v1alpha1.method).transaction = { exclusive: {} }; }
+ rpc Query(Empty) returns (Empty) { option (rbt.v1alpha1.method).reader = {}; }
+}
+message Ledger { option (rbt.v1alpha1.state) = { implements: ["workflow.v1.LedgerMethods"] }; int64 first = 1; int64 second = 2; int64 schedules = 3; }
+message Empty {}
+message Step { int64 amount = 1; }
+message BelowThreshold { int64 required=1; int64 observed=2; }
+message Value { int64 value = 1; }
+message Schedule { int64 not_before = 1; int64 amount = 2; }
+message Handle { bytes id = 1; }
+message Result { int64 first = 1; int64 second = 2; }
+service LedgerMethods {
+ option (rbt.v1alpha1.service) = { state: "workflow.v1.Ledger" };
+ rpc Create(Empty) returns (Empty) { option (rbt.v1alpha1.method).writer = { constructor: {} }; }
+ rpc QueryThreshold(Step) returns (Ledger) { option (rbt.v1alpha1.method) = { reader: {} errors: ["BelowThreshold"] }; }
+ rpc Query(Empty) returns (Ledger) { option (rbt.v1alpha1.method).reader = {}; }
+ rpc ScheduleWork(Schedule) returns (Handle) { option (rbt.v1alpha1.method).writer = {}; }
+ rpc First(Step) returns (Value) { option (rbt.v1alpha1.method).writer = {}; }
+ rpc Second(Step) returns (Value) { option (rbt.v1alpha1.method).writer = {}; }
+ rpc Run(Step) returns (Result) { option (rbt.v1alpha1.method).workflow = {}; }
+ rpc Child(Step) returns (Value) { option (rbt.v1alpha1.method) = { workflow: {} errors: ["BelowThreshold"] }; }
+}
+message AtomicLedger { option (rbt.v1alpha1.state) = { implements: ["workflow.v1.AtomicLedgerMethods", "workflow.v1.AtomicLedgerInitMethods"] }; int64 value = 1; }
+service AtomicLedgerInitMethods {
+ option (rbt.v1alpha1.service) = { state: "workflow.v1.AtomicLedger" };
+ rpc Open(Step) returns (Value) { option (rbt.v1alpha1.method).writer = { constructor: {} }; }
+}
+service AtomicLedgerMethods {
+ option (rbt.v1alpha1.service) = { state: "workflow.v1.AtomicLedger" };
+ rpc Create(Step) returns (Value) { option (rbt.v1alpha1.method).transaction = { constructor: {} exclusive: {} }; }
+ rpc Apply(Step) returns (Value) { option (rbt.v1alpha1.method).transaction = { exclusive: {} }; }
+ rpc Fail(Step) returns (Value) { option (rbt.v1alpha1.method) = { transaction: { exclusive: {} } errors: ["BelowThreshold"] }; }
+ rpc Query(Empty) returns (AtomicLedger) { option (rbt.v1alpha1.method).reader = {}; }
+}
+message Remote { option (rbt.v1alpha1.state) = { implements: ["workflow.v1.RemoteMethods"] }; int64 value = 1; }
+service RemoteMethods {
+ option (rbt.v1alpha1.service) = { state: "workflow.v1.Remote" };
+ rpc Create(Empty) returns (Empty) { option (rbt.v1alpha1.method).writer = { constructor: {} }; }
+ rpc Apply(Step) returns (Value) { option (rbt.v1alpha1.method).writer = {}; }
+ rpc Reject(Step) returns (Value) { option (rbt.v1alpha1.method) = { writer: {} errors: ["BelowThreshold"] }; }
+ rpc Query(Empty) returns (Remote) { option (rbt.v1alpha1.method).reader = {}; }
+}

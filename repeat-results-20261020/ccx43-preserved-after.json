@@ -1,0 +1,235 @@
+{
+  "server": {
+    "id": 171072439,
+    "name": "jean-reboot-rust-validation-ccx43",
+    "status": "running",
+    "server_type": {
+      "id": 99,
+      "name": "ccx43",
+      "architecture": "x86",
+      "cores": 16,
+      "cpu_type": "dedicated",
+      "category": "general_purpose",
+      "deprecated": false,
+      "deprecation": null,
+      "description": "CCX43 Dedicated CPU",
+      "disk": 360,
+      "memory": 64,
+      "prices": [
+        {
+          "location": "ash",
+          "price_hourly": {
+            "gross": "0.5419590000000000",
+            "net": "0.4479000000"
+          },
+          "price_monthly": {
+            "gross": "338.1829000000000000",
+            "net": "279.4900000000"
+          },
+          "included_traffic": 4398046511104,
+          "price_per_tb_traffic": {
+            "gross": "1.2100000000000000",
+            "net": "1.0000000000"
+          }
+        },
+        {
+          "location": "fsn1",
+          "price_hourly": {
+            "gross": "0.5351830000000000",
+            "net": "0.4423000000"
+          },
+          "price_monthly": {
+            "gross": "333.9479000000000000",
+            "net": "275.9900000000"
+          },
+          "included_traffic": 43980465111040,
+          "price_per_tb_traffic": {
+            "gross": "1.2100000000000000",
+            "net": "1.0000000000"
+          }
+        },
+        {
+          "location": "hel1",
+          "price_hourly": {
+            "gross": "0.5351830000000000",
+            "net": "0.4423000000"
+          },
+          "price_monthly": {
+            "gross": "333.9479000000000000",
+            "net": "275.9900000000"
+          },
+          "included_traffic": 43980465111040,
+          "price_per_tb_traffic": {
+            "gross": "1.2100000000000000",
+            "net": "1.0000000000"
+          }
+        },
+        {
+          "location": "hil",
+          "price_hourly": {
+            "gross": "0.5419590000000000",
+            "net": "0.4479000000"
+          },
+          "price_monthly": {
+            "gross": "338.1829000000000000",
+            "net": "279.4900000000"
+          },
+          "included_traffic": 4398046511104,
+          "price_per_tb_traffic": {
+            "gross": "1.2100000000000000",
+            "net": "1.0000000000"
+          }
+        },
+        {
+          "location": "nbg1",
+          "price_hourly": {
+            "gross": "0.5351830000000000",
+            "net": "0.4423000000"
+          },
+          "price_monthly": {
+            "gross": "333.9479000000000000",
+            "net": "275.9900000000"
+          },
+          "included_traffic": 43980465111040,
+          "price_per_tb_traffic": {
+            "gross": "1.2100000000000000",
+            "net": "1.0000000000"
+          }
+        },
+        {
+          "location": "sin",
+          "price_hourly": {
+            "gross": "0.6612650000000000",
+            "net": "0.5465000000"
+          },
+          "price_monthly": {
+            "gross": "412.5979000000000000",
+            "net": "340.9900000000"
+          },
+          "included_traffic": 4398046511104,
+          "price_per_tb_traffic": {
+            "gross": "8.9540000000000000",
+            "net": "7.4000000000"
+          }
+        }
+      ],
+      "storage_type": "local",
+      "locations": [
+        {
+          "id": 1,
+          "name": "fsn1",
+          "available": true,
+          "recommended": false,
+          "deprecation": null
+        },
+        {
+          "id": 2,
+          "name": "nbg1",
+          "available": true,
+          "recommended": false,
+          "deprecation": null
+        },
+        {
+          "id": 3,
+          "name": "hel1",
+          "available": true,
+          "recommended": true,
+          "deprecation": null
+        },
+        {
+          "id": 4,
+          "name": "ash",
+          "available": true,
+          "recommended": false,
+          "deprecation": null
+        },
+        {
+          "id": 5,
+          "name": "hil",
+          "available": true,
+          "recommended": false,
+          "deprecation": null
+        },
+        {
+          "id": 6,
+          "name": "sin",
+          "available": true,
+          "recommended": false,
+          "deprecation": null
+        }
+      ]
+    },
+    "location": {
+      "id": 3,
+      "name": "hel1",
+      "description": "Helsinki DC Park 1",
+      "city": "Helsinki",
+      "country": "FI",
+      "latitude": 60.169855,
+      "longitude": 24.938379,
+      "network_zone": "eu-central"
+    },
+    "image": {
+      "id": 161547269,
+      "type": "system",
+      "name": "ubuntu-24.04",
+      "architecture": "x86",
+      "bound_to": null,
+      "created_from": null,
+      "deprecated": null,
+      "deprecation": null,
+      "description": "Ubuntu 24.04",
+      "disk_size": 5,
+      "image_size": null,
+      "labels": {},
+      "os_flavor": "ubuntu",
+      "os_version": "24.04",
+      "protection": {
+        "delete": false
+      },
+      "rapid_deploy": true,
+      "status": "available",
+      "created": "2024-04-25T13:26:27Z",
+      "deleted": null
+    },
+    "iso": null,
+    "primary_disk_size": 360,
+    "labels": {
+      "ephemeral": "true",
+      "expires": "2026-10-19",
+      "owner": "jean",
+      "purpose": "reboot-rust-validation"
+    },
+    "protection": {
+      "delete": false,
+      "rebuild": false
+    },
+    "backup_window": null,
+    "rescue_enabled": false,
+    "locked": false,
+    "placement_group": null,
+    "public_net": {
+      "firewalls": [],
+      "floating_ips": [],
+      "ipv4": {
+        "id": 156288689,
+        "ip": "2.29.27.53",
+        "blocked": false,
+        "dns_ptr": "static.53.27.29.2.clients.your-server.de"
+      },
+      "ipv6": {
+        "id": 156288690,
+        "ip": "2a01:4f9:c012:8f2f::/64",
+        "blocked": false,
+        "dns_ptr": []
+      }
+    },
+    "private_net": [],
+    "load_balancers": [],
+    "volumes": [],
+    "included_traffic": 43980465111040,
+    "ingoing_traffic": 2234945000,
+    "outgoing_traffic": 56250000,
+    "created": "2026-10-18T18:45:35Z"
+  }
+}

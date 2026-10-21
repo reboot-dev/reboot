@@ -1,0 +1,324 @@
+use crate::{proto, workflow_generated as generated};
+use reboot::{
+    application_host::ApplicationHost,
+    auth::AuthorizationPolicy,
+    database_proto as db,
+    one_shot_tasks::{ReaderTaskWaitService, WorkflowContext},
+    runtime::{DatabaseActorStore, TransactionExecution},
+};
+use std::{net::SocketAddr, sync::Arc};
+
+struct ConfiguredOwner {
+    reference: reboot::state_ref::StateRef,
+    owner: String,
+}
+impl reboot::auth::Authorizer for ConfiguredOwner {
+    fn authorize<'a>(
+        &'a self,
+        context: &'a reboot::auth::AuthorizationContext,
+        auth: Option<&'a reboot::auth::Auth>,
+        _: Option<&'a [u8]>,
+        _: &'a [u8],
+    ) -> reboot::auth::AuthorizeFuture<'a> {
+        Box::pin(async move {
+            use reboot::auth::AuthorizationDecision as Decision;
+            let Some(user) = auth.and_then(reboot::auth::Auth::user_id) else {
+                return Decision::Unauthenticated {
+                    message: "verified user identity required".into(),
+                };
+            };
+            let target =
+                reboot::state_ref::StateRef::from_maybe_readable(context.headers.state_ref.clone());
+            if user != self.owner
+                || context.state_type != "{{ name }}.v1.OwnerWorkflows"
+                || target.as_ref().ok() != Some(&self.reference)
+            {
+                return Decision::PermissionDenied {
+                    message: "configured workflow owner mismatch".into(),
+                };
+            }
+            Decision::Allow
+        })
+    }
+}
+
+#[derive(Clone)]
+pub struct Handler;
+#[tonic::async_trait]
+impl generated::OwnerWorkflowsMethodsDatabaseHandler for Handler {
+    async fn create(
+        &self,
+        _: &mut proto::OwnerWorkflows,
+        _: proto::WorkflowEmpty,
+    ) -> Result<proto::WorkflowEmpty, tonic::Status> {
+        Ok(proto::WorkflowEmpty {})
+    }
+    async fn set_claims(
+        &self,
+        _: &mut proto::OwnerWorkflows,
+        _: proto::WorkflowEmpty,
+    ) -> Result<proto::WorkflowEmpty, tonic::Status> {
+        Err(tonic::Status::internal(
+            "external SetClaims must not reach handler",
+        ))
+    }
+    async fn query(
+        &self,
+        state: &proto::OwnerWorkflows,
+        _: proto::WorkflowEmpty,
+    ) -> Result<proto::OwnerWorkflows, tonic::Status> {
+        Ok(*state)
+    }
+    async fn first(
+        &self,
+        state: &mut proto::OwnerWorkflows,
+        request: proto::WorkflowAdd,
+    ) -> Result<proto::WorkflowValue, tonic::Status> {
+        state.first = state
+            .first
+            .checked_add(request.amount)
+            .ok_or_else(|| tonic::Status::out_of_range("first overflow"))?;
+        Ok(proto::WorkflowValue { value: state.first })
+    }
+    async fn second(
+        &self,
+        state: &mut proto::OwnerWorkflows,
+        request: proto::WorkflowAdd,
+    ) -> Result<proto::WorkflowValue, tonic::Status> {
+        state.second = state
+            .second
+            .checked_add(request.amount)
+            .ok_or_else(|| tonic::Status::out_of_range("second overflow"))?;
+        Ok(proto::WorkflowValue {
+            value: state.second,
+        })
+    }
+    async fn schedule_work(
+        &self,
+        _: &mut proto::OwnerWorkflows,
+        _: proto::UserSchedule,
+    ) -> Result<proto::UserHandle, tonic::Status> {
+        Err(tonic::Status::failed_precondition("use scheduling writer"))
+    }
+    async fn schedule_work_scheduled(
+        &self,
+        state: &mut proto::OwnerWorkflows,
+        request: proto::UserSchedule,
+        reference: String,
+    ) -> Result<TransactionExecution<proto::UserHandle>, tonic::Status> {
+        if request.not_before < 0 {
+            return Err(tonic::Status::invalid_argument(
+                "not_before must be nonnegative",
+            ));
+        }
+        let task = generated::OwnerWorkflowsMethodsTasks::run(
+            &reference,
+            &proto::WorkflowAdd {
+                amount: request.amount,
+            },
+            (request.not_before != 0).then_some(prost_types::Timestamp {
+                seconds: request.not_before,
+                nanos: 0,
+            }),
+        );
+        let mut result = TransactionExecution::new(proto::UserHandle {
+            id: task
+                .task_id
+                .as_ref()
+                .ok_or_else(|| tonic::Status::internal("task identity missing"))?
+                .task_uuid
+                .clone(),
+        });
+        state.schedules = state
+            .schedules
+            .checked_add(1)
+            .ok_or_else(|| tonic::Status::out_of_range("schedule count overflow"))?;
+        result.task_upserts.push(task);
+        Ok(result)
+    }
+    async fn run(
+        &self,
+        context: &WorkflowContext<'_>,
+        request: proto::WorkflowAdd,
+    ) -> Result<proto::UserResult, tonic::Status> {
+        let first = generated::OwnerWorkflowsMethodsWorkflowSteps::first(
+            context,
+            Arc::new(self.clone()),
+            "first-effect",
+            request,
+        )
+        .await?;
+        let second = generated::OwnerWorkflowsMethodsWorkflowSteps::second(
+            context,
+            Arc::new(self.clone()),
+            "second-effect",
+            request,
+        )
+        .await?;
+        Ok(proto::UserResult {
+            first: first.value,
+            second: second.value,
+        })
+    }
+}
+
+// One explicitly configured owner and task dispatcher; no caller-driven discovery.
+pub async fn serve(
+    endpoint: String,
+    address: SocketAddr,
+    application: &str,
+    policy: AuthorizationPolicy,
+    verifier: Arc<dyn reboot::auth::TokenVerifier>,
+    owner: &str,
+    shutdown: impl std::future::Future<Output = ()> + Send + 'static,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let reference = reboot::state_ref::StateRef::from_id("{{ name }}.v1.OwnerWorkflows", owner)?;
+    let workflow_policy = AuthorizationPolicy::new(
+        Some(verifier),
+        Some(Arc::new(ConfiguredOwner {
+            reference: reference.clone(),
+            owner: owner.into(),
+        })),
+    );
+    let store = DatabaseActorStore::connect(endpoint.clone()).await?;
+    let (adapter, tasks) =
+        generated::OwnerWorkflowsMethodsDatabaseAdapter::new(store.clone(), Handler)
+            .with_authorization(workflow_policy.clone())
+            .with_workflows(reference.as_str())?;
+    use reboot::placement_proto as p;
+    let placement = reboot::legacy_placement::PlanOnlyLegacyPlacement::new();
+    placement.install(p::ListenForPlanResponse {
+        plan: Some(p::Plan {
+            version: 1,
+            applications: vec![p::plan::Application {
+                id: application.into(),
+                services: [
+                    ("{{ name }}.v1.HelloWorldMethods", "{{ name }}.v1.HelloWorld"),
+                    (
+                        "{{ name }}.v1.OwnerWorkflowsMethods",
+                        "{{ name }}.v1.OwnerWorkflows",
+                    ),
+                    (
+                        "{{ name }}.v1.OwnerTransactionsMethods",
+                        "{{ name }}.v1.OwnerWorkflows",
+                    ),
+                    ("rbt.v1alpha1.Tasks", "{{ name }}.v1.OwnerWorkflows"),
+                ]
+                .into_iter()
+                .map(|(name, state)| p::plan::application::Service {
+                    full_name: name.into(),
+                    state_type_full_name: state.into(),
+                })
+                .collect(),
+                shards: vec![p::plan::application::Shard {
+                    id: "s000000000".into(),
+                    range: Some(p::plan::application::shard::KeyRange { first_key: vec![] }),
+                    server_id: "local-rust".into(),
+                    replica_index: 0,
+                }],
+            }],
+        }),
+        servers: vec![p::Server {
+            id: "local-rust".into(),
+            application_id: application.into(),
+            address: Some(p::server::Address {
+                host: address.ip().to_string(),
+                port: i32::from(address.port()),
+            }),
+            ..Default::default()
+        }],
+    })?;
+    use reboot::{
+        application_host::LegacyRecoveryMetadata,
+        durable_coordinator::{
+            CoordinatorRecovery, DurableRootCoordinator, ParticipantTarget,
+            SingleParticipantResolver, TonicCoordinatorSidecar,
+        },
+        durable_participant::{
+            DurableActorParticipant, DurableActorParticipantHost, ParticipantRecovery,
+            TonicParticipantSidecar,
+        },
+        legacy_coordinator::DurableCoordinatorWatchHost,
+    };
+    let participant = DurableActorParticipant::new(
+        Arc::new(TonicParticipantSidecar::connect(&endpoint).await?),
+        "{{ name }}.v1.OwnerWorkflows",
+        reference.as_str(),
+    )
+    .with_database_actor_gate(&store);
+    // Host-owned in-process capabilities: never expose transaction controls
+    // on the signed public listener, and do not accept public inbound trees.
+    let coordinator_sidecar = Arc::new(TonicCoordinatorSidecar::connect(&endpoint).await?);
+    let coordinator = DurableRootCoordinator::new(
+        coordinator_sidecar.clone(),
+        Arc::new(SingleParticipantResolver::new(
+            ParticipantTarget {
+                state_type: "{{ name }}.v1.OwnerWorkflows".into(),
+                state_ref: reference.to_string(),
+            },
+            DurableActorParticipantHost::new(participant.clone()),
+        )?),
+    );
+    let transactions = generated::OwnerTransactionsMethodsTransactionAdapter::new(
+        participant,
+        coordinator,
+        crate::user_transactions::Starts,
+        crate::user_transactions::Handler,
+    )
+    .with_authorization(workflow_policy.clone());
+    let durable_recovery = transactions.legacy_recovery_registration(
+        LegacyRecoveryMetadata {
+            participant: ParticipantRecovery {
+                shard_ids: vec!["s000000000".into()],
+                ..Default::default()
+            },
+            coordinator: CoordinatorRecovery {
+                shard_ids: vec!["s000000000".into()],
+                coordinator_state_ref: reference.to_string(),
+                ..Default::default()
+            },
+        },
+        Arc::new(crate::user_transactions::LocalWatch::new(
+            DurableCoordinatorWatchHost::new(
+                coordinator_sidecar,
+                "{{ name }}.v1.OwnerWorkflows",
+                reference.as_str(),
+            )?,
+            reference.to_string(),
+        )),
+    )?;
+    let wait = ReaderTaskWaitService::new(
+        [tasks.clone()],
+        reboot::legacy_placement::LegacyApplicationId::new(application)?,
+        "local-rust",
+        placement.clone(),
+    )?
+    .with_wait_policy(workflow_policy.for_declaration::<generated::OwnerWorkflowsDurableState>());
+    let ordinary =
+        crate::generated::HelloWorldMethodsDatabaseAdapter::new(store, crate::HelloWorld)
+            .with_authorization(policy);
+    ApplicationHost::new(application)
+        .with_legacy_placement_readiness(placement)
+        .with_host_recovery(durable_recovery)
+        .with_host_recovery(tasks.recovery(db::RecoverRequest {
+            state_tags_by_state_type:
+                [("{{ name }}.v1.OwnerWorkflows".into(), "OwnerWorkflows".into())].into(),
+            shard_ids: vec!["s000000000".into()],
+            skip_idempotent_mutations: true,
+        }))
+        .add_public_service(
+            proto::owner_transactions_methods_server::OwnerTransactionsMethodsServer::with_interceptor(
+                transactions, crate::user_transactions::FreshRootOnly,
+            ),
+        )
+        .add_public_service(
+            proto::owner_workflows_methods_server::OwnerWorkflowsMethodsServer::new(adapter),
+        )
+        .add_public_service(db::tasks_server::TasksServer::new(wait))
+        .add_public_service(
+            proto::hello_world_methods_server::HelloWorldMethodsServer::new(ordinary),
+        )
+        .serve_with_shutdown(address, shutdown)
+        .await?;
+    Ok(())
+}

@@ -1,0 +1,74 @@
+[
+  {
+    "id": "9b15327c9788",
+    "name": "Delete repeat CPX02 exact 171353819",
+    "prompt": "Authorized exact-ID expiry cleanup of repeat CPX02. At 2026-10-21T09:47:45.204208+00:00, run python3 /home/openclaw/.hermes/profiles/jean/cache/scratch/tiny-repeat/tiny_repeat_provider.py delete using recorded /home/openclaw/.hermes/profiles/jean/cache/scratch/tiny-repeat/repeat-identity.json. Scope ONLY new server 171353819 and Primary IPv4 156610171 with exact recorded ownership labels, cpx02 fsn1 IP 2.31.73.10. Script GET-verifies identity before DELETE and confirms both API404. NEVER touch old deleted server171335411/IP156588567, existing CCX43 171072439, unknown resources, or change retention. Preserve cleanup receipt. On guard mismatch stop and notify Vlad. Load ephemeral-cloud-benchmarking and scheduled-agent-job-operations. No extension. Work should already have been durably archived; expiry is a hard maximum, not permission to postpone deletion.",
+    "skills": [],
+    "skill": null,
+    "model": "gpt-6.1-sol",
+    "provider": "openai-codex",
+    "base_url": null,
+    "script": null,
+    "context_from": null,
+    "schedule": {
+      "kind": "once",
+      "run_at": "2026-10-21T09:47:45.204208+00:00",
+      "display": "once at 2026-10-21 09:47"
+    },
+    "schedule_display": "once at 2026-10-21 09:47",
+    "repeat": {
+      "times": 1,
+      "completed": 0
+    },
+    "enabled": true,
+    "state": "scheduled",
+    "paused_at": null,
+    "paused_reason": null,
+    "created_at": "2026-10-20T11:52:46.030529+02:00",
+    "next_run_at": "2026-10-21T09:47:45.204208+00:00",
+    "last_run_at": null,
+    "last_status": null,
+    "last_error": null,
+    "last_delivery_error": null,
+    "deliver": "local",
+    "origin": null,
+    "enabled_toolsets": null,
+    "workdir": null
+  },
+  {
+    "id": "b0002ef1b3de",
+    "name": "Repeat CPX02 expiry reminder 171353819",
+    "prompt": "Repeat CPX02 exact server171353819/IP156610171 expires at 2026-10-21T09:47:45.204208+00:00 in30minutes. Read /home/openclaw/.hermes/profiles/jean/cache/scratch/tiny-repeat/repeat-identity.json. Check owner and durable backup; preserve results and stop before expiry. No extension. Do not touch CCX43 retention. If exact server404, no action.",
+    "skills": [],
+    "skill": null,
+    "model": "gpt-6.1-sol",
+    "provider": "openai-codex",
+    "base_url": null,
+    "script": null,
+    "context_from": null,
+    "schedule": {
+      "kind": "once",
+      "run_at": "2026-10-21T09:17:45.204208+00:00",
+      "display": "once at 2026-10-21 09:17"
+    },
+    "schedule_display": "once at 2026-10-21 09:17",
+    "repeat": {
+      "times": 1,
+      "completed": 0
+    },
+    "enabled": true,
+    "state": "scheduled",
+    "paused_at": null,
+    "paused_reason": null,
+    "created_at": "2026-10-20T11:52:46.043732+02:00",
+    "next_run_at": "2026-10-21T09:17:45.204208+00:00",
+    "last_run_at": null,
+    "last_status": null,
+    "last_error": null,
+    "last_delivery_error": null,
+    "deliver": "local",
+    "origin": null,
+    "enabled_toolsets": null,
+    "workdir": null
+  }
+]

@@ -1,0 +1,7 @@
+{
+  "server_id": 171353819,
+  "primary_ip_id": 156610171,
+  "both_api404": true,
+  "time": "2026-10-20T11:21:05.519203+00:00",
+  "note": "Initial guarded deletion stopped on transient attached auto-delete IP after server404; no unsafe IP delete attempted. Provider auto-delete then independently returned404."
+}

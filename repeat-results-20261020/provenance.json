@@ -1,0 +1,104 @@
+{
+  "measured_sdk": "d3b0642d0cb9962c839cfb57ebfd33f2a3cca389",
+  "not_measured": "later published typed 9318 SDK; no inference from later builds",
+  "controller_commit": "101953bbe720945181c2a3caff7aadf3c62f4c36",
+  "bundle_prerequisite": "6e3538ce0b85fcc9b481cf6bffb695a5724426d4",
+  "source_sha256": {
+    "tiny_repeat_analyze.py": "cee54186666e7bb431ec2b2f980ad9c07a7634de9fd21758148a7ea67d37e5f7",
+    "tiny_repeat_control.py": "3741d8dc70d2695cfc15941960dfe166b388bbdab2c95897588fd636751f9470",
+    "tiny_repeat_schema.py": "9c46938021e61cc131a18862e0c4985a5700a77179628e6e4375c36610466cc9",
+    "tiny_repeat_owner.py": "3317a66cbb86fd90785565595bf22b1d404051e4a3f0133fd669a3e11fd076d8",
+    "tiny_repeat_provider.py": "e918301aac227235f6894ff384d1b8325edfd522026a526d89fa4da02e5fe00b",
+    "tiny_repeat_faulttest.py": "d59391a44554079b88fefdd534db16fc9c09bd62aa9367563201f9f5bbd1acc2",
+    "tiny_repeat_selftest.py": "fe32c900ad208619a13d610d7b22a17c8b9da7c4a9a51520c8b636d7e07e49da",
+    "tiny_repeat_smoke.py": "508e4653c642feebbb00f57d427bc5d076abe9e9e6c8bf8f76662a4a8385f1d0",
+    "tiny_repeat_sampler.py": "8885a38b009683bf9fa1e9eb5563706ff5568da2c853db40e726c242f252111f"
+  },
+  "images": {
+    "rust": "sha256:3dcf9d9976f76a63b3a290ef6cf15329f1f6148692c72604e5dc797a237f7db4",
+    "python": "sha256:28241a509e8dbedda24bd2033ce556cc5648ddd02ef80bd349e417586fb84925",
+    "engine": "sha256:1a73705b0771f9c861d9ba96509806849423a3d8bbff140b1261da76280460cd"
+  },
+  "timing_clearance": {
+    "heavy_owner_retired": true,
+    "no_heavy_suite_overlap": true,
+    "coordinator": "parent",
+    "review": "deleg_efa5a9e0 narrow delta PASS; exclusive timing reserved no heavy batches authorized",
+    "candidate_commit": "101953bbe720945181c2a3caff7aadf3c62f4c36",
+    "source_sha256": {
+      "tiny_repeat_analyze.py": "cee54186666e7bb431ec2b2f980ad9c07a7634de9fd21758148a7ea67d37e5f7",
+      "tiny_repeat_control.py": "3741d8dc70d2695cfc15941960dfe166b388bbdab2c95897588fd636751f9470",
+      "tiny_repeat_schema.py": "9c46938021e61cc131a18862e0c4985a5700a77179628e6e4375c36610466cc9",
+      "tiny_repeat_owner.py": "3317a66cbb86fd90785565595bf22b1d404051e4a3f0133fd669a3e11fd076d8",
+      "tiny_repeat_provider.py": "e918301aac227235f6894ff384d1b8325edfd522026a526d89fa4da02e5fe00b",
+      "tiny_repeat_faulttest.py": "d59391a44554079b88fefdd534db16fc9c09bd62aa9367563201f9f5bbd1acc2",
+      "tiny_repeat_selftest.py": "fe32c900ad208619a13d610d7b22a17c8b9da7c4a9a51520c8b636d7e07e49da",
+      "tiny_repeat_smoke.py": "508e4653c642feebbb00f57d427bc5d076abe9e9e6c8bf8f76662a4a8385f1d0",
+      "tiny_repeat_sampler.py": "8885a38b009683bf9fa1e9eb5563706ff5568da2c853db40e726c242f252111f"
+    }
+  },
+  "runtime_environment": {
+    "date": "2026-10-20T10:35:54+00:00\n",
+    "meminfo": "MemTotal:         954872 kB\nMemFree:          506448 kB\nMemAvailable:     618904 kB\nBuffers:            9060 kB\nCached:           231964 kB\nSwapCached:            0 kB\nActive:           214620 kB\nInactive:          96960 kB\nActive(anon):      46956 kB\nInactive(anon):    37368 kB\nActive(file):     167664 kB\nInactive(file):    59592 kB\nUnevictable:       31440 kB\nMlocked:           27440 kB\nSwapTotal:             0 kB\nSwapFree:              0 kB\nZswap:                 0 kB\nZswapped:              0 kB\nDirty:              1340 kB\nWriteback:             0 kB\nAnonPages:        102012 kB\nMapped:            68320 kB\nShmem:              5016 kB\nKReclaimable:      25252 kB\nSlab:              73192 kB\nSReclaimable:      25252 kB\nSUnreclaim:        47940 kB\nKernelStack:        2360 kB\nPageTables:         2448 kB\nSecPageTables:         0 kB\nNFS_Unstable:          0 kB\nBounce:                0 kB\nWritebackTmp:          0 kB\nCommitLimit:      477436 kB\nCommitted_AS:     480788 kB\nVmallocTotal:   13743895347199 kB\nVmallocUsed:       20072 kB\nVmallocChunk:          0 kB\nPercpu:              632 kB\nHardwareCorrupted:     0 kB\nAnonHugePages:         0 kB\nShmemHugePages:        0 kB\nShmemPmdMapped:        0 kB\nFileHugePages:         0 kB\nFilePmdMapped:         0 kB\nUnaccepted:            0 kB\nHugePages_Total:       0\nHugePages_Free:        0\nHugePages_Rsvd:        0\nHugePages_Surp:        0\nHugepagesize:       2048 kB\nHugetlb:               0 kB\nDirectMap4k:       98480 kB\nDirectMap2M:      921600 kB\nDirectMap1G:           0 kB\n",
+    "swaps": "Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority\n",
+    "uname": "Linux jean-reboot-tiny-repeat-20261020 6.8.0-138-generic #138-Ubuntu SMP PREEMPT_DYNAMIC Fri Jul 31 22:41:49 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux\n",
+    "docker": "Client:\n Version:    29.1.3\n Context:    default\n Debug Mode: false\n Plugins:\n  trust: Manage trust on Docker images (Docker Inc.)\n    Version:  29.1.3\n    Path:     /usr/libexec/docker/cli-plugins/docker-trust\n\nServer:\n Containers: 31\n  Running: 0\n  Paused: 0\n  Stopped: 31\n Images: 3\n Server Version: 29.1.3\n Storage Driver: overlayfs\n  driver-type: io.containerd.snapshotter.v1\n Logging Driver: json-file\n Cgroup Driver: systemd\n Cgroup Version: 2\n Plugins:\n  Volume: local\n  Network: bridge host ipvlan macvlan null overlay\n  Log: awslogs fluentd gcplogs gelf journald json-file local splunk syslog\n CDI spec directories:\n  /etc/cdi\n  /var/run/cdi\n Swarm: inactive\n Runtimes: io.containerd.runc.v2 runc\n Default Runtime: runc\n Init Binary: docker-init\n containerd version: \n runc version: \n init version: \n Security Options:\n  apparmor\n  seccomp\n   Profile: builtin\n  cgroupns\n Kernel Version: 6.8.0-138-generic\n Operating System: Ubuntu 24.04.4 LTS\n OSType: linux\n Architecture: x86_64\n CPUs: 1\n Total Memory: 932.5MiB\n Name: jean-reboot-tiny-repeat-20261020\n ID: 84c9c980-f76b-443f-aceb-8671d12c950d\n Docker Root Dir: /var/lib/docker\n Debug Mode: false\n Experimental: false\n Insecure Registries:\n  ::1/128\n  127.0.0.0/8\n Live Restore Enabled: false\n Firewall Backend: iptables\n\n",
+    "cpu": "Architecture:                            x86_64\nCPU op-mode(s):                          32-bit, 64-bit\nAddress sizes:                           40 bits physical, 57 bits virtual\nByte Order:                              Little Endian\nCPU(s):                                  1\nOn-line CPU(s) list:                     0\nVendor ID:                               AuthenticAMD\nBIOS Vendor ID:                          QEMU\nModel name:                              AMD EPYC-Genoa Processor\nBIOS Model name:                         NotSpecified  CPU @ 2.0GHz\nBIOS CPU family:                         1\nCPU family:                              25\nModel:                                   17\nThread(s) per core:                      1\nCore(s) per socket:                      1\nSocket(s):                               1\nStepping:                                0\nBogoMIPS:                                4799.99\nFlags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm rep_good nopl cpuid extd_apicid tsc_known_freq pni pclmulqdq ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand hypervisor lahf_lm cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw topoext perfctr_core ssbd ibrs ibpb stibp ibrs_enhanced vmmcall fsgsbase bmi1 avx2 smep bmi2 erms invpcid avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves avx512_bf16 clzero xsaveerptr wbnoinvd arat avx512vbmi umip pku ospke avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg avx512_vpopcntdq la57 rdpid fsrm\nHypervisor vendor:                       KVM\nVirtualization type:                     full\nL1d cache:                               32 KiB (1 instance)\nL1i cache:                               32 KiB (1 instance)\nL2 cache:                                1 MiB (1 instance)\nL3 cache:                                32 MiB (1 instance)\nNUMA node(s):                            1\nNUMA node0 CPU(s):                       0\nVulnerability Gather data sampling:      Not affected\nVulnerability Indirect target selection: Not affected\nVulnerability Itlb multihit:             Not affected\nVulnerability L1tf:                      Not affected\nVulnerability Mds:                       Not affected\nVulnerability Meltdown:                  Not affected\nVulnerability Mmio stale data:           Not affected\nVulnerability Reg file data sampling:    Not affected\nVulnerability Retbleed:                  Not affected\nVulnerability Spec rstack overflow:      Mitigation; Safe RET\nVulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl\nVulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization\nVulnerability Spectre v2:                Mitigation; Enhanced / Automatic IBRS; IBPB conditional; STIBP disabled; PBRSB-eIBRS Not affected; BHI Not affected\nVulnerability Srbds:                     Not affected\nVulnerability Tsa:                       Vulnerable: Clear CPU buffers attempted, no microcode\nVulnerability Tsx async abort:           Not affected\nVulnerability Vmscape:                   Not affected\n",
+    "cgroup": "0::/user.slice/user-0.slice/session-529.scope\n"
+  },
+  "external_client_host": "CCX43 171072439 / 2.29.27.53; target CPX02 171353819 / 2.31.73.10",
+  "client_cpuset": "14",
+  "cpu_limits": "One actual target vCPU shared by OS/Docker/all containers; NanoCpus/CpuQuota/CpuPeriod=0 (no per-container cap), tinyrepeat.slice MemoryMax=infinity / MemorySwapMax=0. Not a lower-limit exercise.",
+  "retention": {
+    "files": {
+      "actual-evidence.tar.gz": {
+        "sha256": "b46e35597c5f4b4d0b8ee44ff5ebd18271009cab410d68120209e0ba72364d7f",
+        "bytes": 12365280
+      },
+      "all-volumes.tar.gz": {
+        "sha256": "f5a5b99fc8f4e70a468772a6aa6097ce23fd398d7df562e31a951c236d1dd93a",
+        "bytes": 2689787
+      },
+      "volume-content-manifest.json": {
+        "sha256": "e9510eadbf75de1cd8cb22f102c74cfd7cfd0e915f7e57e0cc337cb64c4dbb81",
+        "bytes": 45256
+      },
+      "volume-inspect.json": {
+        "sha256": "58d33d16712f361ac3afaf4c321184aade92e9034eff505d772debdb40f5069d",
+        "bytes": 7185
+      }
+    },
+    "image_archive": {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/tiny-20261020/images.docker-save.tar.gz",
+      "sha256": "f444904864b2c2bc0ca658ff4ffa4df40ad4de7838f2aee1827fb9f16b2b0349",
+      "bytes": 276983276,
+      "all_blob_hashes_verified": 28,
+      "runtime_image_ids": [
+        "sha256:1a73705b0771f9c861d9ba96509806849423a3d8bbff140b1261da76280460cd",
+        "sha256:28241a509e8dbedda24bd2033ce556cc5648ddd02ef80bd349e417586fb84925",
+        "sha256:3dcf9d9976f76a63b3a290ef6cf15329f1f6148692c72604e5dc797a237f7db4"
+      ]
+    },
+    "volume_contents_verified": 238,
+    "free_bytes": 417141022720
+  },
+  "setup_attempts": "Prior controller atomic-write interruption (original partial remains immutable); first detached owner retired for custody/schema repair; RED inspect/spawn/deadline drills then GREEN; ingress public-key setup preflight failure, then detached fatal/live regressions and narrow independent parent PASS. These are setup/review attempts, not extra benchmark repetitions.",
+  "strict_acceptance": false,
+  "telem": {
+    "samples": 9180,
+    "host_memory_PSI_some_avg10_max": 5.1,
+    "host_cpu_PSI_some_avg10_max": 47.48,
+    "host_memory_PSI_full_avg10_max": 3.07,
+    "host_oom_kill_counter_bounds": [
+      0,
+      0
+    ],
+    "stack_swap_bytes_max": 0,
+    "stack_oom_events_max": 0,
+    "service_names": [
+      "containerd.service",
+      "docker.service",
+      "ssh.service"
+    ]
+  }
+}

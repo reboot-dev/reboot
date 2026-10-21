@@ -1,0 +1,82 @@
+{
+  "scope": "Real frozen merged-main import/help prefix only; no serving/signal/full-native/upstream-build acceptance",
+  "merged_main_import_help_verified": true,
+  "merged_main_signal_acceptance": false,
+  "verification": {
+    "merged_main_signal_acceptance": false,
+    "full_native_acceptance": false,
+    "current_upstream_bazel_build_acceptance": false,
+    "failure": "RuntimeError('expected explicit insecure refusal')",
+    "source_count": 3255,
+    "all_child_joins_verified": true,
+    "cleanup_failure": null,
+    "original_task_lock_acquirable": true,
+    "config_sha256": "28db528603b9b9022428791d56fc2d3d60e033e6ae97e28cefc054764481403e",
+    "accepted_retired_sha256": "aff910289ff9132bd3b2f00f27b2a7e1b390708184dba38072f54855ff247a30",
+    "cid": "f8f400b5093a2dc5471faafa7a19fa0baa8d8067f9a7cee2ae607214a7f133ec",
+    "fresh_terminal": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 1,
+      "Error": "",
+      "StartedAt": "2026-10-15T19:22:16.888314697Z",
+      "FinishedAt": "2026-10-15T19:23:02.679595842Z"
+    },
+    "closure_proto_count": 40,
+    "closure_generated_count": 2665,
+    "closure_receipt_sha256": "1ff62db764f1c1d7ff8696bc2e68e6820962fbc52b3ad672831bdece1d4475d7",
+    "packaging_native_extension": {
+      "source": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/publicEnv405/python/lib/python3.12/site-packages/reboot/server/libdatabase_native.so",
+      "sha256": "3245c72162b9ae7bdc9b7c9b7a757feb4a4e60c8a9db641700fb7a517949a986",
+      "claim": "qualified installed package native extension; not a fresh upstream build"
+    }
+  },
+  "rows": [
+    {
+      "name": "closure",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI501-20261015/runtime/closure.log",
+      "sha256": "b6ad1183484bbeaceaf29f6e3f538478453cf78e0edf513296740d2935e3aaa8"
+    },
+    {
+      "name": "imports",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI501-20261015/runtime/imports.log",
+      "sha256": "be9cf6db6a54555ce780962678c22a2ef8b07dd2b4db4911236aeab0a519b991"
+    },
+    {
+      "name": "help",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI501-20261015/runtime/help.log",
+      "sha256": "ea1650da6573e54c3270c80f312e5df4a8b206cd8b37e55cdea9e6f1acc2455b"
+    },
+    {
+      "name": "insecure-refusal",
+      "exit": 2,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI501-20261015/runtime/insecure-refusal.log",
+      "sha256": "fad80773b5e2818ffe92cb540240ad4a2eceab771a5e7d80a7583b62ecce890c"
+    }
+  ],
+  "attach_kernel_wait": {
+    "pid": 1517250,
+    "birth": "91226172",
+    "si_code": 1,
+    "si_status": 1,
+    "exit": 1,
+    "joined": true
+  },
+  "logs": {
+    "closure": "{\"proto_count\": 40, \"overlay_files\": 2665, \"rbt\": \"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI501-20261015/runtime/rbt-merged\"}\n",
+    "imports": "MERGED_MAIN_IMPORT_OK\n",
+    "help": "usage: rbt [-h] [--version] [--state-directory=STATE_DIRECTORY]\n           {cloud,dashboard,dev,export,import,generate,init,inspect,serve,task}\n           ...\n\npositional arguments:\n  {cloud,dashboard,dev,export,import,generate,init,inspect,serve,task}\n\noptions:\n  -h, --help            show this help message and exit\n  --version             show program's version number and exit\n  --state-directory=STATE_DIRECTORY\n                        parent directory for the `.rbt` directory, which\n                        stores application state; defaults to the directory\n                        containing an `.rbtrc` file.\n",
+    "insecure-refusal": "usage: rbt [-h] [--version] [--state-directory=STATE_DIRECTORY]\n           {cloud,dashboard,dev,export,import,generate,init,inspect,serve,task}\n           ...\nrbt: error: unrecognized arguments: --no-open-dashboard\n"
+  },
+  "source_qualification": "Original frozen source417 merged snapshot. rust_dev.py and focused test exactly match published fix; dev.py run_rust_dev call AST matches. Full source is not latest PR/upstream HEAD.",
+  "packaging_qualification": "Pinned original source and freshly generated40schema bindings with qualified installed native extension; not a fresh upstream native library build.",
+  "failure_scope": "Actual refusal trial hit harness obsolete --no-open-dashboard parser flag, not the intended insecure listener refusal. Successor runner corrected arguments; this failure is preserved."
+}

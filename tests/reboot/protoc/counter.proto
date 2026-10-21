@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+import "rbt/v1alpha1/options.proto";
+import "tests/reboot/protoc/shared.proto";
+
+package tests.reboot.protoc;
+
+message Counter {
+  option (rbt.v1alpha1.state) = {
+    implements: [
+      "tests.reboot.protoc.CounterWritesMethods",
+      "tests.reboot.protoc.CounterReadsMethods"
+    ]
+  };
+  int64 value = 1;
+}
+
+message IncrementRequest {
+  int64 amount = 1;
+}
+
+message CounterValue {
+  int64 value = 1;
+}
+
+message CounterLimitExceeded {
+  int64 limit = 1;
+}
+
+message CounterSecondaryExceeded {
+  int64 limit = 1;
+}
+
+service CounterWritesMethods {
+  option (rbt.v1alpha1.service) = {
+    state: "tests.reboot.protoc.Counter"
+  };
+
+  rpc Increment(IncrementRequest) returns (CounterValue) {
+    option (rbt.v1alpha1.method) = {
+      writer: {}
+      // Preserve declaration order in the generated client contract.
+      errors: ".tests.reboot.protoc.CounterSecondaryExceeded"
+      errors: ".tests.reboot.protoc.CounterLimitExceeded"
+    };
+  }
+}
+
+service CounterReadsMethods {
+  option (rbt.v1alpha1.service) = {
+    state: "tests.reboot.protoc.Counter"
+  };
+
+  rpc Get(Empty) returns (CounterValue) {
+    option (rbt.v1alpha1.method) = {
+      reader: {}
+      errors: ".tests.reboot.protoc.CounterLimitExceeded"
+    };
+  }
+}

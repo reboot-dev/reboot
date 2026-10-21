@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package tests.reboot.protoc;
+
+message get_widget_request {
+  string name = 1;
+}
+
+message get_widget_response {
+  string name = 1;
+}
+
+service WidgetApi {
+  rpc GetWidget(get_widget_request) returns (get_widget_response);
+}
