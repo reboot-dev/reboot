@@ -89,10 +89,11 @@ try:
                 from google.rpc import status_pb2
                 rich=next((status_pb2.Status.FromString(v) for k,v in (error.trailing_metadata() or []) if k=='grpc-status-details-bin'),None)
                 return error.code()==grpc.StatusCode.ABORTED and rich is not None and any(d.type_url=='type.googleapis.com/rbt.v1alpha1.StateNotConstructed' for d in rich.details)
+        target_du=du
         def host(child=False,extra=None,wait_ready=True):
             shutdown=work/f'stop-{len(children)}'
             e=env|dict(REMOTE_TRANSACTION_PLANNER=pu,REMOTE_TRANSACTION_SERVER='child' if child else 'root',PURE_TRANSACTION_ACTOR='leaf' if child else 'atomic',DIRECT_TRANSACTION_TASKS='1',WORKFLOW_BODY_EVENTS=str(events),TRANSACTION_DENY_FILE=str(deny))|(extra or {})
-            p=spawn([BIN,'serve-transaction',lu if child else du,f'127.0.0.1:{cp if child else tp}',shutdown],e,role='application')
+            p=spawn([BIN,'serve-transaction',lu if child else target_du,f'127.0.0.1:{cp if child else tp}',shutdown],e,role='application')
             if wait_ready:listening(p,cp if child else tp);until(lambda:ready(child),p)
             return p,shutdown
         def lines():return events.read_text().splitlines() if events.exists() else []
@@ -105,7 +106,8 @@ try:
                 receipts=[m.SerializeToString().hex() for page in c.RecoverIdempotentMutations(db.RecoverIdempotentMutationsRequest(state_type='workflow.v1.AtomicLedger',state_ref=r),timeout=5) for m in page.idempotent_mutations]
                 result.append(dict(value=app.AtomicLedger.FromString(loaded.actors[0].state).value,receipts=receipts,pending=[t.SerializeToString().hex() for page in recovered for t in page.pending_tasks],participants=[t.SerializeToString().hex() for page in recovered for t in page.participant_transactions],tasks=[t.SerializeToString().hex() for t in loaded.tasks]))
             return result
-        declared=case in ['terminal','error-ack-restart','error-target-ack-loss']
+        database_faults=['receipt-ack-loss','abort-ack-loss','source-ack-loss','terminal-ack-loss']
+        declared=case in ['terminal','error-ack-restart','error-target-ack-loss',*database_faults]
         def canonical(action,key,amount=7,schedule='',good=True):
             out=work/f'python-{len(children)}.json'
             p=spawn([sys.executable,FIXTURE/('declared_transaction_client.py' if declared else 'direct_transaction_client.py'),action,tu,key,str(amount),schedule,out],env);wait(p)
@@ -116,6 +118,11 @@ try:
             for child in [True,False]:
                 b,bs=host(child,dict(PURE_TRANSACTION_BOOTSTRAP='1'))
                 assert txn('Create',app.Step(amount=0),uuid.uuid4(),child).value==0;stop(b,bs)
+        dbproxy=None;dbfault=work/'database-fault'
+        if case in database_faults:
+            dbfault.mkdir();pn=port()
+            selected={'receipt-ack-loss':'transaction-error-target','abort-ack-loss':'transaction-abort','source-ack-loss':'transaction-source-stored','terminal-ack-loss':'cancel'}[case]
+            dbproxy=spawn([sys.executable,FIXTURE/'database_ack_proxy.py',f'127.0.0.1:{dp}',f'127.0.0.1:{pn}',selected,dbfault],role='proxy');listening(dbproxy,pn);target_du=f'http://127.0.0.1:{pn}'
         c,cs=host(True)
         barrier=work/'after-target'; extra=dict(REBOOT_TEST_OUTBOUND_WRITER_AFTER_TARGET_ACK=str(barrier)) if case in ['ack-restart','error-ack-restart','authorization-reject','payload-reject'] else {}
         proxy=None;ack=work/'lost-ack.json'
@@ -128,6 +135,18 @@ try:
         if os.environ.get('REMOTE_TRANSACTION_FAULT')=='error':raise RuntimeError('requested remote parent error drill')
         if os.environ.get('REMOTE_TRANSACTION_FAULT')=='signal':os.kill(os.getpid(),signal.SIGTERM)
         key=str(uuid.uuid4());admitted=canonical('spawn',key);task=tasks.TaskId.FromString(bytes.fromhex(admitted['task_id']));before=None
+        if case in database_faults:
+            until((dbfault/'ack-observed.json').exists,t)
+            observed=snapshot(task)
+            assert [x['value'] for x in observed]==[0,0] and not any(x['participants'] for x in observed),observed
+            if case=='receipt-ack-loss':
+                try:txn('Apply',app.Step(amount=1),uuid.uuid4());raise AssertionError('writer bypassed retained root error receipt admission')
+                except grpc.RpcError as error:assert error.code()==grpc.StatusCode.DEADLINE_EXCEEDED,error
+            if case=='abort-ack-loss':assert not any(db.IdempotentMutation.FromString(bytes.fromhex(raw)).request_fingerprint.startswith(b'reboot.transaction.aborted-result.v1\0') for raw in observed[0]['receipts'])
+            (dbfault/'release').touch();wait(t);assert t.returncode!=0
+            rec.setdefault('native_ack_losses',[]).append(json.loads((dbfault/'ack-observed.json').read_text()));save()
+            target_du=du
+            stop(c);stop(d);stop(ld);d,ld=database(),database(True);c,cs=host(True);t,ts=host()
         if extra:
             if case in ['target-ack-loss','error-target-ack-loss']:until(ack.exists,t);wait(t);assert t.returncode!=0
             else:until(barrier.exists,t)
@@ -147,7 +166,7 @@ try:
         final=snapshot(task)
         assert [x['value'] for x in final]==([3,3] if before and declared else [0,0] if declared else [10,10] if before else [7,7]),final
         assert not any(x['participants'] for x in final)
-        assert lines().count('transaction-declared' if declared else 'transaction-apply')==(1 if declared or before is None else 2),lines()
+        assert lines().count('transaction-declared' if declared else 'transaction-apply')==(2 if case=='abort-ack-loss' else 1 if declared or before is None else 2),lines()
         assert db.Task.FromString(bytes.fromhex(final[0]['tasks'][0])).status==db.Task.COMPLETED
         # The remote participant never receives the root receipt identity.
         cdb=dg.DatabaseStub(grpc.insecure_channel(f'127.0.0.1:{dp}'))
@@ -178,6 +197,7 @@ try:
         assert canonical('wait',admitted['task_id'])==result and snapshot(task)==final and lines()==counts
         stop(t,ts);stop(c,cs)
         if proxy:proxy.terminate();wait(proxy);assert proxy.returncode==0
+        if dbproxy:dbproxy.terminate();wait(dbproxy);assert dbproxy.returncode==0
         stop(d);stop(ld);stop(planner)
         cases.append(dict(case=case,admission=admitted,before=before,final=final,result=result,source_checkpoints=checkpoint,events=lines(),plan=plan.SerializeToString().hex()));save()
     rec['complete']=True
