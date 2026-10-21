@@ -39,13 +39,13 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         participant,
         coordinator,
         Starts,
-        Handler { child: (!is_leaf).then_some(leaf) },
+        Handler { child: (!is_leaf).then_some(leaf.clone()) },
     ).with_authorization(AuthorizationPolicy::new(None, Some(Arc::new(Policy))));
     let adapter = if std::env::var_os("PURE_TRANSACTION_BOOTSTRAP").is_some() {
         adapter.with_external_constructors()
     } else { adapter.with_sequential_root_star() };
     let adapter = adapter.with_explicit_abort_owner(reboot::explicit_abort::ExplicitAbortOwner::new(4)?)
-        .with_live_participant_owner(reboot::live_participant::LiveParticipantOwner::new(4, ParticipantTarget { state_type: TYPE.into(), state_ref: root }, watch.clone())?);
+        .with_live_participant_owner(reboot::live_participant::LiveParticipantOwner::new(4, ParticipantTarget { state_type: TYPE.into(), state_ref: root.clone() }, watch.clone())?);
     let (adapter, tasks) = adapter.with_canonical_transaction_tasks(
         #[cfg(feature="pure-transactions")]
         store.clone(),
