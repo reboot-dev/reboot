@@ -48,9 +48,34 @@ rbt $RBT_FLAGS generate
 
 mypy backend/ tests/
 
-# The web app's scenarios need its npm dependencies and a browser,
-# which this script does not install.
-pytest --ignore=tests/web_test.py
+# The web app's scenarios start the frontend's Vite dev server, so
+# install the frontend's npm packages, with the locally built Reboot
+# packages in place of the published ones when the test system
+# provides them.
+pushd frontend
+npm --version
+if [ -n "${REBOOT_NPM_PACKAGE:-}" ]; then
+  # The lockfile pins the published release, while the packages
+  # provided are the unpublished one, so install without it, and with
+  # npm 11, as on Linux: npm 10 crashes on this overlay of unpublished
+  # packages ("Cannot read properties of null (reading 'edgesOut')").
+  npx --yes npm@11 install --no-save --package-lock=false \
+    "${SANDBOX_ROOT}${REBOOT_NPM_PACKAGE}" \
+    "${SANDBOX_ROOT}${REBOOT_API_NPM_PACKAGE}" \
+    "${SANDBOX_ROOT}${REBOOT_WEB_NPM_PACKAGE}" \
+    "${SANDBOX_ROOT}${REBOOT_REACT_NPM_PACKAGE}" \
+    "${SANDBOX_ROOT}${REBOOT_STD_NPM_PACKAGE}" \
+    "${SANDBOX_ROOT}${REBOOT_STD_API_PACKAGE}"
+else
+  npm install
+fi
+popd
+
+# The web app's scenarios drive the app in a browser, so install the
+# one Playwright drives.
+playwright install chromium
+
+pytest
 
 if [ -n "$EXPECTED_RBT_DEV_OUTPUT_FILE" ]; then
   actual_output_file=$(mktemp)

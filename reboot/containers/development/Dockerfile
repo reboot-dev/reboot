@@ -217,6 +217,14 @@ RUN mkdir $NVM_DIR && \
 # Have the non-root user load `nvm` on login.
 RUN echo ". $NVM_DIR/nvm.sh" >> /home/$USERNAME/.bashrc
 
+### Browser scenarios.
+# A project's web app scenarios (the `reboot.bdd` web steps) drive the
+# app in the Chromium that `playwright install chromium` downloads,
+# which needs shared libraries it does not install. Playwright itself
+# knows the list for this distribution, so have it install them.
+RUN . "$NVM_DIR/nvm.sh" && npx --yes playwright install-deps chromium \
+  && rm -rf /var/lib/apt/lists/* /root/.npm
+
 # Install uv as the target user.
 USER $USERNAME
 RUN curl --retry 5 --retry-all-errors -LsSf https://astral.sh/uv/0.11.13/install.sh \

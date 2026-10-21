@@ -13,43 +13,8 @@ sh_library(
     data = test_packages,
 )
 
-# The following package paths are relative to the working directory of
-# the test script.
-general_env = {
-    "EXPECTED_RBT_DEV_OUTPUT_FILE": "tests/reboot/examples/bank-pydantic/expected_output.txt",
-    "REBOOT_WHL_FILE": "$(location //reboot:reboot.dev)",
-}
-
-osx_env = dict(general_env)
-
-osx_env.update({
-    "REBOOT_LOCAL_ENVOY_MODE": "executable",
-})
-
-sh_test_in_working_directory(
-    name = "test",
-    data = test_packages + [
-        ":test_packages",
-        # The actual test script will be given access to all of the files in
-        # the example.
-        "//reboot/examples/bank-pydantic:everything",
-        "expected_output.txt",
-    ],
-    env = select({
-        "@platforms//os:linux": general_env,
-        "@platforms//os:osx": osx_env,
-    }),
-    # The following path is relative to the working directory.
-    script = ".tests/test.sh",
-    # In all our example tests, we initiate LocalEnvoy on the default
-    # secure port 9991. We require 'exclusive' to not run multiple
-    # tests, that use the same port, concurrently.
-    tags = ["exclusive"],
-    working_directory = "reboot/examples/bank-pydantic/",
-)
-
-# The locally built Reboot npm packages that the frontends are
-# type-checked against, instead of the published releases.
+# The locally built Reboot npm packages that the frontends are built
+# and type-checked against, instead of the published releases.
 frontend_packages = [
     "//rbt/std:reboot-dev-reboot-std-api",
     "//rbt/v1alpha1:reboot-dev-reboot-api",
@@ -76,6 +41,47 @@ osx_frontend_env.update({
     # Our OSX CI machines don't have Docker.
     "REBOOT_LOCAL_ENVOY_MODE": "executable",
 })
+
+# The example's tests run its feature files, the web app's included,
+# so they need the frontend's packages as well as the backend's.
+# The following package path is relative to the working directory of
+# the test script.
+test_env = dict(frontend_env)
+
+test_env.update({
+    "EXPECTED_RBT_DEV_OUTPUT_FILE": "tests/reboot/examples/bank-pydantic/expected_output.txt",
+})
+
+osx_test_env = dict(osx_frontend_env)
+
+osx_test_env.update({
+    "EXPECTED_RBT_DEV_OUTPUT_FILE": "tests/reboot/examples/bank-pydantic/expected_output.txt",
+})
+
+sh_test_in_working_directory(
+    name = "test",
+    # The web app's scenarios install the frontend's npm packages and a
+    # browser before they run, on top of the backend's own setup.
+    size = "large",
+    data = frontend_packages + [
+        ":test_packages",
+        # The actual test script will be given access to all of the files in
+        # the example.
+        "//reboot/examples/bank-pydantic:everything",
+        "expected_output.txt",
+    ],
+    env = select({
+        "@platforms//os:linux": test_env,
+        "@platforms//os:osx": osx_test_env,
+    }),
+    # The following path is relative to the working directory.
+    script = ".tests/test.sh",
+    # In all our example tests, we initiate LocalEnvoy on the default
+    # secure port 9991. We require 'exclusive' to not run multiple
+    # tests, that use the same port, concurrently.
+    tags = ["exclusive"],
+    working_directory = "reboot/examples/bank-pydantic/",
+)
 
 # Builds and type-checks the React Native (Expo) front end against the
 # locally built Reboot client. See `frontend/mobile/.tests/react_native_test.sh`.
