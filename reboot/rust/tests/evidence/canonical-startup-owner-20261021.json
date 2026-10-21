@@ -1,0 +1,370 @@
+{
+  "tested_source": "4e4bb8e33f62cfbead226a0484753c0576fb1110",
+  "source_inputs": 501,
+  "native": [
+    {
+      "stage": "restored8",
+      "gate": "mixed-startup",
+      "cases": 4,
+      "driver_children": 61,
+      "binary_sha256": "20fc1646163de271a10beaac6e18c0aafdb489eb0f0c1818b7b25da17193ee64",
+      "receipt": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/restored8/mixed-startup-raw/receipt.json"
+    },
+    {
+      "stage": "restored8",
+      "gate": "mixed-focused",
+      "cases": 6,
+      "driver_children": 97,
+      "binary_sha256": "20fc1646163de271a10beaac6e18c0aafdb489eb0f0c1818b7b25da17193ee64",
+      "receipt": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/restored8/mixed-focused-raw/receipt.json"
+    },
+    {
+      "stage": "restored10",
+      "gate": "pure-startup",
+      "cases": 4,
+      "driver_children": 69,
+      "binary_sha256": "e0b8ff3c64ceddbe04861af38d2e7a60e62125b5cd15aef9c13779f03a898da6",
+      "receipt": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/restored10/pure-startup-raw/receipt.json"
+    },
+    {
+      "stage": "restored10",
+      "gate": "pure-focused",
+      "cases": 6,
+      "driver_children": 109,
+      "binary_sha256": "e0b8ff3c64ceddbe04861af38d2e7a60e62125b5cd15aef9c13779f03a898da6",
+      "receipt": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/restored10/pure-focused-raw/receipt.json"
+    },
+    {
+      "stage": "restored10",
+      "gate": "mixed-remote",
+      "cases": 14,
+      "driver_children": 256,
+      "binary_sha256": "20fc1646163de271a10beaac6e18c0aafdb489eb0f0c1818b7b25da17193ee64",
+      "receipt": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/restored10/mixed-remote-raw/receipt.json"
+    },
+    {
+      "stage": "restored10",
+      "gate": "pure-remote",
+      "cases": 14,
+      "driver_children": 284,
+      "binary_sha256": "e0b8ff3c64ceddbe04861af38d2e7a60e62125b5cd15aef9c13779f03a898da6",
+      "receipt": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/restored10/pure-remote-raw/receipt.json"
+    },
+    {
+      "stage": "restored10",
+      "gate": "legacy7",
+      "cases": 7,
+      "driver_children": 100,
+      "binary_sha256": "20fc1646163de271a10beaac6e18c0aafdb489eb0f0c1818b7b25da17193ee64",
+      "receipt": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/restored10/legacy7-raw/receipt.json"
+    },
+    {
+      "stage": "restored10",
+      "gate": "mixed-commit",
+      "cases": 3,
+      "driver_children": 57,
+      "binary_sha256": "20fc1646163de271a10beaac6e18c0aafdb489eb0f0c1818b7b25da17193ee64",
+      "receipt": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/restored10/mixed-commit-raw/receipt.json"
+    },
+    {
+      "stage": "restored10",
+      "gate": "pure-commit",
+      "cases": 3,
+      "driver_children": 63,
+      "binary_sha256": "e0b8ff3c64ceddbe04861af38d2e7a60e62125b5cd15aef9c13779f03a898da6",
+      "receipt": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/restored10/pure-commit-raw/receipt.json"
+    }
+  ],
+  "final_positive_case_executions": 61,
+  "driver_child_joins": 1096,
+  "sdk_pass_executions": 996,
+  "sdk_ignored": 175,
+  "parents": {
+    "red-admission6": {
+      "parent_pid": 2495263,
+      "owner_waited": true,
+      "started": "2026-10-21T07:53:44.689282+00:00",
+      "owner_pid": 2495264,
+      "owner_wait_returncode": 0,
+      "finished": "2026-10-21T07:54:32.319007+00:00"
+    },
+    "red-claim7": {
+      "parent_pid": 2496009,
+      "owner_waited": true,
+      "started": "2026-10-21T07:54:32.536439+00:00",
+      "owner_pid": 2496010,
+      "owner_wait_returncode": 0,
+      "finished": "2026-10-21T07:55:20.273344+00:00"
+    },
+    "restored8": {
+      "parent_pid": 2496679,
+      "owner_waited": true,
+      "started": "2026-10-21T07:55:20.513072+00:00",
+      "owner_pid": 2496680,
+      "owner_wait_returncode": 1,
+      "finished": "2026-10-21T08:03:03.401925+00:00"
+    },
+    "restored9": {
+      "parent_pid": 2512755,
+      "owner_waited": true,
+      "started": "2026-10-21T08:04:39.849420+00:00",
+      "owner_pid": 2512756,
+      "owner_wait_returncode": 1,
+      "finished": "2026-10-21T08:05:11.436946+00:00"
+    },
+    "restored10": {
+      "parent_pid": 2514771,
+      "owner_waited": true,
+      "started": "2026-10-21T08:07:54.785174+00:00",
+      "owner_pid": 2514772,
+      "owner_wait_returncode": 0,
+      "finished": "2026-10-21T08:13:26.621786+00:00"
+    }
+  },
+  "postflight": {
+    "complete": true,
+    "observed": "2026-10-21T08:13:26.803887+00:00",
+    "host": "jean-reboot-rust-validation-ccx43",
+    "boot_id": "bdc3e231-59dd-45ae-a5d7-59e7e9384078",
+    "unique_absent_pids": 1680,
+    "four_locks_available": true,
+    "available_bytes": 16439083008,
+    "target_bytes": 83124535296,
+    "owners": [
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/focused3/owner.json",
+        "sha256": "526fd3cc8c8e99f0930072e8ff98affb4b52b84df7165e667d524073303c86d5",
+        "complete": false
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/focused2/owner.json",
+        "sha256": "054a32769421110c80794003d3dd31a3f27f6905c78217d304b1272297b49955",
+        "complete": false
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/restored9/owner.json",
+        "sha256": "d9af41d46c40c72df0ba3000a35c927df540e4cd6afc049d611bad08b5f7dd3e",
+        "complete": false
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/red-claim7/owner.json",
+        "sha256": "c7b2af42d9ea45db5190a195c2dcbebc51cdf108869b0c0ac4fe0090d16bfb60",
+        "complete": true
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/restored8/owner.json",
+        "sha256": "c28eb49a934f984d60d8667a3197714301d7adfdff32d80e3f63cdb071addd96",
+        "complete": false
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/red-admission6/owner.json",
+        "sha256": "fc03bb854df6dea423454c81fa56e249b9b9e81a580b5cf4383b851a5ca11823",
+        "complete": true
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/restored10/owner.json",
+        "sha256": "23eafe4e5a67bd0ced5a8b676d3f1353b8517644a615145115b3529a59980d0f",
+        "complete": true
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/compile1/owner.json",
+        "sha256": "9381121b7d635bc6758c8dd407181142a43fe07149ece31c7980d7022f28767f",
+        "complete": false
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/validation4/owner.json",
+        "sha256": "3899a43b529b281a8b3bea2c5341aeb2713498b6701c7873309a7ee1979e2b49",
+        "complete": true
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/focused5/owner.json",
+        "sha256": "94515630560386621e2a8cfdfe35bac84adc251e1c7528d3956db01c169ed5ef",
+        "complete": true
+      }
+    ],
+    "parents": [
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/restored8-parent.json",
+        "exit": 1
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/validation4-parent.json",
+        "exit": 0
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/restored9-parent.json",
+        "exit": 1
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/focused3-parent.json",
+        "exit": 1
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/restored10-parent.json",
+        "exit": 0
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/focused5-parent.json",
+        "exit": 0
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/red-admission6-parent.json",
+        "exit": 0
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/red-claim7-parent.json",
+        "exit": 0
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/focused2-parent.json",
+        "exit": 1
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/compile1-parent.json",
+        "exit": 1
+      }
+    ],
+    "drivers": [
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/focused3/mixed-startup-raw/receipt.json",
+        "complete": false,
+        "cases": 1,
+        "children": 26
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/focused2/mixed-startup-raw/receipt.json",
+        "complete": false,
+        "cases": 0,
+        "children": 11
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/restored9/pure-startup-raw/receipt.json",
+        "complete": false,
+        "cases": 1,
+        "children": 33
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/red-claim7/mixed-startup-raw/receipt.json",
+        "complete": false,
+        "cases": 0,
+        "children": 11
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/restored8/mixed-startup-raw/receipt.json",
+        "complete": true,
+        "cases": 4,
+        "children": 61
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/restored8/mixed-focused-raw/receipt.json",
+        "complete": true,
+        "cases": 6,
+        "children": 97
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/restored8/pure-startup-raw/receipt.json",
+        "complete": false,
+        "cases": 0,
+        "children": 6
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/red-admission6/mixed-startup-raw/receipt.json",
+        "complete": false,
+        "cases": 0,
+        "children": 11
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/restored10/pure-commit-raw/receipt.json",
+        "complete": true,
+        "cases": 3,
+        "children": 63
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/restored10/mixed-remote-raw/receipt.json",
+        "complete": true,
+        "cases": 14,
+        "children": 256
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/restored10/pure-focused-raw/receipt.json",
+        "complete": true,
+        "cases": 6,
+        "children": 109
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/restored10/pure-remote-raw/receipt.json",
+        "complete": true,
+        "cases": 14,
+        "children": 284
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/restored10/legacy7-raw/receipt.json",
+        "complete": true,
+        "cases": 7,
+        "children": 100
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/restored10/pure-startup-raw/receipt.json",
+        "complete": true,
+        "cases": 4,
+        "children": 69
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/restored10/mixed-commit-raw/receipt.json",
+        "complete": true,
+        "cases": 3,
+        "children": 57
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/validation4/mixed-startup-raw/receipt.json",
+        "complete": true,
+        "cases": 3,
+        "children": 47
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/validation4/mixed-focused-raw/receipt.json",
+        "complete": true,
+        "cases": 6,
+        "children": 97
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/validation4/pure-focused-raw/receipt.json",
+        "complete": true,
+        "cases": 6,
+        "children": 109
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/validation4/mixed-startup-reused-raw/receipt.json",
+        "complete": true,
+        "cases": 3,
+        "children": 47
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/validation4/pure-startup-raw/receipt.json",
+        "complete": true,
+        "cases": 3,
+        "children": 53
+      },
+      {
+        "path": "/home/benchbuild/.cache/canonical-startup-owner-20261021-evidence/focused5/mixed-startup-raw/receipt.json",
+        "complete": true,
+        "cases": 4,
+        "children": 61
+      }
+    ],
+    "expiry_utc": "2026-10-21T18:46:13Z"
+  },
+  "archive_parent": {
+    "parent_pid": 2547852,
+    "child_waited": false,
+    "complete": false,
+    "started": "2026-10-21T08:14:06.463197+00:00",
+    "child_pid": 2547853
+  },
+  "publication_hold": [
+    "archive operation active",
+    "offhost full-byte transfer and independent verifier not run",
+    "independent parent source review required"
+  ],
+  "host_expiry_utc": "2026-10-21T18:46:13Z"
+}
