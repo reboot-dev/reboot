@@ -154,7 +154,8 @@ try:
             continue
         key=str(uuid.uuid4());admitted=canonical('spawn',key);task=tasks.TaskId.FromString(bytes.fromhex(admitted['task_id']));before=None
         if requested_case in ['startup-predispatch','startup-child-ack']:
-            exec(compile((FIXTURE/'canonical_startup_recovery_case.py').read_text(),str(FIXTURE/'canonical_startup_recovery_case.py'),'exec'))
+            startup_case = 'canonical_startup_child_ack_case.py' if requested_case == 'startup-child-ack' else 'canonical_startup_recovery_case.py'
+            exec(compile((FIXTURE/startup_case).read_text(),str(FIXTURE/startup_case),'exec'))
             continue
         if case=='remote-intent-restart':
             until((work/'remote-intent').exists,t)
