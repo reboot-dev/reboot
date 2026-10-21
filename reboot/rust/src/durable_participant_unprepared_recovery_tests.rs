@@ -47,6 +47,12 @@ impl crate::durable_coordinator::CoordinatorSidecar for Recovery681Coordinator {
         self.decision_entered.notify_one();
         Box::pin(async { Ok(Default::default()) })
     }
+    fn decision_get(
+        &self,
+        _: database::TransactionCoordinatorDecisionGetRequest,
+    ) -> Recovery681Future<'_, database::TransactionCoordinatorDecisionGetResponse> {
+        Box::pin(async { Ok(Default::default()) })
+    }
     fn recover(
         &self,
         _: database::RecoverRequest,

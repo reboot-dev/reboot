@@ -125,9 +125,10 @@ try:
                 b,bs=host(child,dict(PURE_TRANSACTION_BOOTSTRAP='1'))
                 assert txn('Create',app.Step(amount=0),uuid.uuid4(),child).value==0;stop(b,bs)
         dbproxy=None;dbfault=work/'database-fault'
-        if case in database_faults:
+        authority_recovery = case in ['authority-commit-ack-loss', 'authority-abort-ack-loss']
+        if case in database_faults or authority_recovery:
             dbfault.mkdir();pn=port()
-            selected={'receipt-ack-loss':'transaction-error-target','abort-ack-loss':'transaction-abort','source-ack-loss':'transaction-source-stored','terminal-ack-loss':'cancel'}[case]
+            selected={'receipt-ack-loss':'transaction-error-target','abort-ack-loss':'transaction-abort','source-ack-loss':'transaction-source-stored','terminal-ack-loss':'cancel'}.get(case, 'transaction-decision')
             dbproxy=spawn([sys.executable,FIXTURE/'database_ack_proxy.py',f'127.0.0.1:{dp}',f'127.0.0.1:{pn}',selected,dbfault],role='proxy');listening(dbproxy,pn);target_du=f'http://127.0.0.1:{pn}'
         c,cs=host(True)
         barrier=work/'after-target'; extra=dict(REBOOT_TEST_OUTBOUND_WRITER_AFTER_TARGET_ACK=str(barrier)) if case in ['ack-restart','error-ack-restart','authorization-reject','payload-reject'] else {}
@@ -141,6 +142,9 @@ try:
             assert txn('Open',app.Step(amount=0),uuid.uuid4(),True).value==0
         if os.environ.get('REMOTE_TRANSACTION_FAULT')=='error':raise RuntimeError('requested remote parent error drill')
         if os.environ.get('REMOTE_TRANSACTION_FAULT')=='signal':os.kill(os.getpid(),signal.SIGTERM)
+        if authority_recovery:
+            exec(compile((FIXTURE/'remote_terminal_recovery_case.py').read_text(), str(FIXTURE/'remote_terminal_recovery_case.py'), 'exec'))
+            continue
         key=str(uuid.uuid4());admitted=canonical('spawn',key);task=tasks.TaskId.FromString(bytes.fromhex(admitted['task_id']));before=None
         if case=='child-ack-loss':
             until(child_ack.exists,t);wait(t);assert t.returncode!=0

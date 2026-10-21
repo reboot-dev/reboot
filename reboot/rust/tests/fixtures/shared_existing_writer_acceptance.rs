@@ -538,6 +538,12 @@ impl reboot::durable_coordinator::CoordinatorSidecar for CoordinatorBoundary {
             Ok(response)
         })
     }
+    fn decision_get(
+        &self,
+        r: reboot::database_proto::TransactionCoordinatorDecisionGetRequest,
+    ) -> Rpc<'_, reboot::database_proto::TransactionCoordinatorDecisionGetResponse> {
+        reboot::durable_coordinator::CoordinatorSidecar::decision_get(&self.inner, r)
+    }
     fn recover(
         &self,
         r: reboot::database_proto::RecoverRequest,

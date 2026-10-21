@@ -1271,6 +1271,18 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
         snapshot: CoordinatorRecoverySnapshot,
     ) -> Result<(), Status> {
         for (transaction_id, record, participants) in snapshot.records {
+            // A lost DecisionPut/terminal ACK does not revoke the immutable
+            // decision. Re-Prepare is neither required nor authoritative once
+            // that original decision exists. In particular, a transient Prepare
+            // failure must not strand a durably decided Abort after restart.
+            if let Some(commit) = self.recovered_terminal_decision(
+                transaction_id, &record, &participants,
+            ).await? {
+                self.terminal_all(transaction_id, &participants.should_commit, commit)
+                    .await?;
+                self.cleanup(transaction_id, &record.state_ref).await?;
+                continue;
+            }
             if record.preparing {
                 // Read-only actors released their lock after the original Prepare;
                 // a recovered coordinator must never re-prepare them.
@@ -1320,6 +1332,48 @@ impl<C: CoordinatorSidecar, R: ParticipantResolver> DurableRootCoordinator<C, R>
             self.cleanup(transaction_id, &record.state_ref).await?;
         }
         Ok(())
+    }
+
+    /// Consult only the native immutable decision for this exact recovered root.
+    /// No decision is deliberately non-terminal: membership/record absence never
+    /// authorizes Abort. A read failure also cannot fall through to Prepare.
+    async fn recovered_terminal_decision(
+        &self,
+        transaction_id: Uuid,
+        record: &database::TransactionCoordinator,
+        participants: &ParticipantSet,
+    ) -> Result<Option<bool>, Status> {
+        let response = self.sidecar.decision_get(
+            database::TransactionCoordinatorDecisionGetRequest {
+                root_transaction_id: transaction_id.as_bytes().to_vec(),
+                coordinator_state_ref: record.state_ref.clone(),
+            },
+        ).await?;
+        let Some(decision) = response.decision else { return Ok(None); };
+        if decision.coordinator_state_ref != record.state_ref {
+            return Err(Status::data_loss("recovered terminal decision coordinator differs"));
+        }
+        match database::transaction_coordinator_decision::Outcome::try_from(decision.outcome) {
+            Ok(database::transaction_coordinator_decision::Outcome::Abort) => {
+                if decision.participants.is_some() {
+                    return Err(Status::data_loss("recovered Abort decision carries participants"));
+                }
+                Ok(Some(false))
+            }
+            Ok(database::transaction_coordinator_decision::Outcome::Commit) => {
+                let expected = Self::record(&record.state_ref, &ParticipantSet {
+                    should_commit: participants.should_commit.clone(),
+                    read_only: BTreeSet::new(),
+                }, false).participants;
+                if record.preparing || decision.participants != expected {
+                    return Err(Status::data_loss(
+                        "recovered Commit decision does not match prepared membership",
+                    ));
+                }
+                Ok(Some(true))
+            }
+            _ => Err(Status::data_loss("recovered terminal decision has invalid outcome")),
+        }
     }
 
     async fn persist_abort(
@@ -1678,6 +1732,7 @@ pub mod test_support {
 pub(crate) mod tests {
     include!("coordinator_original_allocation_tests.rs");
     include!("coordinator_recovery_snapshot_tests.rs");
+    include!("coordinator_terminal_recovery_tests.rs");
     use super::*;
     use std::collections::VecDeque;
     use std::sync::Mutex;
@@ -2523,6 +2578,9 @@ pub(crate) mod tests {
         calls: Mutex<Vec<Call>>,
         trace: Arc<Mutex<Vec<&'static str>>>,
         recover: Mutex<VecDeque<Result<database::RecoverResponse, Status>>>,
+        recovered_decision: Mutex<Option<database::TransactionCoordinatorDecision>>,
+        decision_reads: Mutex<Vec<database::TransactionCoordinatorDecisionGetRequest>>,
+        decision_read_error: bool,
         decision_error: bool,
         park_decision: bool,
     }
@@ -2574,6 +2632,20 @@ pub(crate) mod tests {
                     return Err(Status::unavailable("lost decision ACK"));
                 }
                 Ok(Default::default())
+            })
+        }
+        fn decision_get(
+            &self,
+            request: database::TransactionCoordinatorDecisionGetRequest,
+        ) -> CoordinatorFuture<'_, database::TransactionCoordinatorDecisionGetResponse> {
+            self.decision_reads.lock().unwrap().push(request);
+            Box::pin(async move {
+                if self.decision_read_error {
+                    return Err(Status::unavailable("decision read interrupted"));
+                }
+                Ok(database::TransactionCoordinatorDecisionGetResponse {
+                    decision: self.recovered_decision.lock().unwrap().clone(),
+                })
             })
         }
         fn recover(

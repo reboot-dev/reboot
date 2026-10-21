@@ -109,6 +109,11 @@ def main():
             call = channel.unary_unary(path)
             def unary(body, context):
                 try:
+                    if method == 'TransactionCoordinatorDecisionPut' and (root / 'deny-decision-put').exists():
+                        with lock:
+                            with (root / 'denied-decisions.jsonl').open('a') as output:
+                                output.write(json.dumps({'request': body.hex()}) + '\n')
+                        context.abort(grpc.StatusCode.UNAVAILABLE, 'nondefinitive DecisionPut outage after original durable decision')
                     if method == 'Store':
                         with lock:
                             with (root / 'store-attempts.jsonl').open('a') as output:
@@ -120,7 +125,8 @@ def main():
                         drop = not claimed.is_set() and (
                             (method == 'Store' and boundary(body) == selected) or
                             (method == 'CompleteTask' and selected in ['cancel', 'cancel-hold', 'cancel-hold-then-loss']) or
-                            (method == 'TransactionParticipantAbort' and selected == 'transaction-abort'))
+                            (method == 'TransactionParticipantAbort' and selected == 'transaction-abort') or
+                            (method == 'TransactionCoordinatorDecisionPut' and selected == 'transaction-decision' and (root / 'armed').exists()))
                         second = (method == 'CompleteTask' and selected == 'cancel-hold-then-loss'
                                   and claimed.is_set() and not (root / 'second-ack-observed.json').exists())
                         if drop:
