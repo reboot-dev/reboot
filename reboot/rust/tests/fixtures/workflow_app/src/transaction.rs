@@ -291,7 +291,15 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
             watch.clone(),
         )?);
     #[cfg(not(feature = "pure-transactions"))]
-    let (leaf, leaf_tasks) = leaf.with_one_shot_reader_tasks(&leaf_ref)?;
+    let (leaf, leaf_tasks) = if std::env::var_os("TRANSACTION_SUCCESSOR_PROOF").is_some() {
+        leaf.with_canonical_transaction_tasks(
+            tonic::transport::Endpoint::from_shared(format!("http://{address}"))?.connect_lazy(),
+            reboot::CallerId::new("a0000000001", None)?,
+            None,
+        )?
+    } else {
+        leaf.with_one_shot_reader_tasks(&leaf_ref)?
+    };
     #[cfg(feature = "pure-transactions")]
     let (leaf, leaf_tasks) = leaf.with_canonical_transaction_tasks(store.clone(), tonic::transport::Endpoint::from_shared(format!("http://{address}"))?.connect_lazy(), reboot::CallerId::new("a0000000001",None)?, None)?;
     tasks.set_max_live_deliveries(512)?;
