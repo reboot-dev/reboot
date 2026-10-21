@@ -159,3 +159,79 @@ Previous P1 archives and prior evidence directories were not modified. Full
 pre-handoff convergence still requires durable task-to-original-root identity,
 complete pre-dispatch membership/recovery ownership, and an authoritative outcome
 receipt bridge; none is replaced by this bounded native-decision recovery seam.
+
+## Publication HOLD: unchanged legacy regression is required
+
+Independent reviewer `20b3399d` found no runtime bug, but publication remains
+**HOLD** until the unchanged seven-case `prove_transaction.py` matrix completes
+against the frozen final mixed executable. Recovery applies to legacy coordinator
+records too; the older local gate is required regression coverage, not optional
+coverage that can be omitted from this qualification.
+
+The retained `final3/transaction.log` failed at `prove_transaction.py:96` while
+starting the **second native Database**, before either application started.
+`final3/transaction-raw/receipt.json` has `complete=false`, **zero completed cases**,
+and `InterruptedError('transaction proof parent terminated')`. Its four original
+children were joined; this is an infrastructure interruption, not a passing legacy
+matrix or evidence of a runtime regression. Original driver PID was `2287656`;
+its native Database child PIDs were `2287676` and `2287734`.
+
+### Fresh bounded continuation preflight: blocked, no workload launched
+
+At `2026-10-21T02:48:09.126207+00:00`, read-only inspection of the existing authorized
+CCX43 (`root@2.29.27.53`, server `171072439`) found:
+
+| Existing resource/budget | Bytes |
+|---|---:|
+| Available filesystem space | 7,540,981,760 |
+| Existing native-continuation free-space floor | 8,589,934,592 |
+| Deficit **before any new RocksDB/log/archive writes** | **1,048,952,832** |
+| Earlier error/SIGTERM-only floor (not a matrix budget) | 7,516,192,768 |
+| Headroom even above that drill-only floor | 24,788,992 |
+
+The native floor is taken from the original `remaining-budget.json`; the lower
+floor is explicitly restricted by `drill-budget.json` to two error/SIGTERM gates.
+It must not be reused to admit a full seven-case matrix. The current filesystem
+already fails native admission without estimating any further workload growth.
+No cache cleanup, deletion of owned or unowned evidence, replacement capacity,
+installation, build, deployment or push was performed. The matrix was **not
+started**, avoiding another predictably interrupted disk-guard run. Expiry remains
+`2026-10-21 18:46:13 UTC`. Adequate RAM/idle CPUs do not resolve this disk blocker.
+
+Fresh preflight (not archived retirement alone) checked 29 original owner ledgers,
+29 original parent receipts and 73 native-driver receipts, verifying nonempty
+child ledgers, original waits and current PID absence. It acquired all four existing
+cache locks together and verified the old final4 service inactive/successful with
+`MainPID=0`; locks were released when this read-only process exited. The initial
+unprivileged lock probe failed on the existing root-owned lock; the authorized
+root probe succeeded without changing ownership or permissions. No new workload
+owner or native children exist for this blocked continuation.
+
+All 491 frozen source inputs still matched the original final1 manifest. The
+remote mixed executable still has SHA-256
+`091fadaf8c763ca6de035ff4d52008998752537ed58663b077c93cd63cd09f3e`,
+and native Database still has SHA-256
+`619002c569e9841144a8bbedf4f2ce6a753bb0e6b103af71883d91d43f413803`.
+The unchanged legacy driver has SHA-256
+`771e94cdaf0e65a73be2ad0ab5ab974324b49eb8e5d655df82a74fe4d81c44a4`;
+its bytes are unchanged from reviewed base `048223cf` through checked HEAD
+`a3d9858a7383062eddbd808ba2dc2800cfa96177`. No rebuild is needed on this evidence.
+
+Offhost additive diagnostics are retained beside the original archive:
+`legacy_hold_preflight.py` and `legacy-hold-preflight-root.json`. The latter's
+SHA-256 is
+`eaf63728888f13ccae4f0aebe686de6202c2f0a6437ba72391d6bd471c089321`.
+The original immutable archive was independently reverified with the existing
+read-only verifier (exit 0): all 5,929 members and 491 source inputs passed, with
+unchanged archive SHA-256
+`9ca6647845053424b091f9f2bc5cdcbc2ed554435e57564920131f393148f75a`.
+That verifier's bounded-seam acceptance does **not** clear this publication HOLD.
+Prior archives, failure receipts, logs, native storage and assertions are unchanged.
+
+The remaining gate is exactly the default unchanged matrix: `success`,
+`concurrent-root`, `ack-restart`, `target-ack-loss`, `payload-reject`,
+`authorization-reject`, `rollback`. It requires adequate existing disk budget,
+new original-parent custody and fresh four-lock/retirement preflight, followed by
+complete receipt/native RocksDB/executable/source association and verified offhost
+retention. Parent rereview remains required. **No seven-case PASS, publication
+clearance or full pre-handoff ACK convergence is claimed.**
