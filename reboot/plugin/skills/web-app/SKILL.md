@@ -1,6 +1,6 @@
 ---
 name: web-app
-description: Build complete Reboot Web Apps — a Reboot backend behind a standalone browser-facing React frontend, served at a normal URL (not embedded in an MCP host). Layers on top of the python skill for backend mechanics; covers what's specific to standalone Web Apps — no MCP front door, no UI() methods, normal React/Vite SPA scaffolding, and Reboot auth for browser users.
+description: Build complete Reboot Web Apps — a Reboot backend behind a standalone browser-facing React frontend, served at a normal URL (not embedded in an MCP host). Layers on top of the python skill for backend mechanics; covers what's specific to standalone Web Apps — no MCP front door, no UI() methods, normal React/Vite SPA scaffolding, and Reboot auth for browser users. The backend stays ready for an MCP App.
 argument-hint: [<app-description>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 ---
@@ -58,7 +58,7 @@ The Reboot backend is identical. The deltas are all on the frontend:
 | UI shape     | `UI()` methods → artifacts embedded in the MCP host.                                             | An SPA at `frontend/web/` opened at a URL.                                                |
 | Vite config  | The `mcp-app` scaffolding's: one-file `dist/mcp/<name>/index.html` per UI, served through Envoy. | A stock Vite SPA config rooted at `web/`, built to `dist/web/` at `base: "/"`.            |
 | Test surface | MCPJam inspector.                                                                                | Scenarios that drive the app through Playwright (`python/references/testing-web-app.md`). |
-| `User` type  | Required — the MCP entry point.                                                                  | Optional — only if your app needs per-user state.                                         |
+| `User` type  | Required — the MCP entry point.                                                                  | Required too — it owns per-user state and keeps the backend ready for an MCP App.         |
 
 Backend mechanics (state, methods, Servicers, workflows, refs,
 scheduling, stdlib actors, errors, auth predicates, testing) are
@@ -366,12 +366,19 @@ wrong means regenerating everything across the project.
    below.
 2. State the design you are about to build:
    - Application types: state shape (fields, types, tags).
-   - Method map: which operations, which method type
-     (Reader/Writer/Transaction/Workflow).
+   - Method map, one line per method: its method type
+     (Reader/Writer/Transaction/Workflow) and its role for an AI
+     caller (a tool the AI calls, a `UI()` view, or for people only),
+     even though the MCP App comes later.
    - Route surface: which pages does the SPA need; which methods
      each page calls.
-   - Auth: anonymous, logged-in, or per-user state? If per-user,
-     declare a `User` type for owned data and route through it.
+   - `User` type: always. It owns per-user state and routes creation,
+     and it is the MCP front door if an MCP App is added later.
+   - Auth: who signs in, and what an anonymous visitor may read.
+   - Ready for an MCP App: each method's `description=` written for
+     an AI caller from the start. A web app keeps `mcp=None` until an
+     MCP App is added; then only `mcp=` changes, which a deployed app
+     allows (`python/references/api-schema-evolution.md`).
 3. Then execute the Step-by-Step Build Flow.
 
 For updates to existing apps, still work the design first: read
@@ -656,6 +663,8 @@ config: it adds `frontend/mcp/<name>/` beside `web/` and
     not satisfy this requirement.
     The steps are the [`dashboard` skill](../dashboard/SKILL.md)'s
     step 6.
+    Unless the user asked for only a web app, end with the one-line
+    offer of an MCP App (`app` skill, "At handoff").
 
 ## Update Flow
 
