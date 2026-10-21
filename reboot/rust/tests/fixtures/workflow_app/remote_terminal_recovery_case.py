@@ -92,6 +92,10 @@ assert lines().count('transaction-apply') == 1 and lines().count('transaction-ch
 original_task = db.Task.FromString(bytes.fromhex(recovered['state'][0]['tasks'][0]))
 assert original_task.status == db.Task.PENDING and not original_task.HasField('response') and not original_task.HasField('error')
 if commit:
+    # The outage was scoped to original coordinator recovery. Cached target
+    # replay uses the established fresh local guard/Abort cleanup contract,
+    # which is separate from resolution of the original committed transaction.
+    (dbfault/'deny-decision-put').unlink()
     # Reauthorization before the cached target response remains mandatory. Only
     # the real saved root receipt may bridge the separate source journal/CAS.
     deny.touch(); stop(t)
