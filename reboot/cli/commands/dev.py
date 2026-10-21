@@ -712,19 +712,21 @@ async def _check_local_envoy_status(
         address: str,
         root_certificate: Optional[bytes],
     ):
-        # The application is always on this machine, even when `host`
-        # is a certificate's domain, so never dial it through a proxy.
         if root_certificate is not None:
             return grpc.aio.secure_channel(
                 address,
                 grpc.ssl_channel_credentials(
                     root_certificates=root_certificate,
                 ),
+                # The application is always on this machine, even when `host`
+                # is a certificate's domain, so never dial it through a proxy.
                 options=NO_HTTP_PROXY_OPTIONS,
             )
         else:
             return grpc.aio.insecure_channel(
                 address,
+                # The application is always on this machine, even when `host`
+                # is a certificate's domain, so never dial it through a proxy.
                 options=NO_HTTP_PROXY_OPTIONS,
             )
 
