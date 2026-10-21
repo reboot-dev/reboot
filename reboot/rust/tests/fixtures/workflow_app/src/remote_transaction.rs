@@ -26,6 +26,7 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     let endpoint = arg(2);
     let address: std::net::SocketAddr = arg(3).parse()?;
     let shutdown = arg(4);
+    let shard = std::env::var("REMOTE_TRANSACTION_SHARD")?;
     let root = reboot::state_ref::StateRef::from_id(TYPE, "atomic")?.to_string();
     let leaf = reboot::state_ref::StateRef::from_id(TYPE, "leaf")?.to_string();
     let is_leaf = std::env::var("PURE_TRANSACTION_ACTOR").as_deref() == Ok("leaf");
@@ -106,11 +107,11 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     let recovery = adapter.legacy_recovery_registration(
         LegacyRecoveryMetadata {
             participant: ParticipantRecovery {
-                shard_ids: vec!["s000000000".into()],
+                shard_ids: vec![shard.clone()],
                 ..Default::default()
             },
             coordinator: CoordinatorRecovery {
-                shard_ids: vec!["s000000000".into()],
+                shard_ids: vec![shard.clone()],
                 coordinator_state_ref: reference.clone(),
                 ..Default::default()
             },
@@ -121,7 +122,7 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         .with_host_recovery(adapter.explicit_abort_recovery_registration()?)
         .with_host_recovery(adapter.live_participant_recovery_registration()?)
         .with_host_recovery(tasks.recovery(reboot::database_proto::RecoverRequest {
-            shard_ids: vec!["s000000000".into()],
+            shard_ids: vec![shard],
             state_tags_by_state_type: [(TYPE.into(), "AtomicLedger".into())].into(),
             skip_idempotent_mutations: true,
         }))

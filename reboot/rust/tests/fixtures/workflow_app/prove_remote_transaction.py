@@ -70,15 +70,17 @@ try:
         addresses=[f'http://127.0.0.1:{n}' for n in [dp,lp,tp,cp,pp_port]]
         du,lu,tu,cu,pu=addresses
         child_proxy_port=port() if case=='child-ack-loss' else cp
-        p=spawn([BIN,'info',work/'info.pb']);wait(p);assert p.returncode==0
         # SHA-1 predecessor routing uses the raw first StateRef component.
         keyed=sorted([(hashlib.sha1(r.split('/')[0].encode()).digest(),sid,n) for r,sid,n in [(ref,'root',tp),(leaf,'child',child_proxy_port)]])
         assert keyed[0][0]!=keyed[1][0]
         plan=pp.ListenForPlanResponse(plan=pp.Plan(version=1,applications=[pp.Plan.Application(id='workflow-app',services=[pp.Plan.Application.Service(full_name=s,state_type_full_name='workflow.v1.AtomicLedger') for s in ['workflow.v1.AtomicLedgerMethods','workflow.v1.AtomicLedgerInitMethods','rbt.v1alpha1.Tasks']],shards=[pp.Plan.Application.Shard(id=f's{i:09d}',range=pp.Plan.Application.Shard.KeyRange(first_key=b'' if i==0 else key),server_id=sid,replica_index=0) for i,(key,sid,n) in enumerate(keyed)])]),servers=[pp.Server(id=sid,application_id='workflow-app',address=pp.Server.Address(host='127.0.0.1',port=n)) for key,sid,n in keyed])
         (work/'plan.pb').write_bytes(plan.SerializeToString())
+        shard_by_server={s.server_id:s for s in plan.plan.applications[0].shards}
+        for sid,shard in shard_by_server.items():
+            (work/f'{sid}-info.pb').write_bytes(db.ServerInfo(shard_infos=[db.ShardInfo(shard_id=shard.id,shard_first_key=shard.range.first_key)]).SerializeToString())
         planner=spawn([sys.executable,FIXTURE/'remote_transaction_planner.py',f'127.0.0.1:{pp_port}',work/'plan.pb'],env,role='planner');listening(planner,pp_port)
         def database(child=False):
-            p=spawn([DB,work/('child-rocksdb' if child else 'root-rocksdb'),work/'info.pb',lp if child else dp],role='database');listening(p,lp if child else dp);return p
+            p=spawn([DB,work/('child-rocksdb' if child else 'root-rocksdb'),work/('child-info.pb' if child else 'root-info.pb'),lp if child else dp],role='database');listening(p,lp if child else dp);return p
         def txn(method,body,key=None,child=False):
             metadata=[('x-reboot-state-ref',leaf if child else ref)]
             if key:metadata.append(('x-reboot-idempotency-key',str(key)))
@@ -93,7 +95,7 @@ try:
         target_du=du
         def host(child=False,extra=None,wait_ready=True):
             shutdown=work/f'stop-{len(children)}'
-            e=env|dict(REMOTE_TRANSACTION_PLANNER=pu,REMOTE_TRANSACTION_SERVER='child' if child else 'root',PURE_TRANSACTION_ACTOR='leaf' if child else 'atomic',DIRECT_TRANSACTION_TASKS='1',WORKFLOW_BODY_EVENTS=str(events),TRANSACTION_DENY_FILE=str(deny))|(extra or {})
+            e=env|dict(REMOTE_TRANSACTION_PLANNER=pu,REMOTE_TRANSACTION_SERVER='child' if child else 'root',REMOTE_TRANSACTION_SHARD=shard_by_server['child' if child else 'root'].id,PURE_TRANSACTION_ACTOR='leaf' if child else 'atomic',DIRECT_TRANSACTION_TASKS='1',WORKFLOW_BODY_EVENTS=str(events),TRANSACTION_DENY_FILE=str(deny))|(extra or {})
             p=spawn([BIN,'serve-transaction',lu if child else target_du,f'127.0.0.1:{cp if child else tp}',shutdown],e,role='application')
             if wait_ready:listening(p,cp if child else tp);until(lambda:ready(child),p)
             return p,shutdown
@@ -103,7 +105,7 @@ try:
             for n,r in [(dp,ref),(lp,leaf)]:
                 c=dg.DatabaseStub(grpc.insecure_channel(f'127.0.0.1:{n}'))
                 loaded=c.Load(db.LoadRequest(actors=[db.Actor(state_type='workflow.v1.AtomicLedger',state_ref=r)],task_ids=[] if task is None or r==leaf else [task]),timeout=5)
-                recovered=list(c.Recover(db.RecoverRequest(shard_ids=['s000000000'],state_tags_by_state_type={'workflow.v1.AtomicLedger':'AtomicLedger'},skip_idempotent_mutations=True),timeout=5))
+                recovered=list(c.Recover(db.RecoverRequest(shard_ids=[shard_by_server['root' if r==ref else 'child'].id],state_tags_by_state_type={'workflow.v1.AtomicLedger':'AtomicLedger'},skip_idempotent_mutations=True),timeout=5))
                 receipts=[m.SerializeToString().hex() for page in c.RecoverIdempotentMutations(db.RecoverIdempotentMutationsRequest(state_type='workflow.v1.AtomicLedger',state_ref=r),timeout=5) for m in page.idempotent_mutations]
                 result.append(dict(value=app.AtomicLedger.FromString(loaded.actors[0].state).value,receipts=receipts,pending=[t.SerializeToString().hex() for page in recovered for t in page.pending_tasks],participants=[t.SerializeToString().hex() for page in recovered for t in page.participant_transactions],tasks=[t.SerializeToString().hex() for t in loaded.tasks]))
             return result
