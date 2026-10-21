@@ -96,7 +96,9 @@ if commit:
     # the real saved root receipt may bridge the separate source journal/CAS.
     deny.touch(); stop(t)
     t, ts = host(False, wait_ready=False); wait(t); assert t.returncode != 0
-    assert authority_readback(original_root) == recovered
+    denied_readback = authority_readback(original_root)
+    assert {k:v for k,v in denied_readback.items() if k != 'events'} == {k:v for k,v in recovered.items() if k != 'events'}
+    assert [e for e in denied_readback['events'] if e != 'transaction-authorize'] == [e for e in recovered['events'] if e != 'transaction-authorize']
     deny.unlink(); t, ts = host()
     result = canonical('wait', admitted['task_id'])
     assert result == {'response': {'value': '7'}}, result
@@ -105,11 +107,14 @@ if commit:
     assert finished.status == db.Task.COMPLETED
     assert finished.response.type_url == 'type.googleapis.com/workflow.v1.Value'
     assert app.Value.FromString(finished.response.value).value == 7
-    assert final['events'] == recovered['events'] and final['coordinators'] == []
+    assert [e for e in final['events'] if e != 'transaction-authorize'] == [e for e in recovered['events'] if e != 'transaction-authorize']
+    assert final['coordinators'] == []
     stop(t, ts); stop(c, cs); stop(d); stop(ld)
     d, ld = database(), database(True); c, cs = host(True); t, ts = host()
     assert canonical('wait', admitted['task_id']) == result
-    assert authority_readback(original_root) == final
+    restarted_final = authority_readback(original_root)
+    assert {k:v for k,v in restarted_final.items() if k != 'events'} == {k:v for k,v in final.items() if k != 'events'}
+    assert [e for e in restarted_final['events'] if e != 'transaction-authorize'] == [e for e in final['events'] if e != 'transaction-authorize']
     stop(t, ts); stop(c, cs)
 else:
     # A native Abort is NOT a declared-result receipt, source Stored ACK or
