@@ -1,5 +1,5 @@
 load("@rbt_pypi//:requirements.bzl", "requirement")
-load("@rules_python//python:defs.bzl", "py_test")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
 py_test(
     name = "allowed_origins_test_py",
@@ -109,5 +109,18 @@ py_test(
         "//reboot/ping:ping_py",
         requirement("httpx"),
         requirement("starlette"),
+    ],
+)
+
+py_library(
+    name = "oauth_server_harness_py",
+    srcs = ["oauth_server_harness.py"],
+    deps = [
+        "//reboot:settings_py",
+        "//reboot/aio:http_py",
+        requirement("fastapi"),
+        requirement("httpx"),
+        requirement("pyjwt"),
+        requirement("uvicorn"),
     ],
 )
