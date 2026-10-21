@@ -68,7 +68,9 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         adapter.with_sequential_root_star()
     };
-    let adapter = if std::env::var_os("DURABLE_CANONICAL_ROOT_ATTEMPTS").is_some() {
+    let adapter = if std::env::var_os("DURABLE_CANONICAL_ROOT_ATTEMPTS").is_some()
+        && std::env::var_os("PURE_TRANSACTION_BOOTSTRAP").is_none()
+    {
         adapter.with_durable_canonical_root_attempts()
     } else {
         adapter
