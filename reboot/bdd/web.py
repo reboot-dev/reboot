@@ -183,27 +183,15 @@ def web_app(
 _OUTLINE = '3px solid #f59e0b'
 
 
-def pytest_bdd_after_step(
-    request: pytest.FixtureRequest,
-    feature: Any,
-    scenario: Any,
-    step: Any,
-    step_func: Any,
-    step_func_args: dict[str, Any],
-) -> None:
-    """Screenshots a user's browser after the step that opened the
+def _after_web_step(web_app: WebApp, user: str, step: Any) -> None:
+    """Screenshots the user's browser after the step that opened the
     app for them, which shows where they start, and after each
     assertion step that drives their browser, a `Then` or an `And` or
     `But` continuing one, with the element the step asserted on
     scrolled to the middle of the view and outlined; then leaves it
-    on screen for `--recording-dwell`."""
-    web_app = step_func_args.get('web_app')
-    user = step_func_args.get('user')
-    if not isinstance(web_app, WebApp) or not isinstance(user, str):
-        return
-    page = web_app.pages.get(user)
-    if page is None:
-        return
+    on screen for `--recording-dwell`. The user is the one the step
+    named, decoded the way the step decoded it."""
+    page = web_app.page(user=user)
     recording = web_app.recording
     opened = user not in recording.opened
     recording.opened.add(user)
@@ -507,4 +495,51 @@ def _saves_text_in_web_app_as(
     world.save(
         name,
         web_app.page(user=user).get_by_test_id(test_id).inner_text()
+    )
+
+
+# The built-in web steps: each names the user acting as `user`, JSON
+# text or a variable the way the grammar's `USER` captures it, and
+# decodes it with `_string` before touching their page, so the hook
+# below can decode it the same way. Any other step is not the web
+# app's, however it names its arguments.
+_WEB_STEPS = frozenset(
+    {
+        _opens_web_app,
+        _clicks_in_web_app,
+        _fills_in_web_app,
+        _selects_in_web_app,
+        _checks_in_web_app,
+        _presses_in_web_app,
+        _sees_in_web_app,
+        _sees_enabled_in_web_app,
+        _sees_web_app_at,
+        _is_signed_in_to_web_app,
+        _is_signed_out_of_web_app,
+        _saves_text_in_web_app_as,
+    }
+)
+
+
+def pytest_bdd_after_step(
+    request: pytest.FixtureRequest,
+    feature: Any,
+    scenario: Any,
+    step: Any,
+    step_func: Any,
+    step_func_args: dict[str, Any],
+) -> None:
+    """After a built-in web step, screenshots the browser of the user
+    it named, see `_after_web_step`; pytest-bdd calls this after every
+    step, and the rest are not the web app's."""
+    if step_func not in _WEB_STEPS:
+        return
+    _after_web_step(
+        web_app=step_func_args['web_app'],
+        user=_string(
+            step_func_args['world'],
+            step_func_args['user'],
+            error_prefix='The user',
+        ),
+        step=step,
     )
