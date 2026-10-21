@@ -129,6 +129,7 @@ py_library(
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
+        ":oauth_client_py",
         "//reboot:run_environments_py",
         "//reboot/aio:exceptions_py",
         "//reboot/aio:external_py",
