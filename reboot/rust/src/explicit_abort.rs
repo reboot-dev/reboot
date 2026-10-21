@@ -1763,6 +1763,18 @@ impl<P: ParticipantSidecar, C: CoordinatorSidecar, R: ParticipantResolver>
         self.local.as_mut().unwrap().abort_legacy().await
     }
 
+    /// Generated post-authorization, validated cached terminal replay only.
+    /// Retire the empty admission without contradicting the original decision.
+    #[doc(hidden)]
+    pub async fn finish_canonical_cached_replay(mut self) -> Result<(), Status> {
+        self.local.as_mut().ok_or_else(|| Status::failed_precondition("cached root guard consumed"))?
+            .release_clean_cached_root().await?;
+        self.reservation.take();
+        self.registration.take();
+        self.local.take();
+        Ok(())
+    }
+
     /// Generated ordinary pre-Allow denial cleanup only. Keep cleanup ownership
     /// and internal errors intact, but never disclose their rich Status to callers.
     #[doc(hidden)]

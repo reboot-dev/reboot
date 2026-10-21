@@ -2,6 +2,23 @@
 // on the exact original exclusive root, and persisted AFTER acknowledged native
 // Abort, while that same participant still retains actor admission.
 impl<C: ParticipantSidecar> StartedLocalTransaction<C> {
+    pub(crate) async fn release_clean_cached_root(&mut self) -> Result<(), Status> {
+        let participant = self.participant.clone();
+        let mut pending = participant.pending.lock_root(self.transaction_id).await;
+        let current = pending.as_ref().ok_or_else(|| Status::failed_precondition("cached root owner missing"))?;
+        if current.local_owner != Some(self.local_owner) || current.transaction_ids.len() != 1
+            || current.lock.is_shared() || current.factory || current.staged || current.has_native_ownership()
+            || current.prepared || current.terminal_attempted || self.was_handed_off() {
+            return Err(Status::failed_precondition("cached root admission is not clean"));
+        }
+        // A validated terminal receipt has already supplied the result. This
+        // disposable admission owns no native transaction: do not issue Abort
+        // for the original immutable Commit/Abort identity.
+        self.handoff_to_durable_recovery();
+        *pending = None;
+        participant.changed.notify_waiters();
+        Ok(())
+    }
     /// Persist canonical root intent only after generated current-state policy
     /// and cached terminal replay, while retaining this exact exclusive owner.
     #[doc(hidden)]
