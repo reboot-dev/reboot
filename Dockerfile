@@ -458,7 +458,7 @@ RUN wget --tries=5 --waitretry=10 --retry-connrefused https://github.com/bazelbu
 # Install `npm` as per these installation instructions:
 #   https://github.com/nodesource/distributions#installation-instructions
 # Note: We need this to install prettier.
-ARG NODE_MAJOR=20
+ARG NODE_MAJOR=26
 ARG NPM_VERSION=11.19.1
 RUN mkdir -p /etc/apt/keyrings \
     && curl --retry 5 --retry-all-errors -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
