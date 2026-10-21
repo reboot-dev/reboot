@@ -67,7 +67,10 @@ assert lost_ack['coordinators'][0]['root_transaction_id'] == original_root
 assert db.TransactionCoordinatorDecisionGetResponse.FromString(bytes.fromhex(lost_ack['decision'])).decision == request.decision
 rec.setdefault('authority_attempts', []).append(dict(case=case, phase='native-decision-ACK-lost', readback=lost_ack)); save()
 (dbfault/'release').touch()
-wait(t); assert t.returncode != 0
+# Crash the original recovery owner after the real native ACK was discarded.
+# Startup recovery need not naturally exit while retaining prepared ownership.
+stop(t)
+assert t.returncode != 0
 stop(c); stop(d); stop(ld)
 # There is now an immutable terminal decision under the original transaction ID.
 # A mutation outage is non-definitive, not a new outcome. Recovery must use Get
@@ -77,7 +80,9 @@ d, ld = database(), database(True)
 c, cs = host(True, wait_ready=False); listening(c, cp)
 pre = work/'recovered-source-before-dispatch'
 t, ts = host(False, dict(REBOOT_TEST_OUTBOUND_WRITER_BEFORE_DISPATCH=str(pre)), wait_ready=False)
-until(lambda: pre.exists() or t.poll() is not None)
+outcome_deadline = time.monotonic() + 20
+while not pre.exists() and t.poll() is None and time.monotonic() < outcome_deadline:
+    time.sleep(.02)
 recovered = authority_readback(original_root)
 rec.setdefault('authority_attempts', []).append(dict(case=case, phase='restarted-terminal-recovery', readback=recovered,
     denied_decisions=(dbfault/'denied-decisions.jsonl').read_text() if (dbfault/'denied-decisions.jsonl').exists() else '')); save()
