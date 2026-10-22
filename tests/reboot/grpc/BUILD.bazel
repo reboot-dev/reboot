@@ -1,0 +1,11 @@
+load("@rules_python//python:defs.bzl", "py_test")
+
+py_test(
+    name = "options_test_py",
+    timeout = "short",
+    srcs = [":options_test.py"],
+    main = "options_test.py",
+    deps = [
+        "//reboot/grpc:options_py",
+    ],
+)

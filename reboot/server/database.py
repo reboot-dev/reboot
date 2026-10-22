@@ -18,7 +18,10 @@ from reboot.aio.tracing import aio_client_interceptors
 from reboot.aio.types import StateRef, StateTypeName
 # TODO(benh): move this into a top-level 'grpc' module to be shared by
 # both 'respect' and 'reboot'.
-from reboot.grpc.options import make_retry_channel_options
+from reboot.grpc.options import (
+    NO_HTTP_PROXY_OPTIONS,
+    make_retry_channel_options,
+)
 from reboot.settings import (
     MAX_DATABASE_GRPC_MESSAGE_LENGTH_BYTES,
     ONLY_LOCALHOST_NETWORK_ADDRESS,
@@ -768,7 +771,7 @@ class DatabaseClient:
                 max_send_message_length=MAX_DATABASE_GRPC_MESSAGE_LENGTH_BYTES,
                 max_receive_message_length=
                 MAX_DATABASE_GRPC_MESSAGE_LENGTH_BYTES,
-            ),
+            ) + NO_HTTP_PROXY_OPTIONS,
             interceptors=aio_client_interceptors(),
         )
 

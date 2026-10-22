@@ -28,6 +28,7 @@ py_library(
         "//reboot/aio:resolvers_py",
         "//reboot/aio:tracing_py",
         "//reboot/aio:types_py",
+        "//reboot/grpc:options_py",
         "//reboot/ssl:localhost_py",
     ],
 )

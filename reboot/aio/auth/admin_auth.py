@@ -5,6 +5,7 @@ import rbt.v1alpha1.admin.auth_pb2_grpc as admin_auth_pb2_grpc
 from log.log import get_logger
 from reboot.aio.headers import AUTHORIZATION_HEADER
 from reboot.controller.settings import ENVVAR_REBOOT_ADMIN_AUTH_URL
+from reboot.grpc.options import http_proxy_options
 from reboot.run_environments import running_rbt_dev
 from reboot.settings import ENVVAR_SECRET_REBOOT_ADMIN_TOKEN
 from typing import Optional
@@ -103,11 +104,16 @@ class AdminAuthMixin:
         if admin_auth_url is not None:
             if admin_auth_url.startswith('http://'):
                 admin_auth_endpoint = admin_auth_url.removeprefix('http://')
-                channel = grpc.aio.insecure_channel(admin_auth_endpoint)
+                channel = grpc.aio.insecure_channel(
+                    admin_auth_endpoint,
+                    options=http_proxy_options(admin_auth_endpoint),
+                )
             elif admin_auth_url.startswith('https://'):
                 admin_auth_endpoint = admin_auth_url.removeprefix('https://')
                 channel = grpc.aio.secure_channel(
-                    admin_auth_endpoint, grpc.ssl_channel_credentials()
+                    admin_auth_endpoint,
+                    grpc.ssl_channel_credentials(),
+                    options=http_proxy_options(admin_auth_endpoint),
                 )
             else:
                 raise ValueError(
