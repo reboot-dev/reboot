@@ -22,8 +22,13 @@ directory with `.rbtrc` (or the one the build is creating).
 
 ## Step 2 — `AGENTS.md`
 
-If it exists, add only the sections it lacks; never rewrite what the
-user wrote. Otherwise fill this template from the project's real files
+If it exists, add only the sections it lacks (an older file most often
+lacks **Setup, on a fresh clone** and **Which Reboot skill, when**, and
+its Commands name no skill; crm-30, cloned to a second machine on
+2026-10-22, had no generated code and no frontend packages, and its
+agent took `rbt generate` and a `reboot.bdd` error for things no skill
+covered); never rewrite what the user wrote. Otherwise fill this
+template from the project's real files
 (`.rbtrc`, `pyproject.toml` and the tree): each path as it is
 (`api/hotel/v1/hotel.py`), `<project>` the `.rbtrc`'s
 `--application-name`, the Reboot version from the `reboot` pin, no
@@ -40,6 +45,23 @@ application, on Reboot <version>: durable state types whose APIs are
 Pydantic models in `api/` (not `.proto` files), with <a web app | an
 MCP App | both> in front. Reboot's docs: https://docs.reboot.dev; with
 the Reboot plugin installed, its skills know Reboot best.
+
+## Which Reboot skill, when
+
+With the plugin installed, load the skill before acting, even for a
+one-line step: the commands below say what to run, the skills say how
+Reboot behaves.
+
+| When                                                                                     | Skill              |
+| ---------------------------------------------------------------------------------------- | ------------------ |
+| Status, "take stock", what to build next                                                 | `reboot:what-next` |
+| Any new or changed behaviour                                                             | `reboot:feature`   |
+| A change under `api/` or in a servicer, or any error naming `reboot.*` or `rbt`          | `reboot:python`    |
+| A change to the web app                                                                  | `reboot:web-app`   |
+| Starting the app, or a fresh clone                                                       | `reboot:run`       |
+| Upgrading Reboot, or a version mismatch                                                  | `reboot:upgrade`   |
+| Reviewing a change                                                                       | `reboot:review`    |
+| Editing this file                                                                        | `reboot:agents-md` |
 
 ## Setup, on a fresh clone
 
@@ -59,8 +81,10 @@ the Reboot plugin installed, its skills know Reboot best.
 - **Dashboard** (the domain model, the features and their rules):
   `uv run rbt dashboard`, at https://dashboard-<project>.localhost/
   (without portless, `--config=ports`, at http://127.0.0.1:9871/).
-- **Generate** after any change under `api/`: `uv run rbt generate`.
-- **Test:** `uv run pytest`, then `uv run mypy backend/ tests/`.
+- **Generate** after any change under `api/`: `uv run rbt generate`
+  (a refusal names the rule; the `python` skill has it).
+- **Test:** `uv run pytest`, then `uv run mypy backend/ tests/`; a
+  failure from `reboot.bdd` or `rbt` is read with the `python` skill.
 - **Deploy:** the plugin's `deploy` skill, or `uv run rbt cloud up`.
 
 ## Where things live
@@ -80,8 +104,11 @@ the Reboot plugin installed, its skills know Reboot best.
 
 ## Rules
 
-1. A feature starts as a `@wip` feature file agreed in plain English,
-   before the API or the code changes.
+1. Every change to what the app does starts with the Reboot plugin's
+   `feature` skill and the `<web-app | mcp-app>` skill's Update Flow (a
+   `@wip` feature file agreed in plain English, before the API or the
+   code changes), and ends with that skill's checks: the scenarios
+   green, the page check passed, the feature accepted.
 2. Once the app has persisted state or is deployed, the API only grows:
    add fields, methods and types, and never remove or rename one
    (schema evolution, in Reboot's docs).
