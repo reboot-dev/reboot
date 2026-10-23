@@ -275,11 +275,12 @@ def _register_dev_run(parser: ArgumentParser):
             'serve under a named `.localhost` URL via portless '
             '(https://github.com/vercel-labs/portless): registers '
             'this application with the running portless proxy as '
-            '`https://<application-name>.localhost`, and trusts '
-            '`https://frontend-<application-name>.localhost`, where the '
-            'frontend dev server is expected (`portless '
-            'frontend-<application-name> vite`, the frontend\'s `npm run '
-            'dev:portless`), as a browser origin. '
+            '`https://<application-name>.localhost`, and expects the '
+            'frontend dev server at '
+            '`https://frontend-<application-name>.localhost` (the '
+            'frontend\'s `npm run dev` runs `portless '
+            'frontend-<application-name> vite`), which `--frontend-url` '
+            'defaults to and which is trusted as a browser origin. '
             'Requires `--application-name`, and the `portless` CLI on '
             'PATH with its proxy started (`portless proxy start`).'
         ),
@@ -1520,6 +1521,19 @@ async def __dev_run(
         # subdirectory.
         env[ENVVAR_RBT_STATE_DIRECTORY] = str(
             dot_rbt_dev_directory(args, parser) / args.application_name
+        )
+
+    # Under `--portless` the frontend's dev server has a name too,
+    # `frontend-<name>` (see `reboot.portless.frontend_name`), which
+    # is where it is expected unless `--frontend-url` says otherwise,
+    # so the `.rbtrc` need not spell it. Only when something is to be
+    # served from it, since `--frontend-url` alone is refused below.
+    if (
+        args.portless and not args.frontend_url and
+        args.application_name is not None and (args.mcp_app or args.web_app)
+    ):
+        args.frontend_url = 'https://' + reboot.portless.hostname(
+            reboot.portless.frontend_name(args.application_name)
         )
 
     # The MCP Apps are served one of two mutually-exclusive ways: from

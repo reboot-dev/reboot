@@ -33,6 +33,17 @@ def hostname(name: str) -> str:
     return f'{name}.localhost'
 
 
+def frontend_name(name: str) -> str:
+    """The name an application's frontend dev server runs under
+    portless as, `frontend-<name>`: the frontend's `npm run dev`
+    runs `portless frontend-<name> vite`, and `rbt dev run --portless`
+    serves the web app and the MCP Apps from
+    `https://frontend-<name>.localhost` unless `--frontend-url` says
+    otherwise. One hostname label, like `dashboard_name`, and for the
+    same reason."""
+    return f'frontend-{name}'
+
+
 def dashboard_name(name: str) -> str:
     """The name `rbt dashboard --portless` registers an application's
     developer dashboard under, `dashboard-<name>`: one hostname label,

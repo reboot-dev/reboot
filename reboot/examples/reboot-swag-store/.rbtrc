@@ -38,7 +38,6 @@ dev run --default-config=portless
 
 
 dev run:portless --portless
-dev run:portless --frontend-url=https://frontend-reboot-swag-store.localhost
 dev run:portless --mcp-app
 
 # Plain ports instead: `rbt dev run --config=ports`, with Vite run as

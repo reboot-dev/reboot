@@ -49,10 +49,10 @@ strongest first.
   requires the `mcp=` argument, so a Web App has `mcp=None` on all
   of them.
 - There is a `frontend/mcp/<name>/index.html`.
-- `.rbtrc` has a `dev run:portless --frontend-url=...` line (or a
-  `dev run:ports --frontend-url=...` one, for an app kept on plain
-  ports) with `--mcp-app`: Envoy proxying the MCP Apps from the dev
-  server.
+- `.rbtrc` has `dev run:portless --mcp-app` (under `--portless` the
+  dev server is `frontend-<app>` by default; an app kept on plain
+  ports has `dev run:ports --frontend-url=...` with `--mcp-app`):
+  Envoy proxying the MCP Apps from the dev server.
 
 **Web App** — all of:
 

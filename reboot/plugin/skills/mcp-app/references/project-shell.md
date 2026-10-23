@@ -68,7 +68,6 @@ dev run --default-config=portless
 # in either config.
 
 dev run:portless --portless
-dev run:portless --frontend-url=https://frontend-<project-name>.localhost
 dev run:portless --mcp-app
 # A dual-frontend app also serves its web app from the dev server, at `/`:
 # dev run:portless --web-app

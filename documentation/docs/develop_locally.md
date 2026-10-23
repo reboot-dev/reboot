@@ -219,9 +219,9 @@ dev run --default-config=ports
 
 | Flag | Description |
 | --- | --- |
-| `dev run --frontend-url=<url>` | The frontend's dev server (e.g. Vite at `http://localhost:5173`): Envoy proxies `/__/frontend/**` to it, with Hot Module Replacement. Says only where the frontend is; alone it is an error. |
-| `dev run --mcp-app` | Serve the application's MCP Apps (its `UI(...)` methods) from `--frontend-url`, which it requires. An application with `UI(...)` methods needs this or `--mcp-app-dist-path`; one without refuses both. |
-| `dev run --web-app` | Serve the application's web app from `--frontend-url`, which it requires: Envoy sends `/`, and every path the application doesn't answer, to the dev server, which serves the web app at its `/`. Mutually exclusive with `--web-app-dist-path`. Python applications only. |
+| `dev run --frontend-url=<url>` | The frontend's dev server (e.g. Vite at `http://localhost:5173`): Envoy proxies `/__/frontend/**` to it, with Hot Module Replacement. Says only where the frontend is; alone it is an error. Under `--portless` it defaults to `https://frontend-<app>.localhost`, so only a plain-ports config needs it. |
+| `dev run --mcp-app` | Serve the application's MCP Apps (its `UI(...)` methods) from `--frontend-url` (or its default under `--portless`), which it requires. An application with `UI(...)` methods needs this or `--mcp-app-dist-path`; one without refuses both. |
+| `dev run --web-app` | Serve the application's web app from `--frontend-url` (or its default under `--portless`), which it requires: Envoy sends `/`, and every path the application doesn't answer, to the dev server, which serves the web app at its `/`. Mutually exclusive with `--web-app-dist-path`. Python applications only. |
 | `dev run --mcp-app-dist-path=<dir>` | Dist: serve the built MCP Apps from `<dir>` (e.g. `frontend/dist/mcp`) on disk under `/__/frontend/mcp/`, each `UI(path=...)` from `<dir>/<path>/index.html`; mutually exclusive with `--frontend-url` and `--mcp-app`. |
 | `dev run --web-app-dist-path=<dir>` | Serve the built web app from `<dir>` (e.g. `frontend/dist/web`) at `/`, with its `index.html` answering any path the app has no route or file for. Without it, `/` is Reboot's page. Python applications only: with `--nodejs` it is an error. |
 | `dev run --portless` | Serve under a named URL via [portless](https://github.com/vercel-labs/portless): the backend becomes `https://<app>.localhost`, on a free port unless `--port` is given, serving the web app at `/` and the MCP Apps from the frontend dev server, which runs under portless as `https://frontend-<app>.localhost` (its `npm run dev:portless`) and is trusted as a browser origin too. See [Named local URLs](#named-local-urls-with---portless). |
@@ -311,15 +311,15 @@ and no `VITE_REBOOT_URL` is needed. The backend also trusts exactly
 the dev server's origin for credentialed requests (a frontend
 registered under any other name is refused, so the two names cannot
 drift apart), so the web app opened at `https://frontend-<app>.localhost`
-works as well, cross-origin. Point `--frontend-url` at the named dev
-server, typically as a config that `.rbtrc` makes the default:
+works as well, cross-origin. Under `--portless`, `--frontend-url`
+defaults to that named dev server, so the config that `.rbtrc` makes
+the default needs only to say what to serve from it:
 
 ```shell
 dev run --application-name=bank
 dev run --default-config=portless
 
 dev run:portless --portless
-dev run:portless --frontend-url=https://frontend-bank.localhost
 dev run:portless --mcp-app
 dev run:portless --web-app
 

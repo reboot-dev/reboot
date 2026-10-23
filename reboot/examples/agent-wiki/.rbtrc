@@ -31,7 +31,6 @@ dev run --default-config=portless
 # server through Envoy, in either config.
 
 dev run:portless --portless
-dev run:portless --frontend-url=https://frontend-agent-wiki.localhost
 dev run:portless --mcp-app
 
 # Plain ports instead: `rbt dev run --config=ports`, with Vite run as
