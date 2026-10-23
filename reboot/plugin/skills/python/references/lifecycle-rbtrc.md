@@ -186,7 +186,32 @@ its configs are named like `rbt dev run`'s, so
 `rbt dashboard --config=ports` is the plain `http://127.0.0.1:9871/`.
 The frontend's `package.json` mirrors these configs as scripts:
 `dev` is the default, `dev:portless`, which runs
-`portless frontend-<app> vite` with `portless` as a dev dependency, and
-`dev:ports` is plain `vite`. Under `--portless` `rbt dev run` expects
-the dev server at `frontend-<app>` without a `--frontend-url` line
-(only `dev run:ports` needs one).
+`portless frontend-<app>${RBT_APPLICATION_VARIANT:+-$RBT_APPLICATION_VARIANT} vite`
+with `portless` as a dev dependency, and `dev:ports` is plain `vite`.
+`<app>` is the `.rbtrc`'s `--application-name`; the `${...}` appends
+the variant (below) when `RBT_APPLICATION_VARIANT` is set and nothing
+otherwise, so write it exactly so. Under `--portless` `rbt dev run`
+expects the dev server at `frontend-<app>` without a `--frontend-url`
+line (only `dev run:ports` needs one).
+
+## Variants (worktrees and branches)
+
+`RBT_APPLICATION_VARIANT=<variant>` in the environment appends
+`<variant>` to the application's name, `<app>-<variant>`, everywhere:
+the state
+directory (`.rbt/dev/<app>-<variant>/`) and the portless names
+(`<app>-<variant>.localhost`, `frontend-<app>-<variant>.localhost`,
+`dashboard-<app>-<variant>.localhost`). It is how two git worktrees,
+or two branches switched between in one checkout, each get their own
+state and URLs while sharing the committed `.rbtrc`. It is a property
+of the checkout, not of the application, so there is no `.rbtrc` line
+and no flag for it, only the environment variable, which the
+developer sets (in a worktree's `.envrc`, say) and which `rbt dev run`,
+`rbt dashboard` and `rbt dev expunge` all read, and which the
+frontend's `dev:portless` script expands into its name, so an `npm run
+dev` from the same environment follows. Lowercase
+letters, digits and hyphens only; the branch name, squashed to that,
+and nothing more. Set one when the user builds a feature on a branch
+or in a worktree (the `feature` skill asks which) or asks to run
+checkouts side by side; otherwise set nothing. See the run skill's
+"Branches and worktrees".

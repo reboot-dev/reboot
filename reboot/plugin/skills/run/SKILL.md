@@ -151,6 +151,40 @@ If they accept, before the backend and frontend:
 3. Start the frontend with its `dev:portless` script and the
    backend with its portless config, as the sections below say.
 
+### Branches and worktrees
+
+Two checkouts of the project (git worktrees), or two branches the
+user switches between in one checkout, share the `.rbtrc` and so the
+application's name: the same URLs, and the same state under `.rbt/`,
+which a branch with a schema change finds backwards incompatible.
+When the user is working that way, or chose a worktree or a branch
+for a feature (the `feature` skill asks), give each its own
+**variant**: `RBT_APPLICATION_VARIANT=<variant>` in the environment
+appends it to the name everywhere (`<app>-<variant>.localhost`,
+`frontend-<app>-<variant>.localhost`,
+`dashboard-<app>-<variant>.localhost`, state at
+`.rbt/dev/<app>-<variant>/`). Lowercase letters, digits and hyphens.
+The branch name, squashed to that, is the variant; nothing more (no
+user name: on one machine the branch is unique by itself):
+
+```sh
+export RBT_APPLICATION_VARIANT=$(git branch --show-current | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9\n' '-' | tr -s '-' | sed 's/^-//; s/-$//')
+```
+
+It is only ever an environment variable, never a flag or a `.rbtrc`
+line (the `.rbtrc` is committed and the same in every checkout, and
+the frontend sees only the environment): that `export` in the shell
+you start the processes from, every one of them, or in the worktree's
+`.envrc` if the user uses direnv. `uv run rbt dev run`,
+`uv run rbt dashboard` and `uv run rbt dev expunge` all read it, and
+the frontend's `npm run dev` follows when run from the same
+environment, since its `dev:portless` script expands
+`${RBT_APPLICATION_VARIANT:+-$RBT_APPLICATION_VARIANT}` into its name.
+Then read every URL from `rbt dev run`'s output rather than assuming
+`https://<app>.localhost`: with a variant the three names are
+`<app>-<variant>`, `frontend-<app>-<variant>` and
+`dashboard-<app>-<variant>`. Without a variant nothing changes.
+
 ### Tunnel — MCP Apps only
 
 An MCP App's backend needs a Cloudflare quick tunnel so external MCP

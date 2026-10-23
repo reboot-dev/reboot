@@ -224,6 +224,7 @@ dev run --default-config=ports
 | `dev run --web-app` | Serve the application's web app from `--frontend-url` (or its default under `--portless`), which it requires: Envoy sends `/`, and every path the application doesn't answer, to the dev server, which serves the web app at its `/`. Mutually exclusive with `--web-app-dist-path`. Python applications only. |
 | `dev run --mcp-app-dist-path=<dir>` | Dist: serve the built MCP Apps from `<dir>` (e.g. `frontend/dist/mcp`) on disk under `/__/frontend/mcp/`, each `UI(path=...)` from `<dir>/<path>/index.html`; mutually exclusive with `--frontend-url` and `--mcp-app`. |
 | `dev run --web-app-dist-path=<dir>` | Serve the built web app from `<dir>` (e.g. `frontend/dist/web`) at `/`, with its `index.html` answering any path the app has no route or file for. Without it, `/` is Reboot's page. Python applications only: with `--nodejs` it is an error. |
+| `RBT_APPLICATION_VARIANT=<variant>` (environment, not a flag) | A variant of the application, appended to `--application-name` as `<app>-<variant>` wherever the name is used: its state directory and, under `--portless`, its URLs; the frontend's `npm run dev` reads it too. For running two checkouts, worktrees or branches of one application with one `.rbtrc`. See [Variants](#variants-branches-and-worktrees). |
 | `dev run --portless` | Serve under a named URL via [portless](https://github.com/vercel-labs/portless): the backend becomes `https://<app>.localhost`, on a free port unless `--port` is given, serving the web app at `/` and the MCP Apps from the frontend dev server, which runs under portless as `https://frontend-<app>.localhost` (its `npm run dev:portless`) and is trusted as a browser origin too. See [Named local URLs](#named-local-urls-with---portless). |
 | `dev run --tunnel-url=<url>` | The public URL this application is reachable at through a tunnel (e.g. `https://<name>.trycloudflare.com`). The setup wizard shows and verifies it; without it, the wizard asks ngrok and cloudflared, through their local APIs on their default ports, for a tunnel of their own. |
 | `dev run --default-config=<name>` | Sets the default configuration profile when `--config` is not specified. |
@@ -293,11 +294,14 @@ several applications run at once without colliding on `9991`. It
 expects the frontend's dev server at `https://frontend-<app>.localhost`,
 which is what running it under portless with that name gives you.
 The frontend's `package.json` carries that as scripts mirroring the
-`.rbtrc` configs below, with `portless` as a dev dependency:
+`.rbtrc` configs below, with `portless` as a dev dependency (the
+`${RBT_APPLICATION_VARIANT:+-$RBT_APPLICATION_VARIANT}` appends the
+[variant](#variants-branches-and-worktrees) when the environment sets
+one, and nothing otherwise):
 
 ```json
 "dev": "npm run dev:portless",
-"dev:portless": "portless frontend-bank vite",
+"dev:portless": "portless frontend-bank${RBT_APPLICATION_VARIANT:+-$RBT_APPLICATION_VARIANT} vite",
 "dev:ports": "vite"
 ```
 
@@ -334,6 +338,46 @@ routes to (the name is the `.rbtrc`'s `dev run --application-name`).
 The dashboard's configs are named like `rbt dev run`'s, so
 `rbt dashboard --config=ports` goes with `rbt dev run --config=ports`:
 the plain port, `http://127.0.0.1:9871`.
+
+### Variants: branches and worktrees
+
+Two checkouts of one application, say two git worktrees, or two
+branches you switch between in one checkout, share a `.rbtrc`, and
+with it the application's name: the same `https://<app>.localhost`,
+and the same state at `.rbt/dev/<app>/`, which a branch with a schema
+change then finds backwards incompatible. A **variant** gives each its
+own: the variant is appended to the application's
+name, `<app>-<variant>`, everywhere the name is used, so the state is
+at `.rbt/dev/<app>-<variant>/` and the URLs are
+
+| | |
+| --- | --- |
+| backend | `https://<app>-<variant>.localhost` |
+| frontend dev server | `https://frontend-<app>-<variant>.localhost` |
+| dashboard | `https://dashboard-<app>-<variant>.localhost` |
+
+The variant is for the checkout or the branch, not for the
+application, so it is not a flag and not a `.rbtrc` line: it is the
+environment variable `RBT_APPLICATION_VARIANT`, set from a worktree's
+`.envrc` ([direnv](https://direnv.net)) for example, and `rbt dev run`,
+`rbt dashboard` and `rbt dev expunge` all read it. A variant is part
+of a hostname, so it is lowercase letters, digits and hyphens. On
+your own machine the branch is all it needs to be:
+
+```shell
+# .envrc
+export RBT_APPLICATION_VARIANT=$(git branch --show-current | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9\n' '-' | tr -s '-' | sed 's/^-//; s/-$//')
+```
+
+The frontend reads the same variable: its `dev:portless` script is
+`portless frontend-<app>${RBT_APPLICATION_VARIANT:+-$RBT_APPLICATION_VARIANT} vite`,
+which the shell expands to `portless frontend-<app>-<variant> vite`
+when the variable is set and to `portless frontend-<app> vite` when it
+is not, so an `npm run dev` from the same shell, or the same `.envrc`,
+lands on the matching name. That is why the variant is an environment
+variable and nothing else: a flag or a `.rbtrc` line would reach `rbt`
+but not the frontend. `rbt dev run` prints the URLs it is serving at
+when it starts.
 
 A [Cloudflare quick tunnel](/call/from_mcp_client#cloudflared) in
 front of the backend reaches it by name too, with `--url` at the

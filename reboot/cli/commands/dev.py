@@ -31,6 +31,7 @@ from reboot.cli.commands.generate import generate_direct
 # We import the whole `terminal` module (as opposed to the methods it contains)
 # to allow us to mock these methods out in tests.
 from reboot.cli.common import portless, terminal
+from reboot.cli.common.application_name import ApplicationNameWithVariant
 from reboot.cli.common.dev_extra import dev_extra_installed, missing_dev_extra
 from reboot.cli.common.directories import (
     add_working_directory_options,
@@ -73,6 +74,7 @@ from reboot.settings import (
     ENVVAR_LOCAL_ENVOY_TLS_CERTIFICATE_PATH,
     ENVVAR_LOCAL_ENVOY_TLS_KEY_PATH,
     ENVVAR_LOCAL_ENVOY_USE_TLS,
+    ENVVAR_RBT_APPLICATION_VARIANT,
     ENVVAR_RBT_DEV,
     ENVVAR_RBT_EFFECT_VALIDATION,
     ENVVAR_RBT_FRONTEND_URL,
@@ -202,9 +204,18 @@ def _register_dev_run(parser: ArgumentParser):
         type=str,
         help=(
             "name of application; state will be persisted using this name in "
-            "the `.rbt` state directory"
+            "the `.rbt` state directory. The environment variable "
+            f"`{ENVVAR_RBT_APPLICATION_VARIANT}` appends a variant to it, "
+            "`<application-name>-<variant>`, wherever the name is used: the "
+            "state directory, and under `--portless` the application's, its "
+            "frontend's and its dashboard's names. So that checkouts, git "
+            "worktrees or branches of one application run side by side, or "
+            "take turns, each with its own state and URLs, while the "
+            "`.rbtrc` names the application once: set it in a worktree's "
+            "`.envrc`, say, as `fix-269` (lowercase letters, digits and "
+            "hyphens). The frontend's `npm run dev` reads the same variable."
         ),
-        non_empty_string=True,
+        transformer=ApplicationNameWithVariant('--application-name'),
     )
     parser.subcommand('dev run'
                      ).add_renamed_flag('--name', '--application-name')
@@ -279,10 +290,12 @@ def _register_dev_run(parser: ArgumentParser):
             'frontend dev server at '
             '`https://frontend-<application-name>.localhost` (the '
             'frontend\'s `npm run dev` runs `portless '
-            'frontend-<application-name> vite`), which `--frontend-url` '
-            'defaults to and which is trusted as a browser origin. '
-            'Requires `--application-name`, and the `portless` CLI on '
-            'PATH with its proxy started (`portless proxy start`).'
+            'frontend-<application-name> vite`, with the variant '
+            '`RBT_APPLICATION_VARIANT` sets appended, as here), which '
+            '`--frontend-url` defaults to and which is '
+            'trusted as a browser origin. Requires `--application-name`, '
+            'and the `portless` CLI on PATH with its proxy started '
+            '(`portless proxy start`).'
         ),
     )
 
@@ -430,10 +443,12 @@ def _register_dev_expunge(parser: ArgumentParser):
         type=str,
         help=(
             "name of the application to expunge; will remove this "
-            "application's state from the `.rbt` state directory"
+            "application's state from the `.rbt` state directory. With "
+            f"`{ENVVAR_RBT_APPLICATION_VARIANT}` set, that variant's "
+            "(`<application-name>-<variant>`), as for `dev run`"
         ),
         required=True,
-        non_empty_string=True,
+        transformer=ApplicationNameWithVariant('--application-name'),
     )
     parser.subcommand('dev expunge'
                      ).add_renamed_flag('--name', '--application-name')
@@ -1525,9 +1540,10 @@ async def __dev_run(
 
     # Under `--portless` the frontend's dev server has a name too,
     # `frontend-<name>` (see `reboot.portless.frontend_name`), which
-    # is where it is expected unless `--frontend-url` says otherwise,
-    # so the `.rbtrc` need not spell it. Only when something is to be
-    # served from it, since `--frontend-url` alone is refused below.
+    # is where it is expected unless `--frontend-url` says otherwise;
+    # with a variant the name is not one to spell out in the
+    # `.rbtrc`. Only when something is to be served from it, since
+    # `--frontend-url` alone is refused below.
     if (
         args.portless and not args.frontend_url and
         args.application_name is not None and (args.mcp_app or args.web_app)
@@ -2236,7 +2252,6 @@ async def dev_expunge(
     """
     Delete the sidecar state directory for the application with the given name.
     """
-
     await _expunge(args, parser, confirm=True)
 
 

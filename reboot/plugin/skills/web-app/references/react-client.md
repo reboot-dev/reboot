@@ -56,7 +56,7 @@ same version as the backend's `reboot` dependency, and `zod`:
   "type": "module",
   "scripts": {
     "dev": "npm run dev:portless",
-    "dev:portless": "portless frontend-<app> vite",
+    "dev:portless": "portless frontend-<app>${RBT_APPLICATION_VARIANT:+-$RBT_APPLICATION_VARIANT} vite",
     "dev:ports": "vite",
     "build": "tsc -b && vite build"
   },
@@ -138,8 +138,11 @@ the scaffold's `src`, and add the alias's `paths`:
 
 The `dev` scripts mirror the `.rbtrc`'s configs: `npm run dev` is
 the default, `dev:portless`, which runs `portless frontend-<app> vite`
-(`<app>` is the `.rbtrc`'s `--application-name`; `portless` is a dev
-dependency and appends Vite's `--port` itself) and serves the SPA at
+(`<app>` is the `.rbtrc`'s `--application-name`; the
+`${RBT_APPLICATION_VARIANT:+-$RBT_APPLICATION_VARIANT}` appends the
+developer's variant when the environment sets one, so
+write it exactly so; `portless` is a dev dependency and appends Vite's
+`--port` itself) and serves the SPA at
 `https://frontend-<app>.localhost`, which the backend serves it from at
 `https://<app>.localhost/`, and `dev:ports` is plain `vite` at
 `http://localhost:5173/`, served at `http://localhost:9991/` the

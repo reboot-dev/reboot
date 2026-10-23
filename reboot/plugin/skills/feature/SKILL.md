@@ -57,6 +57,24 @@ Ask the user whether that is the feature. Iterate on the English
 until they agree; the file follows the words, so the words come
 first.
 
+Then, before any file changes, **ask where the feature is built**:
+on the current branch, on a new branch, or in a new git worktree
+(`git worktree add ../<project>-<branch> -b <branch>`), the last two
+named after the feature. A branch or a worktree gets its own
+**variant** of the application, so that its URLs and its state do
+not collide with the main checkout's, whose schema this feature is
+about to change: before starting any process for it, in the shell
+every process is started from (or the worktree's `.envrc`, if the
+user uses direnv),
+
+```sh
+export RBT_APPLICATION_VARIANT=$(git branch --show-current | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9\n' '-' | tr -s '-' | sed 's/^-//; s/-$//')
+```
+
+and from then on read every URL from `rbt dev run`'s output. The
+`run` skill's "Branches and worktrees" says what the variant does.
+On the current branch, set nothing.
+
 ## Step 2 — Write it down, tagged `@wip`
 
 Once agreed, create `tests/<capability>.feature`, named for
