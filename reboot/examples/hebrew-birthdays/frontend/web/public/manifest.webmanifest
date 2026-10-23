@@ -1,0 +1,17 @@
+{
+  "name": "Hebrew Birthdays",
+  "short_name": "Birthdays",
+  "description": "Track the Hebrew birthdays of the people you care about.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1e1b4b",
+  "theme_color": "#1e1b4b",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

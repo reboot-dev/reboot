@@ -1,0 +1,70 @@
+# Find '.proto' files in 'api/'.
+generate api/
+
+# Tell `rbt generate` where to put generated files.
+generate --python=backend/api
+
+# Metro (React Native's bundler) resolves imports without file
+# extensions, so we do not enable `--react-extensions`; the generated
+# client's relative imports stay extensionless and resolve under both
+# Vite (web) and Metro (mobile).
+generate --react=frontend/api
+
+# Watch if any generated or source files are modified.
+dev run --watch=backend/**/*.py
+dev run --watch=frontend/dist/**/*.html
+
+# Tell `rbt` that this is a Python application.
+dev run --python
+
+# Save state between chaos restarts.
+dev run --application-name=hebrew-birthdays
+
+# Run the application!
+dev run --application=backend/src/main.py
+
+# Default to named URLs via portless (https://github.com/vercel-labs/portless)
+# when no --config is specified: the app is https://hebrew-birthdays.localhost, serving
+# the web app and the MCP Apps from Vite, which runs as `cd frontend && npm run dev`
+# (`portless frontend-hebrew-birthdays vite`) at https://frontend-hebrew-birthdays.localhost. Needs the
+# `portless` CLI and its proxy (`portless proxy start`).
+dev run --default-config=portless
+
+# Hot Module Replacement (HMR): the MCP Apps are proxied from the Vite dev
+# server through Envoy, in either config.
+
+dev run:portless --portless
+dev run:portless --frontend-url=https://frontend-hebrew-birthdays.localhost
+dev run:portless --mcp-app
+dev run:portless --web-app
+
+# Plain ports instead: `rbt dev run --config=ports`, with Vite run as
+# `cd frontend && npm run dev:ports`.
+dev run:ports --frontend-url=http://localhost:5173
+dev run:ports --mcp-app
+dev run:ports --web-app
+
+# Dist mode: serve the built MCP Apps from "frontend/dist/mcp/" and the
+# built web app at `/` (no Vite HMR). Usage: `rbt dev run --config=dist`
+# Requires: `cd frontend && npm run build`
+dev run:dist --mcp-app-dist-path=frontend/dist/mcp
+dev run:dist --web-app-dist-path=frontend/dist/web
+
+# The developer dashboard (`rbt dashboard`) too: it is
+# https://dashboard-hebrew-birthdays.localhost by default, or on the plain port
+# http://127.0.0.1:9871 with `rbt dashboard --config=ports`.
+dashboard --default-config=portless
+dashboard:portless --portless
+dashboard:ports --no-portless
+
+# When expunging, expunge that state we've saved.
+dev expunge --application-name=hebrew-birthdays
+
+# Production config used by `rbt serve run`: the built MCP Apps and web
+# app, served by the backend itself.
+serve run --python
+serve run --mcp-app-dist-path=frontend/dist/mcp
+serve run --web-app-dist-path=frontend/dist/web
+serve run --application=backend/src/main.py
+serve run --application-name=hebrew-birthdays
+serve run --tls=external

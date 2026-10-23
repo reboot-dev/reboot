@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "reboot-plugin": {
+      "source": {
+        "source": "github",
+        "repo": "reboot-dev/reboot-plugin"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "reboot@reboot-plugin": true
+  }
+}

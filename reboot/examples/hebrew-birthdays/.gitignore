@@ -1,0 +1,23 @@
+# Directory created from using the 'rbt' CLI tool.
+/.rbt/
+
+# The recommended virtualenv directory.
+/.venv/
+
+# Temporary directories produced by `pytest`.
+__pycache__/
+.pytest_cache/
+
+node_modules/
+/frontend/dist/
+
+# Generated code.
+/backend/api/
+/frontend/api/
+/boilerplate/
+
+# Binary artifacts produced only during Reboot library development.
+/.unpublished-reboot-wheel/*.whl
+
+# Recordings of browser scenarios, made by running the tests.
+*.recordings/

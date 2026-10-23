@@ -1,0 +1,87 @@
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.notice {
+  color: var(--text-muted);
+  padding: 16px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.name {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0 0 2px;
+}
+
+.hebrew {
+  font-size: 20px;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.muted {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.next {
+  margin: 14px 0;
+  padding: 12px 14px;
+  background: var(--surface-muted);
+  border-radius: 10px;
+}
+
+.label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.big {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--accent);
+  margin: 2px 0;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.table th {
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.table td {
+  padding: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.right {
+  text-align: right;
+}
+
+.notes {
+  margin: 12px 0 0;
+  font-size: 14px;
+  color: var(--text-muted);
+  font-style: italic;
+}

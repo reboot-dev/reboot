@@ -1,0 +1,35 @@
+/* Shared by the MCP Apps: the colors of the web app, which follow
+   the host's light or dark theme. */
+:root {
+  --surface: #ffffff;
+  --surface-muted: #f5f3ff;
+  --border: #ddd6fe;
+  --text: #1e1b4b;
+  --text-muted: #6d6a8a;
+  --accent: #b45309;
+  --accent-strong: #f59e0b;
+  --accent-text: #1e1b4b;
+  --danger: #be123c;
+  font-family: system-ui, -apple-system, sans-serif;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface: #1e1b4b;
+    --surface-muted: #2e2a6b;
+    --border: #3f3a85;
+    --text: #eef2ff;
+    --text-muted: #a5b4fc;
+    --accent: #fcd34d;
+    --accent-strong: #fbbf24;
+    --accent-text: #1e1b4b;
+    --danger: #fda4af;
+  }
+}
+
+body {
+  margin: 0;
+  background: transparent;
+  color: var(--text);
+}
