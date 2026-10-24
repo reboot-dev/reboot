@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Your sign-in code</title>
+<!-- An empty icon, so that the browser asks for none: this page is the
+     application's, and Reboot has no address for the application's own. -->
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link
+  href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400..700&display=swap"
+  rel="stylesheet">
+<style>
+  :root {
+    --cream: #F7F5ED;
+    --navy: #103761;
+    --blue: #266AB2;
+    --light-blue: #A4D1FF;
+    --tan: #A39382;
+    --gray: #6E7884;
+    --amber: #B26B00;
+    --amber-bg: #FFF4E0;
+  }
+  body {
+    font-family: "DM Sans", "Helvetica Neue", Arial, sans-serif;
+    background: var(--cream);
+    margin: 0;
+    display: flex;
+    min-height: 100vh;
+    align-items: center;
+    justify-content: center;
+    color: var(--navy);
+  }
+  .card {
+    background: #fff;
+    border: 1px solid rgba(16, 55, 97, 0.12);
+    border-radius: 16px;
+    width: 420px;
+    padding: 36px 32px 24px;
+    box-shadow: 0 10px 30px rgba(16, 55, 97, 0.12);
+    text-align: center;
+  }
+  .app-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--gray);
+    margin: 0 0 24px;
+    word-break: break-word;
+  }
+  h1 {
+    font-size: 24px;
+    font-weight: 600;
+    margin: 0 0 4px;
+    color: var(--navy);
+  }
+  .subtitle {
+    color: var(--tan);
+    font-size: 14px;
+    margin: 0 0 22px;
+  }
+  .code {
+    display: block;
+    background: rgba(164, 209, 255, 0.18);
+    border: 1px solid rgba(38, 106, 178, 0.3);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin: 0 0 16px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    text-align: left;
+    word-break: break-all;
+    user-select: all;
+  }
+  .error {
+    background: var(--amber-bg);
+    border: 1px solid rgba(178, 107, 0, 0.3);
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin: 0 0 22px;
+    color: var(--amber);
+    font-size: 13px;
+    line-height: 1.45;
+    text-align: left;
+  }
+  button {
+    width: 100%;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    padding: 12px 0;
+    border-radius: 10px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    background: var(--navy);
+    color: #fff;
+    transition: background 0.15s ease;
+  }
+  button:hover {
+    background: var(--blue);
+  }
+  .footer {
+    color: var(--tan);
+    font-size: 12px;
+    margin: 20px 0 0;
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <p class="app-title">{{ application_title }}</p>
+    {% if code %}
+    <h1>You're signed in</h1>
+    <p class="subtitle">
+      Paste this code into the terminal that sent you here
+    </p>
+    <code class="code" id="code">{{ code }}</code>
+    <button type="button" id="copy">Copy code</button>
+    <script>
+      document.getElementById("copy").addEventListener("click", async () => {
+        const button = document.getElementById("copy");
+        try {
+          await navigator.clipboard.writeText(
+            document.getElementById("code").textContent
+          );
+          button.textContent = "Copied";
+        } catch (e) {
+          button.textContent = "Select the code and copy it";
+        }
+      });
+    </script>
+    {% else %}
+    <h1>Sign-in didn't finish</h1>
+    <p class="subtitle">
+      Go back to your terminal and try again
+    </p>
+    <div class="error">
+      {% if error == "access_denied" %}
+      The sign-in was not approved.
+      {% else %}
+      The sign-in failed with <code>{{ error }}</code>.
+      {% endif %}
+    </div>
+    {% endif %}
+    <p class="footer">You can close this tab.</p>
+  </div>
+</body>
+</html>

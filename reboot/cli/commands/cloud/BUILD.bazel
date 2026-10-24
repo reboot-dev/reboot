@@ -21,6 +21,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//reboot:api_keys_py",
+        "//reboot/cli/common:credentials_py",
         "//reboot/cli/common:rc_py",
         "//reboot/cli/common:terminal_py",
         "@com_github_reboot_dev_reboot//rbt/cloud/v1alpha1/auth:auth_py_reboot",

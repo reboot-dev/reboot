@@ -1,5 +1,5 @@
 load("@rbt_pypi//:requirements.bzl", "requirement")
-load("@rules_python//python:defs.bzl", "py_test")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
 py_test(
     name = "allowed_origins_test_py",
@@ -109,5 +109,50 @@ py_test(
         "//reboot/ping:ping_py",
         requirement("httpx"),
         requirement("starlette"),
+    ],
+)
+
+py_library(
+    name = "oauth_server_harness_py",
+    srcs = ["oauth_server_harness.py"],
+    deps = [
+        "//reboot:settings_py",
+        "//reboot/aio:http_py",
+        requirement("fastapi"),
+        requirement("httpx"),
+        requirement("pyjwt"),
+        requirement("uvicorn"),
+    ],
+)
+
+py_test(
+    name = "oauth_code_page_test_py",
+    size = "small",
+    timeout = "short",
+    srcs = ["oauth_code_page_test.py"],
+    main = "oauth_code_page_test.py",
+    deps = [
+        ":oauth_server_harness_py",
+        "//reboot:settings_py",
+        "//reboot/aio/auth:oauth_providers_py",
+        "//reboot/aio/auth:oauth_server_py",
+        requirement("httpx"),
+    ],
+)
+
+py_test(
+    name = "oauth_client_test_py",
+    size = "small",
+    timeout = "short",
+    srcs = ["oauth_client_test.py"],
+    main = "oauth_client_test.py",
+    deps = [
+        ":oauth_server_harness_py",
+        "//reboot:settings_py",
+        "//reboot/aio/auth:oauth_client_py",
+        "//reboot/aio/auth:oauth_providers_py",
+        "//reboot/aio/auth:oauth_server_py",
+        requirement("fastapi"),
+        requirement("httpx"),
     ],
 )

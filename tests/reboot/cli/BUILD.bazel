@@ -196,3 +196,23 @@ py_test(
         "//reboot/cli/common:rc_py",
     ],
 )
+
+py_test(
+    name = "login_tests_py",
+    size = "small",
+    timeout = "short",
+    srcs = [
+        "login_tests.py",
+    ],
+    main = "login_tests.py",
+    deps = [
+        "//reboot/cli/commands:login_py",
+        "//reboot/cli/common:credentials_py",
+        "//reboot/cli/common:terminal_py",
+        "//tests/reboot/aio/auth:oauth_server_harness_py",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
+        "@com_github_reboot_dev_reboot//reboot/aio/auth:oauth_providers_py",
+        "@com_github_reboot_dev_reboot//reboot/aio/auth:oauth_server_py",
+        requirement("httpx"),
+    ],
+)

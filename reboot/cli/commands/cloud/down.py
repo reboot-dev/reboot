@@ -43,7 +43,7 @@ async def cloud_down(args: argparse.Namespace) -> None:
     context = ExternalContext(
         name="cloud-down",
         url=args.cloud_url,
-        bearer_token=args.api_key,
+        bearer_token=args.credential,
     )
 
     try:

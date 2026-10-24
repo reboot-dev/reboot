@@ -14,7 +14,8 @@ from reboot.api_keys import (
     InvalidAPIKeyBearerToken,
     parse_api_key_bearer_token,
 )
-from reboot.cli.common import terminal
+from reboot.cli.common import credentials, terminal
+from reboot.cli.common.credentials import DEFAULT_REBOOT_CLOUD_URL
 from reboot.cli.common.rc import SubcommandParser
 from reboot.naming import (
     ORGANIZATIONS_ID,
@@ -26,8 +27,6 @@ from reboot.naming import (
 )
 from reboot.settings import ENVVAR_REBOOT_CLOUD_API_KEY
 from typing import Optional
-
-DEFAULT_REBOOT_CLOUD_URL = "https://cloud.prod1.rbt.cloud"
 
 _API_KEY_FLAG = '--api-key'
 
@@ -43,13 +42,15 @@ def _add_common_cloud_args(subcommand: SubcommandParser) -> None:
         default=DEFAULT_REBOOT_CLOUD_URL,
         non_empty_string=True,
     )
-    # TODO: This should probably be read from a file by default.
     subcommand.add_argument(
         _API_KEY_FLAG,
         type=str,
-        help="the API key to use to connect to the Reboot Cloud API",
+        help=(
+            "the API key to use to connect to the Reboot Cloud API; "
+            "without one, the sign-in `rbt login` kept is used"
+        ),
         default=None,
-        required=True,
+        required=False,
         # Allow passing the API key via an environment variable so that it
         # does not appear in the shell's process listing (e.g. `ps`), which
         # is the case when it is passed on the command line.
@@ -132,12 +133,30 @@ async def _user_id_from_api_key(api_key: str, cloud_url: str) -> str:
                 terminal.fail(f"Unexpected error: {aborted}")
 
 
+async def _credential(args: argparse.Namespace) -> tuple[str, UserId]:
+    """The bearer token the command talks to the Cloud with, and whose
+    it is: `--api-key` when given, else the sign-in `rbt login` kept
+    for `--cloud-url`. Fails when there is neither."""
+    if args.api_key is not None:
+        return args.api_key, await _user_id_from_api_key(
+            api_key=args.api_key,
+            cloud_url=args.cloud_url,
+        )
+    kept = await credentials.fresh(args.cloud_url)
+    if kept is None:
+        terminal.fail(
+            f"Not signed in to the Reboot Cloud at {args.cloud_url}: run "
+            f"`rbt login` first, or pass `{_API_KEY_FLAG}`."
+        )
+    return kept.access_token, UserId(kept.user_id)
+
+
 async def _get_organization_id(
     *,
     user_id: UserId,
     organization_name: OrganizationName,
     cloud_url: str,
-    api_key: str,
+    credential: str,
 ) -> Optional[OrganizationId]:
     # Validate the organization name is nonempty.
     if organization_name.strip() == "":
@@ -146,7 +165,7 @@ async def _get_organization_id(
     context = ExternalContext(
         name="get-organization-id",
         url=cloud_url,
-        bearer_token=api_key,
+        bearer_token=credential,
     )
 
     organizations = Organizations.ref(ORGANIZATIONS_ID)
@@ -173,10 +192,10 @@ async def _get_organization_id(
 async def _parse_common_cloud_args(
     args: argparse.Namespace
 ) -> tuple[UserId, QualifiedApplicationName, Optional[OrganizationName]]:
-    user_id = await _user_id_from_api_key(
-        api_key=args.api_key,
-        cloud_url=args.cloud_url,
-    )
+    """Resolves the flags every `rbt cloud` subcommand takes. Also
+    leaves the bearer token the command talks to the Cloud with (the
+    API key, or the kept sign-in's token) on `args.credential`."""
+    args.credential, user_id = await _credential(args)
 
     # If --organization was specified (which is not required for
     # backwards compatibility) then get its ID. This also validates
@@ -189,7 +208,7 @@ async def _parse_common_cloud_args(
             user_id=user_id,
             organization_name=organization_name,
             cloud_url=args.cloud_url,
-            api_key=args.api_key,
+            credential=args.credential,
         )
         if organization_id is None:
             terminal.fail(f"Organization '{organization_name}' does not exist")

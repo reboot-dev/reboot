@@ -144,6 +144,16 @@ py_library(
 )
 
 py_library(
+    name = "credentials_py",
+    srcs = ["credentials.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_reboot_dev_reboot//reboot/aio/auth:oauth_client_py",
+    ],
+)
+
+py_library(
     name = "update_check_py",
     srcs = ["update_check.py"],
     srcs_version = "PY3",
@@ -183,6 +193,7 @@ py_library(
         "//reboot/cli/commands:export_import_py",
         "//reboot/cli/commands:generate_py",
         "//reboot/cli/commands:inspect_py",
+        "//reboot/cli/commands:login_py",
         "//reboot/cli/commands:serve_py",
         "//reboot/cli/commands:task_py",
         "//reboot/cli/commands/cloud:__init___py",

@@ -12,9 +12,27 @@ Reboot Cloud!
 
 ## Prerequisites
 
+### Sign in
+
+Every `rbt cloud` command authenticates you to the Reboot Cloud. The
+simplest way is to sign in once:
+
+```bash
+rbt login
+```
+
+This opens your browser to sign in and keeps the sign-in in
+`~/.config/reboot/credentials.json`, where `rbt cloud` commands find
+it. On a machine without a browser, `rbt login --no-browser` prints a
+URL to open elsewhere and asks you to paste back the code it ends
+with. `rbt logout` forgets the sign-in.
+
+For a machine that is not yours to sign in on, such as CI, use an API
+key instead.
+
 ### Create an API key
 
-Every `rbt cloud` command authenticates with an API key. To create one:
+To create an API key:
 
 1. Sign in at [`cloud.reboot.dev`](https://cloud.reboot.dev/) and
    create (or join) an organization.
@@ -119,7 +137,7 @@ so you can correct the issue and try again.
 
 | Flag                 | Required | Description                                                                                                                                                                |
 | :------------------- | :------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--api-key`          | Only if `REBOOT_CLOUD_API_KEY` is not set | The API key to use to connect to the Reboot Cloud. Prefer setting the `REBOOT_CLOUD_API_KEY` environment variable instead of passing this flag.            |
+| `--api-key`          | Only if neither `rbt login` nor `REBOOT_CLOUD_API_KEY` | The API key to use to connect to the Reboot Cloud. Prefer `rbt login`, or setting the `REBOOT_CLOUD_API_KEY` environment variable, over passing this flag. |
 | `--application-name` | Yes      | The name of the application. Also used to refer to the application in later `rbt cloud` commands.                                                                          |
 | `--organization`     | Yes      | The organization that owns the application. Must be passed on every `rbt cloud` command for the application.                                                                |
 | `--size`             | No       | The size of the application: one of `xsmall` (default), `small`, `medium`, `large`, or `xlarge`.                                                                            |
@@ -180,8 +198,8 @@ tracked in [this issue](https://github.com/reboot-dev/reboot/issues/71).
 
 All `rbt cloud` commands take the same `--api-key`,
 `--application-name`, and `--organization` flags as `rbt cloud up`,
-and all of them read the API key from the `REBOOT_CLOUD_API_KEY`
-environment variable.
+and all of them use the sign-in `rbt login` kept, or the API key from
+the `REBOOT_CLOUD_API_KEY` environment variable.
 
 ## Reboot Enterprise
 

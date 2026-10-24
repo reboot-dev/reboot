@@ -84,6 +84,16 @@ py_library(
 )
 
 py_library(
+    name = "oauth_client_py",
+    srcs = ["oauth_client.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("aiohttp"),
+    ],
+)
+
+py_library(
     name = "oauth_providers_py",
     srcs = ["oauth_providers.py"],
     data = ["development_login_page.html.j2"],
@@ -107,7 +117,10 @@ py_library(
 py_library(
     name = "oauth_server_py",
     srcs = ["oauth_server.py"],
-    data = ["consent_page.html.j2"],
+    data = [
+        "code_page.html.j2",
+        "consent_page.html.j2",
+    ],
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [

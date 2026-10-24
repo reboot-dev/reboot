@@ -30,6 +30,22 @@ class CloudSecretSetTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(e.exception.status, 2)
         self.assertIn('--application-name', e.exception.message)
 
+    async def test_api_key_is_optional(self) -> None:
+        """Tests that `--api-key` may be left out, for the sign-in
+        `rbt login` keeps."""
+        parser: ArgumentParser = cli.create_parser(
+            argv=[
+                'rbt',
+                'cloud',
+                'secret',
+                'set',
+                '--application-name=my-app',
+                'SECRET_FOO=bar',
+            ]
+        )
+        args, _ = parser.parse_args()
+        self.assertIsNone(args.api_key)
+
     async def test_requires_key_value_pairs(self) -> None:
         """Tests that at least one KEY=VALUE is required."""
         parser: ArgumentParser = cli.create_parser(
