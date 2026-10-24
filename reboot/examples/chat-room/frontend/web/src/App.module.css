@@ -1,21 +1,126 @@
-/* Styles by @sowg: https://codepen.io/sowg/pen/qBXexaZ */
+/* Styles originally by @sowg: https://codepen.io/sowg/pen/qBXexaZ */
 
 .messages {
-  width: 300px;
+  width: 340px;
   margin: 0 auto;
 }
 
+/* --- Composer: a rounded text field with a `+` attach button inside,
+   and a Send button beside it. --- */
+
+.composer {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  margin: 1em 0 0.4em;
+}
+
+.inputWrap {
+  position: relative;
+  flex: 1;
+}
+
 .textInput {
-  margin: 1em;
+  width: 100%;
+  box-sizing: border-box;
   appearance: none;
-  border: none;
+  border: 0.15em solid #e91e63;
   outline: none;
-  border-bottom: 0.2em solid #e91e63;
-  background: rgba(#e91e63, 0.2);
-  border-radius: 0.2em 0.2em 0 0;
-  padding: 0.4em;
+  border-radius: 1.6em;
+  padding: 0.55em 2.5em 0.55em 0.9em;
+  color: #e91e63;
+  background: #fff0f5;
+  font-family: sans-serif;
+}
+
+.textInput::placeholder {
+  color: #f48fb1;
+}
+
+.plusButton {
+  position: absolute;
+  /* Equal inset on the top, bottom, and right; `aspect-ratio` then
+     makes it a circle sized to fit, so its right margin matches its
+     vertical margin. */
+  top: 0.35em;
+  bottom: 0.35em;
+  right: 0.35em;
+  aspect-ratio: 1 / 1;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: #e91e63;
+  color: #fff;
+  font-size: 1em;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.plusButton:hover {
+  background: #c2185b;
+}
+
+.hiddenFileInput {
+  display: none;
+}
+
+/* A dismissable error notification (e.g. an attachment that's too
+   large). */
+.errorBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6em;
+  margin: 0 0 0.6em;
+  padding: 0.6em 0.9em;
+  border-radius: 0.8em;
+  background: #ffe3ec;
+  border: 0.12em solid #e91e63;
+  color: #c2185b;
+  font-family: sans-serif;
+  font-size: 0.9em;
+  cursor: pointer;
+}
+
+.errorDismiss {
+  font-size: 1.2em;
+  line-height: 1;
+  flex: none;
+}
+
+/* A chip showing the file that's staged to send, before the message
+   is sent. */
+.pendingAttachment {
+  display: flex;
+  align-items: center;
+  gap: 0.3em;
+  margin: 0 0 0.6em 0.4em;
+  font-family: sans-serif;
+  font-size: 0.85em;
   color: #e91e63;
 }
+
+.pendingAttachmentName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+
+.pendingAttachmentRemove {
+  border: none;
+  background: transparent;
+  color: #e91e63;
+  font-size: 1.2em;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.2em;
+}
+
+/* --- Messages --- */
 
 .message {
   appearance: none;
@@ -27,6 +132,10 @@
   transition: 1s;
   margin: 1em 0;
   font-family: sans-serif;
+}
+
+.messageText {
+  word-break: break-word;
 }
 
 .pendingMessage {
@@ -47,18 +156,21 @@
 
 .buttonDisabled,
 .buttonEnabled {
-  float: right;
+  flex: none;
   appearance: none;
-  border: 0.2em solid;
+  border: 0.15em solid;
   background: hsl(0 0 0/0);
-  padding: 0.85em 1.5em;
+  padding: 0.55em 1.1em;
   border-radius: 2em;
-  transition: 1s;
+  font-family: sans-serif;
+  transition: 0.3s;
+  cursor: pointer;
 }
 
 .buttonDisabled {
   color: gray;
   border-color: darkgray;
+  cursor: default;
 }
 
 .buttonEnabled {
@@ -70,4 +182,95 @@
     background: #e91e63;
     color: #fff;
   }
+}
+
+/* --- Attachments: fixed clickable squares --- */
+
+.attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+  margin-top: 0.6em;
+}
+
+.attachment,
+.attachmentPending {
+  width: 72px;
+  height: 72px;
+  flex: none;
+  box-sizing: border-box;
+  padding: 0;
+  border: 0.15em solid #e91e63;
+  border-radius: 0.6em;
+  background: #fff0f5;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.attachment {
+  cursor: pointer;
+}
+
+.attachment:disabled {
+  cursor: default;
+}
+
+.attachmentPending {
+  border-color: #cfcfcf;
+  background: #f4f4f4;
+}
+
+.attachmentThumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.attachmentGlyph {
+  font-size: 1.9em;
+  color: #a9a9a9;
+}
+
+/* Circular upload progress. Rotated so it fills from the top. */
+.ring {
+  width: 40px;
+  height: 40px;
+  transform: rotate(-90deg);
+}
+
+.ringTrack {
+  fill: none;
+  stroke: #f8bbd0;
+  stroke-width: 3;
+}
+
+.ringFill {
+  fill: none;
+  stroke: #e91e63;
+  stroke-width: 3;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.3s ease;
+}
+
+/* --- Lightbox for viewing a committed image attachment --- */
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: zoom-out;
+}
+
+.lightboxImage {
+  max-width: 90vw;
+  max-height: 90vh;
+  border-radius: 0.4em;
+  box-shadow: 0 0.5em 2em rgba(0, 0, 0, 0.5);
 }
