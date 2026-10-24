@@ -374,7 +374,7 @@ class TestS3Urls(unittest.TestCase):
         # names the application rather than the store: the same path
         # and query, which the forwarding sends on to the store as
         # signed, behind the prefix.
-        store = FakeS3BlobStore([], url_prefix="/__/blob/")
+        store = FakeS3BlobStore([], url_prefix="/rbt.std.blob.v1/")
 
         url, _ = store.download_url(BLOB_ID)
 
@@ -382,7 +382,7 @@ class TestS3Urls(unittest.TestCase):
         self.assertEqual("", parsed.scheme)
         self.assertEqual("", parsed.netloc)
         self.assertEqual(
-            "/__/blob/a-bucket/apps/an-application/blobs/blob-one",
+            "/rbt.std.blob.v1/a-bucket/apps/an-application/blobs/blob-one",
             parsed.path,
         )
         self.assertIn("X-Amz-Signature", parse_qs(parsed.query))
