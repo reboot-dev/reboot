@@ -5,10 +5,13 @@ py_library(
     name = "blob_py",
     srcs = [
         "_s3.py",
+        "_silo.py",
         "_store.py",
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//reboot/aio:signals_py",
+        "//reboot/server:nanny_py",
         requirement("aiohttp"),
         requirement("boto3"),
     ],

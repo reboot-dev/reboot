@@ -1,0 +1,45 @@
+# The Silo binary for the platform a test runs on; see
+# `//bazel:silo.bzl`.
+
+config_setting(
+    name = "linux_x86_64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+config_setting(
+    name = "linux_aarch64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:aarch64",
+    ],
+)
+
+config_setting(
+    name = "macos_x86_64",
+    constraint_values = [
+        "@platforms//os:macos",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+config_setting(
+    name = "macos_aarch64",
+    constraint_values = [
+        "@platforms//os:macos",
+        "@platforms//cpu:aarch64",
+    ],
+)
+
+alias(
+    name = "silo",
+    actual = select({
+        ":linux_aarch64": "@silo_linux_aarch64//:silo",
+        ":linux_x86_64": "@silo_linux_x86_64//:silo",
+        ":macos_aarch64": "@silo_macos_aarch64//:silo",
+        ":macos_x86_64": "@silo_macos_x86_64//:silo",
+    }),
+    visibility = ["//visibility:public"],
+)
