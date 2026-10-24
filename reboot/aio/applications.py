@@ -40,6 +40,7 @@ from reboot.controller.settings import ENVVAR_REBOOT_MODE, REBOOT_MODE_CONFIG
 from reboot.mcp.factories import create_mcp_factory
 from reboot.mcp.ui import find_project_root_from, has_registered_ui_tools
 from reboot.nodejs.python import should_print_stacktrace
+from reboot.routing.envoy_config import Upstream
 from reboot.run_environments import (
     InvalidRunEnvironment,
     RunEnvironment,
@@ -71,7 +72,15 @@ from reboot.settings import (
 from reboot.version import REBOOT_VERSION
 from reboot.versioning import version_less_than
 from starlette.staticfiles import StaticFiles
-from typing import Any, Awaitable, Callable, Mapping, NoReturn, Optional
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Mapping,
+    NoReturn,
+    Optional,
+    Sequence,
+)
 
 logger = get_logger(__name__)
 
@@ -205,6 +214,16 @@ class Library(AbstractLibrary):
         Implement any library setup before the `Application` runs here.
         """
         pass
+
+    def upstreams(self) -> Sequence[Upstream]:
+        """
+        Return the hosts outside the application that the local Envoy
+        forwards a path prefix each to on this library's behalf, so
+        that a browser reaches them on the application's own origin.
+        Asked after `pre_run`, which is where a library learns where
+        what it started is listening.
+        """
+        return []
 
 
 class NodeAdaptorLibrary(Library):
@@ -1150,6 +1169,10 @@ class Application:
             servers=int(servers),
             frontend_url=frontend_url,
             web_app=web_app,
+            upstreams=[
+                upstream for library in self.libraries
+                for upstream in library.upstreams()
+            ],
         )
 
     def _get_serviceables(self) -> list[Serviceable]:

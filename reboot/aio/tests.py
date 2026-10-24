@@ -3,7 +3,11 @@ import os
 import reboot.aio.reboot
 import secrets
 import unittest
-from reboot.aio.applications import Application, NodeApplication
+from reboot.aio.applications import (
+    Application,
+    NodeAdaptorLibrary,
+    NodeApplication,
+)
 from reboot.aio.auth.oauth import OAuth
 from reboot.aio.auth.oauth_providers import (
     ExchangeResult,
@@ -444,6 +448,17 @@ class Reboot(reboot.aio.reboot.Reboot):
             if application.has_http_routes_or_mounts():
                 local_envoy = True
 
+        # Do any pre-run library set up, just like `Application.run()`
+        # does; e.g. a library may start what it serves from and name
+        # it as an upstream below. Libraries must tolerate being
+        # `pre_run` more than once, since a test may `up` the same
+        # `Application` after a `down`. A Node.js library gets its
+        # pre-run in TypeScript, so, as in `NodeApplication.run()`,
+        # only the others are run here.
+        for library in application.libraries:
+            if not isinstance(library, NodeAdaptorLibrary):
+                await library.pre_run(application)
+
         revision = await super().up(
             servicers=application.servicers,
             legacy_grpc_servicers=application.legacy_grpc_servicers,
@@ -462,6 +477,10 @@ class Reboot(reboot.aio.reboot.Reboot):
             effect_validation=effect_validation,
             frontend_url=frontend_url,
             web_app=web_app,
+            upstreams=[
+                upstream for library in application.libraries
+                for upstream in library.upstreams()
+            ],
         )
 
         return revision
