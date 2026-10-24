@@ -348,6 +348,7 @@ and forfeits durability, ordering, and concurrency guarantees:
 
 | You need...                                       | Use                 | Reference                |
 | ------------------------------------------------- | ------------------- | ------------------------ |
+| Files / images / video / uploads — large bytes    | `Blob`              | `stdlib-blob.md`         |
 | Durable FIFO — work queue, job queue, intake      | `Queue`             | `stdlib-queue.md`        |
 | Sorted key-value with pagination / ordering       | `OrderedMap`        | `stdlib-ordered-map.md`  |
 | Presence — who's online / connected               | `Presence`          | `stdlib-presence.md`     |
@@ -485,6 +486,10 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/lifecycle-signals.md` — usually nothing to do on
   `SIGTERM`/`SIGINT`; when something is, `install_cleanup()`, never a
   signal handler of your own
+- `references/lifecycle-upstreams.md` — a service shipped in the
+  container (a search index, an inference server) that the browser
+  must reach on the application's origin: a `Library` names it as an
+  `Upstream` on a path prefix
 
 **API** (`api-`):
 
@@ -513,6 +518,8 @@ above lists the right ones grouped by task type. The full catalog:
 
 **Stdlib** (`stdlib-`):
 
+- `references/stdlib-blob.md` — large binary objects (user uploads):
+  the backend creates the `Blob`, the browser uploads into it
 - `references/stdlib-ordered-map.md`
 - `references/stdlib-queue.md`
 - `references/stdlib-pubsub.md`

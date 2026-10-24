@@ -302,8 +302,9 @@ above for the dev-vs-prod sequence):
   `frontend/` shell (the stock Vite config rooted at `web/`,
   including the `server.host` the browser needs), the backend URL
   (`VITE_REBOOT_URL` — the default detection resolves to Vite's
-  origin, not the backend's), sign-in/sign-out, and how a typed
-  backend error becomes a message the user sees.
+  origin, not the backend's), sign-in/sign-out, how a typed
+  backend error becomes a message the user sees, and how a file the
+  user picks is uploaded into a `Blob` and shown back.
 - `python/references/react-generated-client.md` — what
   `rbt generate --react=` emits: the `use<Type>()` overloads, the
   three-field reader return, why mutations resolve to

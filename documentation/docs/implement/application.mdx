@@ -13,19 +13,17 @@ Your entrypoint will construct an `Application` and then `run` it:
 <Tabs groupId="language">
   <TabItem value="python" label="Python">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/examples/chat-room/backend/src/main.py&lines=25-33) -->
+(CODE:src=../../../reboot/examples/chat-room/backend/src/main.py&lines=26-32) -->
 <!-- The below code snippet is automatically added from ../../../reboot/examples/chat-room/backend/src/main.py -->
 
 ```py
 async def main():
     await Application(
         servicers=[ChatRoomServicer],
+        # Message attachments are stored as blobs.
+        libraries=[blob_library()],
         initialize=initialize,
     ).run()
-
-
-if __name__ == '__main__':
-    asyncio.run(main())
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
@@ -47,6 +45,21 @@ new Application({
   </TabItem>
 </Tabs>
 
+### `libraries`
+
+The optional `libraries` argument brings in [library
+services](/library_services/overview): state machines that Reboot
+implements for you, which your application serves alongside its own.
+The example above uses `blob_library()`, which gives the application
+the `Blob` state machine its message attachments are stored in.
+
+A library service may need somewhere to keep what it holds, and may
+need more than the `reboot` package to do so: blobs keep their bytes
+in an S3-compatible bucket and speak S3 through boto3, which the
+`reboot[std-blob]` extra installs. See [Blob](/library_services/blob)
+for the dependency, the bucket, and the Silo the application runs
+for itself under `rbt dev run`.
+
 ### `initialize` functions
 
 The optional `initialize` argument to the `Application` constructor is a function that
@@ -59,7 +72,7 @@ instances used by your application are created.
 <Tabs groupId="language">
   <TabItem value="python" label="Python">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/examples/chat-room/backend/src/main.py&lines=13-20) -->
+(CODE:src=../../../reboot/examples/chat-room/backend/src/main.py&lines=14-21) -->
 <!-- The below code snippet is automatically added from ../../../reboot/examples/chat-room/backend/src/main.py -->
 
 ```py
@@ -165,7 +178,7 @@ implemented with [Express.js](https://expressjs.com/).
 
 **Limitations of custom HTTP routes**
 
-* Currently only `GET` and `POST` methods are supported.
+* Currently only `GET`, `POST`, and `PUT` methods are supported.
 
 * The `/` route is currently used by Reboot itself to
 show a helpful page explaining that this is a Reboot
@@ -281,3 +294,90 @@ application.http.post("/hello_greeter", async (context, req, res) => {
 <!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
+
+## Upstreams: services in your container
+
+An application may ship with a service of its own that the browser
+must reach: a search index, an inference server, the Silo that
+[blobs](/library_services/blob) use under `rbt dev run`. Such a
+service listens on the application's own loopback, and the
+application forwards one path prefix of its own to it, so that the
+browser reaches the service on the application's origin, by whatever
+name it reached the application by, with no second port to expose and
+no CORS to configure. Reboot calls such a service an _upstream_.
+
+An upstream is named by a library: a `Library` whose `pre_run` starts
+the service, or finds the one already running, and whose `upstreams()`
+says which prefix to forward to which port. The library is currently
+a Python concept:
+
+```py
+from reboot.aio.applications import Application, Library
+from reboot.routing.upstreams import Upstream
+
+
+class SearchIndexLibrary(Library):
+    name = "search-index"
+
+    def servicers(self):
+        return []
+
+    async def pre_run(self, application):
+        # Start the index (or find the one already running) and
+        # remember the port it listens on. `pre_run` is called in
+        # every server process, before the application serves.
+        self._port = await start_search_index()
+
+    def upstreams(self):
+        return [
+            Upstream(
+                name="search-index",
+                # What the browser asks the application for ...
+                prefix="/__/search/",
+                # ... and where it goes.
+                port=self._port,
+                # What the prefix becomes on the way there; `/` drops
+                # it, so `/__/search/query` reaches the index as
+                # `/query`.
+                prefix_rewrite="/",
+            )
+        ]
+
+
+async def main():
+    await Application(
+        servicers=[ChatRoomServicer],
+        libraries=[SearchIndexLibrary()],
+    ).run()
+```
+
+The browser then fetches `/__/search/query` on the application's
+origin, in development and in production alike, and the index answers.
+
+A few things to know:
+
+* **Loopback only.** An upstream is reached on the application's own
+  loopback, which is where a service shipped alongside the application
+  lives: in the same container on Reboot Cloud, on the developer's
+  machine under `rbt dev run`. It is not a way to reach a service
+  elsewhere.
+* **The prefix is the library's own.** A prefix that overlaps another
+  library's, or a path the application answers itself (an
+  [HTTP custom route](#http-custom-routes), say), is refused when the
+  application starts, rather than left to whichever is matched first.
+* **HTTP/1.1 by default.** A service that speaks HTTP/2 (gRPC, say)
+  asks for it with `http2=True`; one that only listens for TLS asks
+  with `tls=True`, and its certificate is then accepted without
+  validation, there being nothing on the loopback to validate it
+  against. A service that checks the `Host` header it is sent, such as
+  a bucket that signs URLs for a particular host, asks for the one it
+  expects with `host_rewrite`.
+* **No authorization on the way in.** Requests on the prefix are
+  forwarded as they are, so anyone who can reach the application can
+  reach the upstream, and a service that must not be open to everyone
+  has to protect itself, as blobs do by honouring only signed URLs.
+  Letting the application decide who may call an upstream is planned.
+* **Any replica may answer.** On Reboot Cloud a request on the prefix
+  reaches whichever replica of the application it lands on, which is
+  fine for a service that is the same in every container and not for
+  one that keeps state of its own per container.

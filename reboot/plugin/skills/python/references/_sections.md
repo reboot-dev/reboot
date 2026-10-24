@@ -7,7 +7,7 @@ This file defines the rule categories for Reboot Python best practices. Rules ar
 ## 1. Lifecycle (lifecycle)
 
 **Impact:** CRITICAL
-**Description:** Project setup, `.rbtrc` configuration, the `Application(...)` entry point, and the `initialize` hook. Foundation for every Reboot application.
+**Description:** Project setup, `.rbtrc` configuration, the `Application(...)` entry point, the `initialize` hook, and upstreams: services shipped in the container that a `Library` names for the application to forward a path prefix to. Foundation for every Reboot application.
 
 ## 2. API (api)
 
@@ -27,7 +27,7 @@ This file defines the rule categories for Reboot Python best practices. Rules ar
 ## 5. Stdlib (stdlib)
 
 **Impact:** HIGH
-**Description:** First-class stdlib state types shipped with Reboot — `OrderedMap`, `Queue`, `Topic` (PubSub), `Presence`, the `Item` value envelope, and `Ciphertext` (envelope encryption / crypto-shredding). One reference per type with method surface and library registration.
+**Description:** First-class stdlib state types shipped with Reboot — `Blob` (large binary objects whose bytes live in a bucket), `OrderedMap`, `Queue`, `Topic` (PubSub), `Presence`, the `Item` value envelope, and `Ciphertext` (envelope encryption / crypto-shredding). One reference per type with method surface and library registration.
 
 ## 6. Crypto (crypto)
 

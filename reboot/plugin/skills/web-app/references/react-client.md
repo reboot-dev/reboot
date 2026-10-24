@@ -247,6 +247,99 @@ The fields on each error case are exactly the fields declared on
 the pydantic error model in the API definition, camelCased. The
 frontend only _reports_; the backend already refused the operation.
 
+## Uploading and Downloading Files with `Blob`
+
+A file a user picks never goes through a Reboot method as bytes. The
+backend creates a `Blob` for it (`python/references/stdlib-blob.md`)
+and returns the blob's ID; the browser uploads straight into the
+bucket and reads the result back from the blob. The hooks live in
+`@reboot-dev/reboot-std-react/blob`, and the status enum and error
+types in `@reboot-dev/reboot-std-api/blob/v1/blob_pb.js`:
+
+```tsx
+import {
+  Blob_Status,
+  Blob_Transition,
+} from "@reboot-dev/reboot-std-api/blob/v1/blob_pb.js";
+import {
+  useBlobDownload,
+  useBlobUpload,
+} from "@reboot-dev/reboot-std-react/blob";
+
+function Composer() {
+  const { send } = useChatRoom({ id: roomId });
+  const { upload } = useBlobUpload();
+
+  const onSubmit = async (file: File) => {
+    // 1. The backend creates the blob (with the content type and
+    //    size, so it can refuse up front) and returns its ID.
+    const { response, aborted } = await send({
+      attachments: [{ contentType: file.type, sizeBytes: BigInt(file.size) }],
+    });
+    if (aborted !== undefined) return setError(friendlyError(aborted));
+    // 2. The bytes go straight to the bucket, in parts, with progress
+    //    reported onto the blob for every participant to see.
+    const { aborted: uploadAborted } = await upload(
+      response.attachmentBlobIds[0],
+      file
+    );
+    if (uploadAborted !== undefined) setError(uploadAborted.message);
+  };
+}
+
+function Attachment({ blobId }: { blobId: string }) {
+  // `info`: status and bytes uploaded, reactive, for a progress ring.
+  // `url`: once committed, refreshed before it lapses. `aborted`:
+  // when the blob is not this user's to read or download. Neither
+  // `url` nor `aborted` while still uploading, nor ever for a discarded
+  // blob, which `info.status` reports.
+  const { info, url, aborted } = useBlobDownload(blobId);
+  const discarded =
+    info?.transition === Blob_Transition.DISCARD ||
+    info?.status === Blob_Status.DISCARDED;
+  if (discarded || aborted !== undefined)
+    return <span>Attachment discarded</span>;
+  if (url === undefined) {
+    return <Progress fraction={Number(info?.bytesUploaded ?? 0) / total} />;
+  }
+  return <img src={url} />;
+}
+```
+
+Rules that trip people:
+
+- **The backend creates the blob by default, not the browser.**
+  `Blob.create` is app-internal unless the library is given another
+  authorizer, so that blobs are created from within a mutation of
+  yours, after whatever policy goes beyond authorization (the size
+  limit, the content-type check, a typed error) and not in the
+  browser; the mutation hands back the ID. When authorization alone
+  is policy enough, `blob_library(authorizer=...)` on the backend lets
+  the browser call `Blob.create` itself.
+- **`upload` resolves `{ aborted }` like a mutation** when the
+  backend refuses (`SizeMismatch`, `AlreadyCommitted`, `Discarded`, the bucket's
+  `CommitRefused`) and rejects only on an interruption: a part that
+  could not be uploaded after retries, or the `AbortSignal` you passed.
+  Calling `upload` again for the same blob resumes. An upload the
+  bucket has dropped, for going uncompleted too long (`UploadNotFound`,
+  from a part or from the commit), `upload` restarts and uploads again
+  from the first part on its own, once.
+- **Progress comes from `useBlobDownload`'s `info`, not from
+  `upload`.** It is on the blob's state, so a second tab or another
+  user sees it too. `info.sizeLimit.case === "size"` gives a definite
+  total; `max_size` leaves it indeterminate.
+- **`useBlobDownload` returns `url` or `aborted`, never both**, and
+  neither until the blob commits. Render progress from `info`
+  meanwhile; do not treat a missing `url` as an error.
+- **The `<img src>` is the URL as returned.** It is already absolute
+  and already signed; do not prepend the backend URL or cache it past
+  a re-render, since the hook replaces it before it lapses.
+- **A discarded blob is a status, not an error.** `aborted` is only
+  for a blob this user may not read or download. For a discarded one
+  `url` stays `undefined` for good, `info.transition` is `DISCARD`
+  while the bytes go and `info.status` is `DISCARDED` once they are
+  gone: check both to show it as discarded, not just `DISCARDED`.
+
 ## Accessible Markup, So Scenarios Can Drive the Page
 
 The web app scenarios (`python/references/testing-web-app.md`)

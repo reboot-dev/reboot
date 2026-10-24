@@ -8,6 +8,7 @@ import TabItem from "@theme/TabItem";
 The standard library uses Reboot's capabilities to build powerful data structures and APIs for common tasks.
 
 The current libraries are:
+* [Blob](./blob) - Large binary objects, such as the files your users upload: the bytes go straight between the browser and a bucket, the metadata and progress live in Reboot.
 * [Ciphertext](./ciphertext) - Envelope encryption with a revocable wrapping key: encrypt values at rest and crypto-shred them by destroying a single key.
 * [OAuth Token Manager](./oauth_token_manager) - An encrypted, per-service store for your users' OAuth tokens, so your application can call external services on their behalf.
 * [PubSub](./pubsub) - A pub/sub implementation that enables you to subscribe and broadcast to topics.

@@ -1,0 +1,229 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Blob
+
+Large binary objects: the images, videos, documents and other files
+your users upload, which are too large to keep in a state machine's
+own state. A `Blob` is the control plane for one object whose bytes
+never change once committed. Its state holds the metadata (content
+type, size, upload progress, lifecycle, and who may upload and
+download) while the bytes travel directly between the browser and an
+S3-compatible bucket, in parts, through URLs the `Blob` answers. Uploads
+are resumable, and sizes are enforced against the bytes actually
+uploaded.
+
+## Installing
+
+Blobs speak S3 through [boto3](https://boto3.amazonaws.com), which the
+`reboot[std-blob]` extra installs. Add it to your dependencies at the
+same version as `reboot`:
+
+```toml
+dependencies = [
+    "reboot==1.7.2",
+    "reboot[std-blob]==1.7.2",
+]
+```
+
+The browser side lives in `@reboot-dev/reboot-std-react`, alongside
+the generated client in `@reboot-dev/reboot-std-api`.
+
+## Registering the library
+
+The library is currently available for Python applications:
+
+```py
+from reboot.std.blob.v1.blob import blob_library
+
+async def main():
+    await Application(
+        servicers=[ChatRoomServicer],
+        libraries=[blob_library()],
+    ).run()
+```
+
+## Creating a blob
+
+By default only your application can create a blob, not a browser.
+That default is there to encourage creating blobs from within your
+own transaction, after applying whatever policy of your own goes
+beyond authorization (who may attach what, how large, how many), and
+handing the blob's random ID, which then acts as the capability, to
+whoever may use it. The chat room example creates a blob per
+attachment inside its `send` transaction and returns the IDs:
+
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../reboot/examples/chat-room/backend/src/chat_room_servicer.py&lines=48-52) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/chat-room/backend/src/chat_room_servicer.py -->
+
+```py
+blob, _ = await Blob.create(
+    context,
+    content_type=attachment.content_type,
+    size=attachment.size_bytes,
+)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+When authorization alone is policy enough, you can let browsers create
+blobs directly by giving the library an authorizer of your own, which
+replaces the default rules for every method of `Blob`:
+
+```py
+from reboot.aio.auth.authorizers import allow_if, has_verified_token
+from reboot.std.blob.v1.blob import blob_library
+
+blob_library(authorizer=allow_if(any=[has_verified_token]))
+```
+
+`Blob.create` takes:
+
+* `content_type`: the MIME type the bytes are served with on download.
+* `size`, the exact total in bytes, or `max_size`, an upper bound, or
+  neither. An exact `size` gives definite progress bars and must be
+  met exactly at commit; either is enforced as parts are reported and
+  again at commit.
+* `uploader_id`: the one user who may upload into the blob. Omit it to
+  let anyone who knows the blob's ID upload.
+* `downloaders`: the users who may download it, as
+  `Downloaders(user_ids=[...])`. Omit it to let anyone who knows the
+  ID download; pass it, even empty, to restrict downloads to the list.
+  The uploader is not implicitly a downloader. `set_downloaders`
+  changes the list later.
+
+## Uploading from the browser
+
+`useBlobUpload()` uploads a `File` (or a `Blob` or `Uint8Array`) into a
+blob your backend created:
+
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../reboot/examples/chat-room/frontend/web/src/App.tsx&&lines=165-165) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/chat-room/frontend/web/src/App.tsx -->
+
+```tsx
+const { upload } = useBlobUpload();
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../reboot/examples/chat-room/frontend/web/src/App.tsx&&lines=214-220) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/chat-room/frontend/web/src/App.tsx -->
+
+```tsx
+const { aborted: uploadAborted } = await upload(
+  response.attachmentBlobIds[0],
+  uploadFile
+);
+if (uploadAborted !== undefined) {
+  console.warn(`Attachment upload failed: ${uploadAborted.message}`);
+}
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+The bytes go in parts, several at a time, straight to the bucket, and
+each part is reported to the blob as it lands, so anyone watching the
+blob sees the progress. Like a [mutation](/call/from_react), `upload`
+resolves `{ aborted }` when the backend refuses: `aborted` is the
+typed error of whichever `Blob` method refused, for example
+`SizeMismatch` when the bytes do not add up to the `size` the blob was
+created with, `Discarded` when the blob has been discarded, or
+`CommitRefused` when the bucket finds the uploaded parts differ from
+what was reported. It rejects on an interruption, a part that could
+not be uploaded even after retries or the caller's own `AbortSignal`;
+the parts that did upload are kept, so calling `upload` again for the
+same blob resumes rather than restarts. Outside React, `S3BlobUploader`
+offers the same as `waitForReady`, `uploadParts` and `commit`.
+
+## Showing a blob
+
+`useBlobDownload` gives a component everything it needs to show a
+blob, kept current for as long as it is mounted:
+
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../reboot/examples/chat-room/frontend/web/src/App.tsx&&lines=44-44) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/chat-room/frontend/web/src/App.tsx -->
+
+```tsx
+const { info, url, aborted } = useBlobDownload(blobId);
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+* `info` is the blob's metadata, reactive, from the first response on:
+  `status` says where the blob is in its life, `bytesUploaded` and
+  `sizeLimit` give the progress to render while it uploads, and
+  `commitRefused`, when set, says why the last commit was refused.
+* `url`, once the blob has committed, is a URL for its bytes, fit for
+  an `<img src>` or a link, asked for anew before it lapses.
+* `aborted` is set when this user may not download the blob, or read
+  it at all.
+
+Exactly one of `url` and `aborted` is ever set, and both are
+`undefined` while the blob is still uploading, and for good once it
+never will be: a blob that was discarded is a `status` that `info`
+reports, not an error, so a component shows it as discarded from
+`info.status` rather than from `aborted`. From the backend,
+`Blob.ref(id).download_url(context)` answers the same way, with
+`ready` false until the blob is committed, and `Blob.ref(id).info(context)`
+is the metadata.
+
+How the bytes are served is decided when the URL is signed and cannot
+be changed by whoever holds it: a declared type that cannot carry
+script is served as declared, and anything else as an opaque download,
+so a claimed `text/html` never renders as a same-origin document.
+
+## Lifecycle
+
+A blob's `status` is what the bucket holds: `CREATED` until its
+multipart upload exists, then `UPLOADING`, then `COMMITTED` once the
+bucket has confirmed the commit, or `DISCARDED` once the bytes are
+gone. Its `transition` is what has been asked for next, named for
+the status it leads to: `create` asks for `UPLOAD`, `commit` for
+`COMMIT` and `discard` for `DISCARD`, and the blob's one workflow
+carries it out in the bucket, one step at a time, then clears it. A
+commit the bucket refuses leaves the blob `UPLOADING` with
+`commit_refused` set, so the client can upload the parts again and
+commit again. A blob stays uploadable until it is committed, and is
+then immutable, until the application discards it. The bucket, though,
+drops an upload that goes uncompleted for long enough (a week, for the
+buckets Reboot runs and provides), after which it refuses every part
+and a commit records `upload_not_found` instead; `restart_upload` asks
+for another upload in place of it, into which every part is uploaded
+again, which the browser's `upload` does on its own.
+
+## Methods
+
+| Method                      | Type   | Notes                                                                   |
+| --------------------------- | ------ | ----------------------------------------------------------------------- |
+| `create`                    | writer | application-internal; `content_type`, `size`/`max_size`, `uploader_id`, `downloaders` |
+| `set_downloaders`           | writer | application-internal; replaces the download allow-list                  |
+| `part_upload_url`           | reader | uploader; the URL to upload one part to                                  |
+| `part_uploaded`             | writer | uploader; reports a part's receipt and size                             |
+| `commit`                    | writer | uploader; validates the parts and schedules the completion              |
+| `restart_upload`            | writer | uploader; schedules another upload in place of one the bucket dropped  |
+| `info`                      | reader | uploader or downloaders; metadata, part size and progress, reactive     |
+| `download_url`              | reader | downloaders; `ready` false until committed                               |
+| `discard`                   | writer | application-internal; deletes the bytes                                 |
+
+The browser hooks call `part_upload_url`, `part_uploaded`, `commit`,
+`info` and `download_url` for you.
+
+## Where the bytes live
+
+Blobs keep their bytes in an S3-compatible bucket, named by the
+`REBOOT_STD_BLOB_S3_ENDPOINT`, `REBOOT_STD_BLOB_S3_BUCKET`,
+`REBOOT_STD_BLOB_S3_REGION`, `REBOOT_STD_BLOB_S3_ACCESS_KEY_ID` and
+`REBOOT_STD_BLOB_S3_SECRET_ACCESS_KEY` environment variables, with an
+optional key prefix in `REBOOT_STD_BLOB_S3_PREFIX`. The browser is
+sent to the endpoint too, on the URLs the blob answers, so it must be a
+name the browser can reach. On Reboot Cloud these are set
+for you. Under `rbt dev run` and in tests, where none is named, the
+application runs a [Silo](https://github.com/pgsty/silo) of its own, keeping blobs
+beside the rest of its state and reaching it on its own origin, so
+there is nothing to configure; Silo is found on the `PATH` as
+`silo` (or named by `REBOOT_STD_BLOB_SILO_PATH`), or run from its
+Docker image. `rbt serve run` needs a bucket you provide.
