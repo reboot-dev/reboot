@@ -1,0 +1,11 @@
+load("@rules_python//python:defs.bzl", "py_test")
+
+py_test(
+    name = "s3_tests_py",
+    timeout = "short",
+    srcs = [":s3_tests.py"],
+    main = "s3_tests.py",
+    deps = [
+        "//reboot/std/blob/v1:blob_py",
+    ],
+)
