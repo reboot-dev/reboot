@@ -18,13 +18,14 @@ from reboot.cli.commands.dev import (
     try_and_become_child_subreaper_on_linux,
 )
 from reboot.cli.common import portless, terminal
+from reboot.cli.common.application_name import application_name_with_variant
 from reboot.cli.common.dev_extra import dev_extra_installed, missing_dev_extra
 from reboot.cli.common.directories import (
     add_working_directory_options,
     dot_rbt_directory,
     use_working_directory,
 )
-from reboot.cli.common.rc import ArgumentParser
+from reboot.cli.common.rc import ArgumentParser, TransformerError
 from reboot.cli.common.subprocesses import Subprocesses
 from reboot.dashboard.backend.constants import (
     DASHBOARD_DIRECTORY,
@@ -148,7 +149,8 @@ def _application(parser: ArgumentParser) -> Optional[str]:
 
 def _application_name(parser: ArgumentParser) -> Optional[str]:
     """Returns the developer's application's name, which is the one
-    they tell `rbt dev run` to save state under, or `None` when they
+    they tell `rbt dev run` to save state under, with the environment's
+    variant appended as `rbt dev run` appends it, or `None` when they
     name none.
 
     Read rather than asked for again, so that `rbt dev run --portless`
@@ -157,7 +159,10 @@ def _application_name(parser: ArgumentParser) -> Optional[str]:
     for argument in parser.dot_rc_arguments('dev run'):
         name, separator, value = argument.partition('=')
         if name == '--application-name' and separator == '=':
-            return value
+            try:
+                return application_name_with_variant(value)
+            except TransformerError as e:
+                terminal.fail(e.message)
     return None
 
 
