@@ -1,0 +1,42 @@
+load("@aspect_rules_js//js:defs.bzl", "js_test")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+
+ts_project(
+    name = "s3_tests_ts",
+    srcs = [
+        "s3_tests.ts",
+        ":package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "strictNullChecks": True,
+            "target": "es2020",
+        },
+    },
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:node_modules/@reboot-dev/reboot-api",
+        "//:node_modules/@types/node",
+        "//reboot/std/react/blob:blob_ts",
+    ],
+)
+
+# A unit test of the S3 part `PUT`'s retry policy, with `fetch` and
+# the backoff sleep handed in; nothing here needs a Reboot backend, so
+# this is a plain `js_test` rather than a `js_reboot_test`.
+js_test(
+    name = "s3_tests",
+    size = "small",
+    data = [
+        ":s3_tests_ts",
+    ],
+    entry_point = "s3_tests.js",
+    node_options = [
+        "--test",
+    ],
+    visibility = ["//visibility:public"],
+)
