@@ -13,19 +13,17 @@ Your entrypoint will construct an `Application` and then `run` it:
 <Tabs groupId="language">
   <TabItem value="python" label="Python">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/examples/chat-room/backend/src/main.py&lines=25-33) -->
+(CODE:src=../../../reboot/examples/chat-room/backend/src/main.py&lines=26-32) -->
 <!-- The below code snippet is automatically added from ../../../reboot/examples/chat-room/backend/src/main.py -->
 
 ```py
 async def main():
     await Application(
         servicers=[ChatRoomServicer],
+        # Message attachments are stored as blobs.
+        libraries=[blob_library()],
         initialize=initialize,
     ).run()
-
-
-if __name__ == '__main__':
-    asyncio.run(main())
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
@@ -47,6 +45,27 @@ new Application({
   </TabItem>
 </Tabs>
 
+### `libraries`
+
+The optional `libraries` argument brings in [library
+services](/library_services/overview): state machines that Reboot
+implements for you, which your application serves alongside its own.
+The example above uses `blob_library()`, which gives the application
+the `Blob` state machine its message attachments are stored in.
+
+A library service may need somewhere to keep what it holds. Blobs keep
+their bytes in an S3-compatible object store, named by the
+`REBOOT_BLOB_S3_ENDPOINT`, `REBOOT_BLOB_S3_BUCKET`,
+`REBOOT_BLOB_S3_REGION`, `REBOOT_BLOB_S3_ACCESS_KEY_ID` and
+`REBOOT_BLOB_S3_SECRET_ACCESS_KEY` environment variables (and an
+optional key prefix, `REBOOT_BLOB_S3_PREFIX`). On Reboot Cloud these
+are set for you. Under `rbt dev run` and in tests, where none is
+named, the application runs a [MinIO](https://min.io) of its own,
+keeping blobs beside the rest of its state, and reaches it through
+its own origin, so there is nothing to configure; MinIO is found on
+the `PATH` as `minio` (or named by `REBOOT_MINIO_PATH`), or run from
+its Docker image. `rbt serve run` needs a store you provide.
+
 ### `initialize` functions
 
 The optional `initialize` argument to the `Application` constructor is a function that
@@ -59,7 +78,7 @@ instances used by your application are created.
 <Tabs groupId="language">
   <TabItem value="python" label="Python">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/examples/chat-room/backend/src/main.py&lines=13-20) -->
+(CODE:src=../../../reboot/examples/chat-room/backend/src/main.py&lines=14-21) -->
 <!-- The below code snippet is automatically added from ../../../reboot/examples/chat-room/backend/src/main.py -->
 
 ```py
@@ -165,7 +184,7 @@ implemented with [Express.js](https://expressjs.com/).
 
 **Limitations of custom HTTP routes**
 
-* Currently only `GET` and `POST` methods are supported.
+* Currently only `GET`, `POST`, and `PUT` methods are supported.
 
 * The `/` route is currently used by Reboot itself to
 show a helpful page explaining that this is a Reboot
