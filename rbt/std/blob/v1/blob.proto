@@ -1,0 +1,519 @@
+syntax = "proto3";
+
+package rbt.std.blob.v1;
+
+import "google/protobuf/timestamp.proto";
+import "rbt/v1alpha1/options.proto";
+
+////////////////////////////////////////////////////////////////////////
+// Errors.
+
+// Raised when an upload-side call arrives after the blob has already
+// been committed (or is in the process of being deleted).
+message AlreadyCommitted {}
+
+// Raised when `GetDownloadUrl` is called on a blob that will never be
+// committed: one that is being removed, or removed.
+message NotCommitted {}
+
+// Raised when the uploaded parts violate the blob's declared `size`
+// or `max_size`.
+message SizeMismatch {
+  // The total size of all parts reported uploaded so far.
+  uint64 bytes_uploaded = 1;
+}
+
+// Raised when the reported parts cannot form a complete object:
+// `Commit` was called before any part was reported, or the reported
+// part numbers are not contiguous starting at 1. Also raised when
+// `PartUploaded` reports an out-of-range part number or a malformed
+// ETag.
+message IncompleteParts {}
+
+// Raised by `CommitWorkflow` when the bucket refuses to assemble the
+// reported parts into an object: a part was reported but never
+// uploaded, a reported size or receipt disagrees with what was
+// uploaded, the parts add up to more than `max_size`, or the upload
+// expired before it was committed. Recoverable by the uploader:
+// upload the parts again and `Commit` again.
+message CommitRefused {
+  // What was refused and what the uploader should do about it, in
+  // words. It does not identify which parts, if any, were at fault.
+  string reason = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+// The set of users allowed to download a blob. Wrapping the list in a
+// message lets the download allow-list be *omitted* (anyone who knows
+// the blob's ID may download) distinctly from *present but empty* (no
+// one but app-internal callers may download).
+message Downloaders {
+  repeated string user_ids = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+// Blob: the control plane for one immutable-once-committed binary
+// object. This state holds only *metadata*; the bytes live in an
+// S3-compatible bucket (S3 itself, or the MinIO that Reboot runs
+// locally) and travel directly between the client and that bucket
+// via URLs minted by `GetPartUploadInstructions` and `GetDownloadUrl`.
+// The upload protocol is multipart: numbered parts `PUT` to per-part
+// URLs, each answering with a receipt (for S3, an ETag), then a
+// completion step that checks those receipts against what was
+// actually uploaded.
+
+message BlobPart {
+  // 1-based part number.
+  uint32 number = 1;
+
+  // What the `PUT` of this part answered with, which the completion
+  // checks against what was actually uploaded: for S3, the `ETag`
+  // header. A servicer for another storage would add a kind of its
+  // own here.
+  oneof receipt {
+    string etag = 2;
+  }
+
+  // Size of this part in bytes.
+  uint64 size = 3;
+}
+
+message Blob {
+  option (rbt.v1alpha1.state) = {
+    trusted_effects: true,
+  };
+
+  // Every status a blob can be in, spelled out: the ones a `Remove`
+  // lands in while a workflow is in flight are their own values, so
+  // that the one workflow then running is the one that moves the blob
+  // on to `REMOVING`, and `RemoveWorkflow` is the only place bytes are
+  // ever deleted.
+  enum Status {
+    // `Create` was called; the `CreateWorkflow` workflow is creating
+    // the multipart upload. The initial status.
+    CREATING = 0;
+
+    // Parts may be uploaded.
+    UPLOADING = 1;
+
+    // `Commit` was called; the `CommitWorkflow` workflow is
+    // finalizing the object in the bucket.
+    COMMITTING = 2;
+
+    // The blob's bytes are immutable and downloadable.
+    COMMITTED = 3;
+
+    // `Remove` was called (or the upload expired) while
+    // `CreateWorkflow` was in flight; its write moves the blob to
+    // `REMOVING`.
+    REMOVE_WHILE_CREATING = 4;
+
+    // `Remove` was called while `CommitWorkflow` was in flight; its
+    // write moves the blob to `REMOVING` instead of `COMMITTED`.
+    REMOVE_WHILE_COMMITTING = 5;
+
+    // The `RemoveWorkflow` workflow is removing the bytes from the
+    // bucket; no other workflow is in flight.
+    REMOVING = 6;
+
+    // The bytes are gone; only this metadata tombstone remains.
+    REMOVED = 7;
+  }
+
+  Status status = 1;
+
+  // MIME type served on download, e.g. `image/png`.
+  string content_type = 2;
+
+  // The ceiling on this blob's total size, in bytes. Whichever form
+  // is set is enforced as parts are reported and again at `Commit`.
+  oneof size_limit {
+    // The exact total the committed bytes must add up to, when it is
+    // known at `Create` time. Also enables definite progress
+    // tracking.
+    uint64 size = 3;
+
+    // An upper bound, when the exact total is not known up front.
+    uint64 max_size = 4;
+  }
+
+  // The ID of the user that may upload into this blob. Absent means
+  // anyone who knows this blob's ID may upload; see the authorizer
+  // note in `reboot.std.blob.v1.blob`.
+  optional string uploader_id = 5;
+
+  // The IDs of the users who may download this blob. When unset
+  // (omitted at `Create`), anyone who knows the blob's ID may
+  // download. When set, only the listed users may (an empty list
+  // means no one but app-internal callers). The uploader is NOT
+  // implicitly a downloader. See the authorizer note in
+  // `reboot.std.blob.v1.blob`.
+  optional Downloaders downloaders = 10;
+
+  // The S3 multipart upload ID, set by `CreateWorkflow`.
+  // `GetPartUploadInstructions` reports `ready: false` until this is set.
+  optional string upload_id = 6;
+
+  // The parts reported uploaded so far, ordered by part number.
+  repeated BlobPart parts = 7;
+
+  // The committed object's ETag, as reported by S3: an
+  // opaque token identifying the stored bytes, suitable as a cache
+  // key for this blob. Do not compute an expected value and compare,
+  // and do not treat it as a content hash: S3 may derive it
+  // from how the object was uploaded, so the same bytes uploaded with
+  // different part boundaries can carry different ETags.
+  optional string etag = 8;
+
+  // The error the most recent `CommitWorkflow` aborted with. Cleared
+  // by `Commit`; while set, `status` has reverted to `UPLOADING` so
+  // the client can upload parts again and `Commit` again.
+  optional CommitRefused commit_refused = 9;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message CreateRequest {
+  // MIME type served on download, e.g. `image/png`.
+  string content_type = 1;
+
+  // The ceiling on this blob's total size, in bytes. Set at most one
+  // form; leave both unset for no limit at all. Either way the
+  // running total is enforced as parts are reported (via
+  // `PartUploaded`) and again at `Commit`.
+  oneof size_limit {
+    // The exact total in bytes, when known up front. Enables definite
+    // progress bars, and the committed bytes must add up to exactly
+    // this — so it doubles as the ceiling during upload.
+    uint64 size = 2;
+
+    // An upper bound in bytes, when the exact total is not known up
+    // front.
+    uint64 max_size = 3;
+  }
+
+  // The ID of the user that may upload into this blob. Omit it to
+  // allow anyone who knows this blob's ID to upload.
+  optional string uploader_id = 4;
+
+  // The IDs of the users who may download this blob. Omit the field
+  // entirely to let anyone who knows the blob's ID download it; set it
+  // (even to an empty list) to restrict downloads to the listed users.
+  // The uploader is NOT implicitly a downloader — omit them from the
+  // list if they shouldn't be able to download (e.g. a drop-box). Can
+  // be changed later with `SetDownloaders`.
+  optional Downloaders downloaders = 5;
+}
+
+message CreateResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message SetDownloadersRequest {
+  // The download allow-list to apply, replacing any previous one.
+  // Omit the field entirely to remove any restriction (anyone who
+  // knows the blob's ID may download); set it (even to an empty list)
+  // to restrict downloads to the listed users.
+  optional Downloaders downloaders = 1;
+}
+
+message SetDownloadersResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message CreateWorkflowRequest {}
+
+message CreateWorkflowResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message GetPartUploadInstructionsRequest {
+  // The 1-based part numbers to mint upload URLs for.
+  repeated uint32 part_numbers = 1;
+}
+
+message PartUploadInstruction {
+  uint32 part_number = 1;
+
+  // URL to `PUT` this part's bytes to. May be relative (resolve it
+  // against the application's URL) or absolute (e.g. a presigned S3
+  // URL). The part's receipt from the response (for S3, its `ETag`
+  // header) must be reported back via `PartUploaded`.
+  string url = 2;
+}
+
+message GetPartUploadInstructionsResponse {
+  // False until `CreateWorkflow` has created the S3 multipart
+  // upload; read this method reactively and the instructions arrive
+  // as soon as it is true.
+  bool ready = 1;
+
+  // The part size uploads should use: every part except the last
+  // must be exactly this many bytes.
+  uint64 part_size = 2;
+
+  repeated PartUploadInstruction instructions = 3;
+
+  // The most parts an upload may have: 10,000 for S3. Bytes that
+  // need more parts than this cannot be one object.
+  uint32 max_parts = 4;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message PartUploadedRequest {
+  uint32 part_number = 1;
+
+  // The part's receipt, as `BlobPart.receipt`: for S3, the `ETag`
+  // the `PUT` answered with. Checked against what was actually
+  // uploaded at `Commit` time.
+  oneof receipt {
+    string etag = 2;
+  }
+
+  // Size of this part in bytes.
+  uint64 size = 3;
+}
+
+message PartUploadedResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message CommitRequest {}
+
+message CommitResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message CommitWorkflowRequest {}
+
+message CommitWorkflowResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message InfoRequest {}
+
+message InfoResponse {
+  Blob.Status status = 1;
+  string content_type = 2;
+
+  // Mirrors `Blob.size_limit`.
+  oneof size_limit {
+    uint64 size = 3;
+    uint64 max_size = 4;
+  }
+
+  // Mirrors `Blob.uploader_id`: absent means anyone who knows this
+  // blob's ID may upload.
+  optional string uploader_id = 5;
+
+  // Total bytes across the parts reported uploaded so far. Together
+  // with `size` this gives upload progress, observable reactively by
+  // any client authorized to call `Info`.
+  uint64 bytes_uploaded = 6;
+
+  repeated BlobPart parts = 7;
+  optional string etag = 8;
+  optional CommitRefused commit_refused = 9;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message GetDownloadUrlRequest {
+  // How long the minted URL should remain valid. The storage
+  // backend's default (and maximum) applies when unset.
+  optional uint32 ttl_seconds = 1;
+
+  // The caller's clock when it asked. A reactive reader is re-issued
+  // when its request changes and not otherwise, so a reader that
+  // wants a URL minted afresh, say before the one it holds lapses,
+  // asks again with a later time, while callers asking at the same
+  // time (to whatever precision they send) share one read and one
+  // URL. The URL is minted as of the servicer's own clock whatever
+  // this holds.
+  google.protobuf.Timestamp requested_at = 2;
+}
+
+message GetDownloadUrlResponse {
+  // False until the blob is committed; read this method reactively
+  // and the URL arrives as soon as it is true. A blob that will never
+  // commit aborts with `NotCommitted` instead.
+  bool ready = 3;
+
+  // URL to `GET` the blob's bytes from. May be relative (resolve it
+  // against the application's URL) or absolute (e.g. a presigned S3
+  // URL). Set iff `ready`.
+  optional string url = 1;
+
+  // How long `url` is actually valid for, which is at most the
+  // requested `ttl_seconds`: S3 caps how far ahead it will
+  // sign, so a caller that wants an unexpired URL must refresh on
+  // this, not on what it asked for. Set iff `ready`.
+  optional uint32 ttl_seconds = 2;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message RemoveRequest {}
+
+message RemoveResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message RemoveWorkflowRequest {}
+
+message RemoveWorkflowResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message ExpireIfNotCommittedRequest {}
+
+message ExpireIfNotCommittedResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+service BlobMethods {
+  // Creates the blob's metadata and schedules `CreateWorkflow`, which
+  // creates a multipart upload in the bucket. Only application code
+  // may call this; it is the application's chance to enforce quota
+  // and size policy (directly, or by setting `max_size`), to record
+  // which user may upload (`uploader_id`), and to restrict who may
+  // download (`downloaders`).
+  rpc Create(CreateRequest) returns (CreateResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: { constructor: {} },
+    };
+  }
+
+  // Replaces the blob's download allow-list. Application-mediated
+  // (app-internal only), like `Create`. Omit `downloaders` in the
+  // request to remove any restriction (anyone who knows the ID may
+  // download again); set it to restrict downloads to the listed
+  // users.
+  rpc SetDownloaders(SetDownloadersRequest) returns (SetDownloadersResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+
+  // Creates the S3 multipart upload and records its
+  // `upload_id`. Scheduled by `Create`; not for direct use.
+  rpc CreateWorkflow(CreateWorkflowRequest) returns (CreateWorkflowResponse) {
+    option (rbt.v1alpha1.method) = {
+      workflow: {},
+    };
+  }
+
+  // Mints `PUT` URLs for the requested part numbers. Reports
+  // `ready: false` until `CreateWorkflow` has completed.
+  rpc GetPartUploadInstructions(GetPartUploadInstructionsRequest)
+      returns (GetPartUploadInstructionsResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+      errors: [ "AlreadyCommitted" ],
+    };
+  }
+
+  // Records that a part was uploaded to the bucket, updating the
+  // progress observable via `Info`. Safe to call multiple times for the
+  // same part number; a re-uploaded part overwrites its previous
+  // record.
+  rpc PartUploaded(PartUploadedRequest) returns (PartUploadedResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+      errors: [ "AlreadyCommitted", "SizeMismatch", "IncompleteParts" ],
+    };
+  }
+
+  // Validates the reported parts and schedules the `CommitWorkflow`
+  // workflow that finalizes the object in the bucket.
+  // Observe the outcome reactively via `Info`: `status` becomes
+  // `COMMITTED`, or reverts to `UPLOADING` with `commit_refused` set.
+  //
+  // Finalization is a workflow rather than part of this writer
+  // because it is a side effect on the bucket, which must be
+  // retried until it converges. This method is then a writer that
+  // schedules that workflow, rather than being a workflow itself,
+  // because workflows can only be run as tasks and cannot be called
+  // from React — and the browser is who commits an upload. Splitting
+  // it this way also suits the outcome, which belongs to every
+  // participant: anyone who may read the blob observes the same
+  // `status` and `commit_refused`, not just whoever called `Commit`.
+  // What this writer *can* decide up front — the multipart upload
+  // exists, the parts are contiguous, the sizes agree with
+  // `size`/`max_size` — it decides here, and reports as a declared
+  // error.
+  rpc Commit(CommitRequest) returns (CommitResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+      errors: [ "AlreadyCommitted", "SizeMismatch", "IncompleteParts" ],
+    };
+  }
+
+  // Finalizes the object in the bucket (which validates the
+  // reported part ETags). Scheduled by `Commit`; not for direct use.
+  // Aborts with `CommitRefused` when the bucket refuses, after
+  // recording that same error on the blob as `commit_refused` and
+  // reverting `status` to `UPLOADING`, so that every participant
+  // watching `Info` sees it, not just the task that ran this
+  // workflow.
+  rpc CommitWorkflow(CommitWorkflowRequest) returns (CommitWorkflowResponse) {
+    option (rbt.v1alpha1.method) = {
+      workflow: {},
+      errors: [ "CommitRefused" ],
+    };
+  }
+
+  // Metadata and upload progress. Reactive: watch it to render a
+  // progress bar. Visible to anyone who may upload or download the
+  // blob: the `uploader_id` and any listed `downloaders`, plus anyone
+  // who knows the ID whenever either side is left open.
+  rpc Info(InfoRequest) returns (InfoResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+
+  // Mints a time-limited URL from which the committed blob's bytes can
+  // be downloaded. Answers `ready: false` rather than an error while
+  // the blob has yet to commit, so that a reactive read stays
+  // subscribed and is pushed the URL the moment the blob commits; an
+  // error would end the read, to be retried only on a backoff.
+  rpc GetDownloadUrl(GetDownloadUrlRequest) returns (GetDownloadUrlResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+      errors: [ "NotCommitted" ],
+    };
+  }
+
+  // Marks the blob for deletion and schedules the `RemoveWorkflow`
+  // workflow that removes its bytes from the bucket.
+  // (Named `Remove` because `Delete` is a reserved Reboot method
+  // name.)
+  rpc Remove(RemoveRequest) returns (RemoveResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+
+  // Removes the blob's bytes from the bucket. Scheduled by
+  // `Remove` and `ExpireIfNotCommitted`; not for direct use.
+  rpc RemoveWorkflow(RemoveWorkflowRequest) returns (RemoveWorkflowResponse) {
+    option (rbt.v1alpha1.method) = {
+      workflow: {},
+    };
+  }
+
+  // Expunges the blob if its upload was abandoned: scheduled by
+  // `Create` to run after the upload expiration period, it removes a
+  // blob still `CREATING` or `UPLOADING` by then, and re-schedules
+  // itself for one that is `COMMITTING`, whose commit may yet fail.
+  // Not for direct use.
+  rpc ExpireIfNotCommitted(ExpireIfNotCommittedRequest)
+      returns (ExpireIfNotCommittedResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+}
