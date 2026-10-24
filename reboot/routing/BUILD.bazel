@@ -12,6 +12,13 @@ py_library(
 )
 
 py_library(
+    name = "upstreams_py",
+    srcs = ["upstreams.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "envoy_config_py",
     srcs = [
         "envoy_config.py",
@@ -42,6 +49,7 @@ py_library(
         "//reboot:portless_py",
         "//reboot/aio/auth:allowed_origins_py",
         "//reboot/routing:cors_settings_py",
+        "//reboot/routing:upstreams_py",
         "//reboot/routing/filters:lua_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:database_py_proto",
         "@com_github_reboot_dev_reboot//reboot:helpers_py",

@@ -57,9 +57,12 @@ py_test(
         requirement("protobuf"),
         "//envoy/config/listener/v3:listenerv3_py_proto",
         "//envoy/extensions/filters/network/http_connection_manager/v3:http_connection_managerv3_py_proto",
+        "//envoy/extensions/transport_sockets/tls/v3:tlsv3_py_proto",
+        "//envoy/extensions/upstreams/http/v3:httpv3_py_proto",
         "//reboot/aio:http_py",
         "//reboot/aio:types_py",
         "//reboot/routing:envoy_config_py",
+        "//reboot/routing:upstreams_py",
     ],
 )
 

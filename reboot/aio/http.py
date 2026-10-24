@@ -101,6 +101,15 @@ class WebFramework(ABC):
         raise NotImplementedError()
 
     @abstractmethod
+    def paths(self) -> list[str]:
+        """The paths this web framework answers, as declared: a route's
+        path with its parameters still in it (`/users/{id}`,
+        `/files/{name:path}`), and everything under a mount's path
+        (`/mcp/{rest:path}`). What `route_matches` is made from, for
+        comparing against other paths."""
+        raise NotImplementedError()
+
+    @abstractmethod
     async def start(
         self,
         server_id: ServerId,
@@ -230,6 +239,15 @@ class PythonWebFramework(WebFramework):
         app: Optional[HTTPASGIApp]
         factory: Optional[Callable[[Callable[[Request], ExternalContext]],
                                    HTTPASGIApp]]
+
+    def paths(self) -> list[str]:
+        return [
+            api_route.path
+            for api_route in self._internal_api_routes + self._http._api_routes
+        ] + [
+            f"{mount.path.rstrip('/')}/{{rest:path}}"
+            for mount in self._http._mounts
+        ]
 
     def route_matches(self) -> list[route_components_pb2.RouteMatch]:
         # Order is irrelevant: every match routes to the one HTTP
@@ -710,6 +728,10 @@ class NodeWebFramework(WebFramework):
     def route_matches(self) -> list[route_components_pb2.RouteMatch]:
         # A Node.js application's web framework is its own; Envoy's
         # catch-all already sends everything there.
+        return []
+
+    def paths(self) -> list[str]:
+        # Its routes are its own too, unknown here.
         return []
 
     def __init__(

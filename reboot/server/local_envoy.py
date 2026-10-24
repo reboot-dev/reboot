@@ -24,6 +24,7 @@ from reboot.aio.headers import SERVER_ID_HEADER
 from reboot.aio.types import ApplicationId, ServerId
 from reboot.routing import envoy_config
 from reboot.routing.envoy_config import FrontendConfig, ServerInfo
+from reboot.routing.upstreams import Upstream
 from reboot.routing.xds_server import AggregatedDiscoveryServiceServicer
 from reboot.settings import LocalEnvoyMode
 from reboot.ssl.localhost import (
@@ -31,7 +32,7 @@ from reboot.ssl.localhost import (
     LOCALHOST_CRT_DATA,
     LOCALHOST_KEY,
 )
-from typing import Optional
+from typing import Optional, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,7 @@ class LocalEnvoy(ABC):
         allowed_origins: Optional[list[str]],
         route_matches: list[route_components_pb2.RouteMatch],
         frontend: Optional[FrontendConfig],
+        upstreams: Sequence[Upstream] = (),
     ):
         self._admin_listen_host = admin_listen_host
         self._admin_port = admin_port
@@ -101,6 +103,8 @@ class LocalEnvoy(ABC):
         # The frontend dev server to route `/__/frontend/**` to, and
         # the web app at `/` when it serves one; `None` for none.
         self._frontend = frontend
+        # The loopback services to forward a path prefix each to.
+        self._upstreams = list(upstreams)
 
         self._grpc_server = grpc.aio.server()
         self._register_xds_port()
@@ -115,6 +119,7 @@ class LocalEnvoy(ABC):
                 servers=[],
                 local_envoy_mode=self._mode,
                 frontend=self._frontend,
+                upstreams=self._upstreams,
             ),
             listeners=self._get_listeners_from_servers([]),
         )
@@ -182,6 +187,7 @@ class LocalEnvoy(ABC):
                 servers=servers,
                 local_envoy_mode=self._mode,
                 frontend=self._frontend,
+                upstreams=self._upstreams,
             ),
             listeners=self._get_listeners_from_servers(servers),
             # NOTE: when using a `LocalEnvoy` we're expecting only _one_
@@ -234,6 +240,7 @@ class LocalEnvoy(ABC):
             allowed_origins=self._allowed_origins,
             route_matches=self._route_matches,
             frontend=self._frontend,
+            upstreams=self._upstreams,
         )
 
     def _generate_envoy_yaml(self) -> str:

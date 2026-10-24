@@ -14,6 +14,7 @@ from log.log import get_logger
 from pathlib import Path
 from reboot.aio.types import ApplicationId
 from reboot.routing.envoy_config import FrontendConfig, ServerInfo
+from reboot.routing.upstreams import Upstream
 from reboot.server.envoy_nanny import envoy_nanny_command
 from reboot.server.local_envoy import LocalEnvoy
 from reboot.settings import (
@@ -29,7 +30,7 @@ from reboot.settings import (
     LocalEnvoyMode,
 )
 from reboot.wait_for_tasks import wait_for_tasks
-from typing import Optional
+from typing import Optional, Sequence
 
 logger = get_logger(__name__)
 logger.setLevel(logging.WARNING)
@@ -59,6 +60,7 @@ class DockerLocalEnvoy(LocalEnvoy):
         allowed_origins: Optional[list[str]],
         route_matches: list[route_components_pb2.RouteMatch],
         frontend: Optional[FrontendConfig],
+        upstreams: Sequence[Upstream] = (),
     ):
         self._published_public_port = public_port
         self._published_trusted_port = 0
@@ -143,6 +145,7 @@ class DockerLocalEnvoy(LocalEnvoy):
             allowed_origins=allowed_origins,
             route_matches=route_matches,
             frontend=frontend,
+            upstreams=upstreams,
         )
 
         self._envoy_config_observed_path = self._write_envoy_dir(

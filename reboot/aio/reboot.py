@@ -38,6 +38,7 @@ from reboot.controller.servers import ServerSpec
 from reboot.controller.settings import ENVVAR_REBOOT_APPLICATION_ID
 from reboot.naming import get_local_application_id
 from reboot.routing import envoy_config
+from reboot.routing.upstreams import Upstream
 from reboot.run_environments import on_cloud
 from reboot.server.database import DatabaseServer, DatabaseServerFailed
 from reboot.settings import (
@@ -323,6 +324,7 @@ class Reboot:
         effect_validation: Optional[EffectValidation] = None,
         frontend_url: Optional[str] = None,
         web_app: bool = False,
+        upstreams: Sequence[Upstream] = (),
     ) -> ApplicationRevision:
         ...
 
@@ -349,6 +351,7 @@ class Reboot:
         effect_validation: Optional[EffectValidation] = None,
         frontend_url: Optional[str] = None,
         web_app: bool = False,
+        upstreams: Sequence[Upstream] = (),
         revision: Optional[ApplicationRevision] = None,
     ) -> ApplicationRevision:
         """
@@ -372,6 +375,9 @@ class Reboot:
         `/__/frontend/**` to, the way `rbt dev run --frontend-url` does,
         and, with `web_app`, the web app at `/` and every path the
         application doesn't answer (`--web-app`).
+
+        upstreams: services on the application's own loopback that it
+        forwards a path prefix each to, as its libraries name them.
 
         effect_validation: sets EffectValidation for these servicers. By
         default, effect validation is:
@@ -523,6 +529,7 @@ class Reboot:
                         web_app=web_app,
                     ) if frontend_url is not None else None
                 ),
+                upstreams=upstreams,
             )
 
             config = self._config_extractor.config_from_serviceables(

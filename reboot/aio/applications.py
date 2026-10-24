@@ -40,6 +40,8 @@ from reboot.controller.settings import ENVVAR_REBOOT_MODE, REBOOT_MODE_CONFIG
 from reboot.mcp.factories import create_mcp_factory
 from reboot.mcp.ui import find_project_root_from, has_registered_ui_tools
 from reboot.nodejs.python import should_print_stacktrace
+from reboot.routing.envoy_config import RESERVED_PREFIXES
+from reboot.routing.upstreams import Upstream
 from reboot.run_environments import (
     InvalidRunEnvironment,
     RunEnvironment,
@@ -71,7 +73,15 @@ from reboot.settings import (
 from reboot.version import REBOOT_VERSION
 from reboot.versioning import version_less_than
 from starlette.staticfiles import StaticFiles
-from typing import Any, Awaitable, Callable, Mapping, NoReturn, Optional
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Mapping,
+    NoReturn,
+    Optional,
+    Sequence,
+)
 
 logger = get_logger(__name__)
 
@@ -184,6 +194,40 @@ assert reboot.aio.memoize.memoize is not None
 reboot.aio.workflows.memoize = reboot.aio.memoize.memoize
 
 
+def _paths_overlap(prefix: str, path: str) -> bool:
+    """Whether a request could be both on `prefix`, a path prefix at a
+    segment boundary (`/a/` takes `/a/b`, not `/ab`), and one that
+    `path` answers: a route's declared template, in which a `{name}`
+    segment matches any one segment and a `{name:path}` segment, last,
+    matches everything from there on. Everything under a prefix is
+    `_everything_under` it, for comparing two prefixes."""
+    wanted = _segments(prefix)
+    answered = _segments(path)
+    if answered and _is_path_parameter(answered[-1]):
+        answered = answered[:-1]
+    elif len(answered) < len(wanted):
+        # The route answers paths of exactly this many segments, and
+        # anything on the prefix has more.
+        return False
+    return all(a == b or _is_parameter(b) for a, b in zip(wanted, answered))
+
+
+def _everything_under(prefix: str) -> str:
+    return f"{prefix.rstrip('/')}/{{rest:path}}"
+
+
+def _segments(path: str) -> list[str]:
+    return [segment for segment in path.split("/") if segment]
+
+
+def _is_parameter(segment: str) -> bool:
+    return segment.startswith("{") and segment.endswith("}")
+
+
+def _is_path_parameter(segment: str) -> bool:
+    return _is_parameter(segment) and segment.endswith(":path}")
+
+
 class Library(AbstractLibrary):
     """
     Defines Application-dependent portion of the Library as well as
@@ -205,6 +249,16 @@ class Library(AbstractLibrary):
         Implement any library setup before the `Application` runs here.
         """
         pass
+
+    def upstreams(self) -> Sequence[Upstream]:
+        """
+        Return the services on the application's own loopback that it
+        forwards a path prefix each to on this library's behalf, so
+        that a browser reaches them on the application's origin.
+        Asked after `pre_run`, which is where a library learns the
+        port of what it started.
+        """
+        return []
 
 
 class NodeAdaptorLibrary(Library):
@@ -1150,7 +1204,71 @@ class Application:
             servers=int(servers),
             frontend_url=frontend_url,
             web_app=web_app,
+            upstreams=self.upstreams(),
         )
+
+    def upstreams(self) -> list[Upstream]:
+        """The services on this application's loopback that it forwards
+        a path prefix each to, as its libraries name them, checked
+        against one another and against the paths the application
+        answers itself. A prefix two libraries claim, or one that
+        overlaps a path of the application's own, is refused rather
+        than left to whichever happens to be matched first."""
+        upstreams: list[Upstream] = []
+        upstreams_by_library: list[tuple[str, Upstream]] = []
+        for library in self.libraries:
+            for upstream in library.upstreams():
+                if not upstream.prefix.startswith("/"):
+                    raise ValueError(
+                        f"Library '{library.name}' names an upstream on "
+                        f"'{upstream.prefix}', which is not a path: a "
+                        "prefix must start with '/'"
+                    )
+                if upstream.prefix == "/":
+                    raise ValueError(
+                        f"Library '{library.name}' names an upstream on "
+                        "'/', the root, which is the application's own: "
+                        "every path nothing else answers goes there"
+                    )
+                for claimed, other in upstreams_by_library:
+                    if _paths_overlap(
+                        upstream.prefix, _everything_under(other.prefix)
+                    ):
+                        raise ValueError(
+                            f"Library '{library.name}' names an upstream "
+                            f"on '{upstream.prefix}', which overlaps "
+                            f"'{other.prefix}', named by library "
+                            f"'{claimed}'"
+                        )
+                upstreams_by_library.append((library.name, upstream))
+                upstreams.append(upstream)
+
+        for path in self.web_framework.paths():
+            # The root is where whatever nothing else answers goes,
+            # which upstreams are routed ahead of.
+            if path == "/":
+                continue
+            for claimed, upstream in upstreams_by_library:
+                if _paths_overlap(upstream.prefix, path):
+                    raise ValueError(
+                        f"Library '{claimed}' names an upstream on "
+                        f"'{upstream.prefix}', which overlaps '{path}', "
+                        "a path this application answers itself"
+                    )
+
+        # The paths the web framework answers include Reboot's own,
+        # but not the prefixes forwarded ahead of the application.
+        for reserved in RESERVED_PREFIXES:
+            for claimed, upstream in upstreams_by_library:
+                if _paths_overlap(
+                    upstream.prefix, _everything_under(reserved)
+                ):
+                    raise ValueError(
+                        f"Library '{claimed}' names an upstream on "
+                        f"'{upstream.prefix}', which overlaps "
+                        f"'{reserved}', a path Reboot answers itself"
+                    )
+        return upstreams
 
     def _get_serviceables(self) -> list[Serviceable]:
         """Helper for converting servicers and legacy gRPC servicers into

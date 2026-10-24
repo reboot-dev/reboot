@@ -6,6 +6,8 @@ from envoy.config.route.v3 import route_components_pb2
 from envoy.extensions.filters.network.http_connection_manager.v3 import (
     http_connection_manager_pb2,
 )
+from envoy.extensions.transport_sockets.tls.v3 import tls_pb2
+from envoy.extensions.upstreams.http.v3 import http_protocol_options_pb2
 from envoy.type.matcher.v3 import regex_pb2
 from google.protobuf.descriptor_pb2 import FileDescriptorSet
 from pathlib import Path
@@ -13,6 +15,8 @@ from reboot.aio.http import PythonWebFramework
 from reboot.aio.types import ApplicationId, ServerId
 from reboot.routing import envoy_config
 from reboot.routing.envoy_config import ServerAddress, ServerInfo
+from reboot.routing.upstreams import Upstream
+from reboot.settings import LocalEnvoyMode
 
 
 def _public_routes(listeners: list[listener_pb2.Listener]):
@@ -31,6 +35,7 @@ def _public_routes(listeners: list[listener_pb2.Listener]):
 def _listeners(
     route_matches: list[route_components_pb2.RouteMatch],
     frontend: envoy_config.FrontendConfig | None = None,
+    upstreams: list[Upstream] = [],
 ) -> list[listener_pb2.Listener]:
     return envoy_config.listeners(
         application_id=ApplicationId("testing"),
@@ -57,7 +62,19 @@ def _listeners(
         allowed_origins=None,
         route_matches=route_matches,
         frontend=frontend,
+        upstreams=upstreams,
     )
+
+
+def _public_route_actions(listeners: list[listener_pb2.Listener]):
+    """The `(match, action)` of every route on the public listener."""
+    (listener,) = [
+        listener for listener in listeners if listener.name == "public"
+    ]
+    manager = http_connection_manager_pb2.HttpConnectionManager()
+    listener.filter_chains[0].filters[0].typed_config.Unpack(manager)
+    (virtual_host,) = manager.route_config.virtual_hosts
+    return [(route.match, route.route) for route in virtual_host.routes]
 
 
 class EnvoyConfigTest(unittest.TestCase):
@@ -137,6 +154,99 @@ class EnvoyConfigTest(unittest.TestCase):
         self.assertEqual(routes[0][0].prefix, "/__/frontend/")
         self.assertEqual(routes[-1][0].prefix, "/")
         self.assertIn("http", routes[-1][1])
+
+    def test_an_upstream_gets_its_prefix_ahead_of_the_application(
+        self,
+    ) -> None:
+        upstream = Upstream(
+            name="store",
+            prefix="/__/reboot/store/",
+            port=9000,
+            prefix_rewrite="/",
+            host_rewrite="127.0.0.1:9000",
+        )
+        listeners = _listeners(
+            [route_components_pb2.RouteMatch(prefix="/mcp")],
+            upstreams=[upstream],
+        )
+
+        # The upstream's prefix comes before the application's own
+        # paths, and is sent on with the prefix and `Host` it asked
+        # for, with no timeout of Envoy's own.
+        routes = _public_route_actions(listeners)
+        match, action = routes[0]
+        self.assertEqual(match.prefix, "/__/reboot/store/")
+        self.assertEqual(action.cluster, "upstream-store")
+        self.assertEqual(action.prefix_rewrite, "/")
+        self.assertEqual(action.host_rewrite_literal, "127.0.0.1:9000")
+        self.assertEqual(action.timeout.ToSeconds(), 0)
+        prefixes = [match.prefix for match, _ in routes]
+        self.assertLess(
+            prefixes.index("/__/reboot/store/"), prefixes.index("/mcp")
+        )
+
+        # The cluster reaches the upstream where it listens.
+        (cluster,) = [
+            cluster for cluster in envoy_config.clusters(
+                application_id=ApplicationId("testing"),
+                servers=[],
+                local_envoy_mode=LocalEnvoyMode.EXECUTABLE,
+                frontend=None,
+                upstreams=[upstream],
+            ) if cluster.name == "upstream-store"
+        ]
+        (endpoint,) = cluster.load_assignment.endpoints[0].lb_endpoints
+        self.assertEqual(
+            endpoint.endpoint.address.socket_address.address, "localhost"
+        )
+        self.assertEqual(
+            endpoint.endpoint.address.socket_address.port_value, 9000
+        )
+        # Reached over plain HTTP/1.1 unless the upstream asks
+        # otherwise.
+        self.assertFalse(cluster.HasField("transport_socket"))
+        self.assertEqual(len(cluster.typed_extension_protocol_options), 0)
+
+    def test_an_upstream_may_ask_for_tls_and_http2(self) -> None:
+        upstream = Upstream(
+            name="index",
+            prefix="/__/index/",
+            port=8443,
+            host_rewrite="index.localhost:8443",
+            tls=True,
+            http2=True,
+        )
+        (cluster,) = [
+            cluster for cluster in envoy_config.clusters(
+                application_id=ApplicationId("testing"),
+                servers=[],
+                local_envoy_mode=LocalEnvoyMode.EXECUTABLE,
+                frontend=None,
+                upstreams=[upstream],
+            ) if cluster.name == "upstream-index"
+        ]
+
+        # TLS, with the name it is asked for as the SNI.
+        self.assertEqual(
+            cluster.transport_socket.name, "envoy.transport_sockets.tls"
+        )
+        tls_context = tls_pb2.UpstreamTlsContext()
+        self.assertTrue(
+            cluster.transport_socket.typed_config.Unpack(tls_context)
+        )
+        self.assertEqual(tls_context.sni, "index.localhost")
+
+        # HTTP/2, explicitly.
+        protocol_options = http_protocol_options_pb2.HttpProtocolOptions()
+        self.assertTrue(
+            cluster.typed_extension_protocol_options[
+                "envoy.extensions.upstreams.http.v3.HttpProtocolOptions"].
+            Unpack(protocol_options)
+        )
+        self.assertTrue(
+            protocol_options.explicit_http_config.
+            HasField("http2_protocol_options")
+        )
 
 
 class PythonWebFrameworkPathsTest(unittest.TestCase):

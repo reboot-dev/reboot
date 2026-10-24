@@ -976,3 +976,16 @@ py_test(
         "//reboot:portless_py",
     ],
 )
+
+py_test(
+    name = "upstreams_tests_py",
+    timeout = "short",
+    srcs = ["upstreams_tests.py"],
+    main = "upstreams_tests.py",
+    deps = [
+        "//reboot/aio:applications_py",
+        "//reboot/aio:servicers_py",
+        "//reboot/routing:upstreams_py",
+        "//reboot/std/collections/v1:sorted_map_py",
+    ],
+)

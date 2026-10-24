@@ -48,13 +48,14 @@ from reboot.routing.filters.lua import (
     load_lua,
     render_lua_template,
 )
+from reboot.routing.upstreams import Upstream
 from reboot.run_environments import on_cloud, running_rbt_dev
 from reboot.settings import (
     ENVOY_PER_CONNECTION_BUFFER_LIMIT_BYTES,
     EVERY_LOCAL_NETWORK_ADDRESS,
     LocalEnvoyMode,
 )
-from typing import Optional
+from typing import Optional, Sequence
 from urllib.parse import urlparse
 
 
@@ -86,6 +87,15 @@ ZERO_SECONDS.FromSeconds(0)
 
 # Frontend routing configuration.
 FRONTEND_CLUSTER_NAME = "frontend"
+
+# The path prefix Envoy forwards to the frontend's dev server; the
+# dev server is configured with it as its `base`, so paths match
+# directly.
+FRONTEND_PREFIX = "/__/frontend/"
+
+# The path prefixes forwarded ahead of the application on its own
+# account: no upstream a library names may overlap them.
+RESERVED_PREFIXES = (FRONTEND_PREFIX,)
 
 
 @dataclass
@@ -128,6 +138,10 @@ def frontend_config(frontend_url: str, *, web_app: bool) -> FrontendConfig:
         web_app=web_app,
         tls=tls,
     )
+
+
+def _upstream_cluster_name(upstream: Upstream) -> str:
+    return f"upstream-{upstream.name}"
 
 
 # Helper for packing an `Any`.
@@ -754,11 +768,10 @@ def _frontend_routes(
         return []
 
     # Route for web dev server assets: "/__/frontend/**".
-    # Dev server is configured with `base: "/__/frontend/"` so paths match directly.
     return [
         _frontend_route(
             config,
-            route_components_pb2.RouteMatch(prefix="/__/frontend/"),
+            route_components_pb2.RouteMatch(prefix=FRONTEND_PREFIX),
         )
     ]
 
@@ -779,6 +792,114 @@ def _frontend_catch_all_routes(
     return [
         _frontend_route(config, route_components_pb2.RouteMatch(prefix="/"))
     ]
+
+
+def _upstream_routes(
+    upstreams: Sequence[Upstream],
+) -> list[route_components_pb2.Route]:
+    """A route per upstream, forwarding its prefix to it with the
+    prefix and `Host` header rewritten as it asks."""
+    return [
+        route_components_pb2.Route(
+            match=route_components_pb2.RouteMatch(prefix=upstream.prefix),
+            route=route_components_pb2.RouteAction(
+                cluster=_upstream_cluster_name(upstream),
+                prefix_rewrite=upstream.prefix_rewrite,
+                host_rewrite_literal=upstream.host_rewrite,
+                # The upstream decides how long a request may take,
+                # since what travels on its prefix is its own: an
+                # upload of many megabytes is a single request, and
+                # takes as long as the connection allows.
+                timeout=ZERO_SECONDS,
+            ),
+            typed_per_filter_config={
+                GRPC_JSON_TRANSCODER_HTTP_FILTER_NAME:
+                    EMPTY_GRPC_JSON_TRANSCODER_CONFIG,
+            },
+        ) for upstream in upstreams
+    ]
+
+
+def _upstream_cluster(
+    local_envoy_mode: LocalEnvoyMode,
+    upstream: Upstream,
+) -> cluster_pb2.Cluster:
+    """The cluster for one upstream: a service on the application's
+    loopback, over HTTP/1.1 or HTTP/2 and with or without TLS as it
+    asks."""
+    # Envoy in a Docker container reaches the host machine's loopback
+    # as `host.docker.internal`; as a stand-alone executable it is its
+    # own `localhost`.
+    host = (
+        "host.docker.internal"
+        if local_envoy_mode is LocalEnvoyMode.DOCKER else "localhost"
+    )
+
+    transport_socket: Optional[base_pb2.TransportSocket] = None
+    if upstream.tls:
+        # An empty `CommonTlsContext` validates nothing: on the
+        # loopback there is no CA to validate against, and the service
+        # is the application's own. The SNI is the name the service
+        # is asked for, where it is asked for one.
+        transport_socket = base_pb2.TransportSocket(
+            name="envoy.transport_sockets.tls",
+            typed_config=any_pack(
+                tls_pb2.UpstreamTlsContext(
+                    sni=urlparse(f"//{upstream.host_rewrite}").hostname or "",
+                    common_tls_context=tls_pb2.CommonTlsContext(),
+                )
+            ),
+        )
+
+    typed_extension_protocol_options: dict[str, any_pb2.Any] = {}
+    if upstream.http2:
+        typed_extension_protocol_options[
+            "envoy.extensions.upstreams.http.v3.HttpProtocolOptions"
+        ] = (
+            any_pack(
+                http_protocol_options_pb2.HttpProtocolOptions(
+                    explicit_http_config=http_protocol_options_pb2.
+                    HttpProtocolOptions.ExplicitHttpConfig(
+                        # Set explicitly, even to its default, since
+                        # it is part of a oneof.
+                        http2_protocol_options=protocol_pb2.
+                        Http2ProtocolOptions(),
+                    )
+                )
+            )
+        )
+
+    name = _upstream_cluster_name(upstream)
+    return cluster_pb2.Cluster(
+        name=name,
+        type=cluster_pb2.Cluster.STRICT_DNS,
+        lb_policy=cluster_pb2.Cluster.ROUND_ROBIN,
+        common_http_protocol_options=protocol_pb2.HttpProtocolOptions(
+            idle_timeout=ZERO_SECONDS,
+        ),
+        transport_socket=transport_socket,
+        typed_extension_protocol_options=typed_extension_protocol_options,
+        dns_lookup_family=cluster_pb2.Cluster.V4_ONLY,
+        load_assignment=endpoint_pb2.ClusterLoadAssignment(
+            cluster_name=name,
+            endpoints=[
+                endpoint_components_pb2.LocalityLbEndpoints(
+                    lb_endpoints=[
+                        endpoint_components_pb2.LbEndpoint(
+                            endpoint=endpoint_components_pb2.Endpoint(
+                                address=address_pb2.Address(
+                                    socket_address=address_pb2.SocketAddress(
+                                        address=host,
+                                        port_value=upstream.port,
+                                    )
+                                )
+                            )
+                        )
+                    ],
+                )
+            ],
+        ),
+    )
 
 
 def _frontend_cluster(
@@ -949,6 +1070,7 @@ def _filter_http_connection_manager(
     allowed_origins: Optional[list[str]],
     route_matches: list[route_components_pb2.RouteMatch],
     frontend: FrontendConfig | None,
+    upstreams: Sequence[Upstream],
 ) -> listener_components_pb2.Filter:
     # With `--web-app` the frontend's dev server, not the HTTP port,
     # answers whatever is left; see `_frontend_catch_all_routes`.
@@ -985,9 +1107,11 @@ def _filter_http_connection_manager(
                     #            chain.
                     cors=_permissive_cors_policy(),
                     routes=_without_cookies(
-                        # Frontend routes (if configured) must come
-                        # first since they match specific prefixes.
-                        _frontend_routes(frontend) + [
+                        # Frontend and upstream routes (if configured)
+                        # must come first since they match specific
+                        # prefixes.
+                        _frontend_routes(frontend) +
+                        _upstream_routes(upstreams) + [
                             route for server in servers for kind in [
                                 # Always list the route for the websocket
                                 # first, since its matching is more specific.
@@ -1088,6 +1212,8 @@ def listeners(
     route_matches: list[route_components_pb2.RouteMatch],
     # The frontend dev server Envoy routes to, if any.
     frontend: FrontendConfig | None,
+    # The hosts Envoy forwards a path prefix each to, if any.
+    upstreams: Sequence[Upstream] = (),
 ) -> list[listener_pb2.Listener]:
 
     @dataclass
@@ -1144,6 +1270,7 @@ def listeners(
                             allowed_origins=allowed_origins,
                             route_matches=route_matches,
                             frontend=frontend,
+                            upstreams=upstreams,
                         ),
                     ],
                     transport_socket=_tls_socket(certificate_path, key_path)
@@ -1269,6 +1396,8 @@ def clusters(
     local_envoy_mode: LocalEnvoyMode,
     # The frontend dev server Envoy routes to, if any.
     frontend: FrontendConfig | None,
+    # The hosts Envoy forwards a path prefix each to, if any.
+    upstreams: Sequence[Upstream] = (),
 ) -> list[cluster_pb2.Cluster]:
     result: list[cluster_pb2.Cluster] = []
 
@@ -1276,6 +1405,9 @@ def clusters(
     frontend_cluster = _frontend_cluster(local_envoy_mode, frontend)
     if frontend_cluster is not None:
         result.append(frontend_cluster)
+
+    for upstream in upstreams:
+        result.append(_upstream_cluster(local_envoy_mode, upstream))
 
     for server in servers:
         # Every server serves both a gRPC and a WebSocket endpoint, on
