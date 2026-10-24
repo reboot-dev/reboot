@@ -1,0 +1,45 @@
+# The MinIO binary for the platform a test runs on; see
+# `//bazel:minio.bzl`.
+
+config_setting(
+    name = "linux_x86_64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+config_setting(
+    name = "linux_aarch64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:aarch64",
+    ],
+)
+
+config_setting(
+    name = "macos_x86_64",
+    constraint_values = [
+        "@platforms//os:macos",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+config_setting(
+    name = "macos_aarch64",
+    constraint_values = [
+        "@platforms//os:macos",
+        "@platforms//cpu:aarch64",
+    ],
+)
+
+alias(
+    name = "minio",
+    actual = select({
+        ":linux_x86_64": "@minio_linux_x86_64//file",
+        ":linux_aarch64": "@minio_linux_aarch64//file",
+        ":macos_x86_64": "@minio_macos_x86_64//file",
+        ":macos_aarch64": "@minio_macos_aarch64//file",
+    }),
+    visibility = ["//visibility:public"],
+)

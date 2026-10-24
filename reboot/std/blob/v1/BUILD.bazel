@@ -4,11 +4,13 @@ load("@rules_python//python:defs.bzl", "py_library")
 py_library(
     name = "blob_py",
     srcs = [
+        "_minio.py",
         "_s3.py",
         "_store.py",
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//reboot/server:envoy_nanny_py",
         requirement("aiohttp"),
         requirement("boto3"),
     ],
