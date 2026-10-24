@@ -1,0 +1,8 @@
+# Requirements of the `reboot[std-blob]` extra: what the blob library's
+# `S3Bucket` speaks S3 with. Only an application that keeps blobs
+# installs it, which spares every other application the AWS SDK and
+# its service models. Every line must also be in `requirements.in`,
+# which stays the complete list that the Bazel lock compiles; the
+# wheel build strips these from the package's dependencies and ships
+# them as the extra.
+boto3==1.43.118 # Latest as of 2026/10/22.

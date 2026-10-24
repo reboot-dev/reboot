@@ -11,6 +11,7 @@ exports_files([
     "versions.bzl",
     "requirements.in",
     "requirements-anthropic.in",
+    "requirements-std-blob.in",
     "requirements-dev.in",
 ])
 
@@ -593,6 +594,7 @@ pip_package(
     extras = {
         "//reboot:requirements-anthropic.in": "anthropic",
         "//reboot:requirements-dev.in": "dev",
+        "//reboot:requirements-std-blob.in": "std-blob",
     },
     license = "Apache-2.0",
     license_txt = ":LICENSE.txt",
