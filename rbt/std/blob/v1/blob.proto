@@ -1,0 +1,599 @@
+syntax = "proto3";
+
+package rbt.std.blob.v1;
+
+import "google/protobuf/timestamp.proto";
+import "rbt/v1alpha1/options.proto";
+
+////////////////////////////////////////////////////////////////////////
+// Errors.
+
+// Raised when an upload-side call arrives after the blob has been
+// committed, or a `Commit` has been asked for.
+message AlreadyCommitted {}
+
+// Raised when an upload-side call arrives after the blob has been
+// discarded, or a `Discard` has been asked for.
+message Discarded {}
+
+// Raised by `PartUploadUrl` while the blob's workflow has yet to begin
+// the upload in the storage, which `Info` shows as the status leaving
+// `CREATED`: wait for that first.
+message UploadNotReady {}
+
+// Raised when the uploaded parts violate the blob's declared `size`
+// or `max_size`.
+message SizeMismatch {
+  // The total size of all parts reported uploaded so far.
+  uint64 bytes_uploaded = 1;
+}
+
+// Raised when the reported parts cannot form a complete object:
+// `Commit` was called before any part was reported, or the reported
+// part numbers are not contiguous starting at 1. Also raised when
+// `PartUploadUrl` is asked for a part number past what the blob's
+// declared size allows, and when `PartUploaded` reports an
+// out-of-range part number or a malformed receipt.
+message IncompleteParts {}
+
+// The storage no longer holds the blob's upload: a storage drops an
+// upload that goes uncompleted for long enough (a week, for the
+// buckets Reboot runs and provides), and nothing uploaded to it
+// survives. Raised by a client as `PartUploadUrl`'s error when the
+// storage refuses a part as belonging to no upload, since the URL
+// that call answered names the upload; recorded as `upload_not_found`
+// when completing the upload finds it gone, for a client watching
+// `Info` to raise as `Commit`'s error. Recoverable by the uploader:
+// `RestartUpload`, then upload every part again.
+message UploadNotFound {}
+
+// Recorded as `commit_refused` when the storage refuses to assemble
+// the reported parts into an object: a part was reported but never
+// uploaded, a reported size or receipt disagrees with what was
+// uploaded, or the parts add up to more than `max_size`. Recoverable
+// by the uploader: upload the parts again and `Commit` again.
+message CommitRefused {
+  // What was refused and what the uploader should do about it, in
+  // words. It does not identify which parts, if any, were at fault.
+  string reason = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+// The set of users allowed to download a blob. Wrapping the list in a
+// message lets the download allow-list be *omitted* (anyone who knows
+// the blob's ID may download) distinctly from *present but empty* (no
+// one but app-internal callers may download).
+message Downloaders {
+  repeated string user_ids = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+// Blob: the control plane for one immutable-once-committed binary
+// object. This state holds only *metadata*; the bytes live in an
+// object storage and travel directly between the client and that
+// storage via URLs from `PartUploadUrl` and `DownloadUrl`. The
+// upload protocol is the same whatever the
+// storage: an upload is begun and identified by `upload_id`,
+// numbered parts are uploaded to per-part URLs, each answering with a
+// receipt, and a completion step checks those receipts against what
+// was actually uploaded. Which storage, and so what a receipt is,
+// is the servicer's: Reboot's keeps the bytes in an S3-compatible
+// bucket (S3 itself, or the Silo it runs locally), and a servicer for
+// another storage speaks this same interface, mapping its own notions
+// onto it.
+
+message BlobPart {
+  // 1-based part number.
+  uint32 number = 1;
+
+  // What uploading this part answered with, which the completion
+  // checks against what was actually uploaded. Its kind is the
+  // storage's: for an S3-compatible bucket, the `ETag` header. A
+  // servicer for another storage adds a kind of its own here.
+  oneof receipt {
+    string etag = 2;
+  }
+
+  // Size of this part in bytes.
+  uint64 size = 3;
+}
+
+message Blob {
+  option (rbt.v1alpha1.state) = {
+    trusted_effects: true,
+  };
+
+  // What the storage holds for the blob. Only the blob's one
+  // workflow, `Reconcile`, ever moves this, as it does in the storage
+  // what `transition` asks for; a writer only ever asks.
+  enum Status {
+    // `Create` was called; the storage holds nothing yet. The
+    // initial status.
+    CREATED = 0;
+
+    // Parts may be uploaded, for as long as it takes. The storage
+    // drops an upload that goes uncompleted for long enough (a week,
+    // for the buckets Reboot runs and provides), after which it
+    // refuses every part; `RestartUpload` begins another, into which
+    // every part is uploaded again. While `transition` is `COMMIT`
+    // the upload is being completed instead, and no part may be
+    // uploaded.
+    UPLOADING = 1;
+
+    // The blob's bytes are immutable and downloadable.
+    COMMITTED = 2;
+
+    // The bytes are gone; only this metadata tombstone remains.
+    DISCARDED = 3;
+  }
+
+  // What has been asked for next, each named for the status it
+  // leads to, which `Reconcile` carries out once whatever the
+  // storage is doing for the blob is done, and then clears.
+  // `DISCARD` supersedes the others: discarding always wins.
+  enum Transition {
+    NONE = 0;
+
+    // `Create` or `RestartUpload` was called: an upload is to be
+    // begun, in place of any the blob has.
+    UPLOAD = 1;
+
+    // `Commit` was called: the upload is to be completed.
+    COMMIT = 2;
+
+    // `Discard` was called: the bytes are to be discarded.
+    DISCARD = 3;
+  }
+
+  Status status = 1;
+
+  // MIME type served on download, e.g. `image/png`.
+  string content_type = 2;
+
+  // The ceiling on this blob's total size, in bytes. Whichever form
+  // is set is enforced as parts are reported and again at `Commit`.
+  oneof size_limit {
+    // The exact total the committed bytes must add up to, when it is
+    // known at `Create` time. Also enables definite progress
+    // tracking.
+    uint64 size = 3;
+
+    // An upper bound, when the exact total is not known up front.
+    uint64 max_size = 4;
+  }
+
+  // The ID of the user that may upload into this blob. Absent means
+  // anyone who knows this blob's ID may upload; see the authorizer
+  // note in `reboot.std.blob.v1.blob`.
+  optional string uploader_id = 5;
+
+  // The IDs of the users who may download this blob. When unset
+  // (omitted at `Create`), anyone who knows the blob's ID may
+  // download. When set, only the listed users may (an empty list
+  // means no one but app-internal callers). The uploader is NOT
+  // implicitly a downloader. See the authorizer note in
+  // `reboot.std.blob.v1.blob`.
+  optional Downloaders downloaders = 10;
+
+  // The storage's identifier for the blob's in-progress upload, set
+  // by `Reconcile`: whatever the storage calls it (for S3, the
+  // multipart upload ID), every servicer provides one.
+  // `PartUploadUrl` raises `UploadNotReady` until this is set.
+  optional string upload_id = 6;
+
+  // The parts reported uploaded so far, ordered by part number.
+  repeated BlobPart parts = 7;
+
+  // The storage's identifier for the committed object, as it reported
+  // it on completion: an opaque token identifying the stored bytes,
+  // suitable as a cache key for this blob. Its kind is the storage's:
+  // for an S3-compatible bucket, the object's ETag. A servicer for
+  // another storage adds a kind of its own here, as with
+  // `BlobPart.receipt`. Do not compute an expected value and compare,
+  // and do not treat it as a content hash: a storage may derive it
+  // from how the object was uploaded, so the same bytes uploaded with
+  // different part boundaries can carry different values.
+  oneof identifier {
+    string etag = 8;
+  }
+
+  // Why the most recent commit did not commit: the storage refused
+  // what was reported, or no longer held the upload to complete.
+  // Cleared by `Commit` and `RestartUpload`; while set, `transition`
+  // is back to `NONE` with `status` still `UPLOADING`, so the client
+  // can upload parts again and `Commit` again, after a
+  // `RestartUpload` for `upload_not_found`.
+  oneof commit_failure {
+    CommitRefused commit_refused = 9;
+    UploadNotFound upload_not_found = 13;
+  }
+
+  Transition transition = 11;
+
+  // Whether a `Reconcile` run is pending or running. Set by the
+  // writer that schedules one, cleared by the run once nothing is
+  // asked for, so that at most one run exists at a time and every
+  // transition asked for is carried out by one.
+  bool reconciling = 12;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message CreateRequest {
+  // MIME type served on download, e.g. `image/png`.
+  string content_type = 1;
+
+  // The ceiling on this blob's total size, in bytes. Set at most one
+  // form; leave both unset for no limit at all. Either way the
+  // running total is enforced as parts are reported (via
+  // `PartUploaded`) and again at `Commit`.
+  oneof size_limit {
+    // The exact total in bytes, when known up front. Enables definite
+    // progress bars, and the committed bytes must add up to exactly
+    // this — so it doubles as the ceiling during upload.
+    uint64 size = 2;
+
+    // An upper bound in bytes, when the exact total is not known up
+    // front.
+    uint64 max_size = 3;
+  }
+
+  // The ID of the user that may upload into this blob. Omit it to
+  // allow anyone who knows this blob's ID to upload.
+  optional string uploader_id = 4;
+
+  // The IDs of the users who may download this blob. Omit the field
+  // entirely to let anyone who knows the blob's ID download it; set it
+  // (even to an empty list) to restrict downloads to the listed users.
+  // The uploader is NOT implicitly a downloader — omit them from the
+  // list if they shouldn't be able to download (e.g. a drop-box). Can
+  // be changed later with `SetDownloaders`.
+  optional Downloaders downloaders = 5;
+}
+
+message CreateResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message SetDownloadersRequest {
+  // The download allow-list to apply, replacing any previous one.
+  // Omit the field entirely to remove any restriction (anyone who
+  // knows the blob's ID may download); set it (even to an empty list)
+  // to restrict downloads to the listed users.
+  optional Downloaders downloaders = 1;
+}
+
+message SetDownloadersResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message ReconcileRequest {}
+
+message ReconcileResponse {}
+
+message ReapOrphanedUploadsRequest {}
+
+message ReapOrphanedUploadsResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message PartUploadUrlRequest {
+  // The 1-based number of the part to upload.
+  uint32 part_number = 1;
+}
+
+message PartUploadUrlResponse {
+  // A URL reference to upload the part's bytes to: an absolute URL
+  // (e.g. a presigned URL of the storage), or a path relative to the
+  // application's URL; resolve it against the application's URL
+  // before use, which leaves an absolute URL as it is. The part's
+  // receipt from the response, of the kind `BlobPart.receipt`
+  // describes, must be reported back via `PartUploaded`.
+  string url_reference = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message PartUploadedRequest {
+  uint32 part_number = 1;
+
+  // The part's receipt, of the kind `BlobPart.receipt` describes:
+  // what uploading it answered with. Checked against what was actually
+  // uploaded at `Commit` time.
+  oneof receipt {
+    string etag = 2;
+  }
+
+  // Size of this part in bytes.
+  uint64 size = 3;
+}
+
+message PartUploadedResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message CommitRequest {}
+
+message CommitResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message RestartUploadRequest {}
+
+message RestartUploadResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message InfoRequest {}
+
+message InfoResponse {
+  Blob.Status status = 1;
+  string content_type = 2;
+
+  // Mirrors `Blob.transition`: what `status` is on its way to.
+  Blob.Transition transition = 12;
+
+  // Mirrors `Blob.size_limit`.
+  oneof size_limit {
+    uint64 size = 3;
+    uint64 max_size = 4;
+  }
+
+  // Mirrors `Blob.uploader_id`: absent means anyone who knows this
+  // blob's ID may upload.
+  optional string uploader_id = 5;
+
+  // Total bytes across the parts reported uploaded so far. Together
+  // with `size` this gives upload progress, observable reactively by
+  // any client authorized to call `Info`.
+  uint64 bytes_uploaded = 6;
+
+  repeated BlobPart parts = 7;
+
+  // As `Blob.identifier`.
+  oneof identifier {
+    string etag = 8;
+  }
+
+  // Mirrors `Blob.commit_failure`.
+  oneof commit_failure {
+    CommitRefused commit_refused = 9;
+    UploadNotFound upload_not_found = 13;
+  }
+
+  // The part size uploads use: every part except the last must be
+  // exactly this many bytes. The storage's, so the same for every
+  // blob.
+  uint64 part_size = 10;
+
+  // The most parts an upload may have, which is the storage's limit
+  // (10,000 for S3). Bytes that need more parts than this cannot be
+  // one object.
+  uint32 max_parts = 11;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message DownloadUrlRequest {
+  // How long the URL should remain valid. The storage
+  // backend's default (and maximum) applies when unset.
+  optional uint32 ttl_seconds = 1;
+
+  // The caller's clock when it asked. A reactive reader is re-issued
+  // when its request changes and not otherwise, so a reader that
+  // wants a new URL, say before the one it holds lapses,
+  // asks again with a later time, while callers asking at the same
+  // time (to whatever precision they send) share one read and one
+  // URL. The URL is signed as of the servicer's own clock whatever
+  // this holds.
+  google.protobuf.Timestamp requested_at = 2;
+}
+
+message DownloadUrlResponse {
+  // False until the blob is committed, and for good once it never
+  // will be (the blob was discarded); `Info` says which. Read this
+  // method reactively and the URL arrives as soon as it is true.
+  bool ready = 3;
+
+  // A URL reference to `GET` the blob's bytes from: an absolute URL
+  // (e.g. a presigned URL of the storage), or a path relative to the
+  // application's URL; resolve it against the application's URL
+  // before use, which leaves an absolute URL as it is. Set iff
+  // `ready`.
+  optional string url_reference = 1;
+
+  // How long `url_reference` is valid for, which is at most the
+  // requested `ttl_seconds`: a storage caps how far ahead it will
+  // sign a URL (S3 at seven days), so a caller that wants an
+  // unexpired URL must refresh on this, not on what it asked for.
+  // Set iff `ready`.
+  optional uint32 ttl_seconds = 2;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message DiscardRequest {}
+
+message DiscardResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+service BlobMethods {
+  // Creates the blob's metadata, asks for the `UPLOAD` transition and
+  // schedules `Reconcile`, the blob's one workflow, which begins the
+  // upload in the storage. Only
+  // application code
+  // may call this; it is the application's chance to enforce quota
+  // and size policy (directly, or by setting `max_size`), to record
+  // which user may upload (`uploader_id`), and to restrict who may
+  // download (`downloaders`).
+  rpc Create(CreateRequest) returns (CreateResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: { constructor: {} },
+    };
+  }
+
+  // Replaces the blob's download allow-list. Application-mediated
+  // (app-internal only), like `Create`. Omit `downloaders` in the
+  // request to remove any restriction (anyone who knows the ID may
+  // download again); set it to restrict downloads to the listed
+  // users.
+  rpc SetDownloaders(SetDownloadersRequest) returns (SetDownloadersResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+
+  // The blob's one workflow: a control loop that, at each iteration,
+  // reads the status and the requested transition, does one step in
+  // the storage (begins the upload for `UPLOAD`, completes it for
+  // `COMMIT`, discards the bytes for `DISCARD`) and records the
+  // outcome, until nothing is requested. Scheduled by whichever
+  // writer requests a transition while no run is pending or running,
+  // which `reconciling` says; one run at a time. Not for direct use.
+  rpc Reconcile(ReconcileRequest) returns (ReconcileResponse) {
+    option (rbt.v1alpha1.method) = {
+      workflow: {},
+    };
+  }
+
+  // Aborts every in-progress upload the storage holds for the blob
+  // but the recorded one. A `Reconcile` attempt that died after the
+  // storage had begun an upload but before the answer naming it was
+  // recorded leaves that upload behind, known to nobody, and the
+  // retry begins another, which is the one recorded. Scheduled by
+  // `Reconcile` once the upload is recorded, for a time by which the
+  // storage's listing is sure to show any such orphan; not for
+  // direct use.
+  rpc ReapOrphanedUploads(ReapOrphanedUploadsRequest)
+      returns (ReapOrphanedUploadsResponse) {
+    option (rbt.v1alpha1.method) = {
+      workflow: {},
+    };
+  }
+
+  // Answers the URL to upload one part to. Raises `UploadNotReady`
+  // while `Reconcile` has yet to begin the upload, which `Info`
+  // shows as the status leaving `CREATED`; `AlreadyCommitted` or
+  // `Discarded` once the blob is past uploading, whichever way; and
+  // `IncompleteParts` for a part number past what the blob's
+  // declared size allows. `UploadNotFound` is the storage's answer
+  // to a part uploaded to the URL, which only the client sees; it is
+  // declared here so that the client may raise it as this call's
+  // error.
+  rpc PartUploadUrl(PartUploadUrlRequest) returns (PartUploadUrlResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+      errors: [
+        "UploadNotReady",
+        "AlreadyCommitted",
+        "Discarded",
+        "IncompleteParts",
+        "UploadNotFound"
+      ],
+    };
+  }
+
+  // Records that a part was uploaded to the storage, updating the
+  // progress observable via `Info`. Safe to call multiple times for the
+  // same part number; a re-uploaded part overwrites its previous
+  // record.
+  rpc PartUploaded(PartUploadedRequest) returns (PartUploadedResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+      errors: [
+        "AlreadyCommitted",
+        "Discarded",
+        "SizeMismatch",
+        "IncompleteParts"
+      ],
+    };
+  }
+
+  // Validates the reported parts and requests the `COMMIT`
+  // transition, which `Reconcile` carries out by completing the
+  // upload in the storage. Observe the outcome reactively via
+  // `Info`: `status` becomes `COMMITTED`, or `transition` is back to
+  // `NONE` with `commit_refused` or `upload_not_found` set.
+  //
+  // Completing is the workflow's rather than this writer's because
+  // it is a side effect on the storage, which must be retried until
+  // it converges, and workflows can only be run as tasks and cannot
+  // be called from React, while the browser is who commits an
+  // upload. The split also suits the outcome, which belongs to every
+  // participant: anyone who may read the blob observes the same
+  // `status` and `commit_refused`, not just whoever called `Commit`.
+  // What this writer *can* decide up front, that the upload exists,
+  // the parts are contiguous and the sizes agree with
+  // `size`/`max_size`, it decides here and reports as a declared
+  // error. `CommitRefused` and `UploadNotFound` are the storage's
+  // verdicts, which the workflow records on the blob; they are
+  // declared here so that a client watching `Info` may raise them as
+  // this call's error.
+  rpc Commit(CommitRequest) returns (CommitResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+      errors: [
+        "AlreadyCommitted",
+        "Discarded",
+        "SizeMismatch",
+        "IncompleteParts",
+        "CommitRefused",
+        "UploadNotFound"
+      ],
+    };
+  }
+
+  // Requests the `UPLOAD` transition for a blob that is `UPLOADING`,
+  // which `Reconcile` carries out by beginning another upload in the
+  // storage in place of the blob's, forgetting every part reported
+  // for it. For an upload the storage no longer holds, which is
+  // `UploadNotFound` from a part upload and from a `Commit` alike.
+  // Idempotent while the transition is in flight. Raises
+  // `AlreadyCommitted` or `Discarded` once the blob is past
+  // uploading, whichever way.
+  rpc RestartUpload(RestartUploadRequest) returns (RestartUploadResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+      errors: [
+        "AlreadyCommitted",
+        "Discarded"
+      ],
+    };
+  }
+
+  // Metadata and upload progress. Reactive: watch it to render a
+  // progress bar. Visible to anyone who may upload or download the
+  // blob: the `uploader_id` and any listed `downloaders`, plus anyone
+  // who knows the ID whenever either side is left open.
+  rpc Info(InfoRequest) returns (InfoResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+
+  // Answers a time-limited URL from which the committed blob's bytes can
+  // be downloaded. Answers `ready: false` rather than an error while
+  // the blob has yet to commit, so that a reactive read stays
+  // subscribed and is pushed the URL the moment the blob commits; an
+  // error would end the read, to be retried only on a backoff. A
+  // blob that never will commit, having been discarded, answers the
+  // same: being discarded is a status `Info` reports, not a refusal
+  // of this call.
+  rpc DownloadUrl(DownloadUrlRequest) returns (DownloadUrlResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+
+  // Requests the `DISCARD` transition, which `Reconcile` carries out
+  // by deleting the bytes from the storage once whatever it was
+  // doing for the blob is done. (`Delete` is a reserved Reboot
+  // method name.)
+  rpc Discard(DiscardRequest) returns (DiscardResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+}
