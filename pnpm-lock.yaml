@@ -47,6 +47,9 @@ importers:
       '@standard-schema/spec':
         specifier: 1.0.0
         version: 1.0.0
+      '@supercharge/promise-pool':
+        specifier: 3.3.0
+        version: 3.3.0
       '@testing-library/react':
         specifier: ^16.3.0
         version: 16.3.2(@testing-library/dom@10.4.2)(@types/react@19.2.7)(react-dom@19.2.1)(react@19.2.1)
@@ -354,6 +357,9 @@ importers:
       '@scarf/scarf':
         specifier: 1.4.0
         version: 1.4.0
+      '@supercharge/promise-pool':
+        specifier: 3.3.0
+        version: 3.3.0
     devDependencies:
       '@types/node':
         specifier: ^26.6.4
@@ -1664,6 +1670,11 @@ packages:
 
   /@standard-schema/spec@1.1.0:
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
+    dev: false
+
+  /@supercharge/promise-pool@3.3.0:
+    resolution: {integrity: sha512-qGzCltMN05ohRRQAXB8TPWt+0Coz9Va266gr9nYN1qc/f/EIaup3VRg7b59mtRaeKTRcxreF20l/udCM/gOqNg==}
+    engines: {node: '>=8'}
     dev: false
 
   /@testing-library/dom@10.4.2:
