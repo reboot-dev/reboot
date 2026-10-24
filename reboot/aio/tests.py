@@ -477,10 +477,7 @@ class Reboot(reboot.aio.reboot.Reboot):
             effect_validation=effect_validation,
             frontend_url=frontend_url,
             web_app=web_app,
-            upstreams=[
-                upstream for library in application.libraries
-                for upstream in library.upstreams()
-            ],
+            upstreams=application.upstreams(),
         )
 
         return revision
