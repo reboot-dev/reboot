@@ -15,6 +15,7 @@
     "@bufbuild/protobuf": "1.10.1",
     "@reboot-dev/reboot-react": "1.7.2",
     "expo": "^58.0.19",
+    "expo-constants": "~58.0.13",
     "expo-linking": "~58.0.14",
     "expo-secure-store": "~58.0.2",
     "expo-status-bar": "~58.0.4",

@@ -509,6 +509,14 @@ export interface ExpoAuthOptions {
   SecureStore: NativeAuthStorage;
   Linking: { createURL: (path: string) => string };
   /**
+   * The `expo` package itself: `import * as Expo from "expo"`.
+   */
+  Expo: { isRunningInExpoGo: () => boolean };
+  /**
+   * The default export of `expo-constants`.
+   */
+  Constants: { expoConfig: { hostUri?: string } | null };
+  /**
    * Path appended to the app's scheme to form the redirect URI.
    * Defaults to `"redirect"`, giving `myapp://redirect`.
    */
@@ -517,19 +525,50 @@ export interface ExpoAuthOptions {
   storageKeyPrefix?: string;
 }
 
+// The redirect URI of an Expo app. A project in Expo Go is reached as
+// `exp://<dev server>/--/<path>`, and `Linking.createURL` builds that
+// form only while Expo Go identifies itself as the store client. Expo
+// Go 58 identifies itself as a bare app, which makes `createURL`
+// return the app's own `scheme`, a URL nothing on the device handles.
+// So under Expo Go build the `exp://` form from the dev server address
+// directly.
+const expoRedirectUri = (
+  options: Pick<ExpoAuthOptions, "Expo" | "Constants" | "Linking">,
+  redirectPath: string
+): string => {
+  const { Expo, Constants, Linking } = options;
+  if (Expo.isRunningInExpoGo()) {
+    const hostUri = Constants.expoConfig?.hostUri;
+    if (hostUri !== undefined) {
+      return `exp://${hostUri}/--/${redirectPath}`;
+    }
+  }
+  return Linking.createURL(redirectPath);
+};
+
 /**
  * Build the `nativeAuth` for a `RebootClientProvider` in an Expo app:
  *
+ *     import * as Expo from "expo";
+ *     import Constants from "expo-constants";
  *     import * as Linking from "expo-linking";
  *     import * as SecureStore from "expo-secure-store";
  *     import * as WebBrowser from "expo-web-browser";
  *
- *     const auth = expoAuth({ WebBrowser, SecureStore, Linking });
+ *     const auth = expoAuth({
+ *       Expo,
+ *       Constants,
+ *       WebBrowser,
+ *       SecureStore,
+ *       Linking,
+ *     });
  *
  * The redirect URI comes from `Linking`, which derives it from the
  * `scheme` in `app.json` — so list `<scheme>://redirect` in
  * `OAuth(skip_consent_for_redirect_uris=[...])` to have Reboot sign
- * users in without a consent screen.
+ * users in without a consent screen. Under Expo Go it is the dev
+ * server's `exp://` URL instead, which `rbt dev run` signs in without
+ * consent on its own.
  *
  * Hold the result in a module-level constant rather than building it
  * inline in JSX: the provider rebuilds its session machinery whenever
@@ -540,6 +579,8 @@ export function expoAuth(options: ExpoAuthOptions): RebootAuthFactory {
     WebBrowser,
     SecureStore,
     Linking,
+    Expo,
+    Constants,
     redirectPath = "redirect",
     clientName,
     storageKeyPrefix,
@@ -552,7 +593,7 @@ export function expoAuth(options: ExpoAuthOptions): RebootAuthFactory {
   WebBrowser.maybeCompleteAuthSession();
 
   return nativeAuth({
-    redirectUri: Linking.createURL(redirectPath),
+    redirectUri: expoRedirectUri({ Expo, Constants, Linking }, redirectPath),
     openAuthSession: WebBrowser.openAuthSessionAsync,
     storage: withWebFallback(SecureStore),
     clientName,

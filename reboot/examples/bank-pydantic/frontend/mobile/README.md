@@ -25,8 +25,11 @@ for the web.
 
 `@reboot-dev/reboot-react/native` offers two ways to build one:
 
-- **`expoAuth({ WebBrowser, SecureStore, Linking })`** — for an Expo
-  app, as here. Pass the module namespaces of
+- **`expoAuth({ Expo, Constants, WebBrowser, SecureStore, Linking })`**
+  — for an Expo app, as here. Pass
+  [`expo`](https://docs.expo.dev/versions/latest/sdk/expo/),
+  [`expo-constants`](https://docs.expo.dev/versions/latest/sdk/constants/)
+  and the module namespaces of
   [`expo-web-browser`](https://docs.expo.dev/versions/latest/sdk/webbrowser/),
   [`expo-secure-store`](https://docs.expo.dev/versions/latest/sdk/securestore/),
   and
@@ -42,13 +45,14 @@ for the web.
 `App.tsx` uses the Expo one:
 
 ```tsx
-const auth = expoAuth({ WebBrowser, SecureStore, Linking });
+const auth = expoAuth({ Expo, Constants, WebBrowser, SecureStore, Linking });
 
 <RebootClientProvider url={REBOOT_URL} nativeAuth={auth}>
 ```
 
 The redirect URI the app signs in with comes from `Linking`, which
-derives it from the `scheme` in `app.json`.
+derives it from the `scheme` in `app.json`; under Expo Go it is the
+dev server's `exp://` URL instead, built from `Constants`.
 
 The app registers itself with the OAuth server dynamically, and
 `backend/src/main.py` lists its redirect URI in

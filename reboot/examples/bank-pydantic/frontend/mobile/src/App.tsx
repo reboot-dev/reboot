@@ -4,6 +4,8 @@ import {
   useSignOut,
 } from "@reboot-dev/reboot-react";
 import { expoAuth } from "@reboot-dev/reboot-react/native";
+import * as Expo from "expo";
+import Constants from "expo-constants";
 import * as Linking from "expo-linking";
 import * as SecureStore from "expo-secure-store";
 import { StatusBar } from "expo-status-bar";
@@ -48,6 +50,8 @@ const REBOOT_URL =
 // `RebootClientProvider` rebuilds its session machinery whenever this
 // value changes identity.
 const auth = expoAuth({
+  Expo,
+  Constants,
   WebBrowser,
   SecureStore,
   Linking,
