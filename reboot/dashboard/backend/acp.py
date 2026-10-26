@@ -110,7 +110,7 @@ class Peer:
         self.closing: asyncio.Task | None = None
         self.channel = secrets.token_urlsafe(32)
         self.starting_updates: list[dict] = []
-        self.diagnostic = None
+        self.diagnostic: str | None = None
 
     async def read_stderr(self):
         assert self.process is not None and self.process.stderr is not None
