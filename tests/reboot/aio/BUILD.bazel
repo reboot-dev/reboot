@@ -37,6 +37,24 @@ py_test(
 )
 
 py_test(
+    name = "http_proxy_test_py",
+    srcs = [":http_proxy_test.py"],
+    main = "http_proxy_test.py",
+    deps = [
+        # Even though `grpcio` is not a direct dependency, we _must_ have this
+        # "requirement" here listed first, or the PYTHONPATH will point at the
+        # wrong `grpcio` path first (i.e. it'll use the one from the outdated
+        # `com_github_grpc_grpc`).
+        requirement("grpcio"),
+        "//rbt/v1alpha1:errors_py_proto",
+        "//reboot/aio:applications_py",
+        "//reboot/aio:external_py",
+        "//reboot/aio:tests_py",
+        "//reboot/std/collections/v1:sorted_map_py",
+    ],
+)
+
+py_test(
     name = "initialize_test_py",
     timeout = "short",
     srcs = [":initialize_test.py"],

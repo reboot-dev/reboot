@@ -22,6 +22,7 @@ from grpc_health.v1 import health_pb2, health_pb2_grpc
 from pathlib import Path
 from reboot.aio.headers import SERVER_ID_HEADER
 from reboot.aio.types import ApplicationId, ServerId
+from reboot.grpc.options import NO_HTTP_PROXY_OPTIONS
 from reboot.routing import envoy_config
 from reboot.routing.envoy_config import FrontendConfig, ServerInfo
 from reboot.routing.xds_server import AggregatedDiscoveryServiceServicer
@@ -372,6 +373,7 @@ class LocalEnvoy(ABC):
                 grpc.ssl_channel_credentials(
                     root_certificates=LOCALHOST_CRT_DATA,
                 ),
+                options=NO_HTTP_PROXY_OPTIONS,
             ) as channel:
                 stub = health_pb2_grpc.HealthStub(channel)
                 request = health_pb2.HealthCheckRequest()

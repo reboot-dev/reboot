@@ -89,6 +89,7 @@ py_library(
         "//reboot/aio:headers_py",
         "//reboot/aio:tracing_py",
         "//reboot/aio:types_py",
+        "//reboot/grpc:options_py",
         "//reboot/routing:envoy_config_py",
         "//reboot/routing:xds_server_py",
         "//reboot/ssl:localhost_py",

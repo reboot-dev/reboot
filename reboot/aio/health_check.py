@@ -5,6 +5,7 @@ from reboot.aio.backoff import Backoff
 from reboot.aio.concurrently import concurrently
 from reboot.aio.headers import STATE_REF_HEADER
 from reboot.aio.types import StateRef
+from reboot.grpc.options import http_proxy_options
 from reboot.ssl.localhost import LOCALHOST_CRT_DATA
 from typing import Callable, Optional
 
@@ -43,11 +44,13 @@ async def do_health_check(
                         if 'dev.localhost.direct' in application_url else None
                     ),
                 ),
+                options=http_proxy_options(application_url),
             )
         else:
             assert application_url.startswith("http://")
             channel = grpc.aio.insecure_channel(
-                application_url.removeprefix("http://")
+                application_url.removeprefix("http://"),
+                options=http_proxy_options(application_url),
             )
 
         stub = health_pb2_grpc.HealthStub(channel)

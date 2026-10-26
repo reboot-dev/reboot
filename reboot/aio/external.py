@@ -100,6 +100,7 @@ class ExternalContext(IdempotencyManager):
             channel_manager = _ChannelManager(
                 resolver=StaticResolver(address if address != '' else path),
                 secure=scheme == 'https',
+                external=True,
             )
         elif channel_manager is None:
             raise ValueError(
