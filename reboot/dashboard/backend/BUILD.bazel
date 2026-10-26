@@ -2,6 +2,13 @@ load("@rbt_pypi//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
 py_library(
+    name = "acp_py",
+    srcs = ["acp.py"],
+    visibility = ["//visibility:public"],
+    deps = [requirement("starlette")],
+)
+
+py_library(
     name = "needs_generate_reason_py",
     srcs = ["needs_generate_reason.py"],
     srcs_version = "PY3",
@@ -211,6 +218,7 @@ py_library(
         ":api_watcher_py",
         ":constants_py",
         ":servicers_py",
+        ":acp_py",
         "//rbt/dashboard/v1:dashboard_py_reboot",
         "//rbt/std/collections/ordered_map/v1:ordered_map_py_reboot",
         "//reboot/aio:applications_py",
@@ -236,6 +244,7 @@ py_binary(
     main = "main.py",
     visibility = ["//visibility:public"],
     deps = [
+        ":acp_py",
         ":constants_py",
         ":servicers_py",
         "//rbt/dashboard/v1:dashboard_py_reboot",

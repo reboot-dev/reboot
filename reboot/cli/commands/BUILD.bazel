@@ -20,6 +20,7 @@ py_library(
         "//reboot/cli/common:subprocesses_py",
         "//reboot/cli/common:terminal_py",
         "//reboot/dashboard/backend:constants_py",
+        "//reboot/dashboard/backend:acp_py",
         # The application this command spawns as a subprocess, so
         # that it is importable from the CLI's own interpreter.
         "//reboot/dashboard/backend:main_py",
