@@ -42,6 +42,76 @@ test('token refresh preserves the active stream and provider, actions use the fr
   await act(async () => { controller.close(); });
 });
 
+test('page remount rediscovers provider resume, cleanup conflict is retryable without replay', async () => {
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  let connectionSignal!: AbortSignal;
+  let remembered = false;
+  let active = false;
+  let conflict = false;
+  const payloads: object[] = [];
+  const fetchMock = vi.fn(async (url: URL, init: RequestInit) => {
+    if (String(url).endsWith('/config')) return Response.json({ enabled: true, providers: ['codex', 'claude'], resumable: { codex: remembered, claude: false }, active });
+    const value = JSON.parse(init.body as string);
+    payloads.push(value);
+    if (String(url).endsWith('/connect')) {
+      if (conflict) return new Response('', { status: 409 });
+      connectionSignal = init.signal!;
+      remembered = true;
+      active = true;
+      return new Response(new ReadableStream<Uint8Array>({ start(c) { controller = c; } }));
+    }
+    return Response.json({ ok: true });
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  const emit = async (value: object) => act(async () => { controller.enqueue(new TextEncoder().encode(JSON.stringify(value) + '\n')); });
+  const first = render(<AgentChat />);
+  fireEvent.click(await screen.findByText('New session'));
+  await waitFor(() => expect(controller).toBeDefined());
+  await emit({ type: 'ready', channel: 'old-channel', canResume: true });
+  first.unmount();
+  expect(connectionSignal.aborted).toBe(true);
+  await act(async () => { controller.close(); });
+
+  // A true remount has no retained React state and no channel/session ID.
+  const second = render(<AgentChat />);
+  const resume = await screen.findByText('Resume last session') as HTMLButtonElement;
+  await waitFor(() => expect(resume.disabled).toBe(false));
+  expect(screen.getByText(/Another connection is active/)).toBeDefined();
+  fireEvent.change(screen.getByLabelText('Agent provider'), { target: { value: 'claude' } });
+  expect(resume.disabled).toBe(true);
+  fireEvent.change(screen.getByLabelText('Agent provider'), { target: { value: 'codex' } });
+  expect(resume.disabled).toBe(false);
+  conflict = true;
+  fireEvent.click(resume);
+  await screen.findByRole('alert');
+  expect(screen.getByRole('alert').textContent).toContain('retry');
+  await waitFor(() => expect(resume.disabled).toBe(false));
+  conflict = false;
+  active = false;
+  fireEvent.click(resume);
+  await waitFor(() => expect(payloads).toHaveLength(3));
+  await emit({ type: 'models', model: { id: 'loaded-model', currentValue: 'retained-model', options: [{ value: 'retained-model', name: 'Retained model' }] } });
+  await emit({ type: 'ready', channel: 'fresh-channel', canResume: true });
+  expect((screen.getByLabelText('Agent model') as HTMLSelectElement).value).toBe('retained-model');
+  expect(payloads).toEqual([{ provider: 'codex', resume: false }, { provider: 'codex', resume: true }, { provider: 'codex', resume: true }]);
+  second.unmount();
+  await act(async () => { controller.close(); });
+});
+
+test('disconnected status polling observes cleanup and never connects or replays by itself', async () => {
+  let active = true;
+  const fetchMock = vi.fn(async (_url: URL) => Response.json({ enabled: true, providers: ['codex'], resumable: { codex: true }, active }));
+  vi.stubGlobal('fetch', fetchMock);
+  const view = render(<AgentChat />);
+  await screen.findByText(/Another connection is active/);
+  active = false;
+  await waitFor(() => expect(screen.queryByText(/Another connection is active/)).toBeNull(), { timeout: 2500 });
+  expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
+  expect(fetchMock.mock.calls.every(([url]) => String(url).endsWith('/config'))).toBe(true);
+  expect((screen.getByText('Resume last session') as HTMLButtonElement).disabled).toBe(false);
+  view.unmount();
+});
+
 test('disabled by default', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({ enabled: false })));
   render(<AgentChat />);

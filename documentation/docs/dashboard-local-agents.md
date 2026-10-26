@@ -167,11 +167,22 @@ already completed edit or stop a child that deliberately escapes its process
 group. There is one active browser per dashboard.
 
 **Resume last session** is available only after the adapter advertises
-`loadSession: true`. The server remembers only its own latest session per
-provider for this dashboard process and loads it with the same cwd; browser
-refresh can disconnect the live agent. No arbitrary session IDs are accepted,
-and dashboard restart loses this in-memory binding. Provider history retention
-is independent. Reconnection and retry never replay a prompt automatically.
+`loadSession: true`. An authenticated, origin-guarded configuration response
+reports availability per provider, without disclosing session IDs or connection
+channels. The panel rediscovers it after refresh and when switching providers.
+The server remembers only its own latest session per provider for this dashboard
+process and loads it with the same cwd. **New session** replaces that provider's
+resume target; there is no historical-session list or durable dashboard binding.
+
+Browser refresh disconnects the live agent and stops active work; completed
+edits remain on disk. Reconnect explicitly with **Resume last session**, which
+loads provider-retained context and rediscovers its model selection. The provider
+controls whether loading replays the transcript. If the previous connection is
+still cleaning up (or another tab owns it), the panel reports this and refreshes
+availability; wait and retry rather than starting another task. No arbitrary
+session IDs are accepted, and dashboard restart loses the in-memory binding.
+Provider history retention is independent. Reconnection and retry never replay
+a prompt automatically.
 
 Protocol references: [initialization](https://agentclientprotocol.com/protocol/v1/initialization),
 [session setup](https://agentclientprotocol.com/protocol/v1/session-setup),

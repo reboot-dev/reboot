@@ -435,6 +435,15 @@ class Host:
         if self.config is None:
             raise HTTPException(404)
 
+    async def configuration(self, request: Request):
+        if self.config is None:
+            return JSONResponse({'enabled': False}, headers={'Cache-Control': 'no-store'})
+        self.guard(request)
+        # Availability only: never disclose session IDs or the active channel.
+        return JSONResponse({'enabled': True, 'providers': list(self.config.providers),
+                             'resumable': {name: name in self.previous for name in self.config.providers},
+                             'active': self.active is not None}, headers={'Cache-Control': 'no-store'})
+
     async def connect(self, request: Request):
         self.guard(request)
         assert self.config is not None
@@ -477,7 +486,10 @@ class Host:
             try:
                 await peer.start(previous)
                 assert peer.session is not None
-                self.previous[provider] = peer.session
+                if peer.capabilities.get('loadSession') is True:
+                    self.previous[provider] = peer.session
+                else:
+                    self.previous.pop(provider, None)
                 while True:
                     try:
                         event = await asyncio.wait_for(peer.events.get(), 15)
@@ -527,12 +539,7 @@ def register(http):
     config = Config.read(filename, Path.cwd()) if filename else None
     host = Host(config, os.environ.get(ORIGIN_ENV, ''))
 
-    @http.post('/__/dashboard/acp/config', require_oauth_token=True)
-    async def configuration(request: Request):
-        if config is None:
-            return JSONResponse({'enabled': False}, headers={'Cache-Control': 'no-store'})
-        host.guard(request)
-        return JSONResponse({'enabled': True, 'providers': list(config.providers)}, headers={'Cache-Control': 'no-store'})
+    http.post('/__/dashboard/acp/config', require_oauth_token=True)(host.configuration)
 
     http.post('/__/dashboard/acp/connect', require_oauth_token=True)(host.connect)
     http.post('/__/dashboard/acp/action', require_oauth_token=True)(host.action)

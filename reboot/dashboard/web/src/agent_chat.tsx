@@ -24,7 +24,8 @@ export function AgentChat(): JSX.Element | null {
   const [busy, setBusy] = useState(false);
   const [model, setModel] = useState<Model | null>(null);
   const [settingModel, setSettingModel] = useState(false);
-  const [resume, setResume] = useState(false);
+  const [resumable, setResumable] = useState<Record<string, boolean>>({});
+  const [serverActive, setServerActive] = useState(false);
   const [cwd, setCwd] = useState("");
   const [draft, setDraft] = useState("");
   const [text, setText] = useState("");
@@ -42,16 +43,30 @@ export function AgentChat(): JSX.Element | null {
   useEffect(() => {
     if (IN_MCP_HOST || client.bearerToken === undefined) return;
     const abort = new AbortController();
-    void request("config", undefined, abort.signal).then(async response => {
-      if (!response.ok) return;
-      const config = await response.json();
-      if (!abort.signal.aborted && config.enabled) {
-        setProviders(config.providers);
-        setProvider(current => config.providers.includes(current) ? current : config.providers[0]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let enabled = true;
+    const refresh = async () => {
+      try {
+        const response = await request("config", undefined, abort.signal);
+        if (!response.ok) return;
+        const config = await response.json();
+        enabled = config.enabled === true;
+        if (!abort.signal.aborted && config.enabled) {
+          setProviders(config.providers);
+          setProvider(current => config.providers.includes(current) ? current : config.providers[0]);
+          if (config.resumable) setResumable(config.resumable);
+          setServerActive(config.active === true);
+        }
+      } catch { /* Authentication and network failures must not enable resume. */ }
+      finally {
+        // Refresh/Disconnect may still be reaping the old adapter. Observe
+        // availability without taking ownership or replaying any prompts.
+        if (enabled && !abort.signal.aborted && !connected && !connecting) timer = setTimeout(() => void refresh(), 1000);
       }
-    }).catch(() => {});
-    return () => abort.abort();
-  }, [client.url, client.bearerToken]);
+    };
+    void refresh();
+    return () => { abort.abort(); clearTimeout(timer); };
+  }, [client.url, client.bearerToken, connected, connecting]);
 
   // A refreshed OAuth token changes future requests, not the current stream.
   useEffect(() => () => { stream.current?.abort(); }, [client.url]);
@@ -63,7 +78,7 @@ export function AgentChat(): JSX.Element | null {
   const onEvent = (event: Event) => {
     if (event.type === "ready") {
       channel.current = event.channel; setConnected(true); setConnecting(false);
-      setCwd(event.cwd ?? ""); setResume(event.canResume === true); setStatus("Ready");
+      setCwd(event.cwd ?? ""); setResumable(current => ({ ...current, [provider]: event.canResume === true })); setStatus("Ready");
     } else if (event.type === "models") {
       setModel(event.model ?? null);
     } else if (event.type === "update" && event.update) {
@@ -91,6 +106,10 @@ export function AgentChat(): JSX.Element | null {
     setConnecting(true); setError(""); setText(""); setTools({}); setPermissions([]); setModel(null); setSettingModel(false);
     try {
       const response = await request("connect", { provider, resume: load }, abort.signal);
+      if (response.status === 409) {
+        setServerActive(true);
+        throw new Error("Connection is still in use or cleaning up. Wait a moment, then retry; no prompt was resent.");
+      }
       if (!response.ok || !response.body) throw new Error(`Connection refused (${response.status})`);
       const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffered = "";
       while (true) {
@@ -115,7 +134,7 @@ export function AgentChat(): JSX.Element | null {
   return <aside className="agent-chat" aria-label="Local coding agent">
     <header><strong>Local coding agent</strong> <span role="status">{status}</span></header>
     <p>Edits your application checkout. Not sandboxed by Reboot. Provider permissions apply.</p>
-    <select aria-label="Agent provider" disabled={connected || connecting} value={provider} onChange={e => { setProvider(e.target.value); setResume(false); }}>
+    <select aria-label="Agent provider" disabled={connected || connecting} value={provider} onChange={e => setProvider(e.target.value)}>
       {providers.map(name => <option key={name}>{name}</option>)}
     </select>
     <label>Model <select aria-label="Agent model" value={model?.currentValue ?? ""}
@@ -132,7 +151,9 @@ export function AgentChat(): JSX.Element | null {
       {model?.options.map(option => <option key={option.value} value={option.value}>{option.name} ({option.value})</option>)}
     </select></label>
     <button disabled={connected || connecting} onClick={() => void connect(false)}>New session</button>
-    <button disabled={connected || connecting || !resume} onClick={() => void connect(true)}>Resume last session</button>
+    <button disabled={connected || connecting || resumable[provider] !== true} onClick={() => void connect(true)}>Resume last session</button>
+    {!connected && serverActive && <p>Another connection is active or disconnect cleanup is finishing. Wait, then retry.</p>}
+    <p>Refresh disconnects the agent and stops active work. Resume loads only this provider's latest session in this dashboard process; it does not resend your prompt. New session replaces that resume target.</p>
     <button disabled={!connected && !connecting} onClick={() => stream.current?.abort()}>Disconnect</button>
     <small>{cwd}</small>
     {error && <p role="alert">{error}</p>}

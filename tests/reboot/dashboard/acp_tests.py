@@ -343,6 +343,93 @@ class ACPTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, 'cannot load'):
             await self.peer.start('fixture-session')
 
+    async def test_configuration_refresh_resume_and_channel_isolation(self):
+        self.config.providers['codex'].append('models')
+        self.config.default_models['codex'] = 'fixture-large'
+        self.config.providers['claude'] = [sys.executable, str(FIXTURE)]
+        host = Host(self.config, ORIGIN)
+
+        async def status():
+            response = await host.configuration(request())
+            self.assertEqual(response.headers['cache-control'], 'no-store')
+            return json.loads(response.body)
+
+        self.assertEqual((await status())['resumable'], {'codex': False, 'claude': False})
+        response = await host.connect(request({'provider': 'codex', 'resume': False}))
+        await anext(response.body_iterator)
+        old = host.active
+        self.assertIsNotNone(old)
+        self.assertEqual((await status())['resumable'], {'codex': True, 'claude': False})
+        self.assertTrue((await status())['active'])
+        self.assertNotIn(old.channel, json.dumps(await status()))
+        self.assertNotIn(old.session, json.dumps(await status()))
+        with self.assertRaises(HTTPException) as error:
+            await host.connect(request({'provider': 'codex', 'resume': True}))
+        self.assertEqual(error.exception.status_code, 409)
+        await response.body_iterator.aclose()
+        self.assertFalse((await status())['active'])
+        self.assertIsNotNone(old.process.returncode)
+        # A new browser has only provider/boolean metadata, not an old channel.
+        self.config.default_models['codex'] = 'fixture-small'
+        response = await host.connect(request({'provider': 'codex', 'resume': True}))
+        try:
+            await anext(response.body_iterator)
+            loaded = host.active
+            self.assertNotEqual(loaded.channel, old.channel)
+            self.assertEqual(loaded.model['currentValue'], 'fixture-large')
+            self.assertIsNone(loaded.turn)  # loading never submits a prompt
+            with self.assertRaises(HTTPException):
+                await host.action(request({'channel': old.channel, 'type': 'cancel'}))
+            with self.assertRaises(HTTPException):
+                await host.action(request({'channel': 'forged', 'type': 'cancel'}))
+        finally:
+            await response.body_iterator.aclose()
+        self.assertFalse((await status())['active'])
+        self.assertEqual((await status())['resumable'], {'codex': True, 'claude': False})
+        self.assertEqual(json.loads((await Host(self.config, ORIGIN).configuration(request())).body)['resumable'],
+                         {'codex': False, 'claude': False})
+
+    async def test_new_session_replaces_only_selected_provider_resume_target(self):
+        host = Host(self.config, ORIGIN)
+        host.previous = {'codex': 'old-owned-session', 'claude': 'other-provider-session'}
+        response = await host.connect(request({'provider': 'codex', 'resume': False}))
+        try:
+            await anext(response.body_iterator)
+            self.assertEqual(host.previous, {'codex': 'fixture-session', 'claude': 'other-provider-session'})
+        finally:
+            await response.body_iterator.aclose()
+
+    async def test_configuration_guards_and_capability_gating(self):
+        self.config.providers['codex'].append('no-load')
+        host = Host(self.config, ORIGIN)
+        for origin, hostname in [('https://evil.test', '127.0.0.1:9999'), ('null', '127.0.0.1:9999'), (ORIGIN, 'evil.test')]:
+            with self.assertRaises(HTTPException) as error:
+                await host.configuration(request(None, origin, hostname))
+            self.assertEqual(error.exception.status_code, 403)
+        response = await host.connect(request({'provider': 'codex', 'resume': False}))
+        try:
+            await anext(response.body_iterator)
+            self.assertEqual(json.loads((await host.configuration(request())).body)['resumable'], {'codex': False})
+        finally:
+            await response.body_iterator.aclose()
+        with self.assertRaises(HTTPException):
+            await host.connect(request({'provider': 'codex', 'resume': True}))
+
+    def test_all_routes_require_oauth_including_configuration(self):
+        from reboot.dashboard.backend.acp import register
+        routes = {}
+        class HTTP:
+            def post(self, path, *, require_oauth_token):
+                self_outer.assertTrue(require_oauth_token)
+                def decorate(handler):
+                    routes[path] = handler
+                    return handler
+                return decorate
+        self_outer = self
+        with patch.dict(os.environ, {}, clear=True):
+            register(HTTP())
+        self.assertEqual(set(routes), {'/__/dashboard/acp/config', '/__/dashboard/acp/connect', '/__/dashboard/acp/action'})
+
     async def test_resume_server_owned(self):
         host = Host(self.config, ORIGIN)
         with self.assertRaises(HTTPException) as error:
