@@ -211,6 +211,14 @@ timeout 120 adb shell am wait-for-broadcast-idle > /dev/null || true
 cd frontend/mobile
 export EXPO_PUBLIC_REBOOT_URL="http://10.0.2.2:9991"
 export EXPO_NO_TELEMETRY=1
+# Keep Expo Go's developer menu out of the flow. With this set, Expo
+# appends the `__expo_disable_onboarding`, `__expo_disable_fab` and
+# `__expo_disable_auto_launch` launch parameters, so Expo Go opens the
+# project without its first-run onboarding sheet or the floating dev
+# menu button, either of which swallows taps meant for the app. Expo
+# already does this when its output is piped, as it is here; setting
+# it explicitly keeps that from depending on how the output is wired.
+export EXPO_NO_DEV_MENU=1
 setsid npx expo start --android > "${EXPO_LOG}" 2>&1 &
 expo_pid=$!
 # Wait for Metro to bundle and the app to load on the emulator.
