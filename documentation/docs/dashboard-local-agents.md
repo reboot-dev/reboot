@@ -8,16 +8,16 @@ and the context their local agent sends them.
 
 Install adapters explicitly in a trusted directory; the dashboard never runs
 an installer. The integration targets stable **ACP v1**, not draft v2. The
-following adapter versions have been probed for initialization, not qualified
-for end-to-end application editing: `@agentclientprotocol/claude-agent-acp@0.95.0`
-and `@agentclientprotocol/codex-acp@2.2.2`. Both negotiate ACP v1. The available
-Claude login expired before a prompt could complete. Codex's bundled CLI
-required authentication at session creation; selecting the existing local CLI
-with its supported `CODEX_PATH` option allowed session creation, but its first
-prompt failed with HTTP 401 and `invalid_refresh_token`. Real-provider edits,
-approvals, cancellation and reload remain unverified until valid local provider
-authentication is available. Deterministic wire-fixture coverage is not provider
-compatibility:
+following adapter versions negotiate ACP v1: `@agentclientprotocol/claude-agent-acp@0.95.0`
+and `@agentclientprotocol/codex-acp@2.2.2`. Real Codex application editing,
+one-time read/edit approvals, native application reload and cancellation were
+exercised using the production panel/backend with a test authentication harness
+and a local Codex CLI selected through `CODEX_PATH`. The combined native
+dashboard OAuth/browser flow remains unqualified. After the successful edit
+and reload, the model reported capacity during its final continuation. Claude
+session initialization succeeded, but editing remains unqualified because the
+available Claude login expired. Deterministic wire-fixture coverage is separate
+from these real-provider checks:
 
 ```sh
 npm install --prefix "$HOME/local-acp" \
