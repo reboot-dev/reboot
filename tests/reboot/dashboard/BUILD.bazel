@@ -11,6 +11,7 @@ py_test(
     main = "acp_tests.py",
     deps = [
         "//reboot/dashboard/backend:acp_py",
+        requirement("anyio"),
         requirement("jsonschema"),
         requirement("starlette"),
     ],

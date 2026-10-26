@@ -4,11 +4,14 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
+
+import anyio
 from importlib.resources import files
 from jsonschema import Draft202012Validator
 from pathlib import Path
 from starlette.exceptions import HTTPException
-from starlette.requests import Request
+from starlette.requests import ClientDisconnect, Request
 from reboot.dashboard.backend.acp import Config, Host, Peer, body, failure_reason, local_origin
 
 FIXTURE = Path(__file__).with_name('acp_fixture.py').resolve()
@@ -70,6 +73,46 @@ class ACPTests(unittest.IsolatedAsyncioTestCase):
         await self.peer.cancel()
         self.assertFalse(self.peer.permissions)
         self.assertIsNone(self.peer.turn)
+        self.assertIn('hello', (self.cwd / 'app.py').read_text())
+
+    async def test_cancel_rejects_late_adapter_permission(self):
+        self.config.providers['codex'].append('late-permission')
+        await self.peer.start()
+        await self.peer.prompt('edit')
+        await self.event('permission')
+        await asyncio.wait_for(self.peer.cancel(), 2)
+        self.assertEqual(json.loads((self.cwd / 'late-outcome.json').read_text()),
+                         {'outcome': {'outcome': 'cancelled'}})
+        self.assertFalse(self.peer.permissions)
+        self.assertIsNone(self.peer.turn)
+        self.assertIn('hello', (self.cwd / 'app.py').read_text())
+        while not self.peer.events.empty():
+            self.assertNotEqual(self.peer.events.get_nowait()['type'], 'permission')
+
+    async def test_cancel_invalidates_handles_before_first_write_await(self):
+        await self.peer.start()
+        await self.peer.prompt('edit')
+        permission = await self.event('permission')
+        writing, release = asyncio.Event(), asyncio.Event()
+        original = self.peer.write
+
+        async def delayed_write(message):
+            writing.set()
+            await release.wait()
+            await original(message)
+
+        with patch.object(self.peer, 'write', delayed_write):
+            cancel = asyncio.create_task(self.peer.cancel())
+            await writing.wait()
+            try:
+                with self.assertRaises(HTTPException) as error:
+                    await asyncio.wait_for(self.peer.permission(permission['request'], 'allow'), .2)
+                self.assertEqual(error.exception.status_code, 409)
+                with self.assertRaises(HTTPException):
+                    await self.peer.prompt('another')
+            finally:
+                release.set()
+                await asyncio.wait_for(cancel, 2)
         self.assertIn('hello', (self.cwd / 'app.py').read_text())
 
     async def test_busy(self):
@@ -160,6 +203,50 @@ class ACPTests(unittest.IsolatedAsyncioTestCase):
         assert self.peer.process is not None
         self.assertIsNotNone(self.peer.process.returncode)
 
+    async def test_close_bounds_blocked_permission_drain_and_cancel(self):
+        await self.peer.start()
+        await self.peer.prompt('edit')
+        await self.event('permission')
+        writing = asyncio.Event()
+
+        async def blocked_write(message):
+            writing.set()
+            await asyncio.Event().wait()
+
+        with patch.object(self.peer, 'write', blocked_write):
+            cancelling = asyncio.create_task(self.peer.cancel())
+            await writing.wait()
+            await asyncio.wait_for(asyncio.gather(self.peer.close(), self.peer.close()), 2)
+            await asyncio.gather(cancelling, return_exceptions=True)
+        self.assertTrue(self.peer.closing.done())
+        self.assertTrue(self.peer.cancellation.done())
+        self.assertIsNotNone(self.peer.process.returncode)
+        self.assertFalse(self.peer.permissions)
+
+    async def test_turn_and_external_close_do_not_wait_on_each_other(self):
+        await self.peer.start()
+        closing_started, release = asyncio.Event(), asyncio.Event()
+        original = self.peer._close
+
+        async def delayed_close(caller):
+            closing_started.set()
+            await release.wait()
+            await original(caller)
+
+        with patch.object(self.peer, '_close', delayed_close):
+            # A failed prompt enters close from the turn itself; a simultaneous
+            # disconnect joins the same cleanup task rather than waiting in a cycle.
+            await self.peer.prompt('crash')
+            await closing_started.wait()
+            external = asyncio.create_task(self.peer.close())
+            release.set()
+            await asyncio.wait_for(external, 2)
+            if self.peer.turn is not None:
+                await asyncio.wait_for(self.peer.turn, 2)
+        self.assertTrue(self.peer.closing.done())
+        self.assertIsNone(self.peer.turn)
+        self.assertIsNotNone(self.peer.process.returncode)
+
     async def test_auth_diagnostics_do_not_echo_secrets(self):
         self.config.providers['codex'].append('auth-error')
         with self.assertLogs('reboot.dashboard.backend.acp', level='WARNING') as logs:
@@ -196,6 +283,82 @@ class ACPTests(unittest.IsolatedAsyncioTestCase):
         await response.body_iterator.aclose()
         self.assertTrue(peer.closed)
         self.assertIsNone(host.active)
+
+    async def test_asgi_send_failure_reaps_and_releases_ownership(self):
+        host = Host(self.config, ORIGIN)
+        response = await host.connect(request({'provider': 'codex', 'resume': False}))
+        peer = host.active
+        assert peer is not None
+
+        async def send(message):
+            if message['type'] == 'http.response.body':
+                raise OSError('browser disconnected')
+
+        scope = {**request().scope, 'asgi': {'version': '3.0', 'spec_version': '2.4'}}
+        try:
+            with self.assertRaises(ClientDisconnect):
+                await response(scope, request().receive, send)
+            with anyio.fail_after(2):
+                while host.active is not None:
+                    await asyncio.sleep(.01)
+            assert peer.process is not None and peer.closing is not None
+            self.assertTrue(peer.closing.done())
+            self.assertIsNotNone(peer.process.returncode)
+        finally:
+            await response.body_iterator.aclose()
+
+    async def test_asgi_disconnect_reaps_and_releases_ownership(self):
+        await self.check_asgi_disconnect(cancel_scope=False)
+
+    async def test_asgi_cancel_scope_reaps_and_releases_ownership(self):
+        await self.check_asgi_disconnect(cancel_scope=True)
+
+    async def check_asgi_disconnect(self, cancel_scope):
+        host = Host(self.config, ORIGIN)
+        baseline = asyncio.all_tasks()
+        for reconnect in range(2):
+            response = await host.connect(request({'provider': 'codex', 'resume': bool(reconnect)}))
+            peer = host.active
+            disconnect, ready, permission = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+            async def receive():
+                await disconnect.wait()
+                return {'type': 'http.disconnect'}
+
+            async def send(message):
+                if message['type'] == 'http.response.body' and message.get('body'):
+                    event = json.loads(message['body'])
+                    if event['type'] == 'ready':
+                        ready.set()
+                    elif event['type'] == 'permission':
+                        permission.set()
+
+            scope = {**request().scope, 'asgi': {'version': '3.0', 'spec_version': '2.3'}}
+            with anyio.fail_after(3):
+                async with anyio.create_task_group() as group:
+                    group.start_soon(response, scope, receive, send)
+                    await ready.wait()
+                    await peer.prompt('edit')
+                    await permission.wait()
+                    pid = peer.process.pid
+                    if cancel_scope:
+                        group.cancel_scope.cancel()
+                    else:
+                        disconnect.set()
+            # The response can return before shielded cleanup finishes; ownership
+            # must stay reserved until reaping, then admit a real resumed stream.
+            with anyio.fail_after(3):
+                while host.active is not None:
+                    await asyncio.sleep(.01)
+            self.assertTrue(peer.closing.done())
+            self.assertIsNotNone(peer.process.returncode)
+            self.assertTrue(all(task.done() for task in peer.tasks))
+            self.assertIsNone(peer.turn)
+            self.assertFalse(peer.permissions)
+            with self.assertRaises(ProcessLookupError):
+                os.kill(pid, 0)
+        await asyncio.sleep(0)
+        self.assertFalse([t for t in asyncio.all_tasks() - baseline if not t.done()])
 
     def test_loopback_only(self):
         for origin in ['https://evil.test:443', 'http://127.0.0.1:9999/path', 'http://localhost', 'http://user@localhost:42', 'http://dashboard.localhost:80']:

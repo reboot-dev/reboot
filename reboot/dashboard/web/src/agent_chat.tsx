@@ -41,10 +41,16 @@ export function AgentChat() {
     void request("config", undefined, abort.signal).then(async response => {
       if (!response.ok) return;
       const config = await response.json();
-      if (config.enabled) { setProviders(config.providers); setProvider(config.providers[0]); }
+      if (!abort.signal.aborted && config.enabled) {
+        setProviders(config.providers);
+        setProvider(current => config.providers.includes(current) ? current : config.providers[0]);
+      }
     }).catch(() => {});
-    return () => { abort.abort(); stream.current?.abort(); };
+    return () => abort.abort();
   }, [client.url, client.bearerToken]);
+
+  // A refreshed OAuth token changes future requests, not the current stream.
+  useEffect(() => () => { stream.current?.abort(); }, [client.url]);
 
   const action = async (value: object) => {
     const response = await request("action", { ...value, channel: channel.current });

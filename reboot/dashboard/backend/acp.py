@@ -104,6 +104,8 @@ class Peer:
         self.session = None
         self.capabilities: dict = {}
         self.turn = None
+        self.cancelling = False
+        self.cancellation: asyncio.Task | None = None
         self.closed = False
         self.closing: asyncio.Task | None = None
         self.channel = secrets.token_urlsafe(32)
@@ -208,7 +210,7 @@ class Peer:
                     elif params.get('sessionId') == self.session:
                         self.emit({'type': 'update', 'update': params['update']})
                 elif method == 'session/request_permission' and 'id' in message:
-                    if params.get('sessionId') != self.session or self.turn is None:
+                    if self.cancelling or self.closed or params.get('sessionId') != self.session or self.turn is None or self.turn.done():
                         await self.write({'id': message['id'], 'result': {'outcome': {'outcome': 'cancelled'}}})
                         continue
                     options = params['options']
@@ -233,19 +235,20 @@ class Peer:
 
     async def permission(self, key: str, option: str):
         pending = self.permissions.get(key)
-        if pending is None or option not in [item['optionId'] for item in pending[1]]:
+        if self.cancelling or self.closed or pending is None or option not in [item['optionId'] for item in pending[1]]:
             raise HTTPException(409, 'Unknown or expired permission option')
         self.permissions.pop(key)
         await self.write({'id': pending[0], 'result': {'outcome': {'outcome': 'selected', 'optionId': option}}})
 
     async def clear_permissions(self):
-        for number, _ in list(self.permissions.values()):
-            await self.write({'id': number, 'result': {'outcome': {'outcome': 'cancelled'}}})
+        pending = list(self.permissions.values())
         self.permissions.clear()
+        for number, _ in pending:
+            await self.write({'id': number, 'result': {'outcome': {'outcome': 'cancelled'}}})
         self.emit({'type': 'permissions_cleared'})
 
     async def prompt(self, text: str):
-        if self.turn is not None:
+        if self.closed or self.cancelling or self.turn is not None:
             raise HTTPException(409, 'A turn is already running')
         async def run():
             try:
@@ -265,27 +268,47 @@ class Peer:
         self.turn = asyncio.create_task(run())
 
     async def cancel(self):
+        if self.closed:
+            return
+        if self.cancellation is None or self.cancellation.done():
+            # Fence both existing handles and late adapter requests before any
+            # write/drain can yield to a concurrent browser approval.
+            self.cancelling = True
+            self.cancellation = asyncio.create_task(self._cancel())
+        await asyncio.shield(self.cancellation)
+
+    async def _cancel(self):
+        try:
+            await asyncio.wait_for(self._cancel_turn(), 5)
+        except asyncio.TimeoutError:
+            await self.close()
+            with contextlib.suppress(asyncio.QueueFull):
+                self.emit({'type': 'closed'})
+        finally:
+            if self.closing is None:
+                self.cancelling = False
+
+    async def _cancel_turn(self):
         await self.clear_permissions()
-        if self.turn is not None:
+        turn = self.turn
+        if turn is not None:
             await self.write({'method': 'session/cancel', 'params': {'sessionId': self.session}})
-            try:
-                await asyncio.wait_for(asyncio.shield(self.turn), 5)
-            except asyncio.TimeoutError:
-                await self.close()
-                with contextlib.suppress(asyncio.QueueFull):
-                    self.emit({'type': 'closed'})
+            await asyncio.shield(turn)
 
     async def close(self):
         if self.closing is None:
+            self.cancelling = True
             self.closing = asyncio.create_task(self._close(asyncio.current_task()))
         await asyncio.shield(self.closing)
 
     async def _close(self, caller):
         if self.process is not None and self.process.returncode is None:
             with contextlib.suppress(Exception):
-                await self.clear_permissions()
+                # An adapter that stopped reading stdin must not block reaping.
+                await asyncio.wait_for(self.clear_permissions(), .25)
+        self.permissions.clear()
         self.closed = True
-        tasks = [t for t in [*self.tasks, self.turn] if t is not None and t is not caller]
+        tasks = [t for t in [*self.tasks, self.turn, self.cancellation] if t is not None and t is not caller]
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -334,6 +357,29 @@ class Host:
             raise HTTPException(409, 'No server-owned session to resume')
         peer = Peer(self.config, provider)
         self.active = peer
+        cleanup_task: asyncio.Task | None = None
+
+        async def cleanup():
+            await peer.close()
+            if self.active is peer:
+                self.active = None
+
+        async def finish():
+            nonlocal cleanup_task
+            if cleanup_task is None:
+                cleanup_task = asyncio.create_task(cleanup())
+            # AnyIO can repeatedly cancel the ASGI caller. The shared asyncio
+            # task must outlive it, including subprocess reaping and ownership.
+            await asyncio.shield(cleanup_task)
+
+        class AgentResponse(StreamingResponse):
+            async def __call__(self, scope, receive, send):
+                try:
+                    await super().__call__(scope, receive, send)
+                finally:
+                    # ASGI 2.4 send errors happen while the generator is paused
+                    # at yield: its own finally will not run until aclose/GC.
+                    await finish()
 
         async def stream():
             try:
@@ -353,14 +399,8 @@ class Host:
             except Exception:
                 yield json.dumps({'type': 'error', 'message': peer.diagnostic or 'Cannot start ACP session. Check the trusted command and local provider login; ACP v1 is required.'}) + '\n'
             finally:
-                async def cleanup():
-                    await peer.close()
-                    if self.active is peer:
-                        self.active = None
-                # StreamingResponse cancels its task group on disconnect. Do
-                # not let that interrupt subprocess reaping or release early.
-                await asyncio.shield(asyncio.create_task(cleanup()))
-        return StreamingResponse(stream(), media_type='application/x-ndjson', headers={'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no'})
+                await finish()
+        return AgentResponse(stream(), media_type='application/x-ndjson', headers={'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no'})
 
     async def action(self, request: Request):
         self.guard(request)

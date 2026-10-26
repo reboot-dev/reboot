@@ -36,8 +36,14 @@ for line in sys.stdin:
         send({'method': 'session/update', 'params': {'sessionId': 'fixture-session', 'update': {'sessionUpdate': 'tool_call', 'toolCallId': 'edit', 'title': 'Edit application', 'status': 'pending'}}})
         send({'id': 'permission-1', 'method': 'session/request_permission', 'params': {'sessionId': 'fixture-session', 'toolCall': {'toolCallId': 'edit', 'title': 'Edit app.py'}, 'options': [{'optionId': 'allow', 'name': 'Allow once', 'kind': 'allow_once'}, {'optionId': 'deny', 'name': 'Reject', 'kind': 'reject_once'}]}})
     elif method == 'session/cancel':
-        if 'hang' not in sys.argv:
+        if 'late-permission' in sys.argv:
+            # The adapter races cancellation with another approval request.
+            send({'id': 'permission-late', 'method': 'session/request_permission', 'params': {'sessionId': 'fixture-session', 'toolCall': {'toolCallId': 'late', 'title': 'Late edit'}, 'options': [{'optionId': 'allow', 'name': 'Allow once', 'kind': 'allow_once'}]}})
+        elif 'hang' not in sys.argv:
             send({'id': prompt_id, 'result': {'stopReason': 'cancelled'}})
+    elif number == 'permission-late':
+        Path('late-outcome.json').write_text(json.dumps(message['result']))
+        send({'id': prompt_id, 'result': {'stopReason': 'cancelled'}})
     elif number == 'permission-1':
         outcome = message['result']['outcome']
         if outcome.get('optionId') == 'allow':
