@@ -22,6 +22,7 @@ py_library(
         "//reboot/aio:aborted_py",
         "//reboot/aio:headers_py",
         "//reboot/controller:settings_py",
+        "//reboot/ssl:roots_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1/admin:auth_py_reboot",
     ],
 )

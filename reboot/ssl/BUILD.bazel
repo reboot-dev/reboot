@@ -1,3 +1,4 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_library")
 
 py_library(
@@ -10,4 +11,15 @@ py_library(
         ":localhost.key",
     ],
     visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "roots_py",
+    srcs = [
+        "roots.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("certifi"),
+    ],
 )

@@ -29,6 +29,7 @@ py_library(
         "//reboot/aio:tracing_py",
         "//reboot/aio:types_py",
         "//reboot/ssl:localhost_py",
+        "//reboot/ssl:roots_py",
     ],
 )
 

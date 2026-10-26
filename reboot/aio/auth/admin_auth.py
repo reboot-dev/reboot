@@ -7,6 +7,7 @@ from reboot.aio.headers import AUTHORIZATION_HEADER
 from reboot.controller.settings import ENVVAR_REBOOT_ADMIN_AUTH_URL
 from reboot.run_environments import running_rbt_dev
 from reboot.settings import ENVVAR_SECRET_REBOOT_ADMIN_TOKEN
+from reboot.ssl.roots import public_root_certificates
 from typing import Optional
 
 logger = get_logger(__name__)
@@ -107,7 +108,14 @@ class AdminAuthMixin:
             elif admin_auth_url.startswith('https://'):
                 admin_auth_endpoint = admin_auth_url.removeprefix('https://')
                 channel = grpc.aio.secure_channel(
-                    admin_auth_endpoint, grpc.ssl_channel_credentials()
+                    admin_auth_endpoint,
+                    grpc.ssl_channel_credentials(
+                        # Need to use `certifi`'s roots because the
+                        # version of `grpcio` we are using (as of the
+                        # time of writing this comment, 1.64.3) has
+                        # compromised roots.
+                        root_certificates=public_root_certificates(),
+                    ),
                 )
             else:
                 raise ValueError(

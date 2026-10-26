@@ -6,6 +6,7 @@ from reboot.aio.concurrently import concurrently
 from reboot.aio.headers import STATE_REF_HEADER
 from reboot.aio.types import StateRef
 from reboot.ssl.localhost import LOCALHOST_CRT_DATA
+from reboot.ssl.roots import public_root_certificates
 from typing import Callable, Optional
 
 MAX_HEALTH_CHECK_BACKOFF_SECONDS = 5
@@ -40,7 +41,12 @@ async def do_health_check(
                 grpc.ssl_channel_credentials(
                     root_certificates=(
                         LOCALHOST_CRT_DATA
-                        if 'dev.localhost.direct' in application_url else None
+                        if 'dev.localhost.direct' in application_url else
+                        # Need to use `certifi`'s roots because the
+                        # version of `grpcio` we are using (as of the
+                        # time of writing this comment, 1.64.3) has
+                        # compromised roots.
+                        public_root_certificates()
                     ),
                 ),
             )

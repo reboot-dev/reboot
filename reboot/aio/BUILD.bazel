@@ -195,6 +195,7 @@ py_library(
         ":types_py",
         "//reboot/aio/backoff:python",
         "//reboot/ssl:localhost_py",
+        "//reboot/ssl:roots_py",
     ],
 )
 
