@@ -4,10 +4,12 @@ import os
 import sys
 import tempfile
 import unittest
+from importlib.resources import files
+from jsonschema import Draft202012Validator
 from pathlib import Path
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
-from reboot.dashboard.backend.acp import Config, Host, Peer, body, local_origin
+from reboot.dashboard.backend.acp import Config, Host, Peer, body, failure_reason, local_origin
 
 FIXTURE = Path(__file__).with_name('acp_fixture.py').resolve()
 ORIGIN = 'http://127.0.0.1:9999'
@@ -133,6 +135,58 @@ class ACPTests(unittest.IsolatedAsyncioTestCase):
         await self.peer.close()
         with self.assertRaises(ProcessLookupError):
             os.kill(pid, 0)
+
+    async def test_early_session_notifications_are_preserved(self):
+        await self.peer.start()
+        update = await self.event('update')
+        self.assertEqual(update['update']['sessionUpdate'], 'available_commands_update')
+
+    async def test_concurrent_close_waits_for_reaping(self):
+        await self.peer.start()
+        await asyncio.gather(self.peer.close(), self.peer.close())
+        assert self.peer.process is not None and self.peer.closing is not None
+        self.assertIsNotNone(self.peer.process.returncode)
+        self.assertTrue(self.peer.closing.done())
+
+    async def test_cancelled_close_still_reaps_process(self):
+        await self.peer.start()
+        closing = asyncio.create_task(self.peer.close())
+        while not self.peer.closed:
+            await asyncio.sleep(0)
+        closing.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await closing
+        await self.peer.close()
+        assert self.peer.process is not None
+        self.assertIsNotNone(self.peer.process.returncode)
+
+    async def test_auth_diagnostics_do_not_echo_secrets(self):
+        self.config.providers['codex'].append('auth-error')
+        with self.assertLogs('reboot.dashboard.backend.acp', level='WARNING') as logs:
+            with self.assertRaisesRegex(RuntimeError, 'authentication required') as error:
+                await self.peer.start()
+            await self.peer.close()
+        self.assertNotIn('private-test-token', str(error.exception))
+        self.assertNotIn('private-test-token', '\n'.join(logs.output))
+        self.assertIn('local provider CLI', str(error.exception))
+
+    def test_diagnostic_allowlist(self):
+        self.assertIn('expired', failure_reason('OAuth session expired Bearer secret'))
+        self.assertIn('invalid', failure_reason('invalid_refresh_token secret'))
+        self.assertIn('quota', failure_reason('quota exhausted secret'))
+        self.assertNotIn('secret', failure_reason('unrecognized provider failure secret'))
+
+    def test_packaged_config_schema(self):
+        schema = json.loads(files('reboot.dashboard.backend').joinpath('acp_config.schema.json').read_text())
+        Draft202012Validator.check_schema(schema)
+        validator = Draft202012Validator(schema)
+        validator.validate({'providers': {'codex': ['/bin/true', '--argument']}})
+        for value in [{'providers': {}}, {'providers': {'other': ['/bin/true']}},
+                      {'providers': {'codex': ['relative']}},
+                      {'providers': {'codex': ['/bin/true', '']}},
+                      {'providers': {'codex': ['/bin/tr\x00ue']}},
+                      {'providers': {'codex': ['/bin/true']}, 'cwd': '/etc'}]:
+            self.assertFalse(validator.is_valid(value), value)
 
     async def test_stream_disconnect_releases_host(self):
         host = Host(self.config, ORIGIN)

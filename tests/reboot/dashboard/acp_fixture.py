@@ -19,6 +19,11 @@ for line in sys.stdin:
         send({'id': number, 'result': {'protocolVersion': 2 if 'v2' in sys.argv else 1, 'agentCapabilities': {'loadSession': 'no-load' not in sys.argv}}})
     elif method in ('session/new', 'session/load'):
         assert params['cwd'] == os.getcwd()
+        if 'auth-error' in sys.argv:
+            print('Authentication required: Bearer private-test-token', file=sys.stderr, flush=True)
+            send({'id': number, 'error': {'code': -32000, 'message': 'Authentication required: private-test-token'}})
+            continue
+        send({'method': 'session/update', 'params': {'sessionId': 'fixture-session', 'update': {'sessionUpdate': 'available_commands_update', 'availableCommands': []}}})
         send({'id': number, 'result': {'sessionId': 'fixture-session'}})
     elif method == 'session/prompt':
         text = params['prompt'][0]['text']

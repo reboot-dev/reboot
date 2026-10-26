@@ -4,6 +4,7 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 py_library(
     name = "acp_py",
     srcs = ["acp.py"],
+    data = ["acp_config.schema.json"],
     visibility = ["//visibility:public"],
     deps = [requirement("starlette")],
 )

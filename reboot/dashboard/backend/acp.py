@@ -6,6 +6,7 @@ Only trusted CLI configuration can select commands, environment or workspace.
 import asyncio
 import contextlib
 import json
+import logging
 import os
 import secrets
 import signal
@@ -22,6 +23,23 @@ CONFIG_ENV = 'RBT_DASHBOARD_ACP_CONFIG'
 ORIGIN_ENV = 'RBT_DASHBOARD_ACP_ORIGIN'
 MAX_BODY = 65536
 MAX_FRAME = 2 * 1024 * 1024
+logger = logging.getLogger(__name__)
+
+
+def failure_reason(value: Any) -> str:
+    """Classify privately received diagnostics; never echo their contents.
+
+    Even stderr may contain tokens, source, or prompts. Only fixed, actionable
+    categories leave this function, including in backend logs.
+    """
+    text = str(value).lower()
+    if ('expired' in text and ('oauth' in text or 'session' in text)) or 'invalid_refresh_token' in text:
+        return 'Provider login expired or invalid; sign in again using the local provider CLI'
+    if 'authentication required' in text or 'failed to authenticate' in text or 'unauthorized' in text:
+        return 'Provider authentication required; sign in using the local provider CLI'
+    if 'quota' in text or 'rate limit' in text or 'insufficient credits' in text:
+        return 'Provider quota or rate limit reached; check the local provider account'
+    return 'ACP request failed; check the trusted adapter command and local provider configuration'
 
 
 @dataclass(frozen=True)
@@ -87,7 +105,20 @@ class Peer:
         self.capabilities: dict = {}
         self.turn = None
         self.closed = False
+        self.closing: asyncio.Task | None = None
         self.channel = secrets.token_urlsafe(32)
+        self.starting_updates: list[dict] = []
+        self.diagnostic = None
+
+    async def read_stderr(self):
+        assert self.process is not None and self.process.stderr is not None
+        # Drain continuously, with bounded chunks (not lines). Retain no raw
+        # diagnostics, even in logs; a broken adapter must not fill its pipe.
+        while chunk := await self.process.stderr.read(8192):
+            reason = failure_reason(chunk.decode(errors='replace'))
+            if reason != failure_reason('') and reason != self.diagnostic:
+                self.diagnostic = reason
+                logger.warning('ACP %s: %s', self.provider, reason)
 
     def emit(self, event: dict):
         # Never let a disconnected/slow browser cause unbounded memory growth.
@@ -114,11 +145,11 @@ class Peer:
         self.process = await asyncio.create_subprocess_exec(
             *self.config.providers[self.provider], cwd=self.config.cwd,
             stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-            # Adapter diagnostics may contain credentials: don't forward them.
-            stderr=asyncio.subprocess.DEVNULL, start_new_session=True,
+            stderr=asyncio.subprocess.PIPE, start_new_session=True,
             limit=MAX_FRAME,
         )
         self.tasks.append(asyncio.create_task(self.read()))
+        self.tasks.append(asyncio.create_task(self.read_stderr()))
         initialized = await self.call('initialize', {
             'protocolVersion': 1, 'clientCapabilities': {},
             'clientInfo': {'name': 'reboot-dashboard', 'version': '1'},
@@ -137,6 +168,10 @@ class Peer:
             self.session = result['sessionId']
             if not isinstance(self.session, str) or not self.session:
                 raise RuntimeError('Invalid ACP session')
+        for params in self.starting_updates:
+            if params.get('sessionId') == self.session:
+                self.emit({'type': 'update', 'update': params['update']})
+        self.starting_updates.clear()
         self.emit({'type': 'ready', 'channel': self.channel,
                    'provider': self.provider, 'cwd': str(self.config.cwd),
                    'canResume': self.capabilities.get('loadSession') is True})
@@ -155,15 +190,23 @@ class Peer:
                     future = self.pending.get(message.get('id', -1))
                     if future is not None and not future.done():
                         if 'error' in message:
-                            # Raw provider errors may contain auth material.
-                            future.set_exception(RuntimeError('ACP request failed; check local adapter authentication/configuration'))
+                            reason = failure_reason(message['error'])
+                            self.diagnostic = reason
+                            logger.warning('ACP %s request %s: %s', self.provider, message.get('id'), reason)
+                            future.set_exception(RuntimeError(reason))
                         else:
                             future.set_result(message['result'])
                     continue
                 params = message.get('params', {})
                 method = message['method']
-                if method == 'session/update' and params.get('sessionId') == self.session:
-                    self.emit({'type': 'update', 'update': params['update']})
+                if method == 'session/update':
+                    if self.session is None:
+                        # Some adapters notify before session/new returns.
+                        if len(self.starting_updates) >= 32:
+                            raise RuntimeError('Too many startup updates')
+                        self.starting_updates.append(params)
+                    elif params.get('sessionId') == self.session:
+                        self.emit({'type': 'update', 'update': params['update']})
                 elif method == 'session/request_permission' and 'id' in message:
                     if params.get('sessionId') != self.session or self.turn is None:
                         await self.write({'id': message['id'], 'result': {'outcome': {'outcome': 'cancelled'}}})
@@ -213,7 +256,7 @@ class Peer:
                 raise
             except Exception:
                 with contextlib.suppress(asyncio.QueueFull):
-                    self.emit({'type': 'error', 'message': 'ACP prompt failed; reconnect to start again'})
+                    self.emit({'type': 'error', 'message': self.diagnostic or 'ACP prompt failed; reconnect to start again'})
                 await self.close()
                 with contextlib.suppress(asyncio.QueueFull):
                     self.emit({'type': 'closed'})
@@ -233,14 +276,16 @@ class Peer:
                     self.emit({'type': 'closed'})
 
     async def close(self):
-        if self.closed:
-            return
+        if self.closing is None:
+            self.closing = asyncio.create_task(self._close(asyncio.current_task()))
+        await asyncio.shield(self.closing)
+
+    async def _close(self, caller):
         if self.process is not None and self.process.returncode is None:
             with contextlib.suppress(Exception):
                 await self.clear_permissions()
         self.closed = True
-        current = asyncio.current_task()
-        tasks = [t for t in [*self.tasks, self.turn] if t is not None and t is not current]
+        tasks = [t for t in [*self.tasks, self.turn] if t is not None and t is not caller]
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -251,7 +296,9 @@ class Peer:
             await asyncio.sleep(0.1)
             with contextlib.suppress(ProcessLookupError):
                 os.killpg(self.process.pid, signal.SIGKILL)
-            await self.process.wait()
+            # wait() alone does not close pipe transports when the reader was
+            # cancelled, especially if an adapter exited with buffered output.
+            await self.process.communicate()
         for future in self.pending.values():
             if not future.done():
                 future.cancel()
@@ -304,11 +351,15 @@ class Host:
             except asyncio.CancelledError:
                 raise
             except Exception:
-                yield json.dumps({'type': 'error', 'message': 'Cannot start ACP session. Check the trusted command and local provider login; ACP v1 is required.'}) + '\n'
+                yield json.dumps({'type': 'error', 'message': peer.diagnostic or 'Cannot start ACP session. Check the trusted command and local provider login; ACP v1 is required.'}) + '\n'
             finally:
-                await peer.close()
-                if self.active is peer:
-                    self.active = None
+                async def cleanup():
+                    await peer.close()
+                    if self.active is peer:
+                        self.active = None
+                # StreamingResponse cancels its task group on disconnect. Do
+                # not let that interrupt subprocess reaping or release early.
+                await asyncio.shield(asyncio.create_task(cleanup()))
         return StreamingResponse(stream(), media_type='application/x-ndjson', headers={'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no'})
 
     async def action(self, request: Request):

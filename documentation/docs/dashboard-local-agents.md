@@ -7,9 +7,17 @@ between the browser and the adapter. Model providers still receive prompts
 and the context their local agent sends them.
 
 Install adapters explicitly in a trusted directory; the dashboard never runs
-an installer. The integration targets stable **ACP v1**, not draft v2. Tested
-adapter compatibility targets are `@agentclientprotocol/claude-agent-acp@0.95.0`
-and `@agentclientprotocol/codex-acp@2.2.2`:
+an installer. The integration targets stable **ACP v1**, not draft v2. The
+following adapter versions have been probed for initialization, not qualified
+for end-to-end application editing: `@agentclientprotocol/claude-agent-acp@0.95.0`
+and `@agentclientprotocol/codex-acp@2.2.2`. Both negotiate ACP v1. The available
+Claude login expired before a prompt could complete. Codex's bundled CLI
+required authentication at session creation; selecting the existing local CLI
+with its supported `CODEX_PATH` option allowed session creation, but its first
+prompt failed with HTTP 401 and `invalid_refresh_token`. Real-provider edits,
+approvals, cancellation and reload remain unverified until valid local provider
+authentication is available. Deterministic wire-fixture coverage is not provider
+compatibility:
 
 ```sh
 npm install --prefix "$HOME/local-acp" \
@@ -30,6 +38,10 @@ Create a trusted JSON file (replace `/home/developer` with your actual home):
 
 Only configured providers appear in the selector. Commands are argv arrays,
 not shell strings, and the executable must be an absolute executable path.
+The [configuration JSON Schema](https://github.com/reboot-dev/reboot/blob/main/reboot/dashboard/backend/acp_config.schema.json)
+describes the file structure; runtime validation also checks executable access
+and that the application directory exists. The schema is shipped beside
+`reboot.dashboard.backend.acp` as `acp_config.schema.json`.
 The CLI flag may also be placed on a `dashboard --agent-config=...` line in
 `.rbtrc`. Review that configuration before running it: it is executable local
 configuration. No browser request can supply argv, environment, a filesystem
@@ -60,6 +72,11 @@ Trusted argv wrappers can configure a provider's supported sandbox/approval
 controls, but those controls belong to the provider, not this panel.
 
 Authenticate through the provider's local CLI before starting the dashboard.
+Check a harmless prompt, not just `login status`: stored login metadata does
+not prove that a refresh token is valid. Codex's adapter bundles its own CLI;
+its [runtime options](https://github.com/agentclientprotocol/codex-acp#runtime-options)
+include `CODEX_PATH` for selecting an existing compatible local CLI. A trusted
+local wrapper may set that variable without changing global configuration.
 Credentials and inherited environment remain in the backend process; no login,
 API-key, command, or authentication RPC is exposed in the browser. The panel
 shows the adapter's actual permission request and **exact offered options**.
@@ -77,6 +94,12 @@ are unsupported. Never expose the dashboard through a tunnel when agents are
 enabled. A random in-memory channel binds actions to the one connected browser;
 a second connection is refused. Requests and output queues are bounded.
 Raw adapter stderr and provider RPC errors are not forwarded to the page.
+The backend drains stderr without retaining raw contents and logs only fixed
+diagnostic categories. Authentication and quota failures produce actionable
+messages without echoing tokens, provider error payloads or private stderr.
+For an authentication failure, reauthenticate with the provider's local CLI
+outside the dashboard, then reconnect. The dashboard cannot repair expired
+OAuth sessions or authenticate an adapter on your behalf.
 
 ## Lifecycle and supported protocol
 
