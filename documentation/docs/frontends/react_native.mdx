@@ -59,6 +59,8 @@ is for the web.
 ```tsx
 import { RebootClientProvider } from "@reboot-dev/reboot-react";
 import { expoAuth } from "@reboot-dev/reboot-react/native";
+import * as Expo from "expo";
+import Constants from "expo-constants";
 import * as Linking from "expo-linking";
 import * as SecureStore from "expo-secure-store";
 import * as WebBrowser from "expo-web-browser";
@@ -67,6 +69,8 @@ import * as WebBrowser from "expo-web-browser";
 // rebuilds its session machinery whenever this value changes
 // identity.
 const auth = expoAuth({
+  Expo,
+  Constants,
   WebBrowser,
   SecureStore,
   Linking,
@@ -80,13 +84,15 @@ const App = () => (
 );
 ```
 
-`expoAuth` needs three things from Expo, and nothing else:
+`expoAuth` needs these things from Expo, and nothing else:
 
 | Module | What Reboot uses it for |
 | --- | --- |
 | `expo-web-browser` | Opening the identity provider's page in a system browser and detecting the redirect back. |
 | `expo-secure-store` | Keeping the refresh token and this installation's client registration in the device keychain. |
 | `expo-linking` | Deriving the redirect URI from the `scheme` in `app.json`. |
+| `expo` | Telling Expo Go apart from a build of the app. |
+| `expo-constants` | The development server address that the redirect URI points at under Expo Go. |
 
 `ExpoAuthOptions` also takes `redirectPath` (default `"redirect"`,
 giving `myapp://redirect`), `clientName` (shown on the consent screen,
