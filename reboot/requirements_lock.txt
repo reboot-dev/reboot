@@ -275,10 +275,11 @@ bitarray==3.8.0 \
     --hash=sha256:fc98ff43abad61f00515ad9a06213b7716699146e46eabd256cdfe7cb522bd97 \
     --hash=sha256:ff1863f037dad765ef5963efc2e37d399ac023e192a6f2bb394e2377d023cefe
     # via -r reboot/requirements.in
-certifi==2023.11.17 \
-    --hash=sha256:9b469f3a900bf28dc19b8cfbf8019bf47f7fdd1a65a1d4ffb98fc14166beb4d1 \
-    --hash=sha256:e036ab49d5b79556f99cfc2d9320b34cfbe5be05c5871b51de9329f0603b0474
+certifi==2026.10.23 \
+    --hash=sha256:a9895e6e2758b371e0545e321a3a8fd1fcfd9829ada8824a936dfb16aaaf36cd \
+    --hash=sha256:e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1
     # via
+    #   -r reboot/requirements.in
     #   httpcore
     #   httpx
     #   kubernetes-asyncio
