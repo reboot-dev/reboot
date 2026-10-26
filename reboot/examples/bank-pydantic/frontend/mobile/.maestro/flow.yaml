@@ -27,36 +27,17 @@ appId: host.exp.exponent
       id: "sign-in-button"
     timeout: 180000
 
-# Expo Go's first-run onboarding "developer menu" bottom sheet would
-# open over the app, and its scrim would swallow taps meant for the
-# app. The orchestration script launches the project with
-# `EXPO_NO_DEV_MENU=1`, which has Expo Go skip the sheet, so the steps
-# below are a safety net for a launch that lost that parameter. None of
-# the sheet's elements expose a testID, so we match it by the "Bottom
-# Sheet" accessibility label on its container — that label is Expo
-# Go's, from the `@gorhom/bottom-sheet` React Native library it renders
-# the dev menu with (its container defaults `accessibilityLabel` to
-# "Bottom Sheet").
-#
-# When the sheet does open, it does so at an unpredictable delay after
-# the project loads: Expo Go loads its dev menu from a separate JS
-# bundle, and on a slow CI emulator the sheet can trail the app's own
-# interactivity by 15+ seconds — long enough to outlast a one-shot
-# conditional check (Maestro polls a `runFlow`/`when` condition for at
-# most 7 seconds, its `optionalLookupTimeoutMs`) and then swallow a
-# later tap. So wait for the sheet before driving the app, tolerating
-# its absence (`optional` keeps the timeout from failing the flow),
-# which is the expected outcome.
+# Expo Go's first-run onboarding sheet would swallow taps meant for the
+# app. The test script launches with `EXPO_NO_DEV_MENU=1`, which keeps
+# it closed; waiting for it here, tolerating its absence, is a safety
+# net for a launch that lost that parameter.
 - extendedWaitUntil:
     visible: "Bottom Sheet"
     timeout: 30000
     optional: true
 
-# Dismiss the sheet (when it did open) with a downward swipe (the
-# library's built-in dismiss gesture): one motion that slides the sheet
-# and its scrim away and returns to the app. Then confirm the dismissal
-# landed, so a failed swipe surfaces here as a named step instead of as
-# a swallowed tap further down the flow.
+# Dismiss the sheet, when it did open, with a downward swipe, and
+# confirm it is gone so a failed swipe fails here by name.
 - runFlow:
     when:
       visible: "Bottom Sheet"
