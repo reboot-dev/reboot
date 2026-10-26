@@ -95,15 +95,15 @@ class Peer:
 
     def __init__(self, config: Config, provider: str):
         self.config, self.provider = config, provider
-        self.process = None
+        self.process: asyncio.subprocess.Process | None = None
         self.tasks: list[asyncio.Task] = []
         self.pending: dict[int, asyncio.Future] = {}
         self.permissions: dict[str, tuple[Any, list[dict]]] = {}
         self.events: asyncio.Queue = asyncio.Queue(maxsize=256)
         self.sequence = 0
-        self.session = None
+        self.session: str | None = None
         self.capabilities: dict = {}
-        self.turn = None
+        self.turn: asyncio.Task | None = None
         self.cancelling = False
         self.cancellation: asyncio.Task | None = None
         self.closed = False
