@@ -1,7 +1,12 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "strict": true
+    "strict": true,
+    // `expo/types` declares the Expo globals, such as `process.env`
+    // and Metro's `require`. Expo's CLI references it from an
+    // `expo-env.d.ts` that it generates on `expo start`, but `tsc`
+    // also runs on its own, so reference it here directly.
+    "types": ["expo/types"]
   },
   "include": ["**/*.ts", "**/*.tsx"]
 }

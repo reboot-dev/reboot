@@ -14,6 +14,7 @@
     },
     "web": {
       "bundler": "metro"
-    }
+    },
+    "plugins": ["expo-status-bar"]
   }
 }
