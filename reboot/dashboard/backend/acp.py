@@ -10,7 +10,7 @@ import logging
 import os
 import secrets
 import signal
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -46,6 +46,7 @@ def failure_reason(value: Any) -> str:
 class Config:
     cwd: Path
     providers: dict[str, list[str]]
+    default_models: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def read(cls, filename: str, cwd: Path) -> 'Config':
@@ -55,14 +56,26 @@ class Config:
         providers = value['providers']
         if not isinstance(providers, dict) or not providers:
             raise ValueError('ACP providers must be a non-empty object')
-        for name, command in providers.items():
+        commands, defaults = {}, {}
+        for name, entry in providers.items():
+            command = entry
+            if isinstance(entry, dict):
+                if not {'command'} <= set(entry) or set(entry) - {'command', 'default_model'}:
+                    raise ValueError('ACP provider accepts only command and optional default_model')
+                command = entry['command']
+                if 'default_model' in entry:
+                    model = entry['default_model']
+                    if not isinstance(model, str) or not model or '\x00' in model:
+                        raise ValueError('ACP default_model must be a non-empty string')
+                    defaults[name] = model
             if name not in ('claude', 'codex') or not isinstance(command, list) or not command:
                 raise ValueError('ACP provider must be claude or codex with an argv array')
             if not all(isinstance(arg, str) and arg and '\x00' not in arg for arg in command):
                 raise ValueError('ACP argv must contain non-empty strings')
             if not Path(command[0]).is_absolute() or not os.access(command[0], os.X_OK):
                 raise ValueError('ACP executable must be an executable absolute path')
-        return cls(cwd.resolve(strict=True), providers)
+            commands[name] = command
+        return cls(cwd.resolve(strict=True), commands, defaults)
 
 
 def local_origin(origin: str) -> bool:
@@ -111,6 +124,78 @@ class Peer:
         self.channel = secrets.token_urlsafe(32)
         self.starting_updates: list[dict] = []
         self.diagnostic: str | None = None
+        self.model: dict | None = None
+        self.setting_model = False
+
+    def model_options(self, result: dict):
+        """Project only an advertised model selector, never permission/mode config.
+
+        ACP v1 configOptions are authoritative; no provider-specific model list
+        or legacy unstable set_model calls are guessed when they are absent.
+        """
+        self.model = None
+        for option in result.get('configOptions') or []:
+            if not isinstance(option, dict) or option.get('type') != 'select':
+                continue
+            if option.get('category') != 'model' and not (option.get('category') is None and option.get('id') == 'model'):
+                continue
+            if not isinstance(option.get('id'), str) or not isinstance(option.get('currentValue'), str):
+                raise RuntimeError('Invalid ACP model configuration')
+            choices = []
+            for item in option.get('options', []):
+                # ACP allows flat values or one level of named groups.
+                for value in item.get('options', [item]):
+                    if not isinstance(value.get('value'), str) or not isinstance(value.get('name'), str):
+                        raise RuntimeError('Invalid ACP model option')
+                    choices.append({'value': value['value'], 'name': value['name']})
+            if len({v['value'] for v in choices}) != len(choices):
+                raise RuntimeError('Duplicate ACP model option')
+            self.model = {'id': option['id'], 'currentValue': option['currentValue'], 'options': choices}
+            break
+        self.emit({'type': 'models', 'model': self.model})
+
+    def session_update(self, update: dict):
+        if update.get('sessionUpdate') == 'config_option_update':
+            self.model_options(update)
+        else:
+            self.emit({'type': 'update', 'update': update})
+
+    async def set_model(self, value: str):
+        if self.closed or self.cancelling or self.turn is not None or self.permissions or self.setting_model or self.session is None:
+            raise HTTPException(409, 'Model cannot change while the agent is busy')
+        if self.model is None or value not in [item['value'] for item in self.model['options']]:
+            raise HTTPException(409, 'Model is not advertised by this agent')
+        self.setting_model = True
+        try:
+            result = await self.call('session/set_config_option', {
+                'sessionId': self.session, 'configId': self.model['id'], 'value': value,
+            })
+            self.model_options(result)
+            if self.model is None or self.model['currentValue'] != value:
+                raise RuntimeError('Agent did not confirm the selected model')
+        except asyncio.CancelledError:
+            # An abandoned HTTP action must not unlock prompts while a setter
+            # could still be applying in the adapter.
+            self.model = None
+            await self.close()
+            while self.events.full():
+                self.events.get_nowait()
+            self.emit({'type': 'closed'})
+            raise
+        except Exception:
+            # A timeout/disconnect leaves model state uncertain. Do not let a
+            # later prompt run under a silently different model.
+            self.model = None
+            with contextlib.suppress(asyncio.QueueFull):
+                self.emit({'type': 'models', 'model': None})
+                self.emit({'type': 'error', 'message': 'Model change failed; reconnect to rediscover agent models'})
+            await self.close()
+            while self.events.full():
+                self.events.get_nowait()
+            self.emit({'type': 'closed'})
+            raise HTTPException(502, 'Model change failed; reconnect to rediscover agent models')
+        finally:
+            self.setting_model = False
 
     async def read_stderr(self):
         assert self.process is not None and self.process.stderr is not None
@@ -164,16 +249,23 @@ class Peer:
             if self.capabilities.get('loadSession') is not True:
                 raise ValueError('This adapter cannot load previous sessions')
             self.session = previous
-            await self.call('session/load', {**params, 'sessionId': previous})
+            result = await self.call('session/load', {**params, 'sessionId': previous})
         else:
             result = await self.call('session/new', params)
             self.session = result['sessionId']
             if not isinstance(self.session, str) or not self.session:
                 raise RuntimeError('Invalid ACP session')
-        for params in self.starting_updates:
-            if params.get('sessionId') == self.session:
-                self.emit({'type': 'update', 'update': params['update']})
+        self.model_options(result)
+        for notification in self.starting_updates:
+            if notification.get('sessionId') == self.session:
+                self.session_update(notification['update'])
         self.starting_updates.clear()
+        default = self.config.default_models.get(self.provider) if not previous else None
+        if default is not None:
+            if self.model is None or default not in [item['value'] for item in self.model['options']]:
+                self.diagnostic = 'Configured default_model is not advertised by this agent; update the trusted configuration'
+                raise ValueError(self.diagnostic)
+            await self.set_model(default)
         self.emit({'type': 'ready', 'channel': self.channel,
                    'provider': self.provider, 'cwd': str(self.config.cwd),
                    'canResume': self.capabilities.get('loadSession') is True})
@@ -208,7 +300,7 @@ class Peer:
                             raise RuntimeError('Too many startup updates')
                         self.starting_updates.append(params)
                     elif params.get('sessionId') == self.session:
-                        self.emit({'type': 'update', 'update': params['update']})
+                        self.session_update(params['update'])
                 elif method == 'session/request_permission' and 'id' in message:
                     if self.cancelling or self.closed or params.get('sessionId') != self.session or self.turn is None or self.turn.done():
                         await self.write({'id': message['id'], 'result': {'outcome': {'outcome': 'cancelled'}}})
@@ -248,7 +340,7 @@ class Peer:
         self.emit({'type': 'permissions_cleared'})
 
     async def prompt(self, text: str):
-        if self.closed or self.cancelling or self.turn is not None:
+        if self.closed or self.cancelling or self.turn is not None or self.setting_model:
             raise HTTPException(409, 'A turn is already running')
         async def run():
             try:
@@ -409,7 +501,7 @@ class Host:
         if peer is None or not isinstance(value.get('channel'), str) or not secrets.compare_digest(value['channel'], peer.channel):
             raise HTTPException(409)
         kind = value.get('type')
-        fields = {'prompt': {'text'}, 'permission': {'request', 'option'}, 'cancel': set()}
+        fields = {'prompt': {'text'}, 'permission': {'request', 'option'}, 'cancel': set(), 'model': {'value'}}
         if not isinstance(kind, str) or kind not in fields or set(value) != {'type', 'channel'} | fields[kind]:
             raise HTTPException(400)
         if kind == 'prompt':
@@ -420,6 +512,10 @@ class Host:
             if not isinstance(value['request'], str) or not isinstance(value['option'], str):
                 raise HTTPException(400)
             await peer.permission(value['request'], value['option'])
+        elif kind == 'model':
+            if not isinstance(value['value'], str):
+                raise HTTPException(400)
+            await peer.set_model(value['value'])
         else:
             await peer.cancel()
         return JSONResponse({'ok': True}, headers={'Cache-Control': 'no-store'})

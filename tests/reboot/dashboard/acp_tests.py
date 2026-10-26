@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from typing import Any
 
 import anyio
 from importlib.resources import files
@@ -57,6 +58,206 @@ class ACPTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(namespace['greeting'](), 'edited')
         with self.assertRaises(HTTPException):
             await self.peer.permission(permission['request'], 'allow')
+
+    async def test_models_and_standard_config_rpc_for_both_providers(self):
+        self.config.providers['codex'].append('models')
+        for provider in ('codex', 'claude'):
+            self.config.providers[provider] = self.config.providers['codex']
+            peer = Peer(self.config, provider)
+            try:
+                await peer.start()
+                assert peer.model is not None
+                self.assertEqual(peer.model['currentValue'], 'fixture-small')
+                self.assertEqual([v['value'] for v in peer.model['options']], ['fixture-small', 'fixture-large'])
+                await peer.set_model('fixture-large')
+                self.assertEqual(peer.model['currentValue'], 'fixture-large')
+                self.assertEqual(json.loads((self.cwd / 'model-request.json').read_text()),
+                                 {'sessionId': 'fixture-session', 'configId': 'fixture-model', 'value': 'fixture-large'})
+            finally:
+                await peer.close()
+
+    async def test_model_changes_require_advertisement_and_idle(self):
+        self.config.providers['codex'].append('models')
+        await self.peer.start()
+        for value in ('invented', 'ask'):
+            with self.assertRaises(HTTPException) as error:
+                await self.peer.set_model(value)
+            self.assertEqual(error.exception.status_code, 409)
+        self.assertFalse((self.cwd / 'model-request.json').exists())
+        await self.peer.prompt('edit')
+        await self.event('permission')
+        with self.assertRaises(HTTPException):
+            await self.peer.set_model('fixture-large')
+        await self.peer.cancel()
+        await self.peer.set_model('fixture-large')
+
+    async def test_model_change_fences_prompts_and_concurrent_changes(self):
+        self.config.providers['codex'].append('models')
+        await self.peer.start()
+        entered, release = asyncio.Event(), asyncio.Event()
+        original = self.peer.call
+
+        async def delayed_call(*args, **kwargs):
+            entered.set()
+            await release.wait()
+            return await original(*args, **kwargs)
+
+        with patch.object(self.peer, 'call', delayed_call):
+            change = asyncio.create_task(self.peer.set_model('fixture-large'))
+            await entered.wait()
+            try:
+                with self.assertRaises(HTTPException):
+                    await self.peer.prompt('edit')
+                with self.assertRaises(HTTPException):
+                    await self.peer.set_model('fixture-small')
+            finally:
+                release.set()
+                await change
+
+    def test_model_projection_ignores_other_config_and_unknown_types(self):
+        model: dict[str, Any] = {'id': 'model', 'type': 'select', 'currentValue': 'one',
+                 'options': [{'value': 'one', 'name': 'One'}]}
+        self.peer.model_options({'configOptions': [model]})
+        self.assertEqual(self.peer.model, {key: value for key, value in model.items() if key != 'type'})
+        self.peer.model_options({'configOptions': [{**model, 'category': 'mode'}]})
+        self.assertIsNone(self.peer.model)
+        self.peer.model_options({'configOptions': [{**model, 'type': 'future-type'}]})
+        self.assertIsNone(self.peer.model)
+        with self.assertRaises(RuntimeError):
+            self.peer.model_options({'configOptions': [{**model, 'options': model['options'] * 2}]})
+
+    async def test_model_change_requires_confirmation_without_fallback(self):
+        self.config.providers['codex'].append('models')
+        await self.peer.start()
+        async def unconfirmed(*args, **kwargs):
+            return {'configOptions': []}
+        with patch.object(self.peer, 'call', unconfirmed):
+            with self.assertRaises(HTTPException) as error:
+                await self.peer.set_model('fixture-large')
+        self.assertEqual(error.exception.status_code, 502)
+        self.assertTrue(self.peer.closed)
+        self.assertIsNone(self.peer.model)
+
+    async def test_cancelled_model_action_closes_uncertain_session(self):
+        self.config.providers['codex'].append('models')
+        await self.peer.start()
+        entered = asyncio.Event()
+        async def blocked(*args, **kwargs):
+            entered.set()
+            await asyncio.Event().wait()
+        with patch.object(self.peer, 'call', blocked):
+            change = asyncio.create_task(self.peer.set_model('fixture-large'))
+            await entered.wait()
+            change.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await change
+        self.assertTrue(self.peer.closed)
+        self.assertFalse(self.peer.setting_model)
+        self.assertIsNone(self.peer.model)
+        with self.assertRaises(HTTPException):
+            await self.peer.prompt('edit')
+
+    async def test_unavailable_models_do_not_guess_legacy_api(self):
+        await self.peer.start()
+        self.assertIsNone(self.peer.model)
+        with self.assertRaises(HTTPException):
+            await self.peer.set_model('invented')
+
+    async def test_default_model_applies_only_to_new_sessions(self):
+        self.config.providers['codex'].append('models')
+        self.config.default_models['codex'] = 'fixture-large'
+        await self.peer.start()
+        assert self.peer.model is not None
+        self.assertEqual(self.peer.model['currentValue'], 'fixture-large')
+        self.assertTrue((self.cwd / 'model-request.json').exists())
+        await self.peer.close()
+        (self.cwd / 'model-request.json').unlink()
+        self.config.default_models['codex'] = 'fixture-small'
+        self.peer = Peer(self.config, 'codex')
+        await self.peer.start('fixture-session')
+        assert self.peer.model is not None
+        self.assertEqual(self.peer.model['currentValue'], 'fixture-large')
+        self.assertFalse((self.cwd / 'model-request.json').exists())
+
+    async def test_unadvertised_default_fails_without_fallback(self):
+        self.config.default_models['codex'] = 'not-advertised'
+        with self.assertRaisesRegex(ValueError, 'not advertised'):
+            await self.peer.start()
+        self.assertFalse((self.cwd / 'model-request.json').exists())
+
+    async def test_model_error_is_sanitized_and_connection_closed(self):
+        self.config.providers['codex'].extend(['models', 'model-error'])
+        await self.peer.start()
+        with self.assertRaises(HTTPException) as error:
+            await self.peer.set_model('fixture-large')
+        self.assertEqual(error.exception.status_code, 502)
+        self.assertNotIn('private-test-token', str(error.exception))
+        self.assertTrue(self.peer.closed)
+        self.assertIsNone(self.peer.model)
+
+    async def test_model_failure_with_full_queue_still_reaps(self):
+        self.config.providers['codex'].extend(['models', 'model-error'])
+        await self.peer.start()
+        while not self.peer.events.full():
+            self.peer.emit({'type': 'heartbeat'})
+        with self.assertRaises(HTTPException):
+            await self.peer.set_model('fixture-large')
+        self.assertTrue(self.peer.closed)
+        assert self.peer.process is not None
+        self.assertIsNotNone(self.peer.process.returncode)
+        await self.event('closed')
+
+    async def test_model_update_replaces_choices_and_can_remove_support(self):
+        self.config.providers['codex'].extend(['models', 'model-update'])
+        await self.peer.start()
+        while self.peer.model is not None and self.peer.model['currentValue'] != 'fixture-large':
+            await self.event('models')
+        assert self.peer.model is not None
+        self.peer.session_update({'sessionUpdate': 'config_option_update', 'configOptions': []})
+        self.assertIsNone(self.peer.model)
+
+    async def test_model_http_action_is_bound_and_not_arbitrary_config(self):
+        self.config.providers['codex'].append('models')
+        await self.peer.start()
+        host = Host(self.config, ORIGIN)
+        host.active = self.peer
+        for value in [
+            {'type': 'model', 'channel': 'foreign', 'value': 'fixture-large'},
+            {'type': 'model', 'channel': self.peer.channel, 'value': 'fixture-large', 'configId': 'mode'},
+            {'type': 'model', 'channel': self.peer.channel, 'value': False},
+            {'type': 'model', 'channel': self.peer.channel, 'value': 'ask'},
+        ]:
+            with self.assertRaises(HTTPException):
+                await host.action(request(value))
+        response = await host.action(request({'type': 'model', 'channel': self.peer.channel, 'value': 'fixture-large'}))
+        self.assertEqual(response.status_code, 200)
+        assert self.peer.model is not None
+        self.assertEqual(self.peer.model['currentValue'], 'fixture-large')
+
+    def test_typed_provider_config_and_schema_agree(self):
+        schema = json.loads(files('reboot.dashboard.backend').joinpath('acp_config.schema.json').read_text())
+        validator = Draft202012Validator(schema)
+        path = self.cwd / 'config.json'
+        valid_entries: list[Any] = [[sys.executable], {'command': [sys.executable]},
+                                   {'command': [sys.executable], 'default_model': 'advertised-value'}]
+        for entry in valid_entries:
+            value = {'providers': {'codex': entry}}
+            validator.validate(value)
+            path.write_text(json.dumps(value))
+            config = Config.read(str(path), self.cwd)
+            self.assertEqual(config.providers['codex'], [sys.executable])
+            self.assertEqual(config.default_models, {'codex': 'advertised-value'} if isinstance(entry, dict) and 'default_model' in entry else {})
+        for entry in [{'command': [sys.executable], 'default_model': ''},
+                      {'command': [sys.executable], 'default_model': None},
+                      {'command': [sys.executable], 'default_model': 1},
+                      {'command': [sys.executable], 'default_model': 'bad\x00value'},
+                      {'command': [sys.executable], 'environment': {}},
+                      {'default_model': 'missing-command'}]:
+            value = {'providers': {'codex': entry}}
+            self.assertFalse(validator.is_valid(value))
+            path.write_text(json.dumps(value))
+            with self.assertRaises(ValueError):
+                Config.read(str(path), self.cwd)
 
     async def test_deny_does_not_edit(self):
         await self.peer.start()

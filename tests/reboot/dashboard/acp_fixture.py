@@ -10,6 +10,17 @@ def send(value):
 
 
 prompt_id = None
+model = 'fixture-small'
+
+
+def config_options():
+    return [
+        {'id': 'mode', 'category': 'mode', 'type': 'select', 'currentValue': 'ask', 'options': [{'value': 'ask', 'name': 'Ask'}]},
+        {'id': 'fixture-model', 'category': 'model', 'type': 'select', 'currentValue': model,
+         'options': [{'group': 'fixture', 'name': 'Fixture', 'options': [{'value': 'fixture-small', 'name': 'Small'}, {'value': 'fixture-large', 'name': 'Large'}]}]},
+    ]
+
+
 for line in sys.stdin:
     message = json.loads(line)
     method = message.get('method')
@@ -24,7 +35,25 @@ for line in sys.stdin:
             send({'id': number, 'error': {'code': -32000, 'message': 'Authentication required: private-test-token'}})
             continue
         send({'method': 'session/update', 'params': {'sessionId': 'fixture-session', 'update': {'sessionUpdate': 'available_commands_update', 'availableCommands': []}}})
-        send({'id': number, 'result': {'sessionId': 'fixture-session'}})
+        if method == 'session/load':
+            model = 'fixture-large'
+        result: dict = {'sessionId': 'fixture-session'}
+        if 'models' in sys.argv:
+            result['configOptions'] = config_options()
+        send({'id': number, 'result': result})
+        if 'model-update' in sys.argv:
+            model = 'fixture-large'
+            send({'method': 'session/update', 'params': {'sessionId': 'fixture-session', 'update': {'sessionUpdate': 'config_option_update', 'configOptions': config_options()}}})
+    elif method == 'session/set_config_option':
+        assert params['sessionId'] == 'fixture-session'
+        assert params['configId'] == 'fixture-model'
+        assert params['value'] in ['fixture-small', 'fixture-large']
+        if 'model-error' in sys.argv:
+            send({'id': number, 'error': {'code': -32602, 'message': 'private-test-token'}})
+        else:
+            model = params['value']
+            Path('model-request.json').write_text(json.dumps(params))
+            send({'id': number, 'result': {'configOptions': config_options()}})
     elif method == 'session/prompt':
         text = params['prompt'][0]['text']
         if text == 'crash':

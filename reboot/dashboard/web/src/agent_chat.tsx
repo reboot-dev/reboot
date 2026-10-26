@@ -7,7 +7,8 @@ type Option = { optionId: string; name: string; kind: string };
 type ToolContent = { type: string; path?: string; oldText?: string; newText?: string; content?: { type: string; text?: string } };
 type Tool = { toolCallId: string; title?: string; status?: string; content?: ToolContent[]; rawInput?: unknown };
 type Permission = { request: string; toolCall: Tool; options: Option[] };
-type Event = { type: string; channel?: string; cwd?: string; canResume?: boolean; message?: string; stopReason?: string; request?: string; toolCall?: Tool; options?: Option[]; update?: Tool & { sessionUpdate: string; content?: any; entries?: unknown } };
+type Model = { id: string; currentValue: string; options: { value: string; name: string }[] };
+type Event = { type: string; model?: Model | null; channel?: string; cwd?: string; canResume?: boolean; message?: string; stopReason?: string; request?: string; toolCall?: Tool; options?: Option[]; update?: Tool & { sessionUpdate: string; content?: any; entries?: unknown } };
 
 /** Text-only ACP v1 client. Commands, cwd and provider sessions stay server-owned. */
 export function AgentChat(): JSX.Element | null {
@@ -21,6 +22,8 @@ export function AgentChat(): JSX.Element | null {
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [model, setModel] = useState<Model | null>(null);
+  const [settingModel, setSettingModel] = useState(false);
   const [resume, setResume] = useState(false);
   const [cwd, setCwd] = useState("");
   const [draft, setDraft] = useState("");
@@ -61,6 +64,8 @@ export function AgentChat(): JSX.Element | null {
     if (event.type === "ready") {
       channel.current = event.channel; setConnected(true); setConnecting(false);
       setCwd(event.cwd ?? ""); setResume(event.canResume === true); setStatus("Ready");
+    } else if (event.type === "models") {
+      setModel(event.model ?? null);
     } else if (event.type === "update" && event.update) {
       const update = event.update;
       if (["agent_message_chunk", "user_message_chunk"].includes(update.sessionUpdate) && update.content?.type === "text") {
@@ -83,7 +88,7 @@ export function AgentChat(): JSX.Element | null {
   const connect = async (load: boolean) => {
     stream.current?.abort();
     const abort = new AbortController(); stream.current = abort;
-    setConnecting(true); setError(""); setText(""); setTools({}); setPermissions([]);
+    setConnecting(true); setError(""); setText(""); setTools({}); setPermissions([]); setModel(null); setSettingModel(false);
     try {
       const response = await request("connect", { provider, resume: load }, abort.signal);
       if (!response.ok || !response.body) throw new Error(`Connection refused (${response.status})`);
@@ -102,7 +107,7 @@ export function AgentChat(): JSX.Element | null {
       if (!abort.signal.aborted) setError(String(reason));
     } finally {
       if (stream.current === abort) {
-        channel.current = undefined; setConnected(false); setConnecting(false); setBusy(false); setPermissions([]); setStatus("Disconnected");
+        channel.current = undefined; setConnected(false); setConnecting(false); setBusy(false); setPermissions([]); setModel(null); setStatus("Disconnected");
       }
     }
   };
@@ -113,6 +118,19 @@ export function AgentChat(): JSX.Element | null {
     <select aria-label="Agent provider" disabled={connected || connecting} value={provider} onChange={e => { setProvider(e.target.value); setResume(false); }}>
       {providers.map(name => <option key={name}>{name}</option>)}
     </select>
+    <label>Model <select aria-label="Agent model" value={model?.currentValue ?? ""}
+      disabled={!connected || busy || permissions.length > 0 || settingModel || !model || model.options.length === 0}
+      onChange={event => {
+        const value = event.target.value;
+        setSettingModel(true); setError("");
+        // The streamed agent state, not the browser choice, owns currentValue.
+        void action({ type: "model", value }).catch(reason => setError(String(reason)))
+          .finally(() => setSettingModel(false));
+      }}>
+      {!model && <option value="">{connected ? "Model selection unavailable — agent did not advertise options" : "Connect to discover models"}</option>}
+      {model && !model.options.some(option => option.value === model.currentValue) && <option value={model.currentValue}>{model.currentValue} (current; not offered)</option>}
+      {model?.options.map(option => <option key={option.value} value={option.value}>{option.name} ({option.value})</option>)}
+    </select></label>
     <button disabled={connected || connecting} onClick={() => void connect(false)}>New session</button>
     <button disabled={connected || connecting || !resume} onClick={() => void connect(true)}>Resume last session</button>
     <button disabled={!connected && !connecting} onClick={() => stream.current?.abort()}>Disconnect</button>
@@ -133,12 +151,12 @@ export function AgentChat(): JSX.Element | null {
       }}>{option.name} ({option.kind})</button>)}
     </section>)}
     <form onSubmit={event => {
-      event.preventDefault(); const prompt = draft.trim(); if (!prompt || busy) return;
+      event.preventDefault(); const prompt = draft.trim(); if (!prompt || busy || settingModel) return;
       setBusy(true); setText(current => current + `\nYou: ${prompt}\n`); setDraft(""); setError("");
       void action({ type: "prompt", text: prompt }).catch(reason => { setBusy(false); setError(String(reason)); });
     }}>
-      <textarea aria-label="Message agent" value={draft} maxLength={32000} disabled={!connected || busy} onChange={e => setDraft(e.target.value)} />
-      <button disabled={!connected || busy || !draft.trim()}>Send</button>
+      <textarea aria-label="Message agent" value={draft} maxLength={32000} disabled={!connected || busy || settingModel} onChange={e => setDraft(e.target.value)} />
+      <button disabled={!connected || busy || settingModel || !draft.trim()}>Send</button>
       <button type="button" disabled={!connected || !busy} onClick={() => { setStatus("Cancelling…"); void action({ type: "cancel" }).catch(reason => setError(String(reason))); }}>Cancel turn</button>
     </form>
   </aside>;

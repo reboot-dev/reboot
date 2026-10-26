@@ -47,6 +47,54 @@ The CLI flag may also be placed on a `dashboard --agent-config=...` line in
 configuration. No browser request can supply argv, environment, a filesystem
 path, MCP servers, or an arbitrary provider session ID.
 
+## Model selection and trusted defaults
+
+Connect to discover the agent's **current model and advertised choices**. The
+panel does not maintain a model catalog or guess a provider default. It uses
+ACP v1 `configOptions` (`category: "model"`, or uncategorized `id: "model"`)
+and `session/set_config_option`, including grouped choices and complete
+`config_option_update` notifications. Choices are rediscovered on new/load;
+changes are disabled during a turn, pending approval or another model change.
+The backend accepts only a value in its current advertised model selector;
+the browser cannot set arbitrary config IDs, permission modes or commands.
+
+The original argv-array form remains supported. To set a default for **new**
+sessions, use a provider object with `command` and optional `default_model`:
+
+```json
+{
+  "providers": {
+    "codex": {
+      "command": ["/home/developer/local-acp/node_modules/.bin/codex-acp"],
+      "default_model": "<exact value shown by your connected agent>"
+    },
+    "claude": ["/home/developer/local-acp/node_modules/.bin/claude-agent-acp"]
+  }
+}
+```
+
+Replace the placeholder with an exact advertised value, not a display name.
+No `CODEX_CONFIG` encoding is necessary. With no configured default, the
+agent's current model is unchanged; **Resume last session** preserves the
+loaded session's model rather than reapplying the new-session default. An
+unadvertised configured default stops connection with an explicit error:
+there is no silent fallback. A failed model-change RPC disconnects because
+its final state may be uncertain; reconnect to rediscover the actual state.
+No prompt is automatically replayed.
+
+Support is capability-based for both Codex and Claude, not inferred from the
+provider name. Agents without a supported model config selector show
+**Model selection unavailable**; the legacy unstable `session/set_model` API
+is not assumed. The pinned Codex ACP 2.2.2 advertises the standard model config
+selector under ACP v1. Its choices depend on the selected Codex CLI and
+account. Adapter-advertised choices are not a guarantee of account access or
+successful inference: some adapters include a locally configured current
+model even when it is missing from the underlying runtime's model list.
+Select a model supported by your actual runtime, or update that runtime via
+its normal installation workflow. Model discovery does not validate a prompt,
+authentication refresh or capacity. Claude model selection remains unqualified
+against a live authenticated account.
+
 ## Application workspace and reload
 
 The CLI resolves the working directory using the existing `.rbtrc` /
@@ -104,7 +152,7 @@ OAuth sessions or authenticate an adapter on your behalf.
 ## Lifecycle and supported protocol
 
 The browser opens a same-origin authenticated POST stream and sends semantic
-prompt, permission and cancel actions. ACP runs as newline-delimited JSON-RPC
+prompt, model, permission and cancel actions. ACP runs as newline-delimited JSON-RPC
 on stdio. The host negotiates protocol version 1, creates one session, streams
 text, plans, tool status and file before/after diffs, and answers permission
 requests. Other agent-to-client requests receive method-not-supported. Rich
@@ -127,4 +175,5 @@ is independent. Reconnection and retry never replay a prompt automatically.
 
 Protocol references: [initialization](https://agentclientprotocol.com/protocol/v1/initialization),
 [session setup](https://agentclientprotocol.com/protocol/v1/session-setup),
+[session config options](https://agentclientprotocol.com/protocol/v1/session-config-options),
 [tool permissions and diffs](https://agentclientprotocol.com/protocol/v1/tool-calls).
