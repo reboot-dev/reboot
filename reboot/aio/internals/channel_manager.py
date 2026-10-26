@@ -22,6 +22,7 @@ from reboot.aio.types import (
 )
 from reboot.settings import GRPC_CLIENT_OPTIONS
 from reboot.ssl.localhost import LOCALHOST_CRT_DATA, is_localhost
+from reboot.ssl.roots import public_root_certificates
 from typing import Optional
 
 logger = get_logger(__name__)
@@ -123,7 +124,11 @@ class _ChannelManager:
                 options=GRPC_CLIENT_OPTIONS,
                 credentials=grpc.ssl_channel_credentials(
                     root_certificates=LOCALHOST_CRT_DATA
-                    if is_localhost(address) else None,
+                    # Need to use `certifi`'s roots because the version
+                    # of `grpcio` we are using (as of the time of
+                    # writing this comment, 1.64.3) has compromised
+                    # roots.
+                    if is_localhost(address) else public_root_certificates(),
                 ),
                 interceptors=aio_client_interceptors(),
             )

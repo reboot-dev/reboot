@@ -1,0 +1,11 @@
+load("@rules_python//python:defs.bzl", "py_test")
+
+py_test(
+    name = "roots_test_py",
+    size = "small",
+    srcs = [":roots_test.py"],
+    main = "roots_test.py",
+    deps = [
+        "//reboot/ssl:roots_py",
+    ],
+)
