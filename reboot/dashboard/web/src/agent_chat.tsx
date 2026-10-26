@@ -1,5 +1,6 @@
 import { useRebootClient } from "@reboot-dev/reboot-react";
 import { useEffect, useRef, useState } from "react";
+import type { JSX } from "react";
 import { IN_MCP_HOST } from "./constants";
 
 type Option = { optionId: string; name: string; kind: string };
@@ -9,7 +10,7 @@ type Permission = { request: string; toolCall: Tool; options: Option[] };
 type Event = { type: string; channel?: string; cwd?: string; canResume?: boolean; message?: string; stopReason?: string; request?: string; toolCall?: Tool; options?: Option[]; update?: Tool & { sessionUpdate: string; content?: any; entries?: unknown } };
 
 /** Text-only ACP v1 client. Commands, cwd and provider sessions stay server-owned. */
-export function AgentChat() {
+export function AgentChat(): JSX.Element | null {
   const client = useRebootClient();
   const token = useRef(client.bearerToken);
   token.current = client.bearerToken;
@@ -118,7 +119,7 @@ export function AgentChat() {
     <small>{cwd}</small>
     {error && <p role="alert">{error}</p>}
     <pre className="agent-chat-transcript" aria-live="polite">{text}</pre>
-    {Object.values(tools).map(tool => <details key={tool.toolCallId} open={tool.status !== "completed"}>
+    {Object.values<Tool>(tools).map(tool => <details key={tool.toolCallId} open={tool.status !== "completed"}>
       <summary>{tool.title ?? tool.toolCallId} — {tool.status ?? "pending"}</summary>
       {tool.content?.map((content, index) => content.type === "diff"
         ? <section key={index}><strong>{content.path}</strong><pre aria-label="Before edit">{content.oldText ?? "(new file)"}</pre><pre aria-label="After edit">{content.newText}</pre></section>
