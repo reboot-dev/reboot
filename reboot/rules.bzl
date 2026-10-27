@@ -94,7 +94,11 @@ def py_reboot_library(
         # `log.*` modules that the generated code (`reboot.py.j2`)
         # imports. The `reboot` and `rbt.v1alpha1` package roots are
         # PEP 420 namespace packages (no `__init__.py`), so they have
-        # no library target and resolve implicitly.
+        # no library target and resolve implicitly. Targets from the
+        # `reboot` workspace are reached by their external label, never
+        # a local one, so that a `pip_package` in another workspace that
+        # maps `com_github_reboot_dev_reboot` to a requirement (see
+        # `workspace_requirements`) leaves them out of its wheel.
         deps = [
             requirement("grpcio"),
             requirement("grpcio-status"),
@@ -103,10 +107,10 @@ def py_reboot_library(
             requirement("tzlocal"),
             "@com_github_reboot_dev_reboot//reboot/aio/backoff:python",
             "@com_github_reboot_dev_reboot//log:log_py",
-            "//reboot:versioning_py",
-            "//reboot/mcp:context_py",
-            "//reboot/mcp:helpers_py",
-            "//reboot/mcp:ui_py",
+            "@com_github_reboot_dev_reboot//reboot:versioning_py",
+            "@com_github_reboot_dev_reboot//reboot/mcp:context_py",
+            "@com_github_reboot_dev_reboot//reboot/mcp:helpers_py",
+            "@com_github_reboot_dev_reboot//reboot/mcp:ui_py",
             "@com_github_reboot_dev_reboot//reboot/aio:call_py",
             "@com_github_reboot_dev_reboot//reboot/aio:caller_id_py",
             "@com_github_reboot_dev_reboot//reboot/aio:contexts_py",

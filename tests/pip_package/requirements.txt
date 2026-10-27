@@ -1,0 +1,2 @@
+# The application has no PyPI dependencies of its own; the ones that
+# `pyprotoc_plugin` has come with its distribution.

@@ -13,6 +13,18 @@ Under the hood, there are three components to be aware of:
      the package's files in the right place, and builds the package.
   3. A Macro, which simply wraps the Rule with a few default values that can
      only be provided via Macro rather than as default values on the Rule.
+
+A package bundles every file reachable from its `deps` that does not come
+from PyPI, including the files of external workspaces such as
+`@com_github_reboot_dev_pyprotoc_plugin`. A package built on top of a
+workspace that is itself published on PyPI, e.g. a plugin for `reboot`
+whose `deps` reach `@com_github_reboot_dev_reboot//...`, must not bundle
+that workspace: the copy would install over the same paths as the real
+distribution, carry the platform tag of its native binaries, and have to
+repeat its PyPI dependencies. The `workspace_requirements` attribute maps
+such a workspace, e.g. `com_github_reboot_dev_reboot`, to the requirement
+that provides it instead, e.g. `reboot==1.2.3`; the caller picks the
+version pin.
 """
 
 # TODO(rjh): `rules_python` comes with a `py_wheel` rule that doesn't meet
@@ -68,15 +80,24 @@ PipPackageInfo = provider(
     doc = "Information about a target's contribution to a pip package.",
     fields = {
         "data_depset": "Non-Python (data) files contributed by the target",
-        "is_platform_dependent": "Whether the package contains platform-dependent " +
-                                 "binary data",
-        "is_pyabi_dependent": "Whether the package contains Python-ABI-dependent " +
-                              "binary data",
         "path_map": "Dict mapping path prefixes as they arein source tree to " +
                     "what they should be in the package layout",
+        "platform_dependent_workspaces": "The workspaces whose targets " +
+                                         "contribute platform-dependent " +
+                                         "binary data. Maps: " +
+                                         "[workspace name -> True]; is a " +
+                                         "dict for deduplication purposes.",
+        "pyabi_dependent_workspaces": "The workspaces whose targets " +
+                                      "contribute Python-ABI-dependent " +
+                                      "binary data. Maps: " +
+                                      "[workspace name -> True]; is a " +
+                                      "dict for deduplication purposes.",
         "pypi_dependencies": "The PyPI dependencies of this target. " +
-                             "Maps: [package name -> True]; is a dict for " +
-                             "deduplication purposes.",
+                             "Maps: [package name -> {workspace name -> " +
+                             "True}], where the workspaces are those of " +
+                             "the targets that depend on the package " +
+                             "directly; a PyPI package's own entry maps " +
+                             "to the empty dict.",
         "source_depset": "Python files contributed by the target",
     },
 )
@@ -136,24 +157,30 @@ def _analyze_pip_package_deps_and_data(target, ctx):
       source files?
     * What files consumed as data by this target should be included in the
       package as data files?
-    * Are any of the data files platform-dependent binary files?
+    * Which workspaces contribute platform-dependent binary data files?
     * Are there files that are currently in the wrong directory, that should be
       mapped to a different directory in the package?
-    * What PyPI packages does this target depend on?
+    * What PyPI packages does this target depend on, and from which
+      workspaces?
+
+    Everything is attributed to the workspace it came from, so that the rule
+    can leave out a whole workspace in favor of the distribution that provides
+    it on PyPI (see `workspace_requirements`).
     """
     pypi_package_name = _pypi_package_name(target, ctx)
     if pypi_package_name != None:
         # Targets loaded from PyPI do not contribute files to the package;
         # they'll be loaded from PyPI via the `requirements.txt` file instead.
-        # We do want to record the dependency on this PyPI package.
+        # We do want to record the dependency on this PyPI package. The
+        # workspaces that depend on it are recorded by the targets that do.
         _debug_print("Package %s is from PyPI" % target.label)
         return [PipPackageInfo(
             source_depset = depset(),
             data_depset = depset(),
             path_map = {},
-            is_platform_dependent = False,
-            is_pyabi_dependent = False,
-            pypi_dependencies = {pypi_package_name: True},
+            platform_dependent_workspaces = {},
+            pyabi_dependent_workspaces = {},
+            pypi_dependencies = {pypi_package_name: {}},
         )]
 
     # To assemble a `PipPackageInfo` for this target, we'll combine information
@@ -166,8 +193,14 @@ def _analyze_pip_package_deps_and_data(target, ctx):
     source_files = []  # Type: list[File].
     data_files = []  # Type: list[File].
     path_map = {}  # Type: dict[str, str], source path -> desired package path.
-    is_platform_dependent = False  # Whether any `data` is platform-dependent.
-    is_pyabi_dependent = False  # Whether any `data` is Python-ABI-dependent.
+
+    # Maps: [workspace name -> True], for the workspaces whose targets
+    # produce platform-dependent (or Python-ABI-dependent) `data`.
+    platform_dependent_workspaces = {}
+    pyabi_dependent_workspaces = {}
+
+    # Maps: [package name -> {workspace name -> True}].
+    pypi_dependencies = {}
 
     # The transitive dependencies of this target will have already been
     # analyzed, and their `source_paths`s and `data_paths`s will each already
@@ -176,12 +209,6 @@ def _analyze_pip_package_deps_and_data(target, ctx):
     transitive_source_depsets = []  # Type: list[depset].
     transitive_data_depsets = []  # Type: list[depset].
     transitive_path_map = {}  # Type: dict[str, str].
-    transitive_is_platform_dependent = False
-    transitive_is_pyabi_dependent = False
-
-    # Maps: [package name -> True].
-    # Is a dict only for deduplication purposes.
-    transitive_pypi_dependencies = {}
 
     # The aspect is run on the entire dependency graph, starting at the leaves
     # and working towards the root(s). The rule that will eventually consume
@@ -192,8 +219,9 @@ def _analyze_pip_package_deps_and_data(target, ctx):
     # Specifically, we say that:
     #   * A target contributes the files it itself contributes, PLUS the files
     #     any of its transitive dependencies contribute.
-    #   * A target contributes binary data if it itself does so, OR if any of
-    #     its transitive dependencies do.
+    #   * A target's workspace contributes binary data if the target itself
+    #     does so, and the workspaces of its transitive dependencies do if any
+    #     of those do.
     #
     # To compute this, we must therefore first discover what the transitive
     # dependencies have computed.
@@ -209,15 +237,21 @@ def _analyze_pip_package_deps_and_data(target, ctx):
             transitive_source_depsets.append(dep[PipPackageInfo].source_depset)
             transitive_data_depsets.append(dep[PipPackageInfo].data_depset)
             transitive_path_map.update(dep[PipPackageInfo].path_map)
-            transitive_is_platform_dependent = (
-                transitive_is_platform_dependent or
-                dep[PipPackageInfo].is_platform_dependent
+            platform_dependent_workspaces.update(
+                dep[PipPackageInfo].platform_dependent_workspaces,
             )
-            transitive_is_pyabi_dependent = (
-                transitive_is_pyabi_dependent or
-                dep[PipPackageInfo].is_pyabi_dependent
+            pyabi_dependent_workspaces.update(
+                dep[PipPackageInfo].pyabi_dependent_workspaces,
             )
-            transitive_pypi_dependencies.update(dep[PipPackageInfo].pypi_dependencies)
+            for package_name, workspaces in dep[PipPackageInfo].pypi_dependencies.items():
+                if package_name not in pypi_dependencies:
+                    pypi_dependencies[package_name] = {}
+                if workspaces:
+                    pypi_dependencies[package_name].update(workspaces)
+                else:
+                    # `dep` is the PyPI package itself, so this target is one
+                    # that depends on it directly.
+                    pypi_dependencies[package_name][target.label.workspace_name] = True
 
     # Determine whether this target produces platform-dependent binary data.
     #
@@ -239,8 +273,10 @@ def _analyze_pip_package_deps_and_data(target, ctx):
     PYABI_DEPENDENT_TARGET_KINDS = [
         "pybind_extension",
     ]
-    is_platform_dependent = ctx.rule.kind in PLATFORM_DEPENDENT_TARGET_KINDS
-    is_pyabi_dependent = ctx.rule.kind in PYABI_DEPENDENT_TARGET_KINDS
+    if ctx.rule.kind in PLATFORM_DEPENDENT_TARGET_KINDS:
+        platform_dependent_workspaces[target.label.workspace_name] = True
+    if ctx.rule.kind in PYABI_DEPENDENT_TARGET_KINDS:
+        pyabi_dependent_workspaces[target.label.workspace_name] = True
 
     if target.label.workspace_name != "":
         _debug_print("Target %s is in external workspace %s" % (
@@ -283,9 +319,9 @@ def _analyze_pip_package_deps_and_data(target, ctx):
             source_depset = depset(transitive = transitive_source_depsets),
             data_depset = depset(transitive = transitive_data_depsets),
             path_map = path_map,
-            is_platform_dependent = is_platform_dependent or transitive_is_platform_dependent,
-            is_pyabi_dependent = is_pyabi_dependent or transitive_is_pyabi_dependent,
-            pypi_dependencies = transitive_pypi_dependencies,
+            platform_dependent_workspaces = platform_dependent_workspaces,
+            pyabi_dependent_workspaces = pyabi_dependent_workspaces,
+            pypi_dependencies = pypi_dependencies,
         )]
 
     # Data files that will be contributed to the distribution are files that are
@@ -297,18 +333,15 @@ def _analyze_pip_package_deps_and_data(target, ctx):
 
         # If the data file we're picking up here contains platform-dependent
         # binary information, this aspect's analysis of the target that built it
-        # will have marked it as such. If so, we must mark ourselves as a
-        # platform-dependent in turn.
-        if (
-            PipPackageInfo in data_target and
-            data_target[PipPackageInfo].is_platform_dependent
-        ):
-            is_platform_dependent = True
-        if (
-            PipPackageInfo in data_target and
-            data_target[PipPackageInfo].is_pyabi_dependent
-        ):
-            is_pyabi_dependent = True
+        # will have marked its workspace as such. If so, we must record that
+        # workspace in turn.
+        if PipPackageInfo in data_target:
+            platform_dependent_workspaces.update(
+                data_target[PipPackageInfo].platform_dependent_workspaces,
+            )
+            pyabi_dependent_workspaces.update(
+                data_target[PipPackageInfo].pyabi_dependent_workspaces,
+            )
 
     # Source files that will be contributed to the distribution are source files
     # produced by a Python target (".py" files, either directly included as
@@ -330,17 +363,17 @@ def _analyze_pip_package_deps_and_data(target, ctx):
     _debug_print("  Kind: %s" % ctx.rule.kind)
     _debug_print("  Files: %s" % source_files)
     _debug_print("  Data: %s" % data_files)
-    _debug_print("  Is platform dependent: %s" % is_platform_dependent)
-    _debug_print("  Is Python ABI dependent: %s" % is_pyabi_dependent)
+    _debug_print("  Platform dependent workspaces: %s" % platform_dependent_workspaces)
+    _debug_print("  Python ABI dependent workspaces: %s" % pyabi_dependent_workspaces)
 
     path_map.update(transitive_path_map)
     return [PipPackageInfo(
         source_depset = depset(source_files, transitive = transitive_source_depsets),
         data_depset = depset(data_files, transitive = transitive_data_depsets),
         path_map = path_map,
-        is_platform_dependent = is_platform_dependent or transitive_is_platform_dependent,
-        is_pyabi_dependent = is_pyabi_dependent or transitive_is_pyabi_dependent,
-        pypi_dependencies = transitive_pypi_dependencies,
+        platform_dependent_workspaces = platform_dependent_workspaces,
+        pyabi_dependent_workspaces = pyabi_dependent_workspaces,
+        pypi_dependencies = pypi_dependencies,
     )]
 
 analyze_pip_package_deps_and_data = aspect(
@@ -401,6 +434,28 @@ def _staging_path(file, path_maps):
             break
     return staged_path
 
+def _requirement_package_name(requirement):
+    """Returns the package name of a requirement such as `reboot==1.2.3`."""
+    name = requirement
+    for separator in [" ", "=", "<", ">", "!", "~", ";", "[", "@"]:
+        name = name.split(separator, 1)[0]
+    return name
+
+def _is_bundled(file, workspace_requirements):
+    """Whether `file` ships in the package.
+
+    A file does not ship when its workspace maps to a requirement, since the
+    requirement provides it at install time.
+    """
+    return file.owner.workspace_name not in workspace_requirements
+
+def _any_bundled(workspaces, workspace_requirements):
+    """Whether any of the given workspaces ship in the package."""
+    for workspace in workspaces:
+        if workspace not in workspace_requirements:
+            return True
+    return False
+
 def _pip_package_impl(ctx):
     """
     The implementation of the `pip_package` Rule.
@@ -410,16 +465,17 @@ def _pip_package_impl(ctx):
     package (`.whl` file).
     """
 
+    # Files from these workspaces are left out of the package; the package
+    # depends on the mapped requirements instead.
+    workspace_requirements = ctx.attr.workspace_requirements
+
     # We may have multiple `deps`, each of which has its own `PipPackageInfo`.
     # Combine those into one set of source files, data files, and so forth.
     source_depsets = []
     data_depsets = []
     path_maps = {}
-    is_platform_dependent = False
-    is_pyabi_dependent = False
-
-    # Maps: [package name -> True].
-    # Is a dict only for deduplication purposes.
+    platform_dependent_workspaces = {}
+    pyabi_dependent_workspaces = {}
     pypi_dependencies = {}
     for dep in ctx.attr.deps:
         if PipPackageInfo not in dep:
@@ -428,26 +484,63 @@ def _pip_package_impl(ctx):
         source_depsets.append(dep[PipPackageInfo].source_depset)
         data_depsets.append(dep[PipPackageInfo].data_depset)
         path_maps.update(dep[PipPackageInfo].path_map)
-        _debug_print("Dependency %s is platform dependent? %s" % (
-            dep,
-            dep[PipPackageInfo].is_platform_dependent,
-        ))
-        is_platform_dependent = is_platform_dependent or dep[PipPackageInfo].is_platform_dependent
-        _debug_print("Dependency %s is Python ABI dependent? %s" % (
-            dep,
-            dep[PipPackageInfo].is_pyabi_dependent,
-        ))
-        is_pyabi_dependent = is_pyabi_dependent or dep[PipPackageInfo].is_pyabi_dependent
-        pypi_dependencies.update(dep[PipPackageInfo].pypi_dependencies)
+        platform_dependent_workspaces.update(
+            dep[PipPackageInfo].platform_dependent_workspaces,
+        )
+        pyabi_dependent_workspaces.update(
+            dep[PipPackageInfo].pyabi_dependent_workspaces,
+        )
+        for package_name, workspaces in dep[PipPackageInfo].pypi_dependencies.items():
+            if package_name not in pypi_dependencies:
+                pypi_dependencies[package_name] = {}
+            pypi_dependencies[package_name].update(workspaces)
 
-    source_depset = depset(transitive = source_depsets)
-    data_depset = depset(transitive = data_depsets)
-    _debug_print("Sources: %s" % source_depset)
-    _debug_print("Data: %s" % data_depset)
+    # Only what ships in the package makes it platform-dependent, and only
+    # the PyPI packages that what ships depends on must be in its
+    # `requirements.txt`; the rest come with the workspace requirements.
+    is_platform_dependent = _any_bundled(
+        platform_dependent_workspaces,
+        workspace_requirements,
+    )
+    is_pyabi_dependent = _any_bundled(
+        pyabi_dependent_workspaces,
+        workspace_requirements,
+    )
+    required_pypi_dependencies = {
+        package_name: True
+        for package_name, workspaces in pypi_dependencies.items()
+        if _any_bundled(workspaces, workspace_requirements)
+    }
+    for requirement in workspace_requirements.values():
+        required_pypi_dependencies[_requirement_package_name(requirement)] = True
+
+    all_source_files = depset(transitive = source_depsets).to_list()
+    all_data_files = depset(transitive = data_depsets).to_list()
+    source_files = [
+        file
+        for file in all_source_files
+        if _is_bundled(file, workspace_requirements)
+    ]
+    data_files = [
+        file
+        for file in all_data_files
+        if _is_bundled(file, workspace_requirements)
+    ]
+    _debug_print("Sources: %s" % source_files)
+    _debug_print("Data: %s" % data_files)
     _debug_print("Path map: %s" % path_maps)
-    _debug_print("PyPI dependencies: %s" % list(pypi_dependencies.keys()))
+    _debug_print("PyPI dependencies: %s" % list(required_pypi_dependencies.keys()))
     _debug_print("Is platform dependent: %s" % is_platform_dependent)
     _debug_print("Is Python ABI dependent: %s" % is_pyabi_dependent)
+
+    # A file that a workspace requirement provides must not also be reached
+    # through a label in another workspace, e.g. a local symlink to the
+    # external workspace's tree, or the package would bundle it after all.
+    unbundled_staged_paths = {
+        _staging_path(file, path_maps): file
+        for file in all_source_files + all_data_files
+        if not _is_bundled(file, workspace_requirements)
+    }
 
     # We would love to simply use files as already laid out in Bazel's tree
     # structure, but that doesn't fly:
@@ -482,8 +575,19 @@ def _pip_package_impl(ctx):
     STAGING_DIRECTORY_NAME = ".pip_package_" + ctx.attr.name
     package_files = []
     seen_staged_paths = {}
-    for file in source_depset.to_list() + data_depset.to_list():
+    for file in source_files + data_files:
         staged_path = _staging_path(file, path_maps)
+
+        if staged_path in unbundled_staged_paths:
+            fail(
+                "File '%s' is reached both as '%s', which is bundled, and " %
+                (staged_path, file.owner) +
+                "as '%s', which the requirement '%s' provides instead; " % (
+                    unbundled_staged_paths[staged_path].owner,
+                    workspace_requirements[unbundled_staged_paths[staged_path].owner.workspace_name],
+                ) +
+                "depend on it only through the latter's workspace",
+            )
 
         # Deduplicate files that map to the same staged path. This
         # can happen when the same physical file is reachable via
@@ -557,6 +661,34 @@ def _pip_package_impl(ctx):
     # but then verify that that file contains every dependency that the
     # `PipPackageInfo` says we need; we do that check in the trampoline below.
     input_requirements_txt = ctx.file.requirements_txt
+    if workspace_requirements:
+        # The workspace requirements come from this rule, so they are
+        # appended to the user's `requirements.txt` rather than expected in
+        # it.
+        workspace_requirements_txt = ctx.actions.declare_file(
+            "%s.workspace_requirements.txt" % ctx.attr.name,
+        )
+        ctx.actions.write(
+            output = workspace_requirements_txt,
+            content = "".join([
+                "%s\n" % requirement
+                for requirement in sorted(workspace_requirements.values())
+            ]),
+        )
+        combined_requirements_txt = ctx.actions.declare_file(
+            "%s.requirements.txt" % ctx.attr.name,
+        )
+        ctx.actions.run_shell(
+            mnemonic = "AppendWorkspaceRequirements",
+            command = "cat %s %s > %s" % (
+                input_requirements_txt.path,
+                workspace_requirements_txt.path,
+                combined_requirements_txt.path,
+            ),
+            inputs = [input_requirements_txt, workspace_requirements_txt],
+            outputs = [combined_requirements_txt],
+        )
+        input_requirements_txt = combined_requirements_txt
     staged_requirements_txt = ctx.actions.declare_file(
         "%s/requirements.txt" % STAGING_DIRECTORY_NAME,
     )
@@ -643,7 +775,7 @@ def _pip_package_impl(ctx):
     #
     # To generate these lines, we must first group the data files by package.
     package_to_data_files = {}
-    for file in data_depset.to_list():
+    for file in data_files:
         staged_path = _staging_path(file, path_maps)
         package_path, file_basename = staged_path.rsplit("/", 1)
         package_name = package_path.replace("/", ".")
@@ -783,7 +915,7 @@ def _pip_package_impl(ctx):
             )
         ] + [
             "--verify-dependency-in-requirements=%s" % dependency
-            for dependency in pypi_dependencies.keys()
+            for dependency in required_pypi_dependencies.keys()
         ],
         inputs = metadata_files + package_files,
         outputs = [built_whl],
@@ -890,6 +1022,21 @@ _pip_package = rule(
             doc = "The version number of the pip package being built. " +
                   "E.g. `1.2.3`.",
             mandatory = True,
+        ),
+        "workspace_requirements": attr.string_dict(
+            default = {},
+            doc = "External workspaces whose files this pip package " +
+                  "does not bundle: each key is a workspace name, e.g. " +
+                  "'com_github_reboot_dev_reboot', and each value the " +
+                  "requirement, e.g. 'reboot==1.2.3', that provides " +
+                  "those files at install time; it is added to the " +
+                  "package's dependencies, and the platform tag and " +
+                  "the `requirements.txt` check consider only what " +
+                  "ships. Every target in such a workspace must be " +
+                  "reached by its external label, '@workspace//...', " +
+                  "since the same file reached by a local label has no " +
+                  "workspace name and is bundled; the rule fails when " +
+                  "it sees a file both ways.",
         ),
         "_build_tool": attr.label(
             # A pointer to the build trampoline program. See the
