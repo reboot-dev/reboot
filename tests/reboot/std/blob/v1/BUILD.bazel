@@ -1,0 +1,70 @@
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_test")
+load("//reboot/nodejs:rules.bzl", "js_reboot_test")
+
+py_test(
+    name = "blob_tests_py",
+    size = "medium",
+    srcs = [":blob_tests.py"],
+    data = ["//bazel/minio"],
+    env = {
+        # The MinIO the test harness keeps blob bytes in.
+        "REBOOT_STD_BLOB_MINIO_PATH": "$(rootpath //bazel/minio)",
+    },
+    main = "blob_tests.py",
+    deps = [
+        "//reboot/aio:applications_py",
+        "//reboot/aio:tests_py",
+        "//reboot/std/blob/v1:blob_py",
+        "@com_github_reboot_dev_reboot//rbt/std/blob/v1:blob_py_reboot",
+        requirement("aiohttp"),
+    ],
+)
+
+py_test(
+    name = "s3_tests_py",
+    timeout = "short",
+    srcs = [":s3_tests.py"],
+    main = "s3_tests.py",
+    deps = [
+        "//reboot/std/blob/v1:blob_py",
+        requirement("boto3"),
+    ],
+)
+
+ts_project(
+    name = "blob_tests_ts",
+    srcs = [
+        "blob_tests.ts",
+        ":package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "target": "es2020",
+        },
+    },
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:node_modules/@reboot-dev/reboot",
+        "//:node_modules/@reboot-dev/reboot-std",
+        "//:node_modules/@types/node",
+    ],
+)
+
+js_reboot_test(
+    name = "test_blob_tests_ts",
+    data = [
+        ":blob_tests_ts",
+        "//bazel/minio",
+    ],
+    entry_point = "blob_tests.js",
+    env = {
+        "REBOOT_STD_BLOB_MINIO_PATH": "$(rootpath //bazel/minio)",
+    },
+    visibility = ["//visibility:public"],
+)

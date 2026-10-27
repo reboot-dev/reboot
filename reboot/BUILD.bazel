@@ -11,6 +11,7 @@ exports_files([
     "versions.bzl",
     "requirements.in",
     "requirements-anthropic.in",
+    "requirements-std-blob.in",
     "requirements-dev.in",
 ])
 
@@ -521,6 +522,7 @@ py_library(
 py_library(
     name = "python_std",
     deps = [
+        "//reboot/std/blob/v1:blob_py",
         "//reboot/std/ciphertext/v1:ciphertext_py",
         "//reboot/std/collections/ordered_map/v1:ordered_map_py",
         "//reboot/std/collections/queue/v1:queue_py",
@@ -592,6 +594,7 @@ pip_package(
     },
     extras = {
         "//reboot:requirements-anthropic.in": "anthropic",
+        "//reboot:requirements-std-blob.in": "std-blob",
         "//reboot:requirements-dev.in": "dev",
     },
     license = "Apache-2.0",

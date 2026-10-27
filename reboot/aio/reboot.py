@@ -323,6 +323,7 @@ class Reboot:
         effect_validation: Optional[EffectValidation] = None,
         frontend_url: Optional[str] = None,
         web_app: bool = False,
+        upstreams: Sequence[envoy_config.Upstream] = (),
     ) -> ApplicationRevision:
         ...
 
@@ -349,6 +350,7 @@ class Reboot:
         effect_validation: Optional[EffectValidation] = None,
         frontend_url: Optional[str] = None,
         web_app: bool = False,
+        upstreams: Sequence[envoy_config.Upstream] = (),
         revision: Optional[ApplicationRevision] = None,
     ) -> ApplicationRevision:
         """
@@ -372,6 +374,10 @@ class Reboot:
         `/__/frontend/**` to, the way `rbt dev run --frontend-url` does,
         and, with `web_app`, the web app at `/` and every path the
         application doesn't answer (`--web-app`).
+
+        upstreams: hosts outside the application that the local Envoy
+        forwards a path prefix each to, as the application's libraries
+        name them.
 
         effect_validation: sets EffectValidation for these servicers. By
         default, effect validation is:
@@ -523,6 +529,7 @@ class Reboot:
                         web_app=web_app,
                     ) if frontend_url is not None else None
                 ),
+                upstreams=upstreams,
             )
 
             config = self._config_extractor.config_from_serviceables(

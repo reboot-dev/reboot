@@ -40,6 +40,7 @@ from reboot.routing.envoy_config import (
     FrontendConfig,
     ServerAddress,
     ServerInfo,
+    Upstream,
 )
 from reboot.run_environments import on_cloud
 from reboot.server.local_envoy import LocalEnvoy
@@ -427,6 +428,8 @@ class RegisteredRevision:
     effect_validation: Optional[EffectValidation]
     # The frontend dev server the local Envoy routes to, if any.
     frontend: Optional[FrontendConfig]
+    # The hosts the local Envoy forwards a path prefix each to.
+    upstreams: Sequence[Upstream]
 
 
 @dataclass(
@@ -637,6 +640,7 @@ class LocalServerManager(ServerManager):
         allowed_origins: Optional[list[str]],
         effect_validation: Optional[EffectValidation],
         frontend: Optional[FrontendConfig] = None,
+        upstreams: Sequence[Upstream] = (),
     ):
         """Save the given serviceable definitions so that we can bring up
         corresponding objects if and when a Server requires them."""
@@ -651,6 +655,7 @@ class LocalServerManager(ServerManager):
             token_verifier=token_verifier,
             effect_validation=effect_validation,
             frontend=frontend,
+            upstreams=upstreams,
         )
 
     @reboot.aio.tracing.function_span()
@@ -1250,6 +1255,7 @@ class LocalServerManager(ServerManager):
             # to it ahead of its catch-all.
             route_matches=self._revision.web_framework.route_matches(),
             frontend=self._revision.frontend,
+            upstreams=self._revision.upstreams,
         )
 
         await self._local_envoy.start()
