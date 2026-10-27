@@ -1,5 +1,6 @@
 import argparse
 import reboot.cli.common.cli as cli
+import reboot.cli.common.command_group as command_group
 import tempfile
 import unittest
 from contextlib import contextmanager
@@ -9,7 +10,7 @@ from unittest.mock import patch
 
 
 class HelloCommandGroup:
-    """A command group, as a distribution would provide one, that
+    """A command group, as an installed package would provide one, that
     registers `hello world` and exits with `EXIT_CODE` when run."""
 
     EXIT_CODE = 42
@@ -48,9 +49,9 @@ class FakeEntryPoint:
 
 @contextmanager
 def installed_command_groups(**command_groups: object) -> Iterator[None]:
-    """Pretends that, for each keyword argument, a distribution is
-    installed whose `rbt.commands` entry point of that name loads the
-    given command group, or fails with it when it is an exception."""
+    """Pretends that, for each keyword argument, a package is installed
+    whose `rbt.commands` entry point of that name loads the given command
+    group, or fails with it when it is an exception."""
     entry_points = [
         FakeEntryPoint(name, command_group)
         for name, command_group in command_groups.items()
@@ -66,7 +67,7 @@ class CommandGroupTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_cloud_is_built_in(self) -> None:
         with installed_command_groups():
-            command_groups = cli.load_command_groups()
+            command_groups = command_group.load_command_groups()
 
         self.assertIn(
             'cloud up',
@@ -79,7 +80,7 @@ class CommandGroupTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_installed_command_group_is_parsed_and_handled(self) -> None:
         hello = HelloCommandGroup()
         with installed_command_groups(hello=hello):
-            command_groups = cli.load_command_groups()
+            command_groups = command_group.load_command_groups()
 
         self.assertIs(command_groups[-1], hello)
 
@@ -97,7 +98,7 @@ class CommandGroupTestCase(unittest.IsolatedAsyncioTestCase):
         first = HelloCommandGroup()
         second = HelloCommandGroup()
         with installed_command_groups(b=second, a=first):
-            command_groups = cli.load_command_groups()
+            command_groups = command_group.load_command_groups()
 
         self.assertEqual(command_groups[-2:], [first, second])
 
@@ -105,7 +106,7 @@ class CommandGroupTestCase(unittest.IsolatedAsyncioTestCase):
         # Flags in `.rbtrc` are only expanded for subcommands the parser
         # knows, so an installed subcommand's flags must be too.
         with installed_command_groups(hello=HelloCommandGroup()):
-            command_groups = cli.load_command_groups()
+            command_groups = command_group.load_command_groups()
 
         with tempfile.NamedTemporaryFile(mode='w') as rc_file:
             rc_file.write('hello world --name=from-rc\n')
@@ -125,7 +126,7 @@ class CommandGroupTestCase(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         with installed_command_groups(broken=ImportError('boom')):
             with self.assertRaises(SystemExit) as e:
-                cli.load_command_groups()
+                command_group.load_command_groups()
 
         self.assertEqual(e.exception.code, 1)
 

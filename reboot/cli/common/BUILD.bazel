@@ -165,6 +165,7 @@ py_library(
     deps = [
         ":rc_py",
         ":terminal_py",
+        "//reboot/cli/commands/cloud:__init___py",
     ],
 )
 
@@ -197,11 +198,6 @@ py_library(
         "//reboot/cli/commands:inspect_py",
         "//reboot/cli/commands:serve_py",
         "//reboot/cli/commands:task_py",
-        "//reboot/cli/commands/cloud:__init___py",
-        "//reboot/cli/commands/cloud:down_py",
-        "//reboot/cli/commands/cloud:logs_py",
-        "//reboot/cli/commands/cloud:secrets_py",
-        "//reboot/cli/commands/cloud:up_py",
         "//reboot/cli/commands/init:init_py",
     ],
 )

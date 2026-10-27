@@ -1,11 +1,13 @@
-"""Command groups that extend the `rbt` CLI from other distributions."""
+"""The command groups of the `rbt` CLI, including those that other
+installed packages register."""
 import argparse
 from importlib.metadata import entry_points
+from reboot.cli.commands import cloud
 from reboot.cli.common import terminal
 from reboot.cli.common.rc import ArgumentParser
 from typing import Optional, Protocol
 
-# The entry point group a Python distribution registers under to add a
+# The entry point group a Python package registers under to add a
 # command group to `rbt`. An entry point's name is the group's first
 # word, e.g. `cloud`, and its value refers to an object, usually a
 # module, that satisfies `CommandGroup`.
@@ -30,10 +32,11 @@ class CommandGroup(Protocol):
         returns `None` when the subcommand belongs to another group."""
 
 
-def discover_command_groups() -> list[CommandGroup]:
-    """Returns the command groups that installed distributions register
-    under `ENTRY_POINT_GROUP`, ordered by entry point name."""
-    command_groups: list[CommandGroup] = []
+def load_command_groups() -> list[CommandGroup]:
+    """Returns the command groups: those that ship with `rbt` followed by
+    those that installed packages register under `ENTRY_POINT_GROUP`,
+    ordered by entry point name."""
+    command_groups: list[CommandGroup] = [cloud]
     for entry_point in sorted(
         entry_points(group=ENTRY_POINT_GROUP),
         key=lambda entry_point: entry_point.name,
