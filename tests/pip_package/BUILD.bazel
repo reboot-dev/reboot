@@ -1,0 +1,37 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//bazel/pip_package_rule:pip_package.bzl", "pip_package")
+
+# An application that depends on another workspace's code: the
+# `pyprotoc_plugin` workspace stands in for one that is also published
+# as its own distribution.
+py_library(
+    name = "app",
+    srcs = ["app.py"],
+    srcs_version = "PY3",
+    deps = [
+        "@com_github_reboot_dev_pyprotoc_plugin//pyprotoc_plugin",
+    ],
+)
+
+pip_package(
+    name = "app-with-workspace-requirement",
+    description = "Test package that expects a workspace from PyPI.",
+    license = "Apache-2.0",
+    license_txt = "LICENSE.txt",
+    readme_md = "README.md",
+    requirements_txt = "requirements.txt",
+    version = "0.0.1",
+    visibility = ["//visibility:private"],
+    workspace_requirements = {
+        "com_github_reboot_dev_pyprotoc_plugin": "pyprotoc-plugin==1.2.3",
+    },
+    deps = [":app"],
+)
+
+py_test(
+    name = "workspace_requirements_test",
+    srcs = ["workspace_requirements_test.py"],
+    args = ["$(location :app-with-workspace-requirement.dev)"],
+    data = [":app-with-workspace-requirement.dev"],
+    main = "workspace_requirements_test.py",
+)
