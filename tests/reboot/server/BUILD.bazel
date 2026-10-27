@@ -20,6 +20,7 @@ py_test(
     deps = [
         "//reboot:settings_py",
         "//reboot/routing:envoy_config_py",
+        "//reboot/routing:frontend_py",
     ],
 )
 

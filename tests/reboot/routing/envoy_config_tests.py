@@ -15,6 +15,7 @@ from reboot.aio.http import PythonWebFramework
 from reboot.aio.types import ApplicationId, ServerId
 from reboot.routing import envoy_config
 from reboot.routing.envoy_config import ServerAddress, ServerInfo
+from reboot.routing.frontend import frontend_upstreams
 from reboot.routing.upstreams import Upstream
 from reboot.settings import LocalEnvoyMode
 
@@ -34,7 +35,6 @@ def _public_routes(listeners: list[listener_pb2.Listener]):
 
 def _listeners(
     route_matches: list[route_components_pb2.RouteMatch],
-    frontend: envoy_config.FrontendConfig | None = None,
     upstreams: list[Upstream] = [],
 ) -> list[listener_pb2.Listener]:
     return envoy_config.listeners(
@@ -61,7 +61,6 @@ def _listeners(
         key_path=Path("key"),
         allowed_origins=None,
         route_matches=route_matches,
-        frontend=frontend,
         upstreams=upstreams,
     )
 
@@ -121,7 +120,7 @@ class EnvoyConfigTest(unittest.TestCase):
         routes = _public_routes(
             _listeners(
                 [route_components_pb2.RouteMatch(prefix="/mcp")],
-                frontend=envoy_config.frontend_config(
+                upstreams=frontend_upstreams(
                     "http://localhost:5173",
                     web_app=True,
                 ),
@@ -132,19 +131,19 @@ class EnvoyConfigTest(unittest.TestCase):
         # port, then `/` and everything else to the dev server; the
         # HTTP port has no catch-all of its own.
         self.assertEqual(routes[0][0].prefix, "/__/frontend/")
-        self.assertEqual(routes[0][1], envoy_config.FRONTEND_CLUSTER_NAME)
+        self.assertEqual(routes[0][1], "upstream-frontend")
         http = [
             (match, cluster) for match, cluster in routes if "http" in cluster
         ]
         self.assertEqual([match.prefix for match, _ in http], ["/mcp"])
         self.assertEqual(routes[-1][0].prefix, "/")
-        self.assertEqual(routes[-1][1], envoy_config.FRONTEND_CLUSTER_NAME)
+        self.assertEqual(routes[-1][1], "upstream-web-app")
 
     def test_without_web_app_the_http_port_keeps_the_catch_all(self) -> None:
         routes = _public_routes(
             _listeners(
                 [],
-                frontend=envoy_config.frontend_config(
+                upstreams=frontend_upstreams(
                     "http://localhost:5173",
                     web_app=False,
                 ),
@@ -191,7 +190,6 @@ class EnvoyConfigTest(unittest.TestCase):
                 application_id=ApplicationId("testing"),
                 servers=[],
                 local_envoy_mode=LocalEnvoyMode.EXECUTABLE,
-                frontend=None,
                 upstreams=[upstream],
             ) if cluster.name == "upstream-store"
         ]
@@ -221,7 +219,6 @@ class EnvoyConfigTest(unittest.TestCase):
                 application_id=ApplicationId("testing"),
                 servers=[],
                 local_envoy_mode=LocalEnvoyMode.EXECUTABLE,
-                frontend=None,
                 upstreams=[upstream],
             ) if cluster.name == "upstream-index"
         ]

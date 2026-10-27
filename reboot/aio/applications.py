@@ -40,7 +40,7 @@ from reboot.controller.settings import ENVVAR_REBOOT_MODE, REBOOT_MODE_CONFIG
 from reboot.mcp.factories import create_mcp_factory
 from reboot.mcp.ui import find_project_root_from, has_registered_ui_tools
 from reboot.nodejs.python import should_print_stacktrace
-from reboot.routing.envoy_config import RESERVED_PREFIXES
+from reboot.routing.frontend import FRONTEND_PREFIX
 from reboot.routing.upstreams import Upstream
 from reboot.run_environments import (
     InvalidRunEnvironment,
@@ -192,6 +192,11 @@ def _handle_input_error(input_error: InputError) -> None:
 assert reboot.aio.workflows.memoize is None
 assert reboot.aio.memoize.memoize is not None
 reboot.aio.workflows.memoize = reboot.aio.memoize.memoize
+
+# The path prefixes the application forwards on its own account,
+# ahead of its own paths: no upstream a library names may overlap
+# them.
+_RESERVED_PREFIXES = (FRONTEND_PREFIX,)
 
 
 def _paths_overlap(prefix: str, path: str) -> bool:
@@ -1258,7 +1263,7 @@ class Application:
 
         # The paths the web framework answers include Reboot's own,
         # but not the prefixes forwarded ahead of the application.
-        for reserved in RESERVED_PREFIXES:
+        for reserved in _RESERVED_PREFIXES:
             for claimed, upstream in upstreams_by_library:
                 if _paths_overlap(
                     upstream.prefix, _everything_under(reserved)

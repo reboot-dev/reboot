@@ -36,11 +36,7 @@ from reboot.controller.settings import (
     ENVVAR_REBOOT_REPLICA_INDEX,
 )
 from reboot.naming import ensure_valid_application_id
-from reboot.routing.envoy_config import (
-    FrontendConfig,
-    ServerAddress,
-    ServerInfo,
-)
+from reboot.routing.envoy_config import ServerAddress, ServerInfo
 from reboot.routing.upstreams import Upstream
 from reboot.run_environments import on_cloud
 from reboot.server.local_envoy import LocalEnvoy
@@ -426,10 +422,7 @@ class RegisteredRevision:
     allowed_origins: Optional[list[str]]
     token_verifier: Optional[TokenVerifier]
     effect_validation: Optional[EffectValidation]
-    # The frontend dev server the local Envoy routes to, if any.
-    frontend: Optional[FrontendConfig]
-    # The loopback services the application forwards a path prefix
-    # each to.
+    # The services the application forwards a path prefix each to.
     upstreams: Sequence[Upstream]
 
 
@@ -640,7 +633,6 @@ class LocalServerManager(ServerManager):
         local_envoy_use_tls: bool,
         allowed_origins: Optional[list[str]],
         effect_validation: Optional[EffectValidation],
-        frontend: Optional[FrontendConfig] = None,
         upstreams: Sequence[Upstream] = (),
     ):
         """Save the given serviceable definitions so that we can bring up
@@ -655,7 +647,6 @@ class LocalServerManager(ServerManager):
             allowed_origins=allowed_origins,
             token_verifier=token_verifier,
             effect_validation=effect_validation,
-            frontend=frontend,
             upstreams=upstreams,
         )
 
@@ -1255,7 +1246,6 @@ class LocalServerManager(ServerManager):
             # The paths the web framework answers, which Envoy routes
             # to it ahead of its catch-all.
             route_matches=self._revision.web_framework.route_matches(),
-            frontend=self._revision.frontend,
             upstreams=self._revision.upstreams,
         )
 

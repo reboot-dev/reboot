@@ -19,6 +19,17 @@ py_library(
 )
 
 py_library(
+    name = "frontend_py",
+    srcs = ["frontend.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//reboot:portless_py",
+        "//reboot/routing:upstreams_py",
+    ],
+)
+
+py_library(
     name = "envoy_config_py",
     srcs = [
         "envoy_config.py",

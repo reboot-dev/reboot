@@ -13,7 +13,7 @@ from google.protobuf.descriptor_pb2 import FileDescriptorSet
 from log.log import get_logger
 from pathlib import Path
 from reboot.aio.types import ApplicationId
-from reboot.routing.envoy_config import FrontendConfig, ServerInfo
+from reboot.routing.envoy_config import ServerInfo
 from reboot.routing.upstreams import Upstream
 from reboot.server.local_envoy import LocalEnvoy
 from reboot.server.nanny import nanny_command
@@ -59,7 +59,6 @@ class DockerLocalEnvoy(LocalEnvoy):
         debug_mode: bool,
         allowed_origins: Optional[list[str]],
         route_matches: list[route_components_pb2.RouteMatch],
-        frontend: Optional[FrontendConfig],
         upstreams: Sequence[Upstream] = (),
     ):
         self._published_public_port = public_port
@@ -144,7 +143,6 @@ class DockerLocalEnvoy(LocalEnvoy):
             use_tls=self._use_tls,
             allowed_origins=allowed_origins,
             route_matches=route_matches,
-            frontend=frontend,
             upstreams=upstreams,
         )
 

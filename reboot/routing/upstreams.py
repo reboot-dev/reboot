@@ -3,6 +3,7 @@ forwards a path prefix each to, so that a browser reaches them on
 the application's origin."""
 
 from dataclasses import dataclass
+from typing import Optional
 
 
 # TODO: support `ext_authz`-style external authorization, so that the
@@ -25,12 +26,14 @@ class Upstream:
     # Names the upstream; unique within an application.
     name: str
     # The path prefix the application's clients use, e.g. a library's
-    # proto package: `/rbt.std.blob.v1/`.
+    # proto package: `/rbt.std.blob.v1/`. An upstream on `/` answers
+    # every path nothing else claimed, after the application's own.
     prefix: str
     # The loopback port the service listens on.
     port: int
-    # What `prefix` becomes on the way there; `/` drops it.
-    prefix_rewrite: str = "/"
+    # What `prefix` becomes on the way there: `/` drops it, `None`
+    # leaves the path as it is.
+    prefix_rewrite: Optional[str] = "/"
     # The `Host` header the service receives; empty leaves the one the
     # client sent. A signed URL's signature covers this header, so an
     # object store is sent the host its URLs were signed for.
@@ -44,3 +47,7 @@ class Upstream:
     # Whether the service speaks HTTP/2 (e.g. gRPC) rather than
     # HTTP/1.1.
     http2: bool = False
+    # An HTML page to answer with in place of a bare 503 when the
+    # service cannot be reached, e.g. a dev server that is not running
+    # yet; `None` leaves the 503 as it is.
+    unreachable_html: Optional[str] = None

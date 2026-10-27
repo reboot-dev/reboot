@@ -62,6 +62,7 @@ py_test(
         "//reboot/aio:http_py",
         "//reboot/aio:types_py",
         "//reboot/routing:envoy_config_py",
+        "//reboot/routing:frontend_py",
         "//reboot/routing:upstreams_py",
     ],
 )

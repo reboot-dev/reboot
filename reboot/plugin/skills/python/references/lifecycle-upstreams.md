@@ -66,15 +66,16 @@ origin, under `rbt dev run` and on Reboot Cloud alike.
 
 ### `Upstream` Fields
 
-| Field            | Meaning                                                                                                                     |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `name`           | Unique among the application's upstreams.                                                                                   |
-| `prefix`         | The path prefix the application's clients use, e.g. `/__/search/` or a proto package.                                       |
-| `port`           | The loopback port the service listens on.                                                                                   |
-| `prefix_rewrite` | What `prefix` becomes on the way there; `/` drops it. Default `/`.                                                          |
-| `host_rewrite`   | The `Host` header the service receives, for one that checks it (a bucket honouring signed URLs). Empty leaves the client's. |
-| `tls`            | Reach the service over TLS. Its certificate is not validated; `host_rewrite`'s name is the SNI.                             |
-| `http2`          | The service speaks HTTP/2 (gRPC, say) rather than HTTP/1.1.                                                                 |
+| Field              | Meaning                                                                                                                                                         |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`             | Unique among the application's upstreams.                                                                                                                       |
+| `prefix`           | The path prefix the application's clients use, e.g. `/__/search/` or a proto package. `/` answers every path nothing else claimed, after the application's own. |
+| `port`             | The loopback port the service listens on.                                                                                                                       |
+| `prefix_rewrite`   | What `prefix` becomes on the way there; `/` drops it (the default), `None` leaves the path as it is.                                                            |
+| `host_rewrite`     | The `Host` header the service receives, for one that checks it (a bucket honouring signed URLs). Empty leaves the client's.                                     |
+| `tls`              | Reach the service over TLS. Its certificate is not validated; `host_rewrite`'s name is the SNI.                                                                 |
+| `http2`            | The service speaks HTTP/2 (gRPC, say) rather than HTTP/1.1.                                                                                                     |
+| `unreachable_html` | An HTML page to answer with in place of a bare 503 when the service cannot be reached.                                                                          |
 
 ### Rules
 

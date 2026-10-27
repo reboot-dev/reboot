@@ -1,17 +1,18 @@
-"""How Envoy reaches the frontend's dev server (`--frontend-url`): on a
-plain `http://localhost:<port>` as before, and over TLS by name for a
-dev server behind the portless proxy, `https://<name>.localhost`."""
+"""How Envoy reaches the frontend's dev server (`--frontend-url`), an
+upstream: on a plain `http://localhost:<port>` as before, and over
+TLS by name for a dev server behind the portless proxy,
+`https://<name>.localhost`."""
 import os
 import reboot.portless
 import tempfile
 import unittest
 from pathlib import Path
 from reboot.routing.envoy_config import (
-    FRONTEND_CLUSTER_NAME,
-    _frontend_cluster,
-    _frontend_routes,
-    frontend_config,
+    _upstream_cluster,
+    _upstream_error_filters,
+    _upstream_routes,
 )
+from reboot.routing.frontend import frontend_upstreams
 from reboot.settings import ENVVAR_RBT_PORTLESS_NAME, LocalEnvoyMode
 from unittest.mock import patch
 
@@ -20,14 +21,11 @@ class FrontendClusterTest(unittest.TestCase):
 
     def test_plain_dev_server(self) -> None:
         os.environ.pop(ENVVAR_RBT_PORTLESS_NAME, None)
-        config = frontend_config('http://localhost:5173', web_app=False)
-        self.assertEqual(
-            (config.host, config.port, config.tls), ('localhost', 5173, False)
-        )
+        [frontend] = frontend_upstreams('http://localhost:5173', web_app=False)
+        self.assertEqual((frontend.port, frontend.tls), (5173, False))
 
-        cluster = _frontend_cluster(LocalEnvoyMode.EXECUTABLE, config)
-        assert cluster is not None
-        self.assertEqual(cluster.name, FRONTEND_CLUSTER_NAME)
+        cluster = _upstream_cluster(LocalEnvoyMode.EXECUTABLE, frontend)
+        self.assertEqual(cluster.name, 'upstream-frontend')
         self.assertFalse(cluster.HasField('transport_socket'))
         endpoint = cluster.load_assignment.endpoints[0].lb_endpoints[
             0].endpoint.address.socket_address
@@ -35,22 +33,29 @@ class FrontendClusterTest(unittest.TestCase):
             (endpoint.address, endpoint.port_value), ('localhost', 5173)
         )
 
-        [route] = _frontend_routes(config)
+        # The path goes through as it is, asked for by the name the
+        # browser used.
+        [route] = _upstream_routes([frontend], catch_all=False)
+        self.assertEqual(route.route.prefix_rewrite, '')
         self.assertEqual(route.route.host_rewrite_literal, '')
+
+        # The dev server's own error page, naming the URL it was
+        # looked for at.
+        [error_filter] = _upstream_error_filters([frontend])
+        self.assertIn(
+            b'http://localhost:5173', error_filter.typed_config.value
+        )
 
     def test_named_dev_server_behind_portless(self) -> None:
         with patch.dict(os.environ, {ENVVAR_RBT_PORTLESS_NAME: 'bank'}):
             os.environ.pop('PORTLESS_PORT', None)
-            config = frontend_config('https://bank.localhost', web_app=False)
-            # The proxy's port, since the URL names none.
-            self.assertEqual(
-                (config.host, config.port, config.tls),
-                ('bank.localhost', 443, True)
-            )
+            [frontend
+            ] = frontend_upstreams('https://bank.localhost', web_app=False)
+            # Reached at loopback, on the proxy's port since the URL
+            # names none, by name over TLS.
+            self.assertEqual((frontend.port, frontend.tls), (443, True))
 
-            cluster = _frontend_cluster(LocalEnvoyMode.EXECUTABLE, config)
-            assert cluster is not None
-            # Reached at loopback, by name over TLS.
+            cluster = _upstream_cluster(LocalEnvoyMode.EXECUTABLE, frontend)
             endpoint = cluster.load_assignment.endpoints[0].lb_endpoints[
                 0].endpoint.address.socket_address
             self.assertEqual(
@@ -64,15 +69,33 @@ class FrontendClusterTest(unittest.TestCase):
             )
 
             # ...and asked for by that name, not ours.
-            [route] = _frontend_routes(config)
+            [route] = _upstream_routes([frontend], catch_all=False)
             self.assertEqual(
                 route.route.host_rewrite_literal, 'bank.localhost'
             )
 
     def test_proxy_port_can_move(self) -> None:
         with patch.dict(os.environ, {'PORTLESS_PORT': '1355'}):
-            config = frontend_config('https://bank.localhost', web_app=False)
-            self.assertEqual(config.port, 1355)
+            [frontend
+            ] = frontend_upstreams('https://bank.localhost', web_app=False)
+            self.assertEqual(frontend.port, 1355)
+
+    def test_serving_the_web_app_is_a_second_upstream_on_the_root(
+        self,
+    ) -> None:
+        os.environ.pop(ENVVAR_RBT_PORTLESS_NAME, None)
+        [frontend,
+         web_app] = frontend_upstreams('http://localhost:5173', web_app=True)
+        self.assertEqual(
+            (frontend.prefix, web_app.prefix), ('/__/frontend/', '/')
+        )
+        self.assertEqual(web_app.port, frontend.port)
+        self.assertNotEqual(web_app.name, frontend.name)
+
+    def test_a_dev_server_elsewhere_is_refused(self) -> None:
+        with self.assertRaises(ValueError) as raised:
+            frontend_upstreams('http://frontend:5173', web_app=False)
+        self.assertIn('on this machine', str(raised.exception))
 
     def test_portless_ca_is_trusted_only_under_portless(self) -> None:
         """The CA portless keeps is trusted for the dev server only when
@@ -81,7 +104,7 @@ class FrontendClusterTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             ca = Path(directory) / 'ca.pem'
             ca.write_text('not really a certificate')
-            config = frontend_config(
+            [frontend] = frontend_upstreams(
                 'https://frontend-bank.localhost',
                 web_app=False,
             )
@@ -90,16 +113,18 @@ class FrontendClusterTest(unittest.TestCase):
                 {},
             ):
                 os.environ.pop(ENVVAR_RBT_PORTLESS_NAME, None)
-                cluster = _frontend_cluster(LocalEnvoyMode.EXECUTABLE, config)
-                assert cluster is not None
+                cluster = _upstream_cluster(
+                    LocalEnvoyMode.EXECUTABLE, frontend
+                )
                 self.assertNotIn(
                     str(ca).encode(),
                     cluster.transport_socket.typed_config.value,
                 )
 
                 os.environ[ENVVAR_RBT_PORTLESS_NAME] = 'bank'
-                cluster = _frontend_cluster(LocalEnvoyMode.EXECUTABLE, config)
-                assert cluster is not None
+                cluster = _upstream_cluster(
+                    LocalEnvoyMode.EXECUTABLE, frontend
+                )
                 self.assertIn(
                     str(ca).encode(),
                     cluster.transport_socket.typed_config.value,

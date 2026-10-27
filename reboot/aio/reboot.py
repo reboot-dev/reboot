@@ -37,7 +37,7 @@ from reboot.controller.server_managers import LocalServerManager
 from reboot.controller.servers import ServerSpec
 from reboot.controller.settings import ENVVAR_REBOOT_APPLICATION_ID
 from reboot.naming import get_local_application_id
-from reboot.routing import envoy_config
+from reboot.routing.frontend import frontend_upstreams
 from reboot.routing.upstreams import Upstream
 from reboot.run_environments import on_cloud
 from reboot.server.database import DatabaseServer, DatabaseServerFailed
@@ -523,13 +523,15 @@ class Reboot:
                 local_envoy_use_tls=self._local_envoy_tls or False,
                 allowed_origins=allowed_origins,
                 effect_validation=effect_validation,
-                frontend=(
-                    envoy_config.frontend_config(
-                        frontend_url,
-                        web_app=web_app,
-                    ) if frontend_url is not None else None
-                ),
-                upstreams=upstreams,
+                # The frontend's dev server is one more upstream (two
+                # with the web app at `/`).
+                upstreams=[
+                    *upstreams,
+                    *(
+                        frontend_upstreams(frontend_url, web_app=web_app)
+                        if frontend_url is not None else []
+                    ),
+                ],
             )
 
             config = self._config_extractor.config_from_serviceables(
