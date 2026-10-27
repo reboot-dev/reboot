@@ -184,6 +184,18 @@ py_test(
 )
 
 py_test(
+    name = "command_group_tests_py",
+    srcs = [
+        "command_group_tests.py",
+    ],
+    main = "command_group_tests.py",
+    deps = [
+        "//reboot/cli/common:cli_py",
+        "//reboot/cli/common:rc_py",
+    ],
+)
+
+py_test(
     name = "cloud_secrets_tests_py",
     srcs = [
         "cloud_secrets_tests.py",

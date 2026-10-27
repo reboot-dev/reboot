@@ -1,3 +1,5 @@
+"""The `rbt cloud` command group; satisfies
+`reboot.cli.common.command_group.CommandGroup`."""
 import argparse
 from reboot.cli.commands.cloud.down import cloud_down, register_cloud_down
 from reboot.cli.commands.cloud.logs import cloud_logs, register_cloud_logs
@@ -12,7 +14,7 @@ from reboot.cli.common.rc import ArgumentParser
 from typing import Optional
 
 
-def cloud_subcommands() -> list[str]:
+def subcommands() -> list[str]:
     return [
         'cloud down',
         'cloud up',
@@ -23,16 +25,14 @@ def cloud_subcommands() -> list[str]:
     ]
 
 
-def register_cloud(parser: ArgumentParser) -> None:
+def register(parser: ArgumentParser) -> None:
     register_cloud_secret(parser)
     register_cloud_down(parser)
     register_cloud_logs(parser)
     register_cloud_up(parser)
 
 
-async def handle_cloud_subcommand(
-    args: argparse.Namespace,
-) -> Optional[int]:
+async def handle(args: argparse.Namespace) -> Optional[int]:
     if args.subcommand == 'cloud secret set':
         await cloud_secret_set(args)
         return 0
