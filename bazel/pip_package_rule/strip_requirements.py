@@ -54,6 +54,14 @@ def main() -> None:
         "they are removed from the output; every one of its packages "
         "must be present in --requirements-txt",
     )
+    parser.add_argument(
+        "--append-requirement",
+        type=str,
+        action="append",
+        default=[],
+        help="requirement to append to the output unless its package "
+        "is already in --requirements-txt",
+    )
     args = parser.parse_args()
 
     extras_packages = set()
@@ -79,6 +87,13 @@ def main() -> None:
                     if package in extras_packages:
                         continue
                 output.write(line)
+            listed = requirement_packages(args.requirements_txt)
+            for requirement in args.append_requirement:
+                package = normalize_package_name(
+                    find_package_name(requirement)
+                )
+                if package not in listed:
+                    output.write(f"{requirement}\n")
 
 
 if __name__ == "__main__":
