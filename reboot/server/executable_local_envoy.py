@@ -1,12 +1,15 @@
 import asyncio
 import json
 import logging
+import os
+import signal
 import tempfile
 import urllib.request
 from envoy.config.route.v3 import route_components_pb2
 from google.protobuf.descriptor_pb2 import FileDescriptorSet
 from log.log import get_logger
 from pathlib import Path
+from reboot.aio import signals
 from reboot.aio.types import ApplicationId
 from reboot.routing.envoy_config import FrontendConfig
 from reboot.routing.upstreams import Upstream
@@ -204,143 +207,185 @@ class ExecutableLocalEnvoy(LocalEnvoy):
             f"Envoy config:\n```\n{self._envoy_config_path.read_text()}\n```"
         )
 
-        self._process = await asyncio.create_subprocess_exec(
-            *command,
-            stdin=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.STDOUT,
-            stdout=asyncio.subprocess.DEVNULL,
-            # Envoy must have its configuration directory as its working dir to
-            # let our Lua code find the libraries that we've copied into that
-            # directory.
-            cwd=self._tmp_envoy_dir.name,
-        )
+        # There is a race between when we've successfully started
+        # Envoy and when we get the nanny started where Envoy may get
+        # orphaned if our process gets terminated or our coroutine is
+        # cancelled.
+        #
+        # We minimize the likelihood of an orphaned Envoy here by
+        # registering a cleanup handler to be executed when a SIGTERM
+        # or SIGQUIT signal is raised that will terminate Envoy (if it
+        # was started).
+        def stop_on_sigterm_sigquit_exception():
+            if self._process is not None and self._process.returncode is None:
+                # NOTE: deliberately not using `asyncio` in here as
+                # this may be run within an interrupt handler.
+                try:
+                    os.kill(self._process.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
 
-        self._nanny_process = await asyncio.create_subprocess_exec(
-            *nanny_command(self._process.pid),
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-
-        # We must now determine the admin port that Envoy has come up on
-        # (since it picked it dynamically). The `--admin-address-path`
-        # parameter makes Envoy write its admin address to a file when
-        # ready.
-        logger.debug("Waiting for Envoy admin address file...")
-        while True:
-            # If Envoy rejected our xDS config it won't come up, so bail
-            # out of this poll instead of spinning until the timeout.
-            await self._raise_if_fatal_error()
-
-            # Check if process has exited.
-            if self._process.returncode is not None:
-                raise RuntimeError(
-                    "Envoy process ended before admin address was found"
-                )
-
+        with signals.cleanup_on_signal(
+            [signal.SIGTERM, signal.SIGQUIT],
+            handler=stop_on_sigterm_sigquit_exception,
+        ):
             try:
-                admin_address = self._admin_address_path.read_text().strip()
-                if admin_address:
-                    # Format is "host:port", e.g. "127.0.0.1:12345".
-                    self._admin_port = int(admin_address.split(':')[-1])
-                    logger.debug(f"Found admin port: {self._admin_port}")
-                    break
-            except (FileNotFoundError, ValueError):
-                pass
-
-            # File not yet written or empty, wait a bit.
-            await asyncio.sleep(0.01)
-
-        # By calling the admin endpoint's `/listeners` API we can
-        # determine the picked ports for both the public and trusted
-        # listeners.
-        logger.debug("Admin address found. Querying for listeners...")
-
-        def _fetch_listeners(url: str) -> dict:
-            """Fetch listeners data from Envoy admin API.
-
-            This is a blocking call, but we run it in a thread to avoid
-            blocking the event loop. We use `urllib` instead of
-            `aiohttp` because `aiohttp` has a bug where it fails to
-            parse HTTP responses from Envoy's admin interface (see
-            https://github.com/aio-libs/aiohttp/issues/7165); instead of
-            tolerating the extra whitespace in the response, `aiohttp`
-            raises an exception.
-            """
-            with urllib.request.urlopen(url) as response:
-                return json.loads(response.read().decode())
-
-        listeners_url = f"http://127.0.0.1:{self._admin_port}/listeners?format=json"
-        while True:
-            # If Envoy rejected our xDS config the listeners never come
-            # up, so this poll would hang forever; surface the error and
-            # bail instead.
-            await self._raise_if_fatal_error()
-
-            try:
-                listeners_data = await asyncio.to_thread(
-                    _fetch_listeners, listeners_url
+                self._process = await asyncio.create_subprocess_exec(
+                    *command,
+                    stdin=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.STDOUT,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    # Envoy must have its configuration directory as its
+                    # working dir to let our Lua code find the libraries
+                    # that we've copied into that directory.
+                    cwd=self._tmp_envoy_dir.name,
                 )
-            except Exception as e:
-                # We've observed cases where Envoy isn't ready to serve
-                # this endpoint immediately after starting up, so we
-                # retry until it works.
-                logger.debug(
-                    f"Listeners endpoint returned error {e}, will retry..."
+
+                self._nanny_process = await asyncio.create_subprocess_exec(
+                    *nanny_command(self._process.pid),
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL,
                 )
-                await asyncio.sleep(0.1)
-                continue
+            except:
+                stop_on_sigterm_sigquit_exception()
+                raise
 
-            # Parse the listener addresses to extract the ports.
-            for listener_state in listeners_data.get("listener_statuses", []):
-                listener_name = listener_state.get("name", "")
-                local_address = listener_state.get("local_address", {})
-                socket_address = local_address.get("socket_address", {})
-                port = socket_address.get("port_value", 0)
+        # Envoy is running now, so a failure from here on stops it,
+        # rather than leaving it to its nanny to end once this process
+        # exits. `_stop()` tolerates an Envoy that already exited, so
+        # a fatal error that stopped Envoy itself is stopped no worse
+        # twice.
+        try:
+            # We must now determine the admin port that Envoy has come up on
+            # (since it picked it dynamically). The `--admin-address-path`
+            # parameter makes Envoy write its admin address to a file when
+            # ready.
+            logger.debug("Waiting for Envoy admin address file...")
+            while True:
+                # If Envoy rejected our xDS config it won't come up, so bail
+                # out of this poll instead of spinning until the timeout.
+                await self._raise_if_fatal_error()
 
-                if listener_name == "public":
-                    self._public_port = port
-                    logger.debug(f"Found public port: {self._public_port}")
-                elif listener_name == "trusted":
-                    self._trusted_port = port
-                    logger.debug(f"Found trusted port: {self._trusted_port}")
+                # Check if process has exited.
+                if self._process.returncode is not None:
+                    raise RuntimeError(
+                        "Envoy process ended before admin address was found"
+                    )
 
-            # Check if we found both listeners.
-            if self._public_port != 0 and self._trusted_port != 0:
-                break
+                try:
+                    admin_address = self._admin_address_path.read_text().strip(
+                    )
+                    if admin_address:
+                        # Format is "host:port", e.g. "127.0.0.1:12345".
+                        self._admin_port = int(admin_address.split(':')[-1])
+                        logger.debug(f"Found admin port: {self._admin_port}")
+                        break
+                except (FileNotFoundError, ValueError):
+                    pass
 
-            # If not found yet, wait and try again.
-            logger.debug("Listeners not ready yet, will retry...")
-            await asyncio.sleep(0.1)
+                # File not yet written or empty, wait a bit.
+                await asyncio.sleep(0.01)
 
-        logger.info(f"Envoy admin port: {self._admin_port}")
-        logger.info(f"Envoy public port: {self._public_port}")
-        logger.info(f"Envoy trusted port: {self._trusted_port}")
+            # By calling the admin endpoint's `/listeners` API we can
+            # determine the picked ports for both the public and trusted
+            # listeners.
+            logger.debug("Admin address found. Querying for listeners...")
 
-        async def _output_logs():
-            """Tail the log file and output lines in debug mode."""
-            with open(self._logfile_path, 'r') as log_file:
-                while True:
-                    assert self._process is not None
+            def _fetch_listeners(url: str) -> dict:
+                """Fetch listeners data from Envoy admin API.
 
-                    line = log_file.readline()
-                    if line:
-                        print(line, end='')
-                    else:
-                        # Check if process has exited.
-                        if self._process.returncode is not None:
-                            # Read any remaining lines before exiting.
-                            for remaining_line in log_file:
-                                print(remaining_line, end='')
-                            break
-                        # No new content yet, wait a bit.
-                        await asyncio.sleep(0.1)
+                This is a blocking call, but we run it in a thread to avoid
+                blocking the event loop. We use `urllib` instead of
+                `aiohttp` because `aiohttp` has a bug where it fails to
+                parse HTTP responses from Envoy's admin interface (see
+                https://github.com/aio-libs/aiohttp/issues/7165); instead of
+                tolerating the extra whitespace in the response, `aiohttp`
+                raises an exception.
+                """
+                with urllib.request.urlopen(url) as response:
+                    return json.loads(response.read().decode())
 
-        if self._debug_mode:
-            self._output_logs_task = asyncio.create_task(
-                _output_logs(),
-                name=f'_output_logs() in {__name__}',
+            listeners_url = (
+                f"http://127.0.0.1:{self._admin_port}/listeners?format=json"
             )
+            while True:
+                # If Envoy rejected our xDS config the listeners never come
+                # up, so this poll would hang forever; surface the error and
+                # bail instead.
+                await self._raise_if_fatal_error()
+
+                try:
+                    listeners_data = await asyncio.to_thread(
+                        _fetch_listeners, listeners_url
+                    )
+                except Exception as e:
+                    # We've observed cases where Envoy isn't ready to serve
+                    # this endpoint immediately after starting up, so we
+                    # retry until it works.
+                    logger.debug(
+                        f"Listeners endpoint returned error {e}, will retry..."
+                    )
+                    await asyncio.sleep(0.1)
+                    continue
+
+                # Parse the listener addresses to extract the ports.
+                for listener_state in listeners_data.get(
+                    "listener_statuses", []
+                ):
+                    listener_name = listener_state.get("name", "")
+                    local_address = listener_state.get("local_address", {})
+                    socket_address = local_address.get("socket_address", {})
+                    port = socket_address.get("port_value", 0)
+
+                    if listener_name == "public":
+                        self._public_port = port
+                        logger.debug(f"Found public port: {self._public_port}")
+                    elif listener_name == "trusted":
+                        self._trusted_port = port
+                        logger.debug(
+                            f"Found trusted port: {self._trusted_port}"
+                        )
+
+                # Check if we found both listeners.
+                if self._public_port != 0 and self._trusted_port != 0:
+                    break
+
+                # If not found yet, wait and try again.
+                logger.debug("Listeners not ready yet, will retry...")
+                await asyncio.sleep(0.1)
+
+            logger.info(f"Envoy admin port: {self._admin_port}")
+            logger.info(f"Envoy public port: {self._public_port}")
+            logger.info(f"Envoy trusted port: {self._trusted_port}")
+
+            async def _output_logs():
+                """Tail the log file and output lines in debug mode."""
+                with open(self._logfile_path, 'r') as log_file:
+                    while True:
+                        assert self._process is not None
+
+                        line = log_file.readline()
+                        if line:
+                            print(line, end='')
+                        else:
+                            # Check if process has exited.
+                            if self._process.returncode is not None:
+                                # Read any remaining lines before exiting.
+                                for remaining_line in log_file:
+                                    print(remaining_line, end='')
+                                break
+                            # No new content yet, wait a bit.
+                            await asyncio.sleep(0.1)
+
+            if self._debug_mode:
+                self._output_logs_task = asyncio.create_task(
+                    _output_logs(),
+                    name=f'_output_logs() in {__name__}',
+                )
+        except BaseException:
+            await self._stop()
+            raise
 
     async def _stop(self):
         """Terminate the Envoy process, escalating to a kill if it
