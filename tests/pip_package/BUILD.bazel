@@ -16,6 +16,11 @@ py_library(
 pip_package(
     name = "app-with-workspace-requirement",
     description = "Test package that expects a workspace from PyPI.",
+    # A dotted group name, which the generated `pyproject.toml` has to
+    # quote.
+    entry_points = {
+        "rbt.commands": ["app = tests.pip_package.app"],
+    },
     license = "Apache-2.0",
     license_txt = "LICENSE.txt",
     readme_md = "README.md",

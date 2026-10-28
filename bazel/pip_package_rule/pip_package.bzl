@@ -797,7 +797,9 @@ def _pip_package_impl(ctx):
     pyproject_toml_file = ctx.actions.declare_file("%s/pyproject.toml" % STAGING_DIRECTORY_NAME)
     entry_points = ""
     for group, entries in ctx.attr.entry_points.items():
-        entry_points += "[project.entry-points.%s]\n" % group
+        # Quoted, since a group name such as `rbt.commands` would
+        # otherwise be read as nested tables.
+        entry_points += '[project.entry-points."%s"]\n' % group
         for entry in entries:
             name, separator, module = entry.partition("=")
             if separator == "":
