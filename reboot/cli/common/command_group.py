@@ -2,7 +2,6 @@
 installed packages register."""
 import argparse
 from importlib.metadata import entry_points
-from reboot.cli.commands import cloud
 from reboot.cli.common import terminal
 from reboot.cli.common.rc import ArgumentParser
 from reboot.version import REBOOT_VERSION
@@ -22,7 +21,9 @@ PackageName = NewType('PackageName', str)
 
 # Command groups that separate packages provide, so that `rbt` can name
 # the package to install when one of their commands runs without it.
-OPTIONAL_COMMAND_GROUPS: dict[CommandGroupName, PackageName] = {}
+OPTIONAL_COMMAND_GROUPS: dict[CommandGroupName, PackageName] = {
+    CommandGroupName('cloud'): PackageName('reboot-cloud'),
+}
 
 
 class CommandGroup(Protocol):
@@ -80,11 +81,11 @@ class MissingCommandGroup:
 
 
 def load_command_groups() -> list[CommandGroup]:
-    """Returns the command groups: those that ship with `rbt` followed by
-    those that installed packages register under `ENTRY_POINT_GROUP`,
-    ordered by entry point name, preceded by a `MissingCommandGroup` for
-    each optional group none of them provides."""
-    installed: list[CommandGroup] = [cloud]
+    """Returns the command groups that installed packages register under
+    `ENTRY_POINT_GROUP`, ordered by entry point name, preceded by a
+    `MissingCommandGroup` for each optional group none of them
+    provides."""
+    installed: list[CommandGroup] = []
     for entry_point in sorted(
         entry_points(group=ENTRY_POINT_GROUP),
         key=lambda entry_point: entry_point.name,
