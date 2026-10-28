@@ -434,12 +434,32 @@ def _staging_path(file, path_maps):
             break
     return staged_path
 
+def _normalize_package_name(name):
+    """Returns `name` as PyPI compares package names.
+
+    That is lower case, with every run of `-`, `_` and `.` as a single `-`.
+    E.g. `Googleapis_Common.Protos`, `googleapis--common-protos` and
+    `googleapis-common-protos` are all `googleapis-common-protos`.
+    """
+    name = name.lower().replace("_", "-").replace(".", "-")
+
+    # Starlark has no `while`; the range is an upper bound the loop never
+    # reaches, since every pass that gets past the `break` shortens `name`.
+    for _ in range(len(name)):
+        if "--" not in name:
+            break
+        name = name.replace("--", "-")
+    return name
+
 def _requirement_package_name(requirement):
-    """Returns the package name of a requirement such as `reboot==1.2.3`."""
+    """Returns the normalized package name of a requirement.
+
+    E.g. `reboot` for `reboot==1.2.3`.
+    """
     name = requirement
     for separator in [" ", "=", "<", ">", "!", "~", ";", "[", "@"]:
         name = name.split(separator, 1)[0]
-    return name
+    return _normalize_package_name(name)
 
 def _is_bundled(file, workspace_requirements):
     """Whether `file` ships in the package.
@@ -507,7 +527,7 @@ def _pip_package_impl(ctx):
         workspace_requirements,
     )
     required_pypi_dependencies = {
-        package_name: True
+        _normalize_package_name(package_name): True
         for package_name, workspaces in pypi_dependencies.items()
         if _any_bundled(workspaces, workspace_requirements)
     }

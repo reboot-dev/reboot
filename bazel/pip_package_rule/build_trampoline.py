@@ -111,26 +111,22 @@ if __name__ == '__main__':
     #
     # We can only do this check here, not in the rule itself, because the rule
     # fundamentally isn't able to read the `requirements.txt` file.
-    missing_dependencies = [
+    missing_dependencies = {
         normalize_package_name(dep)
         for dep in args.verify_dependency_in_requirements
-    ]
+    }
     for requirements_txt_path in args.requirements_txt:
         with open(requirements_txt_path) as requirements_txt:
             for line in requirements_txt:
                 if line.startswith("#"):
                     continue
                 dependency = normalize_package_name(find_package_name(line))
-                try:
-                    # This dependency is no longer missing!
-                    missing_dependencies.remove(dependency)
-                except ValueError:
-                    # Turns out we don't need this dependency. That's
-                    # fine.
-                    pass
+                # This dependency is no longer missing; one we don't need
+                # is fine.
+                missing_dependencies.discard(dependency)
     if len(missing_dependencies) > 0:
         raise MissingDependenciesError(
-            f"Expected dependencies {missing_dependencies} to be in the "
+            f"Expected dependencies {sorted(missing_dependencies)} to be in the "
             f"`requirements.txt` file, but they were not. Inspect the "
             "`requirements.txt` of the `pip_package` rule; it is probably "
             "out of date."
