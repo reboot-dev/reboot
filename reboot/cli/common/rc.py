@@ -215,6 +215,7 @@ class _Parser(ABC):
         type: type,
         help: str,
         repeatable: bool = False,
+        remainder: bool = False,
         environment_variables: Optional[list[str]] = None,
         required: Optional[bool] = None,
         default: Optional[Any] = None,
@@ -228,6 +229,9 @@ class _Parser(ABC):
         experience for our end users, and it allows `environment_variables` to
         allow users to pass arguments via environment variables instead of on
         the command line.
+
+        A `remainder` positional argument collects every remaining
+        command line argument, flags included, as a list.
         """
         if environment_variables is None:
             environment_variables = []
@@ -253,6 +257,15 @@ class _Parser(ABC):
             raise ValueError(
                 f"Invalid argument '{name}': 'bool' "
                 "arguments can not be 'repeatable'"
+            )
+
+        elif remainder and (
+            name.startswith('-') or repeatable or default is not None
+        ):
+            raise ValueError(
+                f"Invalid argument '{name}': only a positional argument "
+                "without a 'default' can be the 'remainder', and it can "
+                "not also be 'repeatable'"
             )
 
         if type != str and non_empty_string:
@@ -283,6 +296,13 @@ class _Parser(ABC):
 
         if type is bool:
             kwargs['action'] = argparse.BooleanOptionalAction
+        elif remainder:
+            # `REMAINDER` hands everything after the first positional to
+            # the argument as is, flags included, so the parser accepts
+            # a command line whose flags it does not know. A `repeatable`
+            # positional stops at the first flag, which the parser then
+            # rejects as unrecognized.
+            kwargs['nargs'] = argparse.REMAINDER
         elif repeatable:
             if name.startswith('--'):
                 # Repeated flags use the 'append' action.
