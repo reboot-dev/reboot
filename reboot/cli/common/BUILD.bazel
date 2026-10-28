@@ -165,6 +165,7 @@ py_library(
     deps = [
         ":rc_py",
         ":terminal_py",
+        "//reboot:version_py",
         "//reboot/cli/commands/cloud:__init___py",
     ],
 )

@@ -48,6 +48,18 @@ class FakeEntryPoint:
 
 
 @contextmanager
+def optional_command_groups(**packages: str) -> Iterator[None]:
+    """Pretends that the given command groups, keyed by their first
+    word, are the ones that separate packages provide."""
+    with patch.dict(
+        'reboot.cli.common.command_group.OPTIONAL_COMMAND_GROUPS',
+        packages,
+        clear=True,
+    ):
+        yield
+
+
+@contextmanager
 def installed_command_groups(**command_groups: object) -> Iterator[None]:
     """Pretends that, for each keyword argument, a package is installed
     whose `rbt.commands` entry point of that name loads the given command
@@ -75,6 +87,70 @@ class CommandGroupTestCase(unittest.IsolatedAsyncioTestCase):
                 subcommand for command_group in command_groups
                 for subcommand in command_group.subcommands()
             ],
+        )
+
+    async def test_missing_optional_command_group_names_its_package(
+        self
+    ) -> None:
+        with optional_command_groups(hello='reboot-hello'):
+            with installed_command_groups():
+                command_groups = command_group.load_command_groups()
+
+        parser = cli.create_parser(
+            argv=['rbt', 'hello', 'world', '--name=rbt'],
+            command_groups=command_groups,
+        )
+        args, _ = parser.parse_args()
+
+        self.assertEqual(args.subcommand, 'hello')
+        [hello] = [
+            group for group in command_groups
+            if group.subcommands() == ['hello']
+        ]
+        with patch(
+            'reboot.cli.common.command_group.terminal.fail',
+            side_effect=SystemExit(1),
+        ) as fail:
+            with self.assertRaises(SystemExit):
+                await hello.handle(args)
+
+        self.assertIn('pip install reboot-hello==', fail.call_args[0][0])
+
+    async def test_missing_optional_command_group_parses_dot_rc(self) -> None:
+        # A `.rbtrc` written for the package must not stop `rbt` from
+        # parsing when the package is missing.
+        with optional_command_groups(hello='reboot-hello'):
+            with installed_command_groups():
+                command_groups = command_group.load_command_groups()
+
+        with tempfile.NamedTemporaryFile(mode='w') as rc_file:
+            rc_file.write('hello world --name=rbt\n')
+            rc_file.flush()
+
+            parser = cli.create_parser(
+                rc_file=rc_file.name,
+                argv=['rbt', 'hello'],
+                command_groups=command_groups,
+            )
+            args, _ = parser.parse_args()
+
+        self.assertEqual(args.arguments, ['world', '--name=rbt'])
+
+    async def test_installed_optional_command_group_has_no_stand_in(
+        self
+    ) -> None:
+        hello = HelloCommandGroup()
+        with optional_command_groups(hello='reboot-hello'):
+            with installed_command_groups(hello=hello):
+                command_groups = command_group.load_command_groups()
+
+        self.assertIn(hello, command_groups)
+        self.assertEqual(
+            [
+                group for group in command_groups
+                if isinstance(group, command_group.MissingCommandGroup)
+            ],
+            [],
         )
 
     async def test_installed_command_group_is_parsed_and_handled(self) -> None:
