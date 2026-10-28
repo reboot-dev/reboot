@@ -17,6 +17,9 @@ class WorkspaceRequirementsTest(unittest.TestCase):
             ]
             self.assertEqual(len(metadata_names), 1, metadata_names)
             self.metadata = wheel.read(metadata_names[0]).decode()
+            self.entry_points = wheel.read(
+                metadata_names[0].replace('METADATA', 'entry_points.txt')
+            ).decode()
 
     def test_bundles_the_application(self) -> None:
         self.assertIn('tests/pip_package/app.py', self.names)
@@ -35,6 +38,11 @@ class WorkspaceRequirementsTest(unittest.TestCase):
         # business, not this package's.
         self.assertNotIn('Jinja2', self.metadata)
         self.assertNotIn('jinja2', self.metadata)
+
+    def test_registers_the_dotted_entry_point_group(self) -> None:
+        self.assertIn(
+            '[rbt.commands]\napp = tests.pip_package.app', self.entry_points
+        )
 
     def test_is_pure_python(self) -> None:
         self.assertTrue(
