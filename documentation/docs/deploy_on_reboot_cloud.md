@@ -12,6 +12,20 @@ Reboot Cloud!
 
 ## Prerequisites
 
+### Install the `reboot-cloud` package
+
+The `rbt cloud` commands come in a separate `reboot-cloud` package that
+must match your `reboot` version exactly. Install it next to `reboot`:
+
+```bash
+pip install reboot-cloud==$(pip show reboot | sed -n 's/^Version: //p')
+```
+
+Add `reboot-cloud` to your `pyproject.toml` (or `requirements.txt`)
+with the same version pin as `reboot` so that every upgrade keeps
+them together. If you run `rbt` through `npx`, the `@reboot-dev/reboot`
+package installs both for you.
+
 ### Create an API key
 
 Every `rbt cloud` command authenticates with an API key. To create one:
