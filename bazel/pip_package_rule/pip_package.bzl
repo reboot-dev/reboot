@@ -661,34 +661,6 @@ def _pip_package_impl(ctx):
     # but then verify that that file contains every dependency that the
     # `PipPackageInfo` says we need; we do that check in the trampoline below.
     input_requirements_txt = ctx.file.requirements_txt
-    if workspace_requirements:
-        # The workspace requirements come from this rule, so they are
-        # appended to the user's `requirements.txt` rather than expected in
-        # it.
-        workspace_requirements_txt = ctx.actions.declare_file(
-            "%s.workspace_requirements.txt" % ctx.attr.name,
-        )
-        ctx.actions.write(
-            output = workspace_requirements_txt,
-            content = "".join([
-                "%s\n" % requirement
-                for requirement in sorted(workspace_requirements.values())
-            ]),
-        )
-        combined_requirements_txt = ctx.actions.declare_file(
-            "%s.requirements.txt" % ctx.attr.name,
-        )
-        ctx.actions.run_shell(
-            mnemonic = "AppendWorkspaceRequirements",
-            command = "cat %s %s > %s" % (
-                input_requirements_txt.path,
-                workspace_requirements_txt.path,
-                combined_requirements_txt.path,
-            ),
-            inputs = [input_requirements_txt, workspace_requirements_txt],
-            outputs = [combined_requirements_txt],
-        )
-        input_requirements_txt = combined_requirements_txt
     staged_requirements_txt = ctx.actions.declare_file(
         "%s/requirements.txt" % STAGING_DIRECTORY_NAME,
     )
@@ -699,7 +671,7 @@ def _pip_package_impl(ctx):
             fail("Expected exactly one requirements file for extra '%s'" %
                  extra_name)
         extras_requirements_txts[extra_name] = extra_files[0]
-    if extras_requirements_txts:
+    if extras_requirements_txts or workspace_requirements:
         strip_arguments = [
             "--requirements-txt",
             input_requirements_txt.path,
@@ -710,6 +682,16 @@ def _pip_package_impl(ctx):
             strip_arguments.append(
                 "--extra-requirements-txt=%s" % extra_file.path,
             )
+
+        # The workspace requirements come from this rule, so they are
+        # appended to the user's `requirements.txt` rather than expected
+        # in it, unless the user listed them anyway. Several workspaces
+        # may map to the same requirement.
+        for requirement in sorted({
+            requirement: True
+            for requirement in workspace_requirements.values()
+        }.keys()):
+            strip_arguments.append("--append-requirement=%s" % requirement)
         ctx.actions.run(
             mnemonic = "StripExtrasRequirements",
             executable = ctx.executable._strip_requirements_tool,
