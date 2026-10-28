@@ -164,6 +164,15 @@ for await (const { response, aborted } of responses) {
   </TabItem>
 </Tabs>
 
+In TypeScript, leaving the `for await` loop, with `break`, `return` or
+an exception, ends the read and the request behind it; nothing else
+needs to be done to stop reading. An ended read cannot be resumed, so
+a read that must outlive one loop is pulled with `responses.next()`
+instead and closed with `responses.return()`. To end a read from
+outside the loop, for example when the page it feeds goes away, pass
+an `AbortSignal` as `{ signal }` in the reader's options and abort
+it: the loop then ends on its own.
+
 ## Making concurrent calls
 
 When calling multiple Reboot methods externally, you can use the

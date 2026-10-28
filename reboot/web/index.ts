@@ -798,46 +798,56 @@ export async function* grpcServerStream<
 
   let accumulated = "";
 
-  while (true) {
-    const { value, done } = await reader.read();
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
 
-    if (done) {
-      break;
-    }
-
-    accumulated += value.trim();
-
-    if (accumulated.startsWith(",")) {
-      accumulated = accumulated.substring(1);
-    }
-
-    if (!accumulated.startsWith("[")) {
-      accumulated = "[" + accumulated;
-    }
-
-    if (!accumulated.endsWith("]")) {
-      accumulated = accumulated + "]";
-    }
-
-    try {
-      // We may receive more than one response, and we need to yield
-      // each one separately.
-      for (const json of JSON.parse(accumulated)) {
-        yield responseType.fromJson(json);
+      if (done) {
+        break;
       }
-      accumulated = "";
-    } catch (e) {
-      // It's possible that we've only received part of the data
-      // necessary to parse and more is on the way. In that case, we
-      // drop the ']' that we added to the end and loop back up to
-      // keep receiving.
-      if (e instanceof SyntaxError) {
-        accumulated = accumulated.substring(0, accumulated.length - 1);
-        continue;
-      } else {
-        throw e;
+
+      accumulated += value.trim();
+
+      if (accumulated.startsWith(",")) {
+        accumulated = accumulated.substring(1);
+      }
+
+      if (!accumulated.startsWith("[")) {
+        accumulated = "[" + accumulated;
+      }
+
+      if (!accumulated.endsWith("]")) {
+        accumulated = accumulated + "]";
+      }
+
+      try {
+        // We may receive more than one response, and we need to yield
+        // each one separately.
+        for (const json of JSON.parse(accumulated)) {
+          yield responseType.fromJson(json);
+        }
+        accumulated = "";
+      } catch (e) {
+        // It's possible that we've only received part of the data
+        // necessary to parse and more is on the way. In that case, we
+        // drop the ']' that we added to the end and loop back up to
+        // keep receiving.
+        if (e instanceof SyntaxError) {
+          accumulated = accumulated.substring(0, accumulated.length - 1);
+          continue;
+        } else {
+          throw e;
+        }
       }
     }
+  } finally {
+    // A consumer that stops iterating before the stream ends
+    // finalizes this generator at its `yield`; cancelling the reader
+    // then ends the request too, which would otherwise stay open
+    // until the server closed it. On a stream that has already
+    // ended or failed the cancel is a no-op or rejects with the
+    // failure thrown above, which is why its rejection is ignored.
+    await reader.cancel().catch(() => {});
   }
 }
 
