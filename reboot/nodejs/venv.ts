@@ -19,7 +19,9 @@ const PYTHONPATH = path.join(
   `python${PYTHON_VERSION_REQUIRED}`,
   "site-packages"
 );
-const PACKAGE_TO_INSTALL = `reboot==${REBOOT_VERSION}`;
+// `reboot-cloud` provides the `rbt cloud` commands; it is a separate
+// package that must match the `reboot` version exactly.
+const PACKAGES_TO_INSTALL = `reboot==${REBOOT_VERSION} reboot-cloud==${REBOOT_VERSION}`;
 
 // How many times to try `pip install` before giving up. pip retries a
 // connection failure or a 5xx on its own, but not an index page it
@@ -39,11 +41,14 @@ function ensureVirtualEnvCreated() {
 }
 
 async function pipInstallReboot() {
+  // A specific wheel file, useful within testing environments, stands
+  // in for the `reboot` package alone.
+  const wheelFile = process.env.REBOOT_WHL_FILE;
+  const packagesToCheck = wheelFile ? ["reboot"] : ["reboot", "reboot-cloud"];
   const show = spawnSync(
-    `. ${path.join(
-      VENV_EXEC_PATH,
-      "activate"
-    )} && pip show reboot | grep "Version: ${REBOOT_VERSION}"`,
+    `. ${path.join(VENV_EXEC_PATH, "activate")} && ${packagesToCheck
+      .map((name) => `pip show ${name} | grep "Version: ${REBOOT_VERSION}"`)
+      .join(" && ")}`,
     {
       shell: true,
       stdio: ["ignore", "ignore", "ignore"],
@@ -55,9 +60,7 @@ async function pipInstallReboot() {
     process.env.REBOOT_FORCE_REINSTALL.toLowerCase() === "true";
 
   if (show.status !== 0 || forceReinstall) {
-    // Use a specific package if specified, useful within testing
-    // environments.
-    let packageToInstall = process.env.REBOOT_WHL_FILE || PACKAGE_TO_INSTALL;
+    let packageToInstall = wheelFile || PACKAGES_TO_INSTALL;
     console.log(
       `Installing dependencies for Reboot, this may take a minute ...`
     );
