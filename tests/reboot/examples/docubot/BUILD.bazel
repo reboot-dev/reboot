@@ -20,6 +20,10 @@ sh_library(
 # The following package paths are relative to the working directory of
 # the test script.
 general_env = {
+    # The tests never drive a browser, and puppeteer's download of one
+    # into the shared cache leaves a half-unpacked browser directory
+    # when two installs share a machine.
+    "PUPPETEER_SKIP_DOWNLOAD": "1",
     "REBOOT_API_NPM_PACKAGE": "$(location //rbt/v1alpha1:reboot-dev-reboot-api)",
     "REBOOT_NPM_PACKAGE": "$(location //reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz)",
     "REBOOT_REACT_NPM_PACKAGE": "$(location //reboot/react:reboot-dev-reboot-react)",
