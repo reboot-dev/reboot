@@ -552,6 +552,7 @@ py_library(
         "@com_github_reboot_dev_reboot//rbt:py_typed",
     ],
     deps = [
+        ":api_keys_py",
         ":api_py",
         ":bdd_plugin_py",
         ":protobuf_py",
@@ -569,6 +570,7 @@ py_library(
         "//reboot/bdd:vite_py",
         "//reboot/bdd:web_py",
         "//reboot/cli:main_py",
+        "//reboot/cli/common:run_command_py",
         "//reboot/dashboard/backend:main_py",
         "//reboot/mcp:python",
         "//reboot/nodejs:python",
