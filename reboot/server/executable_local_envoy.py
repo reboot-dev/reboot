@@ -10,8 +10,8 @@ from pathlib import Path
 from reboot.aio.types import ApplicationId
 from reboot.routing.envoy_config import FrontendConfig
 from reboot.routing.upstreams import Upstream
-from reboot.server.envoy_nanny import envoy_nanny_command
 from reboot.server.local_envoy import LocalEnvoy
+from reboot.server.nanny import nanny_command
 from reboot.settings import ONLY_LOCALHOST_NETWORK_ADDRESS, LocalEnvoyMode
 from typing import Optional, Sequence
 
@@ -216,7 +216,7 @@ class ExecutableLocalEnvoy(LocalEnvoy):
         )
 
         self._nanny_process = await asyncio.create_subprocess_exec(
-            *envoy_nanny_command(self._process.pid),
+            *nanny_command(self._process.pid),
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,

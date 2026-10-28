@@ -15,8 +15,8 @@ from pathlib import Path
 from reboot.aio.types import ApplicationId
 from reboot.routing.envoy_config import FrontendConfig, ServerInfo
 from reboot.routing.upstreams import Upstream
-from reboot.server.envoy_nanny import envoy_nanny_command
 from reboot.server.local_envoy import LocalEnvoy
+from reboot.server.nanny import nanny_command
 from reboot.settings import (
     DEFAULT_INSECURE_PORT,
     DEFAULT_SECURE_PORT,
@@ -615,7 +615,7 @@ class DockerLocalEnvoy(LocalEnvoy):
             'exec',
             '--interactive',
             f'{self._container_id}',
-            *envoy_nanny_command(1),
+            *nanny_command(1),
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,

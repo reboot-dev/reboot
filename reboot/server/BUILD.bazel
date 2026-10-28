@@ -97,8 +97,8 @@ py_library(
 )
 
 py_library(
-    name = "envoy_nanny_py",
-    srcs = ["envoy_nanny.py"],
+    name = "nanny_py",
+    srcs = ["nanny.py"],
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
 )
@@ -117,8 +117,8 @@ py_library(
         requirement("aiohttp"),
         requirement("aiofiles"),
         requirement("protobuf"),
-        ":envoy_nanny_py",
         ":local_envoy_py",
+        ":nanny_py",
         "//reboot:helpers_py",
         "//reboot:settings_py",
         "//reboot:wait_for_tasks_py",
