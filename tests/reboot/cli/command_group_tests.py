@@ -77,17 +77,29 @@ def installed_command_groups(**command_groups: object) -> Iterator[None]:
 
 class CommandGroupTestCase(unittest.IsolatedAsyncioTestCase):
 
-    async def test_cloud_is_built_in(self) -> None:
+    async def test_cloud_is_optional(self) -> None:
         with installed_command_groups():
             command_groups = command_group.load_command_groups()
 
-        self.assertIn(
-            'cloud up',
-            [
-                subcommand for command_group in command_groups
-                for subcommand in command_group.subcommands()
-            ],
+        parser = cli.create_parser(
+            argv=['rbt', 'cloud', 'up', '--application-name=hello'],
+            command_groups=command_groups,
         )
+        args, _ = parser.parse_args()
+
+        self.assertEqual(args.subcommand, 'cloud')
+        [cloud] = [
+            group for group in command_groups
+            if group.subcommands() == ['cloud']
+        ]
+        with patch(
+            'reboot.cli.common.command_group.terminal.fail',
+            side_effect=SystemExit(1),
+        ) as fail:
+            with self.assertRaises(SystemExit):
+                await cloud.handle(args)
+
+        self.assertIn('pip install reboot-cloud==', fail.call_args[0][0])
 
     async def test_missing_optional_command_group_names_its_package(
         self

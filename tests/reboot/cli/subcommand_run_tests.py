@@ -5,8 +5,6 @@ import unittest
 from reboot.aio.tests import temporary_environ
 from typing import Optional
 
-TEST_API_KEY = "AAAAAAAAAA-AAAAAAAAAAAAAAAAAAAA"
-
 
 class RbtDevRunTestCase(unittest.IsolatedAsyncioTestCase):
 
@@ -97,28 +95,18 @@ class RbtDevRunTestCase(unittest.IsolatedAsyncioTestCase):
             returncode=2,
         )
 
-    async def test_cloud_empty_name(self) -> None:
+    async def test_cloud_without_reboot_cloud(self) -> None:
+        # `rbt cloud` is provided by the `reboot-cloud` package, which
+        # is not installed here.
         await self.run_rbt(
-            f'--api-key={TEST_API_KEY}',
-            '--application-name=',
-            error_message=(
-                "The argument '--application-name' must be a non-empty string"
-            ),
-            command='cloud',
-            subcommand='up',
-            returncode=2,
-        )
-
-    async def test_cloud_empty_api_key(self) -> None:
-        await self.run_rbt(
-            '--api-key=',
+            '--api-key=AAAAAAAAAA-AAAAAAAAAAAAAAAAAAAA',
             '--application-name=test',
             error_message=(
-                "The argument '--api-key' must be a non-empty string"
+                "`rbt cloud` is provided by the 'reboot-cloud' package"
             ),
             command='cloud',
             subcommand='up',
-            returncode=2,
+            returncode=1,
         )
 
 
