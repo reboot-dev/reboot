@@ -208,6 +208,12 @@ why a hook's `id` must be real on every render — is in
 [`references/react-client.md`](references/react-client.md). Read it
 at the frontend step; don't reconstruct it from memory here.
 
+Code with no React tree — a page or worker written without React,
+or a Node.js script that must read reactively — calls the backend
+through the generated web client and a `WebContext` instead; that is
+[`references/web-client.md`](references/web-client.md), and it also
+says when not to.
+
 ## Which References to Read, and When
 
 Everything you read stays in the conversation and is re-sent on
@@ -310,6 +316,12 @@ above for the dev-vs-prod sequence):
   three-field reader return, why mutations resolve to
   `{ response, aborted }` instead of throwing, the typed error
   classes, and the snake→camel naming rules.
+- [`references/web-client.md`](references/web-client.md) — only
+  when some code has no React tree: a page or worker without React,
+  or a Node.js script that must read reactively. The
+  `rbt generate --web=` client and its `WebContext`: the same calls
+  and reactive reads as the hooks as plain async functions, the
+  typed error a call throws, and signing in without the provider.
 
 **Before the tests:** `python/references/testing-project-setup.md`,
 `python/references/testing-features.md` (the built-in steps'
