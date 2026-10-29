@@ -153,6 +153,26 @@ seed can't act as a user, though: `initialize` has no user identity.
   Expunge and reseed. `rbt dev expunge` asks for confirmation and waits
   for an answer, so pass `--yes` when running it without a terminal.
 
+### Effect Validation and Seed Speed
+
+`rbt dev run` runs each mutation twice to check it has no side effects
+outside Reboot, which was observed to roughly double mutation latency.
+For a large seed, turn it off: `rbt dev run --effect-validation=disabled`
+(choices `enabled`, `quiet`, `disabled`; the default is `quiet`), or in
+the harness `rbt.up(..., effect_validation=EffectValidation.DISABLED)`.
+
+With validation on, a `Re-running method <name> to validate effects`
+line per seeded method is normal. Under `quiet`, it prints once per
+method and is then silenced for five minutes, so a long seed goes
+quiet. Measure its progress from state (`rbt inspect`), not the log.
+
+Observed sizes, for scale: a sequential seed with validation disabled
+admitted 193 records at about one per second, then about 6 s per bulk
+import, about 15 minutes in all on an M-series laptop, and a restart
+part way resumed through the aliases (1.5.0). A full production seed
+added about 30 s to each harness test; a small seed cut one suite from
+7m50s to 3m52s (1.4.1).
+
 ### Errors
 
 | Error text                                                                        | Meaning                                                                                 | Fix                                                                                                                             |
