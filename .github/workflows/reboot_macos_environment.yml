@@ -45,6 +45,8 @@ env:
   TZ: ${{ inputs.timezone }}
   # There is no Python 3.10.12 available for MacOS.
   PYTHON_VERSION: 3.10.11
+  # Pinned to match the Bazel toolchain (`node_version` in `WORKSPACE`).
+  NODE_VERSION: 26.11.1
   # The default Xcode on the 'depot-macos-15' image.
   XCODE_VERSION: 16.4
   AUTOCONF_VERSION: 2.72
@@ -118,6 +120,11 @@ jobs:
       - name: Select Xcode
         run: |
           sudo xcode-select -s /Applications/Xcode_$XCODE_VERSION.app/Contents/Developer
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: Install corepack
         run: |
