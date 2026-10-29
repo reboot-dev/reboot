@@ -100,6 +100,7 @@ The imports, so you don't have to go looking for them:
 
 ```python
 from reboot.aio.applications import Application
+from reboot.aio.auth.oauth import OAuth
 from reboot.aio.auth.oauth_providers import (
     Development,
     Google,                       # or GitHub, Auth0, …
