@@ -242,6 +242,14 @@ All four factories require an explicit `mcp=` keyword. Use
 use `mcp=Tool(...)` in MCP Apps projects. See `api-pydantic.md` for
 the full rule.
 
+## Six Method Names Are Reserved
+
+Don't name a method `read`, `write`, `delete`, `state`, `schedule` or
+`spawn`. Reboot uses those names on every state type, and
+`rbt generate` refuses the API with
+`has illegal name: <Name> is reserved`. Pick the name before the API
+is written: `schedule_cleaning`, `delete_booking`.
+
 ## See Also
 
 After choosing factories, load the references that make those choices
