@@ -45,6 +45,8 @@ env:
   TZ: ${{ inputs.timezone }}
   # There is no Python 3.10.12 available for MacOS.
   PYTHON_VERSION: 3.10.11
+  # Pinned to match the Bazel toolchain (`node_version` in `WORKSPACE`).
+  NODE_VERSION: 26.11.1
   # The default Xcode on the 'depot-macos-15' image.
   XCODE_VERSION: 16.4
   AUTOCONF_VERSION: 2.72
@@ -118,6 +120,17 @@ jobs:
       - name: Select Xcode
         run: |
           sudo xcode-select -s /Applications/Xcode_$XCODE_VERSION.app/Contents/Developer
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          # The image's Homebrew node ships an npm whose dependency
+          # resolver crashes with "Cannot read properties of null
+          # (reading 'edgesOut')" on the examples that depend on
+          # `vitest` 4 (https://github.com/npm/cli/issues/9787). The
+          # pinned version is the one the rest of CI and the Bazel
+          # toolchain use.
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: Install corepack
         run: |
