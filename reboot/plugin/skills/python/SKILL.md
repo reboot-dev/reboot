@@ -385,6 +385,10 @@ with "unknown actor type."
 - `references/auth-allow-if.md` and `references/auth-built-in-predicates.md`
   — composition patterns
 - `references/auth-custom-predicates.md` — for app-specific rules
+- `references/auth-claims.md` — when the app needs the user's email
+  or name: requesting claims and overriding `User.set_claims`
+- `references/auth-roles.md` — when staff sign in and what each may
+  do depends on a role: one roster, invitations, the first admin
 - `references/auth-context-propagation.md` — **always read when a
   method calls another servicer or records who acted**: a nested call
   carries the caller's `context.auth` and stays app-internal (so
@@ -537,6 +541,8 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/auth-allow-if.md`
 - `references/auth-built-in-predicates.md`
 - `references/auth-custom-predicates.md`
+- `references/auth-claims.md`
+- `references/auth-roles.md`
 - `references/auth-context-propagation.md` — `context.auth` follows a
   call through the application; audit in writers, never in readers
 - `references/auth-external-api-calls.md`

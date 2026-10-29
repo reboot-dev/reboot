@@ -141,9 +141,10 @@ Recommended sequence:
    | `Ory(...)`      | `domain=`, `client_id=`, `client_secret=` |
 
    The registered providers (everything but `Development` and
-   `Anonymous`) also take `scopes=`, `claims=`, and
-   `store_tokens=`; register `/__/oauth/callback` as the redirect
-   URI with the provider.
+   `Anonymous`) also take `scopes=` and `store_tokens=`; register
+   `/__/oauth/callback` as the redirect URI with the provider.
+   Every provider but `Anonymous` takes `claims=`, `Development()`
+   included ([`auth-claims.md`](../python/references/auth-claims.md)).
 
    Add `claims=[...]` when you need identity fields such as the
    user's email, and `store_tokens=True` only when you will call
