@@ -465,6 +465,9 @@ optional extra:
   including the pydantic zero-default rule, `self.state_id`
   non-existence, and `--name` vs. `--application-name`. Read it once
   per task.
+- `references/errors.md` — holding an error string, grep a
+  distinctive fragment of it here first; each row gives the cause,
+  the fix and the reference that explains it. Never read it whole.
 
 ## Available Reference Files
 
@@ -574,6 +577,10 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/patterns-error-handling.md`
 - `references/patterns-idempotency.md`
 - `references/patterns-common-gotchas.md`
+
+**Errors**:
+
+- `references/errors.md` — error strings with cause and fix; grep it
 
 ## External References
 

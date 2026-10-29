@@ -10,6 +10,10 @@ allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 > **Version notices:** if `rbt` reports a version mismatch or that a
 > newer Reboot is available, the [upgrade skill](../upgrade/SKILL.md)
 > says how and when to react.
+>
+> **Errors:** holding an error string, grep a distinctive fragment of
+> it in `python/references/errors.md` first; never read the file
+> whole.
 
 Build complete Reboot MCP Apps from a user description.
 
