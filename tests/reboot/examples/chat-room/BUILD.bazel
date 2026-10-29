@@ -139,6 +139,18 @@ frontend_env = {
     "REBOOT_WHL_FILE": "$(location //reboot:reboot.dev)",
 }
 
+# The Maestro test installs Expo Go itself, at the build for the
+# `expo` SDK in `frontend/mobile/package.json`. Offline mode keeps the
+# Expo CLI from replacing it with the build its versions endpoint
+# lists, and skips its other requests to Expo's servers, which the
+# test does not need.
+maestro_env = dict(frontend_env)
+
+maestro_env.update({
+    "EXPO_GO_VERSION": "58.0.5",
+    "EXPO_OFFLINE": "1",
+})
+
 osx_frontend_env = dict(frontend_env)
 
 osx_frontend_env.update({
@@ -189,7 +201,7 @@ sh_test_in_working_directory(
     data = frontend_packages + [
         "//reboot/examples/chat-room:everything",
     ],
-    env = frontend_env,
+    env = maestro_env,
     script = "frontend/mobile/.tests/maestro_test.sh",
     tags = [
         "exclusive",

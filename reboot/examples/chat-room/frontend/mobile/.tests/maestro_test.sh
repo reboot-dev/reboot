@@ -190,6 +190,24 @@ adb wait-for-device
 until [ "$(adb shell getprop sys.boot_completed 2> /dev/null | tr -d '\r')" = "1" ]; do
   sleep 1
 done
+# Install Expo Go before the broadcast-idle wait below. Android
+# announces an install with broadcasts. Right after boot they queue
+# behind the boot broadcast and arrive late. A late one for Expo Go
+# restarts its activity, which reloads the app mid-flow. Installing
+# now lets them drain with the boot ones. `expo start --android` below
+# then finds this Expo Go and only opens the project in it. The test
+# target pins the version and puts the Expo CLI in offline mode, so
+# the CLI never installs one of its own.
+: "${EXPO_GO_VERSION:?the Expo Go build to install, set by the test target}"
+: "${EXPO_OFFLINE:?offline mode for the Expo CLI, set by the test target}"
+EXPO_GO_APK="${HOME}/.expo/android-apk-cache/Expo-Go-${EXPO_GO_VERSION}.apk"
+if [ ! -s "${EXPO_GO_APK}" ]; then
+  mkdir -p "$(dirname "${EXPO_GO_APK}")"
+  curl -sfL --max-time 300 -o "${EXPO_GO_APK}.download" \
+    "https://github.com/expo/expo-go-releases/releases/download/Expo-Go-${EXPO_GO_VERSION}/Expo-Go-${EXPO_GO_VERSION}.apk"
+  mv "${EXPO_GO_APK}.download" "${EXPO_GO_APK}"
+fi
+adb install -r "${EXPO_GO_APK}"
 # `sys.boot_completed` flips when the system sends `BOOT_COMPLETED`,
 # not when its receivers are done with it. On this `google_apis` image
 # that broadcast fans out to Play Services and dozens of other manifest
