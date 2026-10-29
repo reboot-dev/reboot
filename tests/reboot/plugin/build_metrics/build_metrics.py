@@ -30,11 +30,11 @@ the moment never came.
 
 What each moment is taken to be:
 
-* the design: the go-ahead question (`GO_AHEAD`) asked once
-  `design/design.md` is written, the moment the design is shown for a
+* the design: the go-ahead question (`GO_AHEAD`) asked once the
+  design has been shown in a message, the moment it is shown for a
   decision; failing that, the first message headed "the proposed
   design"; failing that, the first message of `DESIGN_WORDS` words or
-  more (a build from before the design document);
+  more;
 * an edit: the first tool call that writes a file;
 * the feature file: the first write of a `.feature` file;
 * the API file: the first write of a Python file under `api/`;
@@ -55,7 +55,6 @@ from datetime import datetime
 from pathlib import Path
 
 DESIGN_WORDS = 200
-DESIGN_FILE = re.compile(r"(?:^|/)design/design\.md$")
 DESIGN_HEADING = "the proposed design"
 # The question that asks for the go-ahead on a shown design, in either
 # of the skills' wordings.
@@ -428,7 +427,6 @@ def measure(stream: Iterable[Event], agent: str = "") -> Metrics:
     # prompt itself isn't the mark, since the app adds user records of
     # its own (a working-directory notice) seconds after the turn ends.
     turn_ended: datetime | None = None
-    design_written = False
     # The design's three readings, best first (the module's docstring).
     go_ahead_s = heading_s = long_s = -1
     for event in stream:
@@ -458,12 +456,10 @@ def measure(stream: Iterable[Event], agent: str = "") -> Metrics:
                 if not api_written:
                     metrics.questions += event.questions
                 if (
-                    go_ahead_s < 0 and design_written and
+                    go_ahead_s < 0 and (heading_s >= 0 or long_s >= 0) and
                     any(q in event.text for q in GO_AHEAD)
                 ):
                     go_ahead_s = clock.active(event.at)
-            if any(DESIGN_FILE.search(path) for path in event.writes):
-                design_written = True
             if event.writes and metrics.edit_s < 0:
                 metrics.edit_s = clock.active(event.at)
             if metrics.edit_s < 0 and not event.sub:
