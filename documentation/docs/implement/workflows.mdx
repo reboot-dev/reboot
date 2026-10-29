@@ -424,3 +424,190 @@ execute the call for every run (including retries) you can explicitly
 use `.always()`. Or if you want to execute a call within a loop but
 only once per workflow you must explicitly write `.per_workflow()` /
 `.perWorkflow()`.
+
+### Reconcile loops
+
+A common shape for a control loop is a _reconcile loop_: one workflow
+per state that carries out, in the outside world, whatever the
+state's methods have asked for, one step at a time, and runs only
+while there is something to carry out. The `Blob` state in
+`reboot.std.blob` is the model; its servicer in
+`reboot/std/blob/v1/blob.py` is worth reading in full.
+
+The shape rests on three fields in the state rather than one status:
+
+- `status` is what the outside world holds: for a blob, `CREATED`
+  (nothing in the bucket yet), `UPLOADING`, `COMMITTED` or
+  `DISCARDED`. **Only the workflow ever writes it**, after it has
+  done the corresponding step.
+- `transition` is what has been asked for next, named for the status
+  it leads to: `UPLOAD`, `COMMIT`, `DISCARD`, or `NONE`. **Writers
+  only ever set it**; they never touch `status` and never do the work
+  themselves.
+- `reconciling` is whether a run of the workflow is pending or
+  running. The writer that schedules a run sets it; the run clears it
+  once nothing is asked for.
+
+Separating `status` from `transition` is what makes the loop simple
+to reason about. A request can only ever land in `transition`, so a
+request that arrives while an iteration is busy in the outside world
+is done by the next iteration, and each iteration does exactly one
+thing, then decides whether the run is over:
+
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/std/blob/v1/blob.py&lines=334-394) -->
+<!-- The below code snippet is automatically added from ../../../reboot/std/blob/v1/blob.py -->
+
+```py
+@classmethod
+async def reconcile(
+    cls,
+    context: WorkflowContext,
+    request: ReconcileRequest,
+) -> ReconcileResponse:
+    # The one workflow a blob has: each iteration reads what the
+    # storage holds and what has been asked for, does one step in
+    # the storage, and records the outcome, until nothing is asked
+    # for. A request only ever lands in `transition`, so one that
+    # arrives while an iteration is in the storage is done by the
+    # next; the storage is only ever touched here, one step at a
+    # time.
+    async for _ in context.loop("Reconcile"):
+        # Memoized, so that a replay of this iteration takes the
+        # branch its first run took, whatever the status is by now.
+        state = await Blob.ref().per_iteration("Status").read(context)
+        # A run is only ever scheduled with a transition asked for,
+        # and each is only ever asked for from the statuses it moves
+        # on from: `UPLOAD` by `Create`, and by a `RestartUpload` of
+        # an uploading blob, `COMMIT` by a `Commit` of an uploading
+        # blob, `DISCARD` by a `Discard` of anything not yet
+        # discarded.
+        match state.transition:
+            case Blob.State.UPLOAD:
+                assert state.status in (
+                    Blob.State.CREATED,
+                    Blob.State.UPLOADING,
+                ), state.status
+                await cls._create_upload(context, state)
+            case Blob.State.COMMIT:
+                assert state.status == Blob.State.UPLOADING, state.status
+                await cls._complete_upload(context, state)
+            case Blob.State.DISCARD:
+                assert state.status in (
+                    Blob.State.CREATED,
+                    Blob.State.UPLOADING,
+                    Blob.State.COMMITTED,
+                ), state.status
+                await cls._discard(context, state)
+            case _:
+                raise AssertionError(
+                    "Unexpected transition "
+                    f"'{Blob.State.Transition.Name(state.transition)}'"
+                )
+
+        # Whether this run is done: writes to a blob serialize, so
+        # a transition asked for before this write is seen here and
+        # done by the next iteration, and one asked for after it
+        # finds `reconciling` cleared and schedules a run of its own.
+        # Memoized with the write, so that a replay of this iteration
+        # ends, or goes on, as its first run did.
+        async def done(state: Blob.State) -> bool:
+            if state.transition != Blob.State.NONE:
+                return False
+            state.reconciling = False
+            return True
+
+        if await Blob.ref().per_iteration("Done").write(context, done):
+            break
+    return ReconcileResponse()
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+Some things to notice:
+
+- The status and transition are read with `.per_iteration(...)`, so
+  that a replay of an iteration after a failure takes the branch its
+  first run took, whatever the state looks like by then. The step the
+  branch does is memoized the same way, so it runs once per iteration
+  however often the workflow is retried.
+- A `match` on `transition`, with an assertion on the `status` each
+  transition is expected from and a `case _` that raises, so that a
+  transition the loop does not know, or a run scheduled with nothing
+  asked for, fails loudly rather than being waited on forever.
+- One write, after every step, decides whether the run is over. Writes
+  to a state serialize, so a request that landed before that write is
+  seen by it and done by the next iteration, and one that lands after
+  it finds `reconciling` cleared and schedules a run of its own. The
+  decision comes back as the memoized write's result, so a replay
+  ends, or goes on, as the first run did; a fresh read could not
+  promise that.
+
+The write that records a step's outcome clears `transition` only if
+it still holds the request the step served, so a request that
+superseded it meanwhile stays for the next iteration:
+
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/std/blob/v1/blob.py&lines=471-486) -->
+<!-- The below code snippet is automatically added from ../../../reboot/std/blob/v1/blob.py -->
+
+```py
+# The request served is cleared, and no other: a `DISCARD` asked
+# for meanwhile stays, for the next iteration, whatever
+# completing left in the storage. Discarding always wins.
+async def record(state: Blob.State) -> None:
+    if isinstance(outcome, str):
+        state.status = Blob.State.COMMITTED
+        state.etag = outcome
+        state.ClearField("commit_failure")
+    elif isinstance(outcome, CommitRefused):
+        state.commit_refused.CopyFrom(outcome)
+    else:
+        state.upload_not_found.CopyFrom(outcome)
+    if state.transition == Blob.State.COMMIT:
+        state.transition = Blob.State.NONE
+
+await Blob.ref().per_iteration("Record outcome").write(context, record)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+A writer then only has to decide whether a request is valid, record
+it, and schedule a run unless one is already pending or running:
+
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/std/blob/v1/blob.py&lines=783-808) -->
+<!-- The below code snippet is automatically added from ../../../reboot/std/blob/v1/blob.py -->
+
+```py
+async def discard(
+    self,
+    context: WriterContext,
+    request: DiscardRequest,
+) -> DiscardResponse:
+    if (
+        self.state.status == Blob.State.DISCARDED or
+        self.state.transition == Blob.State.DISCARD
+    ):
+        # Idempotent: the bytes are going, or gone.
+        return DiscardResponse()
+    # Supersedes a `COMMIT` still being carried out: discarding
+    # always wins.
+    self.state.transition = Blob.State.DISCARD
+    await self._ensure_reconciling(context)
+    return DiscardResponse()
+
+async def _ensure_reconciling(self, context: WriterContext) -> None:
+    """Schedules `Reconcile` for the transition just asked for,
+    unless a run is pending or running, which finds it on its next
+    iteration. Writes to a blob serialize, so this and the run's
+    own check of what is asked for cannot miss each other."""
+    if self.state.reconciling:
+        return
+    self.state.reconciling = True
+    await self.ref().schedule().reconcile(context)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+That is the whole protocol: at most one run per state, decided from
+`reconciling` alone inside writes that serialize with every other
+write, no run while nothing is asked for, and the outside world only
+ever touched from inside one.

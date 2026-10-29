@@ -358,6 +358,59 @@ async def control_loop(
         # ... do work ...
 ```
 
+### Reconcile Loops: `status`, `transition` and `reconciling`
+
+When a state's methods ask for work in the outside world (an object
+store, a payment provider, a cluster), build the workflow as a
+**reconcile loop** that runs only while there is work, and keep three
+fields in the state instead of one status:
+
+- `status` — what the outside world holds. Only the workflow writes
+  it, after doing the step.
+- `transition` — what has been asked for next, named for the status
+  it leads to (`UPLOAD` → `UPLOADING`, `COMMIT` → `COMMITTED`, ...)
+  plus `NONE`. Writers only set it; they never write `status` and
+  never do the work.
+- `reconciling` — whether a run is pending or running. The writer
+  that schedules a run sets it; the run clears it once nothing is
+  asked for.
+
+The model is `S3BlobServicer.reconcile` in
+`reboot/std/blob/v1/blob.py` (read that method, the `discard` writer
+and `_ensure_reconciling`; do not reinvent them). Its rules:
+
+1. One `context.loop(...)` per state. Each iteration reads the state
+   with `.per_iteration("Status")`, so a replay takes the branch its
+   first run took, then does **one** step.
+2. `match state.transition:` with one arm per transition. Each arm
+   asserts the `status` it is expected from, does its step as a
+   memoized `at_least_once` (external) or `.per_iteration(...)`
+   (Reboot) call, and records the outcome with an inline write. End
+   with `case _: raise AssertionError(...)` naming the value, which
+   also catches `NONE`, since a run is only scheduled with a
+   transition asked for: `match` is not exhaustive on its own, and
+   protobuf enums are `int`s to mypy, so nothing else will catch a
+   missing arm.
+3. The recording write clears `transition` **only if it still holds
+   the request served** (`if state.transition == COMMIT: state.transition = NONE`). A request that superseded it meanwhile
+   stays for the next iteration. This is what makes "a `Discard`
+   arrived while completing the upload" a non-event.
+4. After every step, one more write decides whether the run is over:
+   if `transition` is `NONE`, clear `reconciling` and return `True`;
+   else `False`. `break` on `True`, `return` after the loop. The
+   memoized write's result is replay-safe; a fresh read is not.
+5. A writer validates the request, sets `transition`, and calls a
+   helper that schedules the workflow **only if `reconciling` is
+   false**, setting it true. Writes serialize, so the helper and the
+   run's deciding write cannot miss each other. The constructor does
+   the same for the first transition.
+
+Do not: write `status` from a writer; add a `COMMITTING`-style status
+for work in flight (that is `transition`); wait inside the loop with
+`until` for the next request (that parks a live workflow per state;
+end the run and let the next writer schedule one); do the external
+call in the writer.
+
 ### Scope Semantics and Defaults
 
 The same three scope names underlie the framework enum

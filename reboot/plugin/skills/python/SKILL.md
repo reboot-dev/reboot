@@ -277,8 +277,10 @@ range), never a whole generated file.
   `.per_iteration(alias)` / `.always()` vs. external `at_least_once` /
   `at_most_once`); `context.loop(...)` iteration; inline state
   mutation via `Service.ref().<scope>.write(context, fn)`;
-  `until` / `until_changes` reactive waiting; and the declared-vs-
-  undeclared exception rule for how a workflow exits
+  `until` / `until_changes` reactive waiting; the reconcile-loop
+  shape (`status` plus `transition`, modelled on `Blob`) for work
+  in the outside world; and the declared-vs-undeclared exception
+  rule for how a workflow exits
 
 ### Calling an LLM / building an AI agent
 
