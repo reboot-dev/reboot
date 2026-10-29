@@ -130,9 +130,9 @@ class CatalogServicer(Catalog.Servicer):
         return Catalog.ListResponse(items=self.state.items)
 ```
 
-## One Authorizer per Servicer
+## One Rule, or One Rule per Method
 
-`def authorizer(self)` returns a single rule that applies to every
-method on the Servicer. Per-method differentiation (e.g. allow reads
-but gate writes) requires a custom authorizer subclass — see
-`auth-custom-predicates.md`.
+A rule returned from `def authorizer(self)` applies to every method on
+the Servicer. To give methods different rules (e.g. allow reads but
+gate writes), return the generated `<Type>.Authorizer`, which takes a
+rule per method; see `auth-custom-predicates.md`.
