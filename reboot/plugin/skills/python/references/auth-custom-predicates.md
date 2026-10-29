@@ -216,3 +216,27 @@ class CheckServicer(Check.Servicer):
 Without `_default=`, a method not named can only be called from inside
 the application (on a `User` type, also by that user), so a method
 left out is closed, not open.
+
+When which roles may call which method is itself data, such as a role
+table the app keeps, one predicate can look up the method being
+called. It finds that name in `context.method`, whose form depends on
+where it is read:
+
+| Where                      | `context.method`                 | Example                         |
+| -------------------------- | -------------------------------- | ------------------------------- |
+| An authorizer or predicate | `<package>.<Type>Methods.<Name>` | `hotel.v1.HotelMethods.CheckIn` |
+| The servicer method itself | `<Name>`                         | `CheckIn`                       |
+
+`<Name>` is the PascalCase name, not the Python method's snake_case
+name, so a table keyed `check_in` matches neither form and denies every
+call. Key the table on the PascalCase name and compare the last segment,
+`context.method.rsplit(".", 1)[-1]`, so the same table works in both
+places:
+
+```python
+ROLES = {"CheckIn": {"front_desk", "manager"}, "MarkClean": {"housekeeping"}}
+
+
+def allowed_roles(context: ReaderContext) -> set[str]:
+    return ROLES.get(context.method.rsplit(".", 1)[-1], set())
+```
