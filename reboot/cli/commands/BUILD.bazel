@@ -13,6 +13,8 @@ py_library(
         "//reboot:version_py",
         "//reboot/aio:external_py",
         requirement("aiohttp"),
+        # The source-built CLI must satisfy the dashboard's dev-extra check.
+        requirement("pytest-bdd"),
         "//reboot/cli/common:dev_extra_py",
         "//reboot/cli/common:directories_py",
         "//reboot/cli/common:portless_py",
@@ -20,6 +22,7 @@ py_library(
         "//reboot/cli/common:subprocesses_py",
         "//reboot/cli/common:terminal_py",
         "//reboot/dashboard/backend:constants_py",
+        "//reboot/dashboard/backend:acp_py",
         # The application this command spawns as a subprocess, so
         # that it is importable from the CLI's own interpreter.
         "//reboot/dashboard/backend:main_py",

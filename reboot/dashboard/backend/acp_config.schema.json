@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Reboot dashboard local ACP configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["providers"],
+  "properties": {
+    "providers": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "claude": {"$ref": "#/$defs/provider"},
+        "codex": {"$ref": "#/$defs/provider"}
+      }
+    }
+  },
+  "$defs": {
+    "provider": {
+      "oneOf": [
+        {"$ref": "#/$defs/command"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command"],
+          "properties": {
+            "command": {"$ref": "#/$defs/command"},
+            "default_model": {
+              "type": "string", "minLength": 1, "pattern": "^[^\\u0000]+$",
+              "description": "Exact advertised model value to apply to new sessions; resumed sessions retain their agent state."
+            }
+          }
+        }
+      ]
+    },
+    "command": {
+      "type": "array",
+      "minItems": 1,
+      "prefixItems": [{"type": "string", "pattern": "^/[^\\u0000]*$"}],
+      "items": {"type": "string", "minLength": 1, "pattern": "^[^\\u0000]+$"}
+    }
+  }
+}

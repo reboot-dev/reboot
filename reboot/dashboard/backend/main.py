@@ -146,6 +146,9 @@ def application() -> Application:
         initialize=initialize,
     )
 
+    from reboot.dashboard.backend.acp import register
+    register(application.http)
+
     # Sign only after authenticating the developer. Keep this route
     # before the catch-all; the element itself cannot send a bearer header.
     @application.http.get(RECORDINGS_PATH + '/sign', require_oauth_token=True)

@@ -1,0 +1,47 @@
+Backport bazelbuild/apple_support#373 (44c43c715aa58d16dc713ec0daa0a4373c39245a)
+to 1.17.1, where the helper still lives in osx_cc_configure.bzl rather than
+universal_exec_tool.bzl. Let the linker emit LC_UUID and perform its normal
+ad-hoc signing; do not disable either and then manually re-sign the output.
+https://github.com/bazelbuild/apple_support/commit/44c43c715aa58d16dc713ec0daa0a4373c39245a
+
+--- a/crosstool/osx_cc_configure.bzl
++++ b/crosstool/osx_cc_configure.bzl
+@@ -102,8 +102,6 @@
+         "arm64",
+         "-arch",
+         "x86_64",
+-        "-Wl,-no_adhoc_codesign",
+-        "-Wl,-no_uuid",
+         "-O3",
+         "-o",
+         out_name,
+@@ -113,29 +111,6 @@
+     if xcrun_result.return_code != 0:
+         error_msg = (
+             "return code {code}, stderr: {err}, stdout: {out}"
+-        ).format(
+-            code = xcrun_result.return_code,
+-            err = xcrun_result.stderr,
+-            out = xcrun_result.stdout,
+-        )
+-        fail(out_name + " failed to generate. Please file an issue at " +
+-             "https://github.com/bazelbuild/apple_support/issues with the following:\n" +
+-             error_msg)
+-
+-    xcrun_result = repository_ctx.execute([
+-        "env",
+-        "-i",
+-        "codesign",
+-        "--identifier",  # Required to be reproducible across archs
+-        out_name,
+-        "--force",
+-        "--sign",
+-        "-",
+-        out_name,
+-    ])
+-    if xcrun_result.return_code != 0:
+-        error_msg = (
+-            "codesign return code {code}, stderr: {err}, stdout: {out}"
+         ).format(
+             code = xcrun_result.return_code,
+             err = xcrun_result.stderr,

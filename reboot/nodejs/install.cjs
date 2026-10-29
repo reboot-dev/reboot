@@ -1,5 +1,5 @@
 // Using that file to improve the readability in the package.json.
-const { execSync } = require("child_process");
+const { execFileSync } = require("child_process");
 const fs = require("fs");
 
 if (process.platform === "win32") {
@@ -32,9 +32,9 @@ try {
     env.REBOOT_BAZEL_TEST_FOR_BINDING = "1";
   }
 
-  const cmd = `node-gyp rebuild --python=${env.RBT_PYTHON3_USE}`;
-  console.log(`\n📦 Running: ${cmd}`);
-  execSync(cmd, { stdio: "inherit", env });
+  const args = ["rebuild", `--python=${env.RBT_PYTHON3_USE}`];
+  console.log(`\n📦 Running: node-gyp ${args.join(" ")}`);
+  execFileSync("node-gyp", args, { stdio: "inherit", env });
 } catch (err) {
   console.error("❌ install.js failed:", err);
   process.exit(1);

@@ -1,0 +1,11 @@
+{
+  "extends": "../../../reboot/dashboard/web/tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true
+  },
+  "include": [
+    "../../../reboot/dashboard/web/src/agent_chat.tsx",
+    "agent_chat.test.tsx"
+  ]
+}
