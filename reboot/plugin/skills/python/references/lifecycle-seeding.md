@@ -96,6 +96,24 @@ Tests assert against the seed's constants, not literal counts, so a
 change to the seed doesn't break them. Only the few tests about the
 production size need the production seed.
 
+### Demo Data in Development Only
+
+A believable dataset makes every view show something the first time it
+opens. Seed it only under `rbt dev run`:
+
+```python
+from reboot.run_environments import running_rbt_dev
+
+
+async def initialize(context: InitializeContext):
+    if running_rbt_dev():
+        await seed_demo(context, rooms=12, guests=8)
+```
+
+`running_rbt_dev()` is true only when `rbt dev run` set the
+environment, so it is false under `rbt serve`, on Reboot Cloud, and in
+the test harness. Scenarios seed what each one needs.
+
 ### Errors
 
 | Error text                                  | Meaning                                              | Fix                                                                 |
