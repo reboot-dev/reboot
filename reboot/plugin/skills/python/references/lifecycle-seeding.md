@@ -123,11 +123,43 @@ not `User._authenticated`). It constructs the `User` if it doesn't
 exist and does nothing otherwise, so it is safe from `initialize`. A
 seed can't act as a user, though: `initialize` has no user identity.
 
+### What Goes Wrong
+
+- **Concurrent seeding transactions** (`asyncio.gather` over batches,
+  a semaphore of 12). Transactions that share actors (the index, a
+  parent) queue on each other's locks. Twelve concurrent bulk imports
+  were observed to stall indefinitely with nothing logged, where run
+  one at a time each took five to seven seconds (1.5.0).
+- **One transaction per record.** About 3,600 calls at about 1.5 s
+  each in development were unfinished after five minutes (1.5.0).
+- **Too much in one transaction.** There is no documented size limit,
+  but one is reachable: 138 creates plus inserts into one shared
+  `OrderedMap` worked, while 360 hung the app at startup with the log
+  filling with lock waits and no error (1.4.1). Keep batches to tens of
+  creates. A lock wait gives up after 30 s and the transaction retries
+  (`LOCK_ACQUIRE_DEADLINE_DEFAULT`), so an oversized seed loops on lock
+  waits instead of failing.
+- **Methods called per record inside the seed transaction.** A batch
+  that joins each member, then sells a plan, then checks them in makes
+  three calls per record while holding the parent's lock. Under
+  `rbt dev run`, effect validation runs the transaction a second
+  time; at 1.6.0 that second run was observed to wait on the first
+  one's lock until Reboot aborted it as `PRESUMED_DEADLOCK` and the
+  app stopped serving.
+- **A large `list[...]` inline on an actor the seed keeps writing.**
+  Every write re-serializes the whole list. Collections that grow go in
+  an `OrderedMap` ([`state-collections.md`](state-collections.md)).
+- **Development state that lived through incompatible designs.**
+  Expunge and reseed. `rbt dev expunge` asks for confirmation and waits
+  for an answer, so pass `--yes` when running it without a terminal.
+
 ### Errors
 
-| Error text                                  | Meaning                                              | Fix                                                                 |
-| ------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------- |
-| `PermissionDenied` on a seed call in a test | An internal-only method called with a user's context | Seed through `create_external_context(name=..., app_internal=True)` |
+| Error text                                                                        | Meaning                                                                                 | Fix                                                                                                                             |
+| --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `PermissionDenied` on a seed call in a test                                       | An internal-only method called with a user's context                                    | Seed through `create_external_context(name=..., app_internal=True)`                                                             |
+| `database.cc Check failed`                                                        | Development state from an incompatible earlier design                                   | Stop the app, `rbt dev expunge --application-name=<name> --yes`, reseed                                                         |
+| `is presumed deadlocked with it; aborting so that the older transaction proceeds` | Transactions contending for the same actors; the younger one is rolled back and retried | Seed one batch at a time; observed at 1.6.0 also on sequential `initialize` transactions, about 2.5 s each, and then succeeding |
 
 ### See Also
 
