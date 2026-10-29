@@ -114,6 +114,15 @@ async def initialize(context: InitializeContext):
 environment, so it is false under `rbt serve`, on Reboot Cloud, and in
 the test harness. Scenarios seed what each one needs.
 
+### Seeding `User` Actors
+
+There is no public API for it. The generated servicer has a static
+`_authenticated(context, state_id, claims=None)`; call it on the
+servicer class (`UserServicer._authenticated(context, state_id=user_id)`,
+not `User._authenticated`). It constructs the `User` if it doesn't
+exist and does nothing otherwise, so it is safe from `initialize`. A
+seed can't act as a user, though: `initialize` has no user identity.
+
 ### Errors
 
 | Error text                                  | Meaning                                              | Fix                                                                 |
