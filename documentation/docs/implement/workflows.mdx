@@ -261,9 +261,11 @@ feature.
 `until` will re-execute reactively not only for your own `state`, but
 also for all other states you may call into.
 
-`until` will re-execute reactively until a _non-falsy_ value is
-returned, and then it will return that value if it is not a
-boolean. For example, you can wait for a specific key to be set in a
+`until` will re-execute reactively until a value other than `False`
+is returned, and then it will return that value if it is not a
+boolean. Only `False` keeps it waiting: a falsy value such as `None`,
+`""`, `0` or `[]` ends the wait at once, so return `False` while
+waiting. For example, you can wait for a specific key to be set in a
 collection such as [`SortedMap`](/library_services/sorted_map) or
 [`OrderedMap`](/library_services/ordered_map) and return the value:
 
