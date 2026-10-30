@@ -26,10 +26,14 @@ def counts(result: dict, arm: str) -> dict[tuple[str, str], tuple[int, int]]:
     out: dict[tuple[str, str], tuple[int, int]] = {}
     for case in result["cases"]:
         runs = case["arms"].get(arm, [])
-        # The without-skills arm skips graders that only check a skill
-        # loaded, so the graders an arm has are the ones its runs list.
-        # A run that errored lists none and counts as a failure.
+        # A run that errored lists no graders and counts as a failure.
+        # Every grader runs with the plugin, so that arm takes them from
+        # the case and keeps a case whose runs all errored. The
+        # without-skills arm skips graders that only check a skill
+        # loaded, so it has the graders its runs list.
         names = {g["name"] for run in runs for g in run["graders"]}
+        if arm == "with":
+            names |= {g["name"] for g in case["graders"]}
         for name in sorted(names):
             passed = sum(
                 g["passed"] for run in runs for g in run["graders"]

@@ -140,9 +140,10 @@ jobs:
         run: |
           set -eu
           RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          SUBJECT=$(head -1 "$OUT/report.md" 2>/dev/null | sed 's/^## //')
-          BODY="$(cat "$OUT/report.md" 2>/dev/null)"$'\n\n'"Run: $RUN_URL"
-          if [ -z "$SUBJECT" ]; then
+          if [ -s "$OUT/report.md" ]; then
+            SUBJECT=$(head -1 "$OUT/report.md" | sed 's/^## //')
+            BODY="$(cat "$OUT/report.md")"$'\n\n'"Run: $RUN_URL"
+          else
             SUBJECT="Nightly plugin evals: no report"
             BODY="The evals did not get as far as a report. Run: $RUN_URL"
           fi
