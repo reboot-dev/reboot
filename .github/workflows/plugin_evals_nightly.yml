@@ -1,0 +1,164 @@
+name: Nightly Plugin Evals
+
+# The plugin's eval cases (`tests/reboot/plugin/evals/`), once a day,
+# against `main`, when the plugin or its cases changed in the last day,
+# and every Monday regardless, to catch a Claude Code or model release
+# that moves the results. Each grader is counted three ways: without
+# the plugin, with the plugin as of yesterday's `main`, and with the
+# plugin as of tonight's `main`. Both plugins run tonight, on the same
+# Claude Code and model, so a difference between them comes from the
+# day's changes. The report is mailed; nothing here blocks a merge.
+on:
+  schedule:
+    # An hour after the MacOS nightly, so the two do not compete for
+    # runners.
+    - cron: "0 8 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+env:
+  PLUGIN_PATHS: reboot/plugin tests/reboot/plugin/evals
+
+jobs:
+  changes:
+    name: Check for plugin changes
+    runs-on: depot-ubuntu-24.04
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          show-progress: false
+
+      - name: Look for plugin changes since the last nightly
+        id: check
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -eu
+          # 25 hours rather than 24, as in `macos_nightly.yml`.
+          SINCE=$(git rev-list -1 --before='25 hours ago' HEAD)
+          if [ ! -x tests/reboot/plugin/evals/run.sh ]; then
+            echo "No eval cases in this checkout."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT_NAME" = schedule ] && [ "$(date -u +%u)" != 1 ] \
+              && git diff --quiet "$SINCE" HEAD -- $PLUGIN_PATHS; then
+            echo "Nothing in the plugin changed in the last day."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  evaluate:
+    name: Run the evals
+    needs: changes
+    if: ${{ needs.changes.outputs.run == 'true' }}
+    runs-on: depot-ubuntu-24.04
+    # A full run takes about 15 minutes; this only stops a hung one.
+    timeout-minutes: 90
+    # `MAILGUN_API_KEY` lives on this environment, which accepts `main`
+    # only; see `macos_nightly.yml`.
+    environment: nightly
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      # Per call to `run.sh`. Tonight's plugin with and without skills
+      # cost about $10 in October 2026; this stops a runaway, not a
+      # normal run.
+      MAX_COST_USD: 30
+      OUT: ${{ github.workspace }}/eval-out
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          show-progress: false
+
+      # The latest release on purpose: the evals should see what users
+      # run, and the report names the version.
+      - name: Install Claude Code
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # `--threshold 0`, so a low score does not fail these steps:
+      # severity is decided by the report, and a failure here means the
+      # run itself broke.
+      - name: Evaluate yesterday's plugin
+        run: |
+          set -eux
+          SINCE=$(git rev-list -1 --before='25 hours ago' HEAD)
+          if git diff --quiet "$SINCE" HEAD -- $PLUGIN_PATHS; then
+            echo "The plugin is unchanged since $SINCE; no comparison."
+            exit 0
+          fi
+          echo "SINCE=$SINCE" >> "$GITHUB_ENV"
+          git worktree add "$RUNNER_TEMP/since" "$SINCE"
+          # Tonight's cases, graded against the old plugin, so both
+          # sides answer the same graders.
+          tests/reboot/plugin/evals/run.sh \
+            --plugin "$RUNNER_TEMP/since/reboot/plugin" \
+            --ablation none --threshold 0 -j 3 \
+            --max-cost-usd "$MAX_COST_USD" --output-dir "$OUT/since"
+
+      - name: Evaluate tonight's plugin, with and without skills
+        run: |
+          tests/reboot/plugin/evals/run.sh \
+            --ablation with-without --threshold 0 -j 3 \
+            --max-cost-usd "$MAX_COST_USD" --output-dir "$OUT/tonight"
+
+      # Exits 1 when a grader is critical, after the report is written.
+      - name: Write the report
+        run: |
+          set -eu
+          ARGS=(--tonight "$OUT/tonight/aggregate-result.json" --tonight-commit "$GITHUB_SHA")
+          if [ -n "${SINCE:-}" ]; then
+            ARGS+=(--baseline "$OUT/since/aggregate-result.json" --baseline-commit "$SINCE")
+          fi
+          python3 tests/reboot/plugin/evals_report.py "${ARGS[@]}" > "$OUT/report.md" \
+            || status=$?
+          cat "$OUT/report.md" >> "$GITHUB_STEP_SUMMARY"
+          exit "${status:-0}"
+
+      - name: Upload the results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-evals
+          path: ${{ env.OUT }}
+
+      - name: Email the report
+        if: ${{ always() }}
+        env:
+          MAILGUN_API_KEY: ${{ secrets.MAILGUN_API_KEY }}
+          MAILGUN_DOMAIN: reboot.dev
+          REPORT_TO: ${{ vars.NIGHTLY_REPORT_TO }}
+        run: |
+          set -eu
+          RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          SUBJECT=$(head -1 "$OUT/report.md" 2>/dev/null | sed 's/^## //')
+          BODY="$(cat "$OUT/report.md" 2>/dev/null)"$'\n\n'"Run: $RUN_URL"
+          if [ -z "$SUBJECT" ]; then
+            SUBJECT="Nightly plugin evals: no report"
+            BODY="The evals did not get as far as a report. Run: $RUN_URL"
+          fi
+          echo "$SUBJECT"
+          if [ -z "$MAILGUN_API_KEY" ] || [ -z "$REPORT_TO" ]; then
+            echo "Mail wants the MAILGUN_API_KEY secret and the"
+            echo "NIGHTLY_REPORT_TO variable; with either one missing"
+            echo "the run's summary is the whole of the report."
+            exit 0
+          fi
+          # The credential goes to `curl` on stdin rather than in an
+          # argument, which keeps it out of the process list.
+          printf 'user = "api:%s"\n' "$MAILGUN_API_KEY" \
+            | curl -sS --config - --fail-with-body --max-time 30 \
+              "https://api.mailgun.net/v3/$MAILGUN_DOMAIN/messages" \
+              -F from="Reboot CI <ci@$MAILGUN_DOMAIN>" \
+              -F to="$REPORT_TO" \
+              -F subject="$SUBJECT" \
+              -F text="$BODY"
