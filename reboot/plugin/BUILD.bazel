@@ -3,3 +3,9 @@ filegroup(
     srcs = ["install.sh"],
     visibility = ["//visibility:public"],
 )
+
+filegroup(
+    name = "skills",
+    srcs = glob(["skills/**"]),
+    visibility = ["//visibility:public"],
+)
