@@ -49,7 +49,10 @@ def generate_standalone_envoy_routing_filter() -> str:
                 ],
                 reboot_version=REBOOT_VERSION_BEFORE_SHARDED_DATABASE,
             ),
-        ]
+        ],
+        application_id_by_domain={
+            'api.example.com': ApplicationId('application2')
+        },
     ).splitlines()
 
     template_input = {

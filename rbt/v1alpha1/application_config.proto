@@ -130,6 +130,13 @@ message ApplicationConfig {
     // but empty means only same-origin browser traffic may carry
     // credentials.
     AllowedOrigins allowed_origins = 13;
+
+    // The custom domains, as fully qualified domain names (e.g.
+    // `api.example.com`), the gateway serves this application on, next
+    // to its default `<application ID>.<cluster domain>`. Each one
+    // needs a TLS certificate and a routing-table entry; both are the
+    // controller's job.
+    repeated string custom_domains = 14;
   }
 
   Spec spec = 2;
