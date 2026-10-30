@@ -320,6 +320,9 @@ The `Agent` runs only inside a `WorkflowContext`, so also read the
   modifying an API that has already been deployed or run with
   persisted state**: the rules you must follow for API schema
   evolution
+- `references/patterns-cross-actor-reads.md` — when a page reads
+  many states: summary and detail readers, one fan-out reader on
+  the parent, and keeping items that change together inline
 
 ### Implementing a Servicer
 
@@ -574,6 +577,7 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/patterns-error-handling.md`
 - `references/patterns-idempotency.md`
 - `references/patterns-common-gotchas.md`
+- `references/patterns-cross-actor-reads.md`
 
 ## External References
 
