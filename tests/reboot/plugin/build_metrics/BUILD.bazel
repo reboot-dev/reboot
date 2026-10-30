@@ -1,0 +1,28 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+# How a build went, from its Claude Code transcript: a tool for judging
+# a change to the plugin's skills on real builds. It lives under
+# `tests/`, so it never ships with the plugin.
+py_library(
+    name = "build_metrics",
+    srcs = ["build_metrics.py"],
+)
+
+py_binary(
+    name = "check_transcript",
+    srcs = ["check_transcript.py"],
+    main = "check_transcript.py",
+    deps = [":build_metrics"],
+)
+
+py_test(
+    name = "build_metrics_test",
+    size = "small",
+    srcs = ["build_metrics_test.py"],
+    data = glob(["testdata/**/*.jsonl"]),
+    env = {
+        "BUILD_METRICS_TESTDATA": "tests/reboot/plugin/build_metrics/testdata",
+    },
+    main = "build_metrics_test.py",
+    deps = [":build_metrics"],
+)
