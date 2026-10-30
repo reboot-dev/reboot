@@ -479,6 +479,8 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/lifecycle-rbtrc.md`
 - `references/lifecycle-application-entry.md`
 - `references/lifecycle-initialize-hook.md`
+- `references/lifecycle-seeding.md` — loading a catalog or demo
+  data from `initialize` and tests
 - `references/lifecycle-secrets.md`
 - `references/lifecycle-dockerfile.md`
 - `references/lifecycle-reboot-cloud.md`
