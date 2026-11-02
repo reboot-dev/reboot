@@ -33,10 +33,20 @@ await account.deposit(context, amount=100)
 
 ## The Context Type Must Match the Method
 
-`reader` methods accept any of `ReaderContext`, `WriterContext`,
-`TransactionContext`. `writer` methods require a `WriterContext` (own
-actor) or `TransactionContext`. `transaction` methods require a
-`TransactionContext`.
+| Calling from         | Readers | Writers, transactions, workflows |
+| -------------------- | ------- | -------------------------------- |
+| `ReaderContext`      | yes     | no                               |
+| `WriterContext`      | yes     | no, not even its own actor's     |
+| `TransactionContext` | yes     | yes                              |
+| `WorkflowContext`    | yes     | yes                              |
+| `ExternalContext`    | yes     | yes                              |
+
+A writer can't call another writer, including one on its own actor
+through `self.ref()`. The call fails as it is made, with
+`TypeError: reboot.aio.contexts.WriterContext is not an instance or
+subclass of one of the expected type(s): ['reboot.aio.contexts.TransactionContext', ...]`.
+To change two actors together, make the caller a `Transaction`; to
+change this actor in two steps, do both in one writer.
 
 When in doubt, call from a `transaction` context — it can call any method
 on any actor.
