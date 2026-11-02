@@ -1,0 +1,38 @@
+schema_version: "1.1"
+name: api-in-python
+description: "A new app's API is pydantic Python declared with reboot.api, every field tagged and given a default (a field without one raises AttributeError at first access), not a .proto file."
+tags: [api, code]
+runs: 3
+execution:
+  prompt: "Start a shared grocery list app on Reboot: a household shares its lists, anyone in the household can add items and check them off, and everyone sees the list change as it happens. Write the API for it in `api/grocery/v1/grocery.py`."
+  max_turns: 50
+  timeout_seconds: 900
+  allowed_tools: [Read, Glob, Grep, Skill, Write, Edit]
+  append_system_prompt: "This session can read files, load skills, and write and edit files in the working directory. It cannot run commands, so nothing is generated, installed, tested or started. No one will answer questions in this session: where you would ask, choose, say what you chose, and go on. Do the work the request asks for and write its files."
+graders:
+  - name: reboot-skill
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"reboot:[\w-]+"'
+  - name: imports-reboot-api
+    type: regex
+    target: {source: file, path: api/grocery/v1/grocery.py}
+    pattern: 'from\s+reboot\.api\s+import'
+  - name: no-protobuf
+    type: regex
+    target: {source: file, path: api/grocery/v1/grocery.py}
+    pattern: 'syntax\s*=\s*"proto[23]"|_pb2\b|rbt\.v1alpha1|rbt\s+protoc'
+    match: not_contains
+  - name: tagged-fields
+    type: regex
+    target: {source: file, path: api/grocery/v1/grocery.py}
+    pattern: 'Field\(\s*tag\s*=\s*\d'
+  - name: fields-have-defaults
+    type: regex
+    target: {source: file, path: api/grocery/v1/grocery.py}
+    pattern: 'Field\(\s*tag\s*=\s*\d+\s*\)'
+    match: not_contains
+  - name: method-kinds
+    type: llm
+    focus: {source: file, path: api/grocery/v1/grocery.py}
+    criteria: "PASS if the file declares the app's API in Python with Reboot's `API(...)`, each state type as a `Type(...)` with its `Methods(...)`, and every method's kind fits what it does: a method that only reads is a `Reader`; one that changes only its own instance is a `Writer` or a `Transaction`; one that changes more than one instance (another list, an item that is its own state type) is a `Transaction` or a `Workflow`. FAIL if the file is missing or is not such an API, if a method that only reads is declared a `Writer` or `Transaction`, or if a method that changes several instances is declared a `Writer`. Quote the declarations you relied on."
