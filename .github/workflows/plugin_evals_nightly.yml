@@ -10,8 +10,8 @@ name: Nightly Plugin Evals
 # day's changes. The report is mailed; nothing here blocks a merge.
 on:
   schedule:
-    # An hour after the MacOS nightly, so the two do not compete for
-    # runners.
+    # Around midnight Pacific, after the day's merges. Independent of the
+    # MacOS nightly: other runners, its own concurrency group.
     - cron: "0 8 * * *"
   workflow_dispatch:
 
@@ -92,7 +92,9 @@ jobs:
         run: |
           set -eux
           SINCE=$(git rev-list -1 --before='25 hours ago' HEAD)
-          if git diff --quiet "$SINCE" HEAD -- $PLUGIN_PATHS; then
+          # The plugin only, not the cases: when only the cases changed,
+          # yesterday's plugin is tonight's and its run would repeat it.
+          if git diff --quiet "$SINCE" HEAD -- reboot/plugin; then
             echo "The plugin is unchanged since $SINCE; no comparison."
             exit 0
           fi
@@ -156,10 +158,12 @@ jobs:
           fi
           # The credential goes to `curl` on stdin rather than in an
           # argument, which keeps it out of the process list.
+          # `--form-string` because `-F` ends a value at a `;`, and the
+          # report has them.
           printf 'user = "api:%s"\n' "$MAILGUN_API_KEY" \
             | curl -sS --config - --fail-with-body --max-time 30 \
               "https://api.mailgun.net/v3/$MAILGUN_DOMAIN/messages" \
-              -F from="Reboot CI <ci@$MAILGUN_DOMAIN>" \
-              -F to="$REPORT_TO" \
-              -F subject="$SUBJECT" \
-              -F text="$BODY"
+              --form-string from="Reboot CI <ci@$MAILGUN_DOMAIN>" \
+              --form-string to="$REPORT_TO" \
+              --form-string subject="$SUBJECT" \
+              --form-string text="$BODY"
