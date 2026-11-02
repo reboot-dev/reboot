@@ -36,7 +36,9 @@ def counts(result: dict, arm: str) -> dict[tuple[str, str], tuple[int, int]]:
             names |= {g["name"] for g in case["graders"]}
         for name in sorted(names):
             passed = sum(
-                g["passed"] for run in runs for g in run["graders"]
+                g["passed"]
+                for run in runs
+                for g in run["graders"]
                 if g["name"] == name
             )
             out[(case["name"], name)] = (passed, len(runs))
@@ -100,8 +102,10 @@ def main() -> None:
         print(f"- Last evaluated `main`: `{args.baseline_commit}`")
     else:
         print("- Last evaluated `main`: none, so no comparison column")
-    print(f"- Claude Code {tonight['claudeVersion']}, judged by "
-          f"{tonight['suite']['judgeModel']}")
+    print(
+        f"- Claude Code {tonight['claudeVersion']}, judged by "
+        f"{tonight['suite']['judgeModel']}"
+    )
     print(f"- Cost: ${cost:.2f}")
     print()
     print(
