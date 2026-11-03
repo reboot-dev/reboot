@@ -154,7 +154,8 @@ case "$tool" in
         # `reboot:` selector; `deploy` and `inspect` are intentionally
         # excluded because they reach outside the local project.
         case "$(field skill)" in
-            reboot:app | reboot:full-stack | reboot:feature | \
+            reboot:app | reboot:full-stack | reboot:web-app | \
+            reboot:mcp-app | reboot:feature | \
             reboot:python | reboot:run | reboot:upgrade | \
             reboot:dashboard | reboot:agents-md)
                 emit_allow
