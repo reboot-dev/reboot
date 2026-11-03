@@ -174,6 +174,21 @@ case "$tool" in
         ;;
     Bash)
         cmd=$(field command)
+        # A page file written as `<name>.tmp` and renamed into place:
+        # the desktop app previews every `.html` or `.svg` the Write
+        # tool writes, so a build writes `index.html.tmp` and renames
+        # it. Exactly `mv <path>.tmp <path>`, the same path, an .html
+        # or .svg, no `..`, and an absolute path only inside the cwd.
+        if printf '%s' "$cmd" | grep -Eq '^mv [A-Za-z0-9_./][A-Za-z0-9_./-]*\.(html|svg)\.tmp [A-Za-z0-9_./][A-Za-z0-9_./-]*\.(html|svg)$'; then
+            src=${cmd#mv }; src=${src%% *}; dst=${cmd##* }
+            case "$src" in *..*) exit 0 ;; esac
+            [ "$src" = "$dst.tmp" ] || exit 0
+            case "$dst" in
+                /*) here=$(field cwd); case "$dst" in "$here"/*) emit_allow ;; esac ;;
+                *) emit_allow ;;
+            esac
+            exit 0
+        fi
         has_traversal "$cmd" && exit 0
         # The directory Claude Code launched the tool from. Used to
         # resolve relative paths and to gate the Reboot dev commands.

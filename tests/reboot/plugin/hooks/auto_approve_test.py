@@ -639,6 +639,49 @@ CASES: list[tuple[str, str, dict, Decision]] = [
         },
         Decision.REJECT,
     ),
+    # ----- Bash: a page file renamed into place (the desktop app
+    # previews every .html the Write tool writes, so the build writes
+    # `<page>.tmp` and renames it). -----
+    (
+        'Bash: an index.html written as .tmp and renamed into place is approved',
+        "Bash",
+        {
+            "command": 'mv frontend/web/index.html.tmp frontend/web/index.html'
+        },
+        Decision.APPROVE,
+    ),
+    (
+        'Bash: a rename to a different name is rejected',
+        "Bash",
+        {
+            "command": 'mv frontend/web/index.html.tmp frontend/web/other.html'
+        },
+        Decision.REJECT,
+    ),
+    (
+        'Bash: a .tmp rename of a non-page file is rejected',
+        "Bash",
+        {
+            "command": 'mv backend/src/main.py.tmp backend/src/main.py'
+        },
+        Decision.REJECT,
+    ),
+    (
+        'Bash: a .tmp rename with a traversal is rejected',
+        "Bash",
+        {
+            "command": 'mv ../x/index.html.tmp ../x/index.html'
+        },
+        Decision.REJECT,
+    ),
+    (
+        'Bash: a .tmp rename followed by another command is rejected',
+        "Bash",
+        {
+            "command": 'mv a/index.html.tmp a/index.html && rm -rf /'
+        },
+        Decision.REJECT,
+    ),
 ]
 
 # The `run` skill's Reboot dev commands. These are auto-approved only
