@@ -18,6 +18,8 @@
         "./skills/app",
         "./skills/feature",
         "./skills/full-stack",
+        "./skills/web-app",
+        "./skills/mcp-app",
         "./skills/run",
         "./skills/agents-md",
         "./skills/dashboard",

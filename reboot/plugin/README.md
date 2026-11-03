@@ -10,6 +10,8 @@ agent. The same skills work in both **Claude Code** and **Codex**.
 | [`app`](skills/app/)             | Build a Reboot app from a description — asks who will use it (people and agents by default), then loads `full-stack`                     |
 | [`feature`](skills/feature/)     | Specify a feature in plain English, write it down as a `@wip` feature file, then iterate on its scenarios with the user                   |
 | [`full-stack`](skills/full-stack/) | Build the app a layer at a time — one backend, a web app and an MCP App (or one of them)                                                 |
+| [`web-app`](skills/web-app/)     | `app` with the frontend settled as a web app alone                                                                                       |
+| [`mcp-app`](skills/mcp-app/)     | `app` with the frontend settled as an MCP App alone                                                                                      |
 | [`run`](skills/run/)             | Run an existing Reboot app — detects MCP App vs. Web App and starts every process it needs                                                |
 | [`agents-md`](skills/agents-md/) | Give a Reboot app an `AGENTS.md` for coding agents and a one-line `CLAUDE.md` that imports it; kept current as the app changes            |
 | [`deploy`](skills/deploy/)       | Deploy a Reboot app to production — one container on Reboot Cloud that runs the backend and serves the built MCP Apps and web app         |
