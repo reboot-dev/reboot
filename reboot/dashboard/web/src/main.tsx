@@ -57,6 +57,7 @@ import {
   PRESENCE_ID,
 } from "./constants";
 import { Recording, RecordingButton } from "./recordings";
+import { AgentChat } from "./agent_chat";
 import type * as api_pb from "../../../../rbt/v1alpha1/api/api_pb";
 import type * as dashboard_pb from "../../../../rbt/dashboard/v1/dashboard_pb";
 import type { Timestamp } from "@bufbuild/protobuf";
@@ -4750,6 +4751,7 @@ if (root !== null) {
           {MCP_CARD === undefined ? (
             <Presence id={PRESENCE_ID} subscriberId={SUBSCRIBER_ID}>
               <App />
+              <AgentChat />
             </Presence>
           ) : (
             <MemoryRouter>

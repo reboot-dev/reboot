@@ -1,4 +1,14 @@
+load("@rules_python//python:defs.bzl", "py_test")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+
+py_test(
+    name = "build_python_test",
+    srcs = ["build_python_test.py"],
+    data = [
+        "//reboot/nodejs:select_build_python.py",
+        "//reboot/nodejs:install.cjs",
+    ],
+)
 
 ts_project(
     name = "greeter_ts",

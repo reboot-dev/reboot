@@ -172,6 +172,26 @@ def _bearer_token(request: Request) -> Optional[str]:
     return token
 
 
+def _secure_cookies(request: Request) -> bool:
+    """Allow plain cookies only on explicit HTTP loopback origins.
+
+    Use the browser-facing origin, as redirects do, but also require the
+    direct request to be HTTP loopback. Forwarded headers alone must not
+    downgrade cookies on a remote host. Do not use the caller's Origin
+    (the SPA may be hosted elsewhere) or resolve arbitrary hostnames.
+    """
+    loopback_hosts = ("localhost", "127.0.0.1", "::1")
+    try:
+        origin = urlparse(origin_from_request(request))
+        return not (
+            origin.scheme == "http" and origin.hostname in loopback_hosts and
+            request.url.scheme == "http" and
+            request.url.hostname in loopback_hosts
+        )
+    except ValueError:
+        return True
+
+
 def _compute_code_challenge(code_verifier: str) -> str:
     """The PKCE S256 code challenge for `code_verifier` (RFC 7636
     4.2): the URL-safe, unpadded base64 of its SHA-256 digest."""
@@ -568,29 +588,21 @@ class OAuthServer:
         self,
         response: Response,
         *,
+        request: Request,
         access_token: str,
         refresh_token: str,
         expires_in: int,
     ) -> None:
         """Set the access and refresh session cookies on `response`.
 
-        `SameSite=None; Secure` supports SPAs served on a different
-        origin than the backend; `SameSite=Lax` cookies aren't sent
-        on cross-site fetches to the OAuth endpoints.
-        Users with strict tracking prevention (Safari ITP, Firefox
-        ETP, Chrome 3PC blocking) may have these stripped and be
-        unable to sign in. TODO: prefer `SameSite=Lax; Secure`
-        (optionally with `Domain=` set to a shared parent) when the
-        SPA and backend share an origin or share a registrable
-        domain. We can detect this at cookie-set time by comparing
-        the request's `Origin` header against the backend's own
-        origin. Same-site is robust against tracking prevention and
-        should be the default for production deployments that can
-        arrange a shared parent domain.
-        Note that `Secure` is enforced by all major browsers *except*
-        on `http://localhost` (and `http://127.0.0.1`), so dev under
-        `rbt dev` continues to work without HTTPS; production
-        requires HTTPS.
+        `SameSite=None; Secure` supports production SPAs served on a
+        different site than the backend. Browsers may still block these
+        third-party cookies under their tracking-prevention policies.
+        Explicit HTTP loopback instead uses `SameSite=Lax` without
+        `Secure`: `SameSite=None` requires `Secure`, and accepting Secure
+        cookies on HTTP loopback is not portable across browsers. Local
+        SPAs must use the same site (e.g. do not mix localhost and
+        127.0.0.1). Remote HTTP does not get this exception.
         """
         # Both paths are restricted so the browser only sends the
         # cookies on requests to the OAuth endpoints, never on RPC or
@@ -604,35 +616,36 @@ class OAuthServer:
         response.delete_cookie(
             key=SESSION_COOKIE_NAME,
             path="/",
-            secure=True,
+            secure=_secure_cookies(request),
             httponly=True,
-            samesite="none",
+            samesite="none" if _secure_cookies(request) else "lax",
         )
         response.set_cookie(
             key=SESSION_COOKIE_NAME,
             value=access_token,
             max_age=expires_in,
             path="/__/oauth/",
-            secure=True,
+            secure=_secure_cookies(request),
             httponly=True,
-            samesite="none",
+            samesite="none" if _secure_cookies(request) else "lax",
         )
         response.set_cookie(
             key=REFRESH_COOKIE_NAME,
             value=refresh_token,
             max_age=_REFRESH_TOKEN_TTL_SECONDS,
             path="/__/oauth/",
-            secure=True,
+            secure=_secure_cookies(request),
             httponly=True,
-            samesite="none",
+            samesite="none" if _secure_cookies(request) else "lax",
         )
 
-    def _clear_session_cookies(self, response: Response) -> None:
-        """Clear all session-related cookies on `response`.
+    def _clear_session_cookies(
+        self, response: Response, *, request: Request
+    ) -> None:
+        """Clear session cookies, including the legacy root-path cookie.
 
-        Match the `Path` / `SameSite` / `Secure` attributes of the
-        original `set_cookie` calls; browsers won't honor a
-        delete-cookie request whose attributes don't match.
+        Use transport-appropriate attributes so HTTP loopback browsers
+        can accept the deletion responses too.
         """
         for name, path in (
             (SESSION_COOKIE_NAME, "/__/oauth/"),
@@ -642,9 +655,9 @@ class OAuthServer:
             response.delete_cookie(
                 key=name,
                 path=path,
-                secure=True,
+                secure=_secure_cookies(request),
                 httponly=True,
-                samesite="none",
+                samesite="none" if _secure_cookies(request) else "lax",
             )
 
     def _verify_session_cookie(
@@ -1152,7 +1165,6 @@ class OAuthServer:
             ttl_seconds=_PENDING_STATE_TTL_SECONDS,
         )
 
-        origin = origin_from_request(request)
         parsed_redirect = urlparse(redirect_uri)
         # The prominent host on the consent screen is what the user
         # checks, so strip any `userinfo@` from the netloc: a
@@ -1191,10 +1203,9 @@ class OAuthServer:
             # click; our CSRF protection relies on this cookie never
             # getting delivered cross-site.
             samesite="strict",
-            # Only mark `Secure` over https; in local `http://` dev a
-            # `Secure` cookie would be silently dropped by the browser,
-            # breaking the double-submit check.
-            secure=origin.startswith("https://"),
+            # HTTP loopback must work without browser-specific Secure
+            # exceptions; remote origins still require secure transport.
+            secure=_secure_cookies(request),
         )
         return response
 
@@ -1442,6 +1453,7 @@ class OAuthServer:
         )
         self._set_session_cookies(
             response,
+            request=request,
             access_token=tokens["access_token"],
             refresh_token=tokens["refresh_token"],
             expires_in=tokens["expires_in"],
@@ -1710,11 +1722,22 @@ class OAuthServer:
             value=pending_value,
             max_age=_PENDING_STATE_TTL_SECONDS,
             path="/__/oauth/",
-            secure=True,
+            secure=_secure_cookies(request),
             httponly=True,
             samesite="lax",
         )
         return response
+
+    def _clear_pending_cookie(
+        self, response: Response, request: Request
+    ) -> None:
+        response.delete_cookie(
+            key=PENDING_COOKIE_NAME,
+            path="/__/oauth/",
+            secure=_secure_cookies(request),
+            httponly=True,
+            samesite="lax",
+        )
 
     async def finish(self, request: Request) -> Response:
         """GET /__/oauth/finish?code=...&state=...
@@ -1735,10 +1758,7 @@ class OAuthServer:
                 "Identity provider returned an error.",
                 status_code=400,
             )
-            response.delete_cookie(
-                key=PENDING_COOKIE_NAME,
-                path="/__/oauth/",
-            )
+            self._clear_pending_cookie(response, request)
             return response
 
         # Any 400 return on this handler should also clear
@@ -1752,10 +1772,7 @@ class OAuthServer:
                 description=description,
                 status_code=400,
             )
-            response.delete_cookie(
-                key=PENDING_COOKIE_NAME,
-                path="/__/oauth/",
-            )
+            self._clear_pending_cookie(response, request)
             return response
 
         code_token = params.get("code")
@@ -1816,14 +1833,12 @@ class OAuthServer:
         response = RedirectResponse(url=return_to, status_code=302)
         self._set_session_cookies(
             response,
+            request=request,
             access_token=tokens["access_token"],
             refresh_token=tokens["refresh_token"],
             expires_in=tokens["expires_in"],
         )
-        response.delete_cookie(
-            key=PENDING_COOKIE_NAME,
-            path="/__/oauth/",
-        )
+        self._clear_pending_cookie(response, request)
         return response
 
     async def refresh(self, request: Request) -> Response:
@@ -1858,7 +1873,7 @@ class OAuthServer:
             )
             # Clear stale cookies so the SPA observes a clean
             # signed-out state on the next request.
-            self._clear_session_cookies(response)
+            self._clear_session_cookies(response, request=request)
             return response
 
         user_id: UserId = UserId(refresh_data["sub"])
@@ -1888,6 +1903,7 @@ class OAuthServer:
         )
         self._set_session_cookies(
             response,
+            request=request,
             access_token=tokens["access_token"],
             refresh_token=tokens["refresh_token"],
             expires_in=tokens["expires_in"],
@@ -1949,7 +1965,7 @@ class OAuthServer:
         if forbidden is not None:
             return forbidden
         response = Response(status_code=204)
-        self._clear_session_cookies(response)
+        self._clear_session_cookies(response, request=request)
         return response
 
     async def whoami(self, request: Request) -> JSONResponse:

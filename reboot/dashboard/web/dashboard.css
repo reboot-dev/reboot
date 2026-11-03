@@ -3174,6 +3174,20 @@ header .state-type-description {
 }
 
 /* The property a followed link named flashes the way a method does. */
+.agent-chat {
+  position: fixed; right: 16px; bottom: 16px;
+  width: min(480px, calc(100vw - 32px)); max-height: 75vh;
+  overflow: auto; z-index: 30; background: white; color: #222;
+  border: 1px solid #888; border-radius: 10px; padding: 14px;
+  box-shadow: 0 4px 20px #0003;
+}
+.agent-chat p, .agent-chat small { display: block; margin: 8px 0; }
+.agent-chat pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 280px; overflow: auto; }
+.agent-chat textarea { display: block; width: 100%; min-height: 70px; }
+.agent-chat button { margin: 4px; padding: 5px; border: 1px solid #aaa; border-radius: 4px; }
+.agent-chat button:disabled { opacity: 0.45; }
+.agent-chat-approval { border: 2px solid #b77900; padding: 8px; margin: 8px 0; }
+
 .property.is-flash {
   animation: method-flash 1.5s ease-out;
 }

@@ -73,6 +73,13 @@ def register_dashboard(parser: ArgumentParser):
     add_working_directory_options(parser.subcommand('dashboard'))
 
     parser.subcommand('dashboard').add_argument(
+        '--agent-config',
+        type=str,
+        help='opt in to local ACP coding agents using a trusted JSON argv config; '
+        'agents run in the application working directory with your privileges',
+    )
+
+    parser.subcommand('dashboard').add_argument(
         '--port',
         type=int,
         help='port on which the dashboard will serve traffic; defaults to '
@@ -197,6 +204,19 @@ def _dashboard_env(
     frontend, reaches an application that shares none of it.
     """
     composed = os.environ.copy()
+
+    # Never implicitly enable coding agents through an inherited dashboard env.
+    composed.pop('RBT_DASHBOARD_ACP_CONFIG', None)
+    composed.pop('RBT_DASHBOARD_ACP_ORIGIN', None)
+    agent_config = getattr(args, 'agent_config', None)
+    if agent_config:
+        if portless_name is not None:
+            terminal.fail('Local ACP agents do not support --portless or tunnels')
+        from reboot.dashboard.backend.acp import Config
+        config_path = Path(agent_config).resolve(strict=True)
+        Config.read(str(config_path), Path.cwd())
+        composed['RBT_DASHBOARD_ACP_CONFIG'] = str(config_path)
+        composed['RBT_DASHBOARD_ACP_ORIGIN'] = f'http://127.0.0.1:{port}'
 
     # Every other application-flavored variable is overwritten below;
     # these four have no dashboard value to overwrite them with, so a

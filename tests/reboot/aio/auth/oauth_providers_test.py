@@ -39,6 +39,7 @@ from reboot.std.collections.ordered_map.v1.ordered_map import (
     ordered_map_library,
 )
 from reboot.std.oauth.v1.oauth import oauth_library
+from starlette.requests import Request
 from starlette.responses import Response
 from tests.reboot.pydantic.auto_construct_user.servicer import \
     ProfileServicer as AutoConstructProfileServicer
@@ -101,18 +102,23 @@ class SessionCookieMigrationTest(unittest.TestCase):
     def test_signin_and_signout_remove_legacy_root_cookie(self):
         # Cookie helpers don't depend on the provider or signing keys.
         server = object.__new__(OAuthServer)
+        request = Request({
+            'type': 'http', 'scheme': 'https', 'path': '/__/oauth/finish',
+            'headers': [(b'host', b'app.example')],
+        })
         for signing_in in (True, False):
             with self.subTest(signing_in=signing_in):
                 response = Response()
                 if signing_in:
                     server._set_session_cookies(
                         response,
+                        request=request,
                         access_token='new-access',
                         refresh_token='new-refresh',
                         expires_in=3600,
                     )
                 else:
-                    server._clear_session_cookies(response)
+                    server._clear_session_cookies(response, request=request)
                 cookies = httpx.Cookies()
                 cookies.set(
                     'rbt_session', 'legacy', domain='app.example', path='/'

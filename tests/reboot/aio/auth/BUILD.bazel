@@ -13,6 +13,20 @@ py_test(
 )
 
 py_test(
+    name = "oauth_browser_cookie_test_py",
+    size = "small",
+    srcs = ["oauth_browser_cookie_test.py"],
+    main = "oauth_browser_cookie_test.py",
+    deps = [
+        "//reboot/aio/auth:__init___py",
+        "//reboot/aio/auth:oauth_providers_py",
+        "//reboot/aio/auth:oauth_server_py",
+        requirement("httpx"),
+        requirement("starlette"),
+    ],
+)
+
+py_test(
     name = "oauth_providers_test_py",
     size = "small",
     timeout = "long",

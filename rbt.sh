@@ -1,16 +1,18 @@
 #!/bin/bash
 set -euo pipefail
 
+# Build in Reboot's workspace, but run the CLI in the caller's application.
+# Changing cwd for the entire script would break .rbtrc discovery and ACP cwd.
+REBOOT_SOURCE_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
-if [[ "$1" == "cloud" && "$2" == "up" ]]; then
-    # When 'rbt cloud up' is run, it will build an application's `Dockerfile`. That
-    # `Dockerfile` is likely based on (`FROM`) the `reboot-base` image. To show
-    # our local code changes in the application being built, we must build that
-    # `reboot-base` image locally first.
-    bazel run //reboot/containers/reboot-base:dev
+if [[ "${1:-}" == "cloud" && "${2:-}" == "up" ]]; then
+    # Build the local base image before the application's Dockerfile uses it.
+    (cd "$REBOOT_SOURCE_ROOT" && bazel run //reboot/containers/reboot-base:dev)
 fi
 
-(bazel build --check_up_to_date //reboot/cli:rbt >/dev/null 2>&1 \
-     || (bazel build //reboot/cli:rbt && echo -e '\n\n')) \
-    && PATH=$PATH:"$(dirname $0)"/bazel-bin/reboot/cli/rbt.runfiles/com_github_reboot_dev_reboot/reboot:"$(dirname $0)"/bazel-bin/reboot/cli/rbt.runfiles/com_github_reboot_dev_reboot/protoc_gen_mypy_plugin \
-           "$(dirname $0)"/bazel-bin/reboot/cli/rbt "$@"
+(cd "$REBOOT_SOURCE_ROOT" &&
+    (bazel build --check_up_to_date //reboot/cli:rbt >/dev/null 2>&1 \
+        || (bazel build //reboot/cli:rbt && printf '\n\n')))
+
+export PATH="$PATH:$REBOOT_SOURCE_ROOT/bazel-bin/reboot/cli/rbt.runfiles/com_github_reboot_dev_reboot/reboot:$REBOOT_SOURCE_ROOT/bazel-bin/reboot/cli/rbt.runfiles/com_github_reboot_dev_reboot/protoc_gen_mypy_plugin"
+exec "$REBOOT_SOURCE_ROOT/bazel-bin/reboot/cli/rbt" "$@"

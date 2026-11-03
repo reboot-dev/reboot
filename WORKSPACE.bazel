@@ -18,6 +18,22 @@ local_repository(
 
 ########################################################################
 
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+# gRPC 1.71.0 otherwise selects apple_support 1.17.1 without the upstream
+# LC_UUID fix. Backport only that fix; keep the rest of the toolchain pinned.
+# This must precede repos()/deps(), whose transitive declarations are conditional.
+http_archive(
+    name = "build_bazel_apple_support",
+    sha256 = "b53f6491e742549f13866628ddffcc75d1f3b2d6987dc4f14a16b242113c890b",
+    urls = [
+        "https://storage.googleapis.com/grpc-bazel-mirror/github.com/bazelbuild/apple_support/releases/download/1.17.1/apple_support.1.17.1.tar.gz",
+        "https://github.com/bazelbuild/apple_support/releases/download/1.17.1/apple_support.1.17.1.tar.gz",
+    ],
+    patches = ["//bazel:apple_support_preserve_uuid.patch"],
+    patch_args = ["-p1"],
+)
+
 load("//bazel:repos.bzl", "repos")
 
 repos()
@@ -52,10 +68,6 @@ maybe(
 load("//bazel:extra_deps.bzl", "extra_deps")
 
 extra_deps()
-
-########################################################################
-
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 ########################################################################
 # aspect_rules_ts setup, done here instead of splitting between

@@ -6,6 +6,11 @@ load("@com_github_reboot_dev_reboot//reboot:versions.bzl", "REBOOT_VERSION")
 load("@npm//:defs.bzl", "npm_link_all_packages")
 load("@rules_python//python:defs.bzl", "py_library")
 
+exports_files(
+    ["select_build_python.py", "install.cjs"],
+    visibility = ["//tests/reboot/nodejs:__pkg__"],
+)
+
 npm_link_all_packages()
 
 exports_files([
@@ -56,6 +61,7 @@ genrule(
     srcs = [
         "//:README.md",
         "binding.gyp",
+        "select_build_python.py",
         ":include",
         "package.json",
         "protoc-gen-es.ts",
@@ -91,17 +97,21 @@ genrule(
     #     as portable, and moved around to sandboxes. That doesn't match the
     #     production usage, where the `.node` file is produced within the
     #     `node_modules` directory, and then stable for the life of the install.
-    # TODO: This used to use `@rules_python//python:current_py_toolchain`, but
-    # that Python actually mismatches the one used later in Python and TypeScript
-    # unit tests, which caused subtle failures.
+    # Keep the runner's Python when it is 3.10: switching installations used to
+    # mismatch the Python/TypeScript tests. On other hosts use our explicit 3.10
+    # toolchain, not current_py_toolchain (which consumers can override). Both
+    # binding.gyp and venv.ts require 3.10, as does the packaged npm runtime.
     cmd = """
         set -eu
-        export PYTHON3=$$(readlink -f $$(which python3))
+        PYTHON3=$$("$(execpath @python3_10_12_host//:python)" \
+            "$(execpath :select_build_python.py)" \
+            "$(execpath @python3_10_12_host//:python)")
+        export PYTHON3
         # See note above.
         export RBT_PYTHON3_USE=$$PYTHON3
 
         cp $(execpath :version.ts) $$(dirname $(execpath :rbt.ts))
-        export PATH=$$(realpath $$(dirname $$PYTHON3)):$$PATH
+        export PATH="$$(dirname "$$PYTHON3"):$$PATH"
         npm_binary_path=$$(realpath $(execpath @node//:npm))
         reboot_pkg_dir="$$(realpath $(execpath //:node_modules/@reboot-dev/reboot-api/dir))"
         which_pm_runs_pkg_dir="$$(realpath $(execpath //:node_modules/which-pm-runs/dir))"
@@ -113,7 +123,7 @@ genrule(
         mv copied_package.json package.json
 
         $$npm_binary_path --no-save install "$$reboot_pkg_dir" "$$which_pm_runs_pkg_dir"
-        $$npm_binary_path --python=$$PYTHON3 install
+        $$npm_binary_path --python="$$PYTHON3" install
         mkdir dist
         cp -r -L include dist/include
         cp binding.gyp dist/binding.gyp
@@ -127,7 +137,7 @@ genrule(
         cp reboot_native.cjs dist/reboot_native.cjs
         cp reboot_native.d.ts dist/reboot_native.d.ts
         cd dist
-        $$npm_binary_path --python=$$PYTHON3 pack --pack-destination .
+        $$npm_binary_path --python="$$PYTHON3" pack --pack-destination .
         popd
         mkdir -p $$(dirname $(execpath build/Release/reboot_native.node))
         cp $$(dirname $(execpath :package.json))/build/Release/reboot_native.node $(execpath build/Release/reboot_native.node)
@@ -137,6 +147,8 @@ genrule(
     ),
     tools = [
         "@node//:npm",
+        "@python3_10_12_host//:python",
+        "@python3_10_12//:files",
     ],
     visibility = ["//visibility:public"],
 )

@@ -232,6 +232,11 @@ const sidebars = {
         },
         {
           type: "doc",
+          id: "dashboard-local-agents",
+          label: "Dashboard coding agents",
+        },
+        {
+          type: "doc",
           id: "nonlocal",
           label: "Non-local development",
         },
