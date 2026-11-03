@@ -81,32 +81,27 @@ you open in a browser, and an [MCP App](/frontends/mcp_app) that
 Claude and ChatGPT can drive as tools — sharing one set of todos and
 one signed-in [`User`](/users/overview) per person.
 
-Claude Code picks the right Reboot skill from your description. The one
-thing it will not guess from the subject matter is **where the app
-lives**, so say it:
+Claude Code builds the app with the plugin's `app` skill. A Reboot app
+is used by people and by agents, so by default it gets both frontends:
+a [web app](/frontends/web) for people and an [MCP App](/frontends/mcp_app)
+for agents in Claude and ChatGPT, on one backend with one `User` per
+person. Unless your description settles it, it asks once, with both
+recommended:
 
 | You say | You get |
 | --- | --- |
-| "web app", "website", "SPA", "in the browser", a URL | A [web app](/frontends/web): a React frontend on its own origin. |
-| "MCP", "in Claude", "in ChatGPT", "MCP App" | An [MCP App](/frontends/mcp_app): tools and `UI` methods over MCP. |
-| Both, as above | One backend serving both frontends, with one `User` per person. |
+| nothing about frontends, or both | A web app and an MCP App on one backend. |
+| "just a website", "only a web app", "no MCP" | A [web app](/frontends/web) alone. |
+| "only an MCP server", "no web app" | An [MCP App](/frontends/mcp_app) alone. |
 
 The skills scaffold web frontends and MCP Apps. A
 [React Native app](/frontends/react_native) (alpha) is added by hand.
 
-If your description doesn't say, it asks. You can also invoke the
-skills directly:
+You can also invoke the skill directly:
 
 ```
-/reboot:web-app Build me a todo-list app I can use in a browser
+/reboot:app Build me a todo-list app
 ```
-
-```
-/reboot:mcp-app Build me a todo-list app I can use from Claude and ChatGPT
-```
-
-Or `/reboot:app` with a description, which asks which frontend you
-want and then hands off.
 
 ## What it does before it writes code
 
@@ -211,7 +206,7 @@ example prompts.
 The same skill modifies an existing app:
 
 ```
-/reboot:web-app Add due dates to todos, and a filter for what's overdue
+/reboot:app Add due dates to todos, and a filter for what's overdue
 ```
 
 It reads your current code, plans the changes, and waits for approval
