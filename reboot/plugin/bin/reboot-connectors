@@ -1,0 +1,171 @@
+#!/usr/bin/env sh
+#
+# Reboot Claude Code plugin: `reboot-connectors`, for the developer to
+# run in their own terminal, not for the agent.
+#
+#     reboot-connectors [<app>] [--check | --stop]
+#
+# Puts a Reboot app and its developer dashboard on the internet through
+# Cloudflare quick tunnels, so Claude or ChatGPT can reach them, and
+# prints each one's connector address, named and with `/mcp` already on
+# the end, ready to paste. Two random `*.trycloudflare.com` addresses
+# look alike; the names say which is the app and which the dashboard.
+#
+# <app> is the app's name, as in `https://<app>.localhost` (default: the
+# current folder's name). A tunnel already running for a target (one
+# started with `--metrics`) is reused; otherwise one is started in the
+# background, and it keeps running after this command returns, so it
+# can be run from a chat as `! reboot-connectors <app>`. `--stop` stops
+# the tunnels it started; `--check` says what it would do and starts
+# nothing.
+
+set -eu
+
+APP=""
+CHECK=0
+STOP=0
+for arg in "$@"; do
+    case "$arg" in
+        --check) CHECK=1 ;;
+        --stop) STOP=1 ;;
+        -h | --help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -*) echo "unknown option: $arg" >&2; exit 2 ;;
+        *) APP="$arg" ;;
+    esac
+done
+[ -n "$APP" ] || APP="$(basename "$PWD")"
+
+HERE="$(cd "$(dirname -- "$0")" && pwd)"
+CLOUDFLARED="$HERE/cloudflared"
+[ -x "$CLOUDFLARED" ] || CLOUDFLARED="cloudflared"
+PORTLESS_PORT="${PORTLESS_PORT:-443}"
+CA="$HOME/.portless/ca.pem"
+LOGS="${TMPDIR:-/tmp}/reboot-connectors-$APP"
+mkdir -p "$LOGS"
+
+STARTED=""
+
+if [ "$STOP" = 1 ]; then
+    if [ -s "$LOGS/pids" ]; then
+        kill $(cat "$LOGS/pids") 2>/dev/null || true
+        rm -f "$LOGS/pids"
+        echo "Stopped the tunnels reboot-connectors started for $APP."
+    else
+        echo "No tunnels started by reboot-connectors for $APP."
+    fi
+    exit 0
+fi
+
+# Is an app answering? Portless answers 404 for a name nothing is
+# registered under, and 502 to 504 for one whose app is down.
+answering() {
+    case "$1" in 000 | 404 | 502 | 503 | 504) return 1 ;; *) return 0 ;; esac
+}
+
+# Does https://<host>/ answer through the portless proxy?
+portless_up() {
+    [ -f "$CA" ] || return 1
+    answering "$(curl -s -o /dev/null -w '%{http_code}' -m 3 --cacert "$CA" \
+        --resolve "$1:$PORTLESS_PORT:127.0.0.1" "https://$1:$PORTLESS_PORT/" || true)"
+}
+
+# Does http://localhost:<port>/ answer?
+port_up() {
+    answering "$(curl -s -o /dev/null -w '%{http_code}' -m 3 "http://localhost:$1/" || true)"
+}
+
+free_port() {
+    p=4050
+    while lsof -nP -iTCP:"$p" -sTCP:LISTEN >/dev/null 2>&1; do p=$((p + 1)); done
+    echo "$p"
+}
+
+# The tunnel address a cloudflared metrics port reports, or nothing.
+address_at() {
+    curl -s -m 2 "http://localhost:$1/quicktunnel" 2>/dev/null |
+        sed -n 's/.*"hostname":"\([^"]*\)".*/\1/p'
+}
+
+# A running tunnel's metrics port, found by a word in its command line.
+running_metrics() {
+    ps -axo command= 2>/dev/null | grep '[c]loudflared tunnel' | grep -- "$1" |
+        sed -n 's/.*--metrics[ =]\{1,\}localhost:\([0-9]\{1,\}\).*/\1/p' | head -n 1
+}
+
+# connector <name> <host> <port without portless>: prints "<name>\t<url>".
+connector() {
+    name="$1" host="$2" port="$3"
+    if [ "$PORTLESS" = 1 ] && portless_up "$host"; then
+        args="--url https://127.0.0.1:$PORTLESS_PORT --http-host-header $host --origin-server-name $host --origin-ca-pool $CA"
+        match="--http-host-header $host"
+    elif [ "$PORTLESS" = 0 ] && port_up "$port"; then
+        args="--url http://localhost:$port"
+        match="--url http://localhost:$port"
+    else
+        if [ "$PORTLESS" = 1 ]; then where="https://$host"; else where="localhost:$port"; fi
+        echo "$name: not running ($where does not answer); start it first" >&2
+        return 0
+    fi
+    metrics="$(running_metrics "$match")"
+    if [ -n "$metrics" ]; then
+        how="reusing the tunnel already running"
+    elif [ "$CHECK" = 1 ]; then
+        printf '%s\t%s\n' "$name" "(would start: cloudflared tunnel $args)"
+        return 0
+    else
+        metrics="$(free_port)"
+        # shellcheck disable=SC2086
+        nohup "$CLOUDFLARED" tunnel --metrics "localhost:$metrics" $args \
+            >"$LOGS/$metrics.log" 2>&1 </dev/null &
+        echo "$!" >>"$LOGS/pids"
+        STARTED="$STARTED $!"
+        how="started here"
+    fi
+    i=0
+    address=""
+    while [ -z "$address" ] && [ "$i" -lt 60 ]; do
+        address="$(address_at "$metrics")"
+        [ -n "$address" ] || { sleep 1; i=$((i + 1)); }
+    done
+    if [ -z "$address" ]; then
+        echo "$name: the tunnel gave no address within a minute; see $LOGS/$metrics.log" >&2
+        return 0
+    fi
+    printf '%s\t%s\n' "$name" "https://$address/mcp" >>"$LOGS/out"
+    printf '%s\t%s\n' "$name" "($how)" >>"$LOGS/how"
+}
+
+# Under portless an app is reached by name only: a fixed port may be
+# another app's (every dashboard wants 9871).
+PORTLESS=0
+if [ -f "$CA" ] && [ "$(curl -s -o /dev/null -w '%{http_code}' -m 3 --cacert "$CA" \
+    --resolve "reboot-connectors.localhost:$PORTLESS_PORT:127.0.0.1" \
+    "https://reboot-connectors.localhost:$PORTLESS_PORT/" || true)" != 000 ]; then
+    PORTLESS=1
+fi
+
+rm -f "$LOGS/out" "$LOGS/how"
+connector "$APP" "$APP.localhost" 9991
+connector "$APP dashboard" "dashboard-$APP.localhost" 9871
+if [ "$CHECK" = 1 ]; then cat "$LOGS/out" 2>/dev/null || true; exit 0; fi
+
+if [ ! -s "$LOGS/out" ]; then
+    echo "No connector to give: nothing for $APP is running." >&2
+    exit 1
+fi
+
+echo
+echo "Add each as a custom connector, with its name and address exactly:"
+echo "  Claude: Customize > Connectors > Add custom connector"
+echo "  ChatGPT: Settings > Connectors"
+echo
+while IFS="$(printf '\t')" read -r name url; do
+    printf '  %-24s %s\n' "$name" "$url"
+done <"$LOGS/out"
+echo
+echo "\"$APP\" is the app itself (its tools and UIs); \"$APP dashboard\" is"
+echo "the developer dashboard (features, models, scenarios)."
+
+echo "The tunnels keep running in the background; running this again"
+echo "gives the same addresses. \`reboot-connectors $APP --stop\` stops the"
+echo "ones it started (a new start gets new addresses)."

@@ -157,8 +157,8 @@ URL; that always works.
 ## Step 6 — Required final hand-over: the connector
 
 Required final hand-over: if you started the developer dashboard,
-include the `cloudflared` command and the Claude and ChatGPT connector
-instructions in your final response. This applies even when the user
+include the `reboot-connectors` command and the Claude and ChatGPT
+connector instructions in your final response. This applies even when the user
 asked only for a standalone web app and never mentioned MCP. Do not
 omit them for brevity or perceived relevance. A dashboard URL, or
 instructions saved in a README, do not satisfy this requirement.
@@ -169,27 +169,49 @@ do not wait to be asked. `rbt dashboard` serves this machine alone,
 so an MCP host in the cloud reaches it through a tunnel the user
 starts themselves, in their own shell; do not start one for them.
 
-`rbt dashboard` printed the command for the mode it runs in, right
-after the dashboard's URL: by name under portless, by port with
-`--config=ports`. The dashboard is a Reboot application of its own
-with its own `/mcp`, so the tunnel goes to the dashboard's address
-(`dashboard-<app>.localhost`, or port 9871), never to the user's
-application (`<app>.localhost`), whose `/mcp` is the application's.
-Read the command from the shell it runs in and give the user these,
-with the command verbatim:
+The plugin's `reboot-connectors` command does the tunnels for the
+user: run by them (never by you), it starts a Cloudflare quick tunnel
+to the app and one to its dashboard in the background (or reuses ones
+already running), prints each connector's **name and full address,
+`/mcp` already on the end**, and returns. Two random `*.trycloudflare.com` addresses look alike, so
+giving them named is what keeps the app's connector from being added
+with the dashboard's address. Its path is what `command -v
+reboot-connectors` prints in this session (the plugin's `bin/`); give
+that path whole, in double quotes when it has a space (the desktop
+app installs plugins under "Application Support"), since a terminal of
+the user's does not have the plugin on its PATH. With no app running (a dashboard alone), it gives the
+dashboard's connector only.
 
-1. If `cloudflared` is not installed: `brew install cloudflared` on
-   macOS, or the
-   [download page](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/).
-   The plugin's own `cloudflared` is on your PATH, not theirs.
-2. The tunnel command `rbt dashboard` printed, to run in another
-   shell. It prints a `https://<name>.trycloudflare.com` address.
-3. Add that address with `/mcp` on the end as a custom MCP
-   connector: in Claude under Customize, Connectors, Add custom
-   connector; in ChatGPT under Settings, Connectors. Signing in
-   completes by itself. In Claude the connector also works in the
-   desktop app's Code tab, so a user building with Claude Code sees
-   the dashboard and its cards beside the session; say so.
+**Write the steps for someone who has never added a connector**, so
+no step needs asking about. One section, "Use it from Claude or
+ChatGPT":
+
+1. **Type this in the chat, `!` included**:
+   `! <path>/reboot-connectors <app>`. The `!` runs it right here, and
+   what it prints lands in the conversation, for example:
+   ```
+     my-app https://quiet-river-1234.trycloudflare.com/mcp
+     my-app dashboard      https://swift-lake-5678.trycloudflare.com/mcp
+   ```
+   Each address is a temporary doorway from the internet to this Mac;
+   the tunnels keep running in the background until
+   `! <path>/reboot-connectors <app> --stop`. (Away from Claude Code,
+   the same command without the `!` in a terminal does the same.)
+2. **Add each one as a connector, with its name and address exactly
+   as printed.** In Claude (claude.ai or the desktop app): Customize →
+   Connectors → Add custom connector; paste the name, paste the
+   address, save. A sign-in page may appear: approve it and it
+   finishes by itself. In ChatGPT: Settings → Connectors, the same
+   way. In Claude the connector also works in the desktop app's Code
+   tab, beside the session; say so. The app's connector is the app
+   (its tools and UIs); the dashboard's is the developer dashboard
+   (features, models, scenarios).
+3. **If Claude says "Connecting to the server: 405, Not found"**, the
+   address is missing its `/mcp`: cancel, and paste it again exactly
+   as printed (never "Continue anyway").
+4. **Something to try** in a chat: for the app, a first prompt that
+   uses its tools and opens a `UI()`; for the dashboard, "show me the
+   <feature> feature", which shows its card in the conversation.
 
 Then two reminders: whoever has the address reaches their dashboard
 as them, so not to share it; and a quick tunnel gets a new address
