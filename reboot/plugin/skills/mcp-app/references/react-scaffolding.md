@@ -34,7 +34,7 @@ changes when it does.
   "type": "module",
   "scripts": {
     "dev": "npm run dev:portless",
-    "dev:portless": "portless frontend-<project-name> vite",
+    "dev:portless": "portless frontend-<project-name>${RBT_APPLICATION_VARIANT:+-$RBT_APPLICATION_VARIANT} vite",
     "dev:ports": "vite",
     "build": "tsc -b && node build.mjs"
   },
@@ -64,7 +64,10 @@ The `dev` scripts mirror the `.rbtrc`'s configs: `npm run dev` is
 the default, `dev:portless`, which runs `portless frontend-<project-name> vite`
 (`portless` is a dev dependency and appends Vite's `--port` itself),
 and `dev:ports` is plain `vite`. `<project-name>` is the `.rbtrc`'s
-`--application-name`.
+`--application-name`; the
+`${RBT_APPLICATION_VARIANT:+-$RBT_APPLICATION_VARIANT}` appends the
+developer's variant when the environment sets one, so
+write it exactly so.
 
 Adding or removing a UI needs no script changes: `build()` loads
 `vite.config.ts`, asks `reboot()` for the frontend's UIs (every

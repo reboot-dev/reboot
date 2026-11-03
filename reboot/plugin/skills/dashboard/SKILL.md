@@ -89,15 +89,16 @@ Where the dashboard serves depends on `.rbtrc`. With
 `dashboard --default-config=portless` (every `.rbtrc` these skills
 write has it; see `../python/references/lifecycle-rbtrc.md`) it is
 `https://dashboard-<app>.localhost/`, `<app>` being the `.rbtrc`'s
-`dev run --application-name`, through the portless proxy, which
-must be running: check on it, and start it, as the run skill's
-"Named URLs with portless" section says, before Step 4. Without
-that line, or with `--config=ports`, it is `http://127.0.0.1:9871/`.
-Either forwards to
+`dev run --application-name`, with `-<variant>` appended when the
+environment sets `RBT_APPLICATION_VARIANT` (see the run skill's
+"Branches and worktrees"), through the portless proxy, which must be
+running: check on it, and start it, as the run skill's "Named URLs
+with portless" section says, before Step 4. Without that line, or with
+`--config=ports`, it is `http://127.0.0.1:9871/`. Either forwards to
 wherever its page is. Probe it:
 
 ```sh
-curl -sf -o /dev/null --max-time 2 https://dashboard-<app>.localhost/
+curl -sf -o /dev/null --max-time 2 https://dashboard-<app>${RBT_APPLICATION_VARIANT:+-$RBT_APPLICATION_VARIANT}.localhost/
 ```
 
 If that succeeds, a dashboard is already up — do not start a second

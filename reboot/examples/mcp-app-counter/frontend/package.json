@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "npm run dev:portless",
-    "dev:portless": "portless frontend-mcp-app-counter vite",
+    "dev:portless": "portless frontend-mcp-app-counter${RBT_APPLICATION_VARIANT:+-$RBT_APPLICATION_VARIANT} vite",
     "dev:ports": "vite",
     "build": "tsc -b && node build.mjs"
   },

@@ -32,7 +32,6 @@ dev run --default-config=portless
 # server through Envoy, in either config.
 
 dev run:portless --portless
-dev run:portless --frontend-url=https://frontend-mcp-app-counter.localhost
 dev run:portless --mcp-app
 dev run:portless --web-app
 

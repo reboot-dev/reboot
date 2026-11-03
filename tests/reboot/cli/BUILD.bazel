@@ -42,9 +42,22 @@ py_test(
     deps = [
         ":mock_exit_py",
         "//reboot:portless_py",
+        "//reboot:settings_py",
         "//reboot/cli/common:cli_py",
         "//reboot/cli/common:rc_py",
         "//reboot/dashboard/backend:constants_py",
+    ],
+)
+
+py_test(
+    name = "application_name_tests_py",
+    size = "small",
+    srcs = ["application_name_tests.py"],
+    main = "application_name_tests.py",
+    deps = [
+        "//reboot:settings_py",
+        "//reboot/cli/common:application_name_py",
+        "//reboot/cli/common:rc_py",
     ],
 )
 

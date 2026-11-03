@@ -7,6 +7,7 @@ from reboot.cli.common import cli
 from reboot.cli.common.directories import dot_rbt_directory
 from reboot.cli.common.rc import ArgumentParser
 from reboot.dashboard.backend.constants import DEFAULT_DASHBOARD_PORT
+from reboot.settings import ENVVAR_RBT_APPLICATION_VARIANT
 from tests.reboot.cli.mock_exit import mock_raise_instead_of_exit
 from typing import Optional
 from unittest.mock import patch
@@ -100,6 +101,32 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 reboot.portless.dashboard_name('bank'), 'dashboard-bank'
             )
+
+    async def test_portless_takes_the_variant_too(self) -> None:
+        """The environment's `RBT_APPLICATION_VARIANT` is part of the
+        name, as for `rbt dev run`, so the dashboard's name carries it
+        as well."""
+        with tempfile.TemporaryDirectory() as state_directory:
+            _, parser = self._parse(
+                state_directory,
+                rbtrc=(
+                    'generate api/\n'
+                    'dev run --application-name=bank\n'
+                    'dev run --application=backend/src/main.py'
+                ),
+            )
+            with patch.dict(
+                os.environ, {ENVVAR_RBT_APPLICATION_VARIANT: 'fix-269'}
+            ):
+                self.assertEqual(
+                    dashboard._application_name(parser), 'bank-fix-269'
+                )
+                self.assertEqual(
+                    reboot.portless.dashboard_name(
+                        dashboard._application_name(parser)
+                    ),
+                    'dashboard-bank-fix-269',
+                )
 
     async def test_the_configs_are_named_like_dev_runs(self) -> None:
         """`rbt dashboard --config=ports` goes with `rbt dev run

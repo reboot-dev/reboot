@@ -126,6 +126,15 @@ ENVVAR_RBT_SERVE = 'RBT_SERVE'
 # permissive, local-development-like environment.
 ENVVAR_REBOOT_IN_TEST = 'REBOOT_IN_TEST'
 ENVVAR_RBT_NAME = 'RBT_NAME'
+
+# A variant of the application, appended to its `--application-name`
+# as `<name>-<variant>` everywhere by `rbt dev run`, `rbt dev expunge`
+# and `rbt dashboard`, and by the frontend's `npm run dev`, so that a
+# checkout, a git worktree or a branch has its own variant of an
+# application without the `.rbtrc`, which they share, saying so. Only
+# ever from the environment, since the frontend sees nothing else
+# (see `reboot.cli.common.application_name`).
+ENVVAR_RBT_APPLICATION_VARIANT = 'RBT_APPLICATION_VARIANT'
 ENVVAR_RBT_EFFECT_VALIDATION = 'RBT_EFFECT_VALIDATION'
 # When set to 'true', effect validation also runs for "trusted" Reboot
 # library servicers (those with the `trusted_effects` state option), which

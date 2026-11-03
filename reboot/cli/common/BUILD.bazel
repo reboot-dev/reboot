@@ -134,6 +134,17 @@ py_library(
 )
 
 py_library(
+    name = "application_name_py",
+    srcs = ["application_name.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":rc_py",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
+    ],
+)
+
+py_library(
     name = "rc_py",
     srcs = ["rc.py"],
     srcs_version = "PY3",
