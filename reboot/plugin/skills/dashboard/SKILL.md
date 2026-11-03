@@ -1,6 +1,6 @@
 ---
 name: dashboard
-description: Start the Reboot developer dashboard (`rbt dashboard`) for a project and open it in the browser. Puts the minimum files in place (a `pyproject.toml` depending on `reboot[dev]`, a `.rbtrc`, the API directory), starts the dashboard in a background shell if one is not already serving (it opens itself in the browser), and hands the user its URL. Use this while BUILDING an app — the dashboard watches the API directory from before anything is running, so the developer watches the API take shape as it is written. Not for running an app (see the run skill).
+description: Start the Reboot developer dashboard (`rbt dashboard`) for a project and open it in the browser. Puts the minimum files in place (a `pyproject.toml` depending on `reboot[dev]`, a `.rbtrc`, the API directory), starts the dashboard in a background shell if one is not already serving (it opens itself in the browser), and hands the user its URL. Use this while BUILDING an app, once the API declares a state type (before that every page only says "Waiting for your API"), so the developer watches the features and methods fill in as the build goes. Not for running an app (see the run skill).
 argument-hint: [<project-directory>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 ---
@@ -18,14 +18,18 @@ specify them (the Features page, with each feature's rules and
 scenarios, the methods it uses, its `@wip` and `@blocked` marks, and
 the recordings of its browser scenarios), and a changelog of how the
 API has evolved. It reads the API and feature **files**, not a
-running application, so it works from before the first API file is
-written — which is exactly when to start it: bring the dashboard up
-early in a build and the developer watches the API take shape while
-you write it.
+running application, so it needs no backend; but **until a file in
+the API directory declares a state type, every page of it, Features
+included, shows only "Waiting for your API"**. Start it then and not
+before: once the API is declared and `rbt generate` has run, the
+developer watches the features and methods fill in as the build
+goes.
 
-Use this skill when a build flow directs you here (the `mcp-app`
-and `web-app` skills do, right before the API is written) or when
-the user asks for the dashboard while an app is being built.
+Use this skill when a build flow directs you here (the `mcp-app`,
+`full-stack` skill does, right after the API is generated)
+or when the user asks for the dashboard. Asked for it before there
+is an API, say in one line that it has nothing to show until the
+API is written and that it starts then; start it then.
 
 > This skill **starts the dashboard**, nothing else. It does not run
 > the application — that is the [run skill](../run/SKILL.md).
@@ -116,6 +120,15 @@ From the project root, in its own background shell:
 uv run rbt dashboard
 ```
 
+**In the Claude desktop app, the dashboard opens in the built-in
+browser, every time.** When this session has the built-in browser's
+tools (named `…Claude_Browser__…`; load them with one ToolSearch on
+that prefix if they are deferred), start it as
+`BROWSER=true uv run rbt dashboard` — every start, restarts
+included (a rename, a crash, a `pkill`), so it never opens a window
+of its own beside the pane — and open it in the pane with
+`preview_start` (Step 5).
+
 It takes the API directory from the `generate <dir>` line in
 `.rbtrc` (Step 2), spelled relative to the project root — that is how
 file names are shown in the dashboard.
@@ -140,10 +153,17 @@ the user in one sentence and continue the build without it.
 
 ## Step 5 — Hand over the URL
 
-Do not open the page yourself. `rbt dashboard` opens it in the
-browser once it is serving, unless a tab is already showing it or
-the developer chose "Don't reopen automatically"; opening it as well
-gives the developer two tabs.
+**With the built-in browser's tools** (Step 4): once the probe
+succeeds, open the dashboard in the pane with `preview_start` —
+`<dashboard>/#/features` in a build, the root otherwise. Do it once
+per address: again after a restart that changed the address (a
+rename), not after one that kept it, and also when Step 3 found a
+dashboard already serving that the pane has not shown this session.
+
+**Without them**, do not open the page yourself. `rbt dashboard`
+opens it in the browser once it is serving, unless a tab is already
+showing it or the developer chose "Don't reopen automatically";
+opening it as well gives the developer two tabs.
 
 Tell the user the dashboard is up and what it is for — e.g.
 "Developer dashboard (watch the API as I build it) at
