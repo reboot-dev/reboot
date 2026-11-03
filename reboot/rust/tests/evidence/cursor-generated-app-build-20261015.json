@@ -1,0 +1,101 @@
+{
+  "passed": true,
+  "acceptance_scope": "actual offline generated cursor app build only",
+  "app": {
+    "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+    "sha256": "122aeb7b6b028f53d9184697372733bfca8c3f84ebb516e31ce89dac4c2d46df"
+  },
+  "generated_output_count": 3,
+  "source_manifest_sha256": "a9a011c30329a9572bfe3ed919c20321d7c4af9cce6aef3695b6d51d40e39106",
+  "accepted_retired_sha256": "5f46d9f6bc507499d2c6342d64d8aaec0f17a2dc6960168a2e76c35b40b971a2",
+  "app_build_receipt_sha256": "8a6fa855e4ee5ba1ed4f4843ff8ce49f09970289baf36fa658cd4930363c65b9",
+  "build_log_sha256": "8143d7185ce432539424de24d5b239a429ef26747acdb528097be078772f1c6d",
+  "cid": "74f5d1e0ec1445e6f4b3eab93fc8e7165b47bfa538929127bf74b9dd82b944e0",
+  "exact_attach_kernel_joined_zero": true,
+  "fresh_terminal_state": {
+    "Status": "exited",
+    "Running": false,
+    "Paused": false,
+    "Restarting": false,
+    "OOMKilled": false,
+    "Dead": false,
+    "Pid": 0,
+    "ExitCode": 0,
+    "Error": "",
+    "StartedAt": "2026-10-15T18:20:59.913789882Z",
+    "FinishedAt": "2026-10-15T18:21:37.867876546Z"
+  },
+  "source_unchanged": true,
+  "bundle_unchanged": true,
+  "custody_clean": true,
+  "original_lock_acquirable": true,
+  "original_lock_inode": 1516298,
+  "native_acceptance": false,
+  "public_acceptance": false,
+  "source_commit": "aabf98735b39a37f68b6ceb3a6ac1e9855d2be72",
+  "app_build_receipt": {
+    "sourcefreeze": {
+      "sha256": "a9a011c30329a9572bfe3ed919c20321d7c4af9cce6aef3695b6d51d40e39106",
+      "count": 2822
+    },
+    "app": {
+      "path": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/generated-workflow-cursor-results-app",
+      "sha256": "122aeb7b6b028f53d9184697372733bfca8c3f84ebb516e31ce89dac4c2d46df"
+    },
+    "generated_outputs": {
+      "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/build/generated-workflow-cursor-results-app-81178b99e11033a1/out/rbt.v1alpha1.rs": "b9293eb6f3297e6e0d20969d95187a545c6e9beb1b2d3f47eb17f68ba78e6b9c",
+      "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/build/generated-workflow-cursor-results-app-81178b99e11033a1/out/cursor.v1.rs": "ded34a80c44e63a8e557c20eac1d0b701cc8cf694069afbf4ad2a38ea5973f55",
+      "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/build/generated-workflow-cursor-results-app-81178b99e11033a1/out/cursor/v1/cursor.reboot.rs": "428260f57d68cb3fabc1d604825c3db11252482dd4e4dfb3f802af66dac28a55"
+    },
+    "native_acceptance": false
+  },
+  "cargo_build_row": {
+    "name": "cursor-app-build",
+    "argv": [
+      "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/toolchain/bin/cargo",
+      "build",
+      "--locked",
+      "--offline",
+      "--manifest-path",
+      "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustCursor468-20261015/source/reboot/rust/tests/fixtures/workflow_cursor_results_app/Cargo.toml",
+      "--message-format=json"
+    ],
+    "exit": 0,
+    "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustCursor468-20261015/runtime/cursor-app-build.log",
+    "sha256": "8143d7185ce432539424de24d5b239a429ef26747acdb528097be078772f1c6d"
+  },
+  "worker_custody": {
+    "direct": [
+      {
+        "pid": 7,
+        "birth": "90858617",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/toolchain/bin/cargo",
+          "build",
+          "--locked",
+          "--offline",
+          "--manifest-path",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustCursor468-20261015/source/reboot/rust/tests/fixtures/workflow_cursor_results_app/Cargo.toml",
+          "--message-format=json"
+        ],
+        "fd_identity": [
+          6,
+          1485577
+        ]
+      }
+    ],
+    "adopted": [],
+    "cleanup_failure": null
+  },
+  "attach_kernel_wait": {
+    "pid": 1490127,
+    "birth": "90858474",
+    "si_code": 1,
+    "si_status": 0,
+    "exit": 0,
+    "joined": true
+  }
+}

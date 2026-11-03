@@ -1,0 +1,11 @@
+{
+  "verified": true,
+  "archive_sha256": "4bd2227c8b094f4e121dcbbd441733d69362f087cc32fedbb1e3ef4e8ef16afb",
+  "members_verified": 4273,
+  "local_source_inputs_verified": 430,
+  "native_cases": 70,
+  "original_native_child_waits": 1761,
+  "independent_review": "BLOCKED: standalone Codex CLI authentication refresh failed (401); parent independent review required",
+  "verified_at": "2026-10-20T18:28:53.566676+00:00",
+  "verifier_sha256": "ea6a244c35735c40c9f9895a87b35d8a1b31697992cdfb2ec624e998884c689b"
+}

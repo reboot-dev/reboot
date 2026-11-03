@@ -1,0 +1,841 @@
+{
+  "scope": "Actual Legacy consumer build/strict lint/public/restart/canonical qualification with all245 current published Rust SDK inputs at e10ce36b, existing frozen merged CLI and qualified cached native Database; not latest-upstream native/overall SDK parity",
+  "verification": {
+    "passed": true,
+    "legacy_happy_restart_acceptance": true,
+    "failure": null,
+    "all_child_joins_verified": true,
+    "cleanup_failure": null,
+    "original_task_lock_acquirable": true,
+    "cid": "6c0dc7d32d69133ef1c6a0ce71486fa7ba16a5af9d13c4757ffbedf4ea75c6d1",
+    "fresh_terminal": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-15T20:08:19.517294209Z",
+      "FinishedAt": "2026-10-15T20:09:50.192808259Z"
+    },
+    "config_sha256": "14e228c041c49a7e516f2d0aac6beafb359e713607bc47b6e48c7ab510aedc5b",
+    "accepted_retired_sha256": "69a220d96b135c3f484284f18c27d2a007cbc191cf4b1120de7874f7596202d7",
+    "source_manifest_sha256": "8e9adc986b9f46f58964e1aa19c0aa2def56e29c2dd706cd73624458e8a49e98",
+    "source_count": 3264,
+    "closure_generated_count": 2678,
+    "worker_sha256": "896cb52615473c224cdbca509220ffd30fc123ea18bac4652460c062c18dc6fc",
+    "full_native_acceptance": false
+  },
+  "features": {
+    "consumer_inputs": {
+      "copied": {
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/.rbtrc": "62aacaa787602fab1607d06ff0dd44bca1c03fa559a2d7d933a6bc9eaf0c0775",
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/backend/Cargo.lock": "afa30504d347642262d75b6c59f69051420b292cf9daabbbae01e34e66f35465",
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/backend/Cargo.toml": "3f92ae4a312b0de3905a49b082a5c2ad5d70c8341da8f9558f8719fd3e8320fb",
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/backend/build.rs": "c27cade423a613135ef2b6b2c0e39f3c68c06c0a3d37426d9f5245ed6a364c1f",
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/backend/src/lib.rs": "6ddf2b1f5818f7a5f022fa66da0973254ad8f2f7a1c084952e746be00225a18d",
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/backend/src/main.rs": "cfcd722c3a3adddeb81f6ccb33a64d754a0dbe95d06d542b85aef89f4ee118e0",
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/backend/src/bin/client.rs": "b732a3ccb093e3dbc2a2d4f2a479279a20002172f013ecb3bcade8a552710c39",
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/backend/src/bin/inspect.rs": "0ad333d2bcbdd14e25cdad9044541216176096d2a75537c9f1e2d7dc5d0e3af0",
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/upstream/api/hello_legacy_grpc/v1/greeter.proto": "6adccf9ab0d1c6ace11ce05de74cbe0dc936c233af0d2b93dcccced03aa2d814",
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/upstream/hello-legacy-grpc/.rbtrc": "287133bd598bcc98cf5af23a9d511c5b43a8ca5715bea122f9b0cafc1ec56fd4",
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/upstream/hello-legacy-grpc/backend/.pytest.ini": "f1863943db91359344c235b3b55a4b0eeae61b48046b03cfdd15b950ecfccce6",
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/upstream/hello-legacy-grpc/backend/src/deprecated_greeter_servicer.py": "12338bfc8a72138ce2b921baf33142028374fc599fa19765a05f03b19ed2d5ae",
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/upstream/hello-legacy-grpc/backend/src/main.py": "8448ce29d3e8639e0af8320501ce0c9784db868d41b539a0b34280cd29e54c5d",
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/upstream/hello-legacy-grpc/backend/src/proxy_greeter_servicer.py": "f4491a036b8e3b5d13d324ebabc1cef4fb7f50430a04fbaca33f124d186afc4e",
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/upstream/hello-legacy-grpc/backend/src/reboot_greeter_servicer.py": "f628094fbd4bdafe4f02defa2e61efd6d67812cc1fdb9a98e847d7038fb3d758",
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/upstream/hello-legacy-grpc/backend/tests/greeter_servicer_test.py": "53a0bce4e7e35a03a1b063cfd282d67e6b7ebcc983db8ca6f08c5e916a240d76",
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/api/bank/v1/account.proto": "35704f425b4e987182274f6475fab7bf9958245f996f3ebc0b51e18bca5f9d4d",
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/api/bank/v1/bank.proto": "058fb0fa6db9844d9f6f2131cf4810982a4d871a888f0466e7b3a09c2667dad5",
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/api/bank/v1/errors.proto": "7993ba5445e9a600f6bd2e0bf327d09b66c747030b10b22bacde8116d1b424e3",
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/api/hello_constructors/v1/hello.proto": "c144183d68a73783f260886469706b865fcddbb393aae3899808f971ee5717c1",
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/api/hello_legacy_grpc/v1/greeter.proto": "6adccf9ab0d1c6ace11ce05de74cbe0dc936c233af0d2b93dcccced03aa2d814",
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/api/hello_tasks/v1/hello.proto": "6362f4a635766e534bcc2db0936af80ef412f3560d8216aa5a328e3d84997941"
+      },
+      "binaries": {
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/client": "79d6b32671ef81c38f808b637ad226af1a3f85d21c6b02763a4e5f7122dc2b15",
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/app": "3c8e1acbf00750d6773dec96ad445b04c48b232f67007c60b8b3ba4546c7726f"
+      },
+      "upstream_revision": "5c332a2910122d6035799bfaf2a314bf1de830b8",
+      "manifest_sha256": "3f92ae4a312b0de3905a49b082a5c2ad5d70c8341da8f9558f8719fd3e8320fb",
+      "lock_sha256": "afa30504d347642262d75b6c59f69051420b292cf9daabbbae01e34e66f35465"
+    },
+    "sessions": [
+      {
+        "children": [
+          {
+            "argv": [
+              "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+              "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/.rbt/dev/upstream_hello_legacy_grpc/rust/rocksdb",
+              "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/.rbt/dev/upstream_hello_legacy_grpc/rust/server-info.pb",
+              "20000"
+            ],
+            "birth_and_argv_observed": true,
+            "executable": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+            "label": "Database",
+            "pid": 231,
+            "starttime": "91510516",
+            "version": 1
+          },
+          {
+            "argv": [
+              "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/app"
+            ],
+            "birth_and_argv_observed": true,
+            "executable": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/app",
+            "label": "app",
+            "pid": 282,
+            "starttime": "91510542",
+            "version": 1
+          }
+        ],
+        "rocksdb": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/.rbt/dev/upstream_hello_legacy_grpc/rust/rocksdb",
+        "server_info": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/.rbt/dev/upstream_hello_legacy_grpc/rust/server-info.pb",
+        "server_info_sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0",
+        "host_log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/.rbt/dev/upstream_hello_legacy_grpc/rust/host.log",
+        "host_offset": 0,
+        "host_session_sha256": "6f2332e568d063e2315faf9302c7f86e2bc0f1a10d261f9009d91eb4f4f207de",
+        "initializer_task_uuid": "92ea88a8-d55f-4197-9c7f-bc643225ce1e",
+        "greetings": [
+          [
+            "0",
+            "Greetings, legacy gRPC!"
+          ],
+          [
+            "1",
+            "Hi, legacy gRPC! 1 person has been greeted today by the Reboot service."
+          ],
+          [
+            "2",
+            "Hello, legacy gRPC! 2 people have been greeted today by the Reboot service."
+          ],
+          [
+            "3",
+            "Greetings, legacy gRPC!"
+          ],
+          [
+            "4",
+            "Hi, legacy gRPC!"
+          ],
+          [
+            "5",
+            "Hello, legacy gRPC! 3 people have been greeted today by the Reboot service."
+          ],
+          [
+            "6",
+            "Hello, legacy gRPC! 4 people have been greeted today by the Reboot service."
+          ],
+          [
+            "7",
+            "Hello, legacy gRPC! 5 people have been greeted today by the Reboot service."
+          ],
+          [
+            "8",
+            "Bonjour, legacy gRPC! 6 people have been greeted today by the Reboot service."
+          ],
+          [
+            "9",
+            "Greetings, legacy gRPC! 7 people have been greeted today by the Reboot service."
+          ]
+        ],
+        "callbacks": 1
+      },
+      {
+        "children": [
+          {
+            "argv": [
+              "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+              "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/.rbt/dev/upstream_hello_legacy_grpc/rust/rocksdb",
+              "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/.rbt/dev/upstream_hello_legacy_grpc/rust/server-info.pb",
+              "20000"
+            ],
+            "birth_and_argv_observed": true,
+            "executable": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+            "label": "Database",
+            "pid": 392,
+            "starttime": "91511313",
+            "version": 1
+          },
+          {
+            "argv": [
+              "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/app"
+            ],
+            "birth_and_argv_observed": true,
+            "executable": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/app",
+            "label": "app",
+            "pid": 442,
+            "starttime": "91511333",
+            "version": 1
+          }
+        ],
+        "rocksdb": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/.rbt/dev/upstream_hello_legacy_grpc/rust/rocksdb",
+        "server_info": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/.rbt/dev/upstream_hello_legacy_grpc/rust/server-info.pb",
+        "server_info_sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0",
+        "host_log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/.rbt/dev/upstream_hello_legacy_grpc/rust/host.log",
+        "host_offset": 888,
+        "host_session_sha256": "09b25baa0036cf7dd9e3cad7d342ab57d48f70159b5c15cce89763c0d0c99009",
+        "initializer_task_uuid": "92ea88a8-d55f-4197-9c7f-bc643225ce1e",
+        "greetings": [],
+        "callbacks": 0
+      }
+    ],
+    "canonical_inspections": [
+      {
+        "directory": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/initial-inspection",
+        "count": 8,
+        "files": {
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/initial-inspection/actor.pb": "a12c722eac7278aecb1ef8fea2003bfd974e6951d59c12a15272ac6c20280fa3",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/initial-inspection/task.pb": "7edc7d7e9bf41e39c34b31ad24d5127125c96f54bd64b42586c7de572c4919d1",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/initial-inspection/mutation-0.pb": "33a39ba0b78b01357a5df0d014a199b61089c729ffe5bf2d6e77ac3aa8db914a",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/initial-inspection/mutation-1.pb": "06302791abcfb5cf43c93ddaa2c721e628f28c73bf58f9ff268a466703b1ad18",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/initial-inspection/mutation-2.pb": "586e46ecfe66cbbd505a52cbb459c4fbd92342639b5a9fa4c66b9c6d7203c5aa",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/initial-inspection/mutation-3.pb": "ee9ad821a57c9c4cdb1c20e9a8cfebb14c4defd8148ac4594e5228c84ea7965b",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/initial-inspection/mutation-4.pb": "5737eb4597d13c13d9fe99a6773003e53626fceaa6008d8cba5b851a611966f4",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/initial-inspection/mutation-5.pb": "796331ee5e38f25cf5ad1b23912bc8cc42027e25f2c974f956c52032b3e5c3eb",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/initial-inspection/mutation-6.pb": "72c1621ca74e0d9f817d42a5cdc0f374cbd3a454fcaa257a7f6191da28ff5b82",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/initial-inspection/mutation-7.pb": "c3a39c25bda2a42bfa7299abb026e5f2ec0d200a463155760a7fb700ca08f64a",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/initial-inspection/mutation-8.pb": "d0a9e04d1541884dd7a90ee2a5d63d37c41670135da3412b77c71f4d47a11dd3",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/initial-inspection/mutation-9.pb": "6132f8c9c01d67b718f796d875acc2809459046ffb7347540bef8f7046b6580f",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/initial-inspection/checkpoint.pb": "6132f8c9c01d67b718f796d875acc2809459046ffb7347540bef8f7046b6580f",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/initial-inspection/stored.pb": "6132f8c9c01d67b718f796d875acc2809459046ffb7347540bef8f7046b6580f",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/initial-inspection/summary.json": "2890bde70ab3da6f70e1b9e706adc97c6c6c1a3181f89e63bc926d4ab586208f"
+        },
+        "database_pid": 327,
+        "birth": "91510737",
+        "rocksdb": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/.rbt/dev/upstream_hello_legacy_grpc/rust/rocksdb",
+        "server_info_sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0"
+      },
+      {
+        "directory": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/restart-inspection",
+        "count": 9,
+        "files": {
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/restart-inspection/actor.pb": "fd5fb866ff4305f2a74991b65c34bb841db344cd7154f640b6b1ab06b3e41cec",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/restart-inspection/task.pb": "7edc7d7e9bf41e39c34b31ad24d5127125c96f54bd64b42586c7de572c4919d1",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/restart-inspection/mutation-0.pb": "33a39ba0b78b01357a5df0d014a199b61089c729ffe5bf2d6e77ac3aa8db914a",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/restart-inspection/mutation-1.pb": "06302791abcfb5cf43c93ddaa2c721e628f28c73bf58f9ff268a466703b1ad18",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/restart-inspection/mutation-2.pb": "586e46ecfe66cbbd505a52cbb459c4fbd92342639b5a9fa4c66b9c6d7203c5aa",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/restart-inspection/mutation-3.pb": "ee9ad821a57c9c4cdb1c20e9a8cfebb14c4defd8148ac4594e5228c84ea7965b",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/restart-inspection/mutation-4.pb": "5737eb4597d13c13d9fe99a6773003e53626fceaa6008d8cba5b851a611966f4",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/restart-inspection/mutation-5.pb": "796331ee5e38f25cf5ad1b23912bc8cc42027e25f2c974f956c52032b3e5c3eb",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/restart-inspection/mutation-6.pb": "72c1621ca74e0d9f817d42a5cdc0f374cbd3a454fcaa257a7f6191da28ff5b82",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/restart-inspection/mutation-7.pb": "c3a39c25bda2a42bfa7299abb026e5f2ec0d200a463155760a7fb700ca08f64a",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/restart-inspection/mutation-8.pb": "9a61c8059745683ca72fd6019a012459d8c18ae1a090d670a5387651e6694eb0",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/restart-inspection/mutation-9.pb": "d0a9e04d1541884dd7a90ee2a5d63d37c41670135da3412b77c71f4d47a11dd3",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/restart-inspection/mutation-10.pb": "6132f8c9c01d67b718f796d875acc2809459046ffb7347540bef8f7046b6580f",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/restart-inspection/checkpoint.pb": "6132f8c9c01d67b718f796d875acc2809459046ffb7347540bef8f7046b6580f",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/restart-inspection/stored.pb": "6132f8c9c01d67b718f796d875acc2809459046ffb7347540bef8f7046b6580f",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/restart-inspection/summary.json": "0bfd5087ad2c478ac374b4e034f3302cd4dc4e83bd679f0c7f1c9f56cf3e8bda"
+        },
+        "database_pid": 463,
+        "birth": "91511420",
+        "rocksdb": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/.rbt/dev/upstream_hello_legacy_grpc/rust/rocksdb",
+        "server_info_sha256": "3ae4f8f0f6aa034fa0d871476d7fe1602d5f4b6be94d5437d6b4456a9f9327a0"
+      }
+    ],
+    "legacy_happy_restart": {
+      "passed": true,
+      "command": [
+        "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/rbt-merged",
+        "--state-directory=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc",
+        "dev",
+        "run",
+        "--working-directory=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc",
+        "--port=37289",
+        "--rust-allow-insecure-database"
+      ],
+      "writer_uuidv7": "01a14166-0e9d-7000-8000-000000000000",
+      "initializer_task_uuid": "92ea88a8-d55f-4197-9c7f-bc643225ce1e",
+      "initial_reboot_count": 7,
+      "proxy_reboot_count": 1,
+      "sameDatabase": true,
+      "canonical_task_stored_bytes_equal": true,
+      "scope": "three-service serving initializer, writer replay and same-RocksDB happy restart; not crash/ACK windows"
+    }
+  },
+  "attach_kernel_wait": {
+    "pid": 1562660,
+    "birth": "91502434",
+    "si_code": 1,
+    "si_status": 0,
+    "exit": 0,
+    "joined": true
+  },
+  "rows": [
+    {
+      "name": "closure",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/closure.log",
+      "sha256": "e9ef681ffb251c2baefa89100a21ce9b1a15bbbe048dbeafa3c09f6362ff8838"
+    },
+    {
+      "name": "imports",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/imports.log",
+      "sha256": "be9cf6db6a54555ce780962678c22a2ef8b07dd2b4db4911236aeab0a519b991"
+    },
+    {
+      "name": "help",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/help.log",
+      "sha256": "ea1650da6573e54c3270c80f312e5df4a8b206cd8b37e55cdea9e6f1acc2455b"
+    },
+    {
+      "name": "legacy-build",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/legacy-build.log",
+      "sha256": "53e744b960823cb2785e9d9ce29e3e77c3f9931f41542312ef00d5463d57412f"
+    },
+    {
+      "name": "legacy-clippy",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/legacy-clippy.log",
+      "sha256": "331c8a9398ab8f31b172a23e719ae3b7bcda596d56bc1deead37b8aaf0c2ff32"
+    },
+    {
+      "name": "insecure-refusal",
+      "exit": 1,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/insecure-refusal.log",
+      "sha256": "d635ed18e095d05c93805d6a76034f071dbbcfd86b8000be9da81048300c5ae2"
+    },
+    {
+      "name": "legacy-client-1",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/legacy-client-1.log",
+      "sha256": "302c00b8e3f30dcc562fbc7f504149f209637dbfc077e1c7815dfd24c2e7d662"
+    },
+    {
+      "name": "legacy-client-2",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/legacy-client-2.log",
+      "sha256": "0e3975f057f4f336835697781aaba1986172a621618c38856f7d0ceed68b0337"
+    },
+    {
+      "name": "legacy-client-3",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/legacy-client-3.log",
+      "sha256": "5a888ea7fdb8da05e880f0a933eb5dfcfeb9b6eb38599fad238b448e3f27d157"
+    },
+    {
+      "name": "legacy-client-4",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/legacy-client-4.log",
+      "sha256": "c9c540203e09d2cb81ca9b7e7b11f47dad68ffaf2d0910bf340402b78f206665"
+    },
+    {
+      "name": "legacy-client-5",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/legacy-client-5.log",
+      "sha256": "b620e9d4115c173a44ebf1e53b918b473a770c7b7a41e49d388814a020cf1a17"
+    },
+    {
+      "name": "legacy-initial",
+      "exit": -15,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/legacy-initial.log",
+      "sha256": "9ebf29fe7a610e9357fd502b3405bed854110de7db4c8269a0381553b330b95d"
+    },
+    {
+      "name": "legacy-client-6",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/legacy-client-6.log",
+      "sha256": "9c684629b057dbe33aa452f00092abfc18ef9717472e999c6032abafed76d71c"
+    },
+    {
+      "name": "initial-inspection-database",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/initial-inspection-database.log",
+      "sha256": "0752a8d1ae708d4ee65cad27aca97a7a09c7b502265908f7548937f313890dd6"
+    },
+    {
+      "name": "legacy-client-7",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/legacy-client-7.log",
+      "sha256": "b620e9d4115c173a44ebf1e53b918b473a770c7b7a41e49d388814a020cf1a17"
+    },
+    {
+      "name": "legacy-client-8",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/legacy-client-8.log",
+      "sha256": "9716ffa0bcf294f52d44bb895829d4b075b9ecc704133100099b6ff2c540a7db"
+    },
+    {
+      "name": "legacy-restart",
+      "exit": -15,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/legacy-restart.log",
+      "sha256": "8e8ad70dad445ab9ec0027ed0acdf0c05aa8d01d2a4ca299a80cd9ef0c9fbd18"
+    },
+    {
+      "name": "legacy-client-9",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/legacy-client-9.log",
+      "sha256": "a31c08e591921ef77ba2100c88356afad36534e44c61c30330865e0aca729ad0"
+    },
+    {
+      "name": "restart-inspection-database",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/restart-inspection-database.log",
+      "sha256": "b0dfc74b7a8caffc1afa2b5ba49f38b40c67d8a4fda2a8874404e830a41b230a"
+    },
+    {
+      "name": "unrelated-sentinel",
+      "exit": -15,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/unrelated-sentinel.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "logs": {
+    "closure": "{\"proto_count\": 40, \"overlay_files\": 2678, \"rbt\": \"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/rbt-merged\"}\n",
+    "imports": "MERGED_MAIN_IMPORT_OK\n",
+    "help": "usage: rbt [-h] [--version] [--state-directory=STATE_DIRECTORY]\n           {cloud,dashboard,dev,export,import,generate,init,inspect,serve,task}\n           ...\n\npositional arguments:\n  {cloud,dashboard,dev,export,import,generate,init,inspect,serve,task}\n\noptions:\n  -h, --help            show this help message and exit\n  --version             show program's version number and exit\n  --state-directory=STATE_DIRECTORY\n                        parent directory for the `.rbt` directory, which\n                        stores application state; defaults to the directory\n                        containing an `.rbtrc` file.\n",
+    "legacy-build": "   Compiling reboot-rust-schema v0.0.0 (/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/source/reboot/rust)\n   Compiling upstream-hello-legacy-grpc v0.0.0 (/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/backend)\n    Finished `dev` profile [unoptimized] target(s) in 19.60s\n",
+    "legacy-clippy": "   Compiling upstream-hello-legacy-grpc v0.0.0 (/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/backend)\n    Checking reboot-rust-schema v0.0.0 (/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/source/reboot/rust)\n    Finished `dev` profile [unoptimized] target(s) in 9.08s\n",
+    "insecure-refusal": "Using .rbtrc (from .rbtrc) and working directory .\nThe C++ Database binds 0.0.0.0 without authentication. Use an isolated trusted development network and explicitly pass --rust-allow-insecure-database to opt in; not for production/cloud.\n",
+    "legacy-client-1": "SERVING\n",
+    "legacy-client-2": "DEPRECATED Greetings, Legacy!\n",
+    "legacy-client-3": "SALUTATION Hi\n",
+    "legacy-client-4": "DIRECT_WORKFLOW_DENIED\n",
+    "legacy-client-5": "REBOOT Greetings, Persisted! 8 people have been greeted today by the Reboot service.\n",
+    "legacy-initial": "Using .rbtrc (from .rbtrc) and working directory .\nWARNING: raw C++ Database listens on ALL interfaces without authentication; use only an isolated trusted development network. Rust public host remains loopback.\nRust development mode: missing authorizers are explicitly permitted; not production-safe\n    Finished `dev` profile [unoptimized] target(s) in 0.14s\nRUST_CHILD_LAUNCH {\"argv\": [\"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database\", \"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/.rbt/dev/upstream_hello_legacy_grpc/rust/rocksdb\", \"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/.rbt/dev/upstream_hello_legacy_grpc/rust/server-info.pb\", \"20000\"], \"birth_and_argv_observed\": true, \"executable\": \"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database\", \"label\": \"Database\", \"pid\": 231, \"starttime\": \"91510516\", \"version\": 1}\nRust Database PID=231, durable state=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/.rbt/dev/upstream_hello_legacy_grpc/rust/rocksdb\nRUST_CHILD_LAUNCH {\"argv\": [\"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/app\"], \"birth_and_argv_observed\": true, \"executable\": \"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/app\", \"label\": \"app\", \"pid\": 282, \"starttime\": \"91510542\", \"version\": 1}\nRust app PID=282, endpoint=http://127.0.0.1:37289\nRust app SERVING (canonical gRPC health check)\n",
+    "legacy-client-6": "CANONICAL_INITIALIZER_COMPLETED num=8 task=92ea88a8-d55f-4197-9c7f-bc643225ce1e STORED_UNIT\n",
+    "initial-inspection-database": "Database server started at: 0.0.0.0:60033\nReceived SIGTERM/SIGINT, shutting down gracefully...\n",
+    "legacy-client-7": "REBOOT Greetings, Persisted! 8 people have been greeted today by the Reboot service.\n",
+    "legacy-client-8": "PROXY Hello, Proxy! 9 people have been greeted today by the Reboot service.\nPROXY Hello, Proxy!\nPROXY_BOTH_BRANCHES\n",
+    "legacy-restart": "Using .rbtrc (from .rbtrc) and working directory .\nWARNING: raw C++ Database listens on ALL interfaces without authentication; use only an isolated trusted development network. Rust public host remains loopback.\nRust development mode: missing authorizers are explicitly permitted; not production-safe\n    Finished `dev` profile [unoptimized] target(s) in 0.11s\nRUST_CHILD_LAUNCH {\"argv\": [\"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database\", \"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/.rbt/dev/upstream_hello_legacy_grpc/rust/rocksdb\", \"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/.rbt/dev/upstream_hello_legacy_grpc/rust/server-info.pb\", \"20000\"], \"birth_and_argv_observed\": true, \"executable\": \"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database\", \"label\": \"Database\", \"pid\": 392, \"starttime\": \"91511313\", \"version\": 1}\nRust Database PID=392, durable state=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/.rbt/dev/upstream_hello_legacy_grpc/rust/rocksdb\nRUST_CHILD_LAUNCH {\"argv\": [\"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/app\"], \"birth_and_argv_observed\": true, \"executable\": \"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/app\", \"label\": \"app\", \"pid\": 442, \"starttime\": \"91511333\", \"version\": 1}\nRust app PID=442, endpoint=http://127.0.0.1:37289\nRust app SERVING (canonical gRPC health check)\n",
+    "legacy-client-9": "CANONICAL_INITIALIZER_COMPLETED num=9 task=92ea88a8-d55f-4197-9c7f-bc643225ce1e STORED_UNIT\n",
+    "restart-inspection-database": "Database server started at: 0.0.0.0:40197\nReceived SIGTERM/SIGINT, shutting down gracefully...\n",
+    "unrelated-sentinel": ""
+  },
+  "custody": {
+    "direct": [
+      {
+        "pid": 7,
+        "birth": "91502719",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/publicEnv405/python/bin/python3.12",
+          "-I",
+          "-B",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/closure.py",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015"
+        ],
+        "fd_identity": [
+          6,
+          1569244
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/closure.log"
+      },
+      {
+        "pid": 9,
+        "birth": "91505493",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/publicEnv405/python/bin/python3.12",
+          "-I",
+          "-B",
+          "-c",
+          "import sys;sys.path.insert(0,'/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/python-overlay');import reboot.cli.main,reboot.cli.common.cli,reboot.cli.commands.rust_dev,reboot.server.envoy_nanny;from rbt.dashboard.v1 import dashboard_pb2,dashboard_rbt;from rbt.std.presence.v1 import presence_rbt;from rbt.v1alpha1.bdd import grammar_pb2;from rbt.v1alpha1 import database_pb2_grpc;assert hasattr(dashboard_rbt,\"Preferences\");assert \"SetSuppressAutomaticOpen\" in dashboard_pb2.DESCRIPTOR.services_by_name[\"PreferencesMethods\"].methods_by_name;assert \"suppress_automatic_open\" in dashboard_pb2.PreferencesGetResponse.DESCRIPTOR.fields_by_name;assert \"color_scheme\" in grammar_pb2.OpensWebApp.DESCRIPTOR.fields_by_name;assert hasattr(database_pb2_grpc.DatabaseServicer,\"GetCapabilities\");assert reboot.cli.main.__file__.startswith('/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/python-overlay');print(\"MERGED_MAIN_IMPORT_OK\")"
+        ],
+        "fd_identity": [
+          6,
+          1569432
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/imports.log"
+      },
+      {
+        "pid": 10,
+        "birth": "91506016",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/rbt-merged",
+          "--help"
+        ],
+        "fd_identity": [
+          6,
+          1569456
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/help.log"
+      },
+      {
+        "pid": 11,
+        "birth": "91506548",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/toolchain/bin/cargo",
+          "build",
+          "--bins",
+          "--locked",
+          "--offline",
+          "--manifest-path",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/backend/Cargo.toml"
+        ],
+        "fd_identity": [
+          6,
+          1562667
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/legacy-build.log"
+      },
+      {
+        "pid": 165,
+        "birth": "91508542",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/toolchain/bin/cargo",
+          "clippy",
+          "--all-targets",
+          "--locked",
+          "--offline",
+          "--manifest-path",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/backend/Cargo.toml",
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "fd_identity": [
+          6,
+          1569565
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/legacy-clippy.log"
+      },
+      {
+        "pid": 209,
+        "birth": "91509482",
+        "exit": 1,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/rbt-merged",
+          "--state-directory=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc",
+          "dev",
+          "run",
+          "--working-directory=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc",
+          "--port=37289"
+        ],
+        "fd_identity": [
+          6,
+          1569707
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/insecure-refusal.log"
+      },
+      {
+        "pid": 211,
+        "birth": "91510012",
+        "exit": -15,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/publicEnv405/python/bin/python3.12",
+          "-I",
+          "-B",
+          "-c",
+          "import time;time.sleep(460)"
+        ],
+        "fd_identity": [
+          6,
+          1562768
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/unrelated-sentinel.log"
+      },
+      {
+        "pid": 212,
+        "birth": "91510021",
+        "exit": -15,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/rbt-merged",
+          "--state-directory=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc",
+          "dev",
+          "run",
+          "--working-directory=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc",
+          "--port=37289",
+          "--rust-allow-insecure-database"
+        ],
+        "fd_identity": [
+          6,
+          1562769
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/legacy-initial.log"
+      },
+      {
+        "pid": 311,
+        "birth": "91510615",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/client",
+          "health"
+        ],
+        "fd_identity": [
+          6,
+          1569846
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/legacy-client-1.log"
+      },
+      {
+        "pid": 314,
+        "birth": "91510635",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/client",
+          "deprecated"
+        ],
+        "fd_identity": [
+          6,
+          1569848
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/legacy-client-2.log"
+      },
+      {
+        "pid": 317,
+        "birth": "91510656",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/client",
+          "salutation"
+        ],
+        "fd_identity": [
+          6,
+          1569849
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/legacy-client-3.log"
+      },
+      {
+        "pid": 320,
+        "birth": "91510676",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/client",
+          "direct-workflow-denied"
+        ],
+        "fd_identity": [
+          6,
+          1569851
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/legacy-client-4.log"
+      },
+      {
+        "pid": 323,
+        "birth": "91510697",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/client",
+          "greet-replay",
+          "01a14166-0e9d-7000-8000-000000000000",
+          "Persisted"
+        ],
+        "fd_identity": [
+          6,
+          1569853
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/legacy-client-5.log"
+      },
+      {
+        "pid": 327,
+        "birth": "91510737",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/.rbt/dev/upstream_hello_legacy_grpc/rust/rocksdb",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/.rbt/dev/upstream_hello_legacy_grpc/rust/server-info.pb",
+          "60033"
+        ],
+        "fd_identity": [
+          6,
+          1569855
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/initial-inspection-database.log"
+      },
+      {
+        "pid": 376,
+        "birth": "91510789",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/client",
+          "inspect",
+          "92ea88a8-d55f-4197-9c7f-bc643225ce1e"
+        ],
+        "fd_identity": [
+          6,
+          1562825
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/legacy-client-6.log"
+      },
+      {
+        "pid": 380,
+        "birth": "91510817",
+        "exit": -15,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/rbt-merged",
+          "--state-directory=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc",
+          "dev",
+          "run",
+          "--working-directory=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc",
+          "--port=37289",
+          "--rust-allow-insecure-database"
+        ],
+        "fd_identity": [
+          6,
+          1562828
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/legacy-restart.log"
+      },
+      {
+        "pid": 455,
+        "birth": "91511360",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/client",
+          "greet-replay",
+          "01a14166-0e9d-7000-8000-000000000000",
+          "Persisted"
+        ],
+        "fd_identity": [
+          6,
+          1569949
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/legacy-client-7.log"
+      },
+      {
+        "pid": 459,
+        "birth": "91511381",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/client",
+          "proxy"
+        ],
+        "fd_identity": [
+          6,
+          1569950
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/legacy-client-8.log"
+      },
+      {
+        "pid": 463,
+        "birth": "91511420",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/.rbt/dev/upstream_hello_legacy_grpc/rust/rocksdb",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/examples/hello-legacy-grpc/.rbt/dev/upstream_hello_legacy_grpc/rust/server-info.pb",
+          "40197"
+        ],
+        "fd_identity": [
+          6,
+          1569955
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/restart-inspection-database.log"
+      },
+      {
+        "pid": 512,
+        "birth": "91511472",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/client",
+          "inspect",
+          "92ea88a8-d55f-4197-9c7f-bc643225ce1e"
+        ],
+        "fd_identity": [
+          6,
+          1562944
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedLegacy535-20261015/runtime/legacy-client-9.log"
+      }
+    ],
+    "adopted": [],
+    "cleanup_failure": null
+  },
+  "sdk_refresh": {
+    "changed": [
+      {
+        "path": "reboot/rust/PARITY.md",
+        "frozen": "af187541005b2b7be78088dc539b2578858194538e7440e2ca772dbca0d3dcc9",
+        "publication": "109422850b2e0c37acd8f7f19354e91e8a5068f57e56184c168884b206ebdb71"
+      },
+      {
+        "path": "reboot/rust/src/one_shot_tasks.rs",
+        "frozen": "7f97c8a008350e42adb78e52b28097791c9edde8c1876ac3b336ffb6753ebf91",
+        "publication": "df3e1c16f3c73d15654697e2f9e8a2c0a738e168eb87bc782b17a4646aeccbfd"
+      },
+      {
+        "path": "reboot/rust/src/workflow_at_most_once.rs",
+        "frozen": "26e724dd092a1f5fa6419e727370480cf8402db24a70090a0b30b995fe26fef8",
+        "publication": "eb8cbe145ab41d49509d7e40ea7f60d73739ad0b9eff2f4533f2c3e0dc0ba4f4"
+      },
+      {
+        "path": "reboot/rust/src/workflow_codegen.rs",
+        "frozen": "b7de3ccaada052817924b87e9cfc70f55eead885462cdfea7714a557f4768912",
+        "publication": "b62747b0d57e7584a84e1c66ae4867b907f4817c2678aca2106824ba4a5adefc"
+      },
+      {
+        "path": "reboot/rust/src/workflow_context.rs",
+        "frozen": "c2054226568b0273b18e24b5b1d63428e749b552c34e01abf40ef0014d93ce96",
+        "publication": "7442c5d225dddf1ba0207a07455c0b9f9a4cd936560babdbe396a3cb2b29b1c2"
+      },
+      {
+        "path": "reboot/rust/src/workflow_store.rs",
+        "frozen": "ba017a9cea12d320e64b2a50954fbda78d8042b223709ffd684895c6f63b22aa",
+        "publication": "73af4a8b1b82df3d3aa940b6bb92b421f06d91e8ef2d73a640bf806e583adef1"
+      },
+      {
+        "path": "reboot/rust/tests/fixtures/workflow_at_most_once_tests.rs",
+        "frozen": "06b6e136954bcbdbc0fcfce52dcf649d694547babbf91e3c7ffb7a1421c37abd",
+        "publication": "e1aa47500fe93ddc62309cb446ed992058edd4b75eda0011022ab2af75df37e7"
+      },
+      {
+        "path": "reboot/rust/tests/verify_parity_documentation.py",
+        "frozen": "78ee6563c41d845292950d7b26ce04023dba805744568517b75712e4f13cdcc6",
+        "publication": "18f270f587fa0fa547d67499d452a89d138b680638343a405ac36b73a2e93fd1"
+      }
+    ],
+    "new": [
+      "reboot/rust/tests/fixtures/wait_cursor_binding_race_tests.rs",
+      "reboot/rust/tests/fixtures/workflow_cursor_emission_tests.rs",
+      "reboot/rust/tests/fixtures/workflow_cursor_results_app/Cargo.toml",
+      "reboot/rust/tests/fixtures/workflow_cursor_results_app/build.rs",
+      "reboot/rust/tests/fixtures/workflow_cursor_results_app/cursor/v1/cursor.proto",
+      "reboot/rust/tests/fixtures/workflow_cursor_results_app/src/inspect.rs",
+      "reboot/rust/tests/fixtures/workflow_cursor_results_app/src/main.rs",
+      "reboot/rust/tests/fixtures/workflow_cursor_results_app/src/placement.rs",
+      "reboot/rust/tests/workflow_cursor_results_native.rs"
+    ]
+  },
+  "limits": [
+    "Prior531 used historical frozen SDK;535 refreshes current SDK, not upstream CLI/native sources",
+    "No new crash/ACK-window, Bank/shared/public or overall parity acceptance"
+  ]
+}

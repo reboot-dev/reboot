@@ -1185,6 +1185,7 @@ class WriterContext(Context):
     #   3. The writer is _not_ within a transaction.
     #   4. The writer is _not_ running as a task.
     sync: bool
+    request_fingerprint: Optional[bytes]
 
     def __init__(
         self,
@@ -1206,10 +1207,13 @@ class WriterContext(Context):
         )
 
         self.sync = True
+        self.request_fingerprint = None
 
 
 class TransactionContext(Context):
     """Call context for a transaction call."""
+
+    request_fingerprint: Optional[bytes]
 
     def __init__(
         self,
@@ -1265,6 +1269,8 @@ class TransactionContext(Context):
             task=task,
             effect_validation=effect_validation,
         )
+
+        self.request_fingerprint = None
 
     @property
     def exclusive(self) -> bool:

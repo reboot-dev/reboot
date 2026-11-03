@@ -1,0 +1,91 @@
+{
+  "accepted": true,
+  "source_commit": "9128343ff044701d4d9461383065ee3b31cd5ea0",
+  "archive_sha256": "4717b5156be67813858be4d4357a4b0446e4a53081752710cbbe3e56f0daddae",
+  "archive_bytes": 4985263,
+  "archive_files": 2232,
+  "native_positive_cases": 41,
+  "transaction_cases": 7,
+  "native_receipts": 7,
+  "original_driver_child_waits": 746,
+  "gates": 15,
+  "sdk": {
+    "passed": 972,
+    "ignored": 175
+  },
+  "doctests": {
+    "passed": 8,
+    "ignored": 0
+  },
+  "consumer": {
+    "passed": 1,
+    "ignored": 0
+  },
+  "source_inputs": 1168,
+  "locally_checked_inputs": 434,
+  "binary_sha256": "d15e273bc9732bb739385b2ea438e1df0a5ccc7fa4919676166e4f9cd7a68e76",
+  "database_sha256": "619002c569e9841144a8bbedf4f2ce6a753bb0e6b103af71883d91d43f413803",
+  "fresh_cpp_build": false,
+  "retirement": {
+    "observed": "2026-10-20T20:24:34.502764+00:00",
+    "unit": "MainPID=0\nResult=success\nExecMainStatus=0\nActiveState=inactive\n",
+    "owner_proc_absent": true,
+    "all_gate_pids_absent": true,
+    "all_receipt_children_absent": true,
+    "four_cache_locks_acquired": true,
+    "note": "Timestamped absence plus terminal systemd state; not an external original-parent owner wait."
+  },
+  "owner_pid": 1686547,
+  "controller_pid": 1686549,
+  "started": "2026-10-20T20:15:55.667688+00:00",
+  "finished": "2026-10-20T20:24:16.082455+00:00",
+  "predecessor_archive_sha256": "5428d231fee7acbeafc1b8ce0207912ec19737c4b96885e55cd016f90c2fcb2d",
+  "prior_native_mutants": "retained, not rerun; exact predecessor archive unchanged",
+  "source_objects": 719,
+  "native_receipt_inventory": [
+    {
+      "path": "qualification2/canonical-raw/receipt.json",
+      "complete": true,
+      "cases": 11,
+      "waits": 199
+    },
+    {
+      "path": "qualification2/generic-raw/receipt.json",
+      "complete": true,
+      "cases": 12,
+      "waits": 229
+    },
+    {
+      "path": "qualification2/native-transaction-raw/receipt.json",
+      "complete": true,
+      "cases": 7,
+      "waits": 100
+    },
+    {
+      "path": "qualification2/outbound-ack-raw/receipt.json",
+      "complete": true,
+      "cases": 4,
+      "waits": 95
+    },
+    {
+      "path": "qualification2/outbound-raw/receipt.json",
+      "complete": true,
+      "cases": 7,
+      "waits": 105
+    },
+    {
+      "path": "qualification2/parent-error-raw/receipt.json",
+      "complete": false,
+      "cases": 0,
+      "waits": 9
+    },
+    {
+      "path": "qualification2/parent-signal-raw/receipt.json",
+      "complete": false,
+      "cases": 0,
+      "waits": 9
+    }
+  ],
+  "first_attempt_source_commit": "bebd8e6d3c98bbfd6556857ec4fffb6349ebfffe",
+  "first_attempt_failure": "fixture-clippy: exit 101, canonical unit_arg; retained, not retrocertified"
+}

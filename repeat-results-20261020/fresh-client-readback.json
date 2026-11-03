@@ -1,0 +1,227 @@
+{
+  "Id": "fd0bc321bc098c1ff467742287ed9f7595559389754844e25adf9d8ee9a40d88",
+  "Created": "2026-10-20T10:36:04.02347536Z",
+  "Path": "/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin/python3",
+  "Args": [
+    "-c",
+    "import time;time.sleep(18000)"
+  ],
+  "State": {
+    "Status": "exited",
+    "Running": false,
+    "Paused": false,
+    "Restarting": false,
+    "OOMKilled": false,
+    "Dead": false,
+    "Pid": 0,
+    "ExitCode": 143,
+    "Error": "",
+    "StartedAt": "2026-10-20T10:36:04.047506094Z",
+    "FinishedAt": "2026-10-20T11:14:51.980875562Z"
+  },
+  "Image": "sha256:28241a509e8dbedda24bd2033ce556cc5648ddd02ef80bd349e417586fb84925",
+  "ResolvConfPath": "/var/lib/docker/containers/fd0bc321bc098c1ff467742287ed9f7595559389754844e25adf9d8ee9a40d88/resolv.conf",
+  "HostnamePath": "/var/lib/docker/containers/fd0bc321bc098c1ff467742287ed9f7595559389754844e25adf9d8ee9a40d88/hostname",
+  "HostsPath": "/var/lib/docker/containers/fd0bc321bc098c1ff467742287ed9f7595559389754844e25adf9d8ee9a40d88/hosts",
+  "LogPath": "/var/lib/docker/containers/fd0bc321bc098c1ff467742287ed9f7595559389754844e25adf9d8ee9a40d88/fd0bc321bc098c1ff467742287ed9f7595559389754844e25adf9d8ee9a40d88-json.log",
+  "Name": "/tiny-repeat-ingress-fixed-20261020-client",
+  "RestartCount": 0,
+  "Driver": "overlayfs",
+  "Platform": "linux",
+  "MountLabel": "",
+  "ProcessLabel": "",
+  "AppArmorProfile": "docker-default",
+  "ExecIDs": null,
+  "HostConfig": {
+    "Binds": [
+      "/root/tiny-repeat-ingress-fixed-20261020/bench:/bench:ro",
+      "/root/tiny-repeat-ingress-fixed-20261020/results:/evidence"
+    ],
+    "ContainerIDFile": "",
+    "LogConfig": {
+      "Type": "json-file",
+      "Config": {}
+    },
+    "NetworkMode": "host",
+    "PortBindings": {},
+    "RestartPolicy": {
+      "Name": "no",
+      "MaximumRetryCount": 0
+    },
+    "AutoRemove": false,
+    "VolumeDriver": "",
+    "VolumesFrom": null,
+    "ConsoleSize": [
+      0,
+      0
+    ],
+    "CapAdd": null,
+    "CapDrop": null,
+    "CgroupnsMode": "private",
+    "Dns": null,
+    "DnsOptions": [],
+    "DnsSearch": [],
+    "ExtraHosts": null,
+    "GroupAdd": null,
+    "IpcMode": "private",
+    "Cgroup": "",
+    "Links": null,
+    "OomScoreAdj": 0,
+    "PidMode": "",
+    "Privileged": false,
+    "PublishAllPorts": false,
+    "ReadonlyRootfs": false,
+    "SecurityOpt": null,
+    "UTSMode": "",
+    "UsernsMode": "",
+    "ShmSize": 67108864,
+    "Runtime": "runc",
+    "Isolation": "",
+    "CpuShares": 0,
+    "Memory": 0,
+    "NanoCpus": 0,
+    "CgroupParent": "",
+    "BlkioWeight": 0,
+    "BlkioWeightDevice": [],
+    "BlkioDeviceReadBps": [],
+    "BlkioDeviceWriteBps": [],
+    "BlkioDeviceReadIOps": [],
+    "BlkioDeviceWriteIOps": [],
+    "CpuPeriod": 0,
+    "CpuQuota": 0,
+    "CpuRealtimePeriod": 0,
+    "CpuRealtimeRuntime": 0,
+    "CpusetCpus": "14",
+    "CpusetMems": "",
+    "Devices": [],
+    "DeviceCgroupRules": null,
+    "DeviceRequests": null,
+    "MemoryReservation": 0,
+    "MemorySwap": 0,
+    "MemorySwappiness": null,
+    "OomKillDisable": null,
+    "PidsLimit": null,
+    "Ulimits": null,
+    "CpuCount": 0,
+    "CpuPercent": 0,
+    "IOMaximumIOps": 0,
+    "IOMaximumBandwidth": 0,
+    "MaskedPaths": [
+      "/proc/acpi",
+      "/proc/asound",
+      "/proc/interrupts",
+      "/proc/kcore",
+      "/proc/keys",
+      "/proc/latency_stats",
+      "/proc/sched_debug",
+      "/proc/scsi",
+      "/proc/timer_list",
+      "/proc/timer_stats",
+      "/sys/devices/virtual/powercap",
+      "/sys/firmware"
+    ],
+    "ReadonlyPaths": [
+      "/proc/bus",
+      "/proc/fs",
+      "/proc/irq",
+      "/proc/sys",
+      "/proc/sysrq-trigger"
+    ],
+    "Init": true
+  },
+  "Storage": {
+    "RootFS": {
+      "Snapshot": {
+        "Name": "overlayfs"
+      }
+    }
+  },
+  "Mounts": [
+    {
+      "Type": "bind",
+      "Source": "/root/tiny-repeat-ingress-fixed-20261020/bench",
+      "Destination": "/bench",
+      "Mode": "ro",
+      "RW": false,
+      "Propagation": "rprivate"
+    },
+    {
+      "Type": "bind",
+      "Source": "/root/tiny-repeat-ingress-fixed-20261020/results",
+      "Destination": "/evidence",
+      "Mode": "",
+      "RW": true,
+      "Propagation": "rprivate"
+    }
+  ],
+  "Config": {
+    "Hostname": "jean-reboot-rust-validation-ccx43",
+    "Domainname": "",
+    "User": "",
+    "AttachStdin": false,
+    "AttachStdout": false,
+    "AttachStderr": false,
+    "Tty": false,
+    "OpenStdin": false,
+    "StdinOnce": false,
+    "Env": [
+      "PATH=/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin:/usr/local/bin:/usr/bin:/bin",
+      "PYTHONPATH=/example/hello-constructors/backend/api",
+      "REBOOT_LOCAL_ENVOY_MODE=executable"
+    ],
+    "Cmd": [
+      "-c",
+      "import time;time.sleep(18000)"
+    ],
+    "Healthcheck": {
+      "Test": [
+        "NONE"
+      ]
+    },
+    "Image": "sha256:28241a509e8dbedda24bd2033ce556cc5648ddd02ef80bd349e417586fb84925",
+    "Volumes": null,
+    "WorkingDir": "/example/hello-constructors",
+    "Entrypoint": [
+      "/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin/python3"
+    ],
+    "Labels": {
+      "org.opencontainers.image.revision": "d3b0642d0cb9962c839cfb57ebfd33f2a3cca389",
+      "org.opencontainers.image.version": "24.04",
+      "reboot.python-example": "5c332a2910122d6035799bfaf2a314bf1de830b8",
+      "reboot.sdk-native": "8574ccb0df9893274e69d1a19eca469dad56d779"
+    }
+  },
+  "NetworkSettings": {
+    "SandboxID": "",
+    "SandboxKey": "",
+    "Ports": {},
+    "Networks": {
+      "host": {
+        "IPAMConfig": null,
+        "Links": null,
+        "Aliases": null,
+        "DriverOpts": null,
+        "GwPriority": 0,
+        "NetworkID": "6955d7bc07f2ed77b2878c0e01c80fe710484e89e709b1241366c2813e2a8425",
+        "EndpointID": "",
+        "Gateway": "",
+        "IPAddress": "",
+        "MacAddress": "",
+        "IPPrefixLen": 0,
+        "IPv6Gateway": "",
+        "GlobalIPv6Address": "",
+        "GlobalIPv6PrefixLen": 0,
+        "DNSNames": null
+      }
+    }
+  },
+  "ImageManifestDescriptor": {
+    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+    "digest": "sha256:04b78b4bf4b06a38e722420dc7d493b414108d99cd1f480d8621951364d21633",
+    "size": 1623,
+    "platform": {
+      "architecture": "amd64",
+      "os": "linux"
+    }
+  }
+}

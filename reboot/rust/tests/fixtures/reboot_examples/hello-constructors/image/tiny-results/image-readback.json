@@ -1,0 +1,175 @@
+[
+  {
+    "Id": "sha256:3dcf9d9976f76a63b3a290ef6cf15329f1f6148692c72604e5dc797a237f7db4",
+    "RepoTags": [
+      "hello-rust:tiny-current"
+    ],
+    "RepoDigests": [
+      "hello-rust@sha256:3dcf9d9976f76a63b3a290ef6cf15329f1f6148692c72604e5dc797a237f7db4"
+    ],
+    "Comment": "buildkit.dockerfile.v0",
+    "Created": "2026-10-20T07:55:11.846630263Z",
+    "Config": {
+      "Env": [
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "RBT_RUST_URL=http://127.0.0.1:9990"
+      ],
+      "Entrypoint": [
+        "/usr/local/bin/hello"
+      ],
+      "Labels": {
+        "org.opencontainers.image.revision": "d3b0642d0cb9962c839cfb57ebfd33f2a3cca389",
+        "org.opencontainers.image.version": "24.04"
+      },
+      "Healthcheck": {
+        "Test": [
+          "CMD",
+          "/usr/local/bin/hello-health",
+          "health"
+        ],
+        "Interval": 2000000000,
+        "Timeout": 4000000000,
+        "StartPeriod": 5000000000,
+        "Retries": 2
+      }
+    },
+    "Architecture": "amd64",
+    "Os": "linux",
+    "Size": 33490338,
+    "RootFS": {
+      "Type": "layers",
+      "Layers": [
+        "sha256:32ab39660fd51c6dc3aae486b42d42bbe8fe4c1db78eaf57bb9c21198de48a16",
+        "sha256:1587684db4ec33412387390adf4ba491441f1ec9d1f87702226dfd1b6d6ee479",
+        "sha256:7767c9e6a52d9465e3d444afcd0d322995188bd2687a6b2558f6b54e15949762",
+        "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef"
+      ]
+    },
+    "Metadata": {
+      "LastTagTime": "2026-10-20T07:56:40.614096849Z"
+    },
+    "Descriptor": {
+      "mediaType": "application/vnd.oci.image.index.v1+json",
+      "digest": "sha256:3dcf9d9976f76a63b3a290ef6cf15329f1f6148692c72604e5dc797a237f7db4",
+      "size": 856,
+      "annotations": {
+        "io.containerd.image.name": "docker.io/library/hello-rust:tiny-current",
+        "org.opencontainers.image.ref.name": "tiny-current"
+      }
+    }
+  },
+  {
+    "Id": "sha256:28241a509e8dbedda24bd2033ce556cc5648ddd02ef80bd349e417586fb84925",
+    "RepoTags": [
+      "hello-python:tiny-current"
+    ],
+    "RepoDigests": [
+      "hello-python@sha256:28241a509e8dbedda24bd2033ce556cc5648ddd02ef80bd349e417586fb84925"
+    ],
+    "Comment": "buildkit.dockerfile.v0",
+    "Created": "2026-10-20T07:55:23.471199099Z",
+    "Config": {
+      "Env": [
+        "PATH=/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin:/usr/local/bin:/usr/bin:/bin",
+        "PYTHONPATH=/example/hello-constructors/backend/api",
+        "REBOOT_LOCAL_ENVOY_MODE=executable"
+      ],
+      "Entrypoint": [
+        "/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin/python3",
+        "/usr/local/bin/python-entrypoint.py"
+      ],
+      "WorkingDir": "/example/hello-constructors",
+      "Labels": {
+        "org.opencontainers.image.revision": "d3b0642d0cb9962c839cfb57ebfd33f2a3cca389",
+        "org.opencontainers.image.version": "24.04",
+        "reboot.python-example": "5c332a2910122d6035799bfaf2a314bf1de830b8",
+        "reboot.sdk-native": "8574ccb0df9893274e69d1a19eca469dad56d779"
+      }
+    },
+    "Architecture": "amd64",
+    "Os": "linux",
+    "Size": 257560239,
+    "RootFS": {
+      "Type": "layers",
+      "Layers": [
+        "sha256:32ab39660fd51c6dc3aae486b42d42bbe8fe4c1db78eaf57bb9c21198de48a16",
+        "sha256:9dd5037042b2c87194a26e7bea400eb3ed9da95d25e5031a5980a02e24b66fef",
+        "sha256:8e5affdc8eec308152e46c0933fa56ab47b75e8ba7a01cac1d31077b01cfd9e2",
+        "sha256:dc64d0aaab6107056ad5e687feee9b41eca90911c69f565735ec48313f6fce74",
+        "sha256:472a84334cdac5cf95e0ce2c3dbe6fb8d55b3a647940aea19be5aca45ce392e7",
+        "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef",
+        "sha256:d77a09510ce4164605b11e1406799a9870b6920d72cb09aab938cb044a87e1d2"
+      ]
+    },
+    "Metadata": {
+      "LastTagTime": "2026-10-20T07:56:40.615966999Z"
+    },
+    "Descriptor": {
+      "mediaType": "application/vnd.oci.image.index.v1+json",
+      "digest": "sha256:28241a509e8dbedda24bd2033ce556cc5648ddd02ef80bd349e417586fb84925",
+      "size": 856,
+      "annotations": {
+        "io.containerd.image.name": "docker.io/library/hello-python:tiny-current",
+        "org.opencontainers.image.ref.name": "tiny-current"
+      }
+    }
+  },
+  {
+    "Id": "sha256:1a73705b0771f9c861d9ba96509806849423a3d8bbff140b1261da76280460cd",
+    "RepoTags": [
+      "hello-database:qualification"
+    ],
+    "RepoDigests": [
+      "hello-database@sha256:1a73705b0771f9c861d9ba96509806849423a3d8bbff140b1261da76280460cd"
+    ],
+    "Comment": "buildkit.dockerfile.v0",
+    "Created": "2026-10-19T17:51:38.960475376Z",
+    "Config": {
+      "Env": [
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "RBT_RUST_URL=http://127.0.0.1:20000"
+      ],
+      "Entrypoint": [
+        "/usr/local/bin/database"
+      ],
+      "Labels": {
+        "org.opencontainers.image.version": "24.04"
+      },
+      "Healthcheck": {
+        "Test": [
+          "CMD",
+          "/usr/local/bin/hello-health",
+          "database-health"
+        ],
+        "Interval": 2000000000,
+        "Timeout": 4000000000,
+        "StartPeriod": 5000000000,
+        "Retries": 2
+      }
+    },
+    "Architecture": "amd64",
+    "Os": "linux",
+    "Size": 47567378,
+    "RootFS": {
+      "Type": "layers",
+      "Layers": [
+        "sha256:32ab39660fd51c6dc3aae486b42d42bbe8fe4c1db78eaf57bb9c21198de48a16",
+        "sha256:ea09f2a84901aa4dc758a3d80636616ddf7fdba122936f4b7052b678ea33042e",
+        "sha256:23a8fd055dfb14f73a95e3aea180a3a524e25e698d54339411b0cbf70a5bd221",
+        "sha256:fe7df75ff184a88e5ae39542ca87e9ba5834c0e57ad509fb87d2bf5ef1f2b630"
+      ]
+    },
+    "Metadata": {
+      "LastTagTime": "2026-10-20T07:56:40.616736595Z"
+    },
+    "Descriptor": {
+      "mediaType": "application/vnd.oci.image.index.v1+json",
+      "digest": "sha256:1a73705b0771f9c861d9ba96509806849423a3d8bbff140b1261da76280460cd",
+      "size": 856,
+      "annotations": {
+        "io.containerd.image.name": "docker.io/library/hello-database:qualification",
+        "org.opencontainers.image.ref.name": "qualification"
+      }
+    }
+  }
+]

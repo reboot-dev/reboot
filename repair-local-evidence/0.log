@@ -1,0 +1,48 @@
+{
+  "real_smoke_records": 106,
+  "mutations": [
+    {
+      "mutation": "stack",
+      "old": "RED accepted",
+      "new": "GREEN rejected"
+    },
+    {
+      "mutation": "system_services",
+      "old": "RED accepted",
+      "new": "GREEN rejected"
+    },
+    {
+      "mutation": "host_stat",
+      "old": "RED accepted",
+      "new": "GREEN rejected"
+    },
+    {
+      "mutation": "host_swaps",
+      "old": "RED accepted",
+      "new": "GREEN rejected"
+    },
+    {
+      "mutation": "host_vmstat",
+      "old": "RED accepted",
+      "new": "GREEN rejected"
+    },
+    {
+      "mutation": "processes",
+      "old": "RED accepted",
+      "new": "GREEN rejected"
+    },
+    {
+      "mutation": "memory.stat",
+      "old": "RED accepted",
+      "new": "GREEN rejected"
+    },
+    {
+      "mutation": "missing_throttle_counters",
+      "old": "RED accepted",
+      "new": "GREEN rejected"
+    }
+  ],
+  "malformed_raw_preserved": true,
+  "explicit_boundary_mode": true,
+  "benchmark_claim": false
+}

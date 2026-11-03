@@ -1,0 +1,62 @@
+{
+  "started": "2026-10-20T09:08:48.605606+00:00",
+  "authority": {
+    "server": 171335411,
+    "primary_ip": 156588567
+  },
+  "requests": [
+    {
+      "path": "servers/171335411",
+      "method": "GET",
+      "status": 404,
+      "data": {
+        "error": {
+          "code": "not_found",
+          "message": "server not found",
+          "details": {}
+        }
+      },
+      "time": 1792487328.740626
+    },
+    {
+      "path": "primary_ips/156588567",
+      "method": "GET",
+      "status": 404,
+      "data": {
+        "error": {
+          "code": "not_found",
+          "message": "Primary IP with ID 156588567 not found",
+          "details": null
+        }
+      },
+      "time": 1792487328.8723123
+    },
+    {
+      "path": "servers/171335411",
+      "method": "GET",
+      "status": 404,
+      "data": {
+        "error": {
+          "code": "not_found",
+          "message": "server not found",
+          "details": {}
+        }
+      },
+      "time": 1792487329.0106165
+    },
+    {
+      "path": "primary_ips/156588567",
+      "method": "GET",
+      "status": 404,
+      "data": {
+        "error": {
+          "code": "not_found",
+          "message": "Primary IP with ID 156588567 not found",
+          "details": null
+        }
+      },
+      "time": 1792487329.141641
+    }
+  ],
+  "verified_both_404": true
+}

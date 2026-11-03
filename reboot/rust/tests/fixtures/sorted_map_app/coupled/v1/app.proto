@@ -1,0 +1,13 @@
+syntax = "proto3";
+package coupled.v1;
+import "rbt/v1alpha1/options.proto";
+message App { option (rbt.v1alpha1.state) = {implements:["coupled.v1.AppMethods"]}; int64 value = 1; }
+message Empty {}
+message Apply { bool abort = 1; }
+message Value { int64 value = 1; }
+service AppMethods {
+ option (rbt.v1alpha1.service) = {state:"coupled.v1.App"};
+ rpc Create(Empty) returns (Empty) { option (rbt.v1alpha1.method) = {writer:{constructor:{}}}; }
+ rpc Query(Empty) returns (Value) { option (rbt.v1alpha1.method) = {reader:{}}; }
+ rpc Run(Apply) returns (Value) { option (rbt.v1alpha1.method) = {transaction:{exclusive:{}}}; }
+}

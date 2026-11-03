@@ -1,0 +1,17 @@
+test_both_sides_same_invalid_membership_rejected (test_transcript_comparison.TranscriptComparisonTests.test_both_sides_same_invalid_membership_rejected) ... ok
+test_case_omission_rejected (test_transcript_comparison.TranscriptComparisonTests.test_case_omission_rejected) ... ok
+test_deterministic_error_bytes_rejected (test_transcript_comparison.TranscriptComparisonTests.test_deterministic_error_bytes_rejected) ... ok
+test_deterministic_error_message_rejected (test_transcript_comparison.TranscriptComparisonTests.test_deterministic_error_message_rejected) ... ok
+test_deterministic_order_rejected (test_transcript_comparison.TranscriptComparisonTests.test_deterministic_order_rejected) ... ok
+test_duplicate_message_rejected (test_transcript_comparison.TranscriptComparisonTests.test_duplicate_message_rejected) ... ok
+test_equal_length_duplicate_replacement_rejected (test_transcript_comparison.TranscriptComparisonTests.test_equal_length_duplicate_replacement_rejected) ... ok
+test_exact_valid_records_pass (test_transcript_comparison.TranscriptComparisonTests.test_exact_valid_records_pass) ... ok
+test_missing_message_rejected (test_transcript_comparison.TranscriptComparisonTests.test_missing_message_rejected) ... ok
+test_order_not_required_and_raw_retained (test_transcript_comparison.TranscriptComparisonTests.test_order_not_required_and_raw_retained) ... ok
+test_raw_evidence_disagreement_rejected (test_transcript_comparison.TranscriptComparisonTests.test_raw_evidence_disagreement_rejected) ... ok
+test_unexpected_message_rejected (test_transcript_comparison.TranscriptComparisonTests.test_unexpected_message_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 12 tests in 0.001s
+
+OK

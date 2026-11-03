@@ -1,0 +1,12 @@
+[
+  {
+    "label": "repeat-qualification-rust",
+    "iterations": 4,
+    "elapsed_seconds": 385.1958611011505
+  },
+  {
+    "label": "repeat-qualification-python",
+    "iterations": 5,
+    "elapsed_seconds": 344.0026044845581
+  }
+]

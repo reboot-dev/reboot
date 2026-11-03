@@ -1,0 +1,195 @@
+{
+  "requested_parent": "7d4e17b247ebcd3653295eb0b67c837ae658af70",
+  "executed_harness_revision": "6d567447fa7cfd9a7803603b2a471cca5cf53e54",
+  "status": "Q2 native accepted; Q6 old-budget failure retired; Q6 repaired-budget retry active, not acceptance",
+  "local_snapshot": "/home/openclaw/.hermes/profiles/jean/cache/scratch/q2-q6-native-results-7d4e17b2/handoff-snapshot.tar.gz",
+  "local_snapshot_sha256": "15b0b406dc45fe91cad227b95f32f08601c19da15fc90c85799a8a6093733b04",
+  "snapshot_observed_epoch": 1792427882.0624754,
+  "q2": {
+    "exit": 0,
+    "cases": [
+      "plain",
+      "escaped",
+      "composed"
+    ],
+    "all_children_joined": true,
+    "child_count": 55,
+    "evidence_path": "/home/openclaw/.hermes/profiles/jean/cache/scratch/q2-q6-native-results-7d4e17b2/handoff-snapshot/q2-q6-native-final-evidence/revision/evidence.json",
+    "evidence_sha256": "bc46c813f02b0f4f7f18f028b92ddab49fdafa9a4a373f42d2af78eecb35f25e",
+    "gate_sha256": "d33d02228828808fde9b4e050c036b987ab5cf06c819a81abda49ef34464d85d"
+  },
+  "q6_failed": {
+    "owner_complete": false,
+    "error": "RuntimeError('cursor gate exit 1')",
+    "commands": [
+      {
+        "argv": [
+          "/home/ladin/.cargo/bin/cargo",
+          "build",
+          "--offline",
+          "--locked",
+          "--manifest-path",
+          "/home/ladin/.cache/hermes-reboot-parity/q2-q6-native-binding-v2-src/reboot/rust/tests/fixtures/workflow_cursor_results_app/Cargo.toml",
+          "--bin",
+          "app"
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/q2-q6-native-binding-v2-evidence/build-cursor.log",
+        "start": 1792426783.3852544,
+        "pid": 2828809,
+        "exit": 0,
+        "end": 1792426794.2387078
+      },
+      {
+        "argv": [
+          "/usr/bin/python3",
+          "/home/ladin/.cache/hermes-reboot-parity/q2-q6-native-binding-v2-src/reboot/rust/tests/fixtures/workflow_cursor_results_app/run_native_gate.py"
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/q2-q6-native-binding-v2-evidence/revision.log",
+        "start": 1792426796.2093163,
+        "pid": 2829120,
+        "exit": 0,
+        "end": 1792426802.0822666
+      },
+      {
+        "argv": [
+          "/usr/bin/python3",
+          "/home/ladin/.cache/hermes-reboot-parity/q2-q6-native-binding-v2-src/reboot/rust/tests/fixtures/workflow_cursor_results_app/run_native_gate.py"
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/q2-q6-native-binding-v2-evidence/cursor.log",
+        "start": 1792426802.0852835,
+        "pid": 2829866,
+        "exit": 1,
+        "end": 1792427805.324596
+      }
+    ],
+    "revision": {
+      "complete": true,
+      "failure": null,
+      "custody_failure": null,
+      "child_count": 55,
+      "all_children_joined": true,
+      "gate_sha256": "ab1998a8c8ae5ea1371630b5e63f92aeb513636519c8f533f00bda8fb9a0461f"
+    },
+    "cursor": {
+      "complete": false,
+      "failure": "RuntimeError('proof incomplete; see exclusive evidence and retained custody')",
+      "custody_failure": null,
+      "child_count": 13,
+      "all_children_joined": true,
+      "gate_sha256": "aea7fe65c06edd5613d718185b4f374566983bb1b35e166d98b92294858a6044"
+    },
+    "event_observations": [
+      {
+        "path": "/home/ladin/.cache/hermes-reboot-parity/q2-q6-native-binding-v2-evidence/cursor/work/events-1",
+        "latest_iteration": 0
+      },
+      {
+        "path": "/home/ladin/.cache/hermes-reboot-parity/q2-q6-native-binding-v2-evidence/cursor/work/events-3",
+        "latest_iteration": 7988
+      }
+    ]
+  },
+  "q6_active": {
+    "owner_complete": false,
+    "error": null,
+    "commands": [
+      {
+        "argv": [
+          "/usr/bin/python3",
+          "/home/ladin/.cache/hermes-reboot-parity/q2-q6-native-final-src/reboot/rust/tests/fixtures/workflow_cursor_results_app/run_native_gate.py"
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/q2-q6-native-final-evidence/revision.log",
+        "start": 1792427387.7641366,
+        "environment": {
+          "NATIVE_GATE_SCENARIO": "revision",
+          "CURSOR_APP_BIN": "/home/ladin/.cache/hermes-reboot-parity/q2-q6-native-final-evidence/generated-workflow-app",
+          "REBOOT_NATIVE2PC_CXX_DATABASE": "/home/ladin/.cache/hermes-reboot-parity/q2-q6-native-final-evidence/database",
+          "CURSOR_GATE_DIR": "/home/ladin/.cache/hermes-reboot-parity/q2-q6-native-final-evidence/revision",
+          "CURSOR_ITERATIONS": "10000",
+          "TMPDIR": "/home/ladin/.cache/hermes-reboot-parity/q2-q6-native-final-evidence/tmp"
+        },
+        "pid": 2839651,
+        "exit": 0,
+        "end": 1792427394.2043223
+      },
+      {
+        "argv": [
+          "/usr/bin/python3",
+          "/home/ladin/.cache/hermes-reboot-parity/q2-q6-native-final-src/reboot/rust/tests/fixtures/workflow_cursor_results_app/run_native_gate.py"
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/q2-q6-native-final-evidence/cursor.log",
+        "start": 1792427394.2078764,
+        "environment": {
+          "NATIVE_GATE_SCENARIO": "cursor",
+          "CURSOR_APP_BIN": "/home/ladin/.cache/hermes-reboot-parity/q2-q6-native-final-evidence/app",
+          "REBOOT_NATIVE2PC_CXX_DATABASE": "/home/ladin/.cache/hermes-reboot-parity/q2-q6-native-final-evidence/database",
+          "CURSOR_GATE_DIR": "/home/ladin/.cache/hermes-reboot-parity/q2-q6-native-final-evidence/cursor",
+          "CURSOR_ITERATIONS": "10000",
+          "TMPDIR": "/home/ladin/.cache/hermes-reboot-parity/q2-q6-native-final-evidence/tmp"
+        },
+        "pid": 2840487
+      }
+    ],
+    "revision": {
+      "complete": true,
+      "failure": null,
+      "custody_failure": null,
+      "child_count": 55,
+      "all_children_joined": true,
+      "gate_sha256": "d33d02228828808fde9b4e050c036b987ab5cf06c819a81abda49ef34464d85d"
+    },
+    "cursor": {
+      "complete": false,
+      "failure": null,
+      "custody_failure": null,
+      "child_count": 0,
+      "all_children_joined": false,
+      "gate_sha256": "f94b58a443268139c09eda0ce2df4ba2bfe3d36e17b061b4f11d865be80882c8"
+    },
+    "event_observations": [
+      {
+        "path": "/home/ladin/.cache/hermes-reboot-parity/q2-q6-native-final-evidence/cursor/work/events-1",
+        "latest_iteration": 0
+      },
+      {
+        "path": "/home/ladin/.cache/hermes-reboot-parity/q2-q6-native-final-evidence/cursor/work/events-3",
+        "latest_iteration": 4038
+      }
+    ]
+  },
+  "active_unit": {
+    "name": "hermes-q2-q6-native-final.service",
+    "readback": {
+      "exit": 0,
+      "stdout": "ActiveState=active\nSubState=running\nRuntimeMaxUSec=infinity\nMainPID=2839593\nExecMainStatus=0\nKillMode=none\nSendSIGKILL=no\n",
+      "stderr": ""
+    },
+    "host": "omarchy-jean",
+    "outer_owner_pid": 2839593,
+    "original_exact_child_gate_pid": 2840487,
+    "retention": "RuntimeMaxSec=infinity; KillMode=none; SendSIGKILL=no; no stop/cancel/detach requested; parent must monitor same original owner until terminal",
+    "live_ledger": "active gate publishes full child receipt ledger only at retirement; no zero-child inference from live report"
+  },
+  "binaries": {
+    "/home/ladin/.cache/hermes-reboot-parity/q2-q6-native-final-evidence/database": "039ea1466e3f0668fc1a4c9afd6b8c6270524c2311a376acc7d09c482b974405",
+    "/home/ladin/.cache/hermes-reboot-parity/q2-q6-native-final-evidence/app": "892b9f42ba5978e154e3a7cbec09e0151b9b64621fd54be8eacc49b310c7858f",
+    "/home/ladin/.cache/hermes-reboot-parity/q2-q6-native-final-evidence/generated-workflow-app": "1a19f52d9262e89d68c9d128646ff93f7c01b002eb610d852bc8258685822007"
+  },
+  "native_sources": {
+    "reboot/server/database.cc": "79404e6ed4f8b227aa0f56505eab04908d03adaae68a7af0f8d11348a45549c1",
+    "reboot/server/database.h": "1e350014adf3546df53ed4baaf9011fedaa85503df782201f75bd61b27d7de9f",
+    "rbt/v1alpha1/database.proto": "7a41109aa4dfce4b58fcb0fdb4e5ba586845cd43f696628f19129c90a967a0d0"
+  },
+  "native_binary_association": "Existing host-compatible native build, copied before execution; matching database.cc/database.h/database.proto and actual AdvanceWorkflowCursor implementation symbol. No fresh C++ build or hermetic dependency attestation claimed.",
+  "compiled_source_equivalence": {
+    "previous_revision": "675470c6",
+    "new_revision": "6d567447fa7cfd9a7803603b2a471cca5cf53e54",
+    "scope": "Rust/proto/Cargo hashes equal; Python advancement-budget-only overlay for final retry; see owner.json complete inventory"
+  },
+  "verification": {
+    "python_fixture_tests_passed": 24,
+    "public_ownership_tests_passed": 15,
+    "rust_fixture_tests_passed": 3
+  },
+  "policy": "No push, pulls, installs, deployments, unknown-process kills or unrelated cleanup. Final retry was already active before subsequent CCX43 preference; do not interrupt it."
+}

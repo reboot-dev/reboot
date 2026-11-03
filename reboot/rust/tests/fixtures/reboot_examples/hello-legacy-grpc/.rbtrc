@@ -1,0 +1,6 @@
+dev run --rust
+dev run --application=backend/Cargo.toml
+dev run --application-name=upstream_hello_legacy_grpc
+dev run --servers=1
+dev run --no-chaos
+dev run --no-generate-watch

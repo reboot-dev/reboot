@@ -1,0 +1,278 @@
+{
+  "Id": "86424943a7cc228af5fb28199f9c5437f4d6637fbf75d58582c42fe62bf4b227",
+  "Created": "2026-10-19T18:04:46.141074557Z",
+  "Path": "/usr/local/bin/database",
+  "Args": [
+    "/state/rocksdb",
+    "/state/server-info.pb",
+    "20000"
+  ],
+  "State": {
+    "Status": "exited",
+    "Running": false,
+    "Paused": false,
+    "Restarting": false,
+    "OOMKilled": false,
+    "Dead": false,
+    "Pid": 0,
+    "ExitCode": 0,
+    "Error": "",
+    "StartedAt": "2026-10-19T18:05:01.376770715Z",
+    "FinishedAt": "2026-10-19T18:05:11.169989323Z",
+    "Health": {
+      "Status": "unhealthy",
+      "FailingStreak": 0,
+      "Log": [
+        {
+          "Start": "2026-10-19T18:04:58.372493221Z",
+          "End": "2026-10-19T18:04:58.407860005Z",
+          "ExitCode": 0,
+          "Output": "DATABASE_READABLE\n"
+        },
+        {
+          "Start": "2026-10-19T18:05:00.408631972Z",
+          "End": "2026-10-19T18:05:00.442920237Z",
+          "ExitCode": 0,
+          "Output": "DATABASE_READABLE\n"
+        },
+        {
+          "Start": "2026-10-19T18:05:06.377313872Z",
+          "End": "2026-10-19T18:05:06.412882235Z",
+          "ExitCode": 0,
+          "Output": "DATABASE_READABLE\n"
+        },
+        {
+          "Start": "2026-10-19T18:05:08.413594809Z",
+          "End": "2026-10-19T18:05:08.452725782Z",
+          "ExitCode": 0,
+          "Output": "DATABASE_READABLE\n"
+        },
+        {
+          "Start": "2026-10-19T18:05:10.453450563Z",
+          "End": "2026-10-19T18:05:10.488340488Z",
+          "ExitCode": 0,
+          "Output": "DATABASE_READABLE\n"
+        }
+      ]
+    }
+  },
+  "Image": "sha256:1a73705b0771f9c861d9ba96509806849423a3d8bbff140b1261da76280460cd",
+  "ResolvConfPath": "/var/lib/docker/containers/86424943a7cc228af5fb28199f9c5437f4d6637fbf75d58582c42fe62bf4b227/resolv.conf",
+  "HostnamePath": "/var/lib/docker/containers/86424943a7cc228af5fb28199f9c5437f4d6637fbf75d58582c42fe62bf4b227/hostname",
+  "HostsPath": "/var/lib/docker/containers/86424943a7cc228af5fb28199f9c5437f4d6637fbf75d58582c42fe62bf4b227/hosts",
+  "LogPath": "/var/lib/docker/containers/86424943a7cc228af5fb28199f9c5437f4d6637fbf75d58582c42fe62bf4b227/86424943a7cc228af5fb28199f9c5437f4d6637fbf75d58582c42fe62bf4b227-json.log",
+  "Name": "/hello-image-review-correction-database-1",
+  "RestartCount": 0,
+  "Driver": "overlayfs",
+  "Platform": "linux",
+  "MountLabel": "",
+  "ProcessLabel": "",
+  "AppArmorProfile": "docker-default",
+  "ExecIDs": null,
+  "HostConfig": {
+    "Binds": [
+      "hello-image-review-correction_rust-state:/state:rw"
+    ],
+    "ContainerIDFile": "",
+    "LogConfig": {
+      "Type": "json-file",
+      "Config": {}
+    },
+    "NetworkMode": "hello-image-review-correction_private",
+    "PortBindings": {},
+    "RestartPolicy": {
+      "Name": "no",
+      "MaximumRetryCount": 0
+    },
+    "AutoRemove": false,
+    "VolumeDriver": "",
+    "VolumesFrom": null,
+    "ConsoleSize": [
+      0,
+      0
+    ],
+    "CapAdd": null,
+    "CapDrop": null,
+    "CgroupnsMode": "private",
+    "Dns": null,
+    "DnsOptions": null,
+    "DnsSearch": null,
+    "ExtraHosts": [],
+    "GroupAdd": null,
+    "IpcMode": "private",
+    "Cgroup": "",
+    "Links": null,
+    "OomScoreAdj": 0,
+    "PidMode": "",
+    "Privileged": false,
+    "PublishAllPorts": false,
+    "ReadonlyRootfs": false,
+    "SecurityOpt": null,
+    "UTSMode": "",
+    "UsernsMode": "",
+    "ShmSize": 67108864,
+    "Runtime": "runc",
+    "Isolation": "",
+    "CpuShares": 0,
+    "Memory": 0,
+    "NanoCpus": 0,
+    "CgroupParent": "",
+    "BlkioWeight": 0,
+    "BlkioWeightDevice": null,
+    "BlkioDeviceReadBps": null,
+    "BlkioDeviceWriteBps": null,
+    "BlkioDeviceReadIOps": null,
+    "BlkioDeviceWriteIOps": null,
+    "CpuPeriod": 0,
+    "CpuQuota": 0,
+    "CpuRealtimePeriod": 0,
+    "CpuRealtimeRuntime": 0,
+    "CpusetCpus": "",
+    "CpusetMems": "",
+    "Devices": null,
+    "DeviceCgroupRules": null,
+    "DeviceRequests": null,
+    "MemoryReservation": 0,
+    "MemorySwap": 0,
+    "MemorySwappiness": null,
+    "OomKillDisable": null,
+    "PidsLimit": null,
+    "Ulimits": null,
+    "CpuCount": 0,
+    "CpuPercent": 0,
+    "IOMaximumIOps": 0,
+    "IOMaximumBandwidth": 0,
+    "MaskedPaths": [
+      "/proc/acpi",
+      "/proc/asound",
+      "/proc/interrupts",
+      "/proc/kcore",
+      "/proc/keys",
+      "/proc/latency_stats",
+      "/proc/sched_debug",
+      "/proc/scsi",
+      "/proc/timer_list",
+      "/proc/timer_stats",
+      "/sys/devices/virtual/powercap",
+      "/sys/firmware"
+    ],
+    "ReadonlyPaths": [
+      "/proc/bus",
+      "/proc/fs",
+      "/proc/irq",
+      "/proc/sys",
+      "/proc/sysrq-trigger"
+    ],
+    "Init": true
+  },
+  "Storage": {
+    "RootFS": {
+      "Snapshot": {
+        "Name": "overlayfs"
+      }
+    }
+  },
+  "Mounts": [
+    {
+      "Type": "volume",
+      "Name": "hello-image-review-correction_rust-state",
+      "Source": "/var/lib/docker/volumes/hello-image-review-correction_rust-state/_data",
+      "Destination": "/state",
+      "Driver": "local",
+      "Mode": "rw",
+      "RW": true,
+      "Propagation": ""
+    }
+  ],
+  "Config": {
+    "Hostname": "86424943a7cc",
+    "Domainname": "",
+    "User": "",
+    "AttachStdin": false,
+    "AttachStdout": true,
+    "AttachStderr": true,
+    "Tty": false,
+    "OpenStdin": false,
+    "StdinOnce": false,
+    "Env": [
+      "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+      "RBT_RUST_URL=http://127.0.0.1:20000"
+    ],
+    "Cmd": [
+      "/state/rocksdb",
+      "/state/server-info.pb",
+      "20000"
+    ],
+    "Healthcheck": {
+      "Test": [
+        "CMD",
+        "/usr/local/bin/hello-health",
+        "database-health"
+      ],
+      "Interval": 2000000000,
+      "Timeout": 4000000000,
+      "StartPeriod": 5000000000,
+      "Retries": 2
+    },
+    "Image": "sha256:1a73705b0771f9c861d9ba96509806849423a3d8bbff140b1261da76280460cd",
+    "Volumes": null,
+    "WorkingDir": "",
+    "Entrypoint": [
+      "/usr/local/bin/database"
+    ],
+    "Labels": {
+      "com.docker.compose.config-hash": "d2917f3ec3b9b8fa9008a5d64e7e747f4b10996ee5527e7f4325126423cb92ce",
+      "com.docker.compose.container-number": "1",
+      "com.docker.compose.depends_on": "config:service_completed_successfully:false",
+      "com.docker.compose.image": "sha256:73473cc469f19b849de0401d4576a9ff07023e92953827efa8e89406b56d7c06",
+      "com.docker.compose.oneoff": "False",
+      "com.docker.compose.project": "hello-image-review-correction",
+      "com.docker.compose.project.config_files": "/home/benchbuild/.cache/hello-image-review-src/reboot/rust/tests/fixtures/reboot_examples/hello-constructors/image/compose.review-correction.yaml",
+      "com.docker.compose.project.working_dir": "/home/benchbuild/.cache/hello-image-review-src/reboot/rust/tests/fixtures/reboot_examples/hello-constructors/image",
+      "com.docker.compose.service": "database",
+      "com.docker.compose.version": "5.6.0",
+      "org.opencontainers.image.version": "24.04"
+    },
+    "StopTimeout": 20
+  },
+  "NetworkSettings": {
+    "SandboxID": "",
+    "SandboxKey": "",
+    "Ports": {},
+    "Networks": {
+      "hello-image-review-correction_private": {
+        "IPAMConfig": null,
+        "Links": null,
+        "Aliases": [
+          "hello-image-review-correction-database-1",
+          "database"
+        ],
+        "DriverOpts": null,
+        "GwPriority": 0,
+        "NetworkID": "6489626d4cf66048432708150e0d0bb012cba1d8706d5548a4b43b905257c3d2",
+        "EndpointID": "",
+        "Gateway": "",
+        "IPAddress": "",
+        "MacAddress": "",
+        "IPPrefixLen": 0,
+        "IPv6Gateway": "",
+        "GlobalIPv6Address": "",
+        "GlobalIPv6PrefixLen": 0,
+        "DNSNames": [
+          "hello-image-review-correction-database-1",
+          "database",
+          "86424943a7cc"
+        ]
+      }
+    }
+  },
+  "ImageManifestDescriptor": {
+    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+    "digest": "sha256:73473cc469f19b849de0401d4576a9ff07023e92953827efa8e89406b56d7c06",
+    "size": 1058,
+    "platform": {
+      "architecture": "amd64",
+      "os": "linux"
+    }
+  }
+}

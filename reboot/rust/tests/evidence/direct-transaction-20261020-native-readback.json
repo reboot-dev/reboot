@@ -1,0 +1,78 @@
+{
+  "admission_collision": "FailedPrecondition: exact changed contract rejection",
+  "replay_authorization": "PermissionDenied: transaction policy denied",
+  "tasks": [
+    {
+      "case": "success",
+      "canonical_method": "Apply",
+      "canonical_status": 2,
+      "pending_methods": [
+        "Query"
+      ]
+    },
+    {
+      "case": "scheduled",
+      "canonical_method": "Apply",
+      "canonical_status": 2,
+      "pending_methods": [
+        "Query"
+      ]
+    },
+    {
+      "case": "cancel",
+      "canonical_method": "Apply",
+      "canonical_status": 2,
+      "pending_methods": []
+    },
+    {
+      "case": "replay",
+      "canonical_method": "Apply",
+      "canonical_status": 2,
+      "pending_methods": []
+    },
+    {
+      "case": "ack-restart",
+      "canonical_method": "Apply",
+      "canonical_status": 2,
+      "pending_methods": [
+        "Query",
+        "Query"
+      ]
+    },
+    {
+      "case": "target-ack-loss",
+      "canonical_method": "Apply",
+      "canonical_status": 2,
+      "pending_methods": [
+        "Query",
+        "Query"
+      ]
+    },
+    {
+      "case": "authorization-reject",
+      "canonical_method": "Apply",
+      "canonical_status": 2,
+      "pending_methods": [
+        "Query",
+        "Query"
+      ]
+    },
+    {
+      "case": "running-cancel",
+      "canonical_method": "Apply",
+      "canonical_status": 2,
+      "pending_methods": [
+        "Query",
+        "Query"
+      ]
+    },
+    {
+      "case": "rollback",
+      "canonical_method": "Apply",
+      "canonical_status": 1,
+      "pending_methods": [
+        "Apply"
+      ]
+    }
+  ]
+}

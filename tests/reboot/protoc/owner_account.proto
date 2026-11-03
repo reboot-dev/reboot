@@ -1,0 +1,30 @@
+syntax = "proto3";
+import "rbt/v1alpha1/options.proto";
+package tests.reboot.protoc;
+
+// The annotation, not a message named User, selects owner authorization.
+message OwnerAccount {
+  option (rbt.v1alpha1.state) = {
+    implements: ["tests.reboot.protoc.OwnerAccountMethods"]
+    auto_construct: PER_USER_ID
+  };
+  int64 value = 1;
+}
+message OwnerAccountRequest { int64 value = 1; }
+message OwnerAccountResponse { int64 value = 1; }
+service OwnerAccountMethods {
+  option (rbt.v1alpha1.service) = { state: "tests.reboot.protoc.OwnerAccount" };
+  rpc Create(OwnerAccountRequest) returns (OwnerAccountResponse) {
+    option (rbt.v1alpha1.method) = { writer: { constructor: {} } };
+  }
+  rpc Get(OwnerAccountRequest) returns (OwnerAccountResponse) {
+    option (rbt.v1alpha1.method) = { reader: {} };
+  }
+  rpc Update(OwnerAccountRequest) returns (OwnerAccountResponse) {
+    option (rbt.v1alpha1.method) = { writer: {} };
+  }
+  // Name-valid reader intentionally proves protection independent of method kind.
+  rpc SetClaims(OwnerAccountRequest) returns (OwnerAccountResponse) {
+    option (rbt.v1alpha1.method) = { reader: {} };
+  }
+}

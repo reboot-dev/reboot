@@ -1,0 +1,4114 @@
+[
+  {
+    "Id": "282e2a09e646a28c97d0460f77a7d20fb8f6c83243fbae82ba3bd7c89a4c6c8e",
+    "Created": "2026-10-20T10:36:09.915058156Z",
+    "Path": "/usr/local/bin/hello",
+    "Args": [
+      "--server-info",
+      "/state/server-info.pb"
+    ],
+    "State": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-20T10:36:09.988643312Z",
+      "FinishedAt": "2026-10-20T10:36:10.135725913Z",
+      "Health": {
+        "Status": "unhealthy",
+        "FailingStreak": 0,
+        "Log": []
+      }
+    },
+    "Image": "sha256:3dcf9d9976f76a63b3a290ef6cf15329f1f6148692c72604e5dc797a237f7db4",
+    "ResolvConfPath": "/var/lib/docker/containers/282e2a09e646a28c97d0460f77a7d20fb8f6c83243fbae82ba3bd7c89a4c6c8e/resolv.conf",
+    "HostnamePath": "/var/lib/docker/containers/282e2a09e646a28c97d0460f77a7d20fb8f6c83243fbae82ba3bd7c89a4c6c8e/hostname",
+    "HostsPath": "/var/lib/docker/containers/282e2a09e646a28c97d0460f77a7d20fb8f6c83243fbae82ba3bd7c89a4c6c8e/hosts",
+    "LogPath": "/var/lib/docker/containers/282e2a09e646a28c97d0460f77a7d20fb8f6c83243fbae82ba3bd7c89a4c6c8e/282e2a09e646a28c97d0460f77a7d20fb8f6c83243fbae82ba3bd7c89a4c6c8e-json.log",
+    "Name": "/repeat-qualification-rust-config",
+    "RestartCount": 0,
+    "Driver": "overlayfs",
+    "Platform": "linux",
+    "MountLabel": "",
+    "ProcessLabel": "",
+    "AppArmorProfile": "docker-default",
+    "ExecIDs": null,
+    "HostConfig": {
+      "Binds": [
+        "repeat-qualification-rust-state:/state"
+      ],
+      "ContainerIDFile": "",
+      "LogConfig": {
+        "Type": "json-file",
+        "Config": {}
+      },
+      "NetworkMode": "repeat-qualification-rust-private",
+      "PortBindings": {},
+      "RestartPolicy": {
+        "Name": "no",
+        "MaximumRetryCount": 0
+      },
+      "AutoRemove": false,
+      "VolumeDriver": "",
+      "VolumesFrom": null,
+      "ConsoleSize": [
+        0,
+        0
+      ],
+      "CapAdd": null,
+      "CapDrop": null,
+      "CgroupnsMode": "private",
+      "Dns": null,
+      "DnsOptions": [],
+      "DnsSearch": [],
+      "ExtraHosts": null,
+      "GroupAdd": null,
+      "IpcMode": "private",
+      "Cgroup": "",
+      "Links": null,
+      "OomScoreAdj": 0,
+      "PidMode": "",
+      "Privileged": false,
+      "PublishAllPorts": false,
+      "ReadonlyRootfs": false,
+      "SecurityOpt": null,
+      "UTSMode": "",
+      "UsernsMode": "",
+      "ShmSize": 67108864,
+      "Runtime": "runc",
+      "Isolation": "",
+      "CpuShares": 0,
+      "Memory": 0,
+      "NanoCpus": 0,
+      "CgroupParent": "tinyrepeat.slice",
+      "BlkioWeight": 0,
+      "BlkioWeightDevice": [],
+      "BlkioDeviceReadBps": [],
+      "BlkioDeviceWriteBps": [],
+      "BlkioDeviceReadIOps": [],
+      "BlkioDeviceWriteIOps": [],
+      "CpuPeriod": 0,
+      "CpuQuota": 0,
+      "CpuRealtimePeriod": 0,
+      "CpuRealtimeRuntime": 0,
+      "CpusetCpus": "",
+      "CpusetMems": "",
+      "Devices": [],
+      "DeviceCgroupRules": null,
+      "DeviceRequests": null,
+      "MemoryReservation": 0,
+      "MemorySwap": 0,
+      "MemorySwappiness": null,
+      "OomKillDisable": null,
+      "PidsLimit": null,
+      "Ulimits": [],
+      "CpuCount": 0,
+      "CpuPercent": 0,
+      "IOMaximumIOps": 0,
+      "IOMaximumBandwidth": 0,
+      "MaskedPaths": [
+        "/proc/acpi",
+        "/proc/asound",
+        "/proc/interrupts",
+        "/proc/kcore",
+        "/proc/keys",
+        "/proc/latency_stats",
+        "/proc/sched_debug",
+        "/proc/scsi",
+        "/proc/timer_list",
+        "/proc/timer_stats",
+        "/sys/devices/virtual/powercap",
+        "/sys/firmware"
+      ],
+      "ReadonlyPaths": [
+        "/proc/bus",
+        "/proc/fs",
+        "/proc/irq",
+        "/proc/sys",
+        "/proc/sysrq-trigger"
+      ],
+      "Init": true
+    },
+    "Storage": {
+      "RootFS": {
+        "Snapshot": {
+          "Name": "overlayfs"
+        }
+      }
+    },
+    "Mounts": [
+      {
+        "Type": "volume",
+        "Name": "repeat-qualification-rust-state",
+        "Source": "/var/lib/docker/volumes/repeat-qualification-rust-state/_data",
+        "Destination": "/state",
+        "Driver": "local",
+        "Mode": "z",
+        "RW": true,
+        "Propagation": ""
+      }
+    ],
+    "Config": {
+      "Hostname": "282e2a09e646",
+      "Domainname": "",
+      "User": "",
+      "AttachStdin": false,
+      "AttachStdout": false,
+      "AttachStderr": false,
+      "Tty": false,
+      "OpenStdin": false,
+      "StdinOnce": false,
+      "Env": [
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "RBT_RUST_URL=http://127.0.0.1:9990"
+      ],
+      "Cmd": [
+        "--server-info",
+        "/state/server-info.pb"
+      ],
+      "Healthcheck": {
+        "Test": [
+          "CMD",
+          "/usr/local/bin/hello-health",
+          "health"
+        ],
+        "Interval": 2000000000,
+        "Timeout": 4000000000,
+        "StartPeriod": 5000000000,
+        "Retries": 2
+      },
+      "Image": "sha256:3dcf9d9976f76a63b3a290ef6cf15329f1f6148692c72604e5dc797a237f7db4",
+      "Volumes": null,
+      "WorkingDir": "",
+      "Entrypoint": [
+        "/usr/local/bin/hello"
+      ],
+      "Labels": {
+        "org.opencontainers.image.revision": "d3b0642d0cb9962c839cfb57ebfd33f2a3cca389",
+        "org.opencontainers.image.version": "24.04",
+        "owner": "tiny-repeat-20261020"
+      }
+    },
+    "NetworkSettings": {
+      "SandboxID": "",
+      "SandboxKey": "",
+      "Ports": {},
+      "Networks": {
+        "repeat-qualification-rust-private": {
+          "IPAMConfig": null,
+          "Links": null,
+          "Aliases": null,
+          "DriverOpts": null,
+          "GwPriority": 0,
+          "NetworkID": "c5bc8148bb908ddff7377704f2079c0d46bd1f2ce3b847efacb59f534d5c1f74",
+          "EndpointID": "",
+          "Gateway": "",
+          "IPAddress": "",
+          "MacAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "DNSNames": [
+            "repeat-qualification-rust-config",
+            "282e2a09e646"
+          ]
+        }
+      }
+    },
+    "ImageManifestDescriptor": {
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "digest": "sha256:5635a4c93885008e637aafde171b77293fd1f4aeb4d1266e2db254fab9fb6d45",
+      "size": 1053,
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      }
+    }
+  },
+  {
+    "Id": "2bcf9ad1a9dc7c509bc66af2491f2bf9d9726adf065c8e716de89e1b7f04d850",
+    "Created": "2026-10-20T10:50:02.936814502Z",
+    "Path": "/usr/local/bin/hello",
+    "Args": [],
+    "State": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-20T10:54:14.926064166Z",
+      "FinishedAt": "2026-10-20T10:54:21.737384991Z",
+      "Health": {
+        "Status": "unhealthy",
+        "FailingStreak": 0,
+        "Log": [
+          {
+            "Start": "2026-10-20T10:54:00.152719862Z",
+            "End": "2026-10-20T10:54:00.218942681Z",
+            "ExitCode": 0,
+            "Output": "SERVING_ENGINE_BACKED\n"
+          },
+          {
+            "Start": "2026-10-20T10:54:02.220590923Z",
+            "End": "2026-10-20T10:54:02.293026462Z",
+            "ExitCode": 0,
+            "Output": "SERVING_ENGINE_BACKED\n"
+          },
+          {
+            "Start": "2026-10-20T10:54:04.294148414Z",
+            "End": "2026-10-20T10:54:04.363453823Z",
+            "ExitCode": 0,
+            "Output": "SERVING_ENGINE_BACKED\n"
+          },
+          {
+            "Start": "2026-10-20T10:54:06.363817474Z",
+            "End": "2026-10-20T10:54:06.429912103Z",
+            "ExitCode": 0,
+            "Output": "SERVING_ENGINE_BACKED\n"
+          },
+          {
+            "Start": "2026-10-20T10:54:20.087215651Z",
+            "End": "2026-10-20T10:54:20.15795991Z",
+            "ExitCode": 0,
+            "Output": "SERVING_ENGINE_BACKED\n"
+          }
+        ]
+      }
+    },
+    "Image": "sha256:3dcf9d9976f76a63b3a290ef6cf15329f1f6148692c72604e5dc797a237f7db4",
+    "ResolvConfPath": "/var/lib/docker/containers/2bcf9ad1a9dc7c509bc66af2491f2bf9d9726adf065c8e716de89e1b7f04d850/resolv.conf",
+    "HostnamePath": "/var/lib/docker/containers/2bcf9ad1a9dc7c509bc66af2491f2bf9d9726adf065c8e716de89e1b7f04d850/hostname",
+    "HostsPath": "/var/lib/docker/containers/2bcf9ad1a9dc7c509bc66af2491f2bf9d9726adf065c8e716de89e1b7f04d850/hosts",
+    "LogPath": "/var/lib/docker/containers/2bcf9ad1a9dc7c509bc66af2491f2bf9d9726adf065c8e716de89e1b7f04d850/2bcf9ad1a9dc7c509bc66af2491f2bf9d9726adf065c8e716de89e1b7f04d850-json.log",
+    "Name": "/repeat-perf-1-rust-app",
+    "RestartCount": 0,
+    "Driver": "overlayfs",
+    "Platform": "linux",
+    "MountLabel": "",
+    "ProcessLabel": "",
+    "AppArmorProfile": "docker-default",
+    "ExecIDs": null,
+    "HostConfig": {
+      "Binds": null,
+      "ContainerIDFile": "",
+      "LogConfig": {
+        "Type": "json-file",
+        "Config": {}
+      },
+      "NetworkMode": "repeat-perf-1-rust-private",
+      "PortBindings": {
+        "9990/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": "50052"
+          }
+        ]
+      },
+      "RestartPolicy": {
+        "Name": "no",
+        "MaximumRetryCount": 0
+      },
+      "AutoRemove": false,
+      "VolumeDriver": "",
+      "VolumesFrom": null,
+      "ConsoleSize": [
+        0,
+        0
+      ],
+      "CapAdd": null,
+      "CapDrop": null,
+      "CgroupnsMode": "private",
+      "Dns": null,
+      "DnsOptions": [],
+      "DnsSearch": [],
+      "ExtraHosts": null,
+      "GroupAdd": null,
+      "IpcMode": "private",
+      "Cgroup": "",
+      "Links": null,
+      "OomScoreAdj": 0,
+      "PidMode": "",
+      "Privileged": false,
+      "PublishAllPorts": false,
+      "ReadonlyRootfs": false,
+      "SecurityOpt": null,
+      "UTSMode": "",
+      "UsernsMode": "",
+      "ShmSize": 67108864,
+      "Runtime": "runc",
+      "Isolation": "",
+      "CpuShares": 0,
+      "Memory": 0,
+      "NanoCpus": 0,
+      "CgroupParent": "tinyrepeat.slice",
+      "BlkioWeight": 0,
+      "BlkioWeightDevice": [],
+      "BlkioDeviceReadBps": [],
+      "BlkioDeviceWriteBps": [],
+      "BlkioDeviceReadIOps": [],
+      "BlkioDeviceWriteIOps": [],
+      "CpuPeriod": 0,
+      "CpuQuota": 0,
+      "CpuRealtimePeriod": 0,
+      "CpuRealtimeRuntime": 0,
+      "CpusetCpus": "",
+      "CpusetMems": "",
+      "Devices": [],
+      "DeviceCgroupRules": null,
+      "DeviceRequests": null,
+      "MemoryReservation": 0,
+      "MemorySwap": 0,
+      "MemorySwappiness": null,
+      "OomKillDisable": null,
+      "PidsLimit": null,
+      "Ulimits": [],
+      "CpuCount": 0,
+      "CpuPercent": 0,
+      "IOMaximumIOps": 0,
+      "IOMaximumBandwidth": 0,
+      "MaskedPaths": [
+        "/proc/acpi",
+        "/proc/asound",
+        "/proc/interrupts",
+        "/proc/kcore",
+        "/proc/keys",
+        "/proc/latency_stats",
+        "/proc/sched_debug",
+        "/proc/scsi",
+        "/proc/timer_list",
+        "/proc/timer_stats",
+        "/sys/devices/virtual/powercap",
+        "/sys/firmware"
+      ],
+      "ReadonlyPaths": [
+        "/proc/bus",
+        "/proc/fs",
+        "/proc/irq",
+        "/proc/sys",
+        "/proc/sysrq-trigger"
+      ],
+      "Init": true
+    },
+    "Storage": {
+      "RootFS": {
+        "Snapshot": {
+          "Name": "overlayfs"
+        }
+      }
+    },
+    "Mounts": [],
+    "Config": {
+      "Hostname": "2bcf9ad1a9dc",
+      "Domainname": "",
+      "User": "",
+      "AttachStdin": false,
+      "AttachStdout": false,
+      "AttachStderr": false,
+      "ExposedPorts": {
+        "9990/tcp": {}
+      },
+      "Tty": false,
+      "OpenStdin": false,
+      "StdinOnce": false,
+      "Env": [
+        "RBT_NAME=hello-image-qualified",
+        "RBT_RUST_DATABASE_URL=http://database:20000",
+        "RBT_RUST_LISTEN_ADDR=0.0.0.0:9990",
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "RBT_RUST_URL=http://127.0.0.1:9990"
+      ],
+      "Cmd": null,
+      "Healthcheck": {
+        "Test": [
+          "CMD",
+          "/usr/local/bin/hello-health",
+          "health"
+        ],
+        "Interval": 2000000000,
+        "Timeout": 4000000000,
+        "StartPeriod": 5000000000,
+        "Retries": 2
+      },
+      "Image": "sha256:3dcf9d9976f76a63b3a290ef6cf15329f1f6148692c72604e5dc797a237f7db4",
+      "Volumes": null,
+      "WorkingDir": "",
+      "Entrypoint": [
+        "/usr/local/bin/hello"
+      ],
+      "Labels": {
+        "org.opencontainers.image.revision": "d3b0642d0cb9962c839cfb57ebfd33f2a3cca389",
+        "org.opencontainers.image.version": "24.04",
+        "owner": "tiny-repeat-20261020"
+      }
+    },
+    "NetworkSettings": {
+      "SandboxID": "",
+      "SandboxKey": "",
+      "Ports": {},
+      "Networks": {
+        "repeat-perf-1-rust-private": {
+          "IPAMConfig": null,
+          "Links": null,
+          "Aliases": null,
+          "DriverOpts": null,
+          "GwPriority": 0,
+          "NetworkID": "2b796160fa2903edc70eb65d82ec0b1de612a5d9b942e3dfa7cc159f302a59e4",
+          "EndpointID": "",
+          "Gateway": "",
+          "IPAddress": "",
+          "MacAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "DNSNames": [
+            "repeat-perf-1-rust-app",
+            "2bcf9ad1a9dc"
+          ]
+        },
+        "tinyrepeat-app-ingress": {
+          "IPAMConfig": {
+            "IPv4Address": "",
+            "IPv6Address": ""
+          },
+          "Links": null,
+          "Aliases": [],
+          "DriverOpts": {},
+          "GwPriority": 0,
+          "NetworkID": "c59bf8145c9354dae42cee3fdc34b2c0cc54bc6f920f7622e4aa5352c98cc4e0",
+          "EndpointID": "",
+          "Gateway": "",
+          "IPAddress": "",
+          "MacAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "DNSNames": [
+            "repeat-perf-1-rust-app",
+            "2bcf9ad1a9dc"
+          ]
+        }
+      }
+    },
+    "ImageManifestDescriptor": {
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "digest": "sha256:5635a4c93885008e637aafde171b77293fd1f4aeb4d1266e2db254fab9fb6d45",
+      "size": 1053,
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      }
+    }
+  },
+  {
+    "Id": "351563f70ad83ab7709915f828b1d7dc3e3fa1803747ab0f2793bb323a83234d",
+    "Created": "2026-10-20T10:54:30.587253038Z",
+    "Path": "/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin/python3",
+    "Args": [
+      "/usr/local/bin/python-entrypoint.py"
+    ],
+    "State": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 143,
+      "Error": "",
+      "StartedAt": "2026-10-20T10:57:49.705464198Z",
+      "FinishedAt": "2026-10-20T10:58:05.136180615Z"
+    },
+    "Image": "sha256:28241a509e8dbedda24bd2033ce556cc5648ddd02ef80bd349e417586fb84925",
+    "ResolvConfPath": "/var/lib/docker/containers/351563f70ad83ab7709915f828b1d7dc3e3fa1803747ab0f2793bb323a83234d/resolv.conf",
+    "HostnamePath": "/var/lib/docker/containers/351563f70ad83ab7709915f828b1d7dc3e3fa1803747ab0f2793bb323a83234d/hostname",
+    "HostsPath": "/var/lib/docker/containers/351563f70ad83ab7709915f828b1d7dc3e3fa1803747ab0f2793bb323a83234d/hosts",
+    "LogPath": "/var/lib/docker/containers/351563f70ad83ab7709915f828b1d7dc3e3fa1803747ab0f2793bb323a83234d/351563f70ad83ab7709915f828b1d7dc3e3fa1803747ab0f2793bb323a83234d-json.log",
+    "Name": "/repeat-perf-1-python-app",
+    "RestartCount": 0,
+    "Driver": "overlayfs",
+    "Platform": "linux",
+    "MountLabel": "",
+    "ProcessLabel": "",
+    "AppArmorProfile": "docker-default",
+    "ExecIDs": null,
+    "HostConfig": {
+      "Binds": [
+        "repeat-perf-1-python-state:/state"
+      ],
+      "ContainerIDFile": "",
+      "LogConfig": {
+        "Type": "json-file",
+        "Config": {}
+      },
+      "NetworkMode": "repeat-perf-1-python-private",
+      "PortBindings": {
+        "9991/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": "50052"
+          }
+        ]
+      },
+      "RestartPolicy": {
+        "Name": "no",
+        "MaximumRetryCount": 0
+      },
+      "AutoRemove": false,
+      "VolumeDriver": "",
+      "VolumesFrom": null,
+      "ConsoleSize": [
+        0,
+        0
+      ],
+      "CapAdd": null,
+      "CapDrop": null,
+      "CgroupnsMode": "private",
+      "Dns": null,
+      "DnsOptions": [],
+      "DnsSearch": [],
+      "ExtraHosts": null,
+      "GroupAdd": null,
+      "IpcMode": "private",
+      "Cgroup": "",
+      "Links": null,
+      "OomScoreAdj": 0,
+      "PidMode": "",
+      "Privileged": false,
+      "PublishAllPorts": false,
+      "ReadonlyRootfs": false,
+      "SecurityOpt": null,
+      "UTSMode": "",
+      "UsernsMode": "",
+      "ShmSize": 67108864,
+      "Runtime": "runc",
+      "Isolation": "",
+      "CpuShares": 0,
+      "Memory": 0,
+      "NanoCpus": 0,
+      "CgroupParent": "tinyrepeat.slice",
+      "BlkioWeight": 0,
+      "BlkioWeightDevice": [],
+      "BlkioDeviceReadBps": [],
+      "BlkioDeviceWriteBps": [],
+      "BlkioDeviceReadIOps": [],
+      "BlkioDeviceWriteIOps": [],
+      "CpuPeriod": 0,
+      "CpuQuota": 0,
+      "CpuRealtimePeriod": 0,
+      "CpuRealtimeRuntime": 0,
+      "CpusetCpus": "",
+      "CpusetMems": "",
+      "Devices": [],
+      "DeviceCgroupRules": null,
+      "DeviceRequests": null,
+      "MemoryReservation": 0,
+      "MemorySwap": 0,
+      "MemorySwappiness": null,
+      "OomKillDisable": null,
+      "PidsLimit": null,
+      "Ulimits": [],
+      "CpuCount": 0,
+      "CpuPercent": 0,
+      "IOMaximumIOps": 0,
+      "IOMaximumBandwidth": 0,
+      "MaskedPaths": [
+        "/proc/acpi",
+        "/proc/asound",
+        "/proc/interrupts",
+        "/proc/kcore",
+        "/proc/keys",
+        "/proc/latency_stats",
+        "/proc/sched_debug",
+        "/proc/scsi",
+        "/proc/timer_list",
+        "/proc/timer_stats",
+        "/sys/devices/virtual/powercap",
+        "/sys/firmware"
+      ],
+      "ReadonlyPaths": [
+        "/proc/bus",
+        "/proc/fs",
+        "/proc/irq",
+        "/proc/sys",
+        "/proc/sysrq-trigger"
+      ],
+      "Init": true
+    },
+    "Storage": {
+      "RootFS": {
+        "Snapshot": {
+          "Name": "overlayfs"
+        }
+      }
+    },
+    "Mounts": [
+      {
+        "Type": "volume",
+        "Name": "repeat-perf-1-python-state",
+        "Source": "/var/lib/docker/volumes/repeat-perf-1-python-state/_data",
+        "Destination": "/state",
+        "Driver": "local",
+        "Mode": "z",
+        "RW": true,
+        "Propagation": ""
+      }
+    ],
+    "Config": {
+      "Hostname": "351563f70ad8",
+      "Domainname": "",
+      "User": "",
+      "AttachStdin": false,
+      "AttachStdout": false,
+      "AttachStderr": false,
+      "ExposedPorts": {
+        "9991/tcp": {}
+      },
+      "Tty": false,
+      "OpenStdin": false,
+      "StdinOnce": false,
+      "Env": [
+        "PATH=/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin:/usr/local/bin:/usr/bin:/bin",
+        "PYTHONPATH=/example/hello-constructors/backend/api",
+        "REBOOT_LOCAL_ENVOY_MODE=executable"
+      ],
+      "Cmd": null,
+      "Image": "sha256:28241a509e8dbedda24bd2033ce556cc5648ddd02ef80bd349e417586fb84925",
+      "Volumes": null,
+      "WorkingDir": "/example/hello-constructors",
+      "Entrypoint": [
+        "/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin/python3",
+        "/usr/local/bin/python-entrypoint.py"
+      ],
+      "Labels": {
+        "org.opencontainers.image.revision": "d3b0642d0cb9962c839cfb57ebfd33f2a3cca389",
+        "org.opencontainers.image.version": "24.04",
+        "owner": "tiny-repeat-20261020",
+        "reboot.python-example": "5c332a2910122d6035799bfaf2a314bf1de830b8",
+        "reboot.sdk-native": "8574ccb0df9893274e69d1a19eca469dad56d779"
+      }
+    },
+    "NetworkSettings": {
+      "SandboxID": "",
+      "SandboxKey": "",
+      "Ports": {},
+      "Networks": {
+        "repeat-perf-1-python-private": {
+          "IPAMConfig": null,
+          "Links": null,
+          "Aliases": null,
+          "DriverOpts": null,
+          "GwPriority": 0,
+          "NetworkID": "a08cd4c595320d9c182edbb1d722f7e0b2fe7e6b2b160ff46994fe9d6ce3fdfc",
+          "EndpointID": "",
+          "Gateway": "",
+          "IPAddress": "",
+          "MacAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "DNSNames": [
+            "repeat-perf-1-python-app",
+            "351563f70ad8"
+          ]
+        },
+        "tinyrepeat-app-ingress": {
+          "IPAMConfig": {
+            "IPv4Address": "",
+            "IPv6Address": ""
+          },
+          "Links": null,
+          "Aliases": [],
+          "DriverOpts": {},
+          "GwPriority": 0,
+          "NetworkID": "c59bf8145c9354dae42cee3fdc34b2c0cc54bc6f920f7622e4aa5352c98cc4e0",
+          "EndpointID": "",
+          "Gateway": "",
+          "IPAddress": "",
+          "MacAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "DNSNames": [
+            "repeat-perf-1-python-app",
+            "351563f70ad8"
+          ]
+        }
+      }
+    },
+    "ImageManifestDescriptor": {
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "digest": "sha256:04b78b4bf4b06a38e722420dc7d493b414108d99cd1f480d8621951364d21633",
+      "size": 1623,
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      }
+    }
+  },
+  {
+    "Id": "37164b2753e9d8ecb86c87d46db065dd3dbb114108a0595153bae65c37b3f825",
+    "Created": "2026-10-20T11:06:39.900449636Z",
+    "Path": "/usr/local/bin/database",
+    "Args": [
+      "/state/rocksdb",
+      "/state/server-info.pb",
+      "20000"
+    ],
+    "State": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-20T11:10:58.498849716Z",
+      "FinishedAt": "2026-10-20T11:11:09.866395337Z",
+      "Health": {
+        "Status": "unhealthy",
+        "FailingStreak": 0,
+        "Log": [
+          {
+            "Start": "2026-10-20T11:10:52.099150877Z",
+            "End": "2026-10-20T11:10:52.203811762Z",
+            "ExitCode": 0,
+            "Output": "DATABASE_READABLE\n"
+          },
+          {
+            "Start": "2026-10-20T11:10:54.204489118Z",
+            "End": "2026-10-20T11:10:54.252733205Z",
+            "ExitCode": 0,
+            "Output": "DATABASE_READABLE\n"
+          },
+          {
+            "Start": "2026-10-20T11:11:03.612765941Z",
+            "End": "2026-10-20T11:11:03.681392647Z",
+            "ExitCode": 0,
+            "Output": "DATABASE_READABLE\n"
+          },
+          {
+            "Start": "2026-10-20T11:11:05.681750554Z",
+            "End": "2026-10-20T11:11:05.75282826Z",
+            "ExitCode": 0,
+            "Output": "DATABASE_READABLE\n"
+          },
+          {
+            "Start": "2026-10-20T11:11:07.756272396Z",
+            "End": "2026-10-20T11:11:07.827145473Z",
+            "ExitCode": 0,
+            "Output": "DATABASE_READABLE\n"
+          }
+        ]
+      }
+    },
+    "Image": "sha256:1a73705b0771f9c861d9ba96509806849423a3d8bbff140b1261da76280460cd",
+    "ResolvConfPath": "/var/lib/docker/containers/37164b2753e9d8ecb86c87d46db065dd3dbb114108a0595153bae65c37b3f825/resolv.conf",
+    "HostnamePath": "/var/lib/docker/containers/37164b2753e9d8ecb86c87d46db065dd3dbb114108a0595153bae65c37b3f825/hostname",
+    "HostsPath": "/var/lib/docker/containers/37164b2753e9d8ecb86c87d46db065dd3dbb114108a0595153bae65c37b3f825/hosts",
+    "LogPath": "/var/lib/docker/containers/37164b2753e9d8ecb86c87d46db065dd3dbb114108a0595153bae65c37b3f825/37164b2753e9d8ecb86c87d46db065dd3dbb114108a0595153bae65c37b3f825-json.log",
+    "Name": "/repeat-perf-3-rust-engine",
+    "RestartCount": 0,
+    "Driver": "overlayfs",
+    "Platform": "linux",
+    "MountLabel": "",
+    "ProcessLabel": "",
+    "AppArmorProfile": "docker-default",
+    "ExecIDs": null,
+    "HostConfig": {
+      "Binds": [
+        "repeat-perf-3-rust-state:/state"
+      ],
+      "ContainerIDFile": "",
+      "LogConfig": {
+        "Type": "json-file",
+        "Config": {}
+      },
+      "NetworkMode": "repeat-perf-3-rust-private",
+      "PortBindings": {},
+      "RestartPolicy": {
+        "Name": "no",
+        "MaximumRetryCount": 0
+      },
+      "AutoRemove": false,
+      "VolumeDriver": "",
+      "VolumesFrom": null,
+      "ConsoleSize": [
+        0,
+        0
+      ],
+      "CapAdd": null,
+      "CapDrop": null,
+      "CgroupnsMode": "private",
+      "Dns": null,
+      "DnsOptions": [],
+      "DnsSearch": [],
+      "ExtraHosts": null,
+      "GroupAdd": null,
+      "IpcMode": "private",
+      "Cgroup": "",
+      "Links": null,
+      "OomScoreAdj": 0,
+      "PidMode": "",
+      "Privileged": false,
+      "PublishAllPorts": false,
+      "ReadonlyRootfs": false,
+      "SecurityOpt": null,
+      "UTSMode": "",
+      "UsernsMode": "",
+      "ShmSize": 67108864,
+      "Runtime": "runc",
+      "Isolation": "",
+      "CpuShares": 0,
+      "Memory": 0,
+      "NanoCpus": 0,
+      "CgroupParent": "tinyrepeat.slice",
+      "BlkioWeight": 0,
+      "BlkioWeightDevice": [],
+      "BlkioDeviceReadBps": [],
+      "BlkioDeviceWriteBps": [],
+      "BlkioDeviceReadIOps": [],
+      "BlkioDeviceWriteIOps": [],
+      "CpuPeriod": 0,
+      "CpuQuota": 0,
+      "CpuRealtimePeriod": 0,
+      "CpuRealtimeRuntime": 0,
+      "CpusetCpus": "",
+      "CpusetMems": "",
+      "Devices": [],
+      "DeviceCgroupRules": null,
+      "DeviceRequests": null,
+      "MemoryReservation": 0,
+      "MemorySwap": 0,
+      "MemorySwappiness": null,
+      "OomKillDisable": null,
+      "PidsLimit": null,
+      "Ulimits": [],
+      "CpuCount": 0,
+      "CpuPercent": 0,
+      "IOMaximumIOps": 0,
+      "IOMaximumBandwidth": 0,
+      "MaskedPaths": [
+        "/proc/acpi",
+        "/proc/asound",
+        "/proc/interrupts",
+        "/proc/kcore",
+        "/proc/keys",
+        "/proc/latency_stats",
+        "/proc/sched_debug",
+        "/proc/scsi",
+        "/proc/timer_list",
+        "/proc/timer_stats",
+        "/sys/devices/virtual/powercap",
+        "/sys/firmware"
+      ],
+      "ReadonlyPaths": [
+        "/proc/bus",
+        "/proc/fs",
+        "/proc/irq",
+        "/proc/sys",
+        "/proc/sysrq-trigger"
+      ],
+      "Init": true
+    },
+    "Storage": {
+      "RootFS": {
+        "Snapshot": {
+          "Name": "overlayfs"
+        }
+      }
+    },
+    "Mounts": [
+      {
+        "Type": "volume",
+        "Name": "repeat-perf-3-rust-state",
+        "Source": "/var/lib/docker/volumes/repeat-perf-3-rust-state/_data",
+        "Destination": "/state",
+        "Driver": "local",
+        "Mode": "z",
+        "RW": true,
+        "Propagation": ""
+      }
+    ],
+    "Config": {
+      "Hostname": "37164b2753e9",
+      "Domainname": "",
+      "User": "",
+      "AttachStdin": false,
+      "AttachStdout": false,
+      "AttachStderr": false,
+      "Tty": false,
+      "OpenStdin": false,
+      "StdinOnce": false,
+      "Env": [
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "RBT_RUST_URL=http://127.0.0.1:20000"
+      ],
+      "Cmd": [
+        "/state/rocksdb",
+        "/state/server-info.pb",
+        "20000"
+      ],
+      "Healthcheck": {
+        "Test": [
+          "CMD",
+          "/usr/local/bin/hello-health",
+          "database-health"
+        ],
+        "Interval": 2000000000,
+        "Timeout": 4000000000,
+        "StartPeriod": 5000000000,
+        "Retries": 2
+      },
+      "Image": "sha256:1a73705b0771f9c861d9ba96509806849423a3d8bbff140b1261da76280460cd",
+      "Volumes": null,
+      "WorkingDir": "",
+      "Entrypoint": [
+        "/usr/local/bin/database"
+      ],
+      "Labels": {
+        "org.opencontainers.image.version": "24.04",
+        "owner": "tiny-repeat-20261020"
+      }
+    },
+    "NetworkSettings": {
+      "SandboxID": "",
+      "SandboxKey": "",
+      "Ports": {},
+      "Networks": {
+        "repeat-perf-3-rust-private": {
+          "IPAMConfig": null,
+          "Links": null,
+          "Aliases": [
+            "database"
+          ],
+          "DriverOpts": null,
+          "GwPriority": 0,
+          "NetworkID": "d45532843ade94a1f1b1df6de36cce5281d236f356905a200fed83535dc34958",
+          "EndpointID": "",
+          "Gateway": "",
+          "IPAddress": "",
+          "MacAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "DNSNames": [
+            "repeat-perf-3-rust-engine",
+            "database",
+            "37164b2753e9"
+          ]
+        }
+      }
+    },
+    "ImageManifestDescriptor": {
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "digest": "sha256:73473cc469f19b849de0401d4576a9ff07023e92953827efa8e89406b56d7c06",
+      "size": 1058,
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      }
+    }
+  },
+  {
+    "Id": "3926d4b725043b05086028f7e013b6a2771156f541a2aa9afb3237b5759921ab",
+    "Created": "2026-10-20T11:06:34.117167289Z",
+    "Path": "/usr/local/bin/hello",
+    "Args": [
+      "--server-info",
+      "/state/server-info.pb"
+    ],
+    "State": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-20T11:06:34.164412026Z",
+      "FinishedAt": "2026-10-20T11:06:34.30459261Z",
+      "Health": {
+        "Status": "unhealthy",
+        "FailingStreak": 0,
+        "Log": []
+      }
+    },
+    "Image": "sha256:3dcf9d9976f76a63b3a290ef6cf15329f1f6148692c72604e5dc797a237f7db4",
+    "ResolvConfPath": "/var/lib/docker/containers/3926d4b725043b05086028f7e013b6a2771156f541a2aa9afb3237b5759921ab/resolv.conf",
+    "HostnamePath": "/var/lib/docker/containers/3926d4b725043b05086028f7e013b6a2771156f541a2aa9afb3237b5759921ab/hostname",
+    "HostsPath": "/var/lib/docker/containers/3926d4b725043b05086028f7e013b6a2771156f541a2aa9afb3237b5759921ab/hosts",
+    "LogPath": "/var/lib/docker/containers/3926d4b725043b05086028f7e013b6a2771156f541a2aa9afb3237b5759921ab/3926d4b725043b05086028f7e013b6a2771156f541a2aa9afb3237b5759921ab-json.log",
+    "Name": "/repeat-perf-3-rust-config",
+    "RestartCount": 0,
+    "Driver": "overlayfs",
+    "Platform": "linux",
+    "MountLabel": "",
+    "ProcessLabel": "",
+    "AppArmorProfile": "docker-default",
+    "ExecIDs": null,
+    "HostConfig": {
+      "Binds": [
+        "repeat-perf-3-rust-state:/state"
+      ],
+      "ContainerIDFile": "",
+      "LogConfig": {
+        "Type": "json-file",
+        "Config": {}
+      },
+      "NetworkMode": "repeat-perf-3-rust-private",
+      "PortBindings": {},
+      "RestartPolicy": {
+        "Name": "no",
+        "MaximumRetryCount": 0
+      },
+      "AutoRemove": false,
+      "VolumeDriver": "",
+      "VolumesFrom": null,
+      "ConsoleSize": [
+        0,
+        0
+      ],
+      "CapAdd": null,
+      "CapDrop": null,
+      "CgroupnsMode": "private",
+      "Dns": null,
+      "DnsOptions": [],
+      "DnsSearch": [],
+      "ExtraHosts": null,
+      "GroupAdd": null,
+      "IpcMode": "private",
+      "Cgroup": "",
+      "Links": null,
+      "OomScoreAdj": 0,
+      "PidMode": "",
+      "Privileged": false,
+      "PublishAllPorts": false,
+      "ReadonlyRootfs": false,
+      "SecurityOpt": null,
+      "UTSMode": "",
+      "UsernsMode": "",
+      "ShmSize": 67108864,
+      "Runtime": "runc",
+      "Isolation": "",
+      "CpuShares": 0,
+      "Memory": 0,
+      "NanoCpus": 0,
+      "CgroupParent": "tinyrepeat.slice",
+      "BlkioWeight": 0,
+      "BlkioWeightDevice": [],
+      "BlkioDeviceReadBps": [],
+      "BlkioDeviceWriteBps": [],
+      "BlkioDeviceReadIOps": [],
+      "BlkioDeviceWriteIOps": [],
+      "CpuPeriod": 0,
+      "CpuQuota": 0,
+      "CpuRealtimePeriod": 0,
+      "CpuRealtimeRuntime": 0,
+      "CpusetCpus": "",
+      "CpusetMems": "",
+      "Devices": [],
+      "DeviceCgroupRules": null,
+      "DeviceRequests": null,
+      "MemoryReservation": 0,
+      "MemorySwap": 0,
+      "MemorySwappiness": null,
+      "OomKillDisable": null,
+      "PidsLimit": null,
+      "Ulimits": [],
+      "CpuCount": 0,
+      "CpuPercent": 0,
+      "IOMaximumIOps": 0,
+      "IOMaximumBandwidth": 0,
+      "MaskedPaths": [
+        "/proc/acpi",
+        "/proc/asound",
+        "/proc/interrupts",
+        "/proc/kcore",
+        "/proc/keys",
+        "/proc/latency_stats",
+        "/proc/sched_debug",
+        "/proc/scsi",
+        "/proc/timer_list",
+        "/proc/timer_stats",
+        "/sys/devices/virtual/powercap",
+        "/sys/firmware"
+      ],
+      "ReadonlyPaths": [
+        "/proc/bus",
+        "/proc/fs",
+        "/proc/irq",
+        "/proc/sys",
+        "/proc/sysrq-trigger"
+      ],
+      "Init": true
+    },
+    "Storage": {
+      "RootFS": {
+        "Snapshot": {
+          "Name": "overlayfs"
+        }
+      }
+    },
+    "Mounts": [
+      {
+        "Type": "volume",
+        "Name": "repeat-perf-3-rust-state",
+        "Source": "/var/lib/docker/volumes/repeat-perf-3-rust-state/_data",
+        "Destination": "/state",
+        "Driver": "local",
+        "Mode": "z",
+        "RW": true,
+        "Propagation": ""
+      }
+    ],
+    "Config": {
+      "Hostname": "3926d4b72504",
+      "Domainname": "",
+      "User": "",
+      "AttachStdin": false,
+      "AttachStdout": false,
+      "AttachStderr": false,
+      "Tty": false,
+      "OpenStdin": false,
+      "StdinOnce": false,
+      "Env": [
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "RBT_RUST_URL=http://127.0.0.1:9990"
+      ],
+      "Cmd": [
+        "--server-info",
+        "/state/server-info.pb"
+      ],
+      "Healthcheck": {
+        "Test": [
+          "CMD",
+          "/usr/local/bin/hello-health",
+          "health"
+        ],
+        "Interval": 2000000000,
+        "Timeout": 4000000000,
+        "StartPeriod": 5000000000,
+        "Retries": 2
+      },
+      "Image": "sha256:3dcf9d9976f76a63b3a290ef6cf15329f1f6148692c72604e5dc797a237f7db4",
+      "Volumes": null,
+      "WorkingDir": "",
+      "Entrypoint": [
+        "/usr/local/bin/hello"
+      ],
+      "Labels": {
+        "org.opencontainers.image.revision": "d3b0642d0cb9962c839cfb57ebfd33f2a3cca389",
+        "org.opencontainers.image.version": "24.04",
+        "owner": "tiny-repeat-20261020"
+      }
+    },
+    "NetworkSettings": {
+      "SandboxID": "",
+      "SandboxKey": "",
+      "Ports": {},
+      "Networks": {
+        "repeat-perf-3-rust-private": {
+          "IPAMConfig": null,
+          "Links": null,
+          "Aliases": null,
+          "DriverOpts": null,
+          "GwPriority": 0,
+          "NetworkID": "d45532843ade94a1f1b1df6de36cce5281d236f356905a200fed83535dc34958",
+          "EndpointID": "",
+          "Gateway": "",
+          "IPAddress": "",
+          "MacAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "DNSNames": [
+            "repeat-perf-3-rust-config",
+            "3926d4b72504"
+          ]
+        }
+      }
+    },
+    "ImageManifestDescriptor": {
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "digest": "sha256:5635a4c93885008e637aafde171b77293fd1f4aeb4d1266e2db254fab9fb6d45",
+      "size": 1053,
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      }
+    }
+  },
+  {
+    "Id": "4c70c704922ab93ba0112725f7fefb5983ab718e4a7c216f537cdd408ca23c8d",
+    "Created": "2026-10-20T10:58:11.015884973Z",
+    "Path": "/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin/python3",
+    "Args": [
+      "/usr/local/bin/python-entrypoint.py"
+    ],
+    "State": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 143,
+      "Error": "",
+      "StartedAt": "2026-10-20T11:01:30.819481689Z",
+      "FinishedAt": "2026-10-20T11:01:46.518341242Z"
+    },
+    "Image": "sha256:28241a509e8dbedda24bd2033ce556cc5648ddd02ef80bd349e417586fb84925",
+    "ResolvConfPath": "/var/lib/docker/containers/4c70c704922ab93ba0112725f7fefb5983ab718e4a7c216f537cdd408ca23c8d/resolv.conf",
+    "HostnamePath": "/var/lib/docker/containers/4c70c704922ab93ba0112725f7fefb5983ab718e4a7c216f537cdd408ca23c8d/hostname",
+    "HostsPath": "/var/lib/docker/containers/4c70c704922ab93ba0112725f7fefb5983ab718e4a7c216f537cdd408ca23c8d/hosts",
+    "LogPath": "/var/lib/docker/containers/4c70c704922ab93ba0112725f7fefb5983ab718e4a7c216f537cdd408ca23c8d/4c70c704922ab93ba0112725f7fefb5983ab718e4a7c216f537cdd408ca23c8d-json.log",
+    "Name": "/repeat-perf-2-python-app",
+    "RestartCount": 0,
+    "Driver": "overlayfs",
+    "Platform": "linux",
+    "MountLabel": "",
+    "ProcessLabel": "",
+    "AppArmorProfile": "docker-default",
+    "ExecIDs": null,
+    "HostConfig": {
+      "Binds": [
+        "repeat-perf-2-python-state:/state"
+      ],
+      "ContainerIDFile": "",
+      "LogConfig": {
+        "Type": "json-file",
+        "Config": {}
+      },
+      "NetworkMode": "repeat-perf-2-python-private",
+      "PortBindings": {
+        "9991/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": "50052"
+          }
+        ]
+      },
+      "RestartPolicy": {
+        "Name": "no",
+        "MaximumRetryCount": 0
+      },
+      "AutoRemove": false,
+      "VolumeDriver": "",
+      "VolumesFrom": null,
+      "ConsoleSize": [
+        0,
+        0
+      ],
+      "CapAdd": null,
+      "CapDrop": null,
+      "CgroupnsMode": "private",
+      "Dns": null,
+      "DnsOptions": [],
+      "DnsSearch": [],
+      "ExtraHosts": null,
+      "GroupAdd": null,
+      "IpcMode": "private",
+      "Cgroup": "",
+      "Links": null,
+      "OomScoreAdj": 0,
+      "PidMode": "",
+      "Privileged": false,
+      "PublishAllPorts": false,
+      "ReadonlyRootfs": false,
+      "SecurityOpt": null,
+      "UTSMode": "",
+      "UsernsMode": "",
+      "ShmSize": 67108864,
+      "Runtime": "runc",
+      "Isolation": "",
+      "CpuShares": 0,
+      "Memory": 0,
+      "NanoCpus": 0,
+      "CgroupParent": "tinyrepeat.slice",
+      "BlkioWeight": 0,
+      "BlkioWeightDevice": [],
+      "BlkioDeviceReadBps": [],
+      "BlkioDeviceWriteBps": [],
+      "BlkioDeviceReadIOps": [],
+      "BlkioDeviceWriteIOps": [],
+      "CpuPeriod": 0,
+      "CpuQuota": 0,
+      "CpuRealtimePeriod": 0,
+      "CpuRealtimeRuntime": 0,
+      "CpusetCpus": "",
+      "CpusetMems": "",
+      "Devices": [],
+      "DeviceCgroupRules": null,
+      "DeviceRequests": null,
+      "MemoryReservation": 0,
+      "MemorySwap": 0,
+      "MemorySwappiness": null,
+      "OomKillDisable": null,
+      "PidsLimit": null,
+      "Ulimits": [],
+      "CpuCount": 0,
+      "CpuPercent": 0,
+      "IOMaximumIOps": 0,
+      "IOMaximumBandwidth": 0,
+      "MaskedPaths": [
+        "/proc/acpi",
+        "/proc/asound",
+        "/proc/interrupts",
+        "/proc/kcore",
+        "/proc/keys",
+        "/proc/latency_stats",
+        "/proc/sched_debug",
+        "/proc/scsi",
+        "/proc/timer_list",
+        "/proc/timer_stats",
+        "/sys/devices/virtual/powercap",
+        "/sys/firmware"
+      ],
+      "ReadonlyPaths": [
+        "/proc/bus",
+        "/proc/fs",
+        "/proc/irq",
+        "/proc/sys",
+        "/proc/sysrq-trigger"
+      ],
+      "Init": true
+    },
+    "Storage": {
+      "RootFS": {
+        "Snapshot": {
+          "Name": "overlayfs"
+        }
+      }
+    },
+    "Mounts": [
+      {
+        "Type": "volume",
+        "Name": "repeat-perf-2-python-state",
+        "Source": "/var/lib/docker/volumes/repeat-perf-2-python-state/_data",
+        "Destination": "/state",
+        "Driver": "local",
+        "Mode": "z",
+        "RW": true,
+        "Propagation": ""
+      }
+    ],
+    "Config": {
+      "Hostname": "4c70c704922a",
+      "Domainname": "",
+      "User": "",
+      "AttachStdin": false,
+      "AttachStdout": false,
+      "AttachStderr": false,
+      "ExposedPorts": {
+        "9991/tcp": {}
+      },
+      "Tty": false,
+      "OpenStdin": false,
+      "StdinOnce": false,
+      "Env": [
+        "PATH=/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin:/usr/local/bin:/usr/bin:/bin",
+        "PYTHONPATH=/example/hello-constructors/backend/api",
+        "REBOOT_LOCAL_ENVOY_MODE=executable"
+      ],
+      "Cmd": null,
+      "Image": "sha256:28241a509e8dbedda24bd2033ce556cc5648ddd02ef80bd349e417586fb84925",
+      "Volumes": null,
+      "WorkingDir": "/example/hello-constructors",
+      "Entrypoint": [
+        "/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin/python3",
+        "/usr/local/bin/python-entrypoint.py"
+      ],
+      "Labels": {
+        "org.opencontainers.image.revision": "d3b0642d0cb9962c839cfb57ebfd33f2a3cca389",
+        "org.opencontainers.image.version": "24.04",
+        "owner": "tiny-repeat-20261020",
+        "reboot.python-example": "5c332a2910122d6035799bfaf2a314bf1de830b8",
+        "reboot.sdk-native": "8574ccb0df9893274e69d1a19eca469dad56d779"
+      }
+    },
+    "NetworkSettings": {
+      "SandboxID": "",
+      "SandboxKey": "",
+      "Ports": {},
+      "Networks": {
+        "repeat-perf-2-python-private": {
+          "IPAMConfig": null,
+          "Links": null,
+          "Aliases": null,
+          "DriverOpts": null,
+          "GwPriority": 0,
+          "NetworkID": "458f0c793513603a7f89808420351de092b8196bd8045c4544835ae37dc9944c",
+          "EndpointID": "",
+          "Gateway": "",
+          "IPAddress": "",
+          "MacAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "DNSNames": [
+            "repeat-perf-2-python-app",
+            "4c70c704922a"
+          ]
+        },
+        "tinyrepeat-app-ingress": {
+          "IPAMConfig": {
+            "IPv4Address": "",
+            "IPv6Address": ""
+          },
+          "Links": null,
+          "Aliases": [],
+          "DriverOpts": {},
+          "GwPriority": 0,
+          "NetworkID": "c59bf8145c9354dae42cee3fdc34b2c0cc54bc6f920f7622e4aa5352c98cc4e0",
+          "EndpointID": "",
+          "Gateway": "",
+          "IPAddress": "",
+          "MacAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "DNSNames": [
+            "repeat-perf-2-python-app",
+            "4c70c704922a"
+          ]
+        }
+      }
+    },
+    "ImageManifestDescriptor": {
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "digest": "sha256:04b78b4bf4b06a38e722420dc7d493b414108d99cd1f480d8621951364d21633",
+      "size": 1623,
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      }
+    }
+  },
+  {
+    "Id": "4d31d0453e37c15b67f5083563b882f720b1deceb7e73a22d1e96271710c5847",
+    "Created": "2026-10-20T11:11:15.827785076Z",
+    "Path": "/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin/python3",
+    "Args": [
+      "/usr/local/bin/python-entrypoint.py"
+    ],
+    "State": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 143,
+      "Error": "",
+      "StartedAt": "2026-10-20T11:14:33.839892875Z",
+      "FinishedAt": "2026-10-20T11:14:49.727949275Z"
+    },
+    "Image": "sha256:28241a509e8dbedda24bd2033ce556cc5648ddd02ef80bd349e417586fb84925",
+    "ResolvConfPath": "/var/lib/docker/containers/4d31d0453e37c15b67f5083563b882f720b1deceb7e73a22d1e96271710c5847/resolv.conf",
+    "HostnamePath": "/var/lib/docker/containers/4d31d0453e37c15b67f5083563b882f720b1deceb7e73a22d1e96271710c5847/hostname",
+    "HostsPath": "/var/lib/docker/containers/4d31d0453e37c15b67f5083563b882f720b1deceb7e73a22d1e96271710c5847/hosts",
+    "LogPath": "/var/lib/docker/containers/4d31d0453e37c15b67f5083563b882f720b1deceb7e73a22d1e96271710c5847/4d31d0453e37c15b67f5083563b882f720b1deceb7e73a22d1e96271710c5847-json.log",
+    "Name": "/repeat-perf-3-python-app",
+    "RestartCount": 0,
+    "Driver": "overlayfs",
+    "Platform": "linux",
+    "MountLabel": "",
+    "ProcessLabel": "",
+    "AppArmorProfile": "docker-default",
+    "ExecIDs": null,
+    "HostConfig": {
+      "Binds": [
+        "repeat-perf-3-python-state:/state"
+      ],
+      "ContainerIDFile": "",
+      "LogConfig": {
+        "Type": "json-file",
+        "Config": {}
+      },
+      "NetworkMode": "repeat-perf-3-python-private",
+      "PortBindings": {
+        "9991/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": "50052"
+          }
+        ]
+      },
+      "RestartPolicy": {
+        "Name": "no",
+        "MaximumRetryCount": 0
+      },
+      "AutoRemove": false,
+      "VolumeDriver": "",
+      "VolumesFrom": null,
+      "ConsoleSize": [
+        0,
+        0
+      ],
+      "CapAdd": null,
+      "CapDrop": null,
+      "CgroupnsMode": "private",
+      "Dns": null,
+      "DnsOptions": [],
+      "DnsSearch": [],
+      "ExtraHosts": null,
+      "GroupAdd": null,
+      "IpcMode": "private",
+      "Cgroup": "",
+      "Links": null,
+      "OomScoreAdj": 0,
+      "PidMode": "",
+      "Privileged": false,
+      "PublishAllPorts": false,
+      "ReadonlyRootfs": false,
+      "SecurityOpt": null,
+      "UTSMode": "",
+      "UsernsMode": "",
+      "ShmSize": 67108864,
+      "Runtime": "runc",
+      "Isolation": "",
+      "CpuShares": 0,
+      "Memory": 0,
+      "NanoCpus": 0,
+      "CgroupParent": "tinyrepeat.slice",
+      "BlkioWeight": 0,
+      "BlkioWeightDevice": [],
+      "BlkioDeviceReadBps": [],
+      "BlkioDeviceWriteBps": [],
+      "BlkioDeviceReadIOps": [],
+      "BlkioDeviceWriteIOps": [],
+      "CpuPeriod": 0,
+      "CpuQuota": 0,
+      "CpuRealtimePeriod": 0,
+      "CpuRealtimeRuntime": 0,
+      "CpusetCpus": "",
+      "CpusetMems": "",
+      "Devices": [],
+      "DeviceCgroupRules": null,
+      "DeviceRequests": null,
+      "MemoryReservation": 0,
+      "MemorySwap": 0,
+      "MemorySwappiness": null,
+      "OomKillDisable": null,
+      "PidsLimit": null,
+      "Ulimits": [],
+      "CpuCount": 0,
+      "CpuPercent": 0,
+      "IOMaximumIOps": 0,
+      "IOMaximumBandwidth": 0,
+      "MaskedPaths": [
+        "/proc/acpi",
+        "/proc/asound",
+        "/proc/interrupts",
+        "/proc/kcore",
+        "/proc/keys",
+        "/proc/latency_stats",
+        "/proc/sched_debug",
+        "/proc/scsi",
+        "/proc/timer_list",
+        "/proc/timer_stats",
+        "/sys/devices/virtual/powercap",
+        "/sys/firmware"
+      ],
+      "ReadonlyPaths": [
+        "/proc/bus",
+        "/proc/fs",
+        "/proc/irq",
+        "/proc/sys",
+        "/proc/sysrq-trigger"
+      ],
+      "Init": true
+    },
+    "Storage": {
+      "RootFS": {
+        "Snapshot": {
+          "Name": "overlayfs"
+        }
+      }
+    },
+    "Mounts": [
+      {
+        "Type": "volume",
+        "Name": "repeat-perf-3-python-state",
+        "Source": "/var/lib/docker/volumes/repeat-perf-3-python-state/_data",
+        "Destination": "/state",
+        "Driver": "local",
+        "Mode": "z",
+        "RW": true,
+        "Propagation": ""
+      }
+    ],
+    "Config": {
+      "Hostname": "4d31d0453e37",
+      "Domainname": "",
+      "User": "",
+      "AttachStdin": false,
+      "AttachStdout": false,
+      "AttachStderr": false,
+      "ExposedPorts": {
+        "9991/tcp": {}
+      },
+      "Tty": false,
+      "OpenStdin": false,
+      "StdinOnce": false,
+      "Env": [
+        "PATH=/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin:/usr/local/bin:/usr/bin:/bin",
+        "PYTHONPATH=/example/hello-constructors/backend/api",
+        "REBOOT_LOCAL_ENVOY_MODE=executable"
+      ],
+      "Cmd": null,
+      "Image": "sha256:28241a509e8dbedda24bd2033ce556cc5648ddd02ef80bd349e417586fb84925",
+      "Volumes": null,
+      "WorkingDir": "/example/hello-constructors",
+      "Entrypoint": [
+        "/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin/python3",
+        "/usr/local/bin/python-entrypoint.py"
+      ],
+      "Labels": {
+        "org.opencontainers.image.revision": "d3b0642d0cb9962c839cfb57ebfd33f2a3cca389",
+        "org.opencontainers.image.version": "24.04",
+        "owner": "tiny-repeat-20261020",
+        "reboot.python-example": "5c332a2910122d6035799bfaf2a314bf1de830b8",
+        "reboot.sdk-native": "8574ccb0df9893274e69d1a19eca469dad56d779"
+      }
+    },
+    "NetworkSettings": {
+      "SandboxID": "",
+      "SandboxKey": "",
+      "Ports": {},
+      "Networks": {
+        "repeat-perf-3-python-private": {
+          "IPAMConfig": null,
+          "Links": null,
+          "Aliases": null,
+          "DriverOpts": null,
+          "GwPriority": 0,
+          "NetworkID": "bcdbb56bc954c44a0c0c1a41f9a4362ffd3be1f361596473f86fcaf350bbef40",
+          "EndpointID": "",
+          "Gateway": "",
+          "IPAddress": "",
+          "MacAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "DNSNames": [
+            "repeat-perf-3-python-app",
+            "4d31d0453e37"
+          ]
+        },
+        "tinyrepeat-app-ingress": {
+          "IPAMConfig": {
+            "IPv4Address": "",
+            "IPv6Address": ""
+          },
+          "Links": null,
+          "Aliases": [],
+          "DriverOpts": {},
+          "GwPriority": 0,
+          "NetworkID": "c59bf8145c9354dae42cee3fdc34b2c0cc54bc6f920f7622e4aa5352c98cc4e0",
+          "EndpointID": "",
+          "Gateway": "",
+          "IPAddress": "",
+          "MacAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "DNSNames": [
+            "repeat-perf-3-python-app",
+            "4d31d0453e37"
+          ]
+        }
+      }
+    },
+    "ImageManifestDescriptor": {
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "digest": "sha256:04b78b4bf4b06a38e722420dc7d493b414108d99cd1f480d8621951364d21633",
+      "size": 1623,
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      }
+    }
+  },
+  {
+    "Id": "533a193e240fd569094f46cfa3eb63d657ec9752a2d452342e460e5a6b7e4ca8",
+    "Created": "2026-10-20T10:43:19.131590302Z",
+    "Path": "/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin/python3",
+    "Args": [
+      "/usr/local/bin/python-entrypoint.py"
+    ],
+    "State": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 143,
+      "Error": "",
+      "StartedAt": "2026-10-20T10:43:40.715101607Z",
+      "FinishedAt": "2026-10-20T10:49:43.980218232Z"
+    },
+    "Image": "sha256:28241a509e8dbedda24bd2033ce556cc5648ddd02ef80bd349e417586fb84925",
+    "ResolvConfPath": "/var/lib/docker/containers/533a193e240fd569094f46cfa3eb63d657ec9752a2d452342e460e5a6b7e4ca8/resolv.conf",
+    "HostnamePath": "/var/lib/docker/containers/533a193e240fd569094f46cfa3eb63d657ec9752a2d452342e460e5a6b7e4ca8/hostname",
+    "HostsPath": "/var/lib/docker/containers/533a193e240fd569094f46cfa3eb63d657ec9752a2d452342e460e5a6b7e4ca8/hosts",
+    "LogPath": "/var/lib/docker/containers/533a193e240fd569094f46cfa3eb63d657ec9752a2d452342e460e5a6b7e4ca8/533a193e240fd569094f46cfa3eb63d657ec9752a2d452342e460e5a6b7e4ca8-json.log",
+    "Name": "/repeat-qualification-python-app",
+    "RestartCount": 0,
+    "Driver": "overlayfs",
+    "Platform": "linux",
+    "MountLabel": "",
+    "ProcessLabel": "",
+    "AppArmorProfile": "docker-default",
+    "ExecIDs": null,
+    "HostConfig": {
+      "Binds": [
+        "repeat-qualification-python-state:/state"
+      ],
+      "ContainerIDFile": "",
+      "LogConfig": {
+        "Type": "json-file",
+        "Config": {}
+      },
+      "NetworkMode": "repeat-qualification-python-private",
+      "PortBindings": {
+        "9991/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": "50052"
+          }
+        ]
+      },
+      "RestartPolicy": {
+        "Name": "no",
+        "MaximumRetryCount": 0
+      },
+      "AutoRemove": false,
+      "VolumeDriver": "",
+      "VolumesFrom": null,
+      "ConsoleSize": [
+        0,
+        0
+      ],
+      "CapAdd": null,
+      "CapDrop": null,
+      "CgroupnsMode": "private",
+      "Dns": null,
+      "DnsOptions": [],
+      "DnsSearch": [],
+      "ExtraHosts": null,
+      "GroupAdd": null,
+      "IpcMode": "private",
+      "Cgroup": "",
+      "Links": null,
+      "OomScoreAdj": 0,
+      "PidMode": "",
+      "Privileged": false,
+      "PublishAllPorts": false,
+      "ReadonlyRootfs": false,
+      "SecurityOpt": null,
+      "UTSMode": "",
+      "UsernsMode": "",
+      "ShmSize": 67108864,
+      "Runtime": "runc",
+      "Isolation": "",
+      "CpuShares": 0,
+      "Memory": 0,
+      "NanoCpus": 0,
+      "CgroupParent": "tinyrepeat.slice",
+      "BlkioWeight": 0,
+      "BlkioWeightDevice": [],
+      "BlkioDeviceReadBps": [],
+      "BlkioDeviceWriteBps": [],
+      "BlkioDeviceReadIOps": [],
+      "BlkioDeviceWriteIOps": [],
+      "CpuPeriod": 0,
+      "CpuQuota": 0,
+      "CpuRealtimePeriod": 0,
+      "CpuRealtimeRuntime": 0,
+      "CpusetCpus": "",
+      "CpusetMems": "",
+      "Devices": [],
+      "DeviceCgroupRules": null,
+      "DeviceRequests": null,
+      "MemoryReservation": 0,
+      "MemorySwap": 0,
+      "MemorySwappiness": null,
+      "OomKillDisable": null,
+      "PidsLimit": null,
+      "Ulimits": [],
+      "CpuCount": 0,
+      "CpuPercent": 0,
+      "IOMaximumIOps": 0,
+      "IOMaximumBandwidth": 0,
+      "MaskedPaths": [
+        "/proc/acpi",
+        "/proc/asound",
+        "/proc/interrupts",
+        "/proc/kcore",
+        "/proc/keys",
+        "/proc/latency_stats",
+        "/proc/sched_debug",
+        "/proc/scsi",
+        "/proc/timer_list",
+        "/proc/timer_stats",
+        "/sys/devices/virtual/powercap",
+        "/sys/firmware"
+      ],
+      "ReadonlyPaths": [
+        "/proc/bus",
+        "/proc/fs",
+        "/proc/irq",
+        "/proc/sys",
+        "/proc/sysrq-trigger"
+      ],
+      "Init": true
+    },
+    "Storage": {
+      "RootFS": {
+        "Snapshot": {
+          "Name": "overlayfs"
+        }
+      }
+    },
+    "Mounts": [
+      {
+        "Type": "volume",
+        "Name": "repeat-qualification-python-state",
+        "Source": "/var/lib/docker/volumes/repeat-qualification-python-state/_data",
+        "Destination": "/state",
+        "Driver": "local",
+        "Mode": "z",
+        "RW": true,
+        "Propagation": ""
+      }
+    ],
+    "Config": {
+      "Hostname": "533a193e240f",
+      "Domainname": "",
+      "User": "",
+      "AttachStdin": false,
+      "AttachStdout": false,
+      "AttachStderr": false,
+      "ExposedPorts": {
+        "9991/tcp": {}
+      },
+      "Tty": false,
+      "OpenStdin": false,
+      "StdinOnce": false,
+      "Env": [
+        "PATH=/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin:/usr/local/bin:/usr/bin:/bin",
+        "PYTHONPATH=/example/hello-constructors/backend/api",
+        "REBOOT_LOCAL_ENVOY_MODE=executable"
+      ],
+      "Cmd": null,
+      "Image": "sha256:28241a509e8dbedda24bd2033ce556cc5648ddd02ef80bd349e417586fb84925",
+      "Volumes": null,
+      "WorkingDir": "/example/hello-constructors",
+      "Entrypoint": [
+        "/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin/python3",
+        "/usr/local/bin/python-entrypoint.py"
+      ],
+      "Labels": {
+        "org.opencontainers.image.revision": "d3b0642d0cb9962c839cfb57ebfd33f2a3cca389",
+        "org.opencontainers.image.version": "24.04",
+        "owner": "tiny-repeat-20261020",
+        "reboot.python-example": "5c332a2910122d6035799bfaf2a314bf1de830b8",
+        "reboot.sdk-native": "8574ccb0df9893274e69d1a19eca469dad56d779"
+      }
+    },
+    "NetworkSettings": {
+      "SandboxID": "",
+      "SandboxKey": "",
+      "Ports": {},
+      "Networks": {
+        "repeat-qualification-python-private": {
+          "IPAMConfig": null,
+          "Links": null,
+          "Aliases": null,
+          "DriverOpts": null,
+          "GwPriority": 0,
+          "NetworkID": "f159745442d9783302a1c18ada38420ae1b297bf76fce0d7d664f0a6e25bdf85",
+          "EndpointID": "",
+          "Gateway": "",
+          "IPAddress": "",
+          "MacAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "DNSNames": [
+            "repeat-qualification-python-app",
+            "533a193e240f"
+          ]
+        },
+        "tinyrepeat-app-ingress": {
+          "IPAMConfig": {
+            "IPv4Address": "",
+            "IPv6Address": ""
+          },
+          "Links": null,
+          "Aliases": [],
+          "DriverOpts": {},
+          "GwPriority": 0,
+          "NetworkID": "c59bf8145c9354dae42cee3fdc34b2c0cc54bc6f920f7622e4aa5352c98cc4e0",
+          "EndpointID": "",
+          "Gateway": "",
+          "IPAddress": "",
+          "MacAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "DNSNames": [
+            "repeat-qualification-python-app",
+            "533a193e240f"
+          ]
+        }
+      }
+    },
+    "ImageManifestDescriptor": {
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "digest": "sha256:04b78b4bf4b06a38e722420dc7d493b414108d99cd1f480d8621951364d21633",
+      "size": 1623,
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      }
+    }
+  },
+  {
+    "Id": "5c9386f6efe0cc00daff1da114c57820b3960fd13a2ed5908e6f13deaaeba294",
+    "Created": "2026-10-20T10:36:22.664925479Z",
+    "Path": "/usr/local/bin/hello",
+    "Args": [],
+    "State": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-20T10:36:36.125472767Z",
+      "FinishedAt": "2026-10-20T10:43:10.456816434Z",
+      "Health": {
+        "Status": "unhealthy",
+        "FailingStreak": 0,
+        "Log": [
+          {
+            "Start": "2026-10-20T10:43:00.556351612Z",
+            "End": "2026-10-20T10:43:00.697516551Z",
+            "ExitCode": 0,
+            "Output": "SERVING_ENGINE_BACKED\n"
+          },
+          {
+            "Start": "2026-10-20T10:43:02.698331107Z",
+            "End": "2026-10-20T10:43:02.783291192Z",
+            "ExitCode": 0,
+            "Output": "SERVING_ENGINE_BACKED\n"
+          },
+          {
+            "Start": "2026-10-20T10:43:04.784388046Z",
+            "End": "2026-10-20T10:43:04.903306043Z",
+            "ExitCode": 0,
+            "Output": "SERVING_ENGINE_BACKED\n"
+          },
+          {
+            "Start": "2026-10-20T10:43:06.904493907Z",
+            "End": "2026-10-20T10:43:06.997186763Z",
+            "ExitCode": 0,
+            "Output": "SERVING_ENGINE_BACKED\n"
+          },
+          {
+            "Start": "2026-10-20T10:43:08.997617247Z",
+            "End": "2026-10-20T10:43:09.106331952Z",
+            "ExitCode": 0,
+            "Output": "SERVING_ENGINE_BACKED\n"
+          }
+        ]
+      }
+    },
+    "Image": "sha256:3dcf9d9976f76a63b3a290ef6cf15329f1f6148692c72604e5dc797a237f7db4",
+    "ResolvConfPath": "/var/lib/docker/containers/5c9386f6efe0cc00daff1da114c57820b3960fd13a2ed5908e6f13deaaeba294/resolv.conf",
+    "HostnamePath": "/var/lib/docker/containers/5c9386f6efe0cc00daff1da114c57820b3960fd13a2ed5908e6f13deaaeba294/hostname",
+    "HostsPath": "/var/lib/docker/containers/5c9386f6efe0cc00daff1da114c57820b3960fd13a2ed5908e6f13deaaeba294/hosts",
+    "LogPath": "/var/lib/docker/containers/5c9386f6efe0cc00daff1da114c57820b3960fd13a2ed5908e6f13deaaeba294/5c9386f6efe0cc00daff1da114c57820b3960fd13a2ed5908e6f13deaaeba294-json.log",
+    "Name": "/repeat-qualification-rust-app",
+    "RestartCount": 0,
+    "Driver": "overlayfs",
+    "Platform": "linux",
+    "MountLabel": "",
+    "ProcessLabel": "",
+    "AppArmorProfile": "docker-default",
+    "ExecIDs": null,
+    "HostConfig": {
+      "Binds": null,
+      "ContainerIDFile": "",
+      "LogConfig": {
+        "Type": "json-file",
+        "Config": {}
+      },
+      "NetworkMode": "repeat-qualification-rust-private",
+      "PortBindings": {
+        "9990/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": "50052"
+          }
+        ]
+      },
+      "RestartPolicy": {
+        "Name": "no",
+        "MaximumRetryCount": 0
+      },
+      "AutoRemove": false,
+      "VolumeDriver": "",
+      "VolumesFrom": null,
+      "ConsoleSize": [
+        0,
+        0
+      ],
+      "CapAdd": null,
+      "CapDrop": null,
+      "CgroupnsMode": "private",
+      "Dns": null,
+      "DnsOptions": [],
+      "DnsSearch": [],
+      "ExtraHosts": null,
+      "GroupAdd": null,
+      "IpcMode": "private",
+      "Cgroup": "",
+      "Links": null,
+      "OomScoreAdj": 0,
+      "PidMode": "",
+      "Privileged": false,
+      "PublishAllPorts": false,
+      "ReadonlyRootfs": false,
+      "SecurityOpt": null,
+      "UTSMode": "",
+      "UsernsMode": "",
+      "ShmSize": 67108864,
+      "Runtime": "runc",
+      "Isolation": "",
+      "CpuShares": 0,
+      "Memory": 0,
+      "NanoCpus": 0,
+      "CgroupParent": "tinyrepeat.slice",
+      "BlkioWeight": 0,
+      "BlkioWeightDevice": [],
+      "BlkioDeviceReadBps": [],
+      "BlkioDeviceWriteBps": [],
+      "BlkioDeviceReadIOps": [],
+      "BlkioDeviceWriteIOps": [],
+      "CpuPeriod": 0,
+      "CpuQuota": 0,
+      "CpuRealtimePeriod": 0,
+      "CpuRealtimeRuntime": 0,
+      "CpusetCpus": "",
+      "CpusetMems": "",
+      "Devices": [],
+      "DeviceCgroupRules": null,
+      "DeviceRequests": null,
+      "MemoryReservation": 0,
+      "MemorySwap": 0,
+      "MemorySwappiness": null,
+      "OomKillDisable": null,
+      "PidsLimit": null,
+      "Ulimits": [],
+      "CpuCount": 0,
+      "CpuPercent": 0,
+      "IOMaximumIOps": 0,
+      "IOMaximumBandwidth": 0,
+      "MaskedPaths": [
+        "/proc/acpi",
+        "/proc/asound",
+        "/proc/interrupts",
+        "/proc/kcore",
+        "/proc/keys",
+        "/proc/latency_stats",
+        "/proc/sched_debug",
+        "/proc/scsi",
+        "/proc/timer_list",
+        "/proc/timer_stats",
+        "/sys/devices/virtual/powercap",
+        "/sys/firmware"
+      ],
+      "ReadonlyPaths": [
+        "/proc/bus",
+        "/proc/fs",
+        "/proc/irq",
+        "/proc/sys",
+        "/proc/sysrq-trigger"
+      ],
+      "Init": true
+    },
+    "Storage": {
+      "RootFS": {
+        "Snapshot": {
+          "Name": "overlayfs"
+        }
+      }
+    },
+    "Mounts": [],
+    "Config": {
+      "Hostname": "5c9386f6efe0",
+      "Domainname": "",
+      "User": "",
+      "AttachStdin": false,
+      "AttachStdout": false,
+      "AttachStderr": false,
+      "ExposedPorts": {
+        "9990/tcp": {}
+      },
+      "Tty": false,
+      "OpenStdin": false,
+      "StdinOnce": false,
+      "Env": [
+        "RBT_RUST_LISTEN_ADDR=0.0.0.0:9990",
+        "RBT_NAME=hello-image-qualified",
+        "RBT_RUST_DATABASE_URL=http://database:20000",
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "RBT_RUST_URL=http://127.0.0.1:9990"
+      ],
+      "Cmd": null,
+      "Healthcheck": {
+        "Test": [
+          "CMD",
+          "/usr/local/bin/hello-health",
+          "health"
+        ],
+        "Interval": 2000000000,
+        "Timeout": 4000000000,
+        "StartPeriod": 5000000000,
+        "Retries": 2
+      },
+      "Image": "sha256:3dcf9d9976f76a63b3a290ef6cf15329f1f6148692c72604e5dc797a237f7db4",
+      "Volumes": null,
+      "WorkingDir": "",
+      "Entrypoint": [
+        "/usr/local/bin/hello"
+      ],
+      "Labels": {
+        "org.opencontainers.image.revision": "d3b0642d0cb9962c839cfb57ebfd33f2a3cca389",
+        "org.opencontainers.image.version": "24.04",
+        "owner": "tiny-repeat-20261020"
+      }
+    },
+    "NetworkSettings": {
+      "SandboxID": "",
+      "SandboxKey": "",
+      "Ports": {},
+      "Networks": {
+        "repeat-qualification-rust-private": {
+          "IPAMConfig": null,
+          "Links": null,
+          "Aliases": null,
+          "DriverOpts": null,
+          "GwPriority": 0,
+          "NetworkID": "c5bc8148bb908ddff7377704f2079c0d46bd1f2ce3b847efacb59f534d5c1f74",
+          "EndpointID": "",
+          "Gateway": "",
+          "IPAddress": "",
+          "MacAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "DNSNames": [
+            "repeat-qualification-rust-app",
+            "5c9386f6efe0"
+          ]
+        },
+        "tinyrepeat-app-ingress": {
+          "IPAMConfig": {
+            "IPv4Address": "",
+            "IPv6Address": ""
+          },
+          "Links": null,
+          "Aliases": [],
+          "DriverOpts": {},
+          "GwPriority": 0,
+          "NetworkID": "c59bf8145c9354dae42cee3fdc34b2c0cc54bc6f920f7622e4aa5352c98cc4e0",
+          "EndpointID": "",
+          "Gateway": "",
+          "IPAddress": "",
+          "MacAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "DNSNames": [
+            "repeat-qualification-rust-app",
+            "5c9386f6efe0"
+          ]
+        }
+      }
+    },
+    "ImageManifestDescriptor": {
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "digest": "sha256:5635a4c93885008e637aafde171b77293fd1f4aeb4d1266e2db254fab9fb6d45",
+      "size": 1053,
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      }
+    }
+  },
+  {
+    "Id": "865d5473b08d5ef66c9209c4f73bd4aab87d62b3083c133c59c7d24cbdd28969",
+    "Created": "2026-10-20T10:49:55.400556011Z",
+    "Path": "/usr/local/bin/database",
+    "Args": [
+      "/state/rocksdb",
+      "/state/server-info.pb",
+      "20000"
+    ],
+    "State": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-20T10:54:13.215544889Z",
+      "FinishedAt": "2026-10-20T10:54:24.98864179Z",
+      "Health": {
+        "Status": "unhealthy",
+        "FailingStreak": 0,
+        "Log": [
+          {
+            "Start": "2026-10-20T10:54:08.865108375Z",
+            "End": "2026-10-20T10:54:08.907563234Z",
+            "ExitCode": 0,
+            "Output": "DATABASE_READABLE\n"
+          },
+          {
+            "Start": "2026-10-20T10:54:18.326477505Z",
+            "End": "2026-10-20T10:54:18.403571163Z",
+            "ExitCode": 0,
+            "Output": "DATABASE_READABLE\n"
+          },
+          {
+            "Start": "2026-10-20T10:54:20.404518963Z",
+            "End": "2026-10-20T10:54:20.480335601Z",
+            "ExitCode": 0,
+            "Output": "DATABASE_READABLE\n"
+          },
+          {
+            "Start": "2026-10-20T10:54:22.481124472Z",
+            "End": "2026-10-20T10:54:22.520373161Z",
+            "ExitCode": 0,
+            "Output": "DATABASE_READABLE\n"
+          },
+          {
+            "Start": "2026-10-20T10:54:24.521330651Z",
+            "End": "2026-10-20T10:54:24.58179158Z",
+            "ExitCode": 0,
+            "Output": "DATABASE_READABLE\n"
+          }
+        ]
+      }
+    },
+    "Image": "sha256:1a73705b0771f9c861d9ba96509806849423a3d8bbff140b1261da76280460cd",
+    "ResolvConfPath": "/var/lib/docker/containers/865d5473b08d5ef66c9209c4f73bd4aab87d62b3083c133c59c7d24cbdd28969/resolv.conf",
+    "HostnamePath": "/var/lib/docker/containers/865d5473b08d5ef66c9209c4f73bd4aab87d62b3083c133c59c7d24cbdd28969/hostname",
+    "HostsPath": "/var/lib/docker/containers/865d5473b08d5ef66c9209c4f73bd4aab87d62b3083c133c59c7d24cbdd28969/hosts",
+    "LogPath": "/var/lib/docker/containers/865d5473b08d5ef66c9209c4f73bd4aab87d62b3083c133c59c7d24cbdd28969/865d5473b08d5ef66c9209c4f73bd4aab87d62b3083c133c59c7d24cbdd28969-json.log",
+    "Name": "/repeat-perf-1-rust-engine",
+    "RestartCount": 0,
+    "Driver": "overlayfs",
+    "Platform": "linux",
+    "MountLabel": "",
+    "ProcessLabel": "",
+    "AppArmorProfile": "docker-default",
+    "ExecIDs": null,
+    "HostConfig": {
+      "Binds": [
+        "repeat-perf-1-rust-state:/state"
+      ],
+      "ContainerIDFile": "",
+      "LogConfig": {
+        "Type": "json-file",
+        "Config": {}
+      },
+      "NetworkMode": "repeat-perf-1-rust-private",
+      "PortBindings": {},
+      "RestartPolicy": {
+        "Name": "no",
+        "MaximumRetryCount": 0
+      },
+      "AutoRemove": false,
+      "VolumeDriver": "",
+      "VolumesFrom": null,
+      "ConsoleSize": [
+        0,
+        0
+      ],
+      "CapAdd": null,
+      "CapDrop": null,
+      "CgroupnsMode": "private",
+      "Dns": null,
+      "DnsOptions": [],
+      "DnsSearch": [],
+      "ExtraHosts": null,
+      "GroupAdd": null,
+      "IpcMode": "private",
+      "Cgroup": "",
+      "Links": null,
+      "OomScoreAdj": 0,
+      "PidMode": "",
+      "Privileged": false,
+      "PublishAllPorts": false,
+      "ReadonlyRootfs": false,
+      "SecurityOpt": null,
+      "UTSMode": "",
+      "UsernsMode": "",
+      "ShmSize": 67108864,
+      "Runtime": "runc",
+      "Isolation": "",
+      "CpuShares": 0,
+      "Memory": 0,
+      "NanoCpus": 0,
+      "CgroupParent": "tinyrepeat.slice",
+      "BlkioWeight": 0,
+      "BlkioWeightDevice": [],
+      "BlkioDeviceReadBps": [],
+      "BlkioDeviceWriteBps": [],
+      "BlkioDeviceReadIOps": [],
+      "BlkioDeviceWriteIOps": [],
+      "CpuPeriod": 0,
+      "CpuQuota": 0,
+      "CpuRealtimePeriod": 0,
+      "CpuRealtimeRuntime": 0,
+      "CpusetCpus": "",
+      "CpusetMems": "",
+      "Devices": [],
+      "DeviceCgroupRules": null,
+      "DeviceRequests": null,
+      "MemoryReservation": 0,
+      "MemorySwap": 0,
+      "MemorySwappiness": null,
+      "OomKillDisable": null,
+      "PidsLimit": null,
+      "Ulimits": [],
+      "CpuCount": 0,
+      "CpuPercent": 0,
+      "IOMaximumIOps": 0,
+      "IOMaximumBandwidth": 0,
+      "MaskedPaths": [
+        "/proc/acpi",
+        "/proc/asound",
+        "/proc/interrupts",
+        "/proc/kcore",
+        "/proc/keys",
+        "/proc/latency_stats",
+        "/proc/sched_debug",
+        "/proc/scsi",
+        "/proc/timer_list",
+        "/proc/timer_stats",
+        "/sys/devices/virtual/powercap",
+        "/sys/firmware"
+      ],
+      "ReadonlyPaths": [
+        "/proc/bus",
+        "/proc/fs",
+        "/proc/irq",
+        "/proc/sys",
+        "/proc/sysrq-trigger"
+      ],
+      "Init": true
+    },
+    "Storage": {
+      "RootFS": {
+        "Snapshot": {
+          "Name": "overlayfs"
+        }
+      }
+    },
+    "Mounts": [
+      {
+        "Type": "volume",
+        "Name": "repeat-perf-1-rust-state",
+        "Source": "/var/lib/docker/volumes/repeat-perf-1-rust-state/_data",
+        "Destination": "/state",
+        "Driver": "local",
+        "Mode": "z",
+        "RW": true,
+        "Propagation": ""
+      }
+    ],
+    "Config": {
+      "Hostname": "865d5473b08d",
+      "Domainname": "",
+      "User": "",
+      "AttachStdin": false,
+      "AttachStdout": false,
+      "AttachStderr": false,
+      "Tty": false,
+      "OpenStdin": false,
+      "StdinOnce": false,
+      "Env": [
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "RBT_RUST_URL=http://127.0.0.1:20000"
+      ],
+      "Cmd": [
+        "/state/rocksdb",
+        "/state/server-info.pb",
+        "20000"
+      ],
+      "Healthcheck": {
+        "Test": [
+          "CMD",
+          "/usr/local/bin/hello-health",
+          "database-health"
+        ],
+        "Interval": 2000000000,
+        "Timeout": 4000000000,
+        "StartPeriod": 5000000000,
+        "Retries": 2
+      },
+      "Image": "sha256:1a73705b0771f9c861d9ba96509806849423a3d8bbff140b1261da76280460cd",
+      "Volumes": null,
+      "WorkingDir": "",
+      "Entrypoint": [
+        "/usr/local/bin/database"
+      ],
+      "Labels": {
+        "org.opencontainers.image.version": "24.04",
+        "owner": "tiny-repeat-20261020"
+      }
+    },
+    "NetworkSettings": {
+      "SandboxID": "",
+      "SandboxKey": "",
+      "Ports": {},
+      "Networks": {
+        "repeat-perf-1-rust-private": {
+          "IPAMConfig": null,
+          "Links": null,
+          "Aliases": [
+            "database"
+          ],
+          "DriverOpts": null,
+          "GwPriority": 0,
+          "NetworkID": "2b796160fa2903edc70eb65d82ec0b1de612a5d9b942e3dfa7cc159f302a59e4",
+          "EndpointID": "",
+          "Gateway": "",
+          "IPAddress": "",
+          "MacAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "DNSNames": [
+            "repeat-perf-1-rust-engine",
+            "database",
+            "865d5473b08d"
+          ]
+        }
+      }
+    },
+    "ImageManifestDescriptor": {
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "digest": "sha256:73473cc469f19b849de0401d4576a9ff07023e92953827efa8e89406b56d7c06",
+      "size": 1058,
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      }
+    }
+  },
+  {
+    "Id": "87fbee85cf046b52434bb7831f81e6325fadc4c8ed12e6b72d53fa1ea05780a3",
+    "Created": "2026-10-20T11:06:47.710259304Z",
+    "Path": "/usr/local/bin/hello",
+    "Args": [],
+    "State": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-20T11:11:00.239937285Z",
+      "FinishedAt": "2026-10-20T11:11:06.415225486Z",
+      "Health": {
+        "Status": "unhealthy",
+        "FailingStreak": 0,
+        "Log": [
+          {
+            "Start": "2026-10-20T11:10:45.825384741Z",
+            "End": "2026-10-20T11:10:45.971602433Z",
+            "ExitCode": 0,
+            "Output": "SERVING_ENGINE_BACKED\n"
+          },
+          {
+            "Start": "2026-10-20T11:10:47.972917351Z",
+            "End": "2026-10-20T11:10:48.037427748Z",
+            "ExitCode": 0,
+            "Output": "SERVING_ENGINE_BACKED\n"
+          },
+          {
+            "Start": "2026-10-20T11:10:50.038252325Z",
+            "End": "2026-10-20T11:10:50.11950202Z",
+            "ExitCode": 0,
+            "Output": "SERVING_ENGINE_BACKED\n"
+          },
+          {
+            "Start": "2026-10-20T11:10:52.120032886Z",
+            "End": "2026-10-20T11:10:52.220301491Z",
+            "ExitCode": 0,
+            "Output": "SERVING_ENGINE_BACKED\n"
+          },
+          {
+            "Start": "2026-10-20T11:11:05.401507808Z",
+            "End": "2026-10-20T11:11:05.443217386Z",
+            "ExitCode": 0,
+            "Output": "SERVING_ENGINE_BACKED\n"
+          }
+        ]
+      }
+    },
+    "Image": "sha256:3dcf9d9976f76a63b3a290ef6cf15329f1f6148692c72604e5dc797a237f7db4",
+    "ResolvConfPath": "/var/lib/docker/containers/87fbee85cf046b52434bb7831f81e6325fadc4c8ed12e6b72d53fa1ea05780a3/resolv.conf",
+    "HostnamePath": "/var/lib/docker/containers/87fbee85cf046b52434bb7831f81e6325fadc4c8ed12e6b72d53fa1ea05780a3/hostname",
+    "HostsPath": "/var/lib/docker/containers/87fbee85cf046b52434bb7831f81e6325fadc4c8ed12e6b72d53fa1ea05780a3/hosts",
+    "LogPath": "/var/lib/docker/containers/87fbee85cf046b52434bb7831f81e6325fadc4c8ed12e6b72d53fa1ea05780a3/87fbee85cf046b52434bb7831f81e6325fadc4c8ed12e6b72d53fa1ea05780a3-json.log",
+    "Name": "/repeat-perf-3-rust-app",
+    "RestartCount": 0,
+    "Driver": "overlayfs",
+    "Platform": "linux",
+    "MountLabel": "",
+    "ProcessLabel": "",
+    "AppArmorProfile": "docker-default",
+    "ExecIDs": null,
+    "HostConfig": {
+      "Binds": null,
+      "ContainerIDFile": "",
+      "LogConfig": {
+        "Type": "json-file",
+        "Config": {}
+      },
+      "NetworkMode": "repeat-perf-3-rust-private",
+      "PortBindings": {
+        "9990/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": "50052"
+          }
+        ]
+      },
+      "RestartPolicy": {
+        "Name": "no",
+        "MaximumRetryCount": 0
+      },
+      "AutoRemove": false,
+      "VolumeDriver": "",
+      "VolumesFrom": null,
+      "ConsoleSize": [
+        0,
+        0
+      ],
+      "CapAdd": null,
+      "CapDrop": null,
+      "CgroupnsMode": "private",
+      "Dns": null,
+      "DnsOptions": [],
+      "DnsSearch": [],
+      "ExtraHosts": null,
+      "GroupAdd": null,
+      "IpcMode": "private",
+      "Cgroup": "",
+      "Links": null,
+      "OomScoreAdj": 0,
+      "PidMode": "",
+      "Privileged": false,
+      "PublishAllPorts": false,
+      "ReadonlyRootfs": false,
+      "SecurityOpt": null,
+      "UTSMode": "",
+      "UsernsMode": "",
+      "ShmSize": 67108864,
+      "Runtime": "runc",
+      "Isolation": "",
+      "CpuShares": 0,
+      "Memory": 0,
+      "NanoCpus": 0,
+      "CgroupParent": "tinyrepeat.slice",
+      "BlkioWeight": 0,
+      "BlkioWeightDevice": [],
+      "BlkioDeviceReadBps": [],
+      "BlkioDeviceWriteBps": [],
+      "BlkioDeviceReadIOps": [],
+      "BlkioDeviceWriteIOps": [],
+      "CpuPeriod": 0,
+      "CpuQuota": 0,
+      "CpuRealtimePeriod": 0,
+      "CpuRealtimeRuntime": 0,
+      "CpusetCpus": "",
+      "CpusetMems": "",
+      "Devices": [],
+      "DeviceCgroupRules": null,
+      "DeviceRequests": null,
+      "MemoryReservation": 0,
+      "MemorySwap": 0,
+      "MemorySwappiness": null,
+      "OomKillDisable": null,
+      "PidsLimit": null,
+      "Ulimits": [],
+      "CpuCount": 0,
+      "CpuPercent": 0,
+      "IOMaximumIOps": 0,
+      "IOMaximumBandwidth": 0,
+      "MaskedPaths": [
+        "/proc/acpi",
+        "/proc/asound",
+        "/proc/interrupts",
+        "/proc/kcore",
+        "/proc/keys",
+        "/proc/latency_stats",
+        "/proc/sched_debug",
+        "/proc/scsi",
+        "/proc/timer_list",
+        "/proc/timer_stats",
+        "/sys/devices/virtual/powercap",
+        "/sys/firmware"
+      ],
+      "ReadonlyPaths": [
+        "/proc/bus",
+        "/proc/fs",
+        "/proc/irq",
+        "/proc/sys",
+        "/proc/sysrq-trigger"
+      ],
+      "Init": true
+    },
+    "Storage": {
+      "RootFS": {
+        "Snapshot": {
+          "Name": "overlayfs"
+        }
+      }
+    },
+    "Mounts": [],
+    "Config": {
+      "Hostname": "87fbee85cf04",
+      "Domainname": "",
+      "User": "",
+      "AttachStdin": false,
+      "AttachStdout": false,
+      "AttachStderr": false,
+      "ExposedPorts": {
+        "9990/tcp": {}
+      },
+      "Tty": false,
+      "OpenStdin": false,
+      "StdinOnce": false,
+      "Env": [
+        "RBT_NAME=hello-image-qualified",
+        "RBT_RUST_DATABASE_URL=http://database:20000",
+        "RBT_RUST_LISTEN_ADDR=0.0.0.0:9990",
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "RBT_RUST_URL=http://127.0.0.1:9990"
+      ],
+      "Cmd": null,
+      "Healthcheck": {
+        "Test": [
+          "CMD",
+          "/usr/local/bin/hello-health",
+          "health"
+        ],
+        "Interval": 2000000000,
+        "Timeout": 4000000000,
+        "StartPeriod": 5000000000,
+        "Retries": 2
+      },
+      "Image": "sha256:3dcf9d9976f76a63b3a290ef6cf15329f1f6148692c72604e5dc797a237f7db4",
+      "Volumes": null,
+      "WorkingDir": "",
+      "Entrypoint": [
+        "/usr/local/bin/hello"
+      ],
+      "Labels": {
+        "org.opencontainers.image.revision": "d3b0642d0cb9962c839cfb57ebfd33f2a3cca389",
+        "org.opencontainers.image.version": "24.04",
+        "owner": "tiny-repeat-20261020"
+      }
+    },
+    "NetworkSettings": {
+      "SandboxID": "",
+      "SandboxKey": "",
+      "Ports": {},
+      "Networks": {
+        "repeat-perf-3-rust-private": {
+          "IPAMConfig": null,
+          "Links": null,
+          "Aliases": null,
+          "DriverOpts": null,
+          "GwPriority": 0,
+          "NetworkID": "d45532843ade94a1f1b1df6de36cce5281d236f356905a200fed83535dc34958",
+          "EndpointID": "",
+          "Gateway": "",
+          "IPAddress": "",
+          "MacAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "DNSNames": [
+            "repeat-perf-3-rust-app",
+            "87fbee85cf04"
+          ]
+        },
+        "tinyrepeat-app-ingress": {
+          "IPAMConfig": {
+            "IPv4Address": "",
+            "IPv6Address": ""
+          },
+          "Links": null,
+          "Aliases": [],
+          "DriverOpts": {},
+          "GwPriority": 0,
+          "NetworkID": "c59bf8145c9354dae42cee3fdc34b2c0cc54bc6f920f7622e4aa5352c98cc4e0",
+          "EndpointID": "",
+          "Gateway": "",
+          "IPAddress": "",
+          "MacAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "DNSNames": [
+            "repeat-perf-3-rust-app",
+            "87fbee85cf04"
+          ]
+        }
+      }
+    },
+    "ImageManifestDescriptor": {
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "digest": "sha256:5635a4c93885008e637aafde171b77293fd1f4aeb4d1266e2db254fab9fb6d45",
+      "size": 1053,
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      }
+    }
+  },
+  {
+    "Id": "8a5a6a4fd4fc91ee4201c2267773178c1f3c43ba7ae5daae544089cb13a6617e",
+    "Created": "2026-10-20T10:36:15.20909982Z",
+    "Path": "/usr/local/bin/database",
+    "Args": [
+      "/state/rocksdb",
+      "/state/server-info.pb",
+      "20000"
+    ],
+    "State": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-20T10:36:34.472736823Z",
+      "FinishedAt": "2026-10-20T10:43:13.634669167Z",
+      "Health": {
+        "Status": "unhealthy",
+        "FailingStreak": 0,
+        "Log": [
+          {
+            "Start": "2026-10-20T10:43:04.780361915Z",
+            "End": "2026-10-20T10:43:04.916251144Z",
+            "ExitCode": 0,
+            "Output": "DATABASE_READABLE\n"
+          },
+          {
+            "Start": "2026-10-20T10:43:06.917367879Z",
+            "End": "2026-10-20T10:43:07.012255654Z",
+            "ExitCode": 0,
+            "Output": "DATABASE_READABLE\n"
+          },
+          {
+            "Start": "2026-10-20T10:43:09.013126867Z",
+            "End": "2026-10-20T10:43:09.116248513Z",
+            "ExitCode": 0,
+            "Output": "DATABASE_READABLE\n"
+          },
+          {
+            "Start": "2026-10-20T10:43:11.117580645Z",
+            "End": "2026-10-20T10:43:11.202579931Z",
+            "ExitCode": 0,
+            "Output": "DATABASE_READABLE\n"
+          },
+          {
+            "Start": "2026-10-20T10:43:13.20332436Z",
+            "End": "2026-10-20T10:43:13.270283755Z",
+            "ExitCode": 0,
+            "Output": "DATABASE_READABLE\n"
+          }
+        ]
+      }
+    },
+    "Image": "sha256:1a73705b0771f9c861d9ba96509806849423a3d8bbff140b1261da76280460cd",
+    "ResolvConfPath": "/var/lib/docker/containers/8a5a6a4fd4fc91ee4201c2267773178c1f3c43ba7ae5daae544089cb13a6617e/resolv.conf",
+    "HostnamePath": "/var/lib/docker/containers/8a5a6a4fd4fc91ee4201c2267773178c1f3c43ba7ae5daae544089cb13a6617e/hostname",
+    "HostsPath": "/var/lib/docker/containers/8a5a6a4fd4fc91ee4201c2267773178c1f3c43ba7ae5daae544089cb13a6617e/hosts",
+    "LogPath": "/var/lib/docker/containers/8a5a6a4fd4fc91ee4201c2267773178c1f3c43ba7ae5daae544089cb13a6617e/8a5a6a4fd4fc91ee4201c2267773178c1f3c43ba7ae5daae544089cb13a6617e-json.log",
+    "Name": "/repeat-qualification-rust-engine",
+    "RestartCount": 0,
+    "Driver": "overlayfs",
+    "Platform": "linux",
+    "MountLabel": "",
+    "ProcessLabel": "",
+    "AppArmorProfile": "docker-default",
+    "ExecIDs": null,
+    "HostConfig": {
+      "Binds": [
+        "repeat-qualification-rust-state:/state"
+      ],
+      "ContainerIDFile": "",
+      "LogConfig": {
+        "Type": "json-file",
+        "Config": {}
+      },
+      "NetworkMode": "repeat-qualification-rust-private",
+      "PortBindings": {},
+      "RestartPolicy": {
+        "Name": "no",
+        "MaximumRetryCount": 0
+      },
+      "AutoRemove": false,
+      "VolumeDriver": "",
+      "VolumesFrom": null,
+      "ConsoleSize": [
+        0,
+        0
+      ],
+      "CapAdd": null,
+      "CapDrop": null,
+      "CgroupnsMode": "private",
+      "Dns": null,
+      "DnsOptions": [],
+      "DnsSearch": [],
+      "ExtraHosts": null,
+      "GroupAdd": null,
+      "IpcMode": "private",
+      "Cgroup": "",
+      "Links": null,
+      "OomScoreAdj": 0,
+      "PidMode": "",
+      "Privileged": false,
+      "PublishAllPorts": false,
+      "ReadonlyRootfs": false,
+      "SecurityOpt": null,
+      "UTSMode": "",
+      "UsernsMode": "",
+      "ShmSize": 67108864,
+      "Runtime": "runc",
+      "Isolation": "",
+      "CpuShares": 0,
+      "Memory": 0,
+      "NanoCpus": 0,
+      "CgroupParent": "tinyrepeat.slice",
+      "BlkioWeight": 0,
+      "BlkioWeightDevice": [],
+      "BlkioDeviceReadBps": [],
+      "BlkioDeviceWriteBps": [],
+      "BlkioDeviceReadIOps": [],
+      "BlkioDeviceWriteIOps": [],
+      "CpuPeriod": 0,
+      "CpuQuota": 0,
+      "CpuRealtimePeriod": 0,
+      "CpuRealtimeRuntime": 0,
+      "CpusetCpus": "",
+      "CpusetMems": "",
+      "Devices": [],
+      "DeviceCgroupRules": null,
+      "DeviceRequests": null,
+      "MemoryReservation": 0,
+      "MemorySwap": 0,
+      "MemorySwappiness": null,
+      "OomKillDisable": null,
+      "PidsLimit": null,
+      "Ulimits": [],
+      "CpuCount": 0,
+      "CpuPercent": 0,
+      "IOMaximumIOps": 0,
+      "IOMaximumBandwidth": 0,
+      "MaskedPaths": [
+        "/proc/acpi",
+        "/proc/asound",
+        "/proc/interrupts",
+        "/proc/kcore",
+        "/proc/keys",
+        "/proc/latency_stats",
+        "/proc/sched_debug",
+        "/proc/scsi",
+        "/proc/timer_list",
+        "/proc/timer_stats",
+        "/sys/devices/virtual/powercap",
+        "/sys/firmware"
+      ],
+      "ReadonlyPaths": [
+        "/proc/bus",
+        "/proc/fs",
+        "/proc/irq",
+        "/proc/sys",
+        "/proc/sysrq-trigger"
+      ],
+      "Init": true
+    },
+    "Storage": {
+      "RootFS": {
+        "Snapshot": {
+          "Name": "overlayfs"
+        }
+      }
+    },
+    "Mounts": [
+      {
+        "Type": "volume",
+        "Name": "repeat-qualification-rust-state",
+        "Source": "/var/lib/docker/volumes/repeat-qualification-rust-state/_data",
+        "Destination": "/state",
+        "Driver": "local",
+        "Mode": "z",
+        "RW": true,
+        "Propagation": ""
+      }
+    ],
+    "Config": {
+      "Hostname": "8a5a6a4fd4fc",
+      "Domainname": "",
+      "User": "",
+      "AttachStdin": false,
+      "AttachStdout": false,
+      "AttachStderr": false,
+      "Tty": false,
+      "OpenStdin": false,
+      "StdinOnce": false,
+      "Env": [
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "RBT_RUST_URL=http://127.0.0.1:20000"
+      ],
+      "Cmd": [
+        "/state/rocksdb",
+        "/state/server-info.pb",
+        "20000"
+      ],
+      "Healthcheck": {
+        "Test": [
+          "CMD",
+          "/usr/local/bin/hello-health",
+          "database-health"
+        ],
+        "Interval": 2000000000,
+        "Timeout": 4000000000,
+        "StartPeriod": 5000000000,
+        "Retries": 2
+      },
+      "Image": "sha256:1a73705b0771f9c861d9ba96509806849423a3d8bbff140b1261da76280460cd",
+      "Volumes": null,
+      "WorkingDir": "",
+      "Entrypoint": [
+        "/usr/local/bin/database"
+      ],
+      "Labels": {
+        "org.opencontainers.image.version": "24.04",
+        "owner": "tiny-repeat-20261020"
+      }
+    },
+    "NetworkSettings": {
+      "SandboxID": "",
+      "SandboxKey": "",
+      "Ports": {},
+      "Networks": {
+        "repeat-qualification-rust-private": {
+          "IPAMConfig": null,
+          "Links": null,
+          "Aliases": [
+            "database"
+          ],
+          "DriverOpts": null,
+          "GwPriority": 0,
+          "NetworkID": "c5bc8148bb908ddff7377704f2079c0d46bd1f2ce3b847efacb59f534d5c1f74",
+          "EndpointID": "",
+          "Gateway": "",
+          "IPAddress": "",
+          "MacAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "DNSNames": [
+            "repeat-qualification-rust-engine",
+            "database",
+            "8a5a6a4fd4fc"
+          ]
+        }
+      }
+    },
+    "ImageManifestDescriptor": {
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "digest": "sha256:73473cc469f19b849de0401d4576a9ff07023e92953827efa8e89406b56d7c06",
+      "size": 1058,
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      }
+    }
+  },
+  {
+    "Id": "a8c840e95cb9c17aa1906afd93c7cb03321849a76383366c5485f08a48c06c88",
+    "Created": "2026-10-20T10:49:49.806115478Z",
+    "Path": "/usr/local/bin/hello",
+    "Args": [
+      "--server-info",
+      "/state/server-info.pb"
+    ],
+    "State": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-20T10:49:49.872698338Z",
+      "FinishedAt": "2026-10-20T10:49:50.014507308Z",
+      "Health": {
+        "Status": "unhealthy",
+        "FailingStreak": 0,
+        "Log": []
+      }
+    },
+    "Image": "sha256:3dcf9d9976f76a63b3a290ef6cf15329f1f6148692c72604e5dc797a237f7db4",
+    "ResolvConfPath": "/var/lib/docker/containers/a8c840e95cb9c17aa1906afd93c7cb03321849a76383366c5485f08a48c06c88/resolv.conf",
+    "HostnamePath": "/var/lib/docker/containers/a8c840e95cb9c17aa1906afd93c7cb03321849a76383366c5485f08a48c06c88/hostname",
+    "HostsPath": "/var/lib/docker/containers/a8c840e95cb9c17aa1906afd93c7cb03321849a76383366c5485f08a48c06c88/hosts",
+    "LogPath": "/var/lib/docker/containers/a8c840e95cb9c17aa1906afd93c7cb03321849a76383366c5485f08a48c06c88/a8c840e95cb9c17aa1906afd93c7cb03321849a76383366c5485f08a48c06c88-json.log",
+    "Name": "/repeat-perf-1-rust-config",
+    "RestartCount": 0,
+    "Driver": "overlayfs",
+    "Platform": "linux",
+    "MountLabel": "",
+    "ProcessLabel": "",
+    "AppArmorProfile": "docker-default",
+    "ExecIDs": null,
+    "HostConfig": {
+      "Binds": [
+        "repeat-perf-1-rust-state:/state"
+      ],
+      "ContainerIDFile": "",
+      "LogConfig": {
+        "Type": "json-file",
+        "Config": {}
+      },
+      "NetworkMode": "repeat-perf-1-rust-private",
+      "PortBindings": {},
+      "RestartPolicy": {
+        "Name": "no",
+        "MaximumRetryCount": 0
+      },
+      "AutoRemove": false,
+      "VolumeDriver": "",
+      "VolumesFrom": null,
+      "ConsoleSize": [
+        0,
+        0
+      ],
+      "CapAdd": null,
+      "CapDrop": null,
+      "CgroupnsMode": "private",
+      "Dns": null,
+      "DnsOptions": [],
+      "DnsSearch": [],
+      "ExtraHosts": null,
+      "GroupAdd": null,
+      "IpcMode": "private",
+      "Cgroup": "",
+      "Links": null,
+      "OomScoreAdj": 0,
+      "PidMode": "",
+      "Privileged": false,
+      "PublishAllPorts": false,
+      "ReadonlyRootfs": false,
+      "SecurityOpt": null,
+      "UTSMode": "",
+      "UsernsMode": "",
+      "ShmSize": 67108864,
+      "Runtime": "runc",
+      "Isolation": "",
+      "CpuShares": 0,
+      "Memory": 0,
+      "NanoCpus": 0,
+      "CgroupParent": "tinyrepeat.slice",
+      "BlkioWeight": 0,
+      "BlkioWeightDevice": [],
+      "BlkioDeviceReadBps": [],
+      "BlkioDeviceWriteBps": [],
+      "BlkioDeviceReadIOps": [],
+      "BlkioDeviceWriteIOps": [],
+      "CpuPeriod": 0,
+      "CpuQuota": 0,
+      "CpuRealtimePeriod": 0,
+      "CpuRealtimeRuntime": 0,
+      "CpusetCpus": "",
+      "CpusetMems": "",
+      "Devices": [],
+      "DeviceCgroupRules": null,
+      "DeviceRequests": null,
+      "MemoryReservation": 0,
+      "MemorySwap": 0,
+      "MemorySwappiness": null,
+      "OomKillDisable": null,
+      "PidsLimit": null,
+      "Ulimits": [],
+      "CpuCount": 0,
+      "CpuPercent": 0,
+      "IOMaximumIOps": 0,
+      "IOMaximumBandwidth": 0,
+      "MaskedPaths": [
+        "/proc/acpi",
+        "/proc/asound",
+        "/proc/interrupts",
+        "/proc/kcore",
+        "/proc/keys",
+        "/proc/latency_stats",
+        "/proc/sched_debug",
+        "/proc/scsi",
+        "/proc/timer_list",
+        "/proc/timer_stats",
+        "/sys/devices/virtual/powercap",
+        "/sys/firmware"
+      ],
+      "ReadonlyPaths": [
+        "/proc/bus",
+        "/proc/fs",
+        "/proc/irq",
+        "/proc/sys",
+        "/proc/sysrq-trigger"
+      ],
+      "Init": true
+    },
+    "Storage": {
+      "RootFS": {
+        "Snapshot": {
+          "Name": "overlayfs"
+        }
+      }
+    },
+    "Mounts": [
+      {
+        "Type": "volume",
+        "Name": "repeat-perf-1-rust-state",
+        "Source": "/var/lib/docker/volumes/repeat-perf-1-rust-state/_data",
+        "Destination": "/state",
+        "Driver": "local",
+        "Mode": "z",
+        "RW": true,
+        "Propagation": ""
+      }
+    ],
+    "Config": {
+      "Hostname": "a8c840e95cb9",
+      "Domainname": "",
+      "User": "",
+      "AttachStdin": false,
+      "AttachStdout": false,
+      "AttachStderr": false,
+      "Tty": false,
+      "OpenStdin": false,
+      "StdinOnce": false,
+      "Env": [
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "RBT_RUST_URL=http://127.0.0.1:9990"
+      ],
+      "Cmd": [
+        "--server-info",
+        "/state/server-info.pb"
+      ],
+      "Healthcheck": {
+        "Test": [
+          "CMD",
+          "/usr/local/bin/hello-health",
+          "health"
+        ],
+        "Interval": 2000000000,
+        "Timeout": 4000000000,
+        "StartPeriod": 5000000000,
+        "Retries": 2
+      },
+      "Image": "sha256:3dcf9d9976f76a63b3a290ef6cf15329f1f6148692c72604e5dc797a237f7db4",
+      "Volumes": null,
+      "WorkingDir": "",
+      "Entrypoint": [
+        "/usr/local/bin/hello"
+      ],
+      "Labels": {
+        "org.opencontainers.image.revision": "d3b0642d0cb9962c839cfb57ebfd33f2a3cca389",
+        "org.opencontainers.image.version": "24.04",
+        "owner": "tiny-repeat-20261020"
+      }
+    },
+    "NetworkSettings": {
+      "SandboxID": "",
+      "SandboxKey": "",
+      "Ports": {},
+      "Networks": {
+        "repeat-perf-1-rust-private": {
+          "IPAMConfig": null,
+          "Links": null,
+          "Aliases": null,
+          "DriverOpts": null,
+          "GwPriority": 0,
+          "NetworkID": "2b796160fa2903edc70eb65d82ec0b1de612a5d9b942e3dfa7cc159f302a59e4",
+          "EndpointID": "",
+          "Gateway": "",
+          "IPAddress": "",
+          "MacAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "DNSNames": [
+            "repeat-perf-1-rust-config",
+            "a8c840e95cb9"
+          ]
+        }
+      }
+    },
+    "ImageManifestDescriptor": {
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "digest": "sha256:5635a4c93885008e637aafde171b77293fd1f4aeb4d1266e2db254fab9fb6d45",
+      "size": 1053,
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      }
+    }
+  },
+  {
+    "Id": "d63bb36e3c7c0326b1ff3711fcbdf72559d22121d121be67bfe5b840f67cb784",
+    "Created": "2026-10-20T11:02:06.649428778Z",
+    "Path": "/usr/local/bin/hello",
+    "Args": [],
+    "State": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-20T11:06:18.712464459Z",
+      "FinishedAt": "2026-10-20T11:06:24.824301181Z",
+      "Health": {
+        "Status": "unhealthy",
+        "FailingStreak": 0,
+        "Log": [
+          {
+            "Start": "2026-10-20T11:06:03.521177897Z",
+            "End": "2026-10-20T11:06:03.662262201Z",
+            "ExitCode": 0,
+            "Output": "SERVING_ENGINE_BACKED\n"
+          },
+          {
+            "Start": "2026-10-20T11:06:05.662721244Z",
+            "End": "2026-10-20T11:06:05.7452703Z",
+            "ExitCode": 0,
+            "Output": "SERVING_ENGINE_BACKED\n"
+          },
+          {
+            "Start": "2026-10-20T11:06:07.746058943Z",
+            "End": "2026-10-20T11:06:07.838220809Z",
+            "ExitCode": 0,
+            "Output": "SERVING_ENGINE_BACKED\n"
+          },
+          {
+            "Start": "2026-10-20T11:06:09.841171041Z",
+            "End": "2026-10-20T11:06:10.07043133Z",
+            "ExitCode": 0,
+            "Output": "SERVING_ENGINE_BACKED\n"
+          },
+          {
+            "Start": "2026-10-20T11:06:23.915878996Z",
+            "End": "2026-10-20T11:06:23.999947872Z",
+            "ExitCode": 0,
+            "Output": "SERVING_ENGINE_BACKED\n"
+          }
+        ]
+      }
+    },
+    "Image": "sha256:3dcf9d9976f76a63b3a290ef6cf15329f1f6148692c72604e5dc797a237f7db4",
+    "ResolvConfPath": "/var/lib/docker/containers/d63bb36e3c7c0326b1ff3711fcbdf72559d22121d121be67bfe5b840f67cb784/resolv.conf",
+    "HostnamePath": "/var/lib/docker/containers/d63bb36e3c7c0326b1ff3711fcbdf72559d22121d121be67bfe5b840f67cb784/hostname",
+    "HostsPath": "/var/lib/docker/containers/d63bb36e3c7c0326b1ff3711fcbdf72559d22121d121be67bfe5b840f67cb784/hosts",
+    "LogPath": "/var/lib/docker/containers/d63bb36e3c7c0326b1ff3711fcbdf72559d22121d121be67bfe5b840f67cb784/d63bb36e3c7c0326b1ff3711fcbdf72559d22121d121be67bfe5b840f67cb784-json.log",
+    "Name": "/repeat-perf-2-rust-app",
+    "RestartCount": 0,
+    "Driver": "overlayfs",
+    "Platform": "linux",
+    "MountLabel": "",
+    "ProcessLabel": "",
+    "AppArmorProfile": "docker-default",
+    "ExecIDs": null,
+    "HostConfig": {
+      "Binds": null,
+      "ContainerIDFile": "",
+      "LogConfig": {
+        "Type": "json-file",
+        "Config": {}
+      },
+      "NetworkMode": "repeat-perf-2-rust-private",
+      "PortBindings": {
+        "9990/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": "50052"
+          }
+        ]
+      },
+      "RestartPolicy": {
+        "Name": "no",
+        "MaximumRetryCount": 0
+      },
+      "AutoRemove": false,
+      "VolumeDriver": "",
+      "VolumesFrom": null,
+      "ConsoleSize": [
+        0,
+        0
+      ],
+      "CapAdd": null,
+      "CapDrop": null,
+      "CgroupnsMode": "private",
+      "Dns": null,
+      "DnsOptions": [],
+      "DnsSearch": [],
+      "ExtraHosts": null,
+      "GroupAdd": null,
+      "IpcMode": "private",
+      "Cgroup": "",
+      "Links": null,
+      "OomScoreAdj": 0,
+      "PidMode": "",
+      "Privileged": false,
+      "PublishAllPorts": false,
+      "ReadonlyRootfs": false,
+      "SecurityOpt": null,
+      "UTSMode": "",
+      "UsernsMode": "",
+      "ShmSize": 67108864,
+      "Runtime": "runc",
+      "Isolation": "",
+      "CpuShares": 0,
+      "Memory": 0,
+      "NanoCpus": 0,
+      "CgroupParent": "tinyrepeat.slice",
+      "BlkioWeight": 0,
+      "BlkioWeightDevice": [],
+      "BlkioDeviceReadBps": [],
+      "BlkioDeviceWriteBps": [],
+      "BlkioDeviceReadIOps": [],
+      "BlkioDeviceWriteIOps": [],
+      "CpuPeriod": 0,
+      "CpuQuota": 0,
+      "CpuRealtimePeriod": 0,
+      "CpuRealtimeRuntime": 0,
+      "CpusetCpus": "",
+      "CpusetMems": "",
+      "Devices": [],
+      "DeviceCgroupRules": null,
+      "DeviceRequests": null,
+      "MemoryReservation": 0,
+      "MemorySwap": 0,
+      "MemorySwappiness": null,
+      "OomKillDisable": null,
+      "PidsLimit": null,
+      "Ulimits": [],
+      "CpuCount": 0,
+      "CpuPercent": 0,
+      "IOMaximumIOps": 0,
+      "IOMaximumBandwidth": 0,
+      "MaskedPaths": [
+        "/proc/acpi",
+        "/proc/asound",
+        "/proc/interrupts",
+        "/proc/kcore",
+        "/proc/keys",
+        "/proc/latency_stats",
+        "/proc/sched_debug",
+        "/proc/scsi",
+        "/proc/timer_list",
+        "/proc/timer_stats",
+        "/sys/devices/virtual/powercap",
+        "/sys/firmware"
+      ],
+      "ReadonlyPaths": [
+        "/proc/bus",
+        "/proc/fs",
+        "/proc/irq",
+        "/proc/sys",
+        "/proc/sysrq-trigger"
+      ],
+      "Init": true
+    },
+    "Storage": {
+      "RootFS": {
+        "Snapshot": {
+          "Name": "overlayfs"
+        }
+      }
+    },
+    "Mounts": [],
+    "Config": {
+      "Hostname": "d63bb36e3c7c",
+      "Domainname": "",
+      "User": "",
+      "AttachStdin": false,
+      "AttachStdout": false,
+      "AttachStderr": false,
+      "ExposedPorts": {
+        "9990/tcp": {}
+      },
+      "Tty": false,
+      "OpenStdin": false,
+      "StdinOnce": false,
+      "Env": [
+        "RBT_NAME=hello-image-qualified",
+        "RBT_RUST_DATABASE_URL=http://database:20000",
+        "RBT_RUST_LISTEN_ADDR=0.0.0.0:9990",
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "RBT_RUST_URL=http://127.0.0.1:9990"
+      ],
+      "Cmd": null,
+      "Healthcheck": {
+        "Test": [
+          "CMD",
+          "/usr/local/bin/hello-health",
+          "health"
+        ],
+        "Interval": 2000000000,
+        "Timeout": 4000000000,
+        "StartPeriod": 5000000000,
+        "Retries": 2
+      },
+      "Image": "sha256:3dcf9d9976f76a63b3a290ef6cf15329f1f6148692c72604e5dc797a237f7db4",
+      "Volumes": null,
+      "WorkingDir": "",
+      "Entrypoint": [
+        "/usr/local/bin/hello"
+      ],
+      "Labels": {
+        "org.opencontainers.image.revision": "d3b0642d0cb9962c839cfb57ebfd33f2a3cca389",
+        "org.opencontainers.image.version": "24.04",
+        "owner": "tiny-repeat-20261020"
+      }
+    },
+    "NetworkSettings": {
+      "SandboxID": "",
+      "SandboxKey": "",
+      "Ports": {},
+      "Networks": {
+        "repeat-perf-2-rust-private": {
+          "IPAMConfig": null,
+          "Links": null,
+          "Aliases": null,
+          "DriverOpts": null,
+          "GwPriority": 0,
+          "NetworkID": "f3e4d90f4a6f475db302349a41a66eb5f82ad00053e42108e76981dfb349240e",
+          "EndpointID": "",
+          "Gateway": "",
+          "IPAddress": "",
+          "MacAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "DNSNames": [
+            "repeat-perf-2-rust-app",
+            "d63bb36e3c7c"
+          ]
+        },
+        "tinyrepeat-app-ingress": {
+          "IPAMConfig": {
+            "IPv4Address": "",
+            "IPv6Address": ""
+          },
+          "Links": null,
+          "Aliases": [],
+          "DriverOpts": {},
+          "GwPriority": 0,
+          "NetworkID": "c59bf8145c9354dae42cee3fdc34b2c0cc54bc6f920f7622e4aa5352c98cc4e0",
+          "EndpointID": "",
+          "Gateway": "",
+          "IPAddress": "",
+          "MacAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "DNSNames": [
+            "repeat-perf-2-rust-app",
+            "d63bb36e3c7c"
+          ]
+        }
+      }
+    },
+    "ImageManifestDescriptor": {
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "digest": "sha256:5635a4c93885008e637aafde171b77293fd1f4aeb4d1266e2db254fab9fb6d45",
+      "size": 1053,
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      }
+    }
+  },
+  {
+    "Id": "fdb61952ade6963f3e7190418d209d8322353db5c593efeae529318e2f91a4c1",
+    "Created": "2026-10-20T11:01:52.645833538Z",
+    "Path": "/usr/local/bin/hello",
+    "Args": [
+      "--server-info",
+      "/state/server-info.pb"
+    ],
+    "State": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-20T11:01:52.715511795Z",
+      "FinishedAt": "2026-10-20T11:01:52.879917088Z",
+      "Health": {
+        "Status": "unhealthy",
+        "FailingStreak": 0,
+        "Log": []
+      }
+    },
+    "Image": "sha256:3dcf9d9976f76a63b3a290ef6cf15329f1f6148692c72604e5dc797a237f7db4",
+    "ResolvConfPath": "/var/lib/docker/containers/fdb61952ade6963f3e7190418d209d8322353db5c593efeae529318e2f91a4c1/resolv.conf",
+    "HostnamePath": "/var/lib/docker/containers/fdb61952ade6963f3e7190418d209d8322353db5c593efeae529318e2f91a4c1/hostname",
+    "HostsPath": "/var/lib/docker/containers/fdb61952ade6963f3e7190418d209d8322353db5c593efeae529318e2f91a4c1/hosts",
+    "LogPath": "/var/lib/docker/containers/fdb61952ade6963f3e7190418d209d8322353db5c593efeae529318e2f91a4c1/fdb61952ade6963f3e7190418d209d8322353db5c593efeae529318e2f91a4c1-json.log",
+    "Name": "/repeat-perf-2-rust-config",
+    "RestartCount": 0,
+    "Driver": "overlayfs",
+    "Platform": "linux",
+    "MountLabel": "",
+    "ProcessLabel": "",
+    "AppArmorProfile": "docker-default",
+    "ExecIDs": null,
+    "HostConfig": {
+      "Binds": [
+        "repeat-perf-2-rust-state:/state"
+      ],
+      "ContainerIDFile": "",
+      "LogConfig": {
+        "Type": "json-file",
+        "Config": {}
+      },
+      "NetworkMode": "repeat-perf-2-rust-private",
+      "PortBindings": {},
+      "RestartPolicy": {
+        "Name": "no",
+        "MaximumRetryCount": 0
+      },
+      "AutoRemove": false,
+      "VolumeDriver": "",
+      "VolumesFrom": null,
+      "ConsoleSize": [
+        0,
+        0
+      ],
+      "CapAdd": null,
+      "CapDrop": null,
+      "CgroupnsMode": "private",
+      "Dns": null,
+      "DnsOptions": [],
+      "DnsSearch": [],
+      "ExtraHosts": null,
+      "GroupAdd": null,
+      "IpcMode": "private",
+      "Cgroup": "",
+      "Links": null,
+      "OomScoreAdj": 0,
+      "PidMode": "",
+      "Privileged": false,
+      "PublishAllPorts": false,
+      "ReadonlyRootfs": false,
+      "SecurityOpt": null,
+      "UTSMode": "",
+      "UsernsMode": "",
+      "ShmSize": 67108864,
+      "Runtime": "runc",
+      "Isolation": "",
+      "CpuShares": 0,
+      "Memory": 0,
+      "NanoCpus": 0,
+      "CgroupParent": "tinyrepeat.slice",
+      "BlkioWeight": 0,
+      "BlkioWeightDevice": [],
+      "BlkioDeviceReadBps": [],
+      "BlkioDeviceWriteBps": [],
+      "BlkioDeviceReadIOps": [],
+      "BlkioDeviceWriteIOps": [],
+      "CpuPeriod": 0,
+      "CpuQuota": 0,
+      "CpuRealtimePeriod": 0,
+      "CpuRealtimeRuntime": 0,
+      "CpusetCpus": "",
+      "CpusetMems": "",
+      "Devices": [],
+      "DeviceCgroupRules": null,
+      "DeviceRequests": null,
+      "MemoryReservation": 0,
+      "MemorySwap": 0,
+      "MemorySwappiness": null,
+      "OomKillDisable": null,
+      "PidsLimit": null,
+      "Ulimits": [],
+      "CpuCount": 0,
+      "CpuPercent": 0,
+      "IOMaximumIOps": 0,
+      "IOMaximumBandwidth": 0,
+      "MaskedPaths": [
+        "/proc/acpi",
+        "/proc/asound",
+        "/proc/interrupts",
+        "/proc/kcore",
+        "/proc/keys",
+        "/proc/latency_stats",
+        "/proc/sched_debug",
+        "/proc/scsi",
+        "/proc/timer_list",
+        "/proc/timer_stats",
+        "/sys/devices/virtual/powercap",
+        "/sys/firmware"
+      ],
+      "ReadonlyPaths": [
+        "/proc/bus",
+        "/proc/fs",
+        "/proc/irq",
+        "/proc/sys",
+        "/proc/sysrq-trigger"
+      ],
+      "Init": true
+    },
+    "Storage": {
+      "RootFS": {
+        "Snapshot": {
+          "Name": "overlayfs"
+        }
+      }
+    },
+    "Mounts": [
+      {
+        "Type": "volume",
+        "Name": "repeat-perf-2-rust-state",
+        "Source": "/var/lib/docker/volumes/repeat-perf-2-rust-state/_data",
+        "Destination": "/state",
+        "Driver": "local",
+        "Mode": "z",
+        "RW": true,
+        "Propagation": ""
+      }
+    ],
+    "Config": {
+      "Hostname": "fdb61952ade6",
+      "Domainname": "",
+      "User": "",
+      "AttachStdin": false,
+      "AttachStdout": false,
+      "AttachStderr": false,
+      "Tty": false,
+      "OpenStdin": false,
+      "StdinOnce": false,
+      "Env": [
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "RBT_RUST_URL=http://127.0.0.1:9990"
+      ],
+      "Cmd": [
+        "--server-info",
+        "/state/server-info.pb"
+      ],
+      "Healthcheck": {
+        "Test": [
+          "CMD",
+          "/usr/local/bin/hello-health",
+          "health"
+        ],
+        "Interval": 2000000000,
+        "Timeout": 4000000000,
+        "StartPeriod": 5000000000,
+        "Retries": 2
+      },
+      "Image": "sha256:3dcf9d9976f76a63b3a290ef6cf15329f1f6148692c72604e5dc797a237f7db4",
+      "Volumes": null,
+      "WorkingDir": "",
+      "Entrypoint": [
+        "/usr/local/bin/hello"
+      ],
+      "Labels": {
+        "org.opencontainers.image.revision": "d3b0642d0cb9962c839cfb57ebfd33f2a3cca389",
+        "org.opencontainers.image.version": "24.04",
+        "owner": "tiny-repeat-20261020"
+      }
+    },
+    "NetworkSettings": {
+      "SandboxID": "",
+      "SandboxKey": "",
+      "Ports": {},
+      "Networks": {
+        "repeat-perf-2-rust-private": {
+          "IPAMConfig": null,
+          "Links": null,
+          "Aliases": null,
+          "DriverOpts": null,
+          "GwPriority": 0,
+          "NetworkID": "f3e4d90f4a6f475db302349a41a66eb5f82ad00053e42108e76981dfb349240e",
+          "EndpointID": "",
+          "Gateway": "",
+          "IPAddress": "",
+          "MacAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "DNSNames": [
+            "repeat-perf-2-rust-config",
+            "fdb61952ade6"
+          ]
+        }
+      }
+    },
+    "ImageManifestDescriptor": {
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "digest": "sha256:5635a4c93885008e637aafde171b77293fd1f4aeb4d1266e2db254fab9fb6d45",
+      "size": 1053,
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      }
+    }
+  },
+  {
+    "Id": "fe355b1a2125986d947e79e92cf4249d5d361128e35ade54ea6fca169ac07333",
+    "Created": "2026-10-20T11:01:58.496912024Z",
+    "Path": "/usr/local/bin/database",
+    "Args": [
+      "/state/rocksdb",
+      "/state/server-info.pb",
+      "20000"
+    ],
+    "State": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-20T11:06:16.937012206Z",
+      "FinishedAt": "2026-10-20T11:06:28.187612038Z",
+      "Health": {
+        "Status": "unhealthy",
+        "FailingStreak": 0,
+        "Log": [
+          {
+            "Start": "2026-10-20T11:06:12.022736516Z",
+            "End": "2026-10-20T11:06:12.070932223Z",
+            "ExitCode": 0,
+            "Output": "DATABASE_READABLE\n"
+          },
+          {
+            "Start": "2026-10-20T11:06:14.071844186Z",
+            "End": "2026-10-20T11:06:14.145640561Z",
+            "ExitCode": 0,
+            "Output": "DATABASE_READABLE\n"
+          },
+          {
+            "Start": "2026-10-20T11:06:22.068610546Z",
+            "End": "2026-10-20T11:06:22.141456202Z",
+            "ExitCode": 0,
+            "Output": "DATABASE_READABLE\n"
+          },
+          {
+            "Start": "2026-10-20T11:06:24.142376934Z",
+            "End": "2026-10-20T11:06:24.217854931Z",
+            "ExitCode": 0,
+            "Output": "DATABASE_READABLE\n"
+          },
+          {
+            "Start": "2026-10-20T11:06:26.219153803Z",
+            "End": "2026-10-20T11:06:26.28766521Z",
+            "ExitCode": 0,
+            "Output": "DATABASE_READABLE\n"
+          }
+        ]
+      }
+    },
+    "Image": "sha256:1a73705b0771f9c861d9ba96509806849423a3d8bbff140b1261da76280460cd",
+    "ResolvConfPath": "/var/lib/docker/containers/fe355b1a2125986d947e79e92cf4249d5d361128e35ade54ea6fca169ac07333/resolv.conf",
+    "HostnamePath": "/var/lib/docker/containers/fe355b1a2125986d947e79e92cf4249d5d361128e35ade54ea6fca169ac07333/hostname",
+    "HostsPath": "/var/lib/docker/containers/fe355b1a2125986d947e79e92cf4249d5d361128e35ade54ea6fca169ac07333/hosts",
+    "LogPath": "/var/lib/docker/containers/fe355b1a2125986d947e79e92cf4249d5d361128e35ade54ea6fca169ac07333/fe355b1a2125986d947e79e92cf4249d5d361128e35ade54ea6fca169ac07333-json.log",
+    "Name": "/repeat-perf-2-rust-engine",
+    "RestartCount": 0,
+    "Driver": "overlayfs",
+    "Platform": "linux",
+    "MountLabel": "",
+    "ProcessLabel": "",
+    "AppArmorProfile": "docker-default",
+    "ExecIDs": null,
+    "HostConfig": {
+      "Binds": [
+        "repeat-perf-2-rust-state:/state"
+      ],
+      "ContainerIDFile": "",
+      "LogConfig": {
+        "Type": "json-file",
+        "Config": {}
+      },
+      "NetworkMode": "repeat-perf-2-rust-private",
+      "PortBindings": {},
+      "RestartPolicy": {
+        "Name": "no",
+        "MaximumRetryCount": 0
+      },
+      "AutoRemove": false,
+      "VolumeDriver": "",
+      "VolumesFrom": null,
+      "ConsoleSize": [
+        0,
+        0
+      ],
+      "CapAdd": null,
+      "CapDrop": null,
+      "CgroupnsMode": "private",
+      "Dns": null,
+      "DnsOptions": [],
+      "DnsSearch": [],
+      "ExtraHosts": null,
+      "GroupAdd": null,
+      "IpcMode": "private",
+      "Cgroup": "",
+      "Links": null,
+      "OomScoreAdj": 0,
+      "PidMode": "",
+      "Privileged": false,
+      "PublishAllPorts": false,
+      "ReadonlyRootfs": false,
+      "SecurityOpt": null,
+      "UTSMode": "",
+      "UsernsMode": "",
+      "ShmSize": 67108864,
+      "Runtime": "runc",
+      "Isolation": "",
+      "CpuShares": 0,
+      "Memory": 0,
+      "NanoCpus": 0,
+      "CgroupParent": "tinyrepeat.slice",
+      "BlkioWeight": 0,
+      "BlkioWeightDevice": [],
+      "BlkioDeviceReadBps": [],
+      "BlkioDeviceWriteBps": [],
+      "BlkioDeviceReadIOps": [],
+      "BlkioDeviceWriteIOps": [],
+      "CpuPeriod": 0,
+      "CpuQuota": 0,
+      "CpuRealtimePeriod": 0,
+      "CpuRealtimeRuntime": 0,
+      "CpusetCpus": "",
+      "CpusetMems": "",
+      "Devices": [],
+      "DeviceCgroupRules": null,
+      "DeviceRequests": null,
+      "MemoryReservation": 0,
+      "MemorySwap": 0,
+      "MemorySwappiness": null,
+      "OomKillDisable": null,
+      "PidsLimit": null,
+      "Ulimits": [],
+      "CpuCount": 0,
+      "CpuPercent": 0,
+      "IOMaximumIOps": 0,
+      "IOMaximumBandwidth": 0,
+      "MaskedPaths": [
+        "/proc/acpi",
+        "/proc/asound",
+        "/proc/interrupts",
+        "/proc/kcore",
+        "/proc/keys",
+        "/proc/latency_stats",
+        "/proc/sched_debug",
+        "/proc/scsi",
+        "/proc/timer_list",
+        "/proc/timer_stats",
+        "/sys/devices/virtual/powercap",
+        "/sys/firmware"
+      ],
+      "ReadonlyPaths": [
+        "/proc/bus",
+        "/proc/fs",
+        "/proc/irq",
+        "/proc/sys",
+        "/proc/sysrq-trigger"
+      ],
+      "Init": true
+    },
+    "Storage": {
+      "RootFS": {
+        "Snapshot": {
+          "Name": "overlayfs"
+        }
+      }
+    },
+    "Mounts": [
+      {
+        "Type": "volume",
+        "Name": "repeat-perf-2-rust-state",
+        "Source": "/var/lib/docker/volumes/repeat-perf-2-rust-state/_data",
+        "Destination": "/state",
+        "Driver": "local",
+        "Mode": "z",
+        "RW": true,
+        "Propagation": ""
+      }
+    ],
+    "Config": {
+      "Hostname": "fe355b1a2125",
+      "Domainname": "",
+      "User": "",
+      "AttachStdin": false,
+      "AttachStdout": false,
+      "AttachStderr": false,
+      "Tty": false,
+      "OpenStdin": false,
+      "StdinOnce": false,
+      "Env": [
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "RBT_RUST_URL=http://127.0.0.1:20000"
+      ],
+      "Cmd": [
+        "/state/rocksdb",
+        "/state/server-info.pb",
+        "20000"
+      ],
+      "Healthcheck": {
+        "Test": [
+          "CMD",
+          "/usr/local/bin/hello-health",
+          "database-health"
+        ],
+        "Interval": 2000000000,
+        "Timeout": 4000000000,
+        "StartPeriod": 5000000000,
+        "Retries": 2
+      },
+      "Image": "sha256:1a73705b0771f9c861d9ba96509806849423a3d8bbff140b1261da76280460cd",
+      "Volumes": null,
+      "WorkingDir": "",
+      "Entrypoint": [
+        "/usr/local/bin/database"
+      ],
+      "Labels": {
+        "org.opencontainers.image.version": "24.04",
+        "owner": "tiny-repeat-20261020"
+      }
+    },
+    "NetworkSettings": {
+      "SandboxID": "",
+      "SandboxKey": "",
+      "Ports": {},
+      "Networks": {
+        "repeat-perf-2-rust-private": {
+          "IPAMConfig": null,
+          "Links": null,
+          "Aliases": [
+            "database"
+          ],
+          "DriverOpts": null,
+          "GwPriority": 0,
+          "NetworkID": "f3e4d90f4a6f475db302349a41a66eb5f82ad00053e42108e76981dfb349240e",
+          "EndpointID": "",
+          "Gateway": "",
+          "IPAddress": "",
+          "MacAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "DNSNames": [
+            "repeat-perf-2-rust-engine",
+            "database",
+            "fe355b1a2125"
+          ]
+        }
+      }
+    },
+    "ImageManifestDescriptor": {
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "digest": "sha256:73473cc469f19b849de0401d4576a9ff07023e92953827efa8e89406b56d7c06",
+      "size": 1058,
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      }
+    }
+  }
+]

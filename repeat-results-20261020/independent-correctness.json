@@ -1,0 +1,31 @@
+{
+  "records_each": 22,
+  "deterministic_exact": 21,
+  "unordered_record": "isolation",
+  "membership_multiplicity_equal": true,
+  "raw_order_equal": false,
+  "raw_messages": [
+    [
+      "",
+      "concurrent-0",
+      "concurrent-3",
+      "concurrent-1",
+      "concurrent-2",
+      "concurrent-4",
+      "concurrent-6",
+      "concurrent-5",
+      "concurrent-7"
+    ],
+    [
+      "",
+      "concurrent-0",
+      "concurrent-1",
+      "concurrent-2",
+      "concurrent-3",
+      "concurrent-4",
+      "concurrent-5",
+      "concurrent-6",
+      "concurrent-7"
+    ]
+  ]
+}

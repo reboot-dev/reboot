@@ -1,0 +1,778 @@
+{
+  "all_targets": {
+    "generated_consumer_passed": 55,
+    "library_ignored": 7,
+    "library_passed": 850,
+    "suite_results": [
+      [
+        "ok",
+        "850",
+        "0",
+        "7"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "22",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "2"
+      ],
+      [
+        "ok",
+        "1",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "2",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "5",
+        "0",
+        "130"
+      ],
+      [
+        "ok",
+        "8",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "1",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "1"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "4",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "5",
+        "0",
+        "8"
+      ],
+      [
+        "ok",
+        "1",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "55",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "5",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "5"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "4"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "3"
+      ],
+      [
+        "ok",
+        "5",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "2"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "5"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "2"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "1"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "1"
+      ]
+    ],
+    "total_ignored": 171,
+    "total_passed": 964
+  },
+  "base_commit": "18175834a9df99aeda94786e6d804570c25f6083",
+  "cleanup_drills": {
+    "error": {
+      "all_waited": true,
+      "error": "RuntimeError('injected canonical parent failure after real hosts started')",
+      "expected_failure": true,
+      "original_child_waits": 8
+    },
+    "signal": {
+      "all_waited": true,
+      "error": "InterruptedError('native lifecycle parent termination')",
+      "expected_failure": true,
+      "original_child_waits": 8
+    }
+  },
+  "compile_receipts_reused_from": "final3-gates.json",
+  "complete": true,
+  "finished": "2026-10-20T15:05:59.130397+00:00",
+  "fixture_binary_sha256": "e164476f4aeb84f4e0dedee73a301c210c9634624e116d15a68735b3be13a231",
+  "fresh_cpp_build": false,
+  "gates": [
+    {
+      "accepted": true,
+      "command": [
+        "cargo",
+        "clean",
+        "--locked",
+        "--offline",
+        "-p",
+        "reboot-rust-schema"
+      ],
+      "execution_parent_pid": 1069282,
+      "exit": 0,
+      "expected_exit": 0,
+      "log_sha256": "9d174e1e5aee740460e86f1fddcbeb87af2b7b65e1cca8b2dd04950d9d4349f0",
+      "name": "final5-package-clean",
+      "pid": 1070783,
+      "reuse_reason": "Rust/schema/Cargo and actual Python runtime source inputs are identical; only native proof channel readiness and transparent trailer forwarding changed",
+      "reused_from": "final3-package-clean",
+      "waited_by_original_parent": true
+    },
+    {
+      "accepted": true,
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "--manifest-path",
+        "tests/fixtures/workflow_app/Cargo.toml",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "execution_parent_pid": 1069282,
+      "exit": 0,
+      "expected_exit": 0,
+      "log_sha256": "c327e16f641f5c82063c7f5897420675cbccf0b703b44c87907c9cf007fbf9b6",
+      "name": "final5-fixture-clippy",
+      "pid": 1070793,
+      "reuse_reason": "Rust/schema/Cargo and actual Python runtime source inputs are identical; only native proof channel readiness and transparent trailer forwarding changed",
+      "reused_from": "final3-fixture-clippy",
+      "waited_by_original_parent": true
+    },
+    {
+      "accepted": true,
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--all-targets",
+        "--features",
+        "build,test-support"
+      ],
+      "execution_parent_pid": 1069282,
+      "exit": 0,
+      "expected_exit": 0,
+      "log_sha256": "33ba3f4c57ce0d5f02718f2690899b80e0557536f3afc7afe231b0728c4073b7",
+      "name": "final5-all-targets",
+      "pid": 1070971,
+      "reuse_reason": "Rust/schema/Cargo and actual Python runtime source inputs are identical; only native proof channel readiness and transparent trailer forwarding changed",
+      "reused_from": "final3-all-targets",
+      "waited_by_original_parent": true
+    },
+    {
+      "accepted": true,
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "--all-targets",
+        "--features",
+        "build,test-support",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "execution_parent_pid": 1069282,
+      "exit": 0,
+      "expected_exit": 0,
+      "log_sha256": "2d630b4a8042ebffd2118671e7fe34c34dc742947926c9bac4222164a8545ce4",
+      "name": "final5-sdk-clippy",
+      "pid": 1078877,
+      "reuse_reason": "Rust/schema/Cargo and actual Python runtime source inputs are identical; only native proof channel readiness and transparent trailer forwarding changed",
+      "reused_from": "final3-sdk-clippy",
+      "waited_by_original_parent": true
+    },
+    {
+      "accepted": true,
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--offline",
+        "--manifest-path",
+        "tests/fixtures/workflow_app/Cargo.toml"
+      ],
+      "execution_parent_pid": 1069282,
+      "exit": 0,
+      "expected_exit": 0,
+      "log_sha256": "bbb2faec321740e35598dbe09d3c238e885597ac37957a6febb610da22a1a10f",
+      "name": "final5-fixture-build",
+      "pid": 1079015,
+      "reuse_reason": "Rust/schema/Cargo and actual Python runtime source inputs are identical; only native proof channel readiness and transparent trailer forwarding changed",
+      "reused_from": "final3-fixture-build",
+      "waited_by_original_parent": true
+    },
+    {
+      "accepted": true,
+      "command": [
+        "python3",
+        "/home/benchbuild/.cache/canonical_admission_mutants.py"
+      ],
+      "exit": 0,
+      "expected_exit": 0,
+      "log_sha256": "28e37aa7833bf6e1914f14e22624279a59b73c4117e31963cbf9c4bb228a7e22",
+      "name": "final5-mutants",
+      "pid": 1097635,
+      "waited_by_original_parent": true
+    },
+    {
+      "accepted": true,
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--features",
+        "build,test-support",
+        "--test",
+        "canonical_task_admission_native",
+        "--",
+        "--ignored",
+        "--test-threads=1"
+      ],
+      "exit": 0,
+      "expected_exit": 0,
+      "log_sha256": "c777bfd236b1c05534056368ba2a51e9945e6d361b54c6ac5bbc04d90a31d095",
+      "name": "final5-native-canonical",
+      "pid": 1099096,
+      "waited_by_original_parent": true
+    },
+    {
+      "accepted": true,
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--features",
+        "build,test-support",
+        "--test",
+        "workflow_task_native",
+        "--",
+        "--ignored"
+      ],
+      "exit": 0,
+      "expected_exit": 0,
+      "log_sha256": "c79d13c44701748d3b8be15eb971526232cf43907e16687f2e7f008f585727b2",
+      "name": "final5-native-lifecycle",
+      "pid": 1102686,
+      "waited_by_original_parent": true
+    },
+    {
+      "accepted": true,
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--features",
+        "build,test-support",
+        "--test",
+        "workflow_spawn_native",
+        "--",
+        "--ignored"
+      ],
+      "exit": 0,
+      "expected_exit": 0,
+      "log_sha256": "33b4393600b55bd1f32b161801857364d255dfcb4935b03aa3be8ec52b180ef4",
+      "name": "final5-native-spawn",
+      "pid": 1118127,
+      "waited_by_original_parent": true
+    },
+    {
+      "accepted": true,
+      "command": [
+        "/home/benchbuild/reboot-rust/.venv-acceptance/bin/python",
+        "/home/benchbuild/.cache/canonical-admission-20261020-src/reboot/rust/tests/fixtures/workflow_app/prove_canonical_admission.py",
+        "/home/benchbuild/.cache/canonical-admission-20261020-evidence/final-good-app",
+        "/home/benchbuild/.cache/canonical-admission-20261020-evidence/final5-parent-error-raw"
+      ],
+      "exit": 1,
+      "expected_exit": 1,
+      "log_sha256": "bb6f39bdbe3fefa70b56222ee4d73923fd271fadea7c0879c39024205cf4ed34",
+      "name": "final5-parent-error",
+      "pid": 1128484,
+      "waited_by_original_parent": true
+    },
+    {
+      "accepted": true,
+      "command": [
+        "/home/benchbuild/reboot-rust/.venv-acceptance/bin/python",
+        "/home/benchbuild/.cache/canonical-admission-20261020-src/reboot/rust/tests/fixtures/workflow_app/prove_canonical_admission.py",
+        "/home/benchbuild/.cache/canonical-admission-20261020-evidence/final-good-app",
+        "/home/benchbuild/.cache/canonical-admission-20261020-evidence/final5-parent-signal-raw"
+      ],
+      "exit": 1,
+      "expected_exit": 1,
+      "log_sha256": "d70d3409df4dd3f8aa696ae00829163d4a243a50f8b26554ed4f86a123295b5a",
+      "name": "final5-parent-signal",
+      "pid": 1128657,
+      "waited_by_original_parent": true
+    }
+  ],
+  "generated_rust_outputs": {
+    "generated-rust/generated-workflow-app-03de9ec8146fc883/rbt.v1alpha1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-03de9ec8146fc883/out/rbt.v1alpha1.rs",
+      "sha256": "7368ed4bc334d812f640d1c51f4ebbe9ca1ff8fe51b98577d33e66f46156b190"
+    },
+    "generated-rust/generated-workflow-app-03de9ec8146fc883/workflow.v1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-03de9ec8146fc883/out/workflow.v1.rs",
+      "sha256": "d76fcc3548ab3c9f1081db053979d98450f4384b829ec044fbd8a769e73ec210"
+    },
+    "generated-rust/generated-workflow-app-03de9ec8146fc883/workflow/v1/workflow.reboot.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-03de9ec8146fc883/out/workflow/v1/workflow.reboot.rs",
+      "sha256": "629bf29b9c517f4c87f4a81de355eccdaebca6a24a1b7dcce9e90006a3a05b3c"
+    },
+    "generated-rust/generated-workflow-app-2ba2fac363149492/rbt.v1alpha1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-2ba2fac363149492/out/rbt.v1alpha1.rs",
+      "sha256": "7368ed4bc334d812f640d1c51f4ebbe9ca1ff8fe51b98577d33e66f46156b190"
+    },
+    "generated-rust/generated-workflow-app-2ba2fac363149492/workflow.v1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-2ba2fac363149492/out/workflow.v1.rs",
+      "sha256": "d76fcc3548ab3c9f1081db053979d98450f4384b829ec044fbd8a769e73ec210"
+    },
+    "generated-rust/generated-workflow-app-2ba2fac363149492/workflow/v1/workflow.reboot.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-2ba2fac363149492/out/workflow/v1/workflow.reboot.rs",
+      "sha256": "ca9137cc6eef4de924bee44382a2e69cd9be0af15b2799cb788e112bd1aea06b"
+    },
+    "generated-rust/generated-workflow-app-38f7dcd43f51a94d/rbt.v1alpha1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-38f7dcd43f51a94d/out/rbt.v1alpha1.rs",
+      "sha256": "7368ed4bc334d812f640d1c51f4ebbe9ca1ff8fe51b98577d33e66f46156b190"
+    },
+    "generated-rust/generated-workflow-app-38f7dcd43f51a94d/workflow.v1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-38f7dcd43f51a94d/out/workflow.v1.rs",
+      "sha256": "d76fcc3548ab3c9f1081db053979d98450f4384b829ec044fbd8a769e73ec210"
+    },
+    "generated-rust/generated-workflow-app-38f7dcd43f51a94d/workflow/v1/workflow.reboot.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-38f7dcd43f51a94d/out/workflow/v1/workflow.reboot.rs",
+      "sha256": "629bf29b9c517f4c87f4a81de355eccdaebca6a24a1b7dcce9e90006a3a05b3c"
+    },
+    "generated-rust/generated-workflow-app-4ccd47366b56bf1d/rbt.v1alpha1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-4ccd47366b56bf1d/out/rbt.v1alpha1.rs",
+      "sha256": "7368ed4bc334d812f640d1c51f4ebbe9ca1ff8fe51b98577d33e66f46156b190"
+    },
+    "generated-rust/generated-workflow-app-4ccd47366b56bf1d/workflow.v1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-4ccd47366b56bf1d/out/workflow.v1.rs",
+      "sha256": "d76fcc3548ab3c9f1081db053979d98450f4384b829ec044fbd8a769e73ec210"
+    },
+    "generated-rust/generated-workflow-app-4ccd47366b56bf1d/workflow/v1/workflow.reboot.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-4ccd47366b56bf1d/out/workflow/v1/workflow.reboot.rs",
+      "sha256": "ca9137cc6eef4de924bee44382a2e69cd9be0af15b2799cb788e112bd1aea06b"
+    },
+    "generated-rust/generated-workflow-app-4d21a796ca8479b9/rbt.v1alpha1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-4d21a796ca8479b9/out/rbt.v1alpha1.rs",
+      "sha256": "7368ed4bc334d812f640d1c51f4ebbe9ca1ff8fe51b98577d33e66f46156b190"
+    },
+    "generated-rust/generated-workflow-app-4d21a796ca8479b9/workflow.v1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-4d21a796ca8479b9/out/workflow.v1.rs",
+      "sha256": "d76fcc3548ab3c9f1081db053979d98450f4384b829ec044fbd8a769e73ec210"
+    },
+    "generated-rust/generated-workflow-app-4d21a796ca8479b9/workflow/v1/workflow.reboot.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-4d21a796ca8479b9/out/workflow/v1/workflow.reboot.rs",
+      "sha256": "629bf29b9c517f4c87f4a81de355eccdaebca6a24a1b7dcce9e90006a3a05b3c"
+    },
+    "generated-rust/generated-workflow-app-5db3abda94d4ce54/rbt.v1alpha1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-5db3abda94d4ce54/out/rbt.v1alpha1.rs",
+      "sha256": "7368ed4bc334d812f640d1c51f4ebbe9ca1ff8fe51b98577d33e66f46156b190"
+    },
+    "generated-rust/generated-workflow-app-5db3abda94d4ce54/workflow.v1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-5db3abda94d4ce54/out/workflow.v1.rs",
+      "sha256": "d76fcc3548ab3c9f1081db053979d98450f4384b829ec044fbd8a769e73ec210"
+    },
+    "generated-rust/generated-workflow-app-5db3abda94d4ce54/workflow/v1/workflow.reboot.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-5db3abda94d4ce54/out/workflow/v1/workflow.reboot.rs",
+      "sha256": "ca9137cc6eef4de924bee44382a2e69cd9be0af15b2799cb788e112bd1aea06b"
+    },
+    "generated-rust/generated-workflow-app-726d95fc6311ff88/rbt.v1alpha1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-726d95fc6311ff88/out/rbt.v1alpha1.rs",
+      "sha256": "7368ed4bc334d812f640d1c51f4ebbe9ca1ff8fe51b98577d33e66f46156b190"
+    },
+    "generated-rust/generated-workflow-app-726d95fc6311ff88/workflow.v1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-726d95fc6311ff88/out/workflow.v1.rs",
+      "sha256": "d76fcc3548ab3c9f1081db053979d98450f4384b829ec044fbd8a769e73ec210"
+    },
+    "generated-rust/generated-workflow-app-726d95fc6311ff88/workflow/v1/workflow.reboot.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-726d95fc6311ff88/out/workflow/v1/workflow.reboot.rs",
+      "sha256": "629bf29b9c517f4c87f4a81de355eccdaebca6a24a1b7dcce9e90006a3a05b3c"
+    },
+    "generated-rust/generated-workflow-app-7cd345aa79398f8d/rbt.v1alpha1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-7cd345aa79398f8d/out/rbt.v1alpha1.rs",
+      "sha256": "7368ed4bc334d812f640d1c51f4ebbe9ca1ff8fe51b98577d33e66f46156b190"
+    },
+    "generated-rust/generated-workflow-app-7cd345aa79398f8d/workflow.v1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-7cd345aa79398f8d/out/workflow.v1.rs",
+      "sha256": "d76fcc3548ab3c9f1081db053979d98450f4384b829ec044fbd8a769e73ec210"
+    },
+    "generated-rust/generated-workflow-app-7cd345aa79398f8d/workflow/v1/workflow.reboot.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-7cd345aa79398f8d/out/workflow/v1/workflow.reboot.rs",
+      "sha256": "ca9137cc6eef4de924bee44382a2e69cd9be0af15b2799cb788e112bd1aea06b"
+    },
+    "generated-rust/generated-workflow-app-83b4f8b0361bff41/rbt.v1alpha1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-83b4f8b0361bff41/out/rbt.v1alpha1.rs",
+      "sha256": "7368ed4bc334d812f640d1c51f4ebbe9ca1ff8fe51b98577d33e66f46156b190"
+    },
+    "generated-rust/generated-workflow-app-83b4f8b0361bff41/workflow.v1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-83b4f8b0361bff41/out/workflow.v1.rs",
+      "sha256": "d76fcc3548ab3c9f1081db053979d98450f4384b829ec044fbd8a769e73ec210"
+    },
+    "generated-rust/generated-workflow-app-83b4f8b0361bff41/workflow/v1/workflow.reboot.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-83b4f8b0361bff41/out/workflow/v1/workflow.reboot.rs",
+      "sha256": "ca9137cc6eef4de924bee44382a2e69cd9be0af15b2799cb788e112bd1aea06b"
+    },
+    "generated-rust/generated-workflow-app-9bed8116c70abaa3/rbt.v1alpha1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-9bed8116c70abaa3/out/rbt.v1alpha1.rs",
+      "sha256": "7368ed4bc334d812f640d1c51f4ebbe9ca1ff8fe51b98577d33e66f46156b190"
+    },
+    "generated-rust/generated-workflow-app-9bed8116c70abaa3/workflow.v1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-9bed8116c70abaa3/out/workflow.v1.rs",
+      "sha256": "d76fcc3548ab3c9f1081db053979d98450f4384b829ec044fbd8a769e73ec210"
+    },
+    "generated-rust/generated-workflow-app-9bed8116c70abaa3/workflow/v1/workflow.reboot.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-9bed8116c70abaa3/out/workflow/v1/workflow.reboot.rs",
+      "sha256": "ca9137cc6eef4de924bee44382a2e69cd9be0af15b2799cb788e112bd1aea06b"
+    },
+    "generated-rust/generated-workflow-app-a4345c5c01f9f666/rbt.v1alpha1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-a4345c5c01f9f666/out/rbt.v1alpha1.rs",
+      "sha256": "7368ed4bc334d812f640d1c51f4ebbe9ca1ff8fe51b98577d33e66f46156b190"
+    },
+    "generated-rust/generated-workflow-app-a4345c5c01f9f666/workflow.v1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-a4345c5c01f9f666/out/workflow.v1.rs",
+      "sha256": "d76fcc3548ab3c9f1081db053979d98450f4384b829ec044fbd8a769e73ec210"
+    },
+    "generated-rust/generated-workflow-app-a4345c5c01f9f666/workflow/v1/workflow.reboot.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-a4345c5c01f9f666/out/workflow/v1/workflow.reboot.rs",
+      "sha256": "629bf29b9c517f4c87f4a81de355eccdaebca6a24a1b7dcce9e90006a3a05b3c"
+    },
+    "generated-rust/generated-workflow-app-ab2a0f604d658da2/rbt.v1alpha1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-ab2a0f604d658da2/out/rbt.v1alpha1.rs",
+      "sha256": "7368ed4bc334d812f640d1c51f4ebbe9ca1ff8fe51b98577d33e66f46156b190"
+    },
+    "generated-rust/generated-workflow-app-ab2a0f604d658da2/workflow.v1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-ab2a0f604d658da2/out/workflow.v1.rs",
+      "sha256": "d76fcc3548ab3c9f1081db053979d98450f4384b829ec044fbd8a769e73ec210"
+    },
+    "generated-rust/generated-workflow-app-ab2a0f604d658da2/workflow/v1/workflow.reboot.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-ab2a0f604d658da2/out/workflow/v1/workflow.reboot.rs",
+      "sha256": "629bf29b9c517f4c87f4a81de355eccdaebca6a24a1b7dcce9e90006a3a05b3c"
+    },
+    "generated-rust/generated-workflow-app-b08076e2a4af3de6/rbt.v1alpha1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-b08076e2a4af3de6/out/rbt.v1alpha1.rs",
+      "sha256": "7368ed4bc334d812f640d1c51f4ebbe9ca1ff8fe51b98577d33e66f46156b190"
+    },
+    "generated-rust/generated-workflow-app-b08076e2a4af3de6/workflow.v1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-b08076e2a4af3de6/out/workflow.v1.rs",
+      "sha256": "d76fcc3548ab3c9f1081db053979d98450f4384b829ec044fbd8a769e73ec210"
+    },
+    "generated-rust/generated-workflow-app-b08076e2a4af3de6/workflow/v1/workflow.reboot.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-b08076e2a4af3de6/out/workflow/v1/workflow.reboot.rs",
+      "sha256": "ca9137cc6eef4de924bee44382a2e69cd9be0af15b2799cb788e112bd1aea06b"
+    },
+    "generated-rust/generated-workflow-app-bca7dfc79c31d1fd/rbt.v1alpha1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-bca7dfc79c31d1fd/out/rbt.v1alpha1.rs",
+      "sha256": "7368ed4bc334d812f640d1c51f4ebbe9ca1ff8fe51b98577d33e66f46156b190"
+    },
+    "generated-rust/generated-workflow-app-bca7dfc79c31d1fd/workflow.v1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-bca7dfc79c31d1fd/out/workflow.v1.rs",
+      "sha256": "d76fcc3548ab3c9f1081db053979d98450f4384b829ec044fbd8a769e73ec210"
+    },
+    "generated-rust/generated-workflow-app-bca7dfc79c31d1fd/workflow/v1/workflow.reboot.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-bca7dfc79c31d1fd/out/workflow/v1/workflow.reboot.rs",
+      "sha256": "629bf29b9c517f4c87f4a81de355eccdaebca6a24a1b7dcce9e90006a3a05b3c"
+    },
+    "generated-rust/generated-workflow-app-c67ce112825504e1/rbt.v1alpha1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-c67ce112825504e1/out/rbt.v1alpha1.rs",
+      "sha256": "7368ed4bc334d812f640d1c51f4ebbe9ca1ff8fe51b98577d33e66f46156b190"
+    },
+    "generated-rust/generated-workflow-app-c67ce112825504e1/workflow.v1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-c67ce112825504e1/out/workflow.v1.rs",
+      "sha256": "d76fcc3548ab3c9f1081db053979d98450f4384b829ec044fbd8a769e73ec210"
+    },
+    "generated-rust/generated-workflow-app-c67ce112825504e1/workflow/v1/workflow.reboot.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-c67ce112825504e1/out/workflow/v1/workflow.reboot.rs",
+      "sha256": "629bf29b9c517f4c87f4a81de355eccdaebca6a24a1b7dcce9e90006a3a05b3c"
+    },
+    "generated-rust/generated-workflow-app-e26e5e37c425a99e/rbt.v1alpha1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-e26e5e37c425a99e/out/rbt.v1alpha1.rs",
+      "sha256": "7368ed4bc334d812f640d1c51f4ebbe9ca1ff8fe51b98577d33e66f46156b190"
+    },
+    "generated-rust/generated-workflow-app-e26e5e37c425a99e/workflow.v1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-e26e5e37c425a99e/out/workflow.v1.rs",
+      "sha256": "d76fcc3548ab3c9f1081db053979d98450f4384b829ec044fbd8a769e73ec210"
+    },
+    "generated-rust/generated-workflow-app-e26e5e37c425a99e/workflow/v1/workflow.reboot.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-e26e5e37c425a99e/out/workflow/v1/workflow.reboot.rs",
+      "sha256": "ca9137cc6eef4de924bee44382a2e69cd9be0af15b2799cb788e112bd1aea06b"
+    },
+    "generated-rust/generated-workflow-app-ed6cf0d51f8bb419/rbt.v1alpha1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-ed6cf0d51f8bb419/out/rbt.v1alpha1.rs",
+      "sha256": "7368ed4bc334d812f640d1c51f4ebbe9ca1ff8fe51b98577d33e66f46156b190"
+    },
+    "generated-rust/generated-workflow-app-ed6cf0d51f8bb419/workflow.v1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-ed6cf0d51f8bb419/out/workflow.v1.rs",
+      "sha256": "d76fcc3548ab3c9f1081db053979d98450f4384b829ec044fbd8a769e73ec210"
+    },
+    "generated-rust/generated-workflow-app-ed6cf0d51f8bb419/workflow/v1/workflow.reboot.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-ed6cf0d51f8bb419/out/workflow/v1/workflow.reboot.rs",
+      "sha256": "629bf29b9c517f4c87f4a81de355eccdaebca6a24a1b7dcce9e90006a3a05b3c"
+    },
+    "generated-rust/generated-workflow-app-ee6e7c717aad2843/rbt.v1alpha1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-ee6e7c717aad2843/out/rbt.v1alpha1.rs",
+      "sha256": "7368ed4bc334d812f640d1c51f4ebbe9ca1ff8fe51b98577d33e66f46156b190"
+    },
+    "generated-rust/generated-workflow-app-ee6e7c717aad2843/workflow.v1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-ee6e7c717aad2843/out/workflow.v1.rs",
+      "sha256": "d76fcc3548ab3c9f1081db053979d98450f4384b829ec044fbd8a769e73ec210"
+    },
+    "generated-rust/generated-workflow-app-ee6e7c717aad2843/workflow/v1/workflow.reboot.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-ee6e7c717aad2843/out/workflow/v1/workflow.reboot.rs",
+      "sha256": "ca9137cc6eef4de924bee44382a2e69cd9be0af15b2799cb788e112bd1aea06b"
+    },
+    "generated-rust/generated-workflow-app-fa124dd5b2d9f03e/rbt.v1alpha1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-fa124dd5b2d9f03e/out/rbt.v1alpha1.rs",
+      "sha256": "7368ed4bc334d812f640d1c51f4ebbe9ca1ff8fe51b98577d33e66f46156b190"
+    },
+    "generated-rust/generated-workflow-app-fa124dd5b2d9f03e/workflow.v1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-fa124dd5b2d9f03e/out/workflow.v1.rs",
+      "sha256": "d76fcc3548ab3c9f1081db053979d98450f4384b829ec044fbd8a769e73ec210"
+    },
+    "generated-rust/generated-workflow-app-fa124dd5b2d9f03e/workflow/v1/workflow.reboot.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-fa124dd5b2d9f03e/out/workflow/v1/workflow.reboot.rs",
+      "sha256": "629bf29b9c517f4c87f4a81de355eccdaebca6a24a1b7dcce9e90006a3a05b3c"
+    },
+    "generated-rust/generated-workflow-app-fbecf4b928483296/rbt.v1alpha1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-fbecf4b928483296/out/rbt.v1alpha1.rs",
+      "sha256": "7368ed4bc334d812f640d1c51f4ebbe9ca1ff8fe51b98577d33e66f46156b190"
+    },
+    "generated-rust/generated-workflow-app-fbecf4b928483296/workflow.v1.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-fbecf4b928483296/out/workflow.v1.rs",
+      "sha256": "d76fcc3548ab3c9f1081db053979d98450f4384b829ec044fbd8a769e73ec210"
+    },
+    "generated-rust/generated-workflow-app-fbecf4b928483296/workflow/v1/workflow.reboot.rs": {
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-fbecf4b928483296/out/workflow/v1/workflow.reboot.rs",
+      "sha256": "629bf29b9c517f4c87f4a81de355eccdaebca6a24a1b7dcce9e90006a3a05b3c"
+    }
+  },
+  "ignored_gates_requalified": false,
+  "legacy_binary_sha256": "7c80503337f96dcdac8d3771597223f52a7632fb3d06e89645f00cd495149f1a",
+  "mutants": {
+    "accept-changed-uuid": {
+      "all_original_children_waited": true,
+      "binary_sha256": "0af3cd9c38243676c639c2e00655ce308f13bd2804531d16ffc58225e2d1a464",
+      "diff_sha256": "d0850145f5774621a3fd2414de67c77e6c6360523c254716cf4cfef4f4cdb8c0",
+      "expected_failure_observed": true,
+      "mutated_source_sha256": "b5f28f84effd178fec2642771999fbd14919f4c1840d8230cd18abbbfcea5d52",
+      "name": "accept-changed-uuid",
+      "rejected": true
+    },
+    "ignore-explicit-schedule": {
+      "all_original_children_waited": true,
+      "binary_sha256": "e7cfec2745a228195e2a1221b64bdfb21abbd9250a54bc77ac22576eac2f018a",
+      "diff_sha256": "737309b826dc89785f3cb2335787de5497dbc4f7c7165272d71e2d1eade3295c",
+      "expected_failure_observed": true,
+      "mutated_source_sha256": "7b5bb5dfa2217cc94eb3a12a47639c58fc6d1f7734434ced1924171ac8e466dd",
+      "name": "ignore-explicit-schedule",
+      "rejected": true
+    },
+    "omit-task-trailer": {
+      "all_original_children_waited": true,
+      "binary_sha256": "c9b3ad3ded637b607be529a4f827be5ee837327205654f1117d39c599e45c280",
+      "diff_sha256": "77efa08aa3d8115910056512642ce697363f505ed507b7e9eeb26c99a2e397f8",
+      "expected_failure_observed": true,
+      "mutated_source_sha256": "8d26c710bc5d4914f8dbace5d1b6ab0c7f99205a81d80127511578f779129bb7",
+      "name": "omit-task-trailer",
+      "rejected": true
+    }
+  },
+  "native": {
+    "canonical": {
+      "case_names": [
+        "success",
+        "declared-error",
+        "concurrent",
+        "future-cancel",
+        "admission-auth",
+        "admission-ack-loss"
+      ],
+      "cases": 6,
+      "original_child_waits": 111,
+      "receipt_sha256": "f319aa83b020e5456d86a8a7586b6ce43f89e814411a458a18b58cd782d24bbf"
+    },
+    "lifecycle": {
+      "case_names": [
+        "success",
+        "declared-error",
+        "running-cancel",
+        "scheduled-cancel",
+        "rust-handle-cancel",
+        "cancel-revocation",
+        "wait-revocation",
+        "cancel-ack-loss",
+        "cancel-catch-replay",
+        "cancel-retains-effects",
+        "cancel-race",
+        "terminal-wrong-code",
+        "terminal-malformed-detail",
+        "terminal-rpc-cancelled",
+        "relative-schedule",
+        "relative-concurrent",
+        "relative-replay",
+        "relative-ack-loss",
+        "relative-cancel"
+      ],
+      "cases": 19,
+      "original_child_waits": 657,
+      "receipt_sha256": "beb242d4ef12cde4ec4fd7e4b60335a157be65b226f840d9a1448f1d413e4d16"
+    },
+    "migration": {
+      "case_names": [
+        "legacy-started-intent-to-canonical-application-rpc"
+      ],
+      "cases": 1,
+      "original_child_waits": 30,
+      "receipt_sha256": "0ba1b4bf8c6957235a30d69b658b7134fbc5c0f52bee46392cbb7088892f6e23"
+    },
+    "spawn": {
+      "case_names": [
+        "target-contract",
+        "basic",
+        "direct-call",
+        "concurrent",
+        "declared-error",
+        "ack-crash",
+        "payload-reject",
+        "destination-reject",
+        "schedule-reject",
+        "authorization-reject",
+        "wait-authorization-reject",
+        "cancel",
+        "future-schedule",
+        "unknown-spawn",
+        "unknown-started",
+        "unknown-stored"
+      ],
+      "cases": 16,
+      "original_child_waits": 410,
+      "receipt_sha256": "209ce13e62f781834fbcedd985f60047dc104a5c2d365115d216fe20d4c459b5"
+    }
+  },
+  "native_artifact_reused": true,
+  "native_case_total": 42,
+  "native_database_sha256": "619002c569e9841144a8bbedf4f2ce6a753bb0e6b103af71883d91d43f413803",
+  "native_original_wait_total": 1208,
+  "only_source_delta_from_compile_qualification": [
+    "source/reboot/rust/tests/fixtures/workflow_app/prove_canonical_admission.py",
+    "source/reboot/rust/tests/fixtures/workflow_app/tasks_terminal_proxy.py"
+  ],
+  "original_native_children_waited": true,
+  "original_remote_owner_waited": true,
+  "source_input_count": 715,
+  "source_manifest_sha256": "0eae7460bc4e471c3a7534188879760e6f60c35cf928d07b7c23ede263981799",
+  "source_object_count": 697,
+  "source_unchanged": true,
+  "started": "2026-10-20T14:59:45.511773+00:00",
+  "systemd": "MainPID=0\nResult=success\nExecMainStatus=0\nActiveState=inactive\n"
+}

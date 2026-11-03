@@ -1,0 +1,1282 @@
+{
+  "all_targets": {
+    "generated_consumer_passed": 55,
+    "library_ignored": 7,
+    "library_passed": 850,
+    "suite_results": [
+      [
+        "ok",
+        "850",
+        "0",
+        "7"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "22",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "2"
+      ],
+      [
+        "ok",
+        "1",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "2",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "5",
+        "0",
+        "130"
+      ],
+      [
+        "ok",
+        "8",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "1",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "1"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "4",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "5",
+        "0",
+        "8"
+      ],
+      [
+        "ok",
+        "1",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "55",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "5",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "5"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "4"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "3"
+      ],
+      [
+        "ok",
+        "5",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "2"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "5"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "2"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "1"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "1"
+      ]
+    ],
+    "total_ignored": 171,
+    "total_passed": 964
+  },
+  "cleanup_drills": {
+    "error": {
+      "all_waited": true,
+      "error": "RuntimeError('injected canonical parent failure after real hosts started')",
+      "expected_failure": true,
+      "original_child_waits": 8,
+      "receipt_sha256": "9d91b14bcf57dbe5a92e7a7a6ce85fd4620d6bfeb38fe9a25c731153c9ef4bba"
+    },
+    "signal": {
+      "all_waited": true,
+      "error": "InterruptedError('native lifecycle parent termination')",
+      "expected_failure": true,
+      "original_child_waits": 8,
+      "receipt_sha256": "33dbf222b96983c0d56b6ca72641ed4bcaa897e667fc24aa5df86e0edfbc18b9"
+    }
+  },
+  "compile_receipts_reused": false,
+  "complete": true,
+  "fixture_binary_sha256": "08deb59575da54934ac0eb758ba72770ada5820ae257fe951dee1f09a74654b7",
+  "fixture_cargo_artifact": {
+    "executable": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/generated-workflow-app",
+    "features": [],
+    "filenames": [
+      "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/generated-workflow-app"
+    ],
+    "fresh": false,
+    "manifest_path": "/home/benchbuild/.cache/canonical-duplicate-20261020-src/reboot/rust/tests/fixtures/workflow_app/Cargo.toml",
+    "package_id": "path+file:///home/benchbuild/.cache/canonical-duplicate-20261020-src/reboot/rust/tests/fixtures/workflow_app#generated-workflow-app@0.0.0",
+    "profile": {
+      "debug_assertions": true,
+      "debuginfo": 2,
+      "opt_level": "0",
+      "overflow_checks": true,
+      "test": false
+    },
+    "reason": "compiler-artifact",
+    "target": {
+      "crate_types": [
+        "bin"
+      ],
+      "doc": true,
+      "doctest": false,
+      "edition": "2024",
+      "kind": [
+        "bin"
+      ],
+      "name": "generated-workflow-app",
+      "src_path": "/home/benchbuild/.cache/canonical-duplicate-20261020-src/reboot/rust/tests/fixtures/workflow_app/src/main.rs",
+      "test": true
+    }
+  },
+  "fresh_cpp_build": false,
+  "generated_rust_outputs": {
+    "generated-rust/generated-workflow-app-7e6220a3844daa89/rbt.v1alpha1.rs": {
+      "cargo_package_id": "path+file:///home/benchbuild/.cache/canonical-duplicate-20261020-src/reboot/rust/tests/fixtures/workflow_app#generated-workflow-app@0.0.0",
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-7e6220a3844daa89/out/rbt.v1alpha1.rs",
+      "sha256": "7368ed4bc334d812f640d1c51f4ebbe9ca1ff8fe51b98577d33e66f46156b190"
+    },
+    "generated-rust/generated-workflow-app-7e6220a3844daa89/workflow.v1.rs": {
+      "cargo_package_id": "path+file:///home/benchbuild/.cache/canonical-duplicate-20261020-src/reboot/rust/tests/fixtures/workflow_app#generated-workflow-app@0.0.0",
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-7e6220a3844daa89/out/workflow.v1.rs",
+      "sha256": "d76fcc3548ab3c9f1081db053979d98450f4384b829ec044fbd8a769e73ec210"
+    },
+    "generated-rust/generated-workflow-app-7e6220a3844daa89/workflow/v1/workflow.reboot.rs": {
+      "cargo_package_id": "path+file:///home/benchbuild/.cache/canonical-duplicate-20261020-src/reboot/rust/tests/fixtures/workflow_app#generated-workflow-app@0.0.0",
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/generated-workflow-app-7e6220a3844daa89/out/workflow/v1/workflow.reboot.rs",
+      "sha256": "629bf29b9c517f4c87f4a81de355eccdaebca6a24a1b7dcce9e90006a3a05b3c"
+    },
+    "generated-rust/reboot-rust-schema-94b74377a510bf41/placement_proto/rbt.v1alpha1.rs": {
+      "cargo_package_id": "path+file:///home/benchbuild/.cache/canonical-duplicate-20261020-src/reboot/rust#reboot-rust-schema@0.0.0",
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/reboot-rust-schema-94b74377a510bf41/out/placement_proto/rbt.v1alpha1.rs",
+      "sha256": "bf8b089235cebcf04c0170cc2f0973bc8f777d69c30b5f86a8f2789cfd8a7e34"
+    },
+    "generated-rust/reboot-rust-schema-94b74377a510bf41/rbt.std.collections.v1.rs": {
+      "cargo_package_id": "path+file:///home/benchbuild/.cache/canonical-duplicate-20261020-src/reboot/rust#reboot-rust-schema@0.0.0",
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/reboot-rust-schema-94b74377a510bf41/out/rbt.std.collections.v1.rs",
+      "sha256": "3626fcfb29d0f751d8a56417b567fb1e9aedb409be1f0857eea0b7d5a5d66ab9"
+    },
+    "generated-rust/reboot-rust-schema-94b74377a510bf41/rbt.v1alpha1.rs": {
+      "cargo_package_id": "path+file:///home/benchbuild/.cache/canonical-duplicate-20261020-src/reboot/rust#reboot-rust-schema@0.0.0",
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/reboot-rust-schema-94b74377a510bf41/out/rbt.v1alpha1.rs",
+      "sha256": "d6085204f5b892728b7068464e4eda085d0a54a7bb1bc106719dd3e1bc5ca397"
+    },
+    "generated-rust/reboot-rust-schema-94b74377a510bf41/reboot.rust.reactive.v1.rs": {
+      "cargo_package_id": "path+file:///home/benchbuild/.cache/canonical-duplicate-20261020-src/reboot/rust#reboot-rust-schema@0.0.0",
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/reboot-rust-schema-94b74377a510bf41/out/reboot.rust.reactive.v1.rs",
+      "sha256": "c7fb66b036ef631b4298f9d9f2c192b9047e452d3f2eb2d5ea1302a9b4449117"
+    },
+    "generated-rust/reboot-rust-schema-94b74377a510bf41/tests.reboot.protoc.rs": {
+      "cargo_package_id": "path+file:///home/benchbuild/.cache/canonical-duplicate-20261020-src/reboot/rust#reboot-rust-schema@0.0.0",
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/reboot-rust-schema-94b74377a510bf41/out/tests.reboot.protoc.rs",
+      "sha256": "c063a0ef2f6c97075eff0f627b18e53f1852501baf98eebd34715b36ca837f29"
+    },
+    "generated-rust/reboot-rust-schema-94b74377a510bf41/workflow_spawn_proto/rbt.v1alpha1.rs": {
+      "cargo_package_id": "path+file:///home/benchbuild/.cache/canonical-duplicate-20261020-src/reboot/rust#reboot-rust-schema@0.0.0",
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/reboot-rust-schema-94b74377a510bf41/out/workflow_spawn_proto/rbt.v1alpha1.rs",
+      "sha256": "9083df944e1038b234255e369cbf6967a6b77e5c6e42f7ed185b4da327083ddf"
+    },
+    "generated-rust/reboot-rust-schema-94b74377a510bf41/workflow_spawn_proto/reboot.rust.workflow.v1.rs": {
+      "cargo_package_id": "path+file:///home/benchbuild/.cache/canonical-duplicate-20261020-src/reboot/rust#reboot-rust-schema@0.0.0",
+      "observed_build_output": "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/build/reboot-rust-schema-94b74377a510bf41/out/workflow_spawn_proto/reboot.rust.workflow.v1.rs",
+      "sha256": "304fe19e91e7a3ea5116d14c50fb8b969ac24c50f51dd73bacc9432567185583"
+    }
+  },
+  "greenfinal_source_manifest_sha256": "73d39d93715452c5568dc9214abefd2003c60c6c532f6f653e10dfe4f83e3c25",
+  "legacy_artifact_reused": true,
+  "legacy_binary_sha256": "7c80503337f96dcdac8d3771597223f52a7632fb3d06e89645f00cd495149f1a",
+  "mutation": {
+    "mutation/fixed-to-old.patch": "7551e038744834a71cdb58a264db31f49a8d8aee3055e34fda07aa13e82043ec",
+    "mutation/workflow_spawn.fixed.rs": "2cd1cdc7ccf121a115289c74330e0741af5de55232e50bcfb587bb5a05a22b78",
+    "mutation/workflow_spawn.old.rs": "fed73114a08516caa48d01e0aa72a1349c56f31319d51b53c362b0af46d9ab8f"
+  },
+  "native": {
+    "canonical": {
+      "case_names": [
+        "success",
+        "declared-error",
+        "concurrent",
+        "future-cancel",
+        "admission-auth",
+        "admission-ack-loss",
+        "schedule-empty-future",
+        "schedule-future-empty",
+        "schedule-empty-single",
+        "schedule-empty-repeated",
+        "schedule-future-repeated"
+      ],
+      "cases": 11,
+      "original_child_waits": 199,
+      "receipt_sha256": "893031f933495b3113cc05a67b250ae1b61e8128e31f4c8d5070d45e6a2c5e16"
+    },
+    "lifecycle": {
+      "case_names": [
+        "success",
+        "declared-error",
+        "running-cancel",
+        "scheduled-cancel",
+        "rust-handle-cancel",
+        "cancel-revocation",
+        "wait-revocation",
+        "cancel-ack-loss",
+        "cancel-catch-replay",
+        "cancel-retains-effects",
+        "cancel-race",
+        "terminal-wrong-code",
+        "terminal-malformed-detail",
+        "terminal-rpc-cancelled",
+        "relative-schedule",
+        "relative-concurrent",
+        "relative-replay",
+        "relative-ack-loss",
+        "relative-cancel"
+      ],
+      "cases": 19,
+      "original_child_waits": 657,
+      "receipt_sha256": "6a7755c74ec9dede7489400e9471dd65a402f1696bec9298405d202dfc965e22"
+    },
+    "migration": {
+      "case_names": [
+        "legacy-started-intent-to-canonical-application-rpc"
+      ],
+      "cases": 1,
+      "original_child_waits": 30,
+      "receipt_sha256": "46cace79a8c5709d64f5b800b9a34ed61356245c03fbc630c7380bdb175b33c0"
+    },
+    "spawn": {
+      "case_names": [
+        "target-contract",
+        "basic",
+        "direct-call",
+        "concurrent",
+        "declared-error",
+        "ack-crash",
+        "payload-reject",
+        "destination-reject",
+        "schedule-reject",
+        "authorization-reject",
+        "wait-authorization-reject",
+        "cancel",
+        "future-schedule",
+        "unknown-spawn",
+        "unknown-started",
+        "unknown-stored"
+      ],
+      "cases": 16,
+      "original_child_waits": 411,
+      "receipt_sha256": "479f3a808446b025740eeafa818f7e7b45b91c72860ab63e46b955b6942ebab6"
+    }
+  },
+  "native_artifact_reused": true,
+  "native_case_total": 47,
+  "native_database_sha256": "619002c569e9841144a8bbedf4f2ce6a753bb0e6b103af71883d91d43f413803",
+  "native_original_wait_total": 1297,
+  "old_binary_sha256": "6f242d6faffbacf4afa9e6316a2effa51270498773875c19f40cc80ecc1972ee",
+  "owners": {
+    "greenfinal": {
+      "gates": {
+        "base_commit": "18175834a9df99aeda94786e6d804570c25f6083",
+        "complete": true,
+        "controller_sha256": "259ecf5f5b54bf6486bb352180e70c10265626c9ed74941ae6b996beaa418306",
+        "finished": "2026-10-20T15:43:01.280042+00:00",
+        "fixture_binary_sha256": "08deb59575da54934ac0eb758ba72770ada5820ae257fe951dee1f09a74654b7",
+        "fresh_cpp_build": false,
+        "gates": [
+          {
+            "accepted": true,
+            "command": [
+              "cargo",
+              "clean",
+              "--locked",
+              "--offline",
+              "-p",
+              "reboot-rust-schema"
+            ],
+            "exit": 0,
+            "expected_exit": 0,
+            "log_sha256": "21fa7d4d93a5090ee998d272039a181aa46c2473a7655135f8ee48ca5aedae10",
+            "name": "greenfinal-package-clean",
+            "pid": 1175829,
+            "waited_by_original_parent": true
+          },
+          {
+            "accepted": true,
+            "command": [
+              "cargo",
+              "build",
+              "--locked",
+              "--offline",
+              "--message-format=json",
+              "--manifest-path",
+              "tests/fixtures/workflow_app/Cargo.toml"
+            ],
+            "exit": 0,
+            "expected_exit": 0,
+            "log_sha256": "ae6aa79908e1cae416cd8ca39efafe3427c4673a85e56c2e1e35b9c11c74d255",
+            "name": "greenfinal-fixture-build",
+            "pid": 1175839,
+            "waited_by_original_parent": true
+          },
+          {
+            "accepted": true,
+            "command": [
+              "cargo",
+              "test",
+              "--locked",
+              "--offline",
+              "--all-targets",
+              "--features",
+              "build,test-support"
+            ],
+            "exit": 0,
+            "expected_exit": 0,
+            "log_sha256": "03796a1fb26e1093e9c7e47ff82b0c5d22392de79666c5a77d52da76b7d93845",
+            "name": "greenfinal-all-targets",
+            "pid": 1176050,
+            "waited_by_original_parent": true
+          },
+          {
+            "accepted": true,
+            "command": [
+              "cargo",
+              "clippy",
+              "--locked",
+              "--offline",
+              "--all-targets",
+              "--features",
+              "build,test-support",
+              "--",
+              "-D",
+              "warnings"
+            ],
+            "exit": 0,
+            "expected_exit": 0,
+            "log_sha256": "323648cafc6b9018290e388e0be22af8f13498c9c17d2abe1e5dfb4d8922dd19",
+            "name": "greenfinal-sdk-clippy",
+            "pid": 1183993,
+            "waited_by_original_parent": true
+          },
+          {
+            "accepted": true,
+            "command": [
+              "cargo",
+              "clippy",
+              "--locked",
+              "--offline",
+              "--manifest-path",
+              "tests/fixtures/workflow_app/Cargo.toml",
+              "--all-targets",
+              "--",
+              "-D",
+              "warnings"
+            ],
+            "exit": 0,
+            "expected_exit": 0,
+            "log_sha256": "5eb69a3282c52dd0f9b627b688ac766f89d6e995ff60301500ba39eb267fa040",
+            "name": "greenfinal-fixture-clippy",
+            "pid": 1184189,
+            "waited_by_original_parent": true
+          },
+          {
+            "accepted": true,
+            "command": [
+              "cargo",
+              "test",
+              "--locked",
+              "--offline",
+              "--features",
+              "build,test-support",
+              "--test",
+              "canonical_task_admission_native",
+              "--",
+              "--ignored",
+              "--test-threads=1"
+            ],
+            "exit": 0,
+            "expected_exit": 0,
+            "log_sha256": "1d307c310aca81cfd5fd7ad9ad92c11ebd49f5e66261f933f06400b4e6d9fd09",
+            "name": "greenfinal-native-canonical",
+            "pid": 1184305,
+            "waited_by_original_parent": true
+          },
+          {
+            "accepted": true,
+            "command": [
+              "cargo",
+              "test",
+              "--locked",
+              "--offline",
+              "--features",
+              "build,test-support",
+              "--test",
+              "workflow_task_native",
+              "--",
+              "--ignored"
+            ],
+            "exit": 0,
+            "expected_exit": 0,
+            "log_sha256": "42e5d60cd45d594b554f6581ae905c7eddb77dafbdd2dd3c5eac362e0135c486",
+            "name": "greenfinal-native-lifecycle",
+            "pid": 1189899,
+            "waited_by_original_parent": true
+          },
+          {
+            "accepted": true,
+            "command": [
+              "cargo",
+              "test",
+              "--locked",
+              "--offline",
+              "--features",
+              "build,test-support",
+              "--test",
+              "workflow_spawn_native",
+              "--",
+              "--ignored"
+            ],
+            "exit": 0,
+            "expected_exit": 0,
+            "log_sha256": "523fd058f2f2e38672e02d934f460868a403b25444f4736f758f0f26899b576c",
+            "name": "greenfinal-native-spawn",
+            "pid": 1205366,
+            "waited_by_original_parent": true
+          },
+          {
+            "accepted": true,
+            "command": [
+              "/home/benchbuild/reboot-rust/.venv-acceptance/bin/python",
+              "/home/benchbuild/.cache/canonical-duplicate-20261020-src/reboot/rust/tests/fixtures/workflow_app/prove_canonical_admission.py",
+              "/home/benchbuild/.cache/canonical-duplicate-20261020-evidence/fixed-app",
+              "/home/benchbuild/.cache/canonical-duplicate-20261020-evidence/greenfinal-parent-error-raw"
+            ],
+            "exit": 1,
+            "expected_exit": 1,
+            "log_sha256": "b1d4418f72afca16a48d9fc9f21bdaf67a3624d2821ef5fdbcac692784af6184",
+            "name": "greenfinal-parent-error",
+            "pid": 1215706,
+            "waited_by_original_parent": true
+          },
+          {
+            "accepted": true,
+            "command": [
+              "/home/benchbuild/reboot-rust/.venv-acceptance/bin/python",
+              "/home/benchbuild/.cache/canonical-duplicate-20261020-src/reboot/rust/tests/fixtures/workflow_app/prove_canonical_admission.py",
+              "/home/benchbuild/.cache/canonical-duplicate-20261020-evidence/fixed-app",
+              "/home/benchbuild/.cache/canonical-duplicate-20261020-evidence/greenfinal-parent-signal-raw"
+            ],
+            "exit": 1,
+            "expected_exit": 1,
+            "log_sha256": "e699e927375d4f4c74a943ee462a96274aa03a1a70725af1144ff6102cd01916",
+            "name": "greenfinal-parent-signal",
+            "pid": 1215877,
+            "waited_by_original_parent": true
+          }
+        ],
+        "native_artifact_reused": true,
+        "parent_pid": 1175828,
+        "source_manifest_sha256": "73d39d93715452c5568dc9214abefd2003c60c6c532f6f653e10dfe4f83e3c25",
+        "source_unchanged": true,
+        "started": "2026-10-20T15:33:48.806127+00:00"
+      },
+      "owner_sha256": "3abd6a97c5532f8ef8a2343d141301cd9f47eccda2c620cf37d5f497c285c209",
+      "parent_sha256": "520b7d01ad5e8e6ccb9d8ea5157203d031918932012ea70e33a129d470f15bb1",
+      "systemd": "MainPID=0\nResult=success\nExecMainStatus=0\nActiveState=inactive\n"
+    },
+    "redfinal": {
+      "gates": {
+        "base_commit": "18175834a9df99aeda94786e6d804570c25f6083",
+        "complete": true,
+        "controller_sha256": "ad727a85dc46dd242f7c4d8776738b2b478e4cb39f6a4eea48c9d8a0fc46ae66",
+        "finished": "2026-10-20T15:22:18.296178+00:00",
+        "fixture_binary_sha256": "6f242d6faffbacf4afa9e6316a2effa51270498773875c19f40cc80ecc1972ee",
+        "fresh_cpp_build": false,
+        "gates": [
+          {
+            "accepted": true,
+            "command": [
+              "cargo",
+              "build",
+              "--locked",
+              "--offline",
+              "--manifest-path",
+              "tests/fixtures/workflow_app/Cargo.toml"
+            ],
+            "exit": 0,
+            "expected_exit": 0,
+            "log_sha256": "02dc87976098cd603e15749c5b718dc90961950ccf8773b10c62e14b7150e8c6",
+            "name": "redfinal-fixture-build",
+            "pid": 1132579,
+            "waited_by_original_parent": true
+          },
+          {
+            "accepted": true,
+            "command": [
+              "/home/benchbuild/reboot-rust/.venv-acceptance/bin/python",
+              "/home/benchbuild/.cache/canonical-duplicate-20261020-redfinal-src/reboot/rust/tests/fixtures/workflow_app/prove_canonical_admission.py",
+              "/home/benchbuild/.cache/canonical-duplicate-20261020-evidence/old-app",
+              "/home/benchbuild/.cache/canonical-duplicate-20261020-evidence/redfinal-schedule-empty-future-raw"
+            ],
+            "exit": 1,
+            "expected_exit": 1,
+            "log_sha256": "e34f050729c30b30f7d16ed31850690d74d630a506934344cd1008d61f5c40e1",
+            "name": "redfinal-schedule-empty-future",
+            "pid": 1132789,
+            "waited_by_original_parent": true
+          },
+          {
+            "accepted": true,
+            "command": [
+              "/home/benchbuild/reboot-rust/.venv-acceptance/bin/python",
+              "/home/benchbuild/.cache/canonical-duplicate-20261020-redfinal-src/reboot/rust/tests/fixtures/workflow_app/prove_canonical_admission.py",
+              "/home/benchbuild/.cache/canonical-duplicate-20261020-evidence/old-app",
+              "/home/benchbuild/.cache/canonical-duplicate-20261020-evidence/redfinal-schedule-future-empty-raw"
+            ],
+            "exit": 1,
+            "expected_exit": 1,
+            "log_sha256": "4bca0be958979ca1e4c0d258b9b57cc882c57a0be8a6c44332e6a103b436d37c",
+            "name": "redfinal-schedule-future-empty",
+            "pid": 1132997,
+            "waited_by_original_parent": true
+          },
+          {
+            "accepted": true,
+            "command": [
+              "/home/benchbuild/reboot-rust/.venv-acceptance/bin/python",
+              "/home/benchbuild/.cache/canonical-duplicate-20261020-redfinal-src/reboot/rust/tests/fixtures/workflow_app/prove_canonical_admission.py",
+              "/home/benchbuild/.cache/canonical-duplicate-20261020-evidence/old-app",
+              "/home/benchbuild/.cache/canonical-duplicate-20261020-evidence/redfinal-schedule-empty-single-raw"
+            ],
+            "exit": 0,
+            "expected_exit": 0,
+            "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "name": "redfinal-schedule-empty-single",
+            "pid": 1133229,
+            "waited_by_original_parent": true
+          },
+          {
+            "accepted": true,
+            "command": [
+              "/home/benchbuild/reboot-rust/.venv-acceptance/bin/python",
+              "/home/benchbuild/.cache/canonical-duplicate-20261020-redfinal-src/reboot/rust/tests/fixtures/workflow_app/prove_canonical_admission.py",
+              "/home/benchbuild/.cache/canonical-duplicate-20261020-evidence/old-app",
+              "/home/benchbuild/.cache/canonical-duplicate-20261020-evidence/redfinal-schedule-empty-repeated-raw"
+            ],
+            "exit": 0,
+            "expected_exit": 0,
+            "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "name": "redfinal-schedule-empty-repeated",
+            "pid": 1133682,
+            "waited_by_original_parent": true
+          },
+          {
+            "accepted": true,
+            "command": [
+              "/home/benchbuild/reboot-rust/.venv-acceptance/bin/python",
+              "/home/benchbuild/.cache/canonical-duplicate-20261020-redfinal-src/reboot/rust/tests/fixtures/workflow_app/prove_canonical_admission.py",
+              "/home/benchbuild/.cache/canonical-duplicate-20261020-evidence/old-app",
+              "/home/benchbuild/.cache/canonical-duplicate-20261020-evidence/redfinal-schedule-future-repeated-raw"
+            ],
+            "exit": 0,
+            "expected_exit": 0,
+            "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "name": "redfinal-schedule-future-repeated",
+            "pid": 1134195,
+            "waited_by_original_parent": true
+          }
+        ],
+        "native_artifact_reused": true,
+        "parent_pid": 1132578,
+        "source_manifest_sha256": "0bda14601a5747f89a6aed679d4e86c905a5f1d740784b484f2f911e9755ed71",
+        "source_unchanged": true,
+        "started": "2026-10-20T15:21:32.600923+00:00"
+      },
+      "owner_sha256": "8b2fcf34e2cca4d2fd5703c7ccd02fa55db5a35ade01a465b2b599c33e1509d2",
+      "parent_sha256": "c37150d51b109877faefa46e9f1377d58b9a32a0cbaaa1341f4c32b77bd6df7f",
+      "systemd": "MainPID=0\nResult=success\nExecMainStatus=0\nActiveState=inactive\n"
+    }
+  },
+  "parent_commit": "25dcf84eb5afbb5e7613f1275ccf7cdee14c521a",
+  "prior_1208_retirement_sha256": "846cc0f004d012ea248e50344a6b597a6e8d1abbccd89c8af1c4b01ca393293b",
+  "published_base": "18175834a9df99aeda94786e6d804570c25f6083",
+  "red": {
+    "schedule-empty-future": {
+      "error": "AssertionError('last future schedule dispatched immediately')",
+      "expected_failure": true,
+      "original_child_waits": 9,
+      "probe": {
+        "admission_snapshot": {
+          "first": 7,
+          "receipts": [
+            "0a103b1850af11ed4f169ff2a9adeea27ca52212776f726b666c6f772e76312e4c65646765722a144149754a35347936424869425a673a6368696c644220690e15ef908595978be2d006a1170a826d5b72a7859724dcfccbbe7fce2138fc",
+            "0a107d752631ddca46c3b1a2ff17df8cef7d124b0a3c0a12776f726b666c6f772e76312e4c656467657212144149754a35347936424869425a673a6368696c641a1078c01c24dc7d47ca863799508f8f026a12054368696c641801220208071a3c0a12776f726b666c6f772e76312e4c656467657212144149754a35347936424869425a673a6368696c641a1078c01c24dc7d47ca863799508f8f026a2212776f726b666c6f772e76312e4c65646765722a144149754a35347936424869425a673a6368696c644220ba69941f47e788fc6f231894cd729c88c64f0b6ebd49461668980b1bad541fc5"
+          ],
+          "second": 0,
+          "tasks": [
+            {
+              "id": "78c01c24-dc7d-47ca-8637-99508f8f026a",
+              "status": 2,
+              "wire": "0a3c0a12776f726b666c6f772e76312e4c656467657212144149754a35347936424869425a673a6368696c641a1078c01c24dc7d47ca863799508f8f026a12054368696c64180222020807322b0a25747970652e676f6f676c65617069732e636f6d2f776f726b666c6f772e76312e56616c756512020807"
+            }
+          ]
+        },
+        "case": "schedule-empty-future",
+        "rpc_records": [
+          {
+            "code": "OK",
+            "metadata": [
+              [
+                "x-reboot-state-ref",
+                "AIuJ54y6BHiBZg:child"
+              ],
+              [
+                "x-reboot-idempotency-key",
+                "7d752631-ddca-46c3-b1a2-ff17df8cef7d"
+              ],
+              [
+                "authorization",
+                "Bearer spawn-service"
+              ],
+              [
+                "x-reboot-caller-id",
+                "application_id=a0000000001"
+              ],
+              [
+                "x-reboot-task-schedule",
+                ""
+              ],
+              [
+                "x-reboot-task-schedule",
+                "2030-01-01T00:00:00+00:00"
+              ]
+            ],
+            "request": "0807",
+            "response": "",
+            "trailing_metadata": [
+              [
+                "x-reboot-task-id-uuid",
+                "78c01c24-dc7d-47ca-8637-99508f8f026a"
+              ]
+            ]
+          }
+        ],
+        "values": [
+          "",
+          "2030-01-01T00:00:00+00:00"
+        ]
+      },
+      "receipt_sha256": "924a63c62ae5cef3aad3bc61cce9c63f3c3fb639d86d96e153e99ad1e3847b19"
+    },
+    "schedule-empty-repeated": {
+      "error": null,
+      "expected_failure": false,
+      "original_child_waits": 19,
+      "probe": {
+        "admission_snapshot": {
+          "first": 7,
+          "receipts": [
+            "0a1018ed6aa103a745419132675c009c68992212776f726b666c6f772e76312e4c65646765722a144149754a35347936424869425a673a6368696c644220690e15ef908595978be2d006a1170a826d5b72a7859724dcfccbbe7fce2138fc",
+            "0a10d14f755dab6c425fb40960a3f8555b02124b0a3c0a12776f726b666c6f772e76312e4c656467657212144149754a35347936424869425a673a6368696c641a1095b995efc0404a8eb6ceb692cee2042212054368696c641801220208071a3c0a12776f726b666c6f772e76312e4c656467657212144149754a35347936424869425a673a6368696c641a1095b995efc0404a8eb6ceb692cee204222212776f726b666c6f772e76312e4c65646765722a144149754a35347936424869425a673a6368696c64422008c6f89f7f2e11bcb6cbf4bbbe8394bf2ddfab891f336458ff7b606eca599b4e"
+          ],
+          "second": 0,
+          "tasks": [
+            {
+              "id": "95b995ef-c040-4a8e-b6ce-b692cee20422",
+              "status": 2,
+              "wire": "0a3c0a12776f726b666c6f772e76312e4c656467657212144149754a35347936424869425a673a6368696c641a1095b995efc0404a8eb6ceb692cee2042212054368696c64180222020807322b0a25747970652e676f6f676c65617069732e636f6d2f776f726b666c6f772e76312e56616c756512020807"
+            }
+          ]
+        },
+        "case": "schedule-empty-repeated",
+        "rpc_records": [
+          {
+            "code": "OK",
+            "metadata": [
+              [
+                "x-reboot-state-ref",
+                "AIuJ54y6BHiBZg:child"
+              ],
+              [
+                "x-reboot-idempotency-key",
+                "d14f755d-ab6c-425f-b409-60a3f8555b02"
+              ],
+              [
+                "authorization",
+                "Bearer spawn-service"
+              ],
+              [
+                "x-reboot-caller-id",
+                "application_id=a0000000001"
+              ],
+              [
+                "x-reboot-task-schedule",
+                ""
+              ],
+              [
+                "x-reboot-task-schedule",
+                ""
+              ]
+            ],
+            "request": "0807",
+            "response": "",
+            "trailing_metadata": [
+              [
+                "x-reboot-task-id-uuid",
+                "95b995ef-c040-4a8e-b6ce-b692cee20422"
+              ]
+            ]
+          },
+          {
+            "code": "OK",
+            "metadata": [
+              [
+                "x-reboot-state-ref",
+                "AIuJ54y6BHiBZg:child"
+              ],
+              [
+                "x-reboot-idempotency-key",
+                "d14f755d-ab6c-425f-b409-60a3f8555b02"
+              ],
+              [
+                "authorization",
+                "Bearer spawn-service"
+              ],
+              [
+                "x-reboot-caller-id",
+                "application_id=a0000000001"
+              ],
+              [
+                "x-reboot-task-schedule",
+                ""
+              ],
+              [
+                "x-reboot-task-schedule",
+                ""
+              ]
+            ],
+            "request": "0807",
+            "response": "",
+            "trailing_metadata": [
+              [
+                "x-reboot-task-id-uuid",
+                "95b995ef-c040-4a8e-b6ce-b692cee20422"
+              ]
+            ]
+          },
+          {
+            "code": "OK",
+            "metadata": [
+              [
+                "x-reboot-state-ref",
+                "AIuJ54y6BHiBZg:child"
+              ],
+              [
+                "x-reboot-idempotency-key",
+                "d14f755d-ab6c-425f-b409-60a3f8555b02"
+              ],
+              [
+                "authorization",
+                "Bearer spawn-service"
+              ],
+              [
+                "x-reboot-caller-id",
+                "application_id=a0000000001"
+              ],
+              [
+                "x-reboot-task-schedule",
+                ""
+              ],
+              [
+                "x-reboot-task-schedule",
+                ""
+              ]
+            ],
+            "request": "0807",
+            "response": "",
+            "trailing_metadata": [
+              [
+                "x-reboot-task-id-uuid",
+                "95b995ef-c040-4a8e-b6ce-b692cee20422"
+              ]
+            ]
+          }
+        ],
+        "values": [
+          "",
+          ""
+        ]
+      },
+      "receipt_sha256": "78947ec7e15290dd5ee565ccccaf7d0caa4aba91d61b884ff239e26c8c5667cc"
+    },
+    "schedule-empty-single": {
+      "error": null,
+      "expected_failure": false,
+      "original_child_waits": 19,
+      "probe": {
+        "admission_snapshot": {
+          "first": 7,
+          "receipts": [
+            "0a104c9c86fd7de541b9ba228fc5b7a754f0124b0a3c0a12776f726b666c6f772e76312e4c656467657212144149754a35347936424869425a673a6368696c641a10c930b7e0b3bc411494eb27dd0dbd2fc312054368696c641801220208071a3c0a12776f726b666c6f772e76312e4c656467657212144149754a35347936424869425a673a6368696c641a10c930b7e0b3bc411494eb27dd0dbd2fc32212776f726b666c6f772e76312e4c65646765722a144149754a35347936424869425a673a6368696c6442209200afef5d0c9818ba0d4db27364799edb86bf39aef798149b2308e318dbcbdc",
+            "0a105a2feadc23074f86973d5a131bcd47602212776f726b666c6f772e76312e4c65646765722a144149754a35347936424869425a673a6368696c644220690e15ef908595978be2d006a1170a826d5b72a7859724dcfccbbe7fce2138fc"
+          ],
+          "second": 0,
+          "tasks": [
+            {
+              "id": "c930b7e0-b3bc-4114-94eb-27dd0dbd2fc3",
+              "status": 2,
+              "wire": "0a3c0a12776f726b666c6f772e76312e4c656467657212144149754a35347936424869425a673a6368696c641a10c930b7e0b3bc411494eb27dd0dbd2fc312054368696c64180222020807322b0a25747970652e676f6f676c65617069732e636f6d2f776f726b666c6f772e76312e56616c756512020807"
+            }
+          ]
+        },
+        "case": "schedule-empty-single",
+        "rpc_records": [
+          {
+            "code": "OK",
+            "metadata": [
+              [
+                "x-reboot-state-ref",
+                "AIuJ54y6BHiBZg:child"
+              ],
+              [
+                "x-reboot-idempotency-key",
+                "4c9c86fd-7de5-41b9-ba22-8fc5b7a754f0"
+              ],
+              [
+                "authorization",
+                "Bearer spawn-service"
+              ],
+              [
+                "x-reboot-caller-id",
+                "application_id=a0000000001"
+              ],
+              [
+                "x-reboot-task-schedule",
+                ""
+              ]
+            ],
+            "request": "0807",
+            "response": "",
+            "trailing_metadata": [
+              [
+                "x-reboot-task-id-uuid",
+                "c930b7e0-b3bc-4114-94eb-27dd0dbd2fc3"
+              ]
+            ]
+          },
+          {
+            "code": "OK",
+            "metadata": [
+              [
+                "x-reboot-state-ref",
+                "AIuJ54y6BHiBZg:child"
+              ],
+              [
+                "x-reboot-idempotency-key",
+                "4c9c86fd-7de5-41b9-ba22-8fc5b7a754f0"
+              ],
+              [
+                "authorization",
+                "Bearer spawn-service"
+              ],
+              [
+                "x-reboot-caller-id",
+                "application_id=a0000000001"
+              ],
+              [
+                "x-reboot-task-schedule",
+                ""
+              ]
+            ],
+            "request": "0807",
+            "response": "",
+            "trailing_metadata": [
+              [
+                "x-reboot-task-id-uuid",
+                "c930b7e0-b3bc-4114-94eb-27dd0dbd2fc3"
+              ]
+            ]
+          },
+          {
+            "code": "OK",
+            "metadata": [
+              [
+                "x-reboot-state-ref",
+                "AIuJ54y6BHiBZg:child"
+              ],
+              [
+                "x-reboot-idempotency-key",
+                "4c9c86fd-7de5-41b9-ba22-8fc5b7a754f0"
+              ],
+              [
+                "authorization",
+                "Bearer spawn-service"
+              ],
+              [
+                "x-reboot-caller-id",
+                "application_id=a0000000001"
+              ],
+              [
+                "x-reboot-task-schedule",
+                ""
+              ]
+            ],
+            "request": "0807",
+            "response": "",
+            "trailing_metadata": [
+              [
+                "x-reboot-task-id-uuid",
+                "c930b7e0-b3bc-4114-94eb-27dd0dbd2fc3"
+              ]
+            ]
+          }
+        ],
+        "values": [
+          ""
+        ]
+      },
+      "receipt_sha256": "9094ca97e49db041af6885c1824852e5485179dff1ceeab702912881be7ae8d3"
+    },
+    "schedule-future-empty": {
+      "error": "<_InactiveRpcError of RPC that terminated with:\n\tstatus = StatusCode.FAILED_PRECONDITION\n\tdetails = \"spawn key reused with changed task/payload/schedule/schema contract\"\n\tdebug_error_string = \"UNKNOWN:Error received from peer  {grpc_message:\"spawn key reused with changed task/payload/schedule/schema contract\", grpc_status:9, created_time:\"2026-10-20T15:22:05.774584881+00:00\"}\"\n>",
+      "expected_failure": true,
+      "original_child_waits": 10,
+      "probe": {
+        "admission_snapshot": {
+          "first": 7,
+          "receipts": [
+            "0a1067285edaafd04a09af241fff95064d8312590a3c0a12776f726b666c6f772e76312e4c656467657212144149754a35347936424869425a673a6368696c641a10b66efc9ac7b945d885254604e5d8a22e12054368696c641801220208072a0c089c8eded60610b49b8db7031a3c0a12776f726b666c6f772e76312e4c656467657212144149754a35347936424869425a673a6368696c641a10b66efc9ac7b945d885254604e5d8a22e2212776f726b666c6f772e76312e4c65646765722a144149754a35347936424869425a673a6368696c644220a27bc9cd4486672456d50652db58d03d2c5965c81187dd26d4e4fba82dffd8d0",
+            "0a10f5a3500e2d384fa0926e296805060fc12212776f726b666c6f772e76312e4c65646765722a144149754a35347936424869425a673a6368696c644220690e15ef908595978be2d006a1170a826d5b72a7859724dcfccbbe7fce2138fc"
+          ],
+          "second": 0,
+          "tasks": [
+            {
+              "id": "b66efc9a-c7b9-45d8-8525-4604e5d8a22e",
+              "status": 2,
+              "wire": "0a3c0a12776f726b666c6f772e76312e4c656467657212144149754a35347936424869425a673a6368696c641a10b66efc9ac7b945d885254604e5d8a22e12054368696c641802220208072a0c089c8eded60610b49b8db703322b0a25747970652e676f6f676c65617069732e636f6d2f776f726b666c6f772e76312e56616c756512020807"
+            }
+          ]
+        },
+        "case": "schedule-future-empty",
+        "rpc_records": [
+          {
+            "code": "OK",
+            "metadata": [
+              [
+                "x-reboot-state-ref",
+                "AIuJ54y6BHiBZg:child"
+              ],
+              [
+                "x-reboot-idempotency-key",
+                "67285eda-afd0-4a09-af24-1fff95064d83"
+              ],
+              [
+                "authorization",
+                "Bearer spawn-service"
+              ],
+              [
+                "x-reboot-caller-id",
+                "application_id=a0000000001"
+              ],
+              [
+                "x-reboot-task-schedule",
+                "2030-01-01T00:00:00+00:00"
+              ],
+              [
+                "x-reboot-task-schedule",
+                ""
+              ]
+            ],
+            "request": "0807",
+            "response": "",
+            "trailing_metadata": [
+              [
+                "x-reboot-task-id-uuid",
+                "b66efc9a-c7b9-45d8-8525-4604e5d8a22e"
+              ]
+            ]
+          },
+          {
+            "code": "FAILED_PRECONDITION",
+            "details": "spawn key reused with changed task/payload/schedule/schema contract",
+            "metadata": [
+              [
+                "x-reboot-state-ref",
+                "AIuJ54y6BHiBZg:child"
+              ],
+              [
+                "x-reboot-idempotency-key",
+                "67285eda-afd0-4a09-af24-1fff95064d83"
+              ],
+              [
+                "authorization",
+                "Bearer spawn-service"
+              ],
+              [
+                "x-reboot-caller-id",
+                "application_id=a0000000001"
+              ],
+              [
+                "x-reboot-task-schedule",
+                "2030-01-01T00:00:00+00:00"
+              ],
+              [
+                "x-reboot-task-schedule",
+                ""
+              ]
+            ],
+            "request": "0807"
+          }
+        ],
+        "values": [
+          "2030-01-01T00:00:00+00:00",
+          ""
+        ]
+      },
+      "receipt_sha256": "23bfd711e2949827128ae930bbc5e9a7bb628fcd9894277d4d492e900de84be2"
+    },
+    "schedule-future-repeated": {
+      "error": null,
+      "expected_failure": false,
+      "original_child_waits": 18,
+      "probe": {
+        "admission_snapshot": {
+          "first": 0,
+          "receipts": [
+            "0a1097a6b6deb6424efb98e6c414b59bd5ed2212776f726b666c6f772e76312e4c65646765722a144149754a35347936424869425a673a6368696c644220690e15ef908595978be2d006a1170a826d5b72a7859724dcfccbbe7fce2138fc",
+            "0a10fe73f0674fc84b3a9990d3a50d82d67212530a3c0a12776f726b666c6f772e76312e4c656467657212144149754a35347936424869425a673a6368696c641a1011b4073500544968bbff0d14096a03c812054368696c641801220208072a060880b1ef86071a3c0a12776f726b666c6f772e76312e4c656467657212144149754a35347936424869425a673a6368696c641a1011b4073500544968bbff0d14096a03c82212776f726b666c6f772e76312e4c65646765722a144149754a35347936424869425a673a6368696c644220a5d5e8bbaecc520ed27eed2fdb4ff1398bc6eeccd70fe198dd3bbb25b03c0a6b"
+          ],
+          "second": 0,
+          "tasks": [
+            {
+              "id": "11b40735-0054-4968-bbff-0d14096a03c8",
+              "status": 1,
+              "wire": "0a3c0a12776f726b666c6f772e76312e4c656467657212144149754a35347936424869425a673a6368696c641a1011b4073500544968bbff0d14096a03c812054368696c641801220208072a060880b1ef8607"
+            }
+          ]
+        },
+        "case": "schedule-future-repeated",
+        "rpc_records": [
+          {
+            "code": "OK",
+            "metadata": [
+              [
+                "x-reboot-state-ref",
+                "AIuJ54y6BHiBZg:child"
+              ],
+              [
+                "x-reboot-idempotency-key",
+                "fe73f067-4fc8-4b3a-9990-d3a50d82d672"
+              ],
+              [
+                "authorization",
+                "Bearer spawn-service"
+              ],
+              [
+                "x-reboot-caller-id",
+                "application_id=a0000000001"
+              ],
+              [
+                "x-reboot-task-schedule",
+                "2030-01-01T00:00:00+00:00"
+              ],
+              [
+                "x-reboot-task-schedule",
+                "2030-01-01T00:00:00+00:00"
+              ]
+            ],
+            "request": "0807",
+            "response": "",
+            "trailing_metadata": [
+              [
+                "x-reboot-task-id-uuid",
+                "11b40735-0054-4968-bbff-0d14096a03c8"
+              ]
+            ]
+          },
+          {
+            "code": "OK",
+            "metadata": [
+              [
+                "x-reboot-state-ref",
+                "AIuJ54y6BHiBZg:child"
+              ],
+              [
+                "x-reboot-idempotency-key",
+                "fe73f067-4fc8-4b3a-9990-d3a50d82d672"
+              ],
+              [
+                "authorization",
+                "Bearer spawn-service"
+              ],
+              [
+                "x-reboot-caller-id",
+                "application_id=a0000000001"
+              ],
+              [
+                "x-reboot-task-schedule",
+                "2030-01-01T00:00:00+00:00"
+              ],
+              [
+                "x-reboot-task-schedule",
+                "2030-01-01T00:00:00+00:00"
+              ]
+            ],
+            "request": "0807",
+            "response": "",
+            "trailing_metadata": [
+              [
+                "x-reboot-task-id-uuid",
+                "11b40735-0054-4968-bbff-0d14096a03c8"
+              ]
+            ]
+          },
+          {
+            "code": "OK",
+            "metadata": [
+              [
+                "x-reboot-state-ref",
+                "AIuJ54y6BHiBZg:child"
+              ],
+              [
+                "x-reboot-idempotency-key",
+                "fe73f067-4fc8-4b3a-9990-d3a50d82d672"
+              ],
+              [
+                "authorization",
+                "Bearer spawn-service"
+              ],
+              [
+                "x-reboot-caller-id",
+                "application_id=a0000000001"
+              ],
+              [
+                "x-reboot-task-schedule",
+                "2030-01-01T00:00:00+00:00"
+              ],
+              [
+                "x-reboot-task-schedule",
+                "2030-01-01T00:00:00+00:00"
+              ]
+            ],
+            "request": "0807",
+            "response": "",
+            "trailing_metadata": [
+              [
+                "x-reboot-task-id-uuid",
+                "11b40735-0054-4968-bbff-0d14096a03c8"
+              ]
+            ]
+          }
+        ],
+        "values": [
+          "2030-01-01T00:00:00+00:00",
+          "2030-01-01T00:00:00+00:00"
+        ]
+      },
+      "receipt_sha256": "72011a4c8c416e7d3475431cf62158106c79a260d627007e72f0e0fdc1febf57"
+    }
+  },
+  "red_to_green_source_differences": [
+    "source/reboot/rust/src/workflow_spawn.rs"
+  ],
+  "redfinal_source_manifest_sha256": "0bda14601a5747f89a6aed679d4e86c905a5f1d740784b484f2f911e9755ed71",
+  "source_input_count": 715,
+  "source_object_count": 698
+}

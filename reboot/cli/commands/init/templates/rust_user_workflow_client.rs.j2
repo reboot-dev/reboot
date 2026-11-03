@@ -1,0 +1,137 @@
+{% if name < "reboot" %}use {{ name }}::{proto, workflow_generated as generated};
+use reboot::database_proto as db;
+{% else %}use reboot::database_proto as db;
+use {{ name }}::{proto, workflow_generated as generated};
+{% endif %}
+fn request<T>(
+    body: T,
+    reference: &str,
+    key: Option<&str>,
+) -> Result<tonic::Request<T>, Box<dyn std::error::Error>> {
+    let mut request = tonic::Request::new(body);
+    request.set_timeout(std::time::Duration::from_secs(10));
+    request
+        .metadata_mut()
+        .insert("x-reboot-state-ref", reference.parse()?);
+    if let Some(key) = key {
+        let key = uuid::Uuid::parse_str(key)?;
+        request
+            .metadata_mut()
+            .insert("x-reboot-idempotency-key", key.to_string().parse()?);
+    }
+    match std::env::var("RBT_USER_BEARER_TOKEN") {
+        Ok(token) => {
+            request
+                .metadata_mut()
+                .insert("authorization", format!("Bearer {token}").parse()?);
+        }
+        Err(std::env::VarError::NotPresent) => {}
+        Err(error) => return Err(error.into()),
+    }
+    Ok(request)
+}
+
+pub async fn call(
+    channel: tonic::transport::Channel,
+    args: &[String],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let reference = args.get(2).ok_or("missing workflow state reference")?;
+    let mut client =
+        proto::owner_workflows_methods_client::OwnerWorkflowsMethodsClient::new(channel.clone());
+    match args[1].as_str() {
+        "workflow-apply" => {
+            let mut transactions =
+                proto::owner_transactions_methods_client::OwnerTransactionsMethodsClient::new(
+                    channel,
+                );
+            let value = transactions
+                .apply(request(
+                    proto::UserApply {
+                        amount: args.get(4).ok_or("missing amount")?.parse()?,
+                        fail: args.get(5).map(|s| s.parse()).transpose()?.unwrap_or(false),
+                    },
+                    reference,
+                    Some(args.get(3).ok_or("missing key")?),
+                )?)
+                .await?
+                .into_inner();
+            println!("{}", value.value);
+        }
+        "workflow-inspect" => {
+            let mut transactions =
+                proto::owner_transactions_methods_client::OwnerTransactionsMethodsClient::new(
+                    channel,
+                );
+            let value = transactions
+                .inspect(request(proto::WorkflowEmpty {}, reference, None)?)
+                .await?
+                .into_inner();
+            println!("{}", value.value);
+        }
+        "workflow-create" => {
+            client
+                .create(request(
+                    proto::WorkflowEmpty {},
+                    reference,
+                    Some(args.get(3).ok_or("missing key")?),
+                )?)
+                .await?;
+            println!("created");
+        }
+        "workflow-schedule" => {
+            let result = client
+                .schedule_work(request(
+                    proto::UserSchedule {
+                        not_before: args.get(4).ok_or("missing schedule seconds")?.parse()?,
+                        amount: args.get(5).ok_or("missing amount")?.parse()?,
+                    },
+                    reference,
+                    Some(args.get(3).ok_or("missing key")?),
+                )?)
+                .await?
+                .into_inner();
+            println!("{}", uuid::Uuid::from_slice(&result.id)?);
+        }
+        "workflow-read" => {
+            let value = client
+                .query(request(proto::WorkflowEmpty {}, reference, None)?)
+                .await?
+                .into_inner();
+            {% raw %}println!(
+                "{{\"first\":{},\"second\":{},\"schedules\":{}}}",
+                value.first, value.second, value.schedules
+            );{% endraw %}
+        }
+        "workflow-run" => {
+            client
+                .run(request(proto::WorkflowAdd { amount: 1 }, reference, None)?)
+                .await?;
+        }
+        "workflow-set-claims" => {
+            client
+                .set_claims(request(proto::WorkflowEmpty {}, reference, None)?)
+                .await?;
+        }
+        "workflow-wait" => {
+            let id = db::TaskId {
+                state_type: "{{ name }}.v1.OwnerWorkflows".into(),
+                state_ref: reference.into(),
+                task_uuid: uuid::Uuid::parse_str(args.get(3).ok_or("missing task UUID")?)?
+                    .as_bytes()
+                    .to_vec(),
+            };
+            // Wait may legitimately span a future task eligibility window.
+            // This is one bounded RPC, not a status retry loop.
+            let mut wait_request = request(id, reference, None)?;
+            wait_request.set_timeout(std::time::Duration::from_secs(30));
+            let result =
+                generated::OwnerWorkflowsMethodsTasksWait::run(channel, wait_request).await?;
+            {% raw %}println!(
+                "{{\"first\":{},\"second\":{}}}",
+                result.first, result.second
+            );{% endraw %}
+        }
+        _ => return Err("unknown workflow command".into()),
+    }
+    Ok(())
+}

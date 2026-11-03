@@ -1,0 +1,102 @@
+{
+  "validated_revision": "3784ac5a108c94287f03c5e8fc1e64699a350974",
+  "scope": "native Rust only; debug binary; no Docker or shared Python proof",
+  "host": {
+    "server_id": 171072439,
+    "address": "2.29.27.53",
+    "user": "benchbuild"
+  },
+  "native": {
+    "complete": true,
+    "owner_pid": 414747,
+    "owner_terminal": true,
+    "exact_children": 15,
+    "all_joined": true,
+    "custody_failure": null,
+    "source_and_executable_freeze_verified": true,
+    "interruption_boundary": "test-only generated service wrapper parks Send after real durable Create ACK; same production Startup lifecycle and native adapter, no fake",
+    "artifact_hashes": {
+      "/home/benchbuild/.cache/hello-app-qualification-evidence/binaries/app": "3b5604d5e2264562b4e713463408e4d056e2ab086f059f878204eefee7a8e761",
+      "/home/benchbuild/.cache/hello-app-qualification-evidence/binaries/client": "b2c5bb46187e56a14dd5b83246eb8647e6a4bca85038796ad153334ae7b22ed0",
+      "/home/benchbuild/.cache/hello-app-qualification-evidence/binaries/native-tests": "0b236a0b915e5ca09f813cb5531c7654f8f604cc1cd512ef1af5a399d46ea92d",
+      "/home/benchbuild/.bazel-reboot/e93b36e360167f9c4d61312112fcf414/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database": "619002c569e9841144a8bbedf4f2ce6a753bb0e6b103af71883d91d43f413803"
+    }
+  },
+  "offline_locked_build": {
+    "owner_pid": 412470,
+    "owner_terminal": true,
+    "complete": true,
+    "commands": [
+      {
+        "argv": [
+          "python3",
+          "reboot/rust/tests/fixtures/reboot_examples/hello-constructors/verify_reference.py"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "cargo",
+          "test",
+          "--offline",
+          "--locked",
+          "--manifest-path",
+          "reboot/rust/tests/fixtures/reboot_examples/hello-constructors/backend/Cargo.toml",
+          "--all-targets",
+          "--",
+          "--test-threads=1"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "cargo",
+          "test",
+          "--offline",
+          "--locked",
+          "--manifest-path",
+          "reboot/rust/Cargo.toml",
+          "--lib",
+          "admission_requires_existing_or_preserves_default_compatibility"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "cargo",
+          "test",
+          "--offline",
+          "--locked",
+          "--manifest-path",
+          "reboot/rust/Cargo.toml",
+          "--lib",
+          "constructor_writer"
+        ],
+        "exit": 0
+      }
+    ]
+  },
+  "paths": {
+    "source": "/home/benchbuild/.cache/hello-app-qualification-src",
+    "evidence": "/home/benchbuild/.cache/hello-app-qualification-evidence",
+    "cargo_target": "/home/benchbuild/reboot-rust/.cargo-target-acceptance",
+    "cargo_home": "/home/benchbuild/.cargo",
+    "bazel": "/home/benchbuild/.bazel-reboot"
+  },
+  "evidence_hashes": {
+    "native-1/owner.json": "664dae78e577fc9aa717cc4cab48af57c480d9910d7b11db66d67d321cf0e6c9",
+    "final-build-2/build-owner.json": "f30a52a31c98ace76024dfd334efb4895ac1f3e52449a35b20d39e09f9652e90",
+    "python-generate-final.log": "cbde17c13f069f341aa75d6f9e92a1393ace10632e92e1f9c3b02498fe434cf5"
+  },
+  "engine_provenance": "Existing accepted source/hash-pinned CCX43 Database from checkout 8574ccb0df9893274e69d1a19eca469dad56d779; no engine rebuild. Verified empty git diff from engine source revision to validated_revision for reboot/server, rbt, WORKSPACE.bazel and third_party.",
+  "remaining_gaps": [
+    "No Docker or Envoy available; no image built",
+    "Python source generation succeeds; original supported public runtime not executed",
+    "Python retries initializer exceptions; Rust exits, policy parity unresolved",
+    "Shared identity misuse / error diagnostics comparison unverified",
+    "Engine-loss readiness unverified",
+    "Debug binaries only; release image topology/runtime libraries/digests unqualified"
+  ],
+  "no_install_pull_capacity_deletion_or_push": true,
+  "q6_source_retained_untouched": "4cee506d7c52091c03542f04674cda8401c89258"
+}

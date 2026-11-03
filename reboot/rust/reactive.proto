@@ -1,0 +1,6 @@
+syntax = "proto3";
+package reboot.rust.reactive.v1;
+// Rust-only bounded local subscription wire, NOT rbt.v1alpha1.React.
+message Query { string method = 1; bytes request = 2; }
+message Snapshot { bytes response = 1; }
+service LocalReaders { rpc Subscribe(Query) returns (stream Snapshot); }

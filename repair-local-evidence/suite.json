@@ -1,0 +1,41 @@
+[
+  {
+    "command": [
+      "python3",
+      "repeat_resource_regression_test.py"
+    ],
+    "exit": 0
+  },
+  {
+    "command": [
+      "python3",
+      "tiny_repeat_faulttest.py",
+      "controller-smoke-evidence/repeat-controller-smoke-rust-resources.log"
+    ],
+    "exit": 0
+  },
+  {
+    "command": [
+      "python3",
+      "tiny_repeat_analyze.py",
+      "--self-test"
+    ],
+    "exit": 0
+  },
+  {
+    "command": [
+      "python3",
+      "tiny_repeat_selftest.py",
+      "repair-local-evidence/lifecycle"
+    ],
+    "exit": 0
+  },
+  {
+    "command": [
+      "python3",
+      "tiny_repeat_control.py",
+      "repair-local-evidence/atomic"
+    ],
+    "exit": 0
+  }
+]

@@ -1,0 +1,59 @@
+syntax = "proto3";
+package {{ name }}.v1;
+import "rbt/v1alpha1/options.proto";
+message Ledger {
+ option (rbt.v1alpha1.state) = { implements: ["{{ name }}.v1.LedgerWorkMethods", "{{ name }}.v1.LedgerIndexMethods"] };
+ string batch = 1;
+ uint32 count = 2;
+ uint32 approved = 3;
+ uint32 completed = 4;
+ uint64 submissions = 5;
+ bool rejected = 6;
+ uint64 archived = 7;
+ bool stop_enabled = 8; bool stop_requested = 9; bool stopped = 10;
+ bytes workflow_id = 11; bool decision_finished = 12; uint32 break_after = 13; bool audit_mismatch = 14; string audit_requested = 15;
+}
+message Empty {}
+message Submit { string batch = 1; uint32 count = 2; int64 not_before = 3; uint32 reject_after = 4; bool reject_step = 5; bool stop_enabled = 6; uint32 break_after = 7; string audit_batch = 8; uint32 group_size = 9; }
+message Handle { bytes id = 1; }
+message Step { string batch = 1; uint32 index = 2; bool reject = 3; }
+message StopRequest { string batch = 1; bytes task_id = 2; }
+message StopDenied { string batch = 1; string reason = 2; }
+message StepRejected { string batch = 1; uint32 index = 2; string reason = 3; }
+message BatchRejected { string batch = 1; uint32 completed = 2; string reason = 3; }
+message Approval { string batch = 1; uint32 index = 2; bool invalid_range = 3; }
+message Batch { string batch = 1; }
+message HistoryPageRequest { bool archive = 1; optional string start_key = 2; optional string end_key = 3; bool reverse = 4; uint32 limit = 5; optional string continuation = 6; }
+message HistoryPageEntry { string key = 1; bytes value = 2; }
+message HistoryPageResult { repeated HistoryPageEntry entries = 1; optional string continuation = 2; }
+message HistoryResult { repeated string keys = 1; }
+message BatchMismatch { string expected = 1; string actual = 2; }
+message ArchiveRequest { string key = 1; bool invalid_range = 2; }
+message ArchiveEntriesRequest { repeated string keys = 1; bool invalid_range = 2; }
+message ArchiveEntriesResult { repeated ArchiveResult entries = 1; uint64 archived = 2; }
+message ArchiveResult { string key = 1; bytes value = 2; uint64 archived = 3; }
+message ArchiveRejected { string key = 1; string reason = 2; }
+service LedgerWorkMethods {
+ option (rbt.v1alpha1.service) = { state: "{{ name }}.v1.Ledger" };
+ rpc Create(Empty) returns (Empty) { option (rbt.v1alpha1.method).writer = { constructor: {} }; }
+ rpc SubmitBatch(Submit) returns (Handle) { option (rbt.v1alpha1.method).writer = {}; }
+ rpc Observe(Empty) returns (Ledger) { option (rbt.v1alpha1.method).reader = {}; }
+ rpc ObserveBatch(Batch) returns (Ledger) { option (rbt.v1alpha1.method) = { reader: {} errors: ["BatchMismatch"] }; }
+ rpc StopBatch(StopRequest) returns (Ledger) { option (rbt.v1alpha1.method) = { writer: {} errors: ["StopDenied"] }; }
+ rpc RecordAudit(BatchMismatch) returns (Ledger) { option (rbt.v1alpha1.method).writer = {}; }
+ rpc FinishDecision(Step) returns (Ledger) { option (rbt.v1alpha1.method).writer = {}; }
+ rpc FinishStopped(Step) returns (Ledger) { option (rbt.v1alpha1.method).writer = {}; }
+ rpc TryCheckpoint(Step) returns (Ledger) { option (rbt.v1alpha1.method) = { writer: {} errors: ["StepRejected"] }; }
+ rpc Checkpoint(Step) returns (Ledger) { option (rbt.v1alpha1.method).writer = {}; }
+ rpc RunBatch(Submit) returns (Ledger) { option (rbt.v1alpha1.method) = { workflow: {} errors: ["BatchRejected"] }; }
+}
+service LedgerIndexMethods {
+ option (rbt.v1alpha1.service) = { state: "{{ name }}.v1.Ledger" };
+ rpc ApprovalSnapshot(Batch) returns (Ledger) { option (rbt.v1alpha1.method) = { reader: {} errors: ["BatchMismatch"] }; }
+ rpc Approve(Approval) returns (Ledger) { option (rbt.v1alpha1.method).transaction = { exclusive: {} }; }
+ rpc ArchiveEntry(ArchiveRequest) returns (ArchiveResult) { option (rbt.v1alpha1.method) = { transaction: { exclusive: {} } errors: ["ArchiveRejected"] }; }
+ rpc ArchiveEntries(ArchiveEntriesRequest) returns (ArchiveEntriesResult) { option (rbt.v1alpha1.method) = { transaction: { exclusive: {} } errors: ["ArchiveRejected"] }; }
+ rpc HistoryPage(HistoryPageRequest) returns (HistoryPageResult) { option (rbt.v1alpha1.method).transaction = { exclusive: {} }; }
+ rpc ArchiveHistory(Batch) returns (HistoryResult) { option (rbt.v1alpha1.method).transaction = { exclusive: {} }; }
+ rpc History(Batch) returns (HistoryResult) { option (rbt.v1alpha1.method).transaction = { exclusive: {} }; }
+}

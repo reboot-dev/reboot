@@ -1,0 +1,6 @@
+dev run --rust
+dev run --application=Cargo.toml
+dev run --application-name=generated-workflow-cursor-results-app
+dev run --servers=1
+dev run --no-chaos
+dev run --no-generate-watch

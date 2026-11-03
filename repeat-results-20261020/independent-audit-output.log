@@ -1,0 +1,311 @@
+{
+  "strict_passed": false,
+  "resource_issues": [
+    {
+      "file": "repeat-perf-3-rust-resources.log",
+      "line": 1104,
+      "time": 1792494669.8538582,
+      "error": "ValueError('sampler errors (raw preserved; no silent repair)')",
+      "raw_errors": [
+        {
+          "container": "37164b2753e9d8ecb86c87d46db065dd3dbb114108a0595153bae65c37b3f825",
+          "pid": "107199",
+          "error": "StopIteration()"
+        }
+      ]
+    }
+  ],
+  "coverage_failures": [
+    {
+      "label": "repeat-qualification-python-boot-0",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-qualification-python-boot-1",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-qualification-python-boot-2",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-qualification-python-boot-3",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-qualification-python-boot-4",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-qualification-python-restart-ready-0",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-qualification-python-restart-ready-1",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-qualification-python-restart-ready-2",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-qualification-python-restart-ready-3",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-1-python-boot-0",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-1-python-boot-1",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-1-python-boot-2",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-1-python-boot-3",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-1-python-boot-4",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-1-python-restart-ready-0",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-1-python-restart-ready-1",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-1-python-restart-ready-2",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-1-python-restart-ready-3",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-2-python-boot-0",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-2-python-boot-1",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-2-python-boot-2",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-2-python-boot-3",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-2-python-boot-4",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-2-python-restart-ready-0",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-2-python-restart-ready-1",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-2-python-restart-ready-2",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-2-python-restart-ready-3",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-3-python-boot-0",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-3-python-boot-1",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-3-python-boot-2",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-3-python-boot-3",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-3-python-restart-ready-0",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-3-python-restart-ready-1",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-3-python-restart-ready-2",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-3-python-restart-ready-3",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    }
+  ],
+  "cases": 24,
+  "requests": 138000,
+  "samples": 9180
+}
+rust reader 147.183 53.713 69.68 74.036 198.211 117.605
+rust single_send 80.611 104.64 109.611 144.436 259.527 138.805
+rust many_send 80.204 104.723 106.68 139.171 270.004 154.246
+rust replay 80.32 104.748 105.806 114.289 275.035 168.754
+python reader 179.757 42.252 55.892 60.768 574.129 568.84
+python single_send 113.189 69.831 70.491 82.107 584.051 570.699
+python many_send 113.651 69.84 70.68 73.374 585.844 570.859
+python replay 114.054 69.869 70.389 72.758 577.336 567.461

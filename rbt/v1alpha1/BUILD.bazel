@@ -253,6 +253,32 @@ py_grpc_library(
     deps = [":transactions_py_proto"],
 )
 
+# Isolated Native2pc v1 contract. It intentionally does not depend on or
+# share message targets with the legacy transaction protocol above.  Do not
+# add it to the Python generation boundary: this is schema-only Rust/C++ work.
+proto_library(
+    name = "native_2pc_proto",
+    srcs = [":native_2pc.proto"],
+    visibility = ["//visibility:public"],
+)
+
+cc_proto_library(
+    name = "native_2pc_cc_proto",
+    visibility = ["//visibility:public"],
+    deps = [":native_2pc_proto"],
+)
+
+cc_grpc_library(
+    name = "native_2pc_cc_grpc",
+    srcs = [":native_2pc_proto"],
+    grpc_only = True,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":native_2pc_cc_proto",
+        "@com_github_grpc_grpc//:grpc++",
+    ],
+)
+
 proto_library(
     name = "react_proto",
     srcs = [":react.proto"],

@@ -1,0 +1,248 @@
+{
+  "Id": "642f26c5c87cb0c2d1ca46ee52a293d81b47e57f486d3aadb96208f01c892b0d",
+  "Created": "2026-10-19T18:04:46.158676898Z",
+  "Path": "/usr/local/bin/hello",
+  "Args": [],
+  "State": {
+    "Status": "exited",
+    "Running": false,
+    "Paused": false,
+    "Restarting": false,
+    "OOMKilled": false,
+    "Dead": false,
+    "Pid": 0,
+    "ExitCode": 0,
+    "Error": "",
+    "StartedAt": "2026-10-19T18:05:01.725908745Z",
+    "FinishedAt": "2026-10-19T18:05:09.703685223Z",
+    "Health": {
+      "Status": "unhealthy",
+      "FailingStreak": 0,
+      "Log": [
+        {
+          "Start": "2026-10-19T18:04:57.381050904Z",
+          "End": "2026-10-19T18:04:57.419786401Z",
+          "ExitCode": 0,
+          "Output": "SERVING_ENGINE_BACKED\n"
+        },
+        {
+          "Start": "2026-10-19T18:05:06.726785702Z",
+          "End": "2026-10-19T18:05:06.760733938Z",
+          "ExitCode": 0,
+          "Output": "SERVING_ENGINE_BACKED\n"
+        },
+        {
+          "Start": "2026-10-19T18:05:08.761649292Z",
+          "End": "2026-10-19T18:05:08.79484701Z",
+          "ExitCode": 0,
+          "Output": "SERVING_ENGINE_BACKED\n"
+        }
+      ]
+    }
+  },
+  "Image": "sha256:f2b48e8e9ef922b0aadc558c3c4e4c8db0b19ab712fc53f7ed75bf7e6e45fc06",
+  "ResolvConfPath": "/var/lib/docker/containers/642f26c5c87cb0c2d1ca46ee52a293d81b47e57f486d3aadb96208f01c892b0d/resolv.conf",
+  "HostnamePath": "/var/lib/docker/containers/642f26c5c87cb0c2d1ca46ee52a293d81b47e57f486d3aadb96208f01c892b0d/hostname",
+  "HostsPath": "/var/lib/docker/containers/642f26c5c87cb0c2d1ca46ee52a293d81b47e57f486d3aadb96208f01c892b0d/hosts",
+  "LogPath": "/var/lib/docker/containers/642f26c5c87cb0c2d1ca46ee52a293d81b47e57f486d3aadb96208f01c892b0d/642f26c5c87cb0c2d1ca46ee52a293d81b47e57f486d3aadb96208f01c892b0d-json.log",
+  "Name": "/hello-image-review-correction-rust-1",
+  "RestartCount": 0,
+  "Driver": "overlayfs",
+  "Platform": "linux",
+  "MountLabel": "",
+  "ProcessLabel": "",
+  "AppArmorProfile": "docker-default",
+  "ExecIDs": null,
+  "HostConfig": {
+    "Binds": null,
+    "ContainerIDFile": "",
+    "LogConfig": {
+      "Type": "json-file",
+      "Config": {}
+    },
+    "NetworkMode": "hello-image-review-correction_private",
+    "PortBindings": {},
+    "RestartPolicy": {
+      "Name": "no",
+      "MaximumRetryCount": 0
+    },
+    "AutoRemove": false,
+    "VolumeDriver": "",
+    "VolumesFrom": null,
+    "ConsoleSize": [
+      0,
+      0
+    ],
+    "CapAdd": null,
+    "CapDrop": null,
+    "CgroupnsMode": "private",
+    "Dns": null,
+    "DnsOptions": null,
+    "DnsSearch": null,
+    "ExtraHosts": [],
+    "GroupAdd": null,
+    "IpcMode": "private",
+    "Cgroup": "",
+    "Links": null,
+    "OomScoreAdj": 0,
+    "PidMode": "",
+    "Privileged": false,
+    "PublishAllPorts": false,
+    "ReadonlyRootfs": false,
+    "SecurityOpt": null,
+    "UTSMode": "",
+    "UsernsMode": "",
+    "ShmSize": 67108864,
+    "Runtime": "runc",
+    "Isolation": "",
+    "CpuShares": 0,
+    "Memory": 0,
+    "NanoCpus": 0,
+    "CgroupParent": "",
+    "BlkioWeight": 0,
+    "BlkioWeightDevice": null,
+    "BlkioDeviceReadBps": null,
+    "BlkioDeviceWriteBps": null,
+    "BlkioDeviceReadIOps": null,
+    "BlkioDeviceWriteIOps": null,
+    "CpuPeriod": 0,
+    "CpuQuota": 0,
+    "CpuRealtimePeriod": 0,
+    "CpuRealtimeRuntime": 0,
+    "CpusetCpus": "",
+    "CpusetMems": "",
+    "Devices": null,
+    "DeviceCgroupRules": null,
+    "DeviceRequests": null,
+    "MemoryReservation": 0,
+    "MemorySwap": 0,
+    "MemorySwappiness": null,
+    "OomKillDisable": null,
+    "PidsLimit": null,
+    "Ulimits": null,
+    "CpuCount": 0,
+    "CpuPercent": 0,
+    "IOMaximumIOps": 0,
+    "IOMaximumBandwidth": 0,
+    "MaskedPaths": [
+      "/proc/acpi",
+      "/proc/asound",
+      "/proc/interrupts",
+      "/proc/kcore",
+      "/proc/keys",
+      "/proc/latency_stats",
+      "/proc/sched_debug",
+      "/proc/scsi",
+      "/proc/timer_list",
+      "/proc/timer_stats",
+      "/sys/devices/virtual/powercap",
+      "/sys/firmware"
+    ],
+    "ReadonlyPaths": [
+      "/proc/bus",
+      "/proc/fs",
+      "/proc/irq",
+      "/proc/sys",
+      "/proc/sysrq-trigger"
+    ],
+    "Init": true
+  },
+  "Storage": {
+    "RootFS": {
+      "Snapshot": {
+        "Name": "overlayfs"
+      }
+    }
+  },
+  "Mounts": [],
+  "Config": {
+    "Hostname": "642f26c5c87c",
+    "Domainname": "",
+    "User": "",
+    "AttachStdin": false,
+    "AttachStdout": true,
+    "AttachStderr": true,
+    "Tty": false,
+    "OpenStdin": false,
+    "StdinOnce": false,
+    "Env": [
+      "RBT_NAME=hello-image-qualified",
+      "RBT_RUST_DATABASE_URL=http://database:20000",
+      "RBT_RUST_LISTEN_ADDR=0.0.0.0:9990",
+      "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+      "RBT_RUST_URL=http://127.0.0.1:9990"
+    ],
+    "Cmd": null,
+    "Healthcheck": {
+      "Test": [
+        "CMD",
+        "/usr/local/bin/hello-health",
+        "health"
+      ],
+      "Interval": 2000000000,
+      "Timeout": 4000000000,
+      "StartPeriod": 5000000000,
+      "Retries": 2
+    },
+    "Image": "sha256:f2b48e8e9ef922b0aadc558c3c4e4c8db0b19ab712fc53f7ed75bf7e6e45fc06",
+    "Volumes": null,
+    "WorkingDir": "",
+    "Entrypoint": [
+      "/usr/local/bin/hello"
+    ],
+    "Labels": {
+      "com.docker.compose.config-hash": "11f407bba9b4b392e079e27606f8ebda0de28eee4f922cfc1a2be05c9ec59325",
+      "com.docker.compose.container-number": "1",
+      "com.docker.compose.depends_on": "database:service_healthy:false",
+      "com.docker.compose.image": "sha256:926d8bacb2b9c92d04ab5e16cd2bf4eaa70be789f75a08d808590a719bcf1f8d",
+      "com.docker.compose.oneoff": "False",
+      "com.docker.compose.project": "hello-image-review-correction",
+      "com.docker.compose.project.config_files": "/home/benchbuild/.cache/hello-image-review-src/reboot/rust/tests/fixtures/reboot_examples/hello-constructors/image/compose.review-correction.yaml",
+      "com.docker.compose.project.working_dir": "/home/benchbuild/.cache/hello-image-review-src/reboot/rust/tests/fixtures/reboot_examples/hello-constructors/image",
+      "com.docker.compose.service": "rust",
+      "com.docker.compose.version": "5.6.0",
+      "org.opencontainers.image.version": "24.04"
+    },
+    "StopTimeout": 20
+  },
+  "NetworkSettings": {
+    "SandboxID": "",
+    "SandboxKey": "",
+    "Ports": {},
+    "Networks": {
+      "hello-image-review-correction_private": {
+        "IPAMConfig": null,
+        "Links": null,
+        "Aliases": [
+          "hello-image-review-correction-rust-1",
+          "rust"
+        ],
+        "DriverOpts": null,
+        "GwPriority": 0,
+        "NetworkID": "6489626d4cf66048432708150e0d0bb012cba1d8706d5548a4b43b905257c3d2",
+        "EndpointID": "",
+        "Gateway": "",
+        "IPAddress": "",
+        "MacAddress": "",
+        "IPPrefixLen": 0,
+        "IPv6Gateway": "",
+        "GlobalIPv6Address": "",
+        "GlobalIPv6PrefixLen": 0,
+        "DNSNames": [
+          "hello-image-review-correction-rust-1",
+          "rust",
+          "642f26c5c87c"
+        ]
+      }
+    }
+  },
+  "ImageManifestDescriptor": {
+    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+    "digest": "sha256:926d8bacb2b9c92d04ab5e16cd2bf4eaa70be789f75a08d808590a719bcf1f8d",
+    "size": 1053,
+    "platform": {
+      "architecture": "amd64",
+      "os": "linux"
+    }
+  }
+}
