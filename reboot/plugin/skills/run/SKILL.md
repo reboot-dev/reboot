@@ -1,6 +1,6 @@
 ---
 name: run
-description: Run an existing Reboot application locally. Detects whether the project is an MCP App or a standalone Web App, makes sure dependencies and secrets are in place, then starts every process the app needs — for an MCP App a Cloudflare quick tunnel (so external MCP clients can reach the dev server) via the bundled `cloudflared` shim, the backend (`rbt dev run`), and the frontend dev server (for MCP Apps it also opens the setup wizard, from which the user can launch MCPJam on demand). Use this to bring an app back up, e.g. at the start of a new session.
+description: Run a Reboot application locally — a web app, an MCP App, or both on one backend. Detects which, makes sure dependencies and secrets are in place, then starts every process it needs (the backend, the frontend dev server, and for an MCP App a Cloudflare quick tunnel and the setup wizard, which a web app at `/` replaces). Use this to bring an app back up, e.g. at the start of a new session; the full-stack skill also loads it once the backend passes and again at the build's close.
 argument-hint: [<project-directory>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit, AskUserQuestion
 ---
@@ -21,10 +21,16 @@ up" an existing Reboot app — most commonly at the start of a fresh
 session, where no processes and no exported environment survive
 from last time.
 
-> This skill **runs** an app; it does not build or modify one. To
-> build, see the [`mcp-app` skill](../mcp-app/SKILL.md) and the
-> [web-app skill](../web-app/SKILL.md) — those skills defer here for
-> their "run the app" step.
+> This skill **runs** an app; it does not build or modify one. The
+> [`full-stack` skill](../full-stack/SKILL.md) builds, and loads this skill
+> once the backend passes and again at the close.
+
+**Already up?** In a build this skill is loaded more than once. Before
+starting anything, look for this app's processes (`pgrep -af "rbt dev
+run"`, `pgrep -af vite`, `pgrep -af cloudflared`, each run from or
+naming this project). Whatever is up stays up: `rbt dev run --watch`
+reloads on every change. Start only what is missing, and never open
+a page or the wizard a second time.
 
 ## Step 1 — Locate the project
 
@@ -39,8 +45,10 @@ so the next session in this project starts with its map.
 
 ## Step 2 — Detect the app type
 
-A Reboot project is one of two kinds. Decide using these signals,
-strongest first.
+A Reboot project is a web app, an MCP App, or both. Decide using these
+signals, strongest first; **Both** is an app with the MCP signals and
+the web app's entry, `frontend/web/index.html`, and takes everything
+both kinds need except the setup wizard (below).
 
 **MCP App** — any of:
 
@@ -59,9 +67,9 @@ strongest first.
 - No `mcp=Tool(` / `UI(` anywhere under `api/`.
 - The SPA entry `frontend/web/index.html`, and no `frontend/mcp/`.
 
-If the signals genuinely conflict, or none match, ask the user
-("Is this an MCP App or a standalone Web App?"). Do not guess —
-the app type changes whether the setup wizard is opened.
+If none match, ask the user ("Is this a web app, an MCP App, or
+both?"). Do not guess — the type changes the tunnel, the wizard and
+the handoff.
 
 ## Step 3 — Dependencies
 
@@ -107,10 +115,21 @@ The full secrets story — dev vs. Reboot Cloud — is in
 
 ## Step 5 — Start the processes
 
-Run each process in its own background shell, from the project
-root.
+Start each long-lived process **detached, with its output in a log**,
+from the project root, never as a tool's background shell: those are
+stopped when the shell's time limit runs out, taking the app down
+mid-build. For each command below:
 
-### Named URLs with portless — ask the user first
+```sh
+mkdir -p .rbt && (nohup <command> > .rbt/<name>.log 2>&1 &)
+```
+
+(`<name>` is `backend`, `frontend`, `tunnel` or `dashboard`; the
+frontend's runs from `frontend/`, its log `../.rbt/frontend.log`.)
+Read a process's log to see it come up, with `tail`, never by
+following it.
+
+### Named URLs with portless — the default
 
 Reboot recommends running the app under
 [portless](https://github.com/vercel-labs/portless), which gives
@@ -124,8 +143,16 @@ backend trusts exactly that dev server origin too. An app scaffolded
 by these skills defaults to it: its `.rbtrc` has
 `dev run --default-config=portless`.
 
-**Ask the user whether they want portless before starting anything**
-(recommend it). If they decline, start the processes on plain ports
+**Portless is the default; ask only when it is not already in use.**
+If the portless proxy is already running (`portless doctor`), or this
+session already runs something under it (the developer dashboard at
+`https://dashboard-<app>.localhost`), that is the answer: use it, say
+so in one line ("Running under portless, as the dashboard is"), and
+ask nothing. Otherwise **ask the user whether they want portless
+before starting anything** (recommend it), once per session; an
+answer in the prompt or earlier in the session is the answer. A question that comes back with no
+choice (nobody there, or the dialog was not delivered) is portless:
+say so in one line and go on. If they decline, start the processes on plain ports
 as the sections below describe, passing `--config=ports` to
 `rbt dev run` when the `.rbtrc` defaults to portless, and reading
 `http://localhost:9991` wherever this skill says
@@ -151,12 +178,19 @@ If they accept, before the backend and frontend:
 3. Start the frontend with its `dev:portless` script and the
    backend with its portless config, as the sections below say.
 
-### Tunnel — MCP Apps only
+### Tunnel — MCP Apps and Both
 
 An MCP App's backend needs a Cloudflare quick tunnel so external MCP
 clients (e.g. ChatGPT) can reach it. Skip the tunnel for a **Web
 App**: it has no MCP clients, and a tunnel would publish a dev server
 where the `Development()` picker lets anyone sign in as anyone.
+
+**In a build** (loaded by the full-stack skill), **start
+no tunnel**: a public tunnel is refused by the session's permission
+check, and the build has no use for one. Start the backend without
+`--tunnel-url`; the handoff gives the tunnel command below (Step 6)
+for the user to run in their own shell. What follows is for a launch
+the user asked for by name.
 
 One tunnel per app, for the whole session: a quick tunnel's
 `*.trycloudflare.com` URL is new every time one starts, and the
@@ -175,7 +209,7 @@ otherwise `--url http://localhost:<BACKEND_PORT>`. Its
 every other line alone; those are other apps' tunnels.
 
 If there is none, run the bundled `cloudflared` shim in its own
-background shell, with `--metrics localhost:<METRICS_PORT>` a free
+detached process (above), with `--metrics localhost:<METRICS_PORT>` a free
 local port for its metrics endpoint: `4040`, unless another app's
 tunnel holds it. Under portless the tunnel reaches the backend by
 name through the portless proxy, so it needs no port, can start
@@ -213,14 +247,14 @@ find another app's.
 
 ### Backend — both app types
 
-Start the backend in its own background shell:
+Start the backend, detached (above):
 
 ```sh
 uv run rbt dev run --no-chaos
 ```
 
-For an MCP App, add `--tunnel-url=<URL>`, the tunnel's URL from
-above. `--env-file=.env` in `.rbtrc` loads the secrets into the process;
+For an MCP App or Both, add `--tunnel-url=<URL>`, the tunnel's URL
+from above. `--env-file=.env` in `.rbtrc` loads the secrets into the process;
 `--no-chaos` disables the Chaos Monkey, a useful bug-finder that is
 confusing to a developer who cannot see the backend terminal. With
 portless, the `.rbtrc`'s default config passes `--portless` (add it
@@ -260,7 +294,8 @@ Once the backend logs show it is serving traffic, do two things:
 
 1. **Tell the user the wizard exists and what it's for** — e.g.
    "Setup wizard (connect an MCP client) at http://localhost:9991".
-2. **Open it once in the browser**, best-effort:
+2. **Open it once in the browser**, best-effort (not when the full-stack
+   skill starts the app before it has pages: Step 6):
 
    ```sh
    "$BROWSER" http://localhost:9991 || xdg-open http://localhost:9991 || \
@@ -275,7 +310,12 @@ you open it as a one-shot step during initial startup (not from a
 loop that watches for the backend coming back up), this is naturally
 satisfied — just don't add any reload-driven re-open.
 
-**Skip this only for a Web App.** A **Web App** has no MCP frontend,
+**Skip it for Both, too.** With a web app served, Reboot gives `/` to
+the web app and serves no root page, so there is no wizard to open:
+the MCP App is reached at `/mcp` (through the tunnel, as
+`https://<hostname>/mcp`), which the handoff gives instead.
+
+**Skip this for a Web App.** A **Web App** has no MCP frontend,
 so no wizard is served and there's nothing to connect — don't
 announce or open it. Every other app here is an MCP App, and the
 wizard is how you point a client at it, so open it even for a
@@ -310,7 +350,13 @@ Either way the inspector binds the fixed port 6274.
 
 ## Step 6 — Hand off
 
-Confirm every process is up from its logs, then give the user:
+Confirm every process is up from its logs, then give the user what follows.
+
+**Started by a build (the full-stack skill) before the app has any pages, give
+nothing yet and open nothing** (not the wizard either): say only that
+the app is running. The build gives these once it has pages.
+
+The hand-off:
 
 - the application's own inspect-page URL (and that `rbt inspect`
   inspects the same state from the CLI — see the
@@ -323,7 +369,14 @@ Confirm every process is up from its logs, then give the user:
   step above);
 - for a Web App — the backend's URL, where the web app is served
   (`https://<app>.localhost/` with portless, `http://localhost:9991/`
-  without), and a first page to open.
+  without), and a first page to open;
+- for Both — the web app's URL and first page as for a Web App, and
+  for the MCP App its connector: the tunnel command above (to
+  `<app>.localhost`) for the user to run, and the steps to add its
+  address with `/mcp` on the end, given as the
+  [dashboard skill's Step 6](../dashboard/SKILL.md) gives the
+  dashboard's, in one section with it and the app's first; a first
+  prompt to try; no wizard.
 
 > **Always start every process the app needs.** An MCP App needs
 > backend and frontend; a Web App needs the same. (MCPJam is not in

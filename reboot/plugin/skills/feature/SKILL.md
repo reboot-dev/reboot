@@ -1,6 +1,6 @@
 ---
 name: feature
-description: Specify a Reboot application's feature before and while building it, as a Gherkin `.feature` file the tests run and the dashboard shows. Use whenever the user asks for a new capability or a change to one ("add transfers", "users should be able to..."), before touching the API or code; and when converting an existing test suite to feature files. Agrees on the feature in plain English first, writes it down tagged `@wip`, builds it with the `python` / `web-app` / `mcp-app` skills, then iterates on scenarios with the user until they agree to take the tag off.
+description: Specify a Reboot application's feature before and while building it, as a Gherkin `.feature` file the tests run and the dashboard shows. Use whenever the user asks for a new capability or a change to one ("add transfers", "users should be able to..."), before touching the API or code; and when converting an existing test suite to feature files. Agrees on the feature in plain English first, writes it down tagged `@wip`, builds it with the `full-stack` skill, then iterates on scenarios with the user until they agree to take the tag off. In a whole build, the `full-stack` skill says where each step falls.
 argument-hint: [<feature-description>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit, AskUserQuestion
 ---
@@ -32,6 +32,22 @@ skill's references; read them at the step that needs them:
 - `../python/references/testing-project-setup.md` — the files a
   suite needs (`reboot[dev]`, `pytest.ini`, `.gitignore`).
 
+## In a build
+
+The [`full-stack` skill](../full-stack/SKILL.md) runs these steps for a
+whole app, and says when:
+
+| step | in a build |
+| --- | --- |
+| 1, propose in English | every feature at once, its own message and question, before the model |
+| 2, write it down `@wip` | every feature file, as soon as they are agreed, before the model and the API |
+| 3, build it | a layer at a time across every feature: all the scenarios, then the whole backend, then the whole frontend, then the browser scenarios |
+| 4, scenarios | **first**, every feature's, from its example situations, failing against stubs until the backend pass; the browser scenarios after the frontend |
+| 5, ask before taking `@wip` off | once, at the handoff, for every feature |
+
+Outside a build (a change to an app that exists), the steps run in
+order for the one feature.
+
 ## Step 1 — Propose the feature in English
 
 Before any file changes, tell the user what you understand the
@@ -50,8 +66,9 @@ feature to be, as a person would describe it, not as an API:
 - **A few example situations** in prose, one line each: "a
   transfer between two customers' accounts"; "a transfer for more
   than the source holds".
-- **Whether the web app is part of it**, when the app has one: the
-  flow a person clicks through, if that is how the feature is used.
+- **Its surfaces**: the page a person uses (a web app), the tools the
+  AI calls and the `UI()` it opens (an MCP App), or several; for a
+  page, the flow a person clicks through.
 
 Ask the user whether that is the feature. Iterate on the English
 until they agree; the file follows the words, so the words come
@@ -97,9 +114,9 @@ Tell the user it is there.
 
 ## Step 3 — Build the feature
 
-Change the API, the servicers, and the frontend with the `python`
-skill and, for the frontend, the `web-app` or `mcp-app` skill. Two
-rules of theirs matter most here:
+Change the API, the servicers, and the surface with the
+[`full-stack` skill](../full-stack/SKILL.md) (on the `python` skill's
+references). Two rules matter most here:
 
 - **Every property gets a `description=`** on its `Field(...)`,
   saying what the value means (`api-pydantic.md`). The dashboard
