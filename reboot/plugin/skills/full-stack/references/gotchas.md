@@ -1,11 +1,11 @@
 ---
-title: MCP App–Specific Gotchas
+title: Gotchas — Every Surface, and the MCP Surface's Own
 impact: CRITICAL
 impactDescription: The trip list specific to the MCP App layer. Every entry is a real failure mode the MCP App codegen, runtime, or build surfaces — most are caught at startup or at codegen rather than at write time, so they look like runtime errors but are static schema problems.
 tags: gotchas, traps, errors, mcp, ui, factory, workflow, ref, schedule, optional, react, vite, snake-camel
 ---
 
-## MCP App–Specific Gotchas
+## Gotchas
 
 For the rest of the trip-list — `.rbtrc` line-based, no `__init__.py`
 in `api/`, pydantic Field zero-default rule, `self.ref().state_id`
@@ -14,7 +14,9 @@ paths, `Service.create(context, id)` semantics, register-all-Servicers
 — see `python/references/patterns-common-gotchas.md` and
 the per-topic references.
 
-The list below is what's specific to the MCP App layer:
+The list below is the app layer's: every entry applies to every
+surface unless it is marked **(MCP)**. A Web build writes `mcp=None` on
+every method (2, 17) and has no `UI()`:
 
 1. **React bindings use camelCase.** Python `from_index` becomes
    TypeScript `fromIndex`; same for every snake_case field name.
@@ -39,7 +41,7 @@ The list below is what's specific to the MCP App layer:
 7. **Use `--default-config=portless`** in `.rbtrc` (not
    `--default=portless`).
 
-8. **`UI(path="<name>")`** — `path` is the UI's URL path under
+8. **(MCP)** **`UI(path="<name>")`** — `path` is the UI's URL path under
    `/__/frontend/mcp/` (`"clicker"`, or nested, `"shop/cart"`), not
    a directory: its source is `frontend/mcp/<path>/` (the Vite
    plugin's `mcpAppPath`) and its build
@@ -47,7 +49,7 @@ The list below is what's specific to the MCP App layer:
    (`--mcp-app-dist-path=frontend/dist/mcp`). `path="frontend/mcp/x"`
    is refused.
 
-9. **`UI(request=<ConfigType>)`** passes config as React component
+9. **(MCP)** **`UI(request=<ConfigType>)`** passes config as React component
    props. `UI(request=None)` passes no props. `request=<Model>` is
    for **free-form configuration** (a personalisation string, a
    dashboard hint) — never for entity IDs. A UI about one specific
@@ -161,7 +163,7 @@ The list below is what's specific to the MCP App layer:
     Always use `async def fn(state): ...`. (See
     `python/references/servicer-workflow.md`.)
 
-19. **`frontend/dist/mcp/<name>/index.html` is the right location** for
+19. **(MCP)** **`frontend/dist/mcp/<name>/index.html` is the right location** for
     the built MCP App — `<--mcp-app-dist-path>/<path>/index.html`,
     with `--mcp-app-dist-path=frontend/dist/mcp` in `.rbtrc`. Reboot's
     Vite plugin (`reboot()` from `@reboot-dev/reboot-react/vite`)
@@ -206,7 +208,7 @@ The list below is what's specific to the MCP App layer:
     `--react-extensions` with `--mobile`, because Metro can't resolve
     the `.js`-suffixed imports back to their `.ts` sources.
 
-22. **An MCP App's RPCs are not restricted by `allowed_origins`.** Its
+22. **(MCP)** **An MCP App's RPCs are not restricted by `allowed_origins`.** Its
     UI runs on the host's sandbox origin (a per-conversation
     `*.claudemcpcontent.com` host in Claude, the opaque origin `null`
     in MCPJam), which cannot be listed in advance, and it does not
@@ -225,3 +227,17 @@ The list below is what's specific to the MCP App layer:
     Obtain a short-lived signed URL with the client's bearer and give
     that to `src` instead; never put the token in the URL. Recipe in
     `python/references/auth-http-routes.md`.
+
+24. **Reading an actor nobody has created aborts.** A `Reader` called
+    on an id whose constructor never ran (a day nothing is booked on, an account before its first charge) aborts with
+    `StateNotConstructed` (`<Type>.<Method>Aborted` in the caller);
+    it never returns empty state. Where "not created yet" means
+    "nothing yet", catch that abort in the caller and treat it as
+    empty, or create the actor up front. Scenarios assert it with
+    `aborts with \`StateNotConstructed\``
+    (`python/testing-features.md`).
+
+25. **Never name a request field `status`.** The generated code uses
+    a local variable of that name, so a method whose request has a
+    `status` field fails to generate or type-check (builds have had to rename it mid-build). Name it for what it holds:
+    `task_state`, `order_stage`, `payment_status`.

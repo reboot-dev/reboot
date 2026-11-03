@@ -23,8 +23,7 @@ no `allowed_origins` to keep in sync and no cross-site cookie to lose.
 
 > This skill **deploys** an app; it does not build or modify one
 > beyond production configuration. To build, see the
-> [`mcp-app` skill](../mcp-app/SKILL.md) and the
-> [web-app skill](../web-app/SKILL.md); to run locally, see the
+> [`full-stack` skill](../full-stack/SKILL.md); to run locally, see the
 > [run skill](../run/SKILL.md).
 
 ## When to Use
@@ -67,7 +66,7 @@ Checks that commonly bite on first deploy:
 
 - **A real OAuth provider.** `Development()` is dev-only; the
   `prod=` provider must be set
-  (`mcp-app/references/auth-oauth-providers.md` has the
+  (`full-stack/references/auth-oauth-providers.md` has the
   per-provider details, including registering the backend's
   `https://<application-id>.<cell>.rbt.cloud:9991/__/oauth/callback`
   redirect URI with the IdP once the URL is known).

@@ -21,7 +21,7 @@ more to do calls `build()` between its own steps in that file.**
 `build.mjs` is for a frontend with more than one UI: several MCP
 Apps, or MCP Apps and the web app. A frontend declaring exactly one
 UI builds with plain `vite build` (the plugin builds the one it
-declares when no target is set), which is what the `web-app` skill's
+declares when no target is set), which is what `react-client.md`'s
 web-only shell does. This scaffold starts with `build.mjs` because an
 MCP frontend tends to grow UIs, and then nothing about the build
 changes when it does.
@@ -254,6 +254,11 @@ body {
 ```
 
 ## `frontend/mcp/<ui-name>/index.html`
+
+`npm create @reboot-dev/ui` writes this file for every `UI()` the API
+declares (after `rbt generate`); never write it yourself, as the
+desktop app previews every `.html` the Write tool writes. For
+reference, it is:
 
 ```html
 <!DOCTYPE html>
