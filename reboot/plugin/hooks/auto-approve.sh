@@ -174,7 +174,36 @@ case "$tool" in
         ;;
     Bash)
         cmd=$(field command)
+        # A page file written as `<name>.tmp` and renamed into place:
+        # the desktop app previews every `.html` or `.svg` the Write
+        # tool writes, so a build writes `index.html.tmp` and renames
+        # it. Exactly `mv <path>.tmp <path>`, the same path, an .html
+        # or .svg, no `..`, and an absolute path only inside the cwd.
+        if printf '%s' "$cmd" | grep -Eq '^mv [A-Za-z0-9_./][A-Za-z0-9_./-]*\.(html|svg)\.tmp [A-Za-z0-9_./][A-Za-z0-9_./-]*\.(html|svg)$'; then
+            src=${cmd#mv }; src=${src%% *}; dst=${cmd##* }
+            case "$src" in *..*) exit 0 ;; esac
+            [ "$src" = "$dst.tmp" ] || exit 0
+            case "$dst" in
+                /*) here=$(field cwd); case "$dst" in "$here"/*) emit_allow ;; esac ;;
+                *) emit_allow ;;
+            esac
+            exit 0
+        fi
         has_traversal "$cmd" && exit 0
+        # A Reboot dev command started the way the `run` skill starts
+        # every long-lived process, detached with its output in a log
+        # under `.rbt/`: `mkdir -p .rbt && (nohup <command> >
+        # .rbt/<name>.log 2>&1 &)`, or `<command> > .rbt/<name>.log
+        # 2>&1` (the tool's own background). The wrapper comes off and
+        # the command inside is vetted below like any other. So does a
+        # leading `BROWSER=true` on `uv run rbt dashboard`, which the
+        # dashboard skill sets so the dashboard opens in the desktop
+        # app's Browser pane, not a window of its own.
+        cmd=$(printf '%s' "$cmd" | sed -E \
+            -e 's#^mkdir -p \.rbt && ##' \
+            -e 's#^\(nohup (.+) > \.rbt/[A-Za-z0-9_-]+\.log 2>&1 &\)$#\1#' \
+            -e 's#^(.+) > \.rbt/[A-Za-z0-9_-]+\.log 2>&1$#\1#' \
+            -e 's#^BROWSER=true (uv run rbt dashboard)( |$)#\1\2#')
         # The directory Claude Code launched the tool from. Used to
         # resolve relative paths and to gate the Reboot dev commands.
         cwd=$(field cwd)

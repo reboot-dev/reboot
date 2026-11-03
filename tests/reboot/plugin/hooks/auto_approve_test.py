@@ -639,6 +639,49 @@ CASES: list[tuple[str, str, dict, Decision]] = [
         },
         Decision.REJECT,
     ),
+    # ----- Bash: a page file renamed into place (the desktop app
+    # previews every .html the Write tool writes, so the build writes
+    # `<page>.tmp` and renames it). -----
+    (
+        'Bash: an index.html written as .tmp and renamed into place is approved',
+        "Bash",
+        {
+            "command": 'mv frontend/web/index.html.tmp frontend/web/index.html'
+        },
+        Decision.APPROVE,
+    ),
+    (
+        'Bash: a rename to a different name is rejected',
+        "Bash",
+        {
+            "command": 'mv frontend/web/index.html.tmp frontend/web/other.html'
+        },
+        Decision.REJECT,
+    ),
+    (
+        'Bash: a .tmp rename of a non-page file is rejected',
+        "Bash",
+        {
+            "command": 'mv backend/src/main.py.tmp backend/src/main.py'
+        },
+        Decision.REJECT,
+    ),
+    (
+        'Bash: a .tmp rename with a traversal is rejected',
+        "Bash",
+        {
+            "command": 'mv ../x/index.html.tmp ../x/index.html'
+        },
+        Decision.REJECT,
+    ),
+    (
+        'Bash: a .tmp rename followed by another command is rejected',
+        "Bash",
+        {
+            "command": 'mv a/index.html.tmp a/index.html && rm -rf /'
+        },
+        Decision.REJECT,
+    ),
 ]
 
 # The `run` skill's Reboot dev commands. These are auto-approved only
@@ -649,6 +692,55 @@ CASES: list[tuple[str, str, dict, Decision]] = [
 #   (label, command, where, expected_decision)
 REBOOT_DEV_CASES: list[tuple[str, str, Where, Decision]] = [
     # ----- Inside a Reboot project: the `run` skill's commands. -----
+    # ----- Started as the `run` and dashboard skills start them. -----
+    (
+        'dev: the dashboard started with BROWSER=true',
+        'BROWSER=true uv run rbt dashboard',
+        Where.PROJECT,
+        Decision.APPROVE,
+    ),
+    (
+        'dev: the backend started detached, logged under .rbt/',
+        'mkdir -p .rbt && (nohup uv run rbt dev run --no-chaos > .rbt/backend.log 2>&1 &)',
+        Where.PROJECT,
+        Decision.APPROVE,
+    ),
+    (
+        "dev: the dashboard logged under .rbt/, in the tool's background",
+        'mkdir -p .rbt && BROWSER=true uv run rbt dashboard > .rbt/dashboard.log 2>&1',
+        Where.PROJECT,
+        Decision.APPROVE,
+    ),
+    (
+        'dev: a logged start outside a Reboot project is rejected',
+        'mkdir -p .rbt && (nohup uv run rbt dev run > .rbt/backend.log 2>&1 &)',
+        Where.NON_PROJECT,
+        Decision.REJECT,
+    ),
+    (
+        'dev: a log outside .rbt/ is rejected',
+        'uv run rbt dev run > /tmp/backend.log 2>&1',
+        Where.PROJECT,
+        Decision.REJECT,
+    ),
+    (
+        'dev: a log name with a path in it is rejected',
+        'uv run rbt dev run > .rbt/../x.log 2>&1',
+        Where.PROJECT,
+        Decision.REJECT,
+    ),
+    (
+        'dev: anything but a dev command inside the wrapper is rejected',
+        'mkdir -p .rbt && (nohup rm -rf ~ > .rbt/x.log 2>&1 &)',
+        Where.PROJECT,
+        Decision.REJECT,
+    ),
+    (
+        'dev: BROWSER= with another value is rejected',
+        'BROWSER=evil uv run rbt dashboard',
+        Where.PROJECT,
+        Decision.REJECT,
+    ),
     (
         "dev: uv sync at the project root",
         "uv sync",
