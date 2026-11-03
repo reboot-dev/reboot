@@ -55,7 +55,9 @@ A line marked **Web** or **MCP** is read only for that surface (Both
 reads both).
 
 **At the design:** the frontends' sections below (The Frontends); **Web**
-[`visual-interactive.md`](references/visual-interactive.md).
+[`visual-interactive.md`](references/visual-interactive.md) and the
+looks' index, [`looks/README.md`](references/looks/README.md) (never a
+look in full until one is chosen).
 
 **Before the project shell:** `python/lifecycle-{project-setup,rbtrc,application-entry,initialize-hook}.md`;
 **MCP** [`project-shell.md`](references/project-shell.md) (the
@@ -219,7 +221,7 @@ elsewhere.
 
 #### A feature's page (C3, the frontend pass)
 
-Its view and gesture are
+Its view, look and gesture are
 [`visual-interactive.md`](references/visual-interactive.md)'s; this is the
 React underneath.
 
@@ -476,7 +478,10 @@ Two messages, each ending with one question:
    surface's own part (Web, **the app's page map**, below, and the
    methods each page calls; MCP,
    the tool surface, each `UI()` and where it sits, about three example
-   prompts). Then ask "Build this design?", with two options
+   prompts); Web, **the look** for structure (one from the looks'
+   index) and **the app's palette** for identity (from the prompt's
+   words and the domain's statuses), each named with one clause of
+   why (`visual-interactive.md`, "The look"). Then ask "Build this design?", with two options
    and no others: **Build it** and **Change something**. "Change
    something" asks what to change, in plain text; the change is made and
    the design shown again with the same question. An alternative the
@@ -589,7 +594,9 @@ files exist already (A2).
    files and the frontend's `package.json` name it: the app's
    `https://<project-name>.localhost`, its dashboard's, and its
    persisted state are all keyed on it, and a second app with the
-   same name on the machine collides with it.
+   same name on the machine collides with it. Web: `DESIGN.md`,
+   the chosen look, beside `AGENTS.md` (`visual-interactive.md`, "The
+   look").
 2. `uv sync`.
 3. **The whole API**, as the design has it (one declaration; the model
    stays one decision): every property with a `description=`; every
@@ -640,7 +647,7 @@ files exist already (A2).
    (deleting it is refused); `cd frontend && npm install`, `uv run rbt
    generate` again (the React bindings need `node_modules`); Web, the
    provider, sign-in and sign-out, an empty navigation, and
-   `tokens.css` (`visual-interactive.md`, "The tokens") imported first; MCP, the
+   the look's `tokens.css` and the app's `palette.css` imported first; MCP, the
    `build.mjs` and config. Web: **the app shell** (`visual-interactive.md`, "The app shell":
    masthead, navigation, working context, the sign-in screen) and the
    router, with the page map's routes
@@ -711,7 +718,7 @@ spaces is an error); one feature is `-m <its tag>`.
    feature's view (`visual-interactive.md`) is one of those pages or a
    section of one, with every action reachable by a button or a menu,
    and a gesture (a drag, a hover card) added where it makes the action
-   faster. Live as others change it, in the tokens only;
+   faster. Live as others change it, in the look's tokens only;
    accessible markup from the start. MCP: each `UI()` and the example
    prompts. `npm run build` once at the end of the pass, and its
    errors fixed. Then **show the app**: the run skill's Step 6
@@ -749,10 +756,14 @@ spaces is an error); one feature is `-m <its tag>`.
    a page no scenario reaches gets a browser scenario that opens it,
    with something in it, and sees its heading. Each page passes when:
    - **it is the approved design**: the page map's page, inside the
-     shell (masthead, nav, the working context);
+     shell (masthead, nav, the working context), in the chosen look
+     and the app's palette, **in both themes**: the scenario that
+     reaches the home page opens it a second time in the look's other
+     mode (`opens the web app in dark mode`, or `light` for a dark
+     look), so a screenshot of each theme is there to read;
    - **it is styled, all of it**: no browser defaults (a grey bevelled
      button, a serif face, an underlined blue link, an unstyled
-     select), nothing outside the tokens;
+     select), nothing outside the look's tokens;
    - **nothing is broken**: no overlap, clipped or wrapped-to-pieces
      text, table running off the page, raw id or ISO timestamp where a
      name or a date belongs, empty state that says nothing, loading
@@ -760,7 +771,7 @@ spaces is an error); one feature is `-m <its tag>`.
    - **it reads as one app** with the other pages: the same spacing,
      type sizes, buttons, tables and status colours.
 
-   What fails is fixed in the page, in the tokens (never by
+   What fails is fixed in the page, in the look's tokens (never by
    changing a scenario's assertions), then the browser scenarios run
    again and their new screenshots are read. **Two rounds**: what is
    still off after the second is named in the handoff, page by page.
@@ -820,6 +831,7 @@ When changing an existing app:
 <project>/
 ├── .python-version, .rbtrc, .mypy.ini, pytest.ini, pyproject.toml
 ├── AGENTS.md, CLAUDE.md
+├── DESIGN.md                       # Web: the look, its tokens
 ├── api/<pkg>/v1/<name>.py          # the API, every feature's methods
 ├── backend/src/
 │   ├── main.py
@@ -832,6 +844,6 @@ When changing an existing app:
 └── frontend/
     ├── package.json, vite.config.ts, tsconfig*.json
     ├── api/                        # generated React client
-    ├── web/                        # Web: index.html, src/main.tsx, tokens.css, App.tsx, pages/
+    ├── web/                        # Web: index.html, src/main.tsx, tokens.css, palette.css, App.tsx, pages/
     └── mcp/<ui>/                   # MCP: index.html, main.tsx, App.tsx per UI()
 ```

@@ -1,8 +1,8 @@
 ---
 title: Visual and Interactive — Every Web Feature Is Seen and Handled
 impact: HIGH
-impactDescription: A web app's features are views a person looks at and acts on directly — a board, a timeline, a map — built on the app's tokens, with drag and drop, double-click, right-click and hover, each proven by a scenario.
-tags: surface, web-app, tokens, drag-and-drop, gestures, scenarios
+impactDescription: A web app's features are views a person looks at and acts on directly — a board, a timeline, a map — built in one look, with drag and drop, double-click, right-click and hover, each proven by a scenario.
+tags: surface, web-app, look, design-md, tokens, drag-and-drop, gestures, scenarios
 ---
 
 ## Visual and Interactive
@@ -12,26 +12,90 @@ feature is a view a person reads at a glance and acts on with the
 pointer, not a table and a form. Tables stay for long lists that are
 searched, never as a feature's main view.
 
-### The tokens (the foundation, B7)
+### The look (the design, A3; the foundation, B1 and B7)
 
-The app's design tokens are written once, in the foundation, and
-pages use only them: `frontend/web/src/tokens.css`, written with
-Write, every value a variable on `:root`:
+Two parts. **The structure comes from a look; the identity comes from
+the app.** A borrowed look's palette gives an app some other product's face; the builds that read best take their colours and display face from the prompt's own words and the domain's own statuses, and read as that business.
 
-- colour: `--color-canvas`, `--color-surface`, `--color-ink`,
-  `--color-ink-soft`, `--color-line`, `--color-action` (with
-  `--color-on-action`), `--color-danger`, and **one
-  `--color-status-<name>` per state the domain's things move through,
-  named in its words** (`--color-status-blocked`), each distinct at a
-  glance and legible on the canvas;
-- shape and space: `--radius-sm`, `--radius-md`, `--radius-lg`, and
-  `--space-xs` to `--space-xl`;
-- type: `--font-body` and `--font-display` (system faces), and
-  `--text-sm` to `--text-xl`.
+- **The look, for structure**: pick one from
+  [`looks/README.md`](looks/README.md) by its **ops fit** (staff using
+  it all day take a 4 or 5; a consumer-facing app can go
+  lower). It gives the type scale, spacing, radii, density, depth and
+  components. Never read a look in full before it is chosen.
+- **The app's palette, for identity**: from the prompt's words and
+  the domain ("premium, handmade" → warm paper, deep forest, brass,
+  a serif for headings; "a kids' coding club" → something else
+  entirely), a small set: `canvas`, `surface`, `ink`, `ink-soft`,
+  `line`, `action` (with `on-action`), `accent`, `danger`, and **one
+  `status-<name>` per state the domain's things move through, named
+  in its words** (`status-open`, `status-in-progress`, `status-blocked`,
+  `status-done`), each distinct at a glance
+  and legible on `canvas`. Optionally a `brand-display` typography
+  role: a display face that fits the words, for page titles and the
+  brand only.
 
-Plain and neutral: one action colour, and no theme beyond these.
-`tokens.css` is imported first in `main.tsx`. **Pages use only its
-variables**: no hex code, no pixel size of their own.
+Name both in the design in one line each, with a clause of why
+("structure from flat-square-enterprise for density; a forest, paper
+and brass palette with a serif for a boutique brand"); the user
+changes either at "Build this design?".
+
+In the foundation:
+
+```sh
+cp <skill>/references/looks/<look>.md DESIGN.md
+```
+
+Then `frontend/web/src/tokens.css`, written with Write from
+`DESIGN.md`'s front matter: the look, in CSS. Every token becomes a
+variable on `:root`, named for its key:
+
+- each key under `colors:` → `--color-<key>`;
+- each under `rounded:` → `--radius-<key>`; under `spacing:` →
+  `--space-<key>`;
+- each role under `typography:` → `--font-<role>` (its `fontFamily`),
+  `--text-<role>` (`fontSize`), `--weight-<role>` (`fontWeight`),
+  `--leading-<role>` (`lineHeight`), `--tracking-<role>`
+  (`letterSpacing`);
+- `color-scheme: light` on `:root` (`dark` for a dark look);
+- then the look's other theme: every key of its `colors-dark:` block
+  (`colors-light:` for a dark look) as the same `--color-<key>`, inside
+  `@media (prefers-color-scheme: dark)` (or `light`), on `:root`, with
+  its own `color-scheme`.
+
+Values exactly as `DESIGN.md` writes them, nothing added and nothing
+left out; the file is the look's, never edited afterwards.
+
+**The app's palette** is `frontend/web/src/palette.css`, written with
+Write: each colour a `--color-app-*` variable (`--color-app-action`,
+`--color-app-status-blocked`) on `:root`, then the same names again
+inside `@media (prefers-color-scheme: dark)` (or `light`, for a dark
+look) with their other-theme values. An other-theme value keeps its
+hue: a colour used for text or a mark moves in lightness until it
+reads on that theme's canvas (4.5:1 for text, 3:1 for a fill); a pale
+tint becomes a deep tint of the same hue, and the reverse; a label on
+a fill is whichever of the theme's canvas or ink reads on it. Then in
+`DESIGN.md`, at the top of the body, a `## This app` section: the
+palette's names, each with both values, which role each fills (it
+overrides the look's own colour roles), what each status colour
+means, and `brand-display` if a display face was chosen. Only
+`tokens.css` and `palette.css` carry `prefers-color-scheme`; never a
+page.
+
+`DESIGN.md` sits beside `AGENTS.md` and is the app's look from now
+on; read it once, here. `tokens.css`, then `palette.css`, are
+imported first in `main.tsx`; load the fonts it names from Google Fonts in
+`index.html`. **Pages use only its variables**: colour from the
+app's palette (`var(--color-app-action)`,
+`var(--color-app-status-blocked)`), everything else from the look
+(`var(--radius-md)`, `var(--space-lg)`, `var(--text-body)`): no hex
+code, no pixel size of their own. **Every look defines the same
+components**, by the same names: `app-masthead`, `app-nav-item`
+(`-active`), `working-context`, `page-title`, `table-header`,
+`table-row`, `list-row`, `board-lane`, `board-tile`, `status-pill`,
+`button-primary`, `button-secondary`, `text-input`, `select`,
+`field-label`, `field-error`, `card`, `dialog`, `toast`, `empty-state`,
+`sign-in-panel`; a page is built from these. A component the look lacks is added
+to `DESIGN.md` first, in its words, then built.
 
 ### The app shell (the foundation, B7)
 
@@ -47,7 +111,7 @@ Every page sits in one shell, built before any page:
 - **Sign-in is its own screen** in the app's identity (its name, one
   line of what it is for, one button), not a bare button.
 - Loading and unavailable states are the shell's too: one calm line
-  in the display face, never a blank page.
+  in the brand display face, never a blank page.
 
 ### A feature's view (the design, A1; the loop, C3)
 
