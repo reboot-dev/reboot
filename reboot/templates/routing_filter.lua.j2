@@ -18,17 +18,42 @@ function envoy_on_request(request_handle)
 {% endfor %}
   }
 
+  -- Custom domains (e.g. `api.example.com`) and the application each
+  -- one belongs to. A request for a registered custom domain is
+  -- always routed to that application, whatever application ID
+  -- header the client sent, so a custom domain can only ever reach
+  -- the application it was registered for.
+  local application_id_by_domain = {
+{% for domain, application_id in application_id_by_domain | dictsort %}
+    ["{{ domain }}"] = "{{ application_id }}",
+{% endfor %}
+  }
+
   {{ mangled_http_path_filter | indent(2) }}
 
-  local application_id = request_handle:headers():get("x-reboot-application-id")
-  if application_id == nil then
-    -- HTTP/2 mandate use of 'authority' header, but to be
-    -- conservative if it's not present we look for 'host'.
-    local authority = request_handle:headers():get(":authority")
-    if authority == nil then
-      authority = request_handle:headers():get(":host")
-    end
+  -- HTTP/2 mandate use of 'authority' header, but to be
+  -- conservative if it's not present we look for 'host'.
+  local authority = request_handle:headers():get(":authority")
+  if authority == nil then
+    authority = request_handle:headers():get(":host")
+  end
 
+  local application_id = nil
+  if authority ~= nil then
+    -- The authority may carry a port; custom domains are registered
+    -- without one.
+    local domain = string.match(authority, "^([^:]+)")
+    application_id = application_id_by_domain[domain]
+    if application_id ~= nil then
+      request_handle:headers():replace("x-reboot-application-id", application_id)
+    end
+  end
+
+  if application_id == nil then
+    application_id = request_handle:headers():get("x-reboot-application-id")
+  end
+
+  if application_id == nil then
     -- NOTE: relying on `split()` from 'mangled_http_path_filter'
     -- which we embed above.
     local values = split(authority, ".")
