@@ -27,7 +27,7 @@ my-app/
     api.py
 ```
 
-**Correct (canonical layout, the one the `web-app` and `mcp-app` skills build on):**
+**Correct (canonical layout, the one the `full-stack` skill builds on):**
 
 ```
 my-app/
@@ -46,7 +46,7 @@ my-app/
   tests/                 # see `testing-project-setup.md`
     <capability>.feature
     <name>_test.py
-  frontend/              # see the `web-app` and `mcp-app` skills
+  frontend/              # see the `full-stack` skill
     api/                 # rbt generate --react output
     web/                 # the browser SPA, if the app has one
     mcp/<ui-name>/       # the MCP Apps, if the app has any

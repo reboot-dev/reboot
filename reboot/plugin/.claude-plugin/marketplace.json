@@ -17,8 +17,7 @@
       "skills": [
         "./skills/app",
         "./skills/feature",
-        "./skills/mcp-app",
-        "./skills/web-app",
+        "./skills/full-stack",
         "./skills/run",
         "./skills/agents-md",
         "./skills/dashboard",

@@ -563,7 +563,7 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/testing-external-context.md`
 - `references/testing-failure-recovery.md`
 
-**Frontend** (shared by `web-app` and `mcp-app`):
+**Frontend** (for the `full-stack` skill's web app and MCP App):
 
 - `references/react-generated-client.md` — what
   `rbt generate --react=` emits: hook overloads, `Use<Type>Api`,

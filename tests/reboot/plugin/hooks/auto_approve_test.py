@@ -157,10 +157,10 @@ CASES: list[tuple[str, str, dict, Decision]] = [
         Decision.APPROVE,
     ),
     (
-        "Skill: reboot:mcp-app is approved",
+        "Skill: reboot:full-stack is approved",
         "Skill",
         {
-            "skill": "reboot:mcp-app"
+            "skill": "reboot:full-stack"
         },
         Decision.APPROVE,
     ),
