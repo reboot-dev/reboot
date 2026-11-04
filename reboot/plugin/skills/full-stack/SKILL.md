@@ -420,16 +420,19 @@ Two messages, each ending with one question:
    `UI()`), in the **order they build on** (the one the
    others need first). Short: what a person does and why, no types,
    no methods. Then ask "Are these the features to build?", with
-   four options, each ending with how long it takes to build (not
-   counting time waiting on the user, rounded to five minutes): **15
-   minutes for the foundation, whatever the scope, plus a feature's
-   share: 7 minutes with a web app alone, 5 with an MCP App alone, 9
-   with both**. Both frontends: the first feature only, about 25; the
-   showcase's two, about 35; four, about 50; six, about 70. Never an
-   estimate that makes a smaller scope slower than a larger one.
-   The showcase is the default: first, and the one recommended:
-   - **A Reboot showcase (Recommended)**, always this label: **two
-     features, three or four scenarios each**, picked from the list (or
+   four options, each ending with **a range** for how long it takes
+   to build, not counting time waiting on the user: **8–15 minutes
+   for the foundation, whatever the scope, plus 3–8 a feature with a
+   web app alone, 2–5 with an MCP App alone, 4–10 with both**, rounded
+   out to whole five minutes. Both frontends: the first feature only,
+   10–25 minutes; the middle scope's two, 15–35; four, 20–55; six,
+   30–75. A range, never one number: builds of the same scope vary
+   (the middle scope with both frontends took 17–20 minutes in three
+   headless builds, and a session with permission prompts takes
+   longer). Never a range that makes a smaller scope slower than a
+   larger one. The middle scope is the default, first and recommended:
+   - **Between a core MVP and all features (Recommended)**, always this
+     label: **two features, three or four scenarios each**, picked from the list (or
      cut down from one) to show what Reboot does that other stacks make
      hard, naming which feature shows which:
      - **a transaction across states**: one action that changes two
@@ -444,11 +447,11 @@ Two messages, each ending with one question:
      The page map is the two features' pages only, inside the shell.
    - **Trim to a core MVP**, always this label, naming what the core
      keeps and what comes later.
-   - **Build all the features**, in a few words ("All 6. About 70 minutes.").
+   - **Build all the features**, in a few words ("All 6. 30–75 minutes.").
    - **Build the first feature only**, always this label, naming it;
      left out when the core MVP is already one feature.
 
-   With the showcase, **C1 writes three or four scenarios a feature,
+   With the middle scope, **C1 writes three or four scenarios a feature,
    no more**: a rule the feature has that is not among them is
    enforced in the servicer, and offered as scenarios at the handoff.
 
@@ -579,7 +582,7 @@ files exist already (A2).
    the user has given so far, one line each, in their words (the frontends, the scope and what it leaves out, the design approved and any
    change asked for). **A later answer goes in the moment it is
    given.** Asked what was picked, answer from it, plainly ("We picked
-   the showcase"), never "it looks like". Then the project shell: `.python-version`,
+   the middle scope"), never "it looks like". Then the project shell: `.python-version`,
    `pyproject.toml`, `.rbtrc` (with `generate --react=frontend/api` and
    the surface's lines), `.mypy.ini`, `pytest.ini`. **`<project-name>`
    is the project folder's name** (`~/projects/tracker-7` → `tracker-7`), never the domain's (`tracker`), wherever the shell
