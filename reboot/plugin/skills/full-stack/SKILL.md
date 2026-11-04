@@ -693,15 +693,11 @@ spaces is an error); one feature is `-m <its tag>`.
    goes back through the model: change the declaration, `rbt
    generate`, and say so in one line.
 
-   **Then the sample data**, `backend/src/seed.py`, so the app opens
-   on a working day, not on empty pages. Through the real methods,
-   with fixed ids (`seed-1`), so a restart is a no-op: enough that
-   **every page in the page map and every state it shows has
-   something in it** (things in every status a page shows, with dates around today, and one thing that needs doing now, named in the handoff), with real-sounding
-   names and dates relative to today. `main.py` splits its start-up:
-   `open_<app>` creates what the app needs (the records the rest hang on) and
-   `initialize` calls it, then `seed`; the test module's `application`
-   uses `open_<app>` only, so no scenario sees the sample data.
+   **No sample data yet**: the app opens empty, and sample data is
+   offered at the handoff (D5), never added unasked. `main.py`'s
+   `initialize` creates only what the app needs to work (the records
+   the rest hang on), in a function of its own, `open_<app>`, which the
+   test module's `application` calls too.
 
    One line to the user: the backend is done, N scenarios passing,
    and the dashboard's Features page, where every feature shows them.
@@ -779,6 +775,18 @@ spaces is an error); one feature is `-m <its tag>`.
    - `@wip` on every feature, and the question whether to take it off
      (the feature skill's Step 5), with the features to try first;
    - the features a smaller scope left out, offered as the next build;
+   - **sample data, offered**, last, as a question: "Add sample
+     data?", with **Add sample data** (so every page has something in
+     it to try) and **Leave it empty**. On "Add", `backend/src/seed.py`,
+     through the real methods, with fixed ids (`seed-1`) so a restart
+     is a no-op: enough that every page in the page map and every
+     state it shows has something in it (things in every status a
+     page shows, dates around today, one thing that needs doing now,
+     named when it is done), with real-sounding names. `initialize`
+     calls `open_<app>`, then `seed`; the test module's `application`
+     still calls `open_<app>` only, so no scenario sees the sample
+     data. Then the suite once more, and one line naming what was
+     added and where to see it;
    - the dashboard skill's Step 6 hand-over (the tunnel command and
      the Claude and ChatGPT connector instructions), required whenever
      the dashboard was started.
