@@ -81,12 +81,13 @@ you open in a browser, and an [MCP App](/frontends/mcp_app) that
 Claude and ChatGPT can drive as tools — sharing one set of todos and
 one signed-in [`User`](/users/overview) per person.
 
-Claude Code builds the app with the plugin's `app` skill. A Reboot app
-is used by people and by agents, so by default it gets both frontends:
-a [web app](/frontends/web) for people and an [MCP App](/frontends/mcp_app)
-for agents in Claude and ChatGPT, on one backend with one `User` per
-person. Unless your description settles it, it asks once, with both
-recommended:
+Claude Code builds the app with the plugin's `app` skill. By default
+a Reboot app gets both frontends: a [web app](/frontends/web) in the
+browser and an [MCP App](/frontends/mcp_app) used from an AI chat
+client such as Claude or ChatGPT, on one backend with one `User` per
+person. Unless your description settles it, it asks once how the app
+will be accessed, and recommends an answer only when your description
+leans to one:
 
 | You say | You get |
 | --- | --- |

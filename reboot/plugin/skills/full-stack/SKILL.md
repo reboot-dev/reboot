@@ -369,8 +369,8 @@ logic but are separate entries (`frontend/web/` and `frontend/mcp/`).
   one `Application(oauth=...)`. A user signed in on one frontend is
   signed in on the other (the session cookie short-circuits
   `/authorize`).
-- The design's method map says who calls each method: one agents
-  call is `mcp=Tool()`; one only a page calls is `mcp=None`. Example prompts as for the MCP surface.
+- The design's method map says who calls each method: one the chat
+  client calls is `mcp=Tool()`; one only a page calls is `mcp=None`. Example prompts as for the MCP surface.
 
 #### One frontend folder
 
@@ -466,8 +466,9 @@ Two messages, each ending with one question:
 3. **The design those features need**, by the assessment below: the
    types and their fields, each collection's shape, the method map
    (which method, which kind, which feature uses it, and **who calls
-   it**: people, through a page; agents, as an MCP tool; an agent
-   showing a person, through a `UI()`; or people and agents), `User`
+   it**: a person, through a page; an AI chat client, as an MCP tool;
+   the chat client showing the person something, through a `UI()`;
+   or both a page and a tool), `User`
    and how people sign in, auth; and the
    surface's own part (Web, **the app's page map**, below, and the
    methods each page calls; MCP,
