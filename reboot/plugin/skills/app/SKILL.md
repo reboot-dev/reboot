@@ -40,24 +40,28 @@ Naming one frontend is not asking for it alone: "a website for my
 CRM" and "a tool I can use from Claude" still get the question. Domain
 words never settle it (a CRM, a booking app, "login").
 
-Otherwise ask, before any file is written, whatever the session's
-autonomy settings:
+Otherwise ask, whatever the session's autonomy settings, and **as
+the first thing in the session**: before the plan, before reading
+anything, with no more thought than it takes to pick a
+recommendation.
 
 ```
 Question: "How will this app be accessed?"
 Header:   "Access"
 Options:
-  - "Web app and MCP client" — a web front end in the browser, and an
-    MCP App used from an AI chat client (Claude, ChatGPT) as a
-    connector. One backend, one sign-in.
-  - "Web app only" — a web front end in the browser.
-  - "MCP client only" — an MCP App used from an AI chat client
-    (Claude, ChatGPT, VSCode, Goose) as a connector.
+  - "Web app and MCP client" — a website people open in a browser,
+    and the same app inside Claude or ChatGPT, where they ask for
+    things in the chat. Both use the same data and the same sign-in.
+  - "Web app only" — a website people open in a browser, with pages
+    to view and work in. Nothing in a chat client.
+  - "MCP client only" — the app lives inside an AI chat client such
+    as Claude or ChatGPT. People ask in the chat, and it answers with
+    actions and its own panels. No website.
 ```
 
 The options stay in this order: both first, as the default. **Mark
-one "(Recommended)" only when the description leans to it**, and say
-why in its description, from the prompt's own words:
+one "(Recommended)" only when the description leans to it**, and add
+why to its description in a few words, from the prompt's own:
 
 - **Web app only** when the app is mostly looked at or worked in on a
   screen: a board, a calendar, a map, a dashboard, a page for the
@@ -77,7 +81,7 @@ A question that comes back with no choice (nobody there, or the
 dialog was not delivered) is both: say so in one line. The answer goes
 into `AGENTS.md`'s Decisions when it is written.
 
-Then say it in one sentence ("Building this with both frontends, a
+Then the plan, and say it in one sentence ("Building this with both frontends, a
 web app and an MCP App for AI chat clients: every feature's tests,
 then the backend, then the pages and the tools.") and load the
 `full-stack` skill with the frontends.
@@ -87,7 +91,7 @@ then the backend, then the pages and the tools.") and load the
 | prompt | frontends | why |
 | --- | --- | --- |
 | "a CRM for my relationships" | ask, none marked | nothing leans either way |
-| "a dashboard served at metrics.example.com" | ask, web app only recommended | a URL names the web app, not the web alone; a dashboard is looked at |
+| "a dashboard served at metrics.example.com" | ask, Web app only recommended | a URL names the web app, not the web alone; a dashboard is looked at |
 | "a tool I can use from Claude to track my reading" | ask, MCP client only recommended | Claude named, not "only"; a log kept by talking |
 | "a website and an MCP server for our CRM" | Both | a conjunction |
 | "just a website for my bakery, no AI" | Web | "just", "no AI" |

@@ -410,6 +410,9 @@ built from the hook's `state_id`, opened with the host's `openLink`
 The features come first, agreed in English, then the model they need;
 getting entities, field types or method types wrong means
 regenerating across the project, so both are settled before any code.
+**No tool check first**: the plugin's shims put `rbt`, `uv` and `node`
+on `PATH`, so no `which` and no `rbt --version`; a new folder is
+empty, and an `ls` is all it needs.
 Two messages, each ending with one question:
 
 1. **The features, in English**, as feature's Step 1 has them: each
@@ -419,8 +422,13 @@ Two messages, each ending with one question:
    tiles across, a timeline to drag bars along; MCP, its tools and a
    `UI()`), in the **order they build on** (the one the
    others need first). Short: what a person does and why, no types,
-   no methods. Then ask "Are these the features to build?", with
-   four options, each ending with **a range** for how long it takes
+   no methods, written from the description alone: **no state types,
+   fields, methods or scenarios are worked out before the scope
+   answer**, not even in thought, since step 3 designs them for the
+   scope chosen and only for it. Then ask "How much should the first build include?",
+   the question alone (the message above has the features; no list in
+   it), with three options, each a short line of feature names only,
+   no Reboot terms, ending with **a range** for how long it takes
    to build, not counting time waiting on the user: **8–15 minutes
    for the foundation, whatever the scope, plus 3–8 a feature with a
    web app alone, 2–5 with an MCP App alone, 4–10 with both**, rounded
@@ -430,11 +438,18 @@ Two messages, each ending with one question:
    (the middle scope with both frontends took 17–20 minutes in three
    headless builds, and a session with permission prompts takes
    longer). Never a range that makes a smaller scope slower than a
-   larger one. The middle scope is the default, first and recommended:
-   - **Between a core MVP and all features (Recommended)**, always this
-     label: **two features, three or four scenarios each**, picked from the list (or
+   larger one. Three options, the labels always these, **in this order:
+   Small, Medium, Large, smallest first, even though
+   Medium is the recommended one** (never moved to the top for being
+   recommended); Medium is the default:
+   - **Small**: the core, by name ("Reservations. 10–25 min.").
+   - **Medium (Recommended)**: the two features by name, "the pair
+     that shows Reboot best" ("Reservations and Front desk, the pair
+     that shows Reboot best. 15–35 min."). **Two features, three or
+     four scenarios each**, picked from the list (or
      cut down from one) to show what Reboot does that other stacks make
-     hard, naming which feature shows which:
+     hard; which feature shows which is said in the message above the
+     question, never in the option:
      - **a transaction across states**: one action that changes two
        things or neither (moving stock between two warehouses takes it from one and adds it to the other, or does neither);
      - **live updates**: a change one person makes shows at once on
@@ -445,13 +460,9 @@ Two messages, each ending with one question:
      Each of the three is in one of the two features; the scenarios
      are those three and the feature's main flow, not its edge cases.
      The page map is the two features' pages only, inside the shell.
-   - **Trim to a core MVP**, always this label, naming what the core
-     keeps and what comes later.
-   - **Build all the features**, in a few words ("All 6. 30–75 minutes.").
-   - **Build the first feature only**, always this label, naming it;
-     left out when the core MVP is already one feature.
+   - **Large**: "All 7 features. 35–85 min."
 
-   With the middle scope, **C1 writes three or four scenarios a feature,
+   With Medium, **C1 writes three or four scenarios a feature,
    no more**: a rule the feature has that is not among them is
    enforced in the servicer, and offered as scenarios at the handoff.
 

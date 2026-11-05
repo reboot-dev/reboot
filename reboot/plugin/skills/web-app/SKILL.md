@@ -9,8 +9,8 @@ allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 
 A short name for the [`app` skill](../app/SKILL.md) with the frontends
 already settled: **the web app alone**. Load the `app` skill and follow it from
-the top, with the user's description as input, except that its frontends are the web app alone: do not ask its question ("Who will use this
-app?"); say in one line that this is a web app alone, with no MCP App, then load the
+the top, with the user's description as input, except that its frontends are the web app alone: do not ask its question ("How will this
+app be accessed?"); say in one line that this is a web app alone, with no MCP App, then load the
 [`full-stack` skill](../full-stack/SKILL.md) with them. Everything
 else (the features, the design, the build, the handoff) is the `app`
 skill's, unchanged, and so is changing an app that exists.
