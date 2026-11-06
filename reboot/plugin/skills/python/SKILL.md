@@ -589,6 +589,9 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/lifecycle-rbtrc.md`
 - `references/lifecycle-application-entry.md`
 - `references/lifecycle-initialize-hook.md`
+- `references/lifecycle-sample-data.md` — sample data offered at the
+  handoff: `seed.py` through the real methods, fixed ids, kept out of
+  the scenarios
 - `references/lifecycle-mcp-app-project-files.md` — what an MCP App adds to the
   project files: `.rbtrc` configs, `pyproject.toml`, the example
   prompts module, `main.py`
