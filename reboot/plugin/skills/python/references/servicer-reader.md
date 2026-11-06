@@ -65,6 +65,15 @@ the call propagates the `ReaderContext`. Calling a `Writer` or
 `Transaction` method from a reader is a category error; use a
 `Transaction` method if the work is genuinely cross-actor.
 
+**Reader calls go one way.** Two readers must not call each other.
+If `Reservation.get` reads its guest and `Guest.get` reads each of
+the guest's reservations, each call starts the other again, and the
+first call never returns. There is no error, only a hang until the
+caller gives up. For each pair of types, pick one direction: the
+guest's reader reads its reservations, or a reservation's reader
+reads its guest, not both. When a page needs both, it reads each one
+itself.
+
 A reader of a `Bank` actor calling into per-account readers, run from a
 transaction context (which can also call readers):
 
