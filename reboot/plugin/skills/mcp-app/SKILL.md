@@ -61,9 +61,9 @@ README for the manual install, team auto-enable, and the Codex
 
 ## Which References to Read, and When
 
-The backend mechanics live in the `python` skill's references; the
-MCP App-specific shape on top of them lives in this skill's own
-`references/`. Neither set is restated inline below.
+The backend mechanics live in the `python` skill's references,
+including the MCP App's API, servicer and sign-in pages; the MCP
+App's React pages live in this skill's own `references/`. Neither set is restated inline below.
 
 Everything you read stays in the conversation and is re-sent on
 every later turn, so **read each reference at the step that needs
@@ -123,12 +123,12 @@ exactly one of them — the step that needs it.
   transient cache), split each into its own `Type`. Critical for the
   `User` front door, which otherwise turns into a God actor and
   serializes unrelated writers.
-- [`references/api-method-types.md`](references/api-method-types.md)
+- [`python/references/api-method-types.md`](../python/references/api-method-types.md)
   — the pydantic API file for an MCP App: `User`-type front door,
   `mcp=Tool()` / `mcp=None`, `UI()` (including parameterized UI
   props), `factory=True` on `create`, the `Workflow(...)`
   declaration shape. Full Counter API example.
-- [`references/api-state-shapes.md`](references/api-state-shapes.md)
+- [`python/references/api-state-shapes.md`](../python/references/api-state-shapes.md)
   — two recurring state shapes: `list[Item]` with
   `default_factory=list`; single nested `Model` sub-objects as
   `Optional[X] = Field(tag=N, default=None)` hydrated in factory
@@ -156,7 +156,7 @@ exactly one of them — the step that needs it.
   decision tree (Reboot scopes vs. `at_least_once` vs.
   `at_most_once`), `context.loop`, inline state writes,
   `until` / `until_changes`, and workflow exit semantics.
-- [`references/servicer-patterns.md`](references/servicer-patterns.md)
+- [`python/references/servicer-patterns.md`](../python/references/servicer-patterns.md)
   — the MCP App servicer shapes: `UserServicer` calling
   `<X>.create(context)`, a Workflow Servicer with `MyType.ref()`
   (no-arg) magic, inline writers via
@@ -176,7 +176,7 @@ under Key Framework Concepts):
 - `python/references/auth-allow-deny.md` — narrow uses of
   unconditional rules; specifically, when **not** to reach for
   `allow()`.
-- [`references/auth-oauth-providers.md`](references/auth-oauth-providers.md)
+- [`python/references/auth-oauth-providers.md`](../python/references/auth-oauth-providers.md)
   — choosing your `Application(oauth=...)` provider via
   `OAuthProviderByEnvironment(dev=..., prod=...)` (the recommended
   `dev=Development(), prod=Google(...)` shape; a selected `None` arm
@@ -185,7 +185,7 @@ under Key Framework Concepts):
   `/__/oauth/callback` URL), and the user-ID-namespace gotcha that
   makes switching providers after launch infeasible — choose
   deliberately **before** real users have state.
-- [`references/auth-custom-oauth-provider.md`](references/auth-custom-oauth-provider.md)
+- [`python/references/auth-custom-oauth-provider.md`](../python/references/auth-custom-oauth-provider.md)
   — **writing your own OAuth provider** when none of the shipped
   ones fits (self-hosted Keycloak, internal SSO, an IdP Auth0 can't
   broker): subclass `RegisteredOAuthProvider`, implement
@@ -193,7 +193,7 @@ under Key Framework Concepts):
   id must be **stable** — it becomes `context.auth.user_id`), the
   `validate()` / `mount_routes()` hooks, and `token_service_id` +
   `OAuthTokens` for `store_tokens=True` support.
-- [`references/auth-store-tokens.md`](references/auth-store-tokens.md)
+- [`python/references/auth-store-tokens.md`](../python/references/auth-store-tokens.md)
   — **acting on the user's behalf** at an external service: when the
   API belongs to your `Application(oauth=...)` identity provider,
   add extra OAuth `scopes=[...]` + `store_tokens=True` (needs
@@ -415,7 +415,7 @@ Before writing code, analyze the user's request:
    parent's factory `create` Writer (Gotcha #13); non-Optional
    `Model`-typed fields reject `default=` / `default_factory=`.
    Full rules + examples in
-   [`references/api-state-shapes.md`](references/api-state-shapes.md).
+   [`python/references/api-state-shapes.md`](../python/references/api-state-shapes.md).
 5. **Operations**: Map to the right method type:
    - `Reader` — read-only queries.
    - `Writer` — single-state mutations.
@@ -437,7 +437,7 @@ Before writing code, analyze the user's request:
    a global browser) go on `User`. Putting a per-entity UI on
    `User` with the entity ID inside a `request=<Model>` field is
    an antipattern; see "UI Placement" in
-   [`references/api-method-types.md`](references/api-method-types.md).
+   [`python/references/api-method-types.md`](../python/references/api-method-types.md).
 8. **Identity**: Single default instance vs. multiple instances?
 9. **Cross-state coordination**: Does any operation touch multiple
    state instances? If yes, use `Transaction`.
@@ -500,7 +500,7 @@ Every MCP App has a `User` type and one or more application types:
 The most common scaffolding mistake is putting a per-entity UI
 (e.g. `show_person`) on `User` with the entity ID stuffed into a
 `request=<Model>` field. Don't — see "UI Placement" in
-[`references/api-method-types.md`](references/api-method-types.md).
+[`python/references/api-method-types.md`](../python/references/api-method-types.md).
 
 A second, equally common mistake is letting `User`'s state accrete
 unrelated concerns — auth/session fields alongside persona config
@@ -513,9 +513,9 @@ that warn you are accreting concerns, and the split pattern, are in
 `python/references/state-actor-decomposition.md`.
 
 Full pydantic shape in
-[`references/api-method-types.md`](references/api-method-types.md);
+[`python/references/api-method-types.md`](../python/references/api-method-types.md);
 the `UserServicer` + `<X>.create(context)` pattern in
-[`references/servicer-patterns.md`](references/servicer-patterns.md).
+[`python/references/servicer-patterns.md`](../python/references/servicer-patterns.md).
 
 ### Tool Exposure Control
 
@@ -572,7 +572,7 @@ omit `oauth=` entirely — the test harness supplies a test OAuth
 provider.)
 
 > **Choose your production provider deliberately.** See
-> [`references/auth-oauth-providers.md`](references/auth-oauth-providers.md).
+> [`python/references/auth-oauth-providers.md`](../python/references/auth-oauth-providers.md).
 > Each provider issues user IDs in its own namespace, so switching
 > providers after launch strands every user-keyed piece of state.
 > `Development` is dev-only — replace it before shipping — and don't
@@ -582,7 +582,7 @@ provider.)
 > (profiles, password resets, MFA, blocking users), use `Auth0`. If no
 > shipped provider fits (self-hosted Keycloak, internal SSO), write
 > your own — see
-> [`references/auth-custom-oauth-provider.md`](references/auth-custom-oauth-provider.md).
+> [`python/references/auth-custom-oauth-provider.md`](../python/references/auth-custom-oauth-provider.md).
 
 Consequences for authorizers:
 
@@ -616,7 +616,7 @@ through. The tokens are stored encrypted and read back with
 `OAuthTokenManager.ref(GOOGLE).fetch(context, user_id=context.state_id)`,
 and the outbound call goes **inside a `Workflow`**. The MCP App
 `store_tokens=True` shortcut is in
-[`references/auth-store-tokens.md`](references/auth-store-tokens.md);
+[`python/references/auth-store-tokens.md`](../python/references/auth-store-tokens.md);
 the full read-path and in-`Workflow` call recipe (shared with web apps)
 is in
 [`python/references/auth-external-api-calls.md`](../python/references/auth-external-api-calls.md).
@@ -738,15 +738,15 @@ a worked set are in
    fails to come up, say so in one sentence and keep building; do
    not stop to debug it.
 4. Write API definition (`api/<pkg>/v1/<name>.py`) — see
-   [`references/api-method-types.md`](references/api-method-types.md)
-   and [`references/api-state-shapes.md`](references/api-state-shapes.md);
+   [`python/references/api-method-types.md`](../python/references/api-method-types.md)
+   and [`python/references/api-state-shapes.md`](../python/references/api-state-shapes.md);
    field-level pydantic rules in
    `python/references/api-pydantic.md`.
 5. `uv run rbt generate`. Don't read what it wrote: the signature
    your servicer must match is in `python/references/api-methods.md`
    ("The Servicer Signature Each Declaration Obliges").
 6. Write servicer (`backend/src/servicers/<name>.py`) — see
-   [`references/servicer-patterns.md`](references/servicer-patterns.md);
+   [`python/references/servicer-patterns.md`](../python/references/servicer-patterns.md);
    context-type rules in `python/references/servicer-*.md`.
 7. Write `backend/src/example_prompts.py` (the wizard's example
    prompts) and `main.py` (which imports them and passes

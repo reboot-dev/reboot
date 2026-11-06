@@ -493,6 +493,10 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/api-errors.md`
 - `references/api-schema-evolution.md` — schema evolution rules for
   deployed applications / persisted state
+- `references/api-method-types.md` — an MCP App's API file: the
+  `User` front door, `mcp=Tool()` / `mcp=None`, `UI()`
+- `references/api-state-shapes.md` — `list[Item]` and nested `Model`
+  sub-objects in state
 
 **Servicer** (`servicer-`):
 
@@ -505,6 +509,9 @@ above lists the right ones grouped by task type. The full catalog:
   `until` / `until_changes`, and workflow exit semantics)
 - `references/servicer-constructor.md`
 - `references/servicer-authorizer.md`
+- `references/servicer-patterns.md` — an MCP App's servicers: the
+  `User` front door creating application types, workflows on
+  `MyType.ref()`
 
 **Agent** (`agent-`):
 
@@ -541,6 +548,13 @@ above lists the right ones grouped by task type. The full catalog:
   call through the application; audit in writers, never in readers
 - `references/auth-external-api-calls.md`
 - `references/auth-http-routes.md`
+- `references/auth-oauth-providers.md` — choosing the
+  `Application(oauth=...)` sign-in provider, for an MCP App or a web
+  app
+- `references/auth-custom-oauth-provider.md` — writing a provider of
+  your own
+- `references/auth-store-tokens.md` — `store_tokens=True`: calling the
+  sign-in provider's API as the user
 
 **RPC** (`rpc-`):
 

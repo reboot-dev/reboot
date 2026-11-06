@@ -67,7 +67,7 @@ Checks that commonly bite on first deploy:
 
 - **A real OAuth provider.** `Development()` is dev-only; the
   `prod=` provider must be set
-  (`mcp-app/references/auth-oauth-providers.md` has the
+  (`python/references/auth-oauth-providers.md` has the
   per-provider details, including registering the backend's
   `https://<application-id>.<cell>.rbt.cloud:9991/__/oauth/callback`
   redirect URI with the IdP once the URL is known).

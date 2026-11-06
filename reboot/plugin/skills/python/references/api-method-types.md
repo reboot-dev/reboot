@@ -83,7 +83,7 @@ no arguments needed. The actor reference is end-to-end implicit:
 the AI calls `person_show(person_id=...)`, the React UI
 materializes for that exact `Person`, no props plumbing, no risk
 of mixing up which entity ID goes where. (Mechanism documented
-in [`react-app-tsx.md`](react-app-tsx.md).)
+in [`react-app-tsx.md`](../../mcp-app/references/react-app-tsx.md).)
 
 **Why the `User`-placement anti-pattern fails.** If you put
 `show_person=UI(request=ShowPersonProps)` on `User`, where
