@@ -87,6 +87,12 @@ Checks that commonly bite on first deploy:
   pointing anywhere else turns every call cross-origin and breaks
   sign-in.
 
+- **No sample data.** An app built with sample data calls `seed`
+  only when `RBT_DEV` is `true`, which `rbt dev run` sets and Reboot
+  Cloud never does, so production starts empty. An `initialize` that
+  calls `seed` without that check is fixed before deploying
+  (`python/references/lifecycle-sample-data.md`).
+
 ## Step 3 — The container serves the frontend
 
 `rbt cloud up` builds the `Dockerfile` at the project root. The
