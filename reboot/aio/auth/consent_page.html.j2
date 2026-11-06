@@ -60,6 +60,17 @@
     font-size: 14px;
     margin: 0 0 22px;
   }
+  /* The two values the user should actually read: the host asking,
+     and the application it asks for. */
+  .subtitle code {
+    font-family: inherit;
+    font-weight: 600;
+    color: var(--navy);
+    background: rgba(164, 209, 255, 0.25);
+    border-radius: 5px;
+    padding: 1px 5px;
+    white-space: nowrap;
+  }
   .client {
     background: rgba(164, 209, 255, 0.18);
     border: 1px solid rgba(38, 106, 178, 0.3);
@@ -169,20 +180,25 @@
     margin: 20px 0 0;
   }
   .footer a {
-    color: var(--blue);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: inherit;
     text-decoration: none;
   }
-  .footer a:hover {
-    text-decoration: underline;
+  .footer .logo {
+    height: 16px;
+    width: auto;
   }
 </style>
 </head>
 <body>
   <div class="card">
     <p class="app-title">{{ application_title }}</p>
-    <h1>Do you trust this AI?</h1>
+    <h1>Do you trust this MCP host?</h1>
     <p class="subtitle">
-      An AI wants to use {{ application_title }} on your behalf
+      <code>{{ redirect_host }}</code> wants to use your
+      <code>{{ application_title }}</code> application on your behalf
     </p>
     <div class="client">
       {% if client_uri %}
@@ -209,7 +225,7 @@
     <div class="warning">
       Only continue if you started this sign-in and recognize this
       address. If anything looks unfamiliar, do not approve &mdash;
-      approving lets this AI act as you.
+      approving lets this MCP host act as you.
     </div>
     <form method="post" action="{{ consent_path }}">
       <input type="hidden" name="consent" value="{{ consent_token }}">
@@ -223,7 +239,13 @@
         </button>
       </div>
     </form>
-    <p class="footer">Built with <a href="https://reboot.dev">Reboot</a></p>
+    <p class="footer">
+      <a href="https://reboot.dev" target="_blank" rel="noopener noreferrer">
+      Built with
+      <img class="logo" src="/__/rootpage/reboot-logo-navy.svg"
+           alt="Reboot">
+      </a>
+    </p>
   </div>
 </body>
 </html>
