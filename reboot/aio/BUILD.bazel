@@ -512,9 +512,15 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         requirement("protobuf"),
+        ":aborted_py",
+        ":caller_id_py",
+        ":headers_py",
         ":types_py",
         "//reboot:time_py",
+        "//reboot/aio/internals:channel_manager_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:database_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:errors_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_grpc",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_proto",
     ],
 )
