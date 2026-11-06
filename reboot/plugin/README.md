@@ -11,6 +11,7 @@ agent. The same skills work in both **Claude Code** and **Codex**.
 | [`feature`](skills/feature/)     | Specify a feature in plain English, write it down as a `@wip` feature file, then iterate on its scenarios with the user                   |
 | [`mcp-app`](skills/mcp-app/)     | Build MCP Apps for ChatGPT, Claude, VSCode, Goose, and others — layers on top of `python`                                                 |
 | [`web-app`](skills/web-app/)     | Build standalone Reboot Web Apps — a Reboot backend behind a browser-facing React frontend — layers on top of `python`                    |
+| [`frontend`](skills/frontend/)   | The React side of a Reboot app: the generated client, a web app, MCP App UIs, and browser scenarios                                       |
 | [`run`](skills/run/)             | Run an existing Reboot app — detects MCP App vs. Web App and starts every process it needs                                                |
 | [`agents-md`](skills/agents-md/) | Give a Reboot app an `AGENTS.md` for coding agents and a one-line `CLAUDE.md` that imports it; kept current as the app changes            |
 | [`deploy`](skills/deploy/)       | Deploy a Reboot app to production — one container on Reboot Cloud that runs the backend and serves the built MCP Apps and web app         |

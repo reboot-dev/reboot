@@ -165,6 +165,14 @@ CASES: list[tuple[str, str, dict, Decision]] = [
         Decision.APPROVE,
     ),
     (
+        "Skill: reboot:frontend is approved",
+        "Skill",
+        {
+            "skill": "reboot:frontend"
+        },
+        Decision.APPROVE,
+    ),
+    (
         "Skill: reboot:deploy is NOT auto-approved (reaches outside)",
         "Skill",
         {
