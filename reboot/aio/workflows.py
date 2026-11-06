@@ -1,9 +1,11 @@
+import asyncio
 import collections.abc
 import functools
 import operator
 import sys
 import types
 import typing
+from datetime import timedelta
 from reboot.aio.contexts import EffectValidation, WorkflowContext  # noqa: F401
 from reboot.aio.idempotency import (  # noqa: F401
     ALWAYS,
@@ -11,6 +13,7 @@ from reboot.aio.idempotency import (  # noqa: F401
     PER_WORKFLOW,
     How,
 )
+from reboot.time import DateTimeWithTimeZone
 from typing import (
     Any,
     Awaitable,
@@ -196,6 +199,7 @@ class Memoize(Protocol[T]):
         until: bool = False,
         retryable_exceptions: Optional[list[type[Exception]]] = None,
         effect_validation: EffectValidation | None = None,
+        deliver_cancellation: bool = True,
     ) -> T:
         ...
 
@@ -458,4 +462,90 @@ async def until_changes(
         context,
         previous_not_equals_current,
         type=type_t,
+    )
+
+
+async def sleep(
+    idempotency_alias_or_tuple: str | UntilTupleType,
+    context: WorkflowContext,
+    duration: float | int | timedelta,
+) -> None:
+    """Suspends the workflow for `duration` (seconds, or a `timedelta`).
+
+    This is a _durable_ timer: the moment at which to wake up is
+    memoized when the sleep starts, so a workflow that is retried (or
+    recovered on another machine) while sleeping wakes up at that
+    same moment rather than sleeping for `duration` all over again,
+    and once woken up a replay does not sleep again at all.
+
+    Like `until`, a `sleep` is a _suspension point_: it is where a
+    workflow idles, and therefore where a requested cancellation of
+    the workflow is delivered as `asyncio.CancelledError`, without
+    waiting for the timer to expire. Where it was delivered is
+    recorded so that a replay delivers it in the same place.
+
+    The first argument is an idempotency alias (or an alias and how
+    to apply it) exactly as for `until`.
+    """
+    assert memoize is not None
+
+    seconds = (
+        duration.total_seconds()
+        if isinstance(duration, timedelta) else float(duration)
+    )
+
+    if seconds < 0:
+        raise ValueError(
+            f"'duration' passed to `sleep` must not be negative; got {duration}"
+        )
+
+    def keyed(suffix: str) -> str | UntilTupleType:
+        """Derives the alias (or tuple) of an internal block from the
+        caller's, keeping how idempotency is applied."""
+        if isinstance(idempotency_alias_or_tuple, str):
+            return f'{idempotency_alias_or_tuple}{suffix}'
+        alias, how = idempotency_alias_or_tuple
+        return (f'{alias}{suffix}', how)
+
+    async def compute_deadline() -> DateTimeWithTimeZone:
+        return DateTimeWithTimeZone.now() + timedelta(seconds=seconds)
+
+    # Memoize the deadline (a step) so that a retry sleeps for the
+    # remainder, not for `duration` again. A cancellation pending
+    # when we get here is not delivered after this internal step
+    # but by the suspension point below.
+    deadline = await memoize(
+        keyed(' (deadline)'),
+        context,
+        compute_deadline,
+        type_t=DateTimeWithTimeZone,
+        type_t_inferred=False,
+        at_most_once=False,
+        # Computing a deadline has no effects worth validating (and
+        # re-running it would move the deadline).
+        effect_validation=EffectValidation.DISABLED,
+        deliver_cancellation=False,
+    )
+
+    async def wait_until_deadline() -> bool:
+        while True:
+            remaining = (deadline - DateTimeWithTimeZone.now()).total_seconds()
+            if remaining <= 0:
+                return True
+            # Delivers a requested cancellation (now, or once it is
+            # requested while we wait).
+            await context._wait_cancellable(
+                asyncio.sleep(remaining),
+                deliver=True,
+            )
+
+    await memoize(
+        keyed(''),
+        context,
+        wait_until_deadline,
+        type_t=bool,
+        type_t_inferred=False,
+        at_most_once=False,
+        # A suspension point, like `until`.
+        until=True,
     )

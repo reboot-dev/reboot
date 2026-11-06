@@ -580,6 +580,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":contexts_py",
+        "//reboot:time_py",
     ],
 )
 
