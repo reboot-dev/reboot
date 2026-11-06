@@ -22,9 +22,8 @@ session, where no processes and no exported environment survive
 from last time.
 
 > This skill **runs** an app; it does not build or modify one. To
-> build, see the [`mcp-app` skill](../mcp-app/SKILL.md) and the
-> [web-app skill](../web-app/SKILL.md) — those skills defer here for
-> their "run the app" step.
+> build, see the [`app` skill](../app/SKILL.md) — its build defers here
+> for its "run the app" step.
 
 ## Step 1 — Locate the project
 

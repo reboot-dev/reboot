@@ -7,8 +7,8 @@ tags: react, app-tsx, pop-out, deep-link, openLink, state_id, useMcpApp, dual-fr
 
 ## Pop-out button — deep-linking an MCP App widget to your web app
 
-When the same backend also serves a standalone web app (see the
-`web-app` skill), an MCP App widget can offer a "pop out into the
+When the same backend also serves a standalone web app (see
+`react-client.md`), an MCP App widget can offer a "pop out into the
 web app" button that opens the **same entity** in a full browser
 tab. Two facts make this work:
 
