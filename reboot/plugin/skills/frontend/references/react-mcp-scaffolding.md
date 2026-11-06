@@ -21,8 +21,8 @@ more to do calls `build()` between its own steps in that file.**
 `build.mjs` is for a frontend with more than one UI: several MCP
 Apps, or MCP Apps and the web app. A frontend declaring exactly one
 UI builds with plain `vite build` (the plugin builds the one it
-declares when no target is set), which is what the `web-app` skill's
-web-only shell does. This scaffold starts with `build.mjs` because an
+declares when no target is set), which is what the web-only shell in
+`react-client.md` does. This scaffold starts with `build.mjs` because an
 MCP frontend tends to grow UIs, and then nothing about the build
 changes when it does.
 

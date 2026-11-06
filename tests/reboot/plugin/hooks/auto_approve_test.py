@@ -282,7 +282,7 @@ CASES: list[tuple[str, str, dict, Decision]] = [
         "Grep",
         {
             "pattern": "foo",
-            "path": f"{PLUGIN_ROOT}/skills/mcp-app/references",
+            "path": f"{PLUGIN_ROOT}/skills/frontend/references",
         },
         Decision.APPROVE,
     ),
@@ -300,7 +300,7 @@ CASES: list[tuple[str, str, dict, Decision]] = [
         "Bash: ls -la with flags",
         "Bash",
         {
-            "command": f"ls -la {PLUGIN_ROOT}/skills/mcp-app/references/"
+            "command": f"ls -la {PLUGIN_ROOT}/skills/frontend/references/"
         },
         Decision.APPROVE,
     ),

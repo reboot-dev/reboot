@@ -23,8 +23,7 @@ no `allowed_origins` to keep in sync and no cross-site cookie to lose.
 
 > This skill **deploys** an app; it does not build or modify one
 > beyond production configuration. To build, see the
-> [`mcp-app` skill](../mcp-app/SKILL.md) and the
-> [web-app skill](../web-app/SKILL.md); to run locally, see the
+> [`app` skill](../app/SKILL.md); to run locally, see the
 > [run skill](../run/SKILL.md).
 
 ## When to Use
