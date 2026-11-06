@@ -13,6 +13,6 @@ embedded in the host.
 
 Load the [`app` skill](../app/SKILL.md) and follow it from "When to
 Use", building an MCP App, with the user's description as input. Skip
-its "Routing" section: the front end is already settled. If the user
+its Step 0: the front end is already settled. If the user
 also wants a website beside it, build both, as the app skill's "Both"
 describes.
