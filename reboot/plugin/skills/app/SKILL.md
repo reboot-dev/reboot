@@ -220,28 +220,37 @@ wrong means regenerating everything across 12+ files.
    question, and nothing after it:
 
    ```
-   Question: "I'll start with <the two recommended features, as
-              activities> (~<minutes> min). Good?"
-   Header:   "Scope"
-   Options:
-     - "Yes, start there (Recommended)"
-     - "Smaller: <the first feature, as an activity> (~<minutes> min)"
-     - "Bigger: everything you described (~<minutes> min)"
+   Question: "How should we build it?"
+   Header:   "Build plan"
+   Options (label, then description):
+     - "Two features now, the rest after (Recommended)"
+       "<the two recommended features, as activities> first. ~<minutes> min"
+     - "One feature at a time"
+       "<the first feature, as an activity> first, then you choose the next. ~<minutes> min"
+     - "All at once"
+       "Every feature in one build. ~<minutes> min"
    ```
 
-   For a community garden, say: "I'll start with booking plots on the
-   live map and Monday reminders about idle plots (~25 min). Good?",
-   with "Smaller: just booking plots (~15 min)" and "Bigger: everything
-   you described (~40 min)".
+   For a community garden: "Two features now, the rest after
+   (Recommended)", described "Plots and reminders first. ~25 min";
+   "One feature at a time", "Plots first, then you choose the next.
+   ~15 min"; "All at once", "Every feature in one build. ~40 min".
+   The labels are always these three; only the descriptions are the
+   app's.
 
-   - **Keep the options in this order**: "Yes, start there" first,
+   - **Keep the options in this order**: "Two features now" first,
      since the dialog pre-selects the first option and it is the one
-     recommended, then Smaller, then Bigger. Yes is also the default:
-     a question that comes back with no choice takes it. An answer
-     already in the prompt ("Answers to your questions: start there",
-     "... smaller", "... everything") settles it with no question, and
-     so does an answer to the design question ("build the design as
-     proposed"): it takes the recommended start.
+     recommended, then "One feature at a time", then "All at once".
+     The first is also the default: a question that comes back with
+     no choice takes it. An answer already in the prompt ("Answers to
+     your questions: two features now", "... one feature at a time",
+     "... all at once") settles it with no question, and so does an
+     answer to the design question ("build the design as proposed"):
+     it takes the recommended two.
+   - **"One feature at a time"** builds the first feature, then the
+     handoff offers the remaining features, one to pick as the next
+     build. **"Two features now, the rest after"** offers the rest the
+     same way after the two.
    - **The recommended start is two features, three or four scenarios
      each**, picked from the list (or cut down from one) to show what
      Reboot does that other stacks make hard. Which feature shows
@@ -263,8 +272,9 @@ wrong means regenerating everything across 12+ files.
      cases. A rule the feature has that is not among them is
      enforced in the servicer, and offered as scenarios at the
      handoff.
-   - **Name features as activities, in the app's own words** ("booking
-     plots on the live map"), with no Reboot terms and no caveats.
+   - **Name features as activities, in the app's own words**, short
+     ("plots and reminders"; the message above the question has the
+     full names), with no Reboot terms and no caveats.
      The time is "~N min", the time to build not counting time
      waiting on the user: about 12 minutes for the foundation, plus
      about 5 a feature with a web app alone, 4 with an MCP App alone,
@@ -595,7 +605,7 @@ also do what your front end adds to it ("Each Front End's Pages").
     The steps are the [`dashboard` skill](../dashboard/SKILL.md)'s
     step 6. What to hand over for each front end is the run skill's
     Step 6.
-    Offer the features a smaller scope left out as the next build.
+    Offer the features the build plan left for later, to pick the next build from.
     With sample data, name in one line what was added, that it is
     test data that never reaches production, and where to
     see it.
