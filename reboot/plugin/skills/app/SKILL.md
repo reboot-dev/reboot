@@ -220,27 +220,33 @@ wrong means regenerating everything across 12+ files.
    question, and nothing after it:
 
    ```
-   Question: "How much should the first build include?"
+   Question: "I'll start with <the two recommended features, as
+              activities> (~<minutes> min). Good?"
    Header:   "Scope"
    Options:
-     - "Best first look (Recommended)" — the two features that show
-       Reboot best, as activities. ~<minutes> min
-     - "Just the idea" — the first feature, as an activity. ~<minutes> min
-     - "The whole app" — every feature above, by name. ~<minutes> min
+     - "Yes, start there (Recommended)"
+     - "Smaller: <the first feature, as an activity> (~<minutes> min)"
+     - "Bigger: everything you described (~<minutes> min)"
    ```
 
-   - **Keep the options in this order**: Best first look first, since
-     the dialog pre-selects the first option and it is the one
-     recommended, then Just the idea, then The whole app. Best first
-     look is also the default: a question that comes back with no
-     choice takes it. An answer already in the prompt ("Answers to
-     your questions: Just the idea") settles it with no question, and
+   For a community garden, say: "I'll start with booking plots on the
+   live map and Monday reminders about idle plots (~25 min). Good?",
+   with "Smaller: just booking plots (~15 min)" and "Bigger: everything
+   you described (~40 min)".
+
+   - **Keep the options in this order**: "Yes, start there" first,
+     since the dialog pre-selects the first option and it is the one
+     recommended, then Smaller, then Bigger. Yes is also the default:
+     a question that comes back with no choice takes it. An answer
+     already in the prompt ("Answers to your questions: start there",
+     "... smaller", "... everything") settles it with no question, and
      so does an answer to the design question ("build the design as
-     proposed"): it takes Best first look, the default.
-   - **Best first look is two features, three or four scenarios each**,
-     picked from the list (or cut down from one) to show what Reboot
-     does that other stacks make hard. Which feature shows which is
-     said in the message above the question, never in the option:
+     proposed"): it takes the recommended start.
+   - **The recommended start is two features, three or four scenarios
+     each**, picked from the list (or cut down from one) to show what
+     Reboot does that other stacks make hard. Which feature shows
+     which is said in the message above the question, in a line, never
+     in the question or the options:
      - **a transaction across states**: one action that changes two
        things or neither (moving stock between two warehouses takes
        it from one and adds it to the other, or does neither);
@@ -257,15 +263,13 @@ wrong means regenerating everything across 12+ files.
      cases. A rule the feature has that is not among them is
      enforced in the servicer, and offered as scenarios at the
      handoff.
-   - **Each option's line is short: what people can do, then one
-     approximate time.** The features as activities in the app's own
-     words ("Book a plot on the live map, and Monday reminders about
-     idle plots"), no Reboot terms, no caveats; The whole app may list
-     its features by name. The time is "~N min", the time to build not
-     counting time waiting on the user: about 12 minutes for the
-     foundation, plus about 5 a feature with a web app alone, 4 with
-     an MCP App alone, or 7 with both, rounded to the nearest five, and
-     never a smaller option slower than a larger one.
+   - **Name features as activities, in the app's own words** ("booking
+     plots on the live map"), with no Reboot terms and no caveats.
+     The time is "~N min", the time to build not counting time
+     waiting on the user: about 12 minutes for the foundation, plus
+     about 5 a feature with a web app alone, 4 with an MCP App alone,
+     or 7 with both, rounded to the nearest five, and never a smaller
+     option slower than a larger one.
    - **What every option leaves for later goes above the question,**
      in the message, once: production sign-in and deployment come
      after the build.
