@@ -509,6 +509,9 @@ also do what your front end adds to it ("Each Front End's Pages").
     The steps are the [`dashboard` skill](../dashboard/SKILL.md)'s
     step 6. What to hand over for each front end is the run skill's
     Step 6.
+    Last in the handoff, offer sample data as a question, as
+    [`python/references/lifecycle-sample-data.md`](../python/references/lifecycle-sample-data.md)
+    says.
     Don't bypass the run skill by invoking `rbt dev run` /
     `npm run dev` by hand: those bare commands print only the
     API/MCP/inspect URLs, dropping the hand-over the user actually
