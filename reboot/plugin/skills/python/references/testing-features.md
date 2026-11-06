@@ -199,8 +199,8 @@ call must then name the same user.
 Given "alice" creates an `Account` via `open` with `initial_balance=100`
 And the resulting state id is saved as <account id>
 When "alice" does a `deposit` with `amount=50` on `Account` of <account id>
-Then the result has `updated_balance=150`
 And the resulting `account_id` is saved as <alice account id>
+Then the result has `updated_balance=150`
 ```
 
 - **`creates`** calls a factory. Leave the id out and the factory
@@ -213,6 +213,10 @@ And the resulting `account_id` is saved as <alice account id>
   property; `the resulting state id` and `the resulting task id`
   save what `creates` and `spawns` produced. `the result has ...`
   asserts on the last response.
+- **A `the resulting ...` save goes before the first `Then`.** These
+  saves are `Given` and `When` steps, and an `And` takes the keyword
+  of the line above it, so one after a `Then` is a `Then` step and
+  fails with "Step definition is not found".
 - **A value is saved as the variable later steps say it by**, `saved as <first account id>`, which may have spaces, and is said back the same way: in a
   state id (`of <account id>`), a user id, a bearer token, or a
   property value (`amount=<balance>`). A `Scenario Outline`'s columns
