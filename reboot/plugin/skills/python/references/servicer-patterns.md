@@ -18,7 +18,7 @@ wrappers, raise typed `<Method>Aborted`) are in
 - The User Servicer's `create_<X>` Transaction calls
   `<X>.create(context)` and returns the `state_id` in a response.
 - Workflow Servicers use `MyType.ref()` (no args, picks up `state_id`
-  from `WorkflowContext`) — see Gotcha #11 below; `cls.ref()` and
+  from `WorkflowContext`) — see Gotcha #11 in `patterns-mcp-app-gotchas.md`; `cls.ref()` and
   `self.ref()` are both wrong.
 - Workflows that should run after a User-side `create_<X>`
   Transaction must be **scheduled** (`.schedule().workflow_method()`),

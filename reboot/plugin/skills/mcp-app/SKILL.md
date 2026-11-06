@@ -134,7 +134,7 @@ exactly one of them — the step that needs it.
   `Optional[X] = Field(tag=N, default=None)` hydrated in factory
   `create` (Gotcha #13). The state-inside-state regression and how
   to compose state actors via string ID + `ref(id)`.
-- [`references/gotchas.md`](references/gotchas.md) — the numbered
+- [`python/references/patterns-mcp-app-gotchas.md`](../python/references/patterns-mcp-app-gotchas.md) — the numbered
   MCP App trip list (1–19): `mcp=Tool()`/`mcp=None` required,
   `factory=True` on app-type `create`, `MyType.ref()` not
   `cls.ref()`/`self.ref()` in workflows, `.schedule()` from a

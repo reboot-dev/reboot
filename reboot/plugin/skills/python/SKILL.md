@@ -590,6 +590,7 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/patterns-error-handling.md`
 - `references/patterns-idempotency.md`
 - `references/patterns-common-gotchas.md`
+- `references/patterns-mcp-app-gotchas.md` — the MCP App trip list
 
 ## External References
 
