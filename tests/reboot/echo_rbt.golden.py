@@ -888,6 +888,7 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             tasks_cache=tasks_cache,
             ready=ready,
             complete_task=self._state_manager.complete_task,
+            cancel_task=self._state_manager.cancel_task,
         )
 
         # Store the type of each method's request so that stored requests can be
@@ -2104,8 +2105,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         await complete(task, (response, None))
                         return (response, None)
                     except IMPORT_asyncio.CancelledError:
-                        # Do not retry a task if it was cancelled by a caller.
-                        if self.tasks_dispatcher.is_task_cancelled(task.task_id.task_uuid):
+                        # Do not retry a task if it was cancelled by a
+                        # caller (and the cancellation was delivered),
+                        # as opposed to us shutting down, after which
+                        # the task is re-dispatched elsewhere.
+                        if context._completed_by_cancellation:
                             result = (
                                 None,
                                 IMPORT_reboot.aio.aborted.SystemAborted(
@@ -2178,8 +2182,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         await complete(task, (response, None))
                         return (response, None)
                     except IMPORT_asyncio.CancelledError:
-                        # Do not retry a task if it was cancelled by a caller.
-                        if self.tasks_dispatcher.is_task_cancelled(task.task_id.task_uuid):
+                        # Do not retry a task if it was cancelled by a
+                        # caller (and the cancellation was delivered),
+                        # as opposed to us shutting down, after which
+                        # the task is re-dispatched elsewhere.
+                        if context._completed_by_cancellation:
                             result = (
                                 None,
                                 IMPORT_reboot.aio.aborted.SystemAborted(
@@ -2252,8 +2259,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         await complete(task, (response, None))
                         return (response, None)
                     except IMPORT_asyncio.CancelledError:
-                        # Do not retry a task if it was cancelled by a caller.
-                        if self.tasks_dispatcher.is_task_cancelled(task.task_id.task_uuid):
+                        # Do not retry a task if it was cancelled by a
+                        # caller (and the cancellation was delivered),
+                        # as opposed to us shutting down, after which
+                        # the task is re-dispatched elsewhere.
+                        if context._completed_by_cancellation:
                             result = (
                                 None,
                                 IMPORT_reboot.aio.aborted.SystemAborted(
@@ -2329,8 +2339,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         await complete(task, (response, None))
                         return (response, None)
                     except IMPORT_asyncio.CancelledError:
-                        # Do not retry a task if it was cancelled by a caller.
-                        if self.tasks_dispatcher.is_task_cancelled(task.task_id.task_uuid):
+                        # Do not retry a task if it was cancelled by a
+                        # caller (and the cancellation was delivered),
+                        # as opposed to us shutting down, after which
+                        # the task is re-dispatched elsewhere.
+                        if context._completed_by_cancellation:
                             result = (
                                 None,
                                 IMPORT_reboot.aio.aborted.SystemAborted(
@@ -2406,8 +2419,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         await complete(task, (response, None))
                         return (response, None)
                     except IMPORT_asyncio.CancelledError:
-                        # Do not retry a task if it was cancelled by a caller.
-                        if self.tasks_dispatcher.is_task_cancelled(task.task_id.task_uuid):
+                        # Do not retry a task if it was cancelled by a
+                        # caller (and the cancellation was delivered),
+                        # as opposed to us shutting down, after which
+                        # the task is re-dispatched elsewhere.
+                        if context._completed_by_cancellation:
                             result = (
                                 None,
                                 IMPORT_reboot.aio.aborted.SystemAborted(
@@ -2478,8 +2494,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         await complete(task, (response, None))
                         return (response, None)
                     except IMPORT_asyncio.CancelledError:
-                        # Do not retry a task if it was cancelled by a caller.
-                        if self.tasks_dispatcher.is_task_cancelled(task.task_id.task_uuid):
+                        # Do not retry a task if it was cancelled by a
+                        # caller (and the cancellation was delivered),
+                        # as opposed to us shutting down, after which
+                        # the task is re-dispatched elsewhere.
+                        if context._completed_by_cancellation:
                             result = (
                                 None,
                                 IMPORT_reboot.aio.aborted.SystemAborted(
@@ -2603,8 +2622,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         await complete(task, (response, None))
                         return (response, None)
                     except IMPORT_asyncio.CancelledError:
-                        # Do not retry a task if it was cancelled by a caller.
-                        if self.tasks_dispatcher.is_task_cancelled(task.task_id.task_uuid):
+                        # Do not retry a task if it was cancelled by a
+                        # caller (and the cancellation was delivered),
+                        # as opposed to us shutting down, after which
+                        # the task is re-dispatched elsewhere.
+                        if context._completed_by_cancellation:
                             result = (
                                 None,
                                 IMPORT_reboot.aio.aborted.SystemAborted(
@@ -2675,8 +2697,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         await complete(task, (response, None))
                         return (response, None)
                     except IMPORT_asyncio.CancelledError:
-                        # Do not retry a task if it was cancelled by a caller.
-                        if self.tasks_dispatcher.is_task_cancelled(task.task_id.task_uuid):
+                        # Do not retry a task if it was cancelled by a
+                        # caller (and the cancellation was delivered),
+                        # as opposed to us shutting down, after which
+                        # the task is re-dispatched elsewhere.
+                        if context._completed_by_cancellation:
                             result = (
                                 None,
                                 IMPORT_reboot.aio.aborted.SystemAborted(
@@ -2795,8 +2820,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         await complete(task, (response, None))
                         return (response, None)
                     except IMPORT_asyncio.CancelledError:
-                        # Do not retry a task if it was cancelled by a caller.
-                        if self.tasks_dispatcher.is_task_cancelled(task.task_id.task_uuid):
+                        # Do not retry a task if it was cancelled by a
+                        # caller (and the cancellation was delivered),
+                        # as opposed to us shutting down, after which
+                        # the task is re-dispatched elsewhere.
+                        if context._completed_by_cancellation:
                             result = (
                                 None,
                                 IMPORT_reboot.aio.aborted.SystemAborted(
@@ -2915,8 +2943,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         await complete(task, (response, None))
                         return (response, None)
                     except IMPORT_asyncio.CancelledError:
-                        # Do not retry a task if it was cancelled by a caller.
-                        if self.tasks_dispatcher.is_task_cancelled(task.task_id.task_uuid):
+                        # Do not retry a task if it was cancelled by a
+                        # caller (and the cancellation was delivered),
+                        # as opposed to us shutting down, after which
+                        # the task is re-dispatched elsewhere.
+                        if context._completed_by_cancellation:
                             result = (
                                 None,
                                 IMPORT_reboot.aio.aborted.SystemAborted(
@@ -3035,8 +3066,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         await complete(task, (response, None))
                         return (response, None)
                     except IMPORT_asyncio.CancelledError:
-                        # Do not retry a task if it was cancelled by a caller.
-                        if self.tasks_dispatcher.is_task_cancelled(task.task_id.task_uuid):
+                        # Do not retry a task if it was cancelled by a
+                        # caller (and the cancellation was delivered),
+                        # as opposed to us shutting down, after which
+                        # the task is re-dispatched elsewhere.
+                        if context._completed_by_cancellation:
                             result = (
                                 None,
                                 IMPORT_reboot.aio.aborted.SystemAborted(
@@ -3155,8 +3189,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         await complete(task, (response, None))
                         return (response, None)
                     except IMPORT_asyncio.CancelledError:
-                        # Do not retry a task if it was cancelled by a caller.
-                        if self.tasks_dispatcher.is_task_cancelled(task.task_id.task_uuid):
+                        # Do not retry a task if it was cancelled by a
+                        # caller (and the cancellation was delivered),
+                        # as opposed to us shutting down, after which
+                        # the task is re-dispatched elsewhere.
+                        if context._completed_by_cancellation:
                             result = (
                                 None,
                                 IMPORT_reboot.aio.aborted.SystemAborted(
@@ -3280,8 +3317,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         await complete(task, (response, None))
                         return (response, None)
                     except IMPORT_asyncio.CancelledError:
-                        # Do not retry a task if it was cancelled by a caller.
-                        if self.tasks_dispatcher.is_task_cancelled(task.task_id.task_uuid):
+                        # Do not retry a task if it was cancelled by a
+                        # caller (and the cancellation was delivered),
+                        # as opposed to us shutting down, after which
+                        # the task is re-dispatched elsewhere.
+                        if context._completed_by_cancellation:
                             result = (
                                 None,
                                 IMPORT_reboot.aio.aborted.SystemAborted(
@@ -3357,8 +3397,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         await complete(task, (response, None))
                         return (response, None)
                     except IMPORT_asyncio.CancelledError:
-                        # Do not retry a task if it was cancelled by a caller.
-                        if self.tasks_dispatcher.is_task_cancelled(task.task_id.task_uuid):
+                        # Do not retry a task if it was cancelled by a
+                        # caller (and the cancellation was delivered),
+                        # as opposed to us shutting down, after which
+                        # the task is re-dispatched elsewhere.
+                        if context._completed_by_cancellation:
                             result = (
                                 None,
                                 IMPORT_reboot.aio.aborted.SystemAborted(
@@ -3429,8 +3472,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         await complete(task, (response, None))
                         return (response, None)
                     except IMPORT_asyncio.CancelledError:
-                        # Do not retry a task if it was cancelled by a caller.
-                        if self.tasks_dispatcher.is_task_cancelled(task.task_id.task_uuid):
+                        # Do not retry a task if it was cancelled by a
+                        # caller (and the cancellation was delivered),
+                        # as opposed to us shutting down, after which
+                        # the task is re-dispatched elsewhere.
+                        if context._completed_by_cancellation:
                             result = (
                                 None,
                                 IMPORT_reboot.aio.aborted.SystemAborted(

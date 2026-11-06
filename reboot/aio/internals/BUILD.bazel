@@ -110,6 +110,7 @@ py_library(
     deps = [
         ":tasks_cache_py",
         "//reboot/aio:concurrently_py",
+        "//reboot/aio:contexts_py",
         "//reboot/aio:state_managers_py",
         "//reboot/aio:tasks_py",
         "//reboot/aio/auth:admin_auth_py",
