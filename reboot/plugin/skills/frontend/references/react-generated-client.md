@@ -12,9 +12,9 @@ so this contract holds whether the component renders in a browser SPA
 or inside an MCP host. What differs between frontends — where the
 files live, how the backend URL is found, how a user signs in — is in
 the skill you are building with:
-[`web-app/references/react-client.md`](../../web-app/references/react-client.md)
+[`react-client.md`](react-client.md)
 or
-[`mcp-app/references/react-scaffolding.md`](../../mcp-app/references/react-scaffolding.md).
+[`react-scaffolding.md`](react-scaffolding.md).
 
 **Do not read the generated `*_rbt_react.ts` to rediscover any of
 this.** It runs to tens of thousands of lines, and every one you open

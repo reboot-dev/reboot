@@ -187,7 +187,7 @@ signing in.
   they pass `oauth=` with `Development()` for both arms of
   `OAuthProviderByEnvironment` (a test is neither `rbt dev run` nor
   `rbt serve`) and `allowed_origins=[]` (the web app is served at
-  the backend's own origin); see `testing-web-app.md`. Outside
+  the backend's own origin); see `frontend/references/testing-web-app.md`. Outside
   `rbt dev run`, an `oauth=` without `allowed_origins` refuses to
   start, which is why a test does not reuse the `Application(...)`
   of `main.py`.

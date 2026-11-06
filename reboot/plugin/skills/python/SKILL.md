@@ -423,7 +423,8 @@ feature in English, tag it `@wip`, iterate on scenarios) is the
   making ids up, saved values, assertions, `eventually`, attempts
   and aborts, tasks), `@wip` / `@blocked`, feature / rule / scenario
   structure, custom steps as plain Reboot code, mocks and stand-ins
-- `references/testing-web-app.md` — scenarios that open the web app:
+- `../frontend/references/testing-web-app.md` (in the `frontend`
+  skill) — scenarios that open the web app:
   the `frontend` fixture, the web app steps, the accessible markup
   the page needs, sign-in, recordings
 - `references/testing-harness.md` — the `Reboot()` harness the
@@ -575,16 +576,14 @@ above lists the right ones grouped by task type. The full catalog:
 
 - `references/testing-project-setup.md`
 - `references/testing-features.md`
-- `references/testing-web-app.md`
 - `references/testing-harness.md`
 - `references/testing-external-context.md`
 - `references/testing-failure-recovery.md`
 
-**Frontend** (shared by `web-app` and `mcp-app`):
-
-- `references/react-generated-client.md` — what
-  `rbt generate --react=` emits: hook overloads, `Use<Type>Api`,
-  reader/mutation return shapes, typed errors, naming rules.
+**Frontend**: the React pages and the browser scenarios are in the
+`frontend` skill, `../frontend/references/`: among them
+`react-generated-client.md`, what `rbt generate --react=` emits, and
+`testing-web-app.md`.
 
 **Patterns** (`patterns-`):
 
