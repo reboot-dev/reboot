@@ -224,6 +224,28 @@ Each feature's page is its view and gesture, from
 [`visual-interactive.md`](references/visual-interactive.md), on the
 tokens and inside the shell.
 
+The app's root gates on `useUser()` before it renders the shell:
+`isLoading` shows the shell's calm line, `user === undefined` the
+sign-in screen, and only then the signed-in shell. Without the gate a
+signed-in browser flashes the sign-in screen first, and a browser
+scenario's first click races it.
+
+Build each page with accessible
+markup from the start: labels paired with inputs, buttons that say
+what they do, tables with a labelled heading; that is what a
+scenario drives. **Each item is reachable on its own**: a list's row
+or card carries the item's name as its accessible name
+(`<tr aria-label="Task 14">`), so a scenario says `sees "Blocked" in the "Task 14" row` rather than matching a word that appears on the
+page fifty times, or elsewhere ("Done" in "Nothing done yet").
+**A select's options are labelled for a person** ("Task 14", a person's name), since the select step picks an option by its visible
+text, never by its value or an id; and no step waits for an option to
+be seen, since an option inside a closed `<select>` is never visible
+(the select step waits for it itself). **The step names the whole
+label as the page builds it, from the real data**: "Task 14, Design" is read from the code that creates the tasks (which project each is in), never guessed from what looks right. When a select
+step cannot find its option, read the option's text in the live page
+first (the page's own `<option>`s); change the label or the page only
+once that shows the label is what is wrong.
+
 **Scenarios:** every action in the UI ("sign up and see my profile",
 "submit the form and see the result", "delete an item and have it
 disappear") is a scenario, and the flows a person clicks through are
