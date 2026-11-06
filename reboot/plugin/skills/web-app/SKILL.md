@@ -12,6 +12,6 @@ normal browser, with the Reboot backend behind a React frontend.
 
 Load the [`app` skill](../app/SKILL.md) and follow it from "When to
 Use", building a web app, with the user's description as input. Skip
-its "Routing" section: the front end is already settled. If the user
+its Step 0: the front end is already settled. If the user
 also wants the app in Claude or ChatGPT, build both, as the app
 skill's "Both" describes.
