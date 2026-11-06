@@ -209,11 +209,47 @@ wrong means regenerating everything across 12+ files.
 
 ### Design Phase
 
-0. For each capability the app has, follow the
-   [`feature` skill](../feature/SKILL.md): agree on it in plain
-   English with the user, and write it down as a `@wip` feature
-   file before the API exists. The design below is derived from
-   those features.
+0. **Propose the features, then ask how much to build first.** In
+   one message, describe every feature the description implies, as
+   the [`feature` skill](../feature/SKILL.md)'s Step 1 has them: each
+   one's name, what it is for, its rules, and a few example
+   situations. Put them in the order they build on, the one the
+   others need first. Write them from the description alone: no state
+   types, fields, methods or scenarios yet, since the design is made
+   for the scope chosen and only for it. End the message with this
+   question, and nothing after it:
+
+   ```
+   Question: "How much should the first build include?"
+   Header:   "Scope"
+   Options:
+     - "Quick start" — the first feature, by name. <range>.
+     - "Standard (Recommended)" — the two features that show the
+       app best, by name. <range>.
+     - "Complete" — every feature above. <range>. Production sign-in
+       and deployment come after.
+   ```
+
+   - **Keep the options in this order**, smallest first, even though
+     Standard is the recommended one. Standard is also the default:
+     a question that comes back with no choice is Standard. An answer
+     already in the prompt ("Answers to your questions: Quick start")
+     settles it with no question.
+   - **Each option's line is feature names and a range**, with no
+     Reboot terms. The range is the time to build, not counting time
+     waiting on the user: 8–15 minutes for the foundation, plus 3–8
+     a feature with a web app alone, 2–5 with an MCP App alone, or
+     4–10 with both, rounded out to whole five minutes. A range,
+     never one number, and never a smaller scope slower than a larger
+     one.
+   - **Scope changes how many features, never how carefully.** Every
+     option builds its features properly: real authorizers, real
+     data, and every feature's scenarios passing.
+
+   The answer, or the user's corrections to the features, settles
+   what is built. Write those features down as `@wip` feature files,
+   per the feature skill's Step 2, before the API exists. The design
+   below is derived from them.
 1. Analyze the user's description using the State Model Assessment
    below.
 2. State the design you are about to build:
