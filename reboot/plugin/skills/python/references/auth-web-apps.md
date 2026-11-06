@@ -135,8 +135,8 @@ same recipe.
 ## Who Signs In
 
 A web app's design says who signs in: anonymous visitors only,
-signed-in users, or per-user state. If the app has per-user state,
-declare a `User` type for the owned data and route creation through
-it the same way an MCP App does — the `User`-front-door pattern is
-independent of MCP. If the app is anonymous or all users share state,
-skip `User`.
+signed-in users, or per-user state. **Every web app declares a `User`
+type**, even one with no per-user state: the root's sign-in gate
+reads `useUser()` before it renders the shell (the frontend skill's
+"Building a web app"). Route creation through it the same way an MCP
+App does — the `User`-front-door pattern is independent of MCP.
