@@ -1,4 +1,4 @@
 interface:
   display_name: "Reboot App"
-  short_description: "Build a Reboot app (routes to mcp-app or web-app)"
+  short_description: "Build a Reboot app: settle the front end, then build it end to end"
   default_prompt: "Use Reboot App to build a Reboot application from a description."
