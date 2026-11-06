@@ -57,7 +57,7 @@ The Reboot backend is identical. The deltas are all on the frontend:
 | API exposure | `mcp=Tool()` on writer/transaction methods.                                                      | Methods exposed only through the generated React client.                                  |
 | UI shape     | `UI()` methods → artifacts embedded in the MCP host.                                             | An SPA at `frontend/web/` opened at a URL.                                                |
 | Vite config  | The `mcp-app` scaffolding's: one-file `dist/mcp/<name>/index.html` per UI, served through Envoy. | A stock Vite SPA config rooted at `web/`, built to `dist/web/` at `base: "/"`.            |
-| Test surface | MCPJam inspector.                                                                                | Scenarios that drive the app through Playwright (`python/references/testing-web-app.md`). |
+| Test surface | MCPJam inspector.                                                                                | Scenarios that drive the app through Playwright (`frontend/references/testing-web-app.md`). |
 | `User` type  | Required — the MCP entry point.                                                                  | Optional — only if your app needs per-user state.                                         |
 
 Backend mechanics (state, methods, Servicers, workflows, refs,
@@ -162,7 +162,7 @@ Recommended sequence:
    `python/references/testing-harness.md` ("Identity Wiring in
    Tests"): omit `oauth=` for backend scenarios, and for scenarios
    that open the web app use `Development()` for both arms plus
-   `allowed_origins=[]`, as `python/references/testing-web-app.md`
+   `allowed_origins=[]`, as `frontend/references/testing-web-app.md`
    shows.
 
 3. **Public, unauthenticated endpoints** (health checks, public
@@ -176,7 +176,7 @@ no id-threading: call the `User` hook with **no arguments**. For
 explicit-id hooks the rule is that the id must be real on every
 render — never a placeholder — which is covered with the rest of
 the hook mechanics in
-[`references/react-client.md`](references/react-client.md).
+[`frontend/references/react-client.md`](../frontend/references/react-client.md).
 
 ### Calling external APIs on the user's behalf
 
@@ -205,7 +205,7 @@ same recipe.
 All of it — the provider (and the `url` it must be given), the
 generated hook surface, sign-in/sign-out, reading typed errors, and
 why a hook's `id` must be real on every render — is in
-[`references/react-client.md`](references/react-client.md). Read it
+[`frontend/references/react-client.md`](../frontend/references/react-client.md). Read it
 at the frontend step; don't reconstruct it from memory here.
 
 ## Which References to Read, and When
@@ -216,17 +216,19 @@ it** — not all of them up front — and read each one **once**. The
 groups below are in build order, and each reference appears in
 exactly one of them — the step that needs it.
 
-> **Never read `mcp-app/references/*` for a web app.** They cover
-> the MCP frontend — `UI()` artifacts, the MCPJam inspector,
+> **Never read the MCP App's frontend pages for a web app**
+> (`frontend/references/react-scaffolding.md`, `react-app-tsx.md`,
+> `pop-out-to-web-app.md`, or `mcp-app/references/gotchas.md`). They
+> cover the MCP frontend — `UI()` artifacts, the MCPJam inspector,
 > `mcp/<name>/index.html` entries, one-file MCP App bundles,
 > `mcp=Tool()` markers, popping a widget out into a web app. (The
 > `frontend/` shell itself — `vite.config.ts` with `reboot()` — is
 > the same for both, and
-> `references/react-client.md` has it.) Reaching into them
+> `frontend/references/react-client.md` has it.) Reaching into them
 > costs context and produces MCP App-shaped code (`mcp=Tool()`
 > markers and `UI()` methods in an app with no MCP frontend). The
 > web equivalents are
-> [`references/react-client.md`](references/react-client.md) and the
+> [`frontend/references/react-client.md`](../frontend/references/react-client.md) and the
 > `python` references named below. Choosing a real sign-in provider is in
 > [python/references/auth-oauth-providers.md](../python/references/auth-oauth-providers.md);
 > read it when you pick one.
@@ -298,13 +300,13 @@ above for the dev-vs-prod sequence):
 
 **Before the frontend:**
 
-- [`references/react-client.md`](references/react-client.md) — the
+- [`frontend/references/react-client.md`](../frontend/references/react-client.md) — the
   `frontend/` shell (the stock Vite config rooted at `web/`,
   including the `server.host` the browser needs), the backend URL
   (`VITE_REBOOT_URL` — the default detection resolves to Vite's
   origin, not the backend's), sign-in/sign-out, and how a typed
   backend error becomes a message the user sees.
-- `python/references/react-generated-client.md` — what
+- `frontend/references/react-generated-client.md` — what
   `rbt generate --react=` emits: the `use<Type>()` overloads, the
   three-field reader return, why mutations resolve to
   `{ response, aborted }` instead of throwing, the typed error
@@ -312,7 +314,7 @@ above for the dev-vs-prod sequence):
 
 **Before the tests:** `python/references/testing-project-setup.md`,
 `python/references/testing-features.md` (the built-in steps'
-spelling; always), and `python/references/testing-web-app.md` (the
+spelling; always), and `frontend/references/testing-web-app.md` (the
 `frontend` fixture, the web app steps, and the accessible markup
 the page needs), plus `python/references/patterns-idempotency.md` —
 it explains `IdempotencyUncertainError`, which is otherwise the one
@@ -341,7 +343,7 @@ them the most expensive way in the system to learn a fact.
 
 The generated surfaces you actually need are written out in these
 references — the React client in
-[`references/react-client.md`](references/react-client.md), the
+[`frontend/references/react-client.md`](../frontend/references/react-client.md), the
 backend shapes in `python/references/`. Use them.
 
 If something genuinely isn't covered, bound the output hard: a
@@ -594,7 +596,7 @@ config: it adds `frontend/mcp/<name>/` beside `web/` and
 7. Write `main.py` — `python/references/lifecycle-application-entry.md`.
 8. Scaffold the frontend at `frontend/`
    (`npm create vite@latest frontend -- --template react-ts`) and
-   shape it as [`references/react-client.md`](references/react-client.md)
+   shape it as [`frontend/references/react-client.md`](../frontend/references/react-client.md)
    shows: the SPA's `index.html`, `src/`, and `public/` under
    `frontend/web/`, the config rooted there with the `dedupe` and
    `server.host` entries, and the Reboot packages in `package.json`.
@@ -605,7 +607,7 @@ config: it adds `frontend/mcp/<name>/` beside `web/` and
 10. `uv run rbt generate` again — the React bindings need
     `node_modules` to resolve types correctly.
 11. Build the frontend from
-    [`references/react-client.md`](references/react-client.md): the
+    [`frontend/references/react-client.md`](../frontend/references/react-client.md): the
     provider and its `url`, the generated hook/mutator/error
     declarations, sign-in, and typed errors are all written out
     there. Write the calls from that reference and do **not** open
@@ -620,7 +622,7 @@ config: it adds `frontend/mcp/<name>/` beside `web/` and
     scenario in the built-in steps of
     `python/references/testing-features.md`, and the flows a person
     clicks through are web app scenarios per
-    `python/references/testing-web-app.md` (they need `playwright`,
+    `frontend/references/testing-web-app.md` (they need `playwright`,
     `pytest-playwright`, `uv run playwright install chromium`, and
     the page's accessible markup from step 11). Every step names
     who calls; a user who must be signed in is declared with

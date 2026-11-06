@@ -31,7 +31,7 @@ Scenario: Opening a first account in the web app
   Then as "alice", `balance` on the `Account` for <account id> has `amount=1000.0`
 ```
 
-`testing-features.md` covers the backend steps and the shape of a
+`python/references/testing-features.md` covers the backend steps and the shape of a
 feature; this reference covers what the browser adds. The
 [`reboot-bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic)
 example's `tests/web_test.py` and the scenarios of its

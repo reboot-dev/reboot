@@ -62,8 +62,8 @@ README for the manual install, team auto-enable, and the Codex
 ## Which References to Read, and When
 
 The backend mechanics live in the `python` skill's references,
-including the MCP App's API, servicer and sign-in pages; the MCP
-App's React pages live in this skill's own `references/`. Neither set is restated inline below.
+including the MCP App's API, servicer and sign-in pages; the React
+pages live in the `frontend` skill's references. Neither set is restated inline below.
 
 Everything you read stays in the conversation and is re-sent on
 every later turn, so **read each reference at the step that needs
@@ -71,14 +71,14 @@ it** — not all of them up front — and read each one **once**. The
 groups below are in build order, and each reference appears in
 exactly one of them — the step that needs it.
 
-> **Never read `web-app/references/*` for an MCP App.** They cover
+> **Never read `frontend/references/react-client.md` for an MCP App.** It covers
 > the standalone browser SPA — the `frontend/web/` SPA, the
 > `VITE_REBOOT_URL` backend URL, `<RebootClientProvider>`,
 > browser sign-in buttons — none of which apply to the nested
 > `frontend/mcp/<name>/` bundles an MCP host loads. The MCP App
 > equivalents are
-> [`references/react-scaffolding.md`](references/react-scaffolding.md)
-> and [`references/react-app-tsx.md`](references/react-app-tsx.md).
+> [`frontend/references/react-scaffolding.md`](../frontend/references/react-scaffolding.md)
+> and [`frontend/references/react-app-tsx.md`](../frontend/references/react-app-tsx.md).
 
 **Before the project shell** (`.python-version`, `pyproject.toml`,
 `.rbtrc`, `.mypy.ini`, `main.py`):
@@ -208,22 +208,22 @@ under Key Framework Concepts):
 
 **Before the frontend:**
 
-- [`references/react-scaffolding.md`](references/react-scaffolding.md)
+- [`frontend/references/react-scaffolding.md`](../frontend/references/react-scaffolding.md)
   — the `frontend/` shell: `package.json` and `build.mjs` (`npm run build` calls the package's `build()`, which builds every UI the
   plugin declares; a frontend with one UI could use plain `vite build`, as the web-only shell does),
   `vite.config.ts` (the stock Vite file plus `reboot()`),
   `tsconfig.json` / `tsconfig.app.json` / `tsconfig.node.json`,
   `index.css` theme variables, `mcp/<name>/index.html`,
   `mcp/<name>/main.tsx`.
-- [`references/react-app-tsx.md`](references/react-app-tsx.md) —
+- [`frontend/references/react-app-tsx.md`](../frontend/references/react-app-tsx.md) —
   `App.tsx` itself: what an MCP App component renders, and the full
   Counter `App.tsx` + `App.module.css` example.
-- `python/references/react-generated-client.md` — what
+- `frontend/references/react-generated-client.md` — what
   `rbt generate --react=` emits, identically for every frontend: the
   `use<Type>()` overloads, the three-field reader return, why
   mutations resolve to `{ response, aborted }` instead of throwing,
   the typed error classes, and the snake→camel naming rules.
-- [`references/pop-out-to-web-app.md`](references/pop-out-to-web-app.md)
+- [`frontend/references/pop-out-to-web-app.md`](../frontend/references/pop-out-to-web-app.md)
   — only when a widget needs a "pop out into the web app" button:
   recover the bound entity ID with the generated hook's `state_id`,
   build a deep-link URL, and open it via the host's
@@ -261,7 +261,7 @@ them the most expensive way in the system to learn a fact.
 
 The generated surfaces you actually need are written out in these
 references — the React client in
-`python/references/react-generated-client.md`, the backend shapes in
+`frontend/references/react-generated-client.md`, the backend shapes in
 the rest of `python/references/`. Use them.
 
 If something genuinely isn't covered, bound the output hard: a
@@ -467,7 +467,7 @@ The React UI subscribes to that one reader and pages by cursor —
 the fan-out across item actors happens server-side, inside the
 reader. The composing-reader pattern (backend reader + React
 subscription) is in
-[`references/react-app-tsx.md`](references/react-app-tsx.md);
+[`frontend/references/react-app-tsx.md`](../frontend/references/react-app-tsx.md);
 Shape C is in `python/references/state-collections.md`.
 
 ## Key Framework Concepts (MCP App–specific)
@@ -757,9 +757,9 @@ a worked set are in
 9. `cd frontend && npm install`.
 10. `uv run rbt generate` (React bindings need `node_modules`).
 11. Customize React UIs — see
-    [`references/react-scaffolding.md`](references/react-scaffolding.md)
+    [`frontend/references/react-scaffolding.md`](../frontend/references/react-scaffolding.md)
     for the `frontend/` shell and
-    [`references/react-app-tsx.md`](references/react-app-tsx.md) for
+    [`frontend/references/react-app-tsx.md`](../frontend/references/react-app-tsx.md) for
     `App.tsx` patterns.
 12. `cd frontend && npm run build`.
 13. **Write and run the scenarios of every feature before handing
