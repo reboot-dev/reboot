@@ -235,6 +235,9 @@ An app with both front ends reads both columns.
 | Step | MCP App | Web app |
 | --- | --- | --- |
 | Design | "Designing an MCP App" in [`python/references/mcp-app-concepts.md`](../python/references/mcp-app-concepts.md) | "Designing a web app" in the [`frontend` skill](../frontend/SKILL.md), and "Who Signs In" in [`python/references/auth-web-apps.md`](../python/references/auth-web-apps.md) |
+| Shell, API, servicers, `main.py`, authorizers, scenarios, updates | "Building an MCP App" in the [`python` skill](../python/SKILL.md) | "Building a web app" in the [`python` skill](../python/SKILL.md) |
+| Frontend scaffold and build, browser scenarios, updates | "Building MCP App UIs" in the [`frontend` skill](../frontend/SKILL.md) | "Building a web app" in the [`frontend` skill](../frontend/SKILL.md) |
+| Both front ends in one `frontend/` | "Building both" in the [`frontend` skill](../frontend/SKILL.md) | |
 
 ## Which References to Read, and When
 
@@ -242,25 +245,15 @@ Everything you read stays in the conversation and is re-sent on
 every later turn, so **read each reference at the step that needs
 it** — not all of them up front — and read each one **once**. The
 groups below are in build order, and each reference appears in
-exactly one of them — the step that needs it. A line marked **MCP
-App** or **Web app** is for that front end only; an app with both
-reads both.
-
-**Before the design** — **MCP App:**
-[`python/references/mcp-app-concepts.md`](../python/references/mcp-app-concepts.md)
-— the `User` front door, tool exposure, `UI()`, `oauth=` and
-example prompts the design names.
+exactly one of them — the step that needs it. Each front end adds
+pages of its own at some steps; "Each Front End's Pages" says where
+they are listed.
 
 **Before the project shell** (`.python-version`, `pyproject.toml`,
 `.rbtrc`, `.mypy.ini`, `main.py`):
 
 - `python/references/lifecycle-{project-setup,rbtrc,application-entry,initialize-hook}.md` — the canonical layout, the CLI flags, the
   `Application(...)` constructor, the `initialize` hook.
-- **MCP App:** [`python/references/lifecycle-mcp-app-shell.md`](../python/references/lifecycle-mcp-app-shell.md) —
-  `.python-version`, `.rbtrc` deltas (the `portless`, `ports` and `dist` configs),
-  `pyproject.toml` extras, `main.py` shape, the `example_prompts.py`
-  module wired into `Application(example_prompts=...)`,
-  durable-state setup.
 
 **Before the API definition:**
 
@@ -294,24 +287,6 @@ example prompts the design names.
   transient cache), split each into its own `Type`. Critical for the
   `User` front door, which otherwise turns into a God actor and
   serializes unrelated writers.
-- **MCP App:** [`python/references/api-method-types.md`](../python/references/api-method-types.md)
-  — the pydantic API file for an MCP App: `User`-type front door,
-  `mcp=Tool()` / `mcp=None`, `UI()` (including parameterized UI
-  props), `factory=True` on `create`, the `Workflow(...)`
-  declaration shape. Full Counter API example.
-- **MCP App:** [`python/references/api-state-shapes.md`](../python/references/api-state-shapes.md)
-  — two recurring state shapes: `list[Item]` with
-  `default_factory=list`; single nested `Model` sub-objects as
-  `Optional[X] = Field(tag=N, default=None)` hydrated in factory
-  `create` (Gotcha #8). The state-inside-state regression and how
-  to compose state actors via string ID + `ref(id)`.
-- **MCP App:** [`python/references/patterns-mcp-app-gotchas.md`](../python/references/patterns-mcp-app-gotchas.md)
-  — the numbered MCP App backend trip list: `mcp=Tool()`/`mcp=None` required,
-  `factory=True` on app-type `create`, `MyType.ref()` not
-  `cls.ref()`/`self.ref()` in workflows, `.schedule()` from a
-  Transaction, Optional+`default=None` for nested Models, `.read()`
-  only on a no-arg ref inside a workflow, method-name PascalCase →
-  generated `<Type>.<Method>Request`.
 
 **Before the servicer:**
 
@@ -327,18 +302,9 @@ example prompts the design names.
   decision tree (Reboot scopes vs. `at_least_once` vs.
   `at_most_once`), `context.loop`, inline state writes,
   `until` / `until_changes`, and workflow exit semantics.
-- **MCP App:** [`python/references/servicer-patterns.md`](../python/references/servicer-patterns.md)
-  — the MCP App servicer shapes: `UserServicer` calling
-  `<X>.create(context)`, a Workflow Servicer with `MyType.ref()`
-  (no-arg) magic, inline writers via
-  `.per_workflow("alias").write(context, fn)` /
-  `.per_iteration("alias").write(...)` / `.always().write(...)`,
-  scheduling a workflow from a Transaction with `.schedule()`.
 
-**Before the authorizers** (write rules from day one — see "Auth" in
-`python/references/mcp-app-concepts.md` for an MCP App, and the
-dev-vs-prod sequence in `python/references/auth-web-apps.md` for a
-web app):
+**Before the authorizers** (write rules from day one; your front
+end's sign-in page says how):
 
 - `python/references/servicer-authorizer.md` — **start here**.
   Explains `oauth=` (the default, with rules from day one) vs.
@@ -370,24 +336,6 @@ web app):
   id must be **stable** — it becomes `context.auth.user_id`), the
   `validate()` / `mount_routes()` hooks, and `token_service_id` +
   `OAuthTokens` for `store_tokens=True` support.
-- **MCP App:** [`python/references/auth-store-tokens.md`](../python/references/auth-store-tokens.md)
-  — **acting on the user's behalf** at an external service: when the
-  API belongs to your `Application(oauth=...)` identity provider,
-  add extra OAuth `scopes=[...]` + `store_tokens=True` (needs
-  `oauth_library()` + `ciphertext_library()` +
-  `ordered_map_library()`) and the server captures its tokens.
-  Reboot stores **the provider's own tokens only** (an `Auth0`
-  sign-in stores an Auth0 token, not the upstream Google token). The
-  full host-agnostic recipe — custom OAuth endpoints for any _other_
-  service, reading tokens back, calling the API **inside a
-  `Workflow`**, refresh tokens, erasure — is
-  [`python/references/auth-external-api-calls.md`](../python/references/auth-external-api-calls.md).
-- **Web app:** `python/references/auth-external-api-calls.md` and
-  `python/references/stdlib-oauth-tokens.md` — **calling an external
-  service's API as the user**: custom OAuth endpoints (web apps use
-  Path B — no `store_tokens=True` shortcut) → `OAuthTokenManager.store`
-  → read back + call inside a `Workflow`. Never a plain `str` token
-  field.
 
 **Before the frontend:** the [`frontend` skill](../frontend/SKILL.md).
 Its "Which page to read" names the pages for a web app, for MCP App
@@ -398,9 +346,7 @@ and `python/references/testing-features.md` (the built-in steps'
 spelling; always), plus `python/references/patterns-idempotency.md`
 — it explains `IdempotencyUncertainError`, which is otherwise the
 one runtime error whose cause is not in any reference you have
-read. **Web app:** `frontend/references/testing-web-app.md` (the
-`frontend` fixture, the web app steps, and the accessible markup
-the page needs). `python/references/testing-harness.md` and
+read. `python/references/testing-harness.md` and
 `testing-external-context.md` are for custom steps;
 `testing-failure-recovery.md` is the one to read whenever the app
 has a spawned task, a `Workflow`, or `schedule()`d work: it covers
@@ -629,9 +575,9 @@ Shape C is in `python/references/state-collections.md`.
 ## Project Structure
 
 The layout is the one every Reboot app has, `frontend/` included
-(`python/references/lifecycle-project-setup.md`). An MCP App fills
-`frontend/mcp/`; a web app fills `frontend/web/`; an app with both
-fills both.
+(`python/references/lifecycle-project-setup.md`). What each front end
+puts under `frontend/` is in its section of the
+[`frontend` skill](../frontend/SKILL.md).
 
 ```
 <project>/
@@ -646,61 +592,32 @@ fills both.
 ├── backend/
 │   └── src/
 │       ├── main.py          # Application entrypoint
-│       ├── example_prompts.py  # MCP App: wizard example prompts
 │       └── servicers/
 │           └── <name>.py    # Servicer implementation
 ├── tests/
 │   ├── <capability>.feature  # One feature per capability
-│   ├── <name>_test.py       # `application` fixture + `scenarios(...)`
-│   └── web_test.py          # Web app: the scenarios that open the app
+│   └── <name>_test.py       # `application` fixture + `scenarios(...)`
 └── frontend/
     ├── package.json
     ├── tsconfig.json
     ├── tsconfig.app.json
     ├── tsconfig.node.json
     ├── vite.config.ts       # The stock Vite file plus `reboot({...})`
-    ├── api/                 # Generated TypeScript client
-    │                        # (output of `rbt generate --react=`)
-    ├── mcp/                 # MCP App: one folder per UI
-    │   └── <ui-name>/
-    │       ├── index.html
-    │       ├── index.css        # Theme variables
-    │       ├── main.tsx         # RebootClientProvider entry
-    │       ├── App.tsx          # React component
-    │       └── App.module.css
-    └── web/                 # Web app: the single-page app
-        ├── .env.production  # VITE_REBOOT_URL=<the deployed backend>
-        ├── index.html       # The single SPA entry
-        ├── public/
-        └── src/
-            ├── main.tsx     # RebootClientProvider entry
-            ├── App.tsx      # Routes + top-level component
-            ├── vite-env.d.ts
-            └── pages/
-                └── <page>.tsx
+    └── api/                 # Generated TypeScript client
+                             # (output of `rbt generate --react=`)
 ```
-
-Where the web app is served, in development and built, is in the
-[`frontend` skill](../frontend/SKILL.md) ("Web app: where it is
-served").
 
 ## Step-by-Step Build Flow
 
-**All commands run from the application directory.**
+**All commands run from the application directory.** At each step,
+also do what your front end adds to it ("Each Front End's Pages").
 
 1. Create `.python-version`, `pyproject.toml`, `.rbtrc`, and
    `.mypy.ini` — same shape as in
    `python/references/lifecycle-{project-setup,rbtrc}.md`; the
    `.mypy.ini` template lives in
-   `python/references/lifecycle-project-setup.md`. **MCP App:** the
-   deltas in
-   [`python/references/lifecycle-mcp-app-shell.md`](../python/references/lifecycle-mcp-app-shell.md).
-   **Web app:** in `.rbtrc`, point the React codegen at
-   `frontend/api`:
-   ```sh
-   generate --react=frontend/api
-   ```
-   Then give the project its `AGENTS.md` and `CLAUDE.md` with the
+   `python/references/lifecycle-project-setup.md`. Then give the
+   project its `AGENTS.md` and `CLAUDE.md` with the
    [`agents-md` skill](../agents-md/SKILL.md), naming the API and
    servicer files the design settled on.
 2. `uv sync`.
@@ -712,75 +629,37 @@ served").
 4. Write the API definition (`api/<pkg>/v1/<name>.py`). Pydantic
    rules live in `python/references/api-pydantic.md`; method
    marker → context-type rules in
-   `python/references/api-methods.md`. **MCP App:** see
-   [`python/references/api-method-types.md`](../python/references/api-method-types.md)
-   and [`python/references/api-state-shapes.md`](../python/references/api-state-shapes.md).
-   **Web app:** every `Reader`, `Writer`, `Transaction` and
-   `Workflow` still requires the `mcp=` argument: write `mcp=None` on
-   each one. Do **not** add `mcp=Tool()` or `UI()`; those are MCP App
-   only.
+   `python/references/api-methods.md`.
 5. `uv run rbt generate`. Don't read what it wrote: the signature
    your servicer must match is in `python/references/api-methods.md`
    ("The Servicer Signature Each Declaration Obliges").
 6. Write the servicer (`backend/src/servicers/<name>.py`) —
    context-type patterns in `python/references/servicer-*.md`.
-   **MCP App:** see
-   [`python/references/servicer-patterns.md`](../python/references/servicer-patterns.md).
 7. Write `main.py` — `python/references/lifecycle-application-entry.md`.
-   **MCP App:** also `backend/src/example_prompts.py` (the wizard's
-   example prompts), which `main.py` imports and passes as
-   `example_prompts=` to `Application` — see
-   [`python/references/lifecycle-mcp-app-shell.md`](../python/references/lifecycle-mcp-app-shell.md).
 8. Scaffold the frontend at `frontend/`, as the
-   [`frontend` skill](../frontend/SKILL.md)'s pages for this front end
-   show. **MCP App:** `npm create @reboot-dev/ui`. **Web app:**
-   `npm create vite@latest frontend -- --template react-ts`, shaped as
-   `frontend/references/react-client.md` shows: the SPA's
-   `index.html`, `src/`, and `public/` under `frontend/web/`, the
-   config rooted there with the `dedupe` and `server.host` entries,
-   and the Reboot packages in `package.json`. No `VITE_REBOOT_URL` in
-   development: the web app is served at the backend's origin
-   (`--web-app`); `.env.production` sets it for a deploy elsewhere.
-   **Both:** the web app's tree and config, plus
-   `frontend/mcp/<name>/` beside `web/` and `mcpAppPath: "mcp"` in
-   `reboot()`; the same dev server and `npm run build` serve and
-   build both.
+   [`frontend` skill](../frontend/SKILL.md) says for your front end.
 9. `cd frontend && npm install`.
 10. `uv run rbt generate` again — the React bindings need
     `node_modules` to resolve types correctly.
 11. Build the frontend from the [`frontend` skill](../frontend/SKILL.md)'s
-    pages: **MCP App:** `frontend/references/react-scaffolding.md` for
-    the `frontend/` shell and `frontend/references/react-app-tsx.md`
-    for `App.tsx` patterns. **Web app:**
-    `frontend/references/react-client.md`: the provider and its `url`,
-    the generated hook/mutator/error declarations, sign-in, and typed
-    errors are all written out there. Write the calls from those
-    references and do **not** open `frontend/api/**/*_rbt_react.ts`
-    to check them — it is tens of thousands of lines that then ride
-    along on every later turn.
+    pages for your front end. Write the calls from those references
+    and do **not** open `frontend/api/**/*_rbt_react.ts` to check
+    them — it is tens of thousands of lines that then ride along on
+    every later turn.
 12. `cd frontend && npm run build` (sanity check the bundle).
 13. **Write and run the scenarios of every feature before handing
     the app off.** Each feature file from the design phase (the
     [`feature` skill](../feature/SKILL.md)) gets its scenarios now:
     every action the user should be able to _do_ is a scenario in
     the built-in steps of `python/references/testing-features.md`.
-    **MCP App:** every action through the MCP tool surface ("create
-    a new todo list", "add an item and see it listed", "rename a
-    list"), calling the methods the tools call. **Web app:** every
-    action in the UI ("sign up and see my profile", "submit the form
-    and see the result", "delete an item and have it disappear"), and
-    the flows a person clicks through are web app scenarios per
-    `frontend/references/testing-web-app.md` (they need `playwright`,
-    `pytest-playwright`, `uv run playwright install chromium`, and the
-    page's accessible markup from step 11). Every step names who
-    calls; a user who must be signed in is declared with
-    `"alice" is an authenticated user`, which is how the real
-    authorizers get exercised: register the **real** servicers and
-    never subclass one to weaken its `authorizer()`. Let factories
-    make ids up. Tag what cannot pass yet `@blocked` with its
-    reason; leave `@wip` where work continues. When a scenario
-    fails for a reason that looks like it is inside the framework,
-    check `python/references/patterns-idempotency.md` and
+    Every step names who calls; a user who must be signed in is
+    declared with `"alice" is an authenticated user`, which is how
+    the real authorizers get exercised: register the **real**
+    servicers and never subclass one to weaken its `authorizer()`.
+    Let factories make ids up. Tag what cannot pass yet `@blocked`
+    with its reason; leave `@wip` where work continues. When a
+    scenario fails for a reason that looks like it is inside the
+    framework, check `python/references/patterns-idempotency.md` and
     `patterns-common-gotchas.md` before reading `site-packages`.
     Run `uv run pytest` and fix anything that fails.
     Then type-check: run `uv run mypy backend/ tests/` from the project
@@ -788,10 +667,8 @@ served").
     `python/references/lifecycle-project-setup.md`). Do not
     proceed to the next step until every scenario passes (or is
     `@blocked` with a reason) and mypy is green — together they
-    are what catches contract bugs before the user sees them in
-    MCPJam or the browser. Point the user at the dashboard's Features
-    page to review the features, and, for a web app, at the
-    recordings of the browser scenarios.
+    are what catches contract bugs before the user sees them. Point
+    the user at the dashboard's Features page to review the features.
 14. Run the app — load the [`run` skill](../run/SKILL.md) and
     follow it. It is the single canonical "start the app"
     procedure: it detects the app type, makes sure dependencies
@@ -814,7 +691,6 @@ served").
     URL to the user and open it once at first startup. Do **not**
     start the MCPJam inspector as part of running the app — it
     launches on demand, only if the user picks it in the wizard.
-    **Web app:** the handoff is the URL plus a first page to open.
     Don't bypass the run skill by invoking `rbt dev run` /
     `npm run dev` by hand: those bare commands print only the
     API/MCP/inspect URLs, dropping the wizard hint the user
@@ -822,10 +698,11 @@ served").
 
 ## Update Flow
 
-When modifying an existing app:
+When modifying an existing app (and at each step, what your front end
+adds to it, "Each Front End's Pages"):
 
-1. Read `AGENTS.md`, `.rbtrc`, the API definition, servicer,
-   `main.py`, and for a web app `frontend/web/src/App.tsx`.
+1. Read `AGENTS.md`, `.rbtrc`, the API definition, servicer, and
+   `main.py`.
 2. Assess state model changes. If the app has persisted state or
    has been deployed, read
    `python/references/api-schema-evolution.md` to understand the
@@ -836,27 +713,20 @@ When modifying an existing app:
 4. Update the API definition (every new property with a
    `description=`) → re-run `uv run rbt generate`.
 5. Update servicer methods.
-6. Update React components, and for a web app its routes, keeping
-   the markup accessible (labels paired with inputs, buttons that
-   say what they do) so scenarios can drive the new page.
-7. **MCP App:** when the change adds a new user-facing capability,
-   add or update an example prompt in
-   `backend/src/example_prompts.py` so the wizard surfaces the new
-   flow.
-8. Update the scenarios: the feature file's, and for a web app a
-   web app scenario for a flow a person clicks through. Re-verify
-   the backend: run `uv run mypy backend/ tests/` from the project
-   root and `uv run pytest`; fix every error and failure before
-   handing back, and ask before removing `@wip`.
-9. If the app isn't already running, bring it up with the
+6. Update React components.
+7. Update the scenarios. Re-verify the backend: run
+   `uv run mypy backend/ tests/` from the project root and
+   `uv run pytest`; fix every error and failure before handing
+   back, and ask before removing `@wip`.
+8. If the app isn't already running, bring it up with the
    [`run` skill](../run/SKILL.md). If it is already running under
    `rbt dev run`, the `--watch` globs reload it automatically — no
    restart needed. Editing `.env` likewise triggers a restart, so
    a new or changed secret is re-read by `--env-file` without a
    manual relaunch.
-10. If the change moved a file, added a state type, a page or a UI,
-    changed a command, or taught a rule, update `AGENTS.md` in the
-    same change ([`agents-md` skill](../agents-md/SKILL.md)).
+9. If the change moved a file, added a state type, a page or a UI,
+   changed a command, or taught a rule, update `AGENTS.md` in the
+   same change ([`agents-md` skill](../agents-md/SKILL.md)).
 
 Specific patterns and file shapes live in the references above —
 read them on demand based on what's changing.
