@@ -17930,11 +17930,15 @@ class Greeter:
 
     __state_type_name__ = IMPORT_reboot_aio_types.StateTypeName("tests.reboot.Greeter")
 
-    class CreateTask:
+    class CreateTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -17952,22 +17956,7 @@ class Greeter:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.CreateResponse]:
             """Awaits for task to finish and returns its response."""
@@ -18162,11 +18151,15 @@ class Greeter:
         ) -> bool:
             return False
 
-    class GreetTask:
+    class GreetTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -18184,22 +18177,7 @@ class Greeter:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.GreetResponse]:
             """Awaits for task to finish and returns its response."""
@@ -18393,11 +18371,15 @@ class Greeter:
         ) -> bool:
             return False
 
-    class SetAdjectiveTask:
+    class SetAdjectiveTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -18415,22 +18397,7 @@ class Greeter:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.SetAdjectiveResponse]:
             """Awaits for task to finish and returns its response."""
@@ -18625,11 +18592,15 @@ class Greeter:
         ) -> bool:
             return False
 
-    class TransactionSetAdjectiveTask:
+    class TransactionSetAdjectiveTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -18647,22 +18618,7 @@ class Greeter:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.TransactionSetAdjectiveResponse]:
             """Awaits for task to finish and returns its response."""
@@ -18856,11 +18812,15 @@ class Greeter:
         ) -> bool:
             return False
 
-    class TryToConstructContextTask:
+    class TryToConstructContextTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -18878,22 +18838,7 @@ class Greeter:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.TryToConstructContextResponse]:
             """Awaits for task to finish and returns its response."""
@@ -19087,11 +19032,15 @@ class Greeter:
         ) -> bool:
             return False
 
-    class TryToConstructExternalContextTask:
+    class TryToConstructExternalContextTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -19109,22 +19058,7 @@ class Greeter:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.TryToConstructExternalContextResponse]:
             """Awaits for task to finish and returns its response."""
@@ -19318,11 +19252,15 @@ class Greeter:
         ) -> bool:
             return False
 
-    class TestLongRunningFetchTask:
+    class TestLongRunningFetchTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -19340,22 +19278,7 @@ class Greeter:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.TestLongRunningFetchResponse]:
             """Awaits for task to finish and returns its response."""
@@ -19549,11 +19472,15 @@ class Greeter:
         ) -> bool:
             return False
 
-    class TestLongRunningWriterTask:
+    class TestLongRunningWriterTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -19571,22 +19498,7 @@ class Greeter:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.TestLongRunningWriterResponse]:
             """Awaits for task to finish and returns its response."""
@@ -19781,11 +19693,15 @@ class Greeter:
         ) -> bool:
             return False
 
-    class GetWholeStateTask:
+    class GetWholeStateTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -19803,22 +19719,7 @@ class Greeter:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.GetWholeStateResponse]:
             """Awaits for task to finish and returns its response."""
@@ -20012,11 +19913,15 @@ class Greeter:
         ) -> bool:
             return False
 
-    class FailWithExceptionTask:
+    class FailWithExceptionTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -20034,22 +19939,7 @@ class Greeter:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.FailWithExceptionResponse]:
             """Awaits for task to finish and returns its response."""
@@ -20243,11 +20133,15 @@ class Greeter:
         ) -> bool:
             return False
 
-    class FailWithAbortedTask:
+    class FailWithAbortedTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -20265,22 +20159,7 @@ class Greeter:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.FailWithAbortedResponse]:
             """Awaits for task to finish and returns its response."""
@@ -20483,11 +20362,15 @@ class Greeter:
                 return True
             return False
 
-    class WorkflowTask:
+    class WorkflowTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -20505,22 +20388,7 @@ class Greeter:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.WorkflowResponse]:
             """Awaits for task to finish and returns its response."""
@@ -20723,11 +20591,15 @@ class Greeter:
                 return True
             return False
 
-    class DangerousFieldsTask:
+    class DangerousFieldsTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -20745,22 +20617,7 @@ class Greeter:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.DangerousFieldsResponse]:
             """Awaits for task to finish and returns its response."""
@@ -20955,11 +20812,15 @@ class Greeter:
         ) -> bool:
             return False
 
-    class StoreRecursiveMessageTask:
+    class StoreRecursiveMessageTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -20977,22 +20838,7 @@ class Greeter:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.StoreRecursiveMessageResponse]:
             """Awaits for task to finish and returns its response."""
@@ -21187,11 +21033,15 @@ class Greeter:
         ) -> bool:
             return False
 
-    class ReadRecursiveMessageTask:
+    class ReadRecursiveMessageTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -21209,22 +21059,7 @@ class Greeter:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.ReadRecursiveMessageResponse]:
             """Awaits for task to finish and returns its response."""
@@ -21418,11 +21253,15 @@ class Greeter:
         ) -> bool:
             return False
 
-    class ConstructAndStoreRecursiveMessageTask:
+    class ConstructAndStoreRecursiveMessageTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -21440,22 +21279,7 @@ class Greeter:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Greeter.ConstructAndStoreRecursiveMessageResponse]:
             """Awaits for task to finish and returns its response."""
