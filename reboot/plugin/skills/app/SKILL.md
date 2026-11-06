@@ -224,8 +224,8 @@ wrong means regenerating everything across 12+ files.
    Header:   "Scope"
    Options:
      - "Quick start" — the first feature, by name. <range>.
-     - "Standard (Recommended)" — the two features that show the
-       app best, by name. <range>.
+     - "Standard (Recommended)" — the two features that show Reboot
+       best, by name. <range>.
      - "Complete" — every feature above. <range>. Production sign-in
        and deployment come after.
    ```
@@ -234,7 +234,29 @@ wrong means regenerating everything across 12+ files.
      Standard is the recommended one. Standard is also the default:
      a question that comes back with no choice is Standard. An answer
      already in the prompt ("Answers to your questions: Quick start")
-     settles it with no question.
+     settles it with no question, and so does an answer to the
+     design question ("build the design as proposed"): it takes
+     Standard, the default.
+   - **Standard is two features, three or four scenarios each**,
+     picked from the list (or cut down from one) to show what Reboot
+     does that other stacks make hard. Which feature shows which is
+     said in the message above the question, never in the option:
+     - **a transaction across states**: one action that changes two
+       things or neither (moving stock between two warehouses takes
+       it from one and adds it to the other, or does neither);
+     - **live updates**: a change one person makes shows at once on
+       another's open page, no reload (proved by a browser scenario
+       with two users, as `frontend/references/testing-web-app.md`
+       has it);
+     - **durable work**: a `Workflow` or a `schedule()`d task that
+       carries on after the request (closing an order schedules its
+       invoice; a hold that lapses after its time).
+
+     Each of the three is in one of the two features; the scenarios
+     are those three and the feature's main flow, not its edge
+     cases. A rule the feature has that is not among them is
+     enforced in the servicer, and offered as scenarios at the
+     handoff.
    - **Each option's line is feature names and a range**, with no
      Reboot terms. The range is the time to build, not counting time
      waiting on the user: 8–15 minutes for the foundation, plus 3–8
@@ -557,6 +579,7 @@ also do what your front end adds to it ("Each Front End's Pages").
     The steps are the [`dashboard` skill](../dashboard/SKILL.md)'s
     step 6. What to hand over for each front end is the run skill's
     Step 6.
+    Offer the features a smaller scope left out as the next build.
     Last in the handoff, offer sample data as a question, as
     [`python/references/lifecycle-sample-data.md`](../python/references/lifecycle-sample-data.md)
     says.
