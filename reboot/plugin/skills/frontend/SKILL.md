@@ -252,6 +252,34 @@ accessible (labels paired with inputs, buttons that say what they
 do) so scenarios can drive the new page; add a web app scenario for
 a flow a person clicks through.
 
+## Reviewing a web app's pages
+
+The app skill's review step, for a web app.
+
+Read the screenshots the browser scenarios recorded
+(`tests/*.recordings/**/*.png`, the Read tool, a feature's in
+parallel in one turn). Every page of the page map ("The page map" above) is in them;
+a page no scenario reaches gets a browser scenario that opens it,
+with something in it, and sees its heading. Each page passes when:
+
+- **it is the approved design**: the page map's page, inside the
+  shell (masthead, nav, the working context);
+- **it is styled, all of it**: no browser defaults (a grey bevelled
+  button, a serif face, an underlined blue link, an unstyled
+  select), nothing outside the tokens;
+- **nothing is broken**: no overlap, clipped or wrapped-to-pieces
+  text, table running off the page, raw id or ISO timestamp where a
+  name or a date belongs, empty state that says nothing, loading
+  line that never goes, error shown as a stack or a JSON blob;
+- **it reads as one app** with the other pages: the same spacing,
+  type sizes, buttons, tables and status colours.
+
+What fails is fixed in the page, in the tokens (never by
+changing a scenario's assertions), then the browser scenarios run
+again and their new screenshots are read. **Two rounds**: what is
+still off after the second is named in the handoff, page by page.
+MCP alone: no review; the wizard is the plugin's, not the app's.
+
 ## Building MCP App UIs
 
 What an MCP App adds to the app skill's frontend steps.
