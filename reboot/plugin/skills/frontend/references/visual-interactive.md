@@ -95,15 +95,19 @@ are the app's own (and a fifth that looks inside a region), in
 them:
 
 ```python
-from playwright.sync_api import expect
+from typing import Any, cast
+
+from playwright.sync_api import Locator, expect
 from reboot.bdd import parsers, then, when
 from reboot.bdd.web import WebApp
 
 ROLE = r'"(?P<name>[^"]+)" (?P<role>[a-z]+)'
 
 
-def _element(web_app: WebApp, user: str, role: str, name: str):
-    return web_app.page(user=user).get_by_role(role, name=name, exact=True)
+def _element(web_app: WebApp, user: str, role: str, name: str) -> Locator:
+    # `get_by_role` types its role as a closed list of ARIA names; the
+    # steps take any role as text, so the role is cast for mypy.
+    return web_app.page(user=user).get_by_role(cast(Any, role), name=name, exact=True)
 
 
 @when(parsers.re(r'"(?P<user>[^"]+)" drags the ' + ROLE +
