@@ -1098,13 +1098,11 @@ class OAuthServer:
         # way the authorization code can only land somewhere the
         # application already trusts, so the confused-deputy attack the
         # consent screen guards against — an attacker registering a
-        # client with their own `redirect_uri` — can't arise. Go
-        # straight to the browser-flow behavior: reuse an existing
-        # session if there is one, otherwise sign in at the IdP.
-        if (
-            client_data.get("type") == _BROWSER_CLIENT_TYPE or
-            client_data.get("first_party") is True
-        ):
+        # client with their own `redirect_uri` — can't arise.
+
+        # The browser client reuses the web app's session if there is
+        # one, otherwise signs in at the IdP.
+        if client_data.get("type") == _BROWSER_CLIENT_TYPE:
             existing_user_id = self._verify_session_cookie(request)
             if existing_user_id is not None:
                 return self._redirect_with_auth_code(
@@ -1114,6 +1112,22 @@ class OAuthServer:
                     code_challenge=str(code_challenge),
                     state=mcp_state,
                 )
+            return self._redirect_to_idp(
+                request=request,
+                client_id_token=client_id_token,
+                redirect_uri=redirect_uri,
+                code_challenge=code_challenge,
+                code_challenge_method=code_challenge_method,
+                mcp_state=mcp_state,
+            )
+
+        # A first-party client (a mobile app, say) holds its own tokens
+        # and only comes here when it has none, so it always signs in
+        # at the IdP. The web app's session cookie is not for it: it
+        # would sign the app in as whoever last used the web app in
+        # this browser, and keep a user who just signed out of the app
+        # from signing in as somebody else.
+        if client_data.get("first_party") is True:
             return self._redirect_to_idp(
                 request=request,
                 client_id_token=client_id_token,
@@ -1277,26 +1291,9 @@ class OAuthServer:
             denied.delete_cookie(_CONSENT_CSRF_COOKIE, path=_CONSENT_PATH)
             return denied
 
-        # Web→MCP SSO: the user has approved consent, so the
-        # confused-deputy check the consent screen exists for is
-        # satisfied. If their browser already carries a valid
-        # `rbt_session` cookie (from a prior browser sign-in via
-        # `/finish` or an earlier MCP `/callback`), skip the
-        # identity-provider round-trip and mint an authorization code
-        # directly — they've already proven who they are; only their
-        # consent was still needed.
-        existing_user_id = self._verify_session_cookie(request)
-        if existing_user_id is not None:
-            sso = self._redirect_with_auth_code(
-                user_id=existing_user_id,
-                client_id=str(consent_data["client_id"]),
-                redirect_uri=redirect_uri,
-                code_challenge=str(consent_data["code_challenge"]),
-                state=mcp_state,
-            )
-            sso.delete_cookie(_CONSENT_CSRF_COOKIE, path=_CONSENT_PATH)
-            return sso
-
+        # Approved: sign the user in at the IdP. The web app's session
+        # cookie is deliberately not consulted; a user signed in to the
+        # web app has not said which identity this client should get.
         response = self._redirect_to_idp(
             request=request,
             client_id_token=consent_data["client_id"],
@@ -1413,38 +1410,24 @@ class OAuthServer:
             code_challenge=str(pending["code_challenge"]),
             state=pending.get("mcp_state", ""),
         )
-        # MCP→web SSO: also set the browser session cookies on the
-        # callback response. The callback is reached via a top-level
-        # navigation through the user's browser, so the cookies land
-        # in the Reboot backend's first-party jar — usable by the
-        # standalone SPA on the same Reboot origin next time the
-        # user opens it, even when the original MCP flow was launched
-        # from inside an MCP host like Claude. For pure-MCP-client
-        # flows that don't go through a browser these cookies are
-        # set but ignored (the MCP client doesn't process
-        # `Set-Cookie`).
-        #
         # The identity provider code exchange just above is the one
         # moment the user's verified claims are fresh, so this is the
-        # mint that delivers them; refresh grants and session-cookie
-        # SSO never reach here and so deliver no claims. `None` means
-        # claim delivery is off — the provider was constructed
-        # without `claims=` or has no verified claims source (e.g.
-        # `Anonymous`) — and delivers nothing; an empty mapping is
-        # the provider's complete, current claim set, and clears any
-        # previously delivered claims.
-        tokens = await self._mint_tokens_for_user(
+        # mint that delivers them; refresh grants never reach here and
+        # so deliver no claims. `None` means claim delivery is off —
+        # the provider was constructed without `claims=` or has no
+        # verified claims source (e.g. `Anonymous`) — and delivers
+        # nothing; an empty mapping is the provider's complete,
+        # current claim set, and clears any previously delivered
+        # claims. The tokens themselves are not handed out here: the
+        # client exchanges the authorization code for its own at
+        # `/token`, and the browser flow's session cookies are set by
+        # `/finish`, which the redirect above leads to.
+        await self._mint_tokens_for_user(
             user_id=user_id,
             client_id=str(pending["client_id"]),
             base=origin_from_request(request),
             context=external_context(request),
             claims=result.claims,
-        )
-        self._set_session_cookies(
-            response,
-            access_token=tokens["access_token"],
-            refresh_token=tokens["refresh_token"],
-            expires_in=tokens["expires_in"],
         )
         return response
 

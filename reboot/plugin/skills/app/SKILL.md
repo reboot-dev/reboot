@@ -60,8 +60,8 @@ they probably mean…":
 prompt contains an explicit conjunction:** e.g. "and also a
 website", "MCP server **plus** a dashboard", "expose it to Claude
 **and** host it on the web". Dual-frontend apps share one backend,
-one `oauth=...`, and one `User` actor per upstream identity;
-cross-frontend SSO is automatic.
+one `oauth=...`, and one `User` actor per upstream identity; each
+frontend keeps a session of its own.
 
 ### Do NOT infer commitment from any of these
 
@@ -117,7 +117,7 @@ chat-y", **ask**.
        normal browser.
      - "Both"     — a single app exposed through both an MCP host
        and a standalone browser SPA, sharing one `User` actor per
-       upstream identity (cross-frontend SSO).
+       upstream identity.
    ```
 
    Then route on the answer per steps 1–3. **"Both" loads both

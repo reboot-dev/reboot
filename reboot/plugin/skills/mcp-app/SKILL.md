@@ -29,11 +29,11 @@ Build complete Reboot MCP Apps from a user description.
 > backend; they share `oauth=...`, the same `User` per upstream
 > identity, and the same servicer code. For the standalone SPA
 > piece, also load the
-> [web-app skill](../web-app/SKILL.md). A user who signs in on
-> one frontend is signed in on both (cross-frontend SSO): the OAuth
-> server's `/authorize` short-circuits when the browser already
-> carries a session cookie, and `/callback` sets that cookie
-> on every flow.
+> [web-app skill](../web-app/SKILL.md). Each frontend has a
+> session of its own: the web app's is the `rbt_session` cookie
+> set by `/finish`, an MCP host's is the token it holds from
+> `/token`, so a user signs in to each frontend separately, through
+> the same upstream identity.
 
 ## Installation
 
@@ -229,8 +229,8 @@ under Key Framework Concepts):
   build a deep-link URL, and open it via the host's
   `useMcpApp().openLink({ url })` (the sandboxed iframe blocks
   `window.open`) with a `window.open` fallback. The web-app side
-  reads the ID from the URL; a shared `rbt_session` keeps the user
-  signed in across frontends.
+  reads the ID from the URL and signs the user in if the browser
+  holds no web-app session yet.
 
 **Before the tests:** `python/references/testing-project-setup.md`
 and `python/references/testing-features.md` (the built-in steps'
