@@ -218,7 +218,7 @@ exactly one of them — the step that needs it.
 
 > **Never read the MCP App's frontend pages for a web app**
 > (`frontend/references/react-scaffolding.md`, `react-app-tsx.md`,
-> `pop-out-to-web-app.md`, or `mcp-app/references/gotchas.md`). They
+> `pop-out-to-web-app.md`, or `python/references/patterns-mcp-app-gotchas.md`). They
 > cover the MCP frontend — `UI()` artifacts, the MCPJam inspector,
 > `mcp/<name>/index.html` entries, one-file MCP App bundles,
 > `mcp=Tool()` markers, popping a widget out into a web app. (The
