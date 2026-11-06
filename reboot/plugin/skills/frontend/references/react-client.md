@@ -8,8 +8,8 @@ tags: web-app, react, vite, hooks, errors, RebootClientProvider
 ## Wire the Web SPA to the Reboot Backend
 
 Everything the standalone browser frontend needs. This is the
-web-app equivalent of the `mcp-app` skill's scaffolding references —
-**do not read those**. The `frontend/` shell is the same one (the
+web app's equivalent of the MCP App scaffolding pages beside it
+(`react-scaffolding.md`, `react-app-tsx.md`) — **do not read those**. The `frontend/` shell is the same one (the
 stock Vite file plus Reboot's `reboot()` plugin), and this file
 has the web app's version of it;
 the rest of those references is about `mcp/<name>/` entries and
@@ -76,7 +76,7 @@ same version as the backend's `reboot` dependency, and `zod`:
 ```
 
 `vite.config.ts` is the stock Vite file with Reboot's plugin added,
-the same config the `mcp-app` skill uses, so adding MCP Apps later is
+the same config the MCP App scaffolding uses, so adding MCP Apps later is
 one more option in it rather than a different file:
 
 ```ts
@@ -118,8 +118,8 @@ rather than `/src/main.tsx`, so the dev server can serve it at `/`.
 `npm run build` is `tsc -b && vite build`: with one UI declared, the
 web app, the plugin needs no build target and the stock command
 builds it into `dist/web/`. (A frontend with MCP Apps as well builds
-every UI through `build()` from `@reboot-dev/reboot-react/vite`; the
-`mcp-app` skill has that.) `vite-plugin-singlefile` sits in
+every UI through `build()` from `@reboot-dev/reboot-react/vite`; 
+`react-scaffolding.md` has that.) `vite-plugin-singlefile` sits in
 `devDependencies` beside `vite` and `@vitejs/plugin-react` because
 the plugin imports them from the project.
 
