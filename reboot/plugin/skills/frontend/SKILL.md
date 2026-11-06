@@ -1,6 +1,6 @@
 ---
 name: frontend
-description: The React side of a Reboot application. Covers the client `rbt generate --react=` writes (the `use<Type>()` hooks, mutations, typed errors), a standalone web app at `frontend/web/`, MCP App UIs at `frontend/mcp/<name>/`, the Vite setup both share, and browser scenarios that drive the web app with Playwright. The app skill reads it at the frontend step of a build; use it directly when changing the React code of an existing Reboot app.
+description: The React side of a Reboot application. Covers the client `rbt generate --react=` writes (a hook per state type, mutations, typed errors), a standalone web app at `frontend/web/`, MCP App UIs under `frontend/mcp/`, the Vite setup both share, and browser scenarios that drive the web app with Playwright. The app skill reads it at the frontend step of a build; use it directly when changing the React code of an existing Reboot app.
 ---
 
 # frontend — The React Side of a Reboot App
