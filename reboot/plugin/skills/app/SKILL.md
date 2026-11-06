@@ -307,8 +307,10 @@ wrong means regenerating everything across 12+ files.
      [What Each Front End Adds](#what-each-front-end-adds) above.
 
    Then ask "Build this design?", with three options and no others:
-   **Build it, with sample data** (so every page has something in it
-   to try), **Build it, empty**, and **Change something**. "Change
+   **Build it, with sample data** (test data so every page has
+   something in it to try; its description says, in the app's own
+   nouns, that it stays on this machine and never reaches
+   production), **Build it, empty**, and **Change something**. "Change
    something" asks what to change, in plain text; the change is made
    and the design shown again with the same question. An alternative
    the design weighed goes in the design's text, not in the options.
@@ -619,7 +621,8 @@ also do what your front end adds to it: the table in
     What to hand over for each front end is the run skill's
     [Hand off](../run/SKILL.md#step-6--hand-off).
     Offer the features the build plan left for later, to pick the next build from.
-    With sample data, name in one line what was added and where to
+    With sample data, name in one line what was added, that it is
+    test data that never reaches production, and where to
     see it.
     Don't bypass the run skill by invoking `rbt dev run` /
     `npm run dev` by hand: those bare commands print only the
