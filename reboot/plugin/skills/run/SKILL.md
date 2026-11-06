@@ -314,8 +314,11 @@ Confirm every process is up from its logs, then give the user:
 - the application's own inspect-page URL (and that `rbt inspect`
   inspects the same state from the CLI — see the
   [inspect skill](../inspect/SKILL.md));
-- for an MCP App — the setup-wizard URL (`http://localhost:9991`,
-  already opened for them, for connecting an MCP client) and a
+- for an MCP App — the setup wizard, not the `/mcp` URL: the
+  backend serves it at its root (`https://<app>.localhost` under
+  portless, else `http://localhost:9991`), already opened for them
+  once at first startup; it is the page that connects an MCP client
+  (Claude, ChatGPT, MCPJam, …) and completes OAuth. Add a
   first prompt to try (e.g. "Create a new todo list and show it to
   me"). Don't hand over an MCPJam URL — MCPJam isn't running, and
   only starts if the user picks it in the wizard (see the on-demand
