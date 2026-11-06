@@ -1,6 +1,6 @@
 ---
 name: app
-description: Build a Reboot application from a user description — an MCP App for ChatGPT, Claude, VSCode or Goose, a standalone web app at a URL, or both on one backend sharing one User per identity via `oauth=...`. Settles the front end first, committing only when the prompt names it verbatim (MCP/Claude/ChatGPT for an MCP App; a URL/SPA/"website" for a web app; an explicit conjunction for both) and otherwise asking; the `web-app` and `mcp-app` skills start here with the answer given. Then runs the whole build — design, feature files, project shell, API, servicers, frontend, scenarios, and running the app — reading the `python` skill for the backend and the `frontend` skill for the React side at the step that needs each. Does NOT infer the front end from the app's domain (CRM, todo, dashboard, blog, …) — those describe what the app does, not where it lives.
+description: Build a Reboot application from a user description — one backend with a web app in the browser and an MCP App used from an AI chat client (Claude, ChatGPT, VSCode, Goose) by default, or just one of them. Settles the front end first: from the prompt's own words when it says so outright ("just a website", "only for Claude", or both named), otherwise with one question, "How will this app be accessed?"; the `web-app` and `mcp-app` skills start here with the answer given. Then runs the whole build — design, feature files, project shell, API, servicers, frontend, scenarios, design review, and running the app — reading the `python` skill for the backend and the `frontend` skill for the React side at the step that needs each. Never infers the front end from the app's domain (CRM, todo, dashboard, blog, …).
 argument-hint: [<app-description>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 ---
@@ -27,8 +27,10 @@ skills, read at the step that needs them:
 build started from `/reboot:web-app` or `/reboot:mcp-app`, it is
 settled: go on to "When to Use". Otherwise read
 [`references/choosing-the-front-end.md`](references/choosing-the-front-end.md)
-and do what it says: commit only when the user's own words name the
-front end, and otherwise ask. Write no file until the front end is
+and do what it says: both front ends are the default; skip the
+question only when the prompt settles it outright ("just a website",
+"only for Claude", or both named); otherwise ask "How will this app be
+accessed?" before anything else. Write no file until the front end is
 settled. This holds in auto mode too.
 
 ## When to Use
