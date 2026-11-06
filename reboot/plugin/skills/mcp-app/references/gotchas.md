@@ -54,7 +54,7 @@ The list below is what's specific to the MCP App layer:
    entity belongs on that entity's `Type` with `request=None`; the
    tool-call target becomes the actor ID automatically, and the
    generated `use<Type>()` hook resolves it with no arguments. See
-   "UI Placement" in `api-method-types.md`. Putting
+   "UI Placement" in `python/references/api-method-types.md`. Putting
    `show_person=UI(request=ShowPersonProps(person_id: str))` on
    `User` is the canonical wrong shape — it surfaces in MCPJam as
    a tool with a leaky entity-ID input, forces props plumbing, and
@@ -81,7 +81,7 @@ The list below is what's specific to the MCP App layer:
     state it just created, use `.schedule()`:
     `await MyType.ref(id).schedule().autoplay(context)`. Writing
     `await MyType.ref(id).autoplay(context)` from a transaction
-    raises `TypeError: ... '<Method>' is a workflow and must be scheduled from a 'TransactionContext' via `await [...].schedule([...]).<Method>(context, [...])``. See `servicer-patterns.md` for the full pattern.
+    raises `TypeError: ... '<Method>' is a workflow and must be scheduled from a 'TransactionContext' via `await [...].schedule([...]).<Method>(context, [...])``. See `python/references/servicer-patterns.md` for the full pattern.
 
 13. **Nested `Model` fields can't take `default_factory` or
     `default`.** Two related rules — both raise `UserPydanticError`
@@ -98,7 +98,7 @@ The list below is what's specific to the MCP App layer:
     `preferences: Optional[UserPreferences] = Field(tag=N, default=None)`
     — then materialize it inside the factory `create` method when the
     parent state is first written. Full pattern in
-    `api-state-shapes.md`.
+    `python/references/api-state-shapes.md`.
 
 14. **`.per_workflow()` is implicit; don't write it.** Inside a
     workflow, `MyType.ref().read(context)` and

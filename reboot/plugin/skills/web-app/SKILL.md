@@ -151,7 +151,7 @@ Recommended sequence:
    before real users exist**: `context.auth.user_id` is namespaced
    per provider, so switching providers after launch strands every
    existing user's state. Only reach for
-   [mcp-app/references/auth-oauth-providers.md](../mcp-app/references/auth-oauth-providers.md)
+   [python/references/auth-oauth-providers.md](../python/references/auth-oauth-providers.md)
    if you need to write a custom provider or debug a specific
    provider's flow.
 
@@ -227,9 +227,9 @@ exactly one of them — the step that needs it.
 > markers and `UI()` methods in an app with no MCP frontend). The
 > web equivalents are
 > [`references/react-client.md`](references/react-client.md) and the
-> `python` references named below. The single exception is
-> [mcp-app/references/auth-oauth-providers.md](../mcp-app/references/auth-oauth-providers.md),
-> which is frontend-neutral: read it when you pick a real provider.
+> `python` references named below. Choosing a real sign-in provider is in
+> [python/references/auth-oauth-providers.md](../python/references/auth-oauth-providers.md);
+> read it when you pick one.
 
 **Before the API definition:**
 
