@@ -212,3 +212,37 @@ a worked set are in
 [`python/references/lifecycle-mcp-app-shell.md`](lifecycle-mcp-app-shell.md); the
 `mcp-app-counter` example is the canonical reference.
 
+## Designing an MCP App
+
+The design of an MCP App names, beside its application types and
+method map:
+
+- The `User` type and its methods (the MCP front door
+  for creating new application-type instances and locating
+  existing ones).
+- Tool surface: what the AI will see as callable tools.
+- Example prompts: the ~3 named chat scenarios the
+  root-page wizard will offer, each a sequence of messages
+  exercising a main user story — and most of them ending on a
+  turn that renders a `UI()` component, not just a tool call (see
+  "Example Prompts" above).
+- Which methods get `UI()`.
+
+And the State Model Assessment adds, for an MCP App:
+
+- **The `User` type.** An MCP App always has one: it is the front
+  door.
+- **Tool surface**: Which operations need explicit tool
+  exposure (`mcp=Tool()`)? Default Servicer methods to `mcp=Tool()`
+  if the AI should call them, `mcp=None` otherwise.
+- **UI placement** — for each UI in the app: **is the AI
+  passing in an entity ID for this UI to operate on, or is the UI
+  about the user as a whole?** Per-entity UIs (`show_person`,
+  `edit_task`, `view_document`) go on the entity's own `Type`
+  with `request=None` — the AI's tool-call target becomes the
+  actor ID automatically, and the generated `use<Type>()` hook
+  resolves it with no arguments. User-scoped UIs (a dashboard,
+  a global browser) go on `User`. Putting a per-entity UI on
+  `User` with the entity ID inside a `request=<Model>` field is
+  an antipattern; see "UI Placement" in
+  [`python/references/api-method-types.md`](api-method-types.md).
