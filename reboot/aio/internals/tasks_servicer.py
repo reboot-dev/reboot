@@ -6,6 +6,7 @@ from reboot.aio.auth.admin_auth import (
     auth_metadata_from_metadata,
 )
 from reboot.aio.concurrently import concurrently
+from reboot.aio.contexts import Context
 from reboot.aio.headers import SERVER_ID_HEADER, Headers
 from reboot.aio.internals.channel_manager import _ChannelManager
 from reboot.aio.internals.middleware import Middleware
@@ -216,9 +217,14 @@ class TasksServicer(
         grpc_context: grpc.aio.ServicerContext,
     ) -> tasks_pb2.CancelTaskResponse:
         """Implementation of Tasks.CancelTask()."""
-        await self.ensure_admin_auth_or_fail(grpc_context)
-
         headers = Headers.from_grpc_context(grpc_context)
+
+        # A call from within the application (a workflow cancelling a
+        # task it spawned, e.g., via `handle.cancel()`) may cancel as
+        # is; a call from outside needs admin credentials.
+        if not Context.is_app_internal(headers, self._application_id):
+            await self.ensure_admin_auth_or_fail(grpc_context)
+
         task_id_state_ref = StateRef.from_maybe_readable(
             request.task_id.state_ref
         )

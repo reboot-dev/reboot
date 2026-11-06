@@ -40,6 +40,16 @@ service MemoizeMethods {
     };
   }
 
+  // Records that the workflow's cancellation was delivered at this
+  // memoized block (a step or a suspension point), so that a replay
+  // raises `CancelledError` here again instead of returning the
+  // stored result or waiting.
+  rpc Cancel(CancelRequest) returns (CancelResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+
   // Returns the status of the memoize state.
   rpc Status(StatusRequest) returns (StatusResponse) {
     option (rbt.v1alpha1.method) = {
@@ -60,6 +70,9 @@ message Memoize {
   bool failed = 4;
   bytes data = 3;
   string failure = 5;
+  // Set when the workflow's cancellation was delivered at this block;
+  // may be set alongside `stored` for a step that completed first.
+  bool cancelled = 6;
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -90,6 +103,12 @@ message FailResponse {}
 
 ////////////////////////////////////////////////////////////////////////
 
+message CancelRequest {}
+
+message CancelResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
 message StatusRequest {}
 
 message StatusResponse {
@@ -98,6 +117,7 @@ message StatusResponse {
   bool failed = 4;
   bytes data = 3;
   string failure = 5;
+  bool cancelled = 6;
 }
 
 ////////////////////////////////////////////////////////////////////////

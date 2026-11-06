@@ -269,11 +269,15 @@ async def task_cancel(args) -> None:
         )
 
         if cancel_task_response.status == tasks_pb2.CancelTaskResponse.Status.OK:
-            terminal.info("Task cancelled.")
+            terminal.info(
+                "Task cancellation requested; the task finishes once it "
+                "reaches its next suspension point (or completes the step "
+                "it is in) and has run any cleanup."
+            )
         elif cancel_task_response.status == tasks_pb2.CancelTaskResponse.Status.NOT_FOUND:
             terminal.fail("Task is not running.")
         elif cancel_task_response.status == tasks_pb2.CancelTaskResponse.Status.CANCELLING:
-            terminal.fail("Task is cancelling.")
+            terminal.fail("Task is already cancelling.")
     except grpc.aio.AioRpcError as e:
         terminal.fail(f"Failed to cancel task: {e.details()}")
 
