@@ -490,6 +490,11 @@ above lists the right ones grouped by task type. The full catalog:
   `SIGTERM`/`SIGINT`; when something is, `install_cleanup()`, never a
   signal handler of your own
 
+**MCP App**:
+
+- `references/mcp-app-concepts.md` — what makes an app an MCP App: the
+  `User` front door, `mcp=Tool()`, `UI()`, `oauth=`, example prompts
+
 **API** (`api-`):
 
 - `references/api-pydantic.md`
@@ -559,6 +564,8 @@ above lists the right ones grouped by task type. The full catalog:
   your own
 - `references/auth-store-tokens.md` — `store_tokens=True`: calling the
   sign-in provider's API as the user
+- `references/auth-web-apps.md` — sign-in for a web app's browser users,
+  and the order to write authorizers in
 
 **RPC** (`rpc-`):
 
