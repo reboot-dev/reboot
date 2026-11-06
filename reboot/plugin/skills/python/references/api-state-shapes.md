@@ -78,7 +78,7 @@ For application types that own a single nested `Model` sub-object
 
 - Declare the field as `Optional[Sub] = Field(tag=N, default=None)`.
   Non-Optional nested `Model` types reject both `default=` and
-  `default_factory=` (Gotcha #13 in the gotchas reference).
+  `default_factory=` (Gotcha #13 in `patterns-mcp-app-gotchas.md`).
 - Hydrate the sub-object in the parent's factory `create` Writer, so
   callers never observe the `None`:
 
