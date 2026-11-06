@@ -1,6 +1,6 @@
 ---
 name: app
-description: Build a Reboot application from a user description — one backend with a web app in the browser and an MCP App used from an AI chat client (Claude, ChatGPT, VSCode, Goose) by default, or just one of them. Settles the front end first: from the prompt's own words when it says so outright ("just a website", "only for Claude", or both named), otherwise with one question, "How will this app be accessed?"; the `web-app` and `mcp-app` skills start here with the answer given. Then runs the whole build — design, feature files, project shell, API, servicers, frontend, scenarios, design review, and running the app — reading the `python` skill for the backend and the `frontend` skill for the React side at the step that needs each. Never infers the front end from the app's domain (CRM, todo, dashboard, blog, …).
+description: Build a Reboot application from a user description — one backend with a web app in the browser and an MCP App used from an AI chat client (Claude, ChatGPT, VSCode, Goose) by default, or just one of them. Settles the front end first: from the prompt's own words when it says so outright ("just a website", "only for Claude", or both named), otherwise with one question, "Who will use this app?" (people in a browser, AI agents in a chat, or both); the `web-app` and `mcp-app` skills start here with the answer given. Then runs the whole build — design, feature files, project shell, API, servicers, frontend, scenarios, design review, and running the app — reading the `python` skill for the backend and the `frontend` skill for the React side at the step that needs each. Never infers the front end from the app's domain (CRM, todo, dashboard, blog, …).
 argument-hint: [<app-description>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 ---
@@ -29,8 +29,8 @@ settled: go on to "When to Use". Otherwise read
 [`references/choosing-the-front-end.md`](references/choosing-the-front-end.md)
 and do what it says: both front ends are the default; skip the
 question only when the prompt settles it outright ("just a website",
-"only for Claude", or both named); otherwise ask "How will this app be
-accessed?" before anything else. Write no file until the front end is
+"only for Claude", or both named); otherwise ask "Who will use this app?" (people, agents, or
+both) before anything else. Write no file until the front end is
 settled. This holds in auto mode too.
 
 ## When to Use
@@ -223,15 +223,17 @@ wrong means regenerating everything across 12+ files.
    Question: "How much should the first build include?"
    Header:   "Scope"
    Options:
-     - "Quick start" — the first feature, by name. <range>.
      - "Standard (Recommended)" — the two features that show Reboot
        best, by name. <range>.
+     - "Quick start" — the first feature, by name. <range>.
      - "Full" — every feature above. <range>. Production sign-in
        and deployment come after.
    ```
 
-   - **Keep the options in this order**, smallest first, even though
-     Standard is the recommended one. Standard is also the default:
+   - **Keep the options in this order**: Standard first, since the
+     dialog pre-selects the first option and Standard is the one
+     recommended, then Quick start, then Full. Standard is also the
+     default:
      a question that comes back with no choice is Standard. An answer
      already in the prompt ("Answers to your questions: Quick start")
      settles it with no question, and so does an answer to the

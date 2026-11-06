@@ -32,10 +32,11 @@ connector. The front ends are only what sits on top:
 app, since its tools are the backend's methods. Ask once, unless the
 prompt already settles it:
 
-- **Web alone**, no question: "just a website", "only a web app", "no
-  MCP", "no AI", or an answer already in the prompt that names only
+- **Web alone**, no question: "just a website", "only a web app",
+  "people only", "no MCP", "no AI", or an answer already in the prompt that names only
   the web ("Answers to your questions: a web app").
 - **MCP alone**, no question: "just an MCP server", "only for Claude",
+  "agents only",
   "no web app", "no website", or an answer in the prompt that names
   only MCP.
 - **Both**, no question: an answer in the prompt that names both, or a
@@ -58,39 +59,46 @@ what gets built: a website, the same app inside Claude or ChatGPT, or
 both." Then the question.
 
 ```
-Question: "How will this app be accessed?"
-Header:   "Access"
+Question: "Who will use this app?"
+Header:   "Users"
 Options:
-  - "Web app and MCP App" — a website people open in a browser,
-    and the same app inside Claude or ChatGPT, where they ask for
-    things in the chat. Both use the same data and the same sign-in.
-  - "Web app only" — a website people open in a browser, with pages
-    to view and work in. Nothing in a chat client.
-  - "MCP App only" — the app lives inside an AI chat client such
-    as Claude or ChatGPT. People ask in the chat, and it answers with
-    actions and its own panels. No website.
+  - "People and agents" — a website people open in a browser, and the
+    same app for AI agents like Claude or ChatGPT, which use it when
+    someone asks in the chat. Same data, same sign-in.
+  - "People only" — a website people open in a browser, with pages to
+    view and work in. No agent access.
+  - "Agents only" — a person asks an AI agent like Claude or ChatGPT,
+    and the agent uses the app through its tools and panels in the
+    chat. No website.
 ```
 
-The options stay in this order: both first, as the default. **Mark
-one "(Recommended)" only when the description leans to it**, and add
-why to its description in a few words, from the prompt's own:
+"People and agents" is both front ends, a web app and an MCP App;
+"People only" is the web app alone; "Agents only" is the MCP App
+alone.
 
-- **Web app only** when the app is mostly looked at or worked in on a
+**Mark one "(Recommended)" only when the description leans to it**,
+and add why to its description in a few words, from the prompt's own:
+
+- **People only** when the app is mostly looked at or worked in on a
   screen: a board, a calendar, a map, a dashboard, a page for the
   public, a form a stranger fills in ("a booking page for my
   clinic's patients").
-- **MCP App only** when the app is mostly asked and told things in
-  a conversation: a lookup, a log kept by talking, actions with no
+- **Agents only** when the app is mostly asked and told things in a
+  conversation: a lookup, a log kept by talking, actions with no
   page to work in ("ask Claude what's in my pantry").
-- **Web app and MCP App** when it is both: worked in on a screen
-  and asked about in a chat ("a CRM I also want to ask about
-  my week's follow-ups").
+- **People and agents** when it is both: worked in on a screen and
+  asked about in a chat ("a CRM I also want to ask about my week's
+  follow-ups").
 
-When nothing in the description leans either way, mark none: both
-stays first as the default, unlabelled.
+**The recommended option goes first**, since the dialog pre-selects
+the first option: what a person gets by pressing Enter is what the
+build recommends. The other two follow in the order above. When
+nothing in the description leans either way, mark none: "People and
+agents" stays first, as the default, unlabelled.
 
 A question that comes back with no choice (nobody there, or the
-dialog was not delivered) is both: say so in one line. The answer goes
+dialog was not delivered) takes the recommended option, or "People
+and agents" when none is marked: say so in one line. The answer goes
 into `AGENTS.md`'s Decisions when it is written.
 
 Then say the plan in one sentence ("Building this with both front ends,
@@ -101,9 +109,9 @@ skill, following it from "When to Use".
 
 | prompt | frontends | why |
 | --- | --- | --- |
-| "a CRM for my relationships" | ask, none marked | nothing leans either way |
-| "a dashboard served at metrics.example.com" | ask, Web app only recommended | a URL names the web app, not the web alone; a dashboard is looked at |
-| "a tool I can use from Claude to track my reading" | ask, MCP App only recommended | Claude named, not "only"; a log kept by talking |
+| "a CRM for my relationships" | ask, none marked, People and agents first | nothing leans either way |
+| "a dashboard served at metrics.example.com" | ask, People only recommended and first | a URL names the web app, not the web alone; a dashboard is looked at |
+| "a tool I can use from Claude to track my reading" | ask, Agents only recommended and first | Claude named, not "only"; a log kept by talking |
 | "a website and an MCP server for our CRM" | Both | a conjunction |
 | "just a website for my bakery, no AI" | Web | "just", "no AI" |
 | "only an MCP server for our CRM, no web app" | MCP | "only", "no web app" |
