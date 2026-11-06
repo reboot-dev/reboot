@@ -83,7 +83,7 @@ exactly one of them — the step that needs it.
 **Before the project shell** (`.python-version`, `pyproject.toml`,
 `.rbtrc`, `.mypy.ini`, `main.py`):
 
-- [`references/project-shell.md`](references/project-shell.md) —
+- [`python/references/lifecycle-mcp-app-shell.md`](../python/references/lifecycle-mcp-app-shell.md) —
   `.python-version`, `.rbtrc` deltas (the `portless`, `ports` and `dist` configs),
   `pyproject.toml` extras, `main.py` shape, the `example_prompts.py`
   module wired into `Application(example_prompts=...)`,
@@ -637,7 +637,7 @@ All MCP surface is defined in the API file. `main.py` is minimal. No
 ### State Is Durable
 
 State survives restarts. `dev run --application-name=<name>` in
-`.rbtrc` (see [`references/project-shell.md`](references/project-shell.md))
+`.rbtrc` (see [`python/references/lifecycle-mcp-app-shell.md`](../python/references/lifecycle-mcp-app-shell.md))
 is what makes that work.
 
 ### Example Prompts (Root-Page Wizard)
@@ -674,7 +674,7 @@ least one example drives the user to it.
 They live in `backend/src/example_prompts.py` and are passed to
 `Application(example_prompts=...)` in `main.py`. Full file shapes and
 a worked set are in
-[`references/project-shell.md`](references/project-shell.md); the
+[`python/references/lifecycle-mcp-app-shell.md`](../python/references/lifecycle-mcp-app-shell.md); the
 `mcp-app-counter` example is the canonical reference.
 
 ## Project Structure
@@ -725,7 +725,7 @@ a worked set are in
 
 1. Create `.python-version`, `pyproject.toml`, `.rbtrc`, and
    `.mypy.ini` — see
-   [`references/project-shell.md`](references/project-shell.md);
+   [`python/references/lifecycle-mcp-app-shell.md`](../python/references/lifecycle-mcp-app-shell.md);
    the `.mypy.ini` template lives in
    `python/references/lifecycle-project-setup.md`. Then give the
    project its `AGENTS.md` and `CLAUDE.md` with the
@@ -751,7 +751,7 @@ a worked set are in
 7. Write `backend/src/example_prompts.py` (the wizard's example
    prompts) and `main.py` (which imports them and passes
    `example_prompts=` to `Application`) — see
-   [`references/project-shell.md`](references/project-shell.md) and
+   [`python/references/lifecycle-mcp-app-shell.md`](../python/references/lifecycle-mcp-app-shell.md) and
    `python/references/lifecycle-application-entry.md`.
 8. `npm create @reboot-dev/ui`.
 9. `cd frontend && npm install`.
