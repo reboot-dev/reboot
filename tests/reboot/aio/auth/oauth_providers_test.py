@@ -1143,7 +1143,7 @@ class ConsentScreenTest(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("location", response.headers)
             # The screen frames the app (via `Application(title=...)`) as
             # the thing being acted on behalf of, not "Reboot".
-            self.assertIn("Do you trust this AI?", response.text)
+            self.assertIn("Do you trust this MCP host?", response.text)
             self.assertIn("Reboot Chat", response.text)
             # The redirect host is surfaced, and the client's
             # self-reported metadata is shown as a hint.

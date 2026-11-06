@@ -23,6 +23,7 @@ CONTENT_TYPE_BY_FILE = {
     "bundle.css": "text/css",
     "reboot-logo.svg": "image/svg+xml",
     "reboot-logo-green.svg": "image/svg+xml",
+    "reboot-logo-navy.svg": "image/svg+xml",
     "decorative-shapes.svg": "image/svg+xml",
     "add-app-chatgpt.mp4": "video/mp4",
     "add-app-claude.mp4": "video/mp4",

@@ -1189,6 +1189,7 @@ class OAuthServer:
             client_uri=client_uri if isinstance(client_uri, str) else None,
             client_uri_safe=client_uri_safe,
             redirect_uri=redirect_uri,
+            redirect_host=redirect_host,
             redirect_origin=f"{parsed_redirect.scheme}://{redirect_host}",
             consent_token=consent_token,
             consent_path=_CONSENT_PATH,
