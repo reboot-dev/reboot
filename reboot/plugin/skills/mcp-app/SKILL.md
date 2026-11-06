@@ -132,15 +132,16 @@ exactly one of them — the step that needs it.
   — two recurring state shapes: `list[Item]` with
   `default_factory=list`; single nested `Model` sub-objects as
   `Optional[X] = Field(tag=N, default=None)` hydrated in factory
-  `create` (Gotcha #13). The state-inside-state regression and how
+  `create` (Gotcha #8). The state-inside-state regression and how
   to compose state actors via string ID + `ref(id)`.
-- [`python/references/patterns-mcp-app-gotchas.md`](../python/references/patterns-mcp-app-gotchas.md) — the numbered
-  MCP App trip list (1–19): `mcp=Tool()`/`mcp=None` required,
+- [`python/references/patterns-mcp-app-gotchas.md`](../python/references/patterns-mcp-app-gotchas.md)
+  — the numbered MCP App backend trip list: `mcp=Tool()`/`mcp=None` required,
   `factory=True` on app-type `create`, `MyType.ref()` not
   `cls.ref()`/`self.ref()` in workflows, `.schedule()` from a
   Transaction, Optional+`default=None` for nested Models, `.read()`
   only on a no-arg ref inside a workflow, method-name PascalCase →
-  generated `<Type>.<Method>Request`.
+  generated `<Type>.<Method>Request`. The React side's list is
+  [`frontend/references/gotchas-mcp-app.md`](../frontend/references/gotchas-mcp-app.md).
 
 **Before the servicer:**
 
@@ -412,7 +413,7 @@ Before writing code, analyze the user's request:
    objects, primitives. Each gets `Field(tag=N)`. **Nested `Model`
    sub-objects** owned 1:1 by a parent state must be
    `Optional[X] = Field(tag=N, default=None)` and hydrated in the
-   parent's factory `create` Writer (Gotcha #13); non-Optional
+   parent's factory `create` Writer (Gotcha #8); non-Optional
    `Model`-typed fields reject `default=` / `default_factory=`.
    Full rules + examples in
    [`python/references/api-state-shapes.md`](../python/references/api-state-shapes.md).
