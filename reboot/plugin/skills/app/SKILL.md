@@ -223,23 +223,21 @@ wrong means regenerating everything across 12+ files.
    Question: "How much should the first build include?"
    Header:   "Scope"
    Options:
-     - "Standard (Recommended)" — the two features that show Reboot
-       best, by name. <range>.
-     - "Quick start" — the first feature, by name. <range>.
-     - "Full" — every feature above. <range>. Production sign-in
-       and deployment come after.
+     - "Best first look (Recommended)" — the two features that show
+       Reboot best, as activities. ~<minutes> min
+     - "Just the idea" — the first feature, as an activity. ~<minutes> min
+     - "The whole app" — every feature above, by name. ~<minutes> min
    ```
 
-   - **Keep the options in this order**: Standard first, since the
-     dialog pre-selects the first option and Standard is the one
-     recommended, then Quick start, then Full. Standard is also the
-     default:
-     a question that comes back with no choice is Standard. An answer
-     already in the prompt ("Answers to your questions: Quick start")
-     settles it with no question, and so does an answer to the
-     design question ("build the design as proposed"): it takes
-     Standard, the default.
-   - **Standard is two features, three or four scenarios each**,
+   - **Keep the options in this order**: Best first look first, since
+     the dialog pre-selects the first option and it is the one
+     recommended, then Just the idea, then The whole app. Best first
+     look is also the default: a question that comes back with no
+     choice takes it. An answer already in the prompt ("Answers to
+     your questions: Just the idea") settles it with no question, and
+     so does an answer to the design question ("build the design as
+     proposed"): it takes Best first look, the default.
+   - **Best first look is two features, three or four scenarios each**,
      picked from the list (or cut down from one) to show what Reboot
      does that other stacks make hard. Which feature shows which is
      said in the message above the question, never in the option:
@@ -259,13 +257,18 @@ wrong means regenerating everything across 12+ files.
      cases. A rule the feature has that is not among them is
      enforced in the servicer, and offered as scenarios at the
      handoff.
-   - **Each option's line is feature names and a range**, with no
-     Reboot terms. The range is the time to build, not counting time
-     waiting on the user: 8–15 minutes for the foundation, plus 3–8
-     a feature with a web app alone, 2–5 with an MCP App alone, or
-     4–10 with both, rounded out to whole five minutes. A range,
-     never one number, and never a smaller scope slower than a larger
-     one.
+   - **Each option's line is short: what people can do, then one
+     approximate time.** The features as activities in the app's own
+     words ("Book a plot on the live map, and Monday reminders about
+     idle plots"), no Reboot terms, no caveats; The whole app may list
+     its features by name. The time is "~N min", the time to build not
+     counting time waiting on the user: about 12 minutes for the
+     foundation, plus about 5 a feature with a web app alone, 4 with
+     an MCP App alone, or 7 with both, rounded to the nearest five, and
+     never a smaller option slower than a larger one.
+   - **What every option leaves for later goes above the question,**
+     in the message, once: production sign-in and deployment come
+     after the build.
    - **Scope changes how many features, never how carefully.** Every
      option builds its features properly: real authorizers, real
      data, and every feature's scenarios passing.
