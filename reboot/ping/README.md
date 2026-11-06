@@ -62,8 +62,10 @@ npx @mcpjam/inspector@2.18.1 --url http://localhost:9991/mcp --oauth
 
 The same backend serves the standalone browser SPA in
 [`frontend/web/`](frontend/web/) at `/`, backed by the unified
-`oauth=...` flow. Sign in here and you're also signed in on the
-MCP frontend (and vice versa) via shared `rbt_session` cookies.
+`oauth=...` flow. The SPA's `rbt_session` cookie is a session of
+its own: signing in here does not sign in the MCP frontend, nor
+the other way around, but the same upstream identity resolves to
+the same `User` on both.
 
 ```bash
 ibazel run //reboot/ping:ping_py_bin

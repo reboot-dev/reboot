@@ -46,7 +46,7 @@ from tests.reboot.pydantic.auto_construct_user.servicer import \
     UserServicer as AutoConstructUserServicer
 from tests.reboot.pydantic.auto_construct_user.servicer_api_rbt import \
     User as AutoConstructUser
-from typing import Any, Mapping, Optional
+from typing import Any, Callable, Mapping, Optional
 from unittest import mock
 from urllib.parse import parse_qs, urlencode, urlparse
 
@@ -655,16 +655,104 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
                 "cookie",
             )
 
-    async def test_authorize_short_circuits_with_valid_session(self):
+    async def _sign_in_browser(
+        self,
+        client: httpx.AsyncClient,
+        strip_secure_flag_from_cookies: Callable[[], None],
+    ) -> None:
+        """Drive the browser sign-in (`/start` → `/authorize` →
+        dev-login → `/callback` → `/finish`) on `client`, so that it
+        holds the web app's `rbt_session` cookie afterwards. The flow
+        itself is exercised by
+        `test_browser_flow_whoami_and_refresh_expose_expires_at`."""
+        base = self.rbt.http_localhost_url("")
+        response = await client.get(
+            base + "/__/oauth/start",
+            params={"return_to": "/"},
+        )
+        strip_secure_flag_from_cookies()
+        self.assertEqual(response.status_code, 302)
+        authorize_url = response.headers["location"]
+
+        response = await client.get(authorize_url)
+        strip_secure_flag_from_cookies()
+        self.assertEqual(response.status_code, 302)
+        login_url = response.headers["location"]
+
+        response = await client.get(login_url)
+        strip_secure_flag_from_cookies()
+        self.assertEqual(response.status_code, 200)
+        match = re.search(r'href="([^"]*?code=Alice[^"]*?)"', response.text)
+        assert match is not None
+        callback_url = html.unescape(match.group(1))
+
+        response = await client.get(callback_url)
+        strip_secure_flag_from_cookies()
+        self.assertEqual(response.status_code, 302)
+        finish_url = response.headers["location"]
+
+        response = await client.get(finish_url)
+        strip_secure_flag_from_cookies()
+        self.assertEqual(response.status_code, 302, response.text)
+        self.assertIn("rbt_session", client.cookies)
+
+    async def _authorize_mcp_client(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        redirect_uri: str,
+        state: str,
+    ) -> httpx.Response:
+        """Register a synthetic MCP client whose `redirect_uri` is
+        `redirect_uri` and drive `/__/oauth/authorize` with it, up to
+        and including approving the consent screen; returns the 302
+        that approval produced."""
+        base = self.rbt.http_localhost_url("")
+        metadata_response = await client.get(
+            base + "/.well-known/oauth-authorization-server",
+        )
+        metadata = metadata_response.json()
+        register_response = await client.post(
+            metadata["registration_endpoint"],
+            json={"redirect_uris": [redirect_uri]},
+        )
+        self.assertEqual(register_response.status_code, 201)
+        client_id = register_response.json()["client_id"]
+
+        # Synthetic PKCE pair.
+        code_verifier = base64.urlsafe_b64encode(os.urandom(32)
+                                                ).rstrip(b"=").decode()
+        code_challenge = base64.urlsafe_b64encode(
+            hashlib.sha256(code_verifier.encode()).digest()
+        ).rstrip(b"=").decode()
+
+        response = await client.get(
+            metadata["authorization_endpoint"],
+            params={
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": redirect_uri,
+                "code_challenge": code_challenge,
+                "code_challenge_method": "S256",
+                "state": state,
+            },
+        )
+        # A DCR (MCP) client always gets the consent screen, whatever
+        # session the browser holds; only the first-party browser
+        # client skips it.
+        self.assertEqual(response.status_code, 200, response.text)
+        consent_url = self.rbt.http_localhost_url(_CONSENT_PATH)
+        response = await _approve_consent(client, consent_url, response.text)
+        self.assertEqual(response.status_code, 302, response.text)
+        return response
+
+    async def test_browser_session_does_not_sign_in_an_mcp_client(self):
         """
-        Web→MCP SSO: if the user already has a valid `rbt_session`
-        cookie (set by a previous browser sign-in), an MCP client
-        going through `/__/oauth/authorize` still sees the consent
-        screen, but approving it short-circuits *without* a trip
-        through the IdP — `/consent` mints an auth code directly and
-        302s back to the MCP client's `redirect_uri`. That's what
-        lets an MCP client launched from an already-signed-in browser
-        skip re-entering credentials.
+        The web app's session is the web app's alone: a user signed in
+        to it (holding `rbt_session`) who then approves an MCP client
+        on the consent screen is sent to the identity provider to sign
+        in, rather than having the web app's identity handed to the
+        MCP host.
         """
         await self.rbt.up(
             Application(
@@ -672,9 +760,6 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
                 oauth=OAuth(provider=OAuthProviderForTest(Development())),
             ),
         )
-
-        base = self.rbt.http_localhost_url("")
-        return_to = "/"
 
         async with httpx.AsyncClient(
             follow_redirects=False,
@@ -685,120 +770,30 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
                 for cookie in client.cookies.jar:
                     cookie.secure = False
 
-            # 1. Drive the browser sign-in once so the test client
-            #    holds an `rbt_session` cookie. Helper steps; the
-            #    flow itself is exercised by
-            #    `test_browser_flow_whoami_and_refresh_expose_expires_at`.
-            response = await client.get(
-                base + "/__/oauth/start",
-                params={"return_to": return_to},
+            await self._sign_in_browser(client, strip_secure_flag_from_cookies)
+
+            response = await self._authorize_mcp_client(
+                client,
+                redirect_uri="http://localhost/mcp-callback",
+                state="synthetic-mcp-state",
             )
-            strip_secure_flag_from_cookies()
-            self.assertEqual(response.status_code, 302)
-            authorize_url = response.headers["location"]
-
-            response = await client.get(authorize_url)
-            strip_secure_flag_from_cookies()
-            self.assertEqual(response.status_code, 302)
-            login_url = response.headers["location"]
-
-            response = await client.get(login_url)
-            strip_secure_flag_from_cookies()
-            self.assertEqual(response.status_code, 200)
-            match = re.search(
-                r'href="([^"]*?code=Alice[^"]*?)"', response.text
-            )
-            assert match is not None
-            callback_url = html.unescape(match.group(1))
-
-            response = await client.get(callback_url)
-            strip_secure_flag_from_cookies()
-            self.assertEqual(response.status_code, 302)
-            finish_url = response.headers["location"]
-
-            response = await client.get(finish_url)
-            strip_secure_flag_from_cookies()
-            self.assertEqual(response.status_code, 302, response.text)
-            self.assertIn("rbt_session", client.cookies)
-
-            # 2. Now register a synthetic MCP client and drive
-            #    `/__/oauth/authorize` with that client's params.
-            #    The session cookie carries over; approving the
-            #    consent screen should short-circuit straight to the
-            #    MCP client's redirect_uri *without* bouncing through
-            #    `/__/oauth/dev-login`.
-            mcp_redirect_uri = "http://localhost/mcp-callback"
-            metadata_response = await client.get(
-                base + "/.well-known/oauth-authorization-server",
-            )
-            metadata = metadata_response.json()
-            register_response = await client.post(
-                metadata["registration_endpoint"],
-                json={"redirect_uris": [mcp_redirect_uri]},
-            )
-            self.assertEqual(register_response.status_code, 201)
-            client_id = register_response.json()["client_id"]
-
-            # Synthetic PKCE pair.
-            code_verifier = base64.urlsafe_b64encode(os.urandom(32)
-                                                    ).rstrip(b"=").decode()
-            code_challenge = base64.urlsafe_b64encode(
-                hashlib.sha256(code_verifier.encode()).digest()
-            ).rstrip(b"=").decode()
-
-            response = await client.get(
-                metadata["authorization_endpoint"],
-                params={
-                    "response_type": "code",
-                    "client_id": client_id,
-                    "redirect_uri": mcp_redirect_uri,
-                    "code_challenge": code_challenge,
-                    "code_challenge_method": "S256",
-                    "state": "synthetic-mcp-state",
-                },
-            )
-            strip_secure_flag_from_cookies()
-            # A DCR (MCP) client still gets the consent screen — only
-            # the first-party browser client skips it.
-            self.assertEqual(response.status_code, 200, response.text)
-
-            # Approving consent short-circuits straight to the MCP
-            # client's redirect_uri *without* bouncing through
-            # `/__/oauth/dev-login`: the `rbt_session` cookie from the
-            # browser sign-in above carries the user's identity, so
-            # `/consent` mints the auth code directly.
-            consent_url = self.rbt.http_localhost_url(_CONSENT_PATH)
-            response = await _approve_consent(
-                client, consent_url, response.text
-            )
-            strip_secure_flag_from_cookies()
-            self.assertEqual(response.status_code, 302, response.text)
             location = response.headers["location"]
-            # The whole point: we land on the MCP client's
-            # redirect URI directly, *not* on `/__/oauth/dev-login`.
-            self.assertTrue(
-                location.startswith(mcp_redirect_uri),
-                msg="Expected short-circuit redirect to "
-                f"{mcp_redirect_uri!r}, got {location!r}. If this is "
-                "a dev-login URL, the session cookie wasn't honoured.",
-            )
-            parsed = httpx.URL(location)
-            self.assertIn("code", parsed.params)
-            self.assertEqual(
-                parsed.params["state"],
-                "synthetic-mcp-state",
+            self.assertIn(
+                "/__/oauth/dev-login",
+                location,
+                msg="Expected a redirect to the identity provider, got "
+                f"{location!r}. If this is the MCP client's redirect "
+                "URI, the web app's session was handed to the MCP "
+                "client.",
             )
 
-    async def test_callback_sets_session_cookies_via_mcp_redirect(self):
+    async def test_mcp_sign_in_sets_no_session_cookie(self):
         """
-        MCP→web SSO: when an MCP client kicks off a browser sign-
-        in, the user's browser ends up at `/__/oauth/callback`,
-        which 302s back to the MCP client's `redirect_uri`. The
-        `Set-Cookie` headers on that 302 response are what land
-        `rbt_session` / `rbt_refresh` in the first-party jar on
-        the Reboot backend's origin, so the standalone SPA on
-        that same origin is signed in next time it opens — even
-        though the user never went through `/__/oauth/start`.
+        When an MCP client signs a user in, the user's browser ends up
+        at `/__/oauth/callback`, which 302s back to the MCP client's
+        `redirect_uri`. That response sets no session cookie: the MCP
+        client gets its tokens from `/token`, and the web app on the
+        same origin stays signed out until the user signs in to it.
         """
         await self.rbt.up(
             Application(
@@ -809,46 +804,20 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
 
         base = self.rbt.http_localhost_url("")
 
-        async with httpx.AsyncClient(follow_redirects=False) as client:
-            metadata_response = await client.get(
-                base + "/.well-known/oauth-authorization-server",
-            )
-            metadata = metadata_response.json()
+        async with httpx.AsyncClient(
+            follow_redirects=False,
+            cookies=httpx.Cookies(),
+        ) as client:
 
-            # Register an MCP-style client (DCR).
-            mcp_redirect_uri = "http://localhost/mcp-callback"
-            register_response = await client.post(
-                metadata["registration_endpoint"],
-                json={"redirect_uris": [mcp_redirect_uri]},
-            )
-            self.assertEqual(register_response.status_code, 201)
-            client_id = register_response.json()["client_id"]
+            def strip_secure_flag_from_cookies() -> None:
+                for cookie in client.cookies.jar:
+                    cookie.secure = False
 
-            code_verifier = base64.urlsafe_b64encode(os.urandom(32)
-                                                    ).rstrip(b"=").decode()
-            code_challenge = base64.urlsafe_b64encode(
-                hashlib.sha256(code_verifier.encode()).digest()
-            ).rstrip(b"=").decode()
-
-            # /authorize (no existing session) → 200 consent screen;
-            # approving it → 302 to /dev-login.
-            response = await client.get(
-                metadata["authorization_endpoint"],
-                params={
-                    "response_type": "code",
-                    "client_id": client_id,
-                    "redirect_uri": mcp_redirect_uri,
-                    "code_challenge": code_challenge,
-                    "code_challenge_method": "S256",
-                    "state": "mcp-state-cookie-test",
-                },
+            response = await self._authorize_mcp_client(
+                client,
+                redirect_uri="http://localhost/mcp-callback",
+                state="mcp-state-cookie-test",
             )
-            self.assertEqual(response.status_code, 200, response.text)
-            consent_url = self.rbt.http_localhost_url(_CONSENT_PATH)
-            response = await _approve_consent(
-                client, consent_url, response.text
-            )
-            self.assertEqual(response.status_code, 302)
             login_url = response.headers["location"]
 
             # Scrape Alice's link and follow into /__/oauth/callback.
@@ -862,29 +831,32 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
 
             response = await client.get(callback_url)
             self.assertEqual(response.status_code, 302)
-            # Redirects back to the MCP client's redirect_uri with
-            # an `?code=...` — same as the existing MCP flow.
+            location = response.headers["location"]
             self.assertTrue(
-                response.headers["location"].startswith(mcp_redirect_uri),
+                location.startswith("http://localhost/mcp-callback")
+            )
+            self.assertEqual(
+                response.headers.get_list("set-cookie"),
+                [],
+                msg="An MCP client's callback must not set a session "
+                "cookie: the web app's session is the web app's alone.",
             )
 
-            # The whole point: even though the redirect target is
-            # the MCP client (not `/__/oauth/finish`), the response
-            # carries `Set-Cookie` for the three browser-session
-            # cookies, so the standalone SPA on the Reboot origin
-            # finds them next time the user opens it.
-            set_cookie_headers = response.headers.get_list("set-cookie")
-            cookie_names = {
-                line.split("=", 1)[0].strip() for line in set_cookie_headers
-            }
-            self.assertIn(
-                "rbt_session",
-                cookie_names,
-                msg="MCP /callback must Set-Cookie rbt_session to "
-                "drive MCP→web SSO. Cookies seen: "
-                f"{sorted(cookie_names)}",
+            # The web app is still signed out...
+            response = await client.get(base + "/__/oauth/whoami")
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertFalse(response.json()["authenticated"])
+
+            # ...and its sign-in goes to the identity provider.
+            response = await client.get(
+                base + "/__/oauth/start",
+                params={"return_to": "/"},
             )
-            self.assertIn("rbt_refresh", cookie_names)
+            strip_secure_flag_from_cookies()
+            self.assertEqual(response.status_code, 302)
+            response = await client.get(response.headers["location"])
+            self.assertEqual(response.status_code, 302)
+            self.assertIn("/__/oauth/dev-login", response.headers["location"])
 
     async def test_dev_login_rejects_untrusted_redirect_uri(self):
         """
@@ -1171,7 +1143,7 @@ class ConsentScreenTest(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("location", response.headers)
             # The screen frames the app (via `Application(title=...)`) as
             # the thing being acted on behalf of, not "Reboot".
-            self.assertIn("Do you trust this AI?", response.text)
+            self.assertIn("Do you trust this MCP host?", response.text)
             self.assertIn("Reboot Chat", response.text)
             # The redirect host is surfaced, and the client's
             # self-reported metadata is shown as a hint.
@@ -1423,6 +1395,86 @@ class FirstPartyNativeClientTest(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(response.status_code, 302, response.text)
             self.assertIn("/__/oauth/dev-login", response.headers["location"])
+
+    async def _sign_in(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        client_id: str,
+    ) -> httpx.Response:
+        """Sign the native client `client_id` in: `/authorize` goes
+        straight to the dev-login page, whose per-identity link is the
+        OAuth callback. Returns the callback's 302 to the app's
+        redirect URI, carrying the authorization code."""
+        response = await self._authorize(
+            client,
+            client_id=client_id,
+            redirect_uri=self._SKIP_CONSENT_REDIRECT_URI,
+        )
+        self.assertEqual(response.status_code, 302, response.text)
+        self.assertIn("/__/oauth/dev-login", response.headers["location"])
+        response = await client.get(response.headers["location"])
+        self.assertEqual(response.status_code, 200)
+        match = re.search(r'href="([^"]*?code=Alice[^"]*?)"', response.text)
+        assert match is not None
+        response = await client.get(html.unescape(match.group(1)))
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(
+            response.headers["location"].startswith(
+                self._SKIP_CONSENT_REDIRECT_URI
+            )
+        )
+        return response
+
+    async def test_first_party_client_ignores_the_session_cookie(self):
+        # A native app signs in at the identity provider even when the
+        # browser it opened holds the web app's session: that identity
+        # is not one the user chose for this app, and a user who just
+        # signed out of the app must be able to sign in as somebody
+        # else.
+        await self._up(
+            skip_consent_for_redirect_uris=[self._SKIP_CONSENT_REDIRECT_URI]
+        )
+        async with httpx.AsyncClient(
+            timeout=_HTTP_TIMEOUT_SECONDS,
+            cookies=httpx.Cookies(),
+        ) as client:
+            client_id = await self._register(
+                client,
+                redirect_uris=[self._SKIP_CONSENT_REDIRECT_URI],
+            )
+
+            # Sign in once, so that the session cookie planted below
+            # carries a genuine access token of this server's.
+            response = await self._sign_in(client, client_id=client_id)
+            code = httpx.URL(response.headers["location"]).params["code"]
+            response = await client.post(
+                self.rbt.http_localhost_url(_TOKEN_PATH),
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "client_id": client_id,
+                    "redirect_uri": self._SKIP_CONSENT_REDIRECT_URI,
+                    "code_verifier": "verifier",
+                },
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            client.cookies.set("rbt_session", response.json()["access_token"])
+
+            # With the web app's session present, the app is still sent
+            # to the identity provider.
+            response = await self._authorize(
+                client,
+                client_id=client_id,
+                redirect_uri=self._SKIP_CONSENT_REDIRECT_URI,
+            )
+            self.assertEqual(response.status_code, 302, response.text)
+            self.assertIn(
+                "/__/oauth/dev-login",
+                response.headers["location"],
+                msg="Expected a redirect to the identity provider; the "
+                "web app's session was honoured for a native client.",
+            )
 
     async def test_unlisted_redirect_uri_still_sees_consent(self):
         # An app that registers a redirect URI the application never

@@ -3,9 +3,9 @@
 A minimal Reboot app exposed both as an MCP App *and* as a
 standalone browser SPA. Both frontends share one
 `Application(oauth=...)` configuration, one `User` actor per
-upstream identity, and one set of servicers. A user signed in on
-one frontend is automatically signed in on the other via shared
-`rbt_session` cookies (cross-frontend SSO).
+upstream identity, and one set of servicers. Each frontend has a
+session of its own, so a user signs in to each separately; the same
+upstream identity resolves to the same `User` on both.
 
 ## Quick Start
 

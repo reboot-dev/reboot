@@ -86,6 +86,7 @@ py_library(
         "index.html.j2",
         "reboot-logo.svg",
         "reboot-logo-green.svg",
+        "reboot-logo-navy.svg",
         ":bundle",
     ],
     srcs_version = "PY3",
