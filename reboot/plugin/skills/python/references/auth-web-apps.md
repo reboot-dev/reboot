@@ -130,6 +130,14 @@ erasure, for MCP Apps and web apps alike. Never store tokens in a
 plain `str` field or hand-roll `Ciphertext`
 (`python/references/stdlib-oauth-tokens.md`). If the service doesn't do
 OAuth at all and the user pastes an **API key** instead, that key goes
-through `Ciphertext` (the ciphertext id kept in state). See the
-section titled "Path C — the user provides an API key, not OAuth" in
-`python/references/auth-external-api-calls.md`.
+through `Ciphertext` (the ciphertext id kept in state) — Path C in the
+same recipe.
+
+## Who Signs In
+
+A web app's design says who signs in: anonymous visitors only,
+signed-in users, or per-user state. If the app has per-user state,
+declare a `User` type for the owned data and route creation through
+it the same way an MCP App does — the `User`-front-door pattern is
+independent of MCP. If the app is anonymous or all users share state,
+skip `User`.
