@@ -64,12 +64,11 @@ class OAuth:
           developer forgot", and we'd rather raise loudly than
           silently CORS-block every sign-in attempt in production.
     :param skip_consent_for_redirect_uris: exact-match list of the
-        redirect URIs whose clients sign a user in directly, with no
-        consent screen — the same treatment the browser SPA gets.
-        Typically your own first-party apps: a mobile app's custom
-        scheme (e.g. `"myapp://redirect"`), an `https://` App Link /
-        Universal Link, or the redirect URI of an MCP client you
-        already trust.
+        redirect URIs whose clients sign a user in directly at the
+        identity provider, with no consent screen. Typically your own
+        apps: a mobile app's custom scheme (e.g. `"myapp://redirect"`),
+        an `https://` App Link / Universal Link, or the redirect URI
+        of an MCP host you run yourself.
 
         A client that cannot use the browser sign-in flow registers
         itself dynamically (RFC 7591) and completes an ordinary
@@ -89,7 +88,11 @@ class OAuth:
         authorization code issued for one of these URIs is delivered
         to *that* app, so an attacker registering the same URI gains
         nothing. Entries are therefore compared for exact equality,
-        and wildcards are refused.
+        and wildcards are refused. For the same reason, never list
+        the callback of a host shared by many users, such as a public
+        AI assistant's: there the `state` decides which of its users
+        a code lands with, so an attacker can bind your user to their
+        own account, and the consent screen is what stops that.
 
         Under `rbt dev run`, Expo's `exp://<host>/--/...` development
         URIs skip consent automatically, because they carry the
