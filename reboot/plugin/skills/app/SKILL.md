@@ -226,6 +226,16 @@ wrong means regenerating everything across 12+ files.
      (Reader/Writer/Transaction/Workflow).
    - The design items of each front end you build: see
      [What Each Front End Adds](#what-each-front-end-adds) above.
+
+   Then ask "Build this design?", with two options and no others:
+   **Build it** and **Change something**. "Change something" asks
+   what to change, in plain text; the change is made and the design
+   shown again with the same question. An alternative the design
+   weighed goes in the design's text, not in the options. An answer
+   already given ("build the design as proposed") answers it: send
+   the design and go on. A question that comes back with no choice
+   (nobody there, or the dialog was not delivered) takes its first
+   option: say so in one line and go on.
 3. Then execute the Step-by-Step Build Flow.
 
 For updates to existing apps, still work the design first: read
