@@ -682,19 +682,12 @@ also do what your front end adds to it ("Each Front End's Pages").
     relevance. A dashboard URL, or instructions saved in a README, do
     not satisfy this requirement.
     The steps are the [`dashboard` skill](../dashboard/SKILL.md)'s
-    step 6. **The handoff for an MCP App is the setup wizard,
-    not the `/mcp` URL.** The backend serves an interactive
-    **setup wizard at its root (`https://<app>.localhost` under
-    portless, else `http://localhost:9991`)** — the
-    page that connects an MCP client (Claude, ChatGPT, MCPJam, …)
-    and completes OAuth. As the run skill directs, surface that
-    URL to the user and open it once at first startup. Do **not**
-    start the MCPJam inspector as part of running the app — it
-    launches on demand, only if the user picks it in the wizard.
+    step 6. What to hand over for each front end is the run skill's
+    Step 6.
     Don't bypass the run skill by invoking `rbt dev run` /
     `npm run dev` by hand: those bare commands print only the
-    API/MCP/inspect URLs, dropping the wizard hint the user
-    actually needs.
+    API/MCP/inspect URLs, dropping the hand-over the user actually
+    needs.
 
 ## Update Flow
 
