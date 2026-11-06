@@ -155,7 +155,7 @@ case "$tool" in
         # excluded because they reach outside the local project.
         case "$(field skill)" in
             reboot:app | reboot:feature | reboot:mcp-app | reboot:web-app | \
-            reboot:python | reboot:run | reboot:upgrade)
+            reboot:frontend | reboot:python | reboot:run | reboot:upgrade)
                 emit_allow
                 ;;
         esac
