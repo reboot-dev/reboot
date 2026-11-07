@@ -11,6 +11,16 @@ allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 > newer Reboot is available, the [upgrade skill](../upgrade/SKILL.md)
 > says how and when to react.
 
+> **Plugin tools:** the plugin's pinned tools (`rbt`, `uv`, `uvx`,
+> `node`, `npm`, `envoy`, `cloudflared`, `portless`,
+> `mcpjam-inspector`) are in `../../bin` relative to this file. If
+> `command -v rbt` prints any other path, or nothing, put that
+> directory first on PATH in every command, for example
+> `PATH="<plugin>/bin:$PATH" rbt dev run`. Calling `<plugin>/bin/rbt`
+> alone is not enough, because `rbt dev run` looks up `envoy` and
+> `npm` on PATH. Under Codex on Linux, ask to run `rbt` commands
+> outside the sandbox; inside it they hang (openai/codex#24933).
+
 The developer dashboard is a browser page, served by
 `rbt dashboard`, that shows a Reboot application's API (the Models
 page), its features as the `.feature` files under `tests/`
