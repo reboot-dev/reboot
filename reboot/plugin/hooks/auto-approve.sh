@@ -28,7 +28,8 @@
 #     out of whatever directory it was checked against.
 #   - Outside a Reboot project, the hook exits before its checks
 #     unless the call names a `reboot:` skill, a path under this
-#     plugin's `skills/`, or starts by `cd`ing into a Reboot project.
+#     plugin's `skills/`, or starts by `cd`ing into a Reboot project
+#     (an absolute path, or one relative to `cwd`).
 #
 # For Bash, the command is split — on `;` `&&` `||` `|` — into
 # parts validated independently. A part with a metacharacter that
@@ -154,12 +155,14 @@ if [ -z "$cwd" ] || ! in_reboot_project "$cwd"; then
     relevant=""
     case "$(field skill)" in reboot:*) relevant=1 ;; esac
     case "$input" in *"${CLAUDE_PLUGIN_ROOT}/skills/"*) relevant=1 ;; esac
-    command=$(field command)
+    # A relative `cd` target resolves against `cwd`, as in the Bash
+    # checks below.
+    command=$(field command | sed 's/^[[:space:]]*//')
     case "$command" in
-        'cd /'*)
+        'cd '*)
             target=${command#cd }
             target=${target%%[ ;&|]*}
-            in_reboot_project "$target" && relevant=1
+            [ -n "$target" ] && in_reboot_project "$target" && relevant=1
             ;;
     esac
     [ -n "$relevant" ] || exit 0

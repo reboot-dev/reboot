@@ -208,6 +208,24 @@ class SessionStartTest(unittest.TestCase):
         )
         self.assertEqual(self.read_env_file(), "")
 
+    def test_prepends_in_a_project_with_escaped_characters(self) -> None:
+        """A `"` or `\\` in the project's path arrives JSON-escaped in
+        the hook input's `cwd`, and must still find the `.rbtrc`."""
+        project = os.path.join(self.non_project, 'my "app" \\ v2')
+        os.makedirs(project)
+        open(os.path.join(project, ".rbtrc"), "w").close()
+        run_hook(
+            {
+                "CLAUDE_ENV_FILE": self.env_file,
+                "CLAUDE_PLUGIN_ROOT": self.plugin_root,
+            },
+            cwd=project,
+        )
+        self.assertEqual(
+            self.read_env_file(),
+            f'export PATH="{self.plugin_root}/bin:$PATH"\n',
+        )
+
     def test_falls_back_to_process_cwd(self) -> None:
         """Without a `cwd` field, the hook process's own working
         directory decides."""

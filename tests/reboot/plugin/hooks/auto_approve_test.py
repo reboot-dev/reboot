@@ -54,6 +54,8 @@ class Where(enum.Enum):
     PROJECT = "project"
     # A directory with no `.rbtrc` at or above it.
     NON_PROJECT = "non_project"
+    # The directory that holds the Reboot project, itself not in one.
+    PARENT = "parent"
     # No `cwd` field in the payload at all.
     UNSET = "unset"
 
@@ -921,6 +923,26 @@ REBOOT_DEV_CASES: list[tuple[str, str, Where, Decision]] = [
         Where.NON_PROJECT,
         Decision.REJECT,
     ),
+    (
+        # A session started in the folder above the project `cd`s
+        # into it by its relative name.
+        "dev: relative cd from the parent into the project, then uv sync",
+        "cd {project_name} && uv sync",
+        Where.PARENT,
+        Decision.APPROVE,
+    ),
+    (
+        "dev: indented absolute cd into project web, then npm install",
+        "  cd {project}/web && npm install",
+        Where.NON_PROJECT,
+        Decision.APPROVE,
+    ),
+    (
+        "dev: relative cd from the parent into a non-project, then uv sync",
+        "cd elsewhere && uv sync",
+        Where.PARENT,
+        Decision.REJECT,
+    ),
 
     # ----- Outside a Reboot project: the same commands defer. -----
     (
@@ -1089,6 +1111,7 @@ class AutoApproveTest(unittest.TestCase):
             cwd_for: dict[Where, str | None] = {
                 Where.PROJECT: project,
                 Where.NON_PROJECT: non_project,
+                Where.PARENT: os.path.dirname(project),
                 Where.UNSET: None,
             }
             for runtime in (Runtime.CODEX, Runtime.CODEX_NESTED):
@@ -1100,7 +1123,11 @@ class AutoApproveTest(unittest.TestCase):
                             "Bash",
                             {
                                 "command":
-                                    command.replace("{project}", project),
+                                    command.replace("{project}", project)
+                                    .replace(
+                                        "{project_name}",
+                                        os.path.basename(project),
+                                    ),
                             },
                             cwd=cwd_for[where],
                             runtime=runtime,
@@ -1130,6 +1157,7 @@ class AutoApproveTest(unittest.TestCase):
             cwd_for: dict[Where, str | None] = {
                 Where.PROJECT: project,
                 Where.NON_PROJECT: non_project,
+                Where.PARENT: os.path.dirname(project),
                 Where.UNSET: None,
             }
             for label, command, where, expected in REBOOT_DEV_CASES:
@@ -1140,6 +1168,9 @@ class AutoApproveTest(unittest.TestCase):
                             "command": command.replace(
                                 "{project}",
                                 project,
+                            ).replace(
+                                "{project_name}",
+                                os.path.basename(project),
                             ),
                         },
                         cwd=cwd_for[where],
