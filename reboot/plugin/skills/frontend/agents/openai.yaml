@@ -1,0 +1,3 @@
+interface:
+  display_name: "Reboot Frontend"
+  short_description: "The React side of a Reboot app: generated client, web app, MCP App UIs"

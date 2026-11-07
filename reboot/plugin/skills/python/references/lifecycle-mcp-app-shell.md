@@ -184,7 +184,7 @@ the app's main user stories, phrased the way a real user would talk
 to the chat client. Most prompts should end on a natural
 "show me / open / view ..." turn that renders a `UI()` component
 rather than only calling tool-only methods — see "Example Prompts"
-in `SKILL.md` for the full rule. The counter set above does this
+in `mcp-app-concepts.md` for the full rule. The counter set above does this
 with its "…and show me the counter" / "show me the wins counter"
 turns. See the worked set in
 `public/reboot/examples/mcp-app-counter/backend/src/example_prompts.py`.

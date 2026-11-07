@@ -61,9 +61,9 @@ README for the manual install, team auto-enable, and the Codex
 
 ## Which References to Read, and When
 
-The backend mechanics live in the `python` skill's references; the
-MCP App-specific shape on top of them lives in this skill's own
-`references/`. Neither set is restated inline below.
+The backend mechanics live in the `python` skill's references,
+including the MCP App's API, servicer and sign-in pages; the React
+pages live in the `frontend` skill's references. Neither set is restated inline below.
 
 Everything you read stays in the conversation and is re-sent on
 every later turn, so **read each reference at the step that needs
@@ -71,19 +71,19 @@ it** — not all of them up front — and read each one **once**. The
 groups below are in build order, and each reference appears in
 exactly one of them — the step that needs it.
 
-> **Never read `web-app/references/*` for an MCP App.** They cover
+> **Never read `frontend/references/react-client.md` for an MCP App.** It covers
 > the standalone browser SPA — the `frontend/web/` SPA, the
 > `VITE_REBOOT_URL` backend URL, `<RebootClientProvider>`,
 > browser sign-in buttons — none of which apply to the nested
 > `frontend/mcp/<name>/` bundles an MCP host loads. The MCP App
 > equivalents are
-> [`references/react-scaffolding.md`](references/react-scaffolding.md)
-> and [`references/react-app-tsx.md`](references/react-app-tsx.md).
+> [`frontend/references/react-scaffolding.md`](../frontend/references/react-scaffolding.md)
+> and [`frontend/references/react-app-tsx.md`](../frontend/references/react-app-tsx.md).
 
 **Before the project shell** (`.python-version`, `pyproject.toml`,
 `.rbtrc`, `.mypy.ini`, `main.py`):
 
-- [`references/project-shell.md`](references/project-shell.md) —
+- [`python/references/lifecycle-mcp-app-shell.md`](../python/references/lifecycle-mcp-app-shell.md) —
   `.python-version`, `.rbtrc` deltas (the `portless`, `ports` and `dist` configs),
   `pyproject.toml` extras, `main.py` shape, the `example_prompts.py`
   module wired into `Application(example_prompts=...)`,
@@ -123,24 +123,25 @@ exactly one of them — the step that needs it.
   transient cache), split each into its own `Type`. Critical for the
   `User` front door, which otherwise turns into a God actor and
   serializes unrelated writers.
-- [`references/api-method-types.md`](references/api-method-types.md)
+- [`python/references/api-method-types.md`](../python/references/api-method-types.md)
   — the pydantic API file for an MCP App: `User`-type front door,
   `mcp=Tool()` / `mcp=None`, `UI()` (including parameterized UI
   props), `factory=True` on `create`, the `Workflow(...)`
   declaration shape. Full Counter API example.
-- [`references/api-state-shapes.md`](references/api-state-shapes.md)
+- [`python/references/api-state-shapes.md`](../python/references/api-state-shapes.md)
   — two recurring state shapes: `list[Item]` with
   `default_factory=list`; single nested `Model` sub-objects as
   `Optional[X] = Field(tag=N, default=None)` hydrated in factory
-  `create` (Gotcha #13). The state-inside-state regression and how
+  `create` (Gotcha #8). The state-inside-state regression and how
   to compose state actors via string ID + `ref(id)`.
-- [`references/gotchas.md`](references/gotchas.md) — the numbered
-  MCP App trip list (1–19): `mcp=Tool()`/`mcp=None` required,
+- [`python/references/patterns-mcp-app-gotchas.md`](../python/references/patterns-mcp-app-gotchas.md)
+  — the numbered MCP App backend trip list: `mcp=Tool()`/`mcp=None` required,
   `factory=True` on app-type `create`, `MyType.ref()` not
   `cls.ref()`/`self.ref()` in workflows, `.schedule()` from a
   Transaction, Optional+`default=None` for nested Models, `.read()`
   only on a no-arg ref inside a workflow, method-name PascalCase →
-  generated `<Type>.<Method>Request`.
+  generated `<Type>.<Method>Request`. The React side's list is
+  [`frontend/references/gotchas-mcp-app.md`](../frontend/references/gotchas-mcp-app.md).
 
 **Before the servicer:**
 
@@ -156,7 +157,7 @@ exactly one of them — the step that needs it.
   decision tree (Reboot scopes vs. `at_least_once` vs.
   `at_most_once`), `context.loop`, inline state writes,
   `until` / `until_changes`, and workflow exit semantics.
-- [`references/servicer-patterns.md`](references/servicer-patterns.md)
+- [`python/references/servicer-patterns.md`](../python/references/servicer-patterns.md)
   — the MCP App servicer shapes: `UserServicer` calling
   `<X>.create(context)`, a Workflow Servicer with `MyType.ref()`
   (no-arg) magic, inline writers via
@@ -164,8 +165,8 @@ exactly one of them — the step that needs it.
   `.per_iteration("alias").write(...)` / `.always().write(...)`,
   scheduling a workflow from a Transaction with `.schedule()`.
 
-**Before the authorizers** (write rules from day one — see "Auth"
-under Key Framework Concepts):
+**Before the authorizers** (write rules from day one — see "Auth" in
+`python/references/mcp-app-concepts.md`):
 
 - `python/references/servicer-authorizer.md`,
   `python/references/auth-allow-if.md`,
@@ -176,7 +177,7 @@ under Key Framework Concepts):
 - `python/references/auth-allow-deny.md` — narrow uses of
   unconditional rules; specifically, when **not** to reach for
   `allow()`.
-- [`references/auth-oauth-providers.md`](references/auth-oauth-providers.md)
+- [`python/references/auth-oauth-providers.md`](../python/references/auth-oauth-providers.md)
   — choosing your `Application(oauth=...)` provider via
   `OAuthProviderByEnvironment(dev=..., prod=...)` (the recommended
   `dev=Development(), prod=Google(...)` shape; a selected `None` arm
@@ -185,7 +186,7 @@ under Key Framework Concepts):
   `/__/oauth/callback` URL), and the user-ID-namespace gotcha that
   makes switching providers after launch infeasible — choose
   deliberately **before** real users have state.
-- [`references/auth-custom-oauth-provider.md`](references/auth-custom-oauth-provider.md)
+- [`python/references/auth-custom-oauth-provider.md`](../python/references/auth-custom-oauth-provider.md)
   — **writing your own OAuth provider** when none of the shipped
   ones fits (self-hosted Keycloak, internal SSO, an IdP Auth0 can't
   broker): subclass `RegisteredOAuthProvider`, implement
@@ -193,7 +194,7 @@ under Key Framework Concepts):
   id must be **stable** — it becomes `context.auth.user_id`), the
   `validate()` / `mount_routes()` hooks, and `token_service_id` +
   `OAuthTokens` for `store_tokens=True` support.
-- [`references/auth-store-tokens.md`](references/auth-store-tokens.md)
+- [`python/references/auth-store-tokens.md`](../python/references/auth-store-tokens.md)
   — **acting on the user's behalf** at an external service: when the
   API belongs to your `Application(oauth=...)` identity provider,
   add extra OAuth `scopes=[...]` + `store_tokens=True` (needs
@@ -208,22 +209,22 @@ under Key Framework Concepts):
 
 **Before the frontend:**
 
-- [`references/react-scaffolding.md`](references/react-scaffolding.md)
+- [`frontend/references/react-scaffolding.md`](../frontend/references/react-scaffolding.md)
   — the `frontend/` shell: `package.json` and `build.mjs` (`npm run build` calls the package's `build()`, which builds every UI the
   plugin declares; a frontend with one UI could use plain `vite build`, as the web-only shell does),
   `vite.config.ts` (the stock Vite file plus `reboot()`),
   `tsconfig.json` / `tsconfig.app.json` / `tsconfig.node.json`,
   `index.css` theme variables, `mcp/<name>/index.html`,
   `mcp/<name>/main.tsx`.
-- [`references/react-app-tsx.md`](references/react-app-tsx.md) —
+- [`frontend/references/react-app-tsx.md`](../frontend/references/react-app-tsx.md) —
   `App.tsx` itself: what an MCP App component renders, and the full
   Counter `App.tsx` + `App.module.css` example.
-- `python/references/react-generated-client.md` — what
+- `frontend/references/react-generated-client.md` — what
   `rbt generate --react=` emits, identically for every frontend: the
   `use<Type>()` overloads, the three-field reader return, why
   mutations resolve to `{ response, aborted }` instead of throwing,
   the typed error classes, and the snake→camel naming rules.
-- [`references/pop-out-to-web-app.md`](references/pop-out-to-web-app.md)
+- [`frontend/references/pop-out-to-web-app.md`](../frontend/references/pop-out-to-web-app.md)
   — only when a widget needs a "pop out into the web app" button:
   recover the bound entity ID with the generated hook's `state_id`,
   build a deep-link URL, and open it via the host's
@@ -261,7 +262,7 @@ them the most expensive way in the system to learn a fact.
 
 The generated surfaces you actually need are written out in these
 references — the React client in
-`python/references/react-generated-client.md`, the backend shapes in
+`frontend/references/react-generated-client.md`, the backend shapes in
 the rest of `python/references/`. Use them.
 
 If something genuinely isn't covered, bound the output hard: a
@@ -290,7 +291,7 @@ wrong means regenerating everything across 12+ files.
      wizard will offer, each a sequence of messages exercising a
      main user story — and most of them ending on a turn that
      renders a `UI()` component, not just a tool call (see
-     "Example Prompts" under Key Framework Concepts).
+     "Example Prompts" in `python/references/mcp-app-concepts.md`).
 3. Then execute the Step-by-Step Build Flow.
 
 For updates to existing apps, still work the design first: read
@@ -412,10 +413,10 @@ Before writing code, analyze the user's request:
    objects, primitives. Each gets `Field(tag=N)`. **Nested `Model`
    sub-objects** owned 1:1 by a parent state must be
    `Optional[X] = Field(tag=N, default=None)` and hydrated in the
-   parent's factory `create` Writer (Gotcha #13); non-Optional
+   parent's factory `create` Writer (Gotcha #8); non-Optional
    `Model`-typed fields reject `default=` / `default_factory=`.
    Full rules + examples in
-   [`references/api-state-shapes.md`](references/api-state-shapes.md).
+   [`python/references/api-state-shapes.md`](../python/references/api-state-shapes.md).
 5. **Operations**: Map to the right method type:
    - `Reader` — read-only queries.
    - `Writer` — single-state mutations.
@@ -437,7 +438,7 @@ Before writing code, analyze the user's request:
    a global browser) go on `User`. Putting a per-entity UI on
    `User` with the entity ID inside a `request=<Model>` field is
    an antipattern; see "UI Placement" in
-   [`references/api-method-types.md`](references/api-method-types.md).
+   [`python/references/api-method-types.md`](../python/references/api-method-types.md).
 8. **Identity**: Single default instance vs. multiple instances?
 9. **Cross-state coordination**: Does any operation touch multiple
    state instances? If yes, use `Transaction`.
@@ -467,215 +468,16 @@ The React UI subscribes to that one reader and pages by cursor —
 the fan-out across item actors happens server-side, inside the
 reader. The composing-reader pattern (backend reader + React
 subscription) is in
-[`references/react-app-tsx.md`](references/react-app-tsx.md);
+[`frontend/references/react-app-tsx.md`](../frontend/references/react-app-tsx.md);
 Shape C is in `python/references/state-collections.md`.
 
 ## Key Framework Concepts (MCP App–specific)
 
-### `User` and Application Types
-
-Every MCP App has a `User` type and one or more application types:
-
-- **`User`** is the AI's front door for **creating and locating**
-  application-type instances. **"Front door" means entry point +
-  delegation, not container for all application state.** `User`
-  holds identity (e.g. display name) and **IDs of the concern-
-  specific actors it owns**; per-concern state (auth/session,
-  background-engine config, persona config, transient caches) lives
-  on its own `Type` and is referenced by ID from `User`. Typical
-  `User` methods are `Transaction`s that create application-type
-  instances, or `Reader`s that locate existing instances' IDs —
-  either directly or via indexes whose IDs are stored on `User`.
-  `User`-scoped UIs (a dashboard spanning the whole user, a global
-  browser) also live here.
-- **Application types** (e.g. `Counter`, `Person`, `Task`) hold
-  most of the actual entity state. They typically need a `create`
-  Writer with `factory=True` for construction. **Once an entity exists,
-  anything specific to that entity — Readers, Writers, UIs —
-  lives on that entity's `Type`**, never on `User`. The actor
-  ID is then implicit in every call: the AI passes the entity
-  ID to the tool, and the generated `use<Type>()` React hook
-  auto-resolves the same ID with no arguments.
-
-The most common scaffolding mistake is putting a per-entity UI
-(e.g. `show_person`) on `User` with the entity ID stuffed into a
-`request=<Model>` field. Don't — see "UI Placement" in
-[`references/api-method-types.md`](references/api-method-types.md).
-
-A second, equally common mistake is letting `User`'s state accrete
-unrelated concerns — auth/session fields alongside persona config
-alongside a background engine's configuration alongside a UI cache.
-That turns the front door into a God actor and, because writers on
-the same actor serialize, makes a login step contend with a persona
-edit and a background workflow's state writes. Split each concern
-into its own `Type` and have `User` reference it by ID. The signals
-that warn you are accreting concerns, and the split pattern, are in
-`python/references/state-actor-decomposition.md`.
-
-Full pydantic shape in
-[`references/api-method-types.md`](references/api-method-types.md);
-the `UserServicer` + `<X>.create(context)` pattern in
-[`references/servicer-patterns.md`](references/servicer-patterns.md).
-
-### Tool Exposure Control
-
-Every method must explicitly declare its MCP exposure:
-
-- **`mcp=Tool()`** — expose the method as an AI-callable tool.
-  Required on every method (including `User` methods) the AI should
-  be able to call.
-- **`mcp=None`** — hide the method from the AI. Use for human-only
-  actions or to reduce context bloat.
-- **`Tool(name="...", title="...")`** — override the default tool
-  name or add a human-readable title.
-
-### Method Types
-
-The `Reader` / `Writer` / `Transaction` / `Workflow` markers come from
-`reboot.api` and behave exactly as `python`'s `api-methods.md`
-describes (each fixes the Servicer's context type). The MCP App
-adds one more:
-
-- **`UI()`** — opens a React UI inside the MCP client. Takes
-  `request=` (config type or `None`), `path=` (the UI's URL path
-  under `/__/frontend/mcp/`, like `"clicker"` or `"shop/cart"`; its
-  source is `frontend/mcp/<path>/`, its build
-  `frontend/dist/mcp/<path>/index.html`), `title=`, `description=`.
-  **No servicer implementation needed** — the React app _is_ the
-  implementation.
-  When `request=` is a `Model`, its fields become props on the React
-  component.
-
-`factory=True` on an application type's `create` Writer is the
-MCP App spelling of a constructor (see `python`'s
-`servicer-constructor.md` for the underlying mechanic).
-
-### Auth: `oauth=` Provider Selection and Real Authorizers from Day One
-
-MCP Apps wire identity via `Application(oauth=...)`: what you pass
-there stands primarily for **identity** — it determines who
-`context.auth.user_id` says the caller is, and in an MCP App that
-principal is the user. There's no middle ground: either every user
-signs in through this OAuth flow, or the app has no per-user auth at
-all. The slot takes an `OAuth`, whose `provider` is an
-`OAuthProviderSelector`. The typical shape is
-`oauth=OAuth(provider=OAuthProviderByEnvironment(dev=Development(), prod=Google(...)))`:
-under `rbt dev` you get `Development()` — a real provider that shows a
-fake account picker and issues every caller a verified, stable
-`dev-{hash}` `context.auth.user_id`, no external IdP — while every other
-environment (`rbt serve`, Reboot Cloud, or anything unrecognized) gets
-the real provider. Both arms are required; either may be `None`, and a
-selected `None` arm makes the app **fail to start** with a clear
-message, so you can't silently ship without sensible auth.
-Servicer-side code doesn't change between providers. (In unit tests,
-omit `oauth=` entirely — the test harness supplies a test OAuth
-provider.)
-
-> **Choose your production provider deliberately.** See
-> [`references/auth-oauth-providers.md`](references/auth-oauth-providers.md).
-> Each provider issues user IDs in its own namespace, so switching
-> providers after launch strands every user-keyed piece of state.
-> `Development` is dev-only — replace it before shipping — and don't
-> launch on a throwaway like `Anonymous` planning to "upgrade later";
-> do it **before** real users have state. `Google` / `GitHub` give you
-> a user id and nothing more; if the app needs **user management**
-> (profiles, password resets, MFA, blocking users), use `Auth0`. If no
-> shipped provider fits (self-hosted Keycloak, internal SSO), write
-> your own — see
-> [`references/auth-custom-oauth-provider.md`](references/auth-custom-oauth-provider.md).
-
-Consequences for authorizers:
-
-- **Write `authorizer()` on every Servicer from day one.** Don't
-  defer it "until prod." Identity is wired the same in dev and prod,
-  so production-shaped rules (`allow_if(all=[state_id_is_user_id])`,
-  `allow_if(all=[has_verified_token])`, etc.) work immediately.
-- **Don't use `allow()` as a default.** It declares "this endpoint
-  is public on the internet, no identity required" — not what you
-  want for app-state methods.
-- **`User`-type Servicers don't need a custom `authorizer()`.** The
-  framework's default rule (`state_id_is_user_id` + `is_app_internal`)
-  is production-worthy already.
-- **Application-type Servicers (`Counter`, `TodoList`, …)** typically
-  use `allow_if(all=[state_id_is_user_id])` when the state belongs to
-  one user, or compose other predicates (`has_verified_token`,
-  custom) when state is shared.
-
-Backend mechanics — predicate composition, custom predicates, the
-function-vs-instance footgun — live in `python/references/auth-*.md`
-and `python/references/servicer-authorizer.md`. The MCP App delta
-is just **which mode you're in**: `oauth=` + real rules from day one.
-
-**Acting on the user's behalf at the provider.** Beyond identity,
-`Google` / `GitHub` / `Auth0` can request extra OAuth `scopes=[...]` and
-capture the provider's tokens (`store_tokens=True`) so the app can call
-that provider's API as the signed-in user (their calendar, repos, etc.).
-Reboot stores the **provider's own** tokens only — with `Auth0` that's
-an Auth0 token, not the upstream Google token a brokered sign-in went
-through. The tokens are stored encrypted and read back with
-`OAuthTokenManager.ref(GOOGLE).fetch(context, user_id=context.state_id)`,
-and the outbound call goes **inside a `Workflow`**. The MCP App
-`store_tokens=True` shortcut is in
-[`references/auth-store-tokens.md`](references/auth-store-tokens.md);
-the full read-path and in-`Workflow` call recipe (shared with web apps)
-is in
-[`python/references/auth-external-api-calls.md`](../python/references/auth-external-api-calls.md).
-
-**Files the UI fetches from the backend.** A plain HTTP route — an
-image or video the UI shows, a download — serves every request
-unless registered with `require_oauth_token=True`, which serves only
-a request carrying the client's bearer. A plain `<img src>` cannot
-carry one, so the UI obtains a short-lived signed URL with the bearer
-and gives that to `src`. Backend and page side in
-[`python/references/auth-http-routes.md`](../python/references/auth-http-routes.md).
-
-### Declarative, Not Decorator
-
-All MCP surface is defined in the API file. `main.py` is minimal. No
-`@mcp.tool()` decorators.
-
-### State Is Durable
-
-State survives restarts. `dev run --application-name=<name>` in
-`.rbtrc` (see [`references/project-shell.md`](references/project-shell.md))
-is what makes that work.
-
-### Example Prompts (Root-Page Wizard)
-
-Every MCP App ships **example prompts** — short, named chat
-scenarios the root-page wizard shows users so they can try the app
-the moment it boots, without having to invent a first message. They
-are not optional polish: a fresh user landing on the wizard with no
-suggested prompts has nothing to click, so always author a set.
-
-An example prompt is an `ExamplePrompt(title=..., prompts=[...])`
-(imported from `reboot.application`). The `title` is a short label
-(and the identity key — same title replaces an existing entry); the
-`prompts` are an **ordered sequence** of chat messages the user sends
-one per turn, walking a real end-to-end flow through the app's MCP
-tools (create something → act on it → view the result), not one
-isolated message. Write ~3 examples that together cover the app's
-main user stories, phrased the way a real user would talk to the
-chat client.
-
-**Make the prompts show the UI, not just call tools.** The embedded
-React UIs (the `UI()` methods) are the whole reason this is an MCP
-**App** and not a plain MCP server — a flow that only calls
-tool-only methods and never renders a component demos the boring
-half. Every example should end on (or pass through) a turn that
-triggers a `UI()` method — phrase that turn as a natural "show me
-/ open / view ..." request so the AI picks the UI tool. In the counter
-example, the "…and show me the counter" / "show me the wins counter"
-turns are exactly this: they resolve to the `Counter` UI and render the
-live component, not just a text reply. When you write the set, look at
-the method map from the design: for each `UI()` method, make sure at
-least one example drives the user to it.
-
-They live in `backend/src/example_prompts.py` and are passed to
-`Application(example_prompts=...)` in `main.py`. Full file shapes and
-a worked set are in
-[`references/project-shell.md`](references/project-shell.md); the
-`mcp-app-counter` example is the canonical reference.
+The `User` front door, tool exposure with `mcp=`, the `UI()` method
+type, sign-in with `oauth=` and authorizers from day one, and the
+example prompts are in
+[`python/references/mcp-app-concepts.md`](../python/references/mcp-app-concepts.md).
+Read it before the design.
 
 ## Project Structure
 
@@ -725,7 +527,7 @@ a worked set are in
 
 1. Create `.python-version`, `pyproject.toml`, `.rbtrc`, and
    `.mypy.ini` — see
-   [`references/project-shell.md`](references/project-shell.md);
+   [`python/references/lifecycle-mcp-app-shell.md`](../python/references/lifecycle-mcp-app-shell.md);
    the `.mypy.ini` template lives in
    `python/references/lifecycle-project-setup.md`. Then give the
    project its `AGENTS.md` and `CLAUDE.md` with the
@@ -738,28 +540,28 @@ a worked set are in
    fails to come up, say so in one sentence and keep building; do
    not stop to debug it.
 4. Write API definition (`api/<pkg>/v1/<name>.py`) — see
-   [`references/api-method-types.md`](references/api-method-types.md)
-   and [`references/api-state-shapes.md`](references/api-state-shapes.md);
+   [`python/references/api-method-types.md`](../python/references/api-method-types.md)
+   and [`python/references/api-state-shapes.md`](../python/references/api-state-shapes.md);
    field-level pydantic rules in
    `python/references/api-pydantic.md`.
 5. `uv run rbt generate`. Don't read what it wrote: the signature
    your servicer must match is in `python/references/api-methods.md`
    ("The Servicer Signature Each Declaration Obliges").
 6. Write servicer (`backend/src/servicers/<name>.py`) — see
-   [`references/servicer-patterns.md`](references/servicer-patterns.md);
+   [`python/references/servicer-patterns.md`](../python/references/servicer-patterns.md);
    context-type rules in `python/references/servicer-*.md`.
 7. Write `backend/src/example_prompts.py` (the wizard's example
    prompts) and `main.py` (which imports them and passes
    `example_prompts=` to `Application`) — see
-   [`references/project-shell.md`](references/project-shell.md) and
+   [`python/references/lifecycle-mcp-app-shell.md`](../python/references/lifecycle-mcp-app-shell.md) and
    `python/references/lifecycle-application-entry.md`.
 8. `npm create @reboot-dev/ui`.
 9. `cd frontend && npm install`.
 10. `uv run rbt generate` (React bindings need `node_modules`).
 11. Customize React UIs — see
-    [`references/react-scaffolding.md`](references/react-scaffolding.md)
+    [`frontend/references/react-scaffolding.md`](../frontend/references/react-scaffolding.md)
     for the `frontend/` shell and
-    [`references/react-app-tsx.md`](references/react-app-tsx.md) for
+    [`frontend/references/react-app-tsx.md`](../frontend/references/react-app-tsx.md) for
     `App.tsx` patterns.
 12. `cd frontend && npm run build`.
 13. **Write and run the scenarios of every feature before handing

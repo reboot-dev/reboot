@@ -18,11 +18,11 @@ wrappers, raise typed `<Method>Aborted`) are in
 - The User Servicer's `create_<X>` Transaction calls
   `<X>.create(context)` and returns the `state_id` in a response.
 - Workflow Servicers use `MyType.ref()` (no args, picks up `state_id`
-  from `WorkflowContext`) — see Gotcha #11 below; `cls.ref()` and
+  from `WorkflowContext`) — see Gotcha #6 in `patterns-mcp-app-gotchas.md`; `cls.ref()` and
   `self.ref()` are both wrong.
 - Workflows that should run after a User-side `create_<X>`
   Transaction must be **scheduled** (`.schedule().workflow_method()`),
-  not awaited directly — see Gotcha #12.
+  not awaited directly — see Gotcha #7.
 
 ## Simple Servicer (Counter)
 
@@ -112,7 +112,7 @@ class MyTypeServicer(MyType.Servicer):
             # `MyType.ref()` with no args is Workflow-only magic: it
             # reads `state_id` from `WorkflowContext`, returning a
             # ref to this workflow's own instance. Do NOT write
-            # `cls.ref()` or `self.ref()` here — see Gotcha #11.
+            # `cls.ref()` or `self.ref()` here — see Gotcha #6.
             await MyType.ref().do_ping(context)
             pings_sent = iteration + 1  # iteration starts at 0.
             if pings_sent >= request.num_pings:
@@ -122,7 +122,7 @@ class MyTypeServicer(MyType.Servicer):
         # a foreign-state read like `OtherType.ref(id).read(context)`
         # raises a "only supported within workflows" RuntimeError.
         # Call a Reader method on the foreign type instead — see
-        # Gotcha #15.
+        # Gotcha #10.
         state = await MyType.ref().read(context)
         return MyType.DoPingPeriodicallyResponse(
             num_pings=state.num_pings,
