@@ -11,22 +11,7 @@
   "plugins": [
     {
       "name": "reboot",
-      "description": "Use Reboot to build MCP Apps for ChatGPT, Claude, VSCode, Goose, and others.",
-      "source": "./",
-      "strict": false,
-      "skills": [
-        "./skills/app",
-        "./skills/feature",
-        "./skills/mcp-app",
-        "./skills/web-app",
-        "./skills/run",
-        "./skills/agents-md",
-        "./skills/dashboard",
-        "./skills/deploy",
-        "./skills/inspect",
-        "./skills/python",
-        "./skills/upgrade"
-      ]
+      "source": "./"
     }
   ]
 }
