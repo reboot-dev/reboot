@@ -59,7 +59,7 @@ tokens only: with `Auth0` you get an Auth0 token, not the upstream
 Google/GitHub token a brokered sign-in went through — to call the
 upstream API, ask Auth0 for the federated IdP token or use Path B. The
 provider-config details (per-provider scopes, `Development()` issues no
-tokens, the Auth0-broker caveat, etc.) are in the `mcp-app` skill's
+tokens, the Auth0-broker caveat, etc.) are in
 `auth-store-tokens.md`.
 
 ### Path B — your own OAuth flow (any other service)

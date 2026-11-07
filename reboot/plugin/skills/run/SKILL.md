@@ -22,9 +22,8 @@ session, where no processes and no exported environment survive
 from last time.
 
 > This skill **runs** an app; it does not build or modify one. To
-> build, see the [`mcp-app` skill](../mcp-app/SKILL.md) and the
-> [web-app skill](../web-app/SKILL.md) — those skills defer here for
-> their "run the app" step.
+> build, see the [`app` skill](../app/SKILL.md) — its build defers here
+> for its "run the app" step.
 
 ## Step 1 — Locate the project
 
@@ -315,8 +314,11 @@ Confirm every process is up from its logs, then give the user:
 - the application's own inspect-page URL (and that `rbt inspect`
   inspects the same state from the CLI — see the
   [inspect skill](../inspect/SKILL.md));
-- for an MCP App — the setup-wizard URL (`http://localhost:9991`,
-  already opened for them, for connecting an MCP client) and a
+- for an MCP App — the setup wizard, not the `/mcp` URL: the
+  backend serves it at its root (`https://<app>.localhost` under
+  portless, else `http://localhost:9991`), already opened for them
+  once at first startup; it is the page that connects an MCP client
+  (Claude, ChatGPT, MCPJam, …) and completes OAuth. Add a
   first prompt to try (e.g. "Create a new todo list and show it to
   me"). Don't hand over an MCPJam URL — MCPJam isn't running, and
   only starts if the user picks it in the wizard (see the on-demand

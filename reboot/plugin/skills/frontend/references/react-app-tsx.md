@@ -324,7 +324,7 @@ There each item is a separate actor, and there is no
 The wrong fix is to flatten the model back into `list[Item]` on
 one actor so the dashboard regains a single subscription — see
 "When Correct Decomposition Fights the UI" in
-[`mcp-app/SKILL.md`](../../mcp-app/SKILL.md). The right fix keeps the decomposition
+[`app/SKILL.md`](../../app/SKILL.md). The right fix keeps the decomposition
 and gives the front-door type a **composing reader**: the UI
 still has exactly one subscription, and the fan-out across item
 actors happens server-side.
