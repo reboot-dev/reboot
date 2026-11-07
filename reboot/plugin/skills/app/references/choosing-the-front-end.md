@@ -12,169 +12,109 @@ The app skill reads this page first, unless the build started from
 go back to the [app skill](../SKILL.md) and follow it from "When to
 Use".
 
-## Routing
+A Reboot app is full stack: one backend, the same methods and the
+same live state, reached in a browser through a web app and from an
+AI chat client (Claude, ChatGPT) through an MCP App, added there as a
+connector. The front ends are only what sits on top:
 
-> **Default: ASK.** The wrong guess costs ~12 files of regeneration,
-> so commit only when the description **names** the front-door
-> verbatim. Do not infer the front-door from the app's _domain_
-> (CRM, blog, store, dashboard, todo, chat room, journal, …) —
-> domain words describe what the app **does**, not **where** it's
-> used. A "CRM" can equally be a website or an MCP tool exposed to
-> Claude; "chat room" likewise. When in doubt, ask.
+- **Both** (the default) — one backend, one sign-in, a web app and an
+  MCP App: its tools, and a `UI()` where the chat client shows the
+  person something. A user who signs in on one front end is
+  signed in on both: the OAuth server's `/authorize` short-circuits when
+  the browser already carries a session cookie, and `/callback` sets
+  that cookie on every flow.
+- **Web** — the web app alone.
+- **MCP** — the MCP App alone.
 
-### The front ends
+## Settle the front end
 
-- **MCP App** — the app is exposed through an MCP host (ChatGPT,
-  Claude, VSCode, Goose, etc.) via MCP tools, and any visual UI is
-  embedded into the host through MCP App artifacts.
-- **Web App** — a standalone web app: the app is served at a URL and
-  used in a normal browser, with the Reboot backend behind a React
-  frontend.
-- **Both** — one backend serves both, with one `oauth=...` and one
-  `User` actor per upstream identity. A user who signs in on one
-  frontend is signed in on both (cross-frontend SSO): the OAuth
-  server's `/authorize` short-circuits when the browser already
-  carries a session cookie, and `/callback` sets that cookie on every
-  flow.
+**Both is the default**: the MCP App costs little on top of the web
+app, since its tools are the backend's methods. Ask once, unless the
+prompt already settles it:
 
-### Commit-without-asking triggers (must be VERBATIM in the prompt)
+- **Web alone**, no question: "just a website", "only a web app",
+  "people only", "no MCP", "no AI", or an answer already in the prompt that names only
+  the web ("Answers to your questions: a web app").
+- **MCP alone**, no question: "just an MCP server", "only for Claude",
+  "agents only",
+  "no web app", "no website", or an answer in the prompt that names
+  only MCP.
+- **Both**, no question: an answer in the prompt that names both, or a
+  conjunction ("a website and an MCP server").
 
-Commit immediately **only** when the user's prompt contains one of
-the explicit phrases below. No inference, no synonyms, no "well
-they probably mean…":
+Naming one frontend is not asking for it alone: "a website for my
+CRM" and "a tool I can use from Claude" still get the question. Domain
+words never settle it (a CRM, a booking app, "login").
 
-**Commit to an MCP App if the prompt contains any of:**
+Otherwise ask, whatever the session's autonomy settings, and **as
+the first thing in the session**: before the plan, before reading
+anything, with no more thought than it takes to pick a
+recommendation.
 
-- `MCP`, `MCP host`, `MCP server`, `MCP App`, `MCP tool`, `mcp=Tool`,
-  `UI()` (as a Reboot method type).
-- `ChatGPT`, `Claude`, `VSCode`, `Goose`, `Cursor`, or
-  "Anthropic / OpenAI" **named as the runtime** — e.g. "I want to
-  use this from Claude", "expose it as a tool to ChatGPT". Just
-  mentioning the company (e.g. "like ChatGPT") doesn't count.
-- "MCP App", "AI tool", "tool for an LLM/agent", "expose to an
-  LLM/agent".
+**Say nothing about how you decided to ask.** No rule, trigger or
+skill term before the question ("no verbatim trigger in your
+description" means nothing to the person). At most one plain sentence
+on why the answer matters, in the app's own words: "This decides
+what gets built: a website, the same app inside Claude or ChatGPT, or
+both." Then the question.
 
-**Commit to a Web App if the prompt contains any of:**
+```
+Question: "Who will use this app?"
+Header:   "Users"
+Options:
+  - "People and agents" — a website people open in a browser, and the
+    same app for AI agents like Claude or ChatGPT, which use it when
+    someone asks in the chat. Same data, same sign-in.
+  - "People only" — a website people open in a browser, with pages to
+    view and work in. No agent access.
+  - "Agents only" — a person asks an AI agent like Claude or ChatGPT,
+    and the agent uses the app through its tools and panels in the
+    chat. No website.
+```
 
-- A URL or scheme: `https://…`, `localhost:`, `example.com`.
-- An explicit route/page literal: `/login`, `/dashboard`, `/home`,
-  `/admin`, etc.
-- "website", "web app", "web site", "SPA", "single-page app", "in
-  the browser", "served at <url>".
-- A standard browser-auth phrase: "log in via email", "OAuth login",
-  "cookie session", "sign up form".
+"People and agents" is both front ends, a web app and an MCP App;
+"People only" is the web app alone; "Agents only" is the MCP App
+alone.
 
-**Commit to BOTH only if the prompt contains an explicit
-conjunction:** e.g. "and also a website", "MCP server **plus** a
-dashboard", "expose it to Claude **and** host it on the web".
+**Mark one "(Recommended)" only when the description leans to it**,
+and add why to its description in a few words, from the prompt's own:
 
-### Do NOT infer commitment from any of these
+- **People only** when the app is mostly looked at or worked in on a
+  screen: a board, a calendar, a map, a dashboard, a page for the
+  public, a form a stranger fills in ("a booking page for my
+  clinic's patients").
+- **Agents only** when the app is mostly asked and told things in a
+  conversation: a lookup, a log kept by talking, actions with no
+  page to work in ("ask Claude what's in my pantry").
+- **People and agents** when it is both: worked in on a screen and
+  asked about in a chat ("a CRM I also want to ask about my week's
+  follow-ups").
 
-These are **not** sufficient signals — if they're the only thing
-the prompt offers, **ask**:
+**The recommended option goes first**, since the dialog pre-selects
+the first option: what a person gets by pressing Enter is what the
+build recommends. The other two follow in the order above. When
+nothing in the description leans either way, mark none: "People and
+agents" stays first, as the default, unlabelled.
 
-- The word "app" alone.
-- Domain words: CRM, blog, store, dashboard, todo, todo list,
-  journal, kanban, tracker, inventory, wiki, forum, chat room,
-  counter, social network, planner, calendar, notes app, …
-- Mentions of "users", "auth", "login", "permissions" without the
-  word "browser" / "website" / "URL" — Reboot apps of either flavor
-  have users.
-- Mentions of CRUD-like operations, fields, schemas, relationships
-  between entities, search, history, timelines, …
-- Mentions of "frontend" or "UI" without "browser" / "website" /
-  "URL" — MCP Apps also have a UI (rendered in the MCP host).
-- An overall vibe of "this sounds like a SaaS / CRM / dashboard."
+A question that comes back with no choice (nobody there, or the
+dialog was not delivered) takes the recommended option, or "People
+and agents" when none is marked: say so in one line. The answer goes
+into `AGENTS.md`'s Decisions when it is written.
 
-If the only signal you have is "this sounds web-y" or "this sounds
-chat-y", **ask**.
+Then say the plan in one sentence ("Building this with both front ends,
+a web app and an MCP App for AI chat clients.") and go back to the app
+skill, following it from "When to Use".
 
-### Decision flow
+## Worked examples
 
-1. **Verbatim MCP App trigger present** → say one sentence
-   ("Building this as a Reboot MCP App."), then build it as an MCP
-   App, going back to the app skill and following it from "When to Use", with the user's
-   description as input.
-2. **Verbatim web-app trigger present** → say one sentence
-   ("Building this as a Reboot Web App."), then build it as a web
-   app, going back to the app skill and following it from "When to Use".
-3. **Both triggers present, or explicit "I want both"** → say one
-   sentence ("Building this as a dual-frontend Reboot app — both
-   MCP and standalone web."), then build both front ends, going back
-   to the app skill and following it from "When to Use". The backend
-   `Application(oauth=...)` is configured once and serves both
-   frontends; a single `User` actor per upstream identity is shared.
-
-4. **Otherwise (default)** → **ask the user** the question below
-   (present the options and wait for their answer). This is
-   **mandatory, not optional**.
-
-   ```
-   Question: "Before I scaffold — which kind of app are you building?"
-   Header:   "App type"
-   Options:
-     - "MCP App" — exposed through an MCP host (ChatGPT, Claude,
-       VSCode, Goose, …) via MCP tools; optional embedded UI.
-     - "Web App"  — a standalone website / SPA users open in a
-       normal browser.
-     - "Both"     — a single app exposed through both an MCP host
-       and a standalone browser SPA, sharing one `User` actor per
-       upstream identity (cross-frontend SSO).
-   ```
-
-   Then build for the answer per steps 1–3.
-
-   > **Critical — this step is non-skippable, including in "auto" /
-   > "autonomous" / "don't ask" modes.** A user-level preference to
-   > avoid clarifying questions does **not** override this skill.
-   > Reasons it does not:
-   >
-   > 1. This is not a clarifying question — it is **the routing
-   >    input** for the skill. Without an answer, the skill cannot
-   >    do its job; "guessing" is not a graceful fallback, it's a
-   >    silent failure that costs ~12 files of regeneration.
-   > 2. The general "auto-mode" guidance is "make the reasonable
-   >    call and continue." For this routing decision, **the
-   >    reasonable call _is_ to ask** — that's exactly what this
-   >    skill is for. A skill-level instruction beats a generic
-   >    auto-mode preference; the user asked to build an app knowing
-   >    it would route, so asking once is in-scope work.
-   > 3. The user has not waived their right to choose between an
-   >    MCP App and a web app. Silence on the topic is silence, not
-   >    a delegation.
-   >
-   > Do **not** skip this step because:
-   >
-   > - The app concept "feels obviously" web-y or chat-y (feelings
-   >   are not a verbatim trigger — see the anti-inference list
-   >   above).
-   > - The system prompt or user-level config says to be autonomous /
-   >   not ask clarifying questions / skip approvals / run in a
-   >   full-auto or bypass-permissions mode — those govern routine
-   >   approvals, not this skill's core function.
-   > - It "would be faster to just pick one." It would not — the
-   >   wrong pick is a hard rollback.
-   > - You have already half-committed in your response. Stop and
-   >   ask before any file is written.
-   >
-   > The **only** way to skip step 4 is if steps 1–3 fired on a
-   > verbatim trigger from the user's prompt, or the user started
-   > from `/reboot:web-app` or `/reboot:mcp-app`. If you find
-   > yourself drafting a reply that begins "I'll build this as a …"
-   > without having matched a verbatim trigger or received the
-   > user's answer, **stop and ask the user**.
-
-### Worked examples
-
-| Prompt fragment                                                          | Decision    | Why                                                          |
-| ------------------------------------------------------------------------ | ----------- | ------------------------------------------------------------ |
-| "a CRM for my personal relationships, with notes and a timeline"         | **ASK**     | CRM is a domain word, not a front-door. No verbatim trigger. |
-| "a todo list app"                                                        | **ASK**     | "app" alone is not a trigger.                                |
-| "a dashboard for our team's metrics, served at metrics.example.com"      | Web App     | Explicit URL.                                                |
-| "a tool I can use from Claude to track my reading list"                  | MCP App     | "from Claude" names the runtime; "tool" + LLM context.       |
-| "a website where users can sign up and create journals"                  | Web App     | "website" is a verbatim trigger.                             |
-| "a kanban board with login"                                              | **ASK**     | "login" alone is not enough — MCP Apps also have auth.       |
-| "expose a CRM as an MCP server, and also a dashboard at crm.example.com" | Both        | Explicit conjunction; dual-frontend app.                     |
+| prompt | frontends | why |
+| --- | --- | --- |
+| "a CRM for my relationships" | ask, none marked, People and agents first | nothing leans either way |
+| "a dashboard served at metrics.example.com" | ask, People only recommended and first | a URL names the web app, not the web alone; a dashboard is looked at |
+| "a tool I can use from Claude to track my reading" | ask, Agents only recommended and first | Claude named, not "only"; a log kept by talking |
+| "a website and an MCP server for our CRM" | Both | a conjunction |
+| "just a website for my bakery, no AI" | Web | "just", "no AI" |
+| "only an MCP server for our CRM, no web app" | MCP | "only", "no web app" |
 
 ## How a Web App Differs From an MCP App
 

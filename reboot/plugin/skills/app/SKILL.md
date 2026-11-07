@@ -1,6 +1,6 @@
 ---
 name: app
-description: Build a Reboot application from a user description — an MCP App for ChatGPT, Claude, VSCode or Goose, a standalone web app at a URL, or both on one backend sharing one User per identity via `oauth=...`. Settles the front end first, committing only when the prompt names it verbatim (MCP/Claude/ChatGPT for an MCP App; a URL/SPA/"website" for a web app; an explicit conjunction for both) and otherwise asking; the `web-app` and `mcp-app` skills start here with the answer given. Then runs the whole build — design, feature files, project shell, API, servicers, frontend, scenarios, and running the app — reading the `python` skill for the backend and the `frontend` skill for the React side at the step that needs each. Does NOT infer the front end from the app's domain (CRM, todo, dashboard, blog, …) — those describe what the app does, not where it lives.
+description: Build a Reboot application from a user description — one backend with a web app in the browser and an MCP App used from an AI chat client (Claude, ChatGPT, VSCode, Goose) by default, or just one of them. Settles the front end first: from the prompt's own words when it says so outright ("just a website", "only for Claude", or both named), otherwise with one question, "Who will use this app?" (people in a browser, AI agents in a chat, or both); the `web-app` and `mcp-app` skills start here with the answer given. Then runs the whole build — design, feature files, project shell, API, servicers, frontend, scenarios, design review, and running the app — reading the `python` skill for the backend and the `frontend` skill for the React side at the step that needs each. Never infers the front end from the app's domain (CRM, todo, dashboard, blog, …).
 argument-hint: [<app-description>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 ---
@@ -27,8 +27,10 @@ skills, read at the step that needs them:
 build started from `/reboot:web-app` or `/reboot:mcp-app`, it is
 settled: go on to "When to Use". Otherwise read
 [`references/choosing-the-front-end.md`](references/choosing-the-front-end.md)
-and do what it says: commit only when the user's own words name the
-front end, and otherwise ask. Write no file until the front end is
+and do what it says: both front ends are the default; skip the
+question only when the prompt settles it outright ("just a website",
+"only for Claude", or both named); otherwise ask "Who will use this app?" (people, agents, or
+both) before anything else. Write no file until the front end is
 settled. This holds in auto mode too.
 
 ## When to Use
@@ -207,11 +209,88 @@ wrong means regenerating everything across 12+ files.
 
 ### Design Phase
 
-0. For each capability the app has, follow the
-   [`feature` skill](../feature/SKILL.md): agree on it in plain
-   English with the user, and write it down as a `@wip` feature
-   file before the API exists. The design below is derived from
-   those features.
+0. **Propose the features, then ask how much to build first.** In
+   one message, describe every feature the description implies, as
+   the [`feature` skill](../feature/SKILL.md)'s Step 1 has them: each
+   one's name, what it is for, its rules, and a few example
+   situations. Put them in the order they build on, the one the
+   others need first. Write them from the description alone: no state
+   types, fields, methods or scenarios yet, since the design is made
+   for the scope chosen and only for it. End the message with this
+   question, and nothing after it:
+
+   ```
+   Question: "How should we build it?"
+   Header:   "Build plan"
+   Options (label, then description):
+     - "Two features now, the rest after (Recommended)"
+       "<the two recommended features, as activities> first. ~<minutes> min"
+     - "One feature at a time"
+       "<the first feature, as an activity> first, then you choose the next. ~<minutes> min"
+     - "All at once"
+       "Every feature in one build. ~<minutes> min"
+   ```
+
+   For a community garden: "Two features now, the rest after
+   (Recommended)", described "Plots and reminders first. ~25 min";
+   "One feature at a time", "Plots first, then you choose the next.
+   ~15 min"; "All at once", "Every feature in one build. ~40 min".
+   The labels are always these three; only the descriptions are the
+   app's.
+
+   - **Keep the options in this order**: "Two features now" first,
+     since the dialog pre-selects the first option and it is the one
+     recommended, then "One feature at a time", then "All at once".
+     The first is also the default: a question that comes back with
+     no choice takes it. An answer already in the prompt ("Answers to
+     your questions: two features now", "... one feature at a time",
+     "... all at once") settles it with no question, and so does an
+     answer to the design question ("build the design as proposed"):
+     it takes the recommended two.
+   - **"One feature at a time"** builds the first feature, then the
+     handoff offers the remaining features, one to pick as the next
+     build. **"Two features now, the rest after"** offers the rest the
+     same way after the two.
+   - **The recommended start is two features, three or four scenarios
+     each**, picked from the list (or cut down from one) to show what
+     Reboot does that other stacks make hard. Which feature shows
+     which is said in the message above the question, in a line, never
+     in the question or the options:
+     - **a transaction across states**: one action that changes two
+       things or neither (moving stock between two warehouses takes
+       it from one and adds it to the other, or does neither);
+     - **live updates**: a change one person makes shows at once on
+       another's open page, no reload (proved by a browser scenario
+       with two users, as `frontend/references/testing-web-app.md`
+       has it);
+     - **durable work**: a `Workflow` or a `schedule()`d task that
+       carries on after the request (closing an order schedules its
+       invoice; a hold that lapses after its time).
+
+     Each of the three is in one of the two features; the scenarios
+     are those three and the feature's main flow, not its edge
+     cases. A rule the feature has that is not among them is
+     enforced in the servicer, and offered as scenarios at the
+     handoff.
+   - **Name features as activities, in the app's own words**, short
+     ("plots and reminders"; the message above the question has the
+     full names), with no Reboot terms and no caveats.
+     The time is "~N min", the time to build not counting time
+     waiting on the user: about 12 minutes for the foundation, plus
+     about 5 a feature with a web app alone, 4 with an MCP App alone,
+     or 7 with both, rounded to the nearest five, and never a smaller
+     option slower than a larger one.
+   - **What every option leaves for later goes above the question,**
+     in the message, once: production sign-in and deployment come
+     after the build.
+   - **Scope changes how many features, never how carefully.** Every
+     option builds its features properly: real authorizers, real
+     data, and every feature's scenarios passing.
+
+   The answer, or the user's corrections to the features, settles
+   what is built. Write those features down as `@wip` feature files,
+   per the feature skill's Step 2, before the API exists. The design
+   below is derived from them.
 1. Analyze the user's description using the State Model Assessment
    below.
 2. State the design you are about to build:
@@ -220,6 +299,20 @@ wrong means regenerating everything across 12+ files.
      (Reader/Writer/Transaction/Workflow).
    - The design items of each front end you build: see "Each Front
      End's Pages" below.
+
+   Then ask "Build this design?", with three options and no others:
+   **Build it, with sample data** (test data so every page has
+   something in it to try; its description says, in the app's own
+   nouns, that it stays on this machine and never reaches
+   production), **Build it, empty**, and **Change something**. "Change
+   something" asks what to change, in plain text; the change is made
+   and the design shown again with the same question. An alternative
+   the design weighed goes in the design's text, not in the options.
+   An answer already given answers it: "build the design as proposed,
+   with sample data" or "... empty"; "build the design as proposed"
+   alone takes sample data. Send the design and go on. A question that
+   comes back with no choice (nobody there, or the dialog was not
+   delivered) takes its first option: say so in one line and go on.
 3. Then execute the Step-by-Step Build Flow.
 
 For updates to existing apps, still work the design first: read
@@ -457,6 +550,9 @@ also do what your front end adds to it ("Each Front End's Pages").
 6. Write the servicer (`backend/src/servicers/<name>.py`) —
    context-type patterns in `python/references/servicer-*.md`.
 7. Write `main.py` — `python/references/lifecycle-application-entry.md`.
+   With sample data, also write `backend/src/seed.py` now, as
+   [`python/references/lifecycle-sample-data.md`](../python/references/lifecycle-sample-data.md)
+   says.
 8. Scaffold the frontend at `frontend/`, as the
    [`frontend` skill](../frontend/SKILL.md) says for your front end.
 9. `cd frontend && npm install`.
@@ -509,6 +605,10 @@ also do what your front end adds to it ("Each Front End's Pages").
     The steps are the [`dashboard` skill](../dashboard/SKILL.md)'s
     step 6. What to hand over for each front end is the run skill's
     Step 6.
+    Offer the features the build plan left for later, to pick the next build from.
+    With sample data, name in one line what was added, that it is
+    test data that never reaches production, and where to
+    see it.
     Don't bypass the run skill by invoking `rbt dev run` /
     `npm run dev` by hand: those bare commands print only the
     API/MCP/inspect URLs, dropping the hand-over the user actually
