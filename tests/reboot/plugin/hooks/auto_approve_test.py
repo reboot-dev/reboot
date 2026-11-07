@@ -1123,8 +1123,8 @@ class AutoApproveTest(unittest.TestCase):
                             "Bash",
                             {
                                 "command":
-                                    command.replace("{project}", project)
-                                    .replace(
+                                    command.replace("{project}", project).
+                                    replace(
                                         "{project_name}",
                                         os.path.basename(project),
                                     ),
@@ -1165,13 +1165,14 @@ class AutoApproveTest(unittest.TestCase):
                     stdout = run_hook(
                         "Bash",
                         {
-                            "command": command.replace(
-                                "{project}",
-                                project,
-                            ).replace(
-                                "{project_name}",
-                                os.path.basename(project),
-                            ),
+                            "command":
+                                command.replace(
+                                    "{project}",
+                                    project,
+                                ).replace(
+                                    "{project_name}",
+                                    os.path.basename(project),
+                                ),
                         },
                         cwd=cwd_for[where],
                     )
