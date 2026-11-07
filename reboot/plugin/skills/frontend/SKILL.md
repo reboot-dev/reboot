@@ -9,6 +9,16 @@ description: The React side of a Reboot application. Covers the client `rbt gene
 > newer Reboot is available, the [upgrade skill](../upgrade/SKILL.md)
 > says how and when to react.
 
+> **Plugin tools:** the plugin's pinned tools (`rbt`, `uv`, `uvx`,
+> `node`, `npm`, `envoy`, `cloudflared`, `portless`,
+> `mcpjam-inspector`) are in `../../bin` relative to this file. If
+> that directory is not the first entry on PATH, put it first in
+> every command, for example `PATH="<plugin>/bin:$PATH" rbt dev run`.
+> Calling `<plugin>/bin/rbt` alone is not enough, because
+> `rbt dev run` looks up `envoy` and `npm` on PATH. Under Codex on
+> Linux, ask to run `rbt` commands outside the sandbox; inside it they
+> hang (openai/codex#24933).
+
 A Reboot app's frontend is React, built with Vite, and talks to the
 backend through a client that `rbt generate --react=` writes into
 `frontend/api/`. An app has one or both of two kinds of frontend:
