@@ -14,10 +14,12 @@ allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 > **Plugin tools:** the plugin's pinned tools (`rbt`, `uv`, `uvx`,
 > `node`, `npm`, `envoy`, `cloudflared`, `portless`,
 > `mcpjam-inspector`) are in `../../bin` relative to this file. If
-> `command -v rbt` finds nothing, put that directory first on PATH in
-> every command, for example `PATH="<plugin>/bin:$PATH" rbt dev run`.
-> Calling `<plugin>/bin/rbt` alone is not enough, because
-> `rbt dev run` looks up `envoy` and `npm` on PATH.
+> `command -v rbt` prints any other path, or nothing, put that
+> directory first on PATH in every command, for example
+> `PATH="<plugin>/bin:$PATH" rbt dev run`. Calling `<plugin>/bin/rbt`
+> alone is not enough, because `rbt dev run` looks up `envoy` and
+> `npm` on PATH. Under Codex on Linux, ask to run `rbt` commands
+> outside the sandbox; inside it they hang (openai/codex#24933).
 
 Build complete Reboot Web Apps from a user description: a Reboot
 backend behind a standalone React frontend served at a normal URL.
