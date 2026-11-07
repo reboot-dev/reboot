@@ -7,6 +7,14 @@ allowed-tools: Bash, Read, Write, Glob, Grep, Edit, AskUserQuestion
 
 # upgrade — Upgrade a Reboot Application
 
+> **Plugin tools:** the plugin's pinned tools (`rbt`, `uv`, `uvx`,
+> `node`, `npm`, `envoy`, `cloudflared`, `portless`,
+> `mcpjam-inspector`) are in `../../bin` relative to this file. If
+> `command -v rbt` finds nothing, put that directory first on PATH in
+> every command, for example `PATH="<plugin>/bin:$PATH" rbt dev run`.
+> Calling `<plugin>/bin/rbt` alone is not enough, because
+> `rbt dev run` looks up `envoy` and `npm` on PATH.
+
 Upgrade an existing Reboot application to the latest Reboot version.
 This skill is the single authoritative upgrade procedure; follow it
 whenever:

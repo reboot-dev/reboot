@@ -16,6 +16,14 @@ metadata:
 > newer Reboot is available, the [upgrade skill](../upgrade/SKILL.md)
 > says how and when to react.
 
+> **Plugin tools:** the plugin's pinned tools (`rbt`, `uv`, `uvx`,
+> `node`, `npm`, `envoy`, `cloudflared`, `portless`,
+> `mcpjam-inspector`) are in `../../bin` relative to this file. If
+> `command -v rbt` finds nothing, put that directory first on PATH in
+> every command, for example `PATH="<plugin>/bin:$PATH" rbt dev run`.
+> Calling `<plugin>/bin/rbt` alone is not enough, because
+> `rbt dev run` looks up `envoy` and `npm` on PATH.
+
 Guide for building transactional microservices in Python with the Reboot
 framework. Reboot APIs are defined in pydantic Python
 (`reboot.api`) and code-generated into typed Servicer base classes;

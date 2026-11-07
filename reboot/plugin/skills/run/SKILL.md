@@ -11,6 +11,14 @@ allowed-tools: Bash, Read, Write, Glob, Grep, Edit, AskUserQuestion
 > newer Reboot is available, the [upgrade skill](../upgrade/SKILL.md)
 > says how and when to react.
 
+> **Plugin tools:** the plugin's pinned tools (`rbt`, `uv`, `uvx`,
+> `node`, `npm`, `envoy`, `cloudflared`, `portless`,
+> `mcpjam-inspector`) are in `../../bin` relative to this file. If
+> `command -v rbt` finds nothing, put that directory first on PATH in
+> every command, for example `PATH="<plugin>/bin:$PATH" rbt dev run`.
+> Calling `<plugin>/bin/rbt` alone is not enough, because
+> `rbt dev run` looks up `envoy` and `npm` on PATH.
+
 Bring an existing Reboot application up locally. This skill is the
 single canonical "start the app" procedure: it figures out what
 kind of app the project is, makes sure dependencies and secrets are
