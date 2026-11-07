@@ -913,6 +913,14 @@ REBOOT_DEV_CASES: list[tuple[str, str, Where, Decision]] = [
         Where.NON_PROJECT,
         Decision.APPROVE,
     ),
+    (
+        # The same shape whose `cd` target is not a Reboot project
+        # stops at the hook's early exit.
+        "dev: absolute cd outside any project, then npm install",
+        "cd /tmp && npm install",
+        Where.NON_PROJECT,
+        Decision.REJECT,
+    ),
 
     # ----- Outside a Reboot project: the same commands defer. -----
     (

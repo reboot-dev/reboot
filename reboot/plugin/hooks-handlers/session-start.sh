@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 
-# SessionStart hook: prepend the plugin's `bin/` to PATH for every
-# subsequent Bash tool invocation. Claude Code already *appends* `bin/`
-# to PATH automatically, but appending means system-installed binaries
-# with the same names (e.g. `node`, `uv`) win over our shims. Prepending
-# fixes that.
+# SessionStart hook: in a Reboot project, prepend the plugin's `bin/`
+# to PATH for every subsequent Bash tool invocation. Claude Code already
+# *appends* `bin/` to PATH automatically, but appending means
+# system-installed binaries with the same names (e.g. `node`, `uv`) win
+# over our shims. Prepending fixes that.
 #
 # `$CLAUDE_ENV_FILE` is the file Claude Code sources before each Bash
 # invocation; appending `export ...` lines here is the documented way to
@@ -35,6 +35,24 @@ set -euo pipefail
 if [ -z "${CLAUDE_ENV_FILE:-}" ] || [ -z "${CLAUDE_PLUGIN_ROOT:-}" ]; then
     exit 0
 fi
+
+# Only a session in a Reboot project gets the shims ahead of the
+# system's binaries: the hook input's `cwd` (or, without one, this
+# process's working directory), or an ancestor, holds a `.rbtrc`.
+# Elsewhere the shims stay where the agent CLI puts them, after the
+# system's. This is the same check `remind.sh` makes.
+input=$(cat)
+dir=$(printf '%s' "$input" |
+    sed -n 's/.*"cwd"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+[ -n "$dir" ] || dir=$PWD
+case "$dir" in
+    /*) ;;
+    *) dir="${PWD}/${dir}" ;;
+esac
+while [ -n "$dir" ] && [ "$dir" != "/" ] && [ ! -f "${dir}/.rbtrc" ]; do
+    dir="${dir%/*}"
+done
+[ -f "${dir}/.rbtrc" ] || exit 0
 
 # Note the careful quoting: `${CLAUDE_PLUGIN_ROOT}` must expand *now*
 # (so the env file captures the plugin's absolute path from the time the

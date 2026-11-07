@@ -18,23 +18,35 @@ import unittest
 HOOK_SCRIPT = os.path.abspath(os.environ["SESSION_START_SH"])
 
 # A representative `SessionStart` hook input; both CLIs pass one on
-# stdin, though this handler reads no fields from it.
+# stdin. The handler reads only `cwd`, which `run_hook` adds.
 HOOK_INPUT = {
     "hook_event_name": "SessionStart",
     "source": "startup",
 }
 
 
-def run_hook(environment: dict[str, str]) -> str:
+def run_hook(
+    environment: dict[str, str],
+    *,
+    cwd: str | None,
+    process_cwd: str | None = None,
+) -> str:
     """Invoke the hook with `environment` as its entire environment
     beyond `PATH`. Returns stdout. Raises when the hook exits non-zero,
-    which both CLIs surface to the developer as a hook error."""
+    which both CLIs surface to the developer as a hook error.
+
+    `cwd` is the hook input's `cwd` field, omitted when `None`;
+    `process_cwd` is the working directory the hook process runs in."""
+    hook_input = dict(HOOK_INPUT)
+    if cwd is not None:
+        hook_input["cwd"] = cwd
     result = subprocess.run(
         ["bash", HOOK_SCRIPT],
-        input=json.dumps(HOOK_INPUT),
+        input=json.dumps(hook_input),
         capture_output=True,
         text=True,
         timeout=30,
+        cwd=process_cwd,
         env={
             "PATH": os.environ.get("PATH", ""),
             **environment,
@@ -59,6 +71,13 @@ class SessionStartTest(unittest.TestCase):
         # the environment Codex really supplies.
         self.plugin_data = os.path.join(directory.name, "plugin-data")
         self.env_file = os.path.join(directory.name, "env")
+        # A Reboot project (a `.rbtrc` at its root, and a subdirectory)
+        # and a directory that is not in one.
+        self.project = os.path.join(directory.name, "project")
+        os.makedirs(os.path.join(self.project, "web"))
+        open(os.path.join(self.project, ".rbtrc"), "w").close()
+        self.non_project = os.path.join(directory.name, "elsewhere")
+        os.makedirs(self.non_project)
 
     def read_env_file(self) -> str:
         if not os.path.exists(self.env_file):
@@ -76,7 +95,8 @@ class SessionStartTest(unittest.TestCase):
                 {
                     "CLAUDE_ENV_FILE": self.env_file,
                     "CLAUDE_PLUGIN_ROOT": self.plugin_root,
-                }
+                },
+                cwd=self.project,
             ),
             "",
         )
@@ -92,7 +112,8 @@ class SessionStartTest(unittest.TestCase):
             {
                 "CLAUDE_ENV_FILE": self.env_file,
                 "CLAUDE_PLUGIN_ROOT": self.plugin_root,
-            }
+            },
+            cwd=self.project,
         )
         result = subprocess.run(
             ["bash", "-c", f'. "{self.env_file}"; printf "%s" "$PATH"'],
@@ -116,7 +137,8 @@ class SessionStartTest(unittest.TestCase):
             {
                 "CLAUDE_ENV_FILE": self.env_file,
                 "CLAUDE_PLUGIN_ROOT": self.plugin_root,
-            }
+            },
+            cwd=self.project,
         )
         self.assertEqual(
             self.read_env_file(),
@@ -151,8 +173,55 @@ class SessionStartTest(unittest.TestCase):
         ]
         for environment in cases:
             with self.subTest(environment=environment):
-                self.assertEqual(run_hook(environment), "")
+                self.assertEqual(
+                    run_hook(environment, cwd=self.project),
+                    "",
+                )
                 self.assertEqual(self.read_env_file(), "")
+
+    def test_prepends_in_a_project_subdirectory(self) -> None:
+        """A `.rbtrc` in an ancestor of `cwd` counts."""
+        run_hook(
+            {
+                "CLAUDE_ENV_FILE": self.env_file,
+                "CLAUDE_PLUGIN_ROOT": self.plugin_root,
+            },
+            cwd=os.path.join(self.project, "web"),
+        )
+        self.assertEqual(
+            self.read_env_file(),
+            f'export PATH="{self.plugin_root}/bin:$PATH"\n',
+        )
+
+    def test_no_op_outside_a_reboot_project(self) -> None:
+        """Outside a Reboot project the shims must not shadow the
+        system's binaries, so the handler writes nothing."""
+        self.assertEqual(
+            run_hook(
+                {
+                    "CLAUDE_ENV_FILE": self.env_file,
+                    "CLAUDE_PLUGIN_ROOT": self.plugin_root,
+                },
+                cwd=self.non_project,
+            ),
+            "",
+        )
+        self.assertEqual(self.read_env_file(), "")
+
+    def test_falls_back_to_process_cwd(self) -> None:
+        """Without a `cwd` field, the hook process's own working
+        directory decides."""
+        environment = {
+            "CLAUDE_ENV_FILE": self.env_file,
+            "CLAUDE_PLUGIN_ROOT": self.plugin_root,
+        }
+        run_hook(environment, cwd=None, process_cwd=self.non_project)
+        self.assertEqual(self.read_env_file(), "")
+        run_hook(environment, cwd=None, process_cwd=self.project)
+        self.assertEqual(
+            self.read_env_file(),
+            f'export PATH="{self.plugin_root}/bin:$PATH"\n',
+        )
 
 
 if __name__ == "__main__":

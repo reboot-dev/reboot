@@ -26,6 +26,9 @@
 #     meaningless.
 #   - No argument may contain `..` — that would let a path step
 #     out of whatever directory it was checked against.
+#   - Outside a Reboot project, the hook exits before its checks
+#     unless the call names a `reboot:` skill, a path under this
+#     plugin's `skills/`, or starts by `cd`ing into a Reboot project.
 #
 # For Bash, the command is split — on `;` `&&` `||` `|` — into
 # parts validated independently. A part with a metacharacter that
@@ -143,6 +146,24 @@ in_reboot_project() {
     done
     [ -f "/.rbtrc" ]
 }
+
+# Outside a Reboot project, only calls that target this plugin, or
+# that `cd` into a Reboot project first, go on to the checks below.
+cwd=$(field cwd)
+if [ -z "$cwd" ] || ! in_reboot_project "$cwd"; then
+    relevant=""
+    case "$(field skill)" in reboot:*) relevant=1 ;; esac
+    case "$input" in *"${CLAUDE_PLUGIN_ROOT}/skills/"*) relevant=1 ;; esac
+    command=$(field command)
+    case "$command" in
+        'cd /'*)
+            target=${command#cd }
+            target=${target%%[ ;&|]*}
+            in_reboot_project "$target" && relevant=1
+            ;;
+    esac
+    [ -n "$relevant" ] || exit 0
+fi
 
 tool=$(field tool_name)
 
