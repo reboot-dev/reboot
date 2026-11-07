@@ -255,6 +255,11 @@ body {
 
 ## `frontend/mcp/<ui-name>/index.html`
 
+`npm create @reboot-dev/ui` writes this file for every `UI()` the API
+declares (after `rbt generate`); never write it yourself, as the
+desktop app previews every `.html` the Write tool writes. For
+reference, it is:
+
 ```html
 <!DOCTYPE html>
 <html lang="en">
