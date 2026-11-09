@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+package tests.reboot.mcp_proto;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "rbt/v1alpha1/options.proto";
+
+// A proto-defined (i.e. non-Pydantic) state whose methods are MCP
+// tools and resources. FastMCP derives a tool's input schema from the
+// handler's signature, and it cannot do so from a protobuf class, so
+// the generated handler takes the request message's fields as its
+// parameters.
+message Note {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  repeated string lines = 1;
+  map<string, string> labels = 2;
+  string author = 3;
+  Priority priority = 4;
+  google.protobuf.Timestamp when = 5;
+  google.protobuf.Value extra = 6;
+}
+
+message Author {
+  string name = 1;
+}
+
+enum Priority {
+  PRIORITY_UNSPECIFIED = 0;
+  LOW = 1;
+  HIGH = 2;
+}
+
+message AppendRequest {
+  string text = 1;
+  int32 times = 2;
+  repeated string tags = 3;
+  map<string, string> labels = 4;
+  Author author = 5;
+  Priority priority = 6;
+  google.protobuf.Timestamp when = 7;
+  google.protobuf.Value extra = 8;
+}
+
+message AppendResponse {
+  int32 count = 1;
+}
+
+message GetRequest {}
+
+message GetResponse {
+  repeated string lines = 1;
+  map<string, string> labels = 2;
+  string author = 3;
+  Priority priority = 4;
+  google.protobuf.Timestamp when = 5;
+  google.protobuf.Value extra = 6;
+}
+
+message LineRequest {
+  int32 index = 1;
+}
+
+message LineResponse {
+  string line = 1;
+}
+
+service NoteMethods {
+  rpc Append(AppendRequest) returns (AppendResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+      mcp: { tool: true },
+    };
+  }
+
+  rpc Get(GetRequest) returns (GetResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+      mcp: { tool: true, resource: true },
+    };
+  }
+
+  rpc Line(LineRequest) returns (LineResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+      mcp: { resource: true },
+    };
+  }
+}

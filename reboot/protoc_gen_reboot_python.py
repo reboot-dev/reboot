@@ -70,6 +70,12 @@ class PythonMethod(BaseMethod):
     output_type: PythonType
     output_type_name: PythonType
     input_type_fields: dict[str, str]
+    # For an API defined in proto, the request message's fields typed
+    # for an MCP tool's parameters (see `_mcp_tool_parameter_types`): a
+    # tool's handler takes them in place of the request, since FastMCP
+    # cannot derive a schema from a protobuf class. Empty for an API
+    # defined in pydantic, whose request is a model.
+    mcp_tool_parameter_types: dict[str, str]
     has_non_none_request: bool
     has_non_none_response: bool
 
@@ -92,7 +98,7 @@ class PythonState(BaseState):
     services: Sequence[PythonService]
     pb2_name: str
     # For an API defined in proto, each UI's request message fields by
-    # the UI's name, as `input_type_fields` are for a method: the
+    # the UI's name, as `mcp_tool_parameter_types` are for a method: the
     # generated tool takes them as its parameters, since FastMCP
     # cannot derive a schema from a protobuf class. Empty for an API
     # defined in pydantic, whose request is a model.
@@ -157,6 +163,10 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
                         method.proto._descriptor.input_type,
                         from_pydantic,
                     ),
+                    mcp_tool_parameter_types={}
+                    if from_pydantic else self._mcp_tool_parameter_types(
+                        method.proto._descriptor.input_type
+                    ),
                     has_non_none_request=self.
                     _analyze_has_non_none_request_or_response(
                         method.proto._descriptor.input_type,
@@ -185,7 +195,7 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
             pb2_name=self._pb2_module_name(file.proto._descriptor),
             proto_ui_request_fields={} if from_pydantic else {
                 ui.name:
-                    self._analyze_message_fields(
+                    self._mcp_tool_parameter_types(
                         file.proto._descriptor.message_types_by_name[
                             ui.request_message]
                     ) for ui in state.proto.uis if ui.request_message
@@ -557,6 +567,26 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
 
         return model_fields
 
+    # The Python type of a scalar field, by the field's type.
+    _SCALAR_TYPES: dict[int, str] = {
+        FieldDescriptor.TYPE_DOUBLE: 'float',
+        FieldDescriptor.TYPE_FLOAT: 'float',
+        FieldDescriptor.TYPE_INT32: 'int',
+        FieldDescriptor.TYPE_INT64: 'int',
+        FieldDescriptor.TYPE_UINT32: 'int',
+        FieldDescriptor.TYPE_UINT64: 'int',
+        FieldDescriptor.TYPE_SINT32: 'int',
+        FieldDescriptor.TYPE_SINT64: 'int',
+        FieldDescriptor.TYPE_FIXED32: 'int',
+        FieldDescriptor.TYPE_FIXED64: 'int',
+        FieldDescriptor.TYPE_SFIXED32: 'int',
+        FieldDescriptor.TYPE_SFIXED64: 'int',
+        FieldDescriptor.TYPE_BOOL: 'bool',
+        FieldDescriptor.TYPE_STRING: 'str',
+        FieldDescriptor.TYPE_BYTES: 'bytes',
+        FieldDescriptor.TYPE_ENUM: 'int',
+    }
+
     @classmethod
     def _analyze_message_fields(
         cls,
@@ -576,25 +606,6 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
             pattern = r"^_?[a-z0-9]+(_[a-z0-9]*)*$"
 
             return bool(re.match(pattern, name))
-
-        py_types: dict[int, str] = {
-            FieldDescriptor.TYPE_DOUBLE: 'float',
-            FieldDescriptor.TYPE_FLOAT: 'float',
-            FieldDescriptor.TYPE_INT32: 'int',
-            FieldDescriptor.TYPE_INT64: 'int',
-            FieldDescriptor.TYPE_UINT32: 'int',
-            FieldDescriptor.TYPE_UINT64: 'int',
-            FieldDescriptor.TYPE_SINT32: 'int',
-            FieldDescriptor.TYPE_SINT64: 'int',
-            FieldDescriptor.TYPE_FIXED32: 'int',
-            FieldDescriptor.TYPE_FIXED64: 'int',
-            FieldDescriptor.TYPE_SFIXED32: 'int',
-            FieldDescriptor.TYPE_SFIXED64: 'int',
-            FieldDescriptor.TYPE_BOOL: 'bool',
-            FieldDescriptor.TYPE_STRING: 'str',
-            FieldDescriptor.TYPE_BYTES: 'bytes',
-            FieldDescriptor.TYPE_ENUM: 'int',
-        }
 
         message_fields: dict[str, str] = {}
 
@@ -622,8 +633,8 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
                     field.message_type
                 )
             else:
-                assert field.type in py_types
-                message_fields[field.name] = py_types[field.type]
+                assert field.type in cls._SCALAR_TYPES
+                message_fields[field.name] = cls._SCALAR_TYPES[field.type]
 
             if field.label == FieldDescriptor.LABEL_REPEATED:
                 # To avoid name conflicts in the generated code, we import the
@@ -633,6 +644,77 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
                 ] = f"IMPORT_typing.Iterable[{message_fields[field.name]}]"
 
         return message_fields
+
+    # The Python type an MCP tool's parameter has for a field of a
+    # well-known type, which the protobuf JSON mapping writes as a JSON
+    # value of its own rather than as an object of the message's
+    # fields.
+    _MCP_WELL_KNOWN_TYPES: dict[str, str] = {
+        'google.protobuf.Value': 'IMPORT_typing.Any',
+        'google.protobuf.Struct': 'dict',
+        'google.protobuf.ListValue': 'list',
+        'google.protobuf.Timestamp': 'str',
+        'google.protobuf.Duration': 'str',
+        'google.protobuf.FieldMask': 'str',
+        'google.protobuf.StringValue': 'str',
+        'google.protobuf.BytesValue': 'str',
+        'google.protobuf.BoolValue': 'bool',
+        'google.protobuf.Int32Value': 'int',
+        'google.protobuf.Int64Value': 'int',
+        'google.protobuf.UInt32Value': 'int',
+        'google.protobuf.UInt64Value': 'int',
+        'google.protobuf.FloatValue': 'float',
+        'google.protobuf.DoubleValue': 'float',
+    }
+
+    @classmethod
+    def _mcp_tool_parameter_types(
+        cls,
+        message: Descriptor,
+    ) -> dict[str, str]:
+        """Returns a dict from each field's name of a request message to
+        the Python type an MCP tool's parameter for it has.
+
+        The types are the ones the protobuf JSON mapping uses, so that
+        FastMCP can derive a JSON schema from them and `ParseDict` can
+        build the request from the arguments: a scalar's Python type,
+        `str` holding base64 for `bytes`, a `Literal` of the value
+        names for an enum, `list[...]` for a repeated field,
+        `dict[...]` for a map and `dict` for a message other than a
+        well-known type.
+        """
+
+        def mcp_type(field: FieldDescriptor) -> str:
+            if field.type == FieldDescriptor.TYPE_ENUM:
+                names = ', '.join(
+                    repr(value.name) for value in field.enum_type.values
+                )
+                return f'IMPORT_typing.Literal[{names}]'
+            if field.type == FieldDescriptor.TYPE_BYTES:
+                return 'str'
+            if field.type == FieldDescriptor.TYPE_MESSAGE:
+                return cls._MCP_WELL_KNOWN_TYPES.get(
+                    field.message_type.full_name, 'dict'
+                )
+            if field.type == FieldDescriptor.TYPE_GROUP:
+                raise UserProtoError(
+                    "Fields of type 'group' are currently not supported"
+                )
+            return cls._SCALAR_TYPES[field.type]
+
+        fields: dict[str, str] = {}
+
+        for field in message.fields:
+            if cls._is_map_field(message, field):
+                key, value = field.message_type.fields
+                fields[field.name
+                      ] = f'dict[{mcp_type(key)}, {mcp_type(value)}]'
+            elif field.label == FieldDescriptor.LABEL_REPEATED:
+                fields[field.name] = f'list[{mcp_type(field)}]'
+            else:
+                fields[field.name] = mcp_type(field)
+
+        return fields
 
 
 # This is a separate function (rather than just being in `__main__`) so that we
