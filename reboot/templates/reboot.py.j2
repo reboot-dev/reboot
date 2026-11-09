@@ -2804,9 +2804,14 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% if state.proto.auto_construct == AUTO_CONSTRUCT_UNSPECIFIED %}
             {{ mcp_name_prefix }}id: str,
 {% endif %}
-{% if method.input_type_fields %}
+{% if method.input_type_fields and options.proto.pydantic %}
             *,
             request: {{ request_type }},
+{% elif method.input_type_fields %}
+            *,
+{% for name, type in method.mcp_tool_parameter_types.items() %}
+            {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
+{% endfor %}
 {% endif %}
         ):
             reboot_context = IMPORT_reboot_mcp_context.get_reboot_context(ctx)
@@ -2816,6 +2821,21 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
             # State is auto-constructed when the user's
             # JWT is minted; see `_authenticated`.
+{% endif %}
+{% if method.input_type_fields and not options.proto.pydantic %}
+            # The request from the arguments given, which are the
+            # request message's fields in the protobuf JSON mapping;
+            # a field left out keeps its default.
+            request = IMPORT_google_protobuf_json_format.ParseDict(
+                {
+                    name: value for name, value in {
+{% for name in method.mcp_tool_parameter_types %}
+                        "{{ name }}": {{ name }},
+{% endfor %}
+                    }.items() if value is not None
+                },
+                {{ request_type }}(),
+            )
 {% endif %}
 {% if method.options.proto.constructor %}
 {% if method.input_type_fields %}
@@ -2896,10 +2916,16 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             )
 {% if method.options.proto.constructor %}
             _, response = await {{ state.proto.name }}.{{ method.proto.name }}(reboot_context, {{ mcp_name_prefix }}id, request)
-            return response
 {% else %}
             ref = {{ state.proto.name }}.ref({{ mcp_name_prefix }}id)
-            return await ref.{{ method.proto.name | to_snake }}(reboot_context, request)
+            response = await ref.{{ method.proto.name | to_snake }}(reboot_context, request)
+{% endif %}
+{% if options.proto.pydantic %}
+            return response
+{% else %}
+            # A protobuf message is not JSON to FastMCP, which would
+            # hand the model its text form; a dict is.
+            return IMPORT_google_protobuf_json_format.MessageToDict(response)
 {% endif %}
 {% else %}
         @mcp.resource(
@@ -2931,7 +2957,13 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% else %}
             response = await {{ state.proto.name }}.ref({{ mcp_name_prefix }}id).{{ method.proto.name | to_snake }}(reboot_context)
 {% endif %}
+{% if options.proto.pydantic %}
             return response
+{% else %}
+            # A protobuf message is not JSON to FastMCP, which would
+            # hand the model its text form; a dict is.
+            return IMPORT_google_protobuf_json_format.MessageToDict(response)
+{% endif %}
 {% endif %}
 
 {% endif %}
