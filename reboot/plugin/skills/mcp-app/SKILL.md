@@ -77,7 +77,7 @@ exactly one of them — the step that needs it.
 > browser sign-in buttons — none of which apply to the nested
 > `frontend/mcp/<name>/` bundles an MCP host loads. The MCP App
 > equivalents are
-> [`frontend/references/react-scaffolding.md`](../frontend/references/react-scaffolding.md)
+> [`frontend/references/react-mcp-scaffolding.md`](../frontend/references/react-mcp-scaffolding.md)
 > and [`frontend/references/react-app-tsx.md`](../frontend/references/react-app-tsx.md).
 
 **Before the project shell** (`.python-version`, `pyproject.toml`,
@@ -209,7 +209,7 @@ exactly one of them — the step that needs it.
 
 **Before the frontend:**
 
-- [`frontend/references/react-scaffolding.md`](../frontend/references/react-scaffolding.md)
+- [`frontend/references/react-mcp-scaffolding.md`](../frontend/references/react-mcp-scaffolding.md)
   — the `frontend/` shell: `package.json` and `build.mjs` (`npm run build` calls the package's `build()`, which builds every UI the
   plugin declares; a frontend with one UI could use plain `vite build`, as the web-only shell does),
   `vite.config.ts` (the stock Vite file plus `reboot()`),
@@ -559,7 +559,7 @@ Read it before the design.
 9. `cd frontend && npm install`.
 10. `uv run rbt generate` (React bindings need `node_modules`).
 11. Customize React UIs — see
-    [`frontend/references/react-scaffolding.md`](../frontend/references/react-scaffolding.md)
+    [`frontend/references/react-mcp-scaffolding.md`](../frontend/references/react-mcp-scaffolding.md)
     for the `frontend/` shell and
     [`frontend/references/react-app-tsx.md`](../frontend/references/react-app-tsx.md) for
     `App.tsx` patterns.
