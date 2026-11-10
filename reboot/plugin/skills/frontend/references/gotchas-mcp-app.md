@@ -15,19 +15,16 @@ file, servicers and workflows, is
 1. **React bindings use camelCase.** Python `from_index` becomes
    TypeScript `fromIndex`; same for every snake_case field name.
 
-2. **`npm install` before second `rbt generate`** — React bindings
-   need `node_modules` to exist when `rbt generate` produces them.
-
-3. **Generated React hook:** `use<TypeName>()` — e.g. `useCounter()`,
+2. **Generated React hook:** `use<TypeName>()` — e.g. `useCounter()`,
    `useInventory()`.
 
-4. **Generated React import path:**
+3. **Generated React import path:**
    `@api/<pkg>/v1/<name>_rbt_react`.
 
-5. **Frontend request/response types are Zod** — generated from
+4. **Frontend request/response types are Zod** — generated from
    the Python Models.
 
-6. **`frontend/dist/mcp/<name>/index.html` is the right location** for
+5. **`frontend/dist/mcp/<name>/index.html` is the right location** for
    the built MCP App — `<--mcp-app-dist-path>/<path>/index.html`,
    with `--mcp-app-dist-path=frontend/dist/mcp` in `.rbtrc`. Reboot's
    Vite plugin (`reboot()` from `@reboot-dev/reboot-react/vite`)
@@ -39,7 +36,7 @@ file, servicers and workflows, is
    `cd frontend && npm run build` — do **not** rewrite the Vite config
    to emit a flat `dist/<name>.html`; that breaks the lookup.
 
-7. **Don't add `generate --react-extensions` to `.rbtrc`.** This is
+6. **Don't add `generate --react-extensions` to `.rbtrc`.** This is
    a Python-backend app that generates the React client on its own
    into `frontend/api/`. Vite — plus `tsc` under the
    `moduleResolution: "bundler"` the scaffolded tsconfigs use —
@@ -54,7 +51,7 @@ file, servicers and workflows, is
    `--react-extensions` with `--mobile`, because Metro can't resolve
    the `.js`-suffixed imports back to their `.ts` sources.
 
-8. **An `<img src>` or `<a href>` pointing at the backend carries
+7. **An `<img src>` or `<a href>` pointing at the backend carries
    no bearer.** The UI runs in the host's sandbox, cross-origin to
    the backend, so a plain `src` or `href` arrives with no
    credential and a `require_oauth_token=True` route returns 401.

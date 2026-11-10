@@ -44,8 +44,8 @@ the Reboot plugin installed, its skills know Reboot best.
 ## Setup, on a fresh clone
 
 - `uv sync`, and `cd frontend && npm install`.
-- `uv run rbt generate` (after `npm install`: it writes the React
-  code into `frontend/api/`).
+- `uv run rbt generate` (it writes the React code into
+  `frontend/api/`).
 - `uv run playwright install chromium`, once, for the browser scenarios.
 
 ## Commands
