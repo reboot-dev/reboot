@@ -41,7 +41,7 @@ React side's list is `frontend/references/gotchas-mcp-app.md`.
    for **free-form configuration** (a personalisation string, a
    dashboard hint) — never for entity IDs. A UI about one specific
    entity belongs on that entity's `Type` with `request=None`; the
-   tool-call target becomes the actor ID automatically, and the
+   tool-call target becomes the state type ID automatically, and the
    generated `use<Type>()` hook resolves it with no arguments. See
    "UI Placement" in `python/references/api-method-types.md`. Putting
    `show_person=UI(request=ShowPersonProps(person_id: str))` on
