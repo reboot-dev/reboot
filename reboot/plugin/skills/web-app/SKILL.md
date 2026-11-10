@@ -120,7 +120,7 @@ exactly one of them — the step that needs it.
 - `python/references/state-nested-models.md` — the same rule from
   the nested-`Model` angle.
 
-**Before the project shell** (`.rbtrc`, `pyproject.toml`,
+**Before the project files** (`.rbtrc`, `pyproject.toml`,
 `.mypy.ini`, `main.py`):
 
 - `python/references/lifecycle-{project-setup,rbtrc,application-entry,initialize-hook}.md` — the canonical layout, the CLI flags, the

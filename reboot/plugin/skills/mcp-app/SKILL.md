@@ -81,10 +81,10 @@ exactly one of them — the step that needs it.
 > [`frontend/references/react-mcp-scaffolding.md`](../frontend/references/react-mcp-scaffolding.md)
 > and [`frontend/references/react-app-tsx.md`](../frontend/references/react-app-tsx.md).
 
-**Before the project shell** (`.python-version`, `pyproject.toml`,
+**Before the project files** (`.python-version`, `pyproject.toml`,
 `.rbtrc`, `.mypy.ini`, `main.py`):
 
-- [`python/references/lifecycle-mcp-app-shell.md`](../python/references/lifecycle-mcp-app-shell.md) —
+- [`python/references/lifecycle-mcp-app-project-files.md`](../python/references/lifecycle-mcp-app-project-files.md) —
   `.python-version`, `.rbtrc` deltas (the `portless`, `ports` and `dist` configs),
   `pyproject.toml` extras, `main.py` shape, the `example_prompts.py`
   module wired into `Application(example_prompts=...)`,
@@ -531,7 +531,7 @@ Read it before the design.
 
 1. Create `.python-version`, `pyproject.toml`, `.rbtrc`, and
    `.mypy.ini` — see
-   [`python/references/lifecycle-mcp-app-shell.md`](../python/references/lifecycle-mcp-app-shell.md);
+   [`python/references/lifecycle-mcp-app-project-files.md`](../python/references/lifecycle-mcp-app-project-files.md);
    the `.mypy.ini` template lives in
    `python/references/lifecycle-project-setup.md`. Then give the
    project its `AGENTS.md` and `CLAUDE.md` with the
@@ -557,7 +557,7 @@ Read it before the design.
 7. Write `backend/src/example_prompts.py` (the wizard's example
    prompts) and `main.py` (which imports them and passes
    `example_prompts=` to `Application`) — see
-   [`python/references/lifecycle-mcp-app-shell.md`](../python/references/lifecycle-mcp-app-shell.md) and
+   [`python/references/lifecycle-mcp-app-project-files.md`](../python/references/lifecycle-mcp-app-project-files.md) and
    `python/references/lifecycle-application-entry.md`.
 8. `npm create @reboot-dev/ui`.
 9. `cd frontend && npm install`.

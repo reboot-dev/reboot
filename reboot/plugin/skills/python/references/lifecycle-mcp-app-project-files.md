@@ -1,11 +1,11 @@
 ---
-title: Project Shell — MCP App Deltas
+title: Project Files — What an MCP App Adds
 impact: CRITICAL
-impactDescription: The shell files (`.rbtrc`, `pyproject.toml`, `.python-version`, `main.py`) wire the build, the dev server, the HMR routing, and the entry point — wrong shapes break either codegen or live reload before the app even boots.
-tags: project, shell, rbtrc, pyproject, python-version, main, application-entry, hmr, dist
+impactDescription: The project files (`.rbtrc`, `pyproject.toml`, `.python-version`, `main.py`) wire the build, the dev server, the HMR routing, and the entry point — wrong shapes break either codegen or live reload before the app even boots.
+tags: project, files, rbtrc, pyproject, python-version, main, application-entry, hmr, dist
 ---
 
-## Project Shell — MCP App Deltas
+## Project Files — What an MCP App Adds
 
 The `python` skill covers the canonical project shape
 (`lifecycle-project-setup.md`) and the `.rbtrc` format
