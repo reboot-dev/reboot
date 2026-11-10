@@ -141,7 +141,7 @@ exactly one of them — the step that needs it.
   `at_most_once`), `context.loop`, inline state writes,
   `until` / `until_changes`, and workflow exit semantics.
 
-**Before the authorizers** (browser users — see
+**Before writing the authorizers** (browser users — see
 `python/references/auth-web-apps.md` for the dev-vs-prod sequence):
 
 - `python/references/servicer-authorizer.md` — **start here**.
