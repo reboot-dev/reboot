@@ -41,7 +41,7 @@ A second, equally common mistake is letting `User`'s state accrete
 unrelated concerns — auth/session fields alongside persona config
 alongside a background engine's configuration alongside a UI cache.
 This is an anti-pattern because writers on
-the same actor serialize, makes a login step contend with a persona
+the same state type serialize, makes a login step contend with a persona
 edit and a background workflow's state writes. Split each concern
 into its own `Type` and have `User` reference it by ID. The signals
 that warn you are accreting concerns, and the split pattern, are in
