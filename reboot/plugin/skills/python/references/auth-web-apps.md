@@ -60,8 +60,8 @@ Recommended sequence:
    `allow_if(...)` rules that run in dev exactly as in production
    (see `python/references/servicer-authorizer.md`,
    `python/references/auth-allow-if.md`, and
-   `python/references/auth-built-in-predicates.md`). Do **not**
-   paper over a missing rule with `allow()`; `allow()` means
+   `python/references/auth-built-in-predicates.md`). Do **not** use
+   `allow()` in place of a missing rule; `allow()` means
    "public, unauthenticated internet endpoint" and survives into
    production.
 2. **Before `rbt serve` / Reboot Cloud:** set `prod=Google(...)`
