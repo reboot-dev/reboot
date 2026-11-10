@@ -15,7 +15,7 @@ Every MCP App has a `User` type and one or more application types:
   application-type instances. **"Front door" means entry point +
   delegation, not container for all application state.** `User`
   holds identity (e.g. display name) and **IDs of the concern-
-  specific actors it owns**; per-concern state (auth/session,
+  specific state types it owns**; per-concern state (auth/session,
   background-engine config, persona config, transient caches) lives
   on its own `Type` and is referenced by ID from `User`. Typical
   `User` methods are `Transaction`s that create application-type
