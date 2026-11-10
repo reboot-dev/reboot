@@ -38,9 +38,10 @@ you read is sent again on every later turn.
 | [`gotchas-mcp-app.md`](references/gotchas-mcp-app.md) | Building MCP App UIs: camelCase names, the build's output path, `--react-extensions`, image URLs that carry no bearer |
 | [`testing-web-app.md`](references/testing-web-app.md) | Writing scenarios that open the web app in a browser: the `frontend` fixture, the web app steps, the accessible markup the page needs |
 
-An app with both frontends reads both rows that apply to it. An app
-with one reads only its own: the web app pages produce web app code,
-and the MCP App pages produce `UI()`-shaped code.
+An app with both a web app and MCP App UIs reads the rows for both.
+An app with only one reads only the rows for that one: the web app
+pages produce web app code, and the MCP App pages produce
+`UI()`-shaped code.
 
 ## Web app: hooks and the browser-side wiring
 
