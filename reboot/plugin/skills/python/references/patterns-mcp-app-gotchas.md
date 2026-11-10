@@ -1,7 +1,7 @@
 ---
 title: MCP App–Specific Gotchas: the Backend
 impact: CRITICAL
-impactDescription: The trip list specific to the MCP App layer. Every entry is a real failure mode the MCP App codegen, runtime, or build surfaces — most are caught at startup or at codegen rather than at write time, so they look like runtime errors but are static schema problems.
+impactDescription: The gotchas specific to the MCP App layer. Every entry is a real failure mode the MCP App codegen, runtime, or build raises — most are caught at startup or at codegen rather than at write time, so they look like runtime errors but are static schema problems.
 tags: gotchas, traps, errors, mcp, ui, factory, workflow, ref, schedule, optional
 ---
 
