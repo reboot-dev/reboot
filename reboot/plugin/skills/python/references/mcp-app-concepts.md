@@ -40,7 +40,7 @@ The most common scaffolding mistake is putting a per-entity UI
 A second, equally common mistake is letting `User`'s state accrete
 unrelated concerns — auth/session fields alongside persona config
 alongside a background engine's configuration alongside a UI cache.
-That turns the front door into a God actor and, because writers on
+This is an anti-pattern because writers on
 the same actor serialize, makes a login step contend with a persona
 edit and a background workflow's state writes. Split each concern
 into its own `Type` and have `User` reference it by ID. The signals
