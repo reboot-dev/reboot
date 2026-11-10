@@ -89,8 +89,9 @@ import {
 
 - The hook is `use<TypeName>()` — `useCounter()`, `useInventory()`,
   etc.
-- The import path is `@api/<pkg>/v1/<name>_rbt_react` (the
-  `@api/*` alias is set up by `vite.config.ts`).
+- The import path is `@api/<pkg>/v1/<name>_rbt_react`. The `@api`
+  alias comes from `reboot({ apiPath })` in `vite.config.ts`, with the
+  matching `paths` entry in `tsconfig`; a relative import works too.
 - Frontend Request/Response types are Zod-validated; the same
   `<MethodPascalCase>Request`/`<MethodPascalCase>Response` rule
   applies on the TypeScript side.
