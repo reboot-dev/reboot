@@ -62,8 +62,9 @@ README for the manual install, team auto-enable, and the Codex
 ## Which References to Read, and When
 
 The backend mechanics live in the `python` skill's references,
-including the MCP App's API, servicer and sign-in pages; the React
-pages live in the `frontend` skill's references. Neither set is restated inline below.
+including the MCP App's API, servicer and sign-in references; the
+React references live in the `frontend` skill. Neither set is
+restated inline below.
 
 Everything you read stays in the conversation and is re-sent on
 every later turn, so **read each reference at the step that needs
