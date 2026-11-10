@@ -117,16 +117,19 @@ an `OAuthTokenManager` and make the call inside a `Workflow`. When the
 API belongs to the identity provider you already sign in with via
 `Application(oauth=...)` (`Google` / `GitHub` / `Auth0`), use the
 `store_tokens=True` shortcut: add the extra `scopes=[...]` your calls
-need and the OAuth server captures the provider's tokens at sign-in
-(Path A in `python/references/auth-external-api-calls.md`). For any
-other service, run that service's OAuth flow yourself with your own
+need and the OAuth server captures the provider's tokens at sign-in.
+See the section titled "Path A — the built-in easy path" in
+`python/references/auth-external-api-calls.md`. For any other
+service, run that service's OAuth flow yourself with your own
 authorize/callback HTTP endpoints (a callback registered
-`app_internal=True`) and call `OAuthTokenManager.store`. The full
-host-agnostic recipe — endpoints, storage, reading tokens back, the
-in-`Workflow` call, refresh, and erasure — is
-`python/references/auth-external-api-calls.md` (Path B). Never store
-tokens in a plain `str` field or hand-roll `Ciphertext`
+`app_internal=True`) and call `OAuthTokenManager.store`. See the
+section titled "Path B — your own OAuth flow (any other service)" in
+`python/references/auth-external-api-calls.md`; the same file covers
+storage, reading tokens back, the in-`Workflow` call, refresh, and
+erasure, for MCP Apps and web apps alike. Never store tokens in a
+plain `str` field or hand-roll `Ciphertext`
 (`python/references/stdlib-oauth-tokens.md`). If the service doesn't do
 OAuth at all and the user pastes an **API key** instead, that key goes
-through `Ciphertext` (the ciphertext id kept in state) — Path C in the
-same recipe.
+through `Ciphertext` (the ciphertext id kept in state). See the
+section titled "Path C — the user provides an API key, not OAuth" in
+`python/references/auth-external-api-calls.md`.
