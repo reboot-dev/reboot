@@ -56,5 +56,5 @@ file, servicers and workflows, is
    the backend, so a plain `src` or `href` arrives with no
    credential and a `require_oauth_token=True` route returns 401.
    Obtain a short-lived signed URL with the client's bearer and give
-   that to `src` instead; never put the token in the URL. Recipe in
+   that to `src` instead; never put the token in the URL. See the instructions in
    `python/references/auth-http-routes.md`.
