@@ -101,7 +101,7 @@ Recommended sequence:
    servicers, with the same authorizers, and wire identity per
    `python/references/testing-harness.md` ("Identity Wiring in
    Tests"): omit `oauth=` for backend scenarios, and for scenarios
-   that open the web app use `Development()` for both arms plus
+   that open the web app use `Development()` for both `dev=` and `prod=`, plus
    `allowed_origins=[]`, as `frontend/references/testing-web-app.md`
    shows.
 
