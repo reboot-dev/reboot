@@ -21,7 +21,19 @@ backend through a client that `rbt generate --react=` writes into
 
 Both use the same generated client and the same `frontend/` folder.
 Everything on the backend side, including the `UI()` declarations and
-sign-in, is in the [`python` skill](../python/SKILL.md).
+sign-in, is in the [`python` skill](../python/SKILL.md). The pages
+below send you to these `python` pages; read them from here:
+
+- [`patterns-mcp-app-gotchas.md`](../python/references/patterns-mcp-app-gotchas.md):
+  the backend half of the MCP App gotchas.
+- [`auth-http-routes.md`](../python/references/auth-http-routes.md):
+  signed image URLs for an MCP App UI.
+- [`state-collections.md`](../python/references/state-collections.md),
+  [`servicer-reader.md`](../python/references/servicer-reader.md) and
+  [`stdlib-ordered-map.md`](../python/references/stdlib-ordered-map.md):
+  the state behind a composing reader in `react-app-tsx.md`.
+- [`testing-features.md`](../python/references/testing-features.md):
+  the backend steps that browser scenarios build on.
 
 ## Which page to read
 

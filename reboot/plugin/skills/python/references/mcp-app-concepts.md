@@ -12,22 +12,25 @@ tags: mcp, user, front-door, tool, ui, oauth, authorizer, example-prompts
 Every MCP App has a `User` type and one or more application types:
 
 - **`User`** is the AI's entry point for **creating and locating**
-  application-type instances. **"Front door" means entry point +
-  delegation, not container for all application state.** `User`
-  holds identity (e.g. display name) and **IDs of the concern-
-  specific state types it owns**; per-concern state (auth/session,
-  background-engine config, persona config, transient caches) lives
-  on its own `Type` and is referenced by ID from `User`. Typical
-  `User` methods are `Transaction`s that create application-type
-  instances, or `Reader`s that locate existing instances' IDs —
-  either directly or via indexes whose IDs are stored on `User`.
-  `User`-scoped UIs (a dashboard spanning the whole user, a global
-  browser) also live here.
+  application-type instances. It is not a container for all of the
+  app's state:
+  - `User` holds the user's identity (for example, a display name)
+    and the **IDs of the state it owns**.
+  - Each kind of per-user state (a sign-in session, persona
+    settings, a transient cache) lives on its own `Type`, and `User`
+    keeps its ID.
+  - Typical `User` methods are `Transaction`s that create
+    application-type instances, and `Reader`s that return the IDs of
+    existing ones.
+  - Those IDs are stored on `User` directly, or in an index whose ID
+    is stored on `User`.
+  - `User`-scoped UIs (a dashboard spanning the whole user, a global
+    browser) also live on `User`.
 - **Application types** (e.g. `Counter`, `Person`, `Task`) hold
   most of the actual entity state. They typically need a `create`
   Writer with `factory=True` for construction. **Once an entity exists,
   anything specific to that entity — Readers, Writers, UIs —
-  lives on that entity's `Type`**, never on `User`. The state types
+  lives on that entity's `Type`**, never on `User`. The entity's
   ID is then implicit in every call: the AI passes the entity
   ID to the tool, and the generated `use<Type>()` React hook
   auto-resolves the same ID with no arguments.
@@ -71,7 +74,7 @@ The `Reader` / `Writer` / `Transaction` / `Workflow` markers come from
 describes (each fixes the Servicer's context type). The MCP App
 adds one more:
 
-- **`UI()`** — opens a React UI inside the MCP client. Takes
+- **`UI()`** — opens a React UI inside the MCP host. Takes
   `request=` (config type or `None`), `path=` (the UI's URL path
   under `/__/frontend/mcp/`, like `"clicker"` or `"shop/cart"`; its
   source is `frontend/mcp/<path>/`, its build
@@ -94,14 +97,15 @@ principal is the user. There's no middle ground: either every user
 signs in through this OAuth flow, or the app has no per-user auth at
 all. The slot takes an `OAuth`, whose `provider` is an
 `OAuthProviderSelector`. The typical shape is
-`oauth=OAuth(provider=OAuthProviderByEnvironment(dev=Development(), prod=Google(...)))`:
-under `rbt dev` you get `Development()` — a real provider that shows a
-fake account picker and issues every caller a verified, stable
-`dev-{hash}` `context.auth.user_id`, no external IdP — while every other
+`oauth=OAuth(provider=OAuthProviderByEnvironment(dev=Development(), prod=Google(...)))`.
+Under `rbt dev` you get `Development()`: a real provider, with no
+external IdP, that shows a fake account picker and gives every caller
+a verified, stable `dev-{hash}` `context.auth.user_id`. Every other
 environment (`rbt serve`, Reboot Cloud, or anything unrecognized) gets
-the real provider. Both arms are required; either may be `None`, and a
-selected `None` arm makes the app **fail to start** with a clear
-message, so you can't silently ship without sensible auth.
+the real provider. Both `dev=` and `prod=` are required. Either may
+be `None`, and when the running environment's provider is `None` the
+app **fails to start** with a clear message, so you can't ship
+without sensible auth.
 Servicer-side code doesn't change between providers. (In unit tests,
 omit `oauth=` entirely — the test harness supplies a test OAuth
 provider.)
@@ -191,20 +195,20 @@ one per turn, walking a real end-to-end flow through the app's MCP
 tools (create something → act on it → view the result), not one
 isolated message. Write ~3 examples that together cover the app's
 main user stories, phrased the way a real user would talk to the
-chat client.
+MCP host.
 
 **Make the prompts show the UI, not just call tools.** The embedded
 React UIs (the `UI()` methods) are the whole reason this is an MCP
-**App** and not a plain MCP server — a flow that only calls
-tool-only methods and never renders a component demos the boring
-half. Every example should end on (or pass through) a turn that
-triggers a `UI()` method — phrase that turn as a natural "show me
-/ open / view ..." request so the AI picks the UI tool. In the counter
-example, the "…and show me the counter" / "show me the wins counter"
-turns are exactly this: they resolve to the `Counter` UI and render the
-live component, not just a text reply. When you write the set, look at
-the method map from the design: for each `UI()` method, make sure at
-least one example drives the user to it.
+**App** and not a plain MCP server. A flow that only calls tools and
+never renders a UI doesn't show that, so every example should end on
+(or pass through) a turn that triggers a `UI()` method — phrase that
+turn as a natural "show me / open / view ..." request so the AI picks
+the UI tool. In the counter example, the "…and show me the counter" /
+"show me the wins counter" turns are exactly this: they resolve to the
+`Counter` UI and render the live component, not just a text reply.
+When you write the set, look at the method map from the design: for
+each `UI()` method, make sure at least one example drives the user to
+it.
 
 They live in `backend/src/example_prompts.py` and are passed to
 `Application(example_prompts=...)` in `main.py`. Full file shapes and
