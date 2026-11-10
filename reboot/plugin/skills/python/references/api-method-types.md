@@ -44,7 +44,7 @@ directly. Omitting `mcp=` raises at codegen with
 
 ## `UI()` — React Surface
 
-`UI()` opens a React UI inside the MCP client. Takes
+`UI()` opens a React UI inside the MCP host. Takes
 `request=` (config type or `None`), `path=` (web dir relative to
 project root), `title=`, `description=`, and optionally
 `display_modes=` (such as `["fullscreen", "inline"]`: the UI asks

@@ -181,7 +181,7 @@ chat messages the user sends one per turn. A single example is a
 tools (create something → act on it → view the result), not a single
 isolated message. Write three or so examples that together exercise
 the app's main user stories, phrased the way a real user would talk
-to the chat client. Most prompts should end on a natural
+to the MCP host. Most prompts should end on a natural
 "show me / open / view ..." turn that renders a `UI()` component
 rather than only calling tool-only methods — see "Example Prompts"
 in `mcp-app-concepts.md` for the full rule. The counter set above does this
