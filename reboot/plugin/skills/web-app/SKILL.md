@@ -146,8 +146,8 @@ exactly one of them — the step that needs it.
 
 - `python/references/servicer-authorizer.md` — **start here**.
   Explains `oauth=` (the default, with rules from day one) vs.
-  `token_verifier=` (the escape hatch for custom IdPs, where rules
-  may wait until the verifier is wired).
+  `token_verifier=` (for identity providers the built-in ones don't
+  cover, where rules may wait until the verifier is wired).
 - `python/references/auth-allow-if.md`,
   `python/references/auth-built-in-predicates.md`,
   `python/references/auth-custom-predicates.md` — the predicate
