@@ -587,10 +587,10 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/testing-external-context.md`
 - `references/testing-failure-recovery.md`
 
-**Frontend**: the React pages and the browser scenarios are in the
-`frontend` skill, `../frontend/references/`: among them
-`react-generated-client.md`, what `rbt generate --react=` emits, and
-`testing-web-app.md`.
+**Frontend**: the React references and the browser scenarios are in
+the `frontend` skill's `references/`. `react-generated-client.md`
+says what `rbt generate --react=` emits, and `testing-web-app.md`
+covers the browser scenarios.
 
 **Patterns** (`patterns-`):
 
