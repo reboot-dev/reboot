@@ -42,22 +42,19 @@ An app with both frontends reads both rows that apply to it. An app
 with one reads only its own: the web app pages produce web app code,
 and the MCP App pages produce `UI()`-shaped code.
 
-## Web app: feeding the user's identity into hooks
+## Web app: hooks and the browser-side wiring
 
-With `Application(oauth=...)` the signed-in user's own state needs
-no id-threading: call the `User` hook with **no arguments**. For
-explicit-id hooks the rule is that the id must be real on every
-render — never a placeholder — which is covered with the rest of
-the hook mechanics in
-[`frontend/references/react-client.md`](references/react-client.md).
+[`frontend/references/react-client.md`](references/react-client.md)
+covers the provider (and the `url` it must be given), the generated
+hooks, sign-in and sign-out, and reading typed errors. Read it at the
+frontend step; don't reconstruct it from memory here. Two of its
+rules apply to every page:
 
-## Web app: browser-side wiring (React)
-
-All of it — the provider (and the `url` it must be given), the
-generated hook surface, sign-in/sign-out, reading typed errors, and
-why a hook's `id` must be real on every render — is in
-[`frontend/references/react-client.md`](references/react-client.md). Read it
-at the frontend step; don't reconstruct it from memory here.
+- With `Application(oauth=...)`, the signed-in user's own state needs
+  no id: call the `User` hook with **no arguments** and it finds the
+  signed-in user.
+- For hooks that take an id, the id must be real on every render,
+  never a placeholder.
 
 ## Never read generated code
 
