@@ -170,6 +170,43 @@ library) instead of inferring Reboot behavior from trial and error.
 See [`hooks-handlers/remind.sh`](hooks-handlers/remind.sh); it works
 identically in Claude Code and Codex.
 
+## What the plugin runs and downloads
+
+Hooks (registered in [`hooks/hooks.json`](hooks/hooks.json)):
+
+- **SessionStart** puts the plugin's `bin/` shims first on `PATH`, only
+  inside a Reboot project. It writes one `export PATH=…` line.
+  Elsewhere the shims come after the system's binaries.
+- **SessionStart** and **UserPromptSubmit** inject the skill reminder
+  described above, only inside a Reboot project.
+- **PreToolUse** auto-approves three things and nothing else:
+  this plugin's own `reboot:` skills; read-only calls (`Read`, `LS`,
+  `Glob`, `Grep`, and `ls`/`cat`/`head`/`tail`/`find`/`wc`/`file`/`stat`)
+  on files under the plugin's `skills/`; and the dev commands of the
+  `run` and `dashboard` skills, only when they run inside a Reboot
+  project. Outside a Reboot project it exits at once for any call that
+  is not one of the first two, unless a Bash command starts with `cd`
+  into a Reboot project. Every other tool call gets the normal
+  permission prompt.
+
+None of the hooks makes a network call.
+
+Downloads: the shims in `bin/` install pinned tools on first use, into
+`~/.claude/plugins/data/reboot/`. Each version is set in its install
+script in [`lib/`](lib/):
+
+| Tool                   | Downloaded from                                                |
+| ---------------------- | -------------------------------------------------------------- |
+| uv                     | astral.sh                                                      |
+| Node.js                | nodejs.org                                                     |
+| Envoy                  | github.com (Linux), archive.tetratelabs.io (macOS)             |
+| cloudflared            | github.com                                                     |
+| portless               | the npm registry                                               |
+| the Reboot CLI (`rbt`) | PyPI, through `uvx`                                            |
+| MCPJam Inspector       | the npm registry, through `npx`, when the `run` skill opens it |
+
+The plugin sends no telemetry.
+
 ## Repository Structure
 
 ```
@@ -179,11 +216,14 @@ plugin/
 │   │   └── marketplace.json  # Codex marketplace catalog (single-plugin)
 │   └── skills -> ../skills   # Codex repo-bundled skill discovery
 ├── .claude-plugin/
-│   └── marketplace.json      # Claude Code marketplace + plugin defs
+│   ├── marketplace.json      # Claude Code marketplace (single-plugin)
+│   ├── plugin.json           # Claude Code plugin manifest
+│   └── icon.png              # listing icon for Anthropic's directory
 ├── .codex-plugin/
 │   └── plugin.json           # Codex plugin manifest (skills); see
 │                             # "Differences in Codex vs. Claude Code"
 │                             # above for how PATH is wired under Codex
+├── LICENSE
 ├── README.md
 ├── install.sh                # installs for Claude Code and/or Codex
 ├── bin/                      # pinned tool shims (uv, node, rbt,

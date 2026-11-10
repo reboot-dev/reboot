@@ -292,6 +292,21 @@ class RebootVersionTest(unittest.TestCase):
                     f'version {version}'
                 )
 
+        claude_plugin_manifest_path = os.path.join(
+            plugin_dir, '.claude-plugin', 'plugin.json'
+        )
+        with open(
+            claude_plugin_manifest_path, 'r'
+        ) as claude_plugin_manifest_file:
+            claude_plugin_manifest = json.load(claude_plugin_manifest_file)
+            manifest_version = claude_plugin_manifest['version']
+            if manifest_version != version:
+                self.fail(
+                    f'{claude_plugin_manifest_path} contains version '
+                    f'{manifest_version}, which is out of date with '
+                    f'version {version}'
+                )
+
         # The `upgrade` skill's migration fragments live in
         # `migrations/next/` until a release, when `make versions`
         # moves them into a `migrations/<version>/` directory. Catch
