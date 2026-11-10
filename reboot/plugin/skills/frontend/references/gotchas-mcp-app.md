@@ -1,7 +1,7 @@
 ---
 title: MCP App–Specific Gotchas: the React Side
 impact: CRITICAL
-impactDescription: The trip list for an MCP App's React UIs and their build. Each entry is a real failure the generated client, the Vite build or the host's sandbox surfaces.
+impactDescription: The gotchas for an MCP App's React UIs and their build. Each entry is a real failure that can happen in the generated client, the Vite build or the host's sandbox.
 tags: gotchas, traps, errors, mcp, react, vite, snake-camel, codegen, bearer
 ---
 
