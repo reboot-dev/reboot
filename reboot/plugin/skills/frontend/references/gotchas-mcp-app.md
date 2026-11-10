@@ -32,15 +32,9 @@ file, servicers and workflows, is
    into `frontend/api/`. Vite — plus `tsc` under the
    `moduleResolution: "bundler"` the scaffolded tsconfigs use —
    resolves the generated client's relative imports without explicit
-   `.js` extensions, so the flag buys nothing here. The two cases
-   where a project _does_ need it both require something this skill
-   never produces: a webpack/`ts-loader` bundler (this skill uses
-   Vite), or a `--nodejs`/`--web` target sharing the React output
-   directory and forcing matching extensions (a Python backend has
-   no Node.js client). Adding the flag anyway also breaks a future
-   `--mobile` (React Native) client — `rbt generate` rejects
-   `--react-extensions` with `--mobile`, because Metro can't resolve
-   the `.js`-suffixed imports back to their `.ts` sources.
+   `.js` extensions, so the flag does nothing here. It also breaks a
+   future `--mobile` (React Native) client, because `rbt generate`
+   rejects `--react-extensions` with `--mobile`.
 
 4. **An `<img src>` or `<a href>` pointing at the backend carries
    no bearer.** The UI runs in the host's sandbox, cross-origin to
