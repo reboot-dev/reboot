@@ -1,11 +1,11 @@
 ---
-title: React Scaffolding — package.json, vite.config.ts, tsconfigs, index.css
+title: React Scaffolding for MCP App UIs — package.json, vite.config.ts, tsconfigs, index.css
 impact: CRITICAL
-impactDescription: The shell files for the `frontend/` tree. `vite.config.ts` is the stock Vite file plus `reboot()` from `@reboot-dev/reboot-react/vite`, which builds each MCP App into the **nested** `frontend/dist/mcp/<name>/index.html` the server resolves. `npm run build` runs the package's `build.mjs`, which builds every UI the plugin declares; tsconfigs split into `app` and `node` halves.
+impactDescription: The `frontend/` setup for an app with MCP App UIs. `vite.config.ts` is the stock Vite file plus `reboot()` from `@reboot-dev/reboot-react/vite`, which builds each MCP App into the **nested** `frontend/dist/mcp/<name>/index.html` the server resolves. `npm run build` runs the package's `build.mjs`, which builds every UI the plugin declares; tsconfigs split into `app` and `node` halves.
 tags: web, react, vite, tsconfig, package-json, css, build, hmr, scaffolding, build.mjs
 ---
 
-## React Scaffolding — package.json, vite.config.ts, tsconfigs, index.css
+## React Scaffolding for MCP App UIs — package.json, vite.config.ts, tsconfigs, index.css
 
 Everything below is MCP App-specific. The `frontend/` tree is
 owned by this skill — `python` knows nothing about it.

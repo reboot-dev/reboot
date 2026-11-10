@@ -32,7 +32,7 @@ you read is sent again on every later turn.
 | --- | --- |
 | [`react-generated-client.md`](references/react-generated-client.md) | Writing any React code: what the generated client exports, the `use<Type>()` hooks, why mutations return `{ response, aborted }` instead of throwing, the typed errors, and how names change from Python to TypeScript |
 | [`react-client.md`](references/react-client.md) | Building a web app: the `frontend/` folder's Vite setup, rooted at `web/`, the backend URL, the provider, sign-in and sign-out, showing a typed error |
-| [`react-scaffolding.md`](references/react-scaffolding.md) | Building MCP App UIs: `package.json`, `build.mjs`, `vite.config.ts`, the tsconfigs, the theme, each UI's `index.html` and `main.tsx` |
+| [`react-mcp-scaffolding.md`](references/react-mcp-scaffolding.md) | Building MCP App UIs: `package.json`, `build.mjs`, `vite.config.ts`, the tsconfigs, the theme, each UI's `index.html` and `main.tsx` |
 | [`react-app-tsx.md`](references/react-app-tsx.md) | Writing an MCP App UI's `App.tsx`, including a composing reader that pages through many actors |
 | [`pop-out-to-web-app.md`](references/pop-out-to-web-app.md) | Only when an MCP App UI needs a button that opens the same thing in the web app |
 | [`gotchas-mcp-app.md`](references/gotchas-mcp-app.md) | Building MCP App UIs: camelCase names, the build's output path, `--react-extensions`, image URLs that carry no bearer |

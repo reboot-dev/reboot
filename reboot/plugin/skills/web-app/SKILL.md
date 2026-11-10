@@ -81,7 +81,7 @@ groups below are in build order, and each reference appears in
 exactly one of them — the step that needs it.
 
 > **Never read the MCP App's frontend pages for a web app**
-> (`frontend/references/react-scaffolding.md`, `react-app-tsx.md`,
+> (`frontend/references/react-mcp-scaffolding.md`, `react-app-tsx.md`,
 > `pop-out-to-web-app.md`, `gotchas-mcp-app.md`). They
 > cover the MCP frontend — `UI()` artifacts, the MCPJam inspector,
 > `mcp/<name>/index.html` entries, one-file MCP App bundles,
