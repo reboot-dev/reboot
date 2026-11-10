@@ -598,7 +598,7 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/patterns-idempotency.md`
 - `references/patterns-common-gotchas.md`
 - `references/patterns-mcp-app-gotchas.md` — the MCP App's backend gotchas:
-`mcp=` on every method, `factory=True`, workflow refs,
+  `mcp=` on every method, `factory=True`, workflow refs,
   nested `Model` defaults
 
 ## External References
