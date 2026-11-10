@@ -12,3 +12,15 @@ py_test(
     main = "merge_codex_config_test.py",
     deps = [requirement("tomlkit")],
 )
+
+py_test(
+    name = "skill_description_length_test",
+    size = "small",
+    srcs = ["skill_description_length_test.py"],
+    data = ["//reboot/plugin:skill_files"],
+    env = {
+        "SKILL_FILES": "$(locations //reboot/plugin:skill_files)",
+    },
+    main = "skill_description_length_test.py",
+    deps = [requirement("pyyaml")],
+)
