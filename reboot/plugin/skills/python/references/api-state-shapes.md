@@ -1,7 +1,7 @@
 ---
 title: API State Shapes — List and Nested Sub-Objects
 impact: HIGH
-impactDescription: Two recurring MCP App state patterns. `list[Item]` of non-state Models is for **bounded sub-records** that have no identity of their own; entity collections (people, posts, messages, anything addressable on its own) must be promoted to their own state `Type`. Single nested `Model` sub-objects must be `Optional` with `default=None` and hydrated in the factory `create` Writer — non-Optional `Model`-typed fields reject both `default=` and `default_factory=` (Gotcha #8 in `patterns-mcp-app-gotchas.md`).
+impactDescription: Two recurring MCP App state patterns. `list[Item]` of non-state Models is for **bounded sub-records** that have no identity of their own; entity collections (people, posts, messages, anything addressable on its own) must be promoted to their own state `Type`. Single nested `Model` sub-objects must be `Optional` with `default=None` and hydrated in the factory `create` Writer — non-Optional `Model`-typed fields reject both `default=` and `default_factory=` (the gotcha "Nested `Model` fields can't take `default_factory` or `default`" in `patterns-mcp-app-gotchas.md`).
 tags: state, list, nested, sub-object, optional, model, default, default_factory, gotcha-13, decomposition
 ---
 
@@ -78,7 +78,8 @@ For application types that own a single nested `Model` sub-object
 
 - Declare the field as `Optional[Sub] = Field(tag=N, default=None)`.
   Non-Optional nested `Model` types reject both `default=` and
-  `default_factory=` (Gotcha #8 in `patterns-mcp-app-gotchas.md`).
+  `default_factory=` (the gotcha "Nested `Model` fields can't take
+  `default_factory` or `default`" in `patterns-mcp-app-gotchas.md`).
 - Hydrate the sub-object in the parent's factory `create` Writer, so
   callers never observe the `None`:
 
@@ -123,7 +124,7 @@ If the prompt suggests _plural_ sub-objects ("each guest's
 preferences"), prefer `list[GuestPreferences]` with
 `default_factory=list` — lists are exempt from this rule.
 
-## The Two Failure Modes (Gotcha #8 — full text)
+## The Two Failure Modes (full text of the gotcha "Nested `Model` fields can't take `default_factory` or `default`")
 
 Both raise `UserPydanticError` at startup, not at field-construction
 time, so they look like runtime errors but are static schema problems:
