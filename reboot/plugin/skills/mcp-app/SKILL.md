@@ -168,7 +168,7 @@ exactly one of them — the step that needs it.
   `.per_iteration("alias").write(...)` / `.always().write(...)`,
   scheduling a workflow from a Transaction with `.schedule()`.
 
-**Before the authorizers** (write rules from day one — see "Auth" in
+**Before writing the authorizers** (write rules from day one — see "Auth" in
 `python/references/mcp-app-concepts.md`):
 
 - `python/references/servicer-authorizer.md`,
