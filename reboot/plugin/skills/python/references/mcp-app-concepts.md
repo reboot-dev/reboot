@@ -172,7 +172,7 @@ All MCP interface is defined in the API file. `main.py` is minimal. No
 ## State Is Durable
 
 State survives restarts. `dev run --application-name=<name>` in
-`.rbtrc` (see [`python/references/lifecycle-mcp-app-shell.md`](lifecycle-mcp-app-shell.md))
+`.rbtrc` (see [`python/references/lifecycle-mcp-app-project-files.md`](lifecycle-mcp-app-project-files.md))
 is what makes that work.
 
 ## Example Prompts (Root-Page Wizard)
@@ -209,6 +209,6 @@ least one example drives the user to it.
 They live in `backend/src/example_prompts.py` and are passed to
 `Application(example_prompts=...)` in `main.py`. Full file shapes and
 a worked set are in
-[`python/references/lifecycle-mcp-app-shell.md`](lifecycle-mcp-app-shell.md); the
+[`python/references/lifecycle-mcp-app-project-files.md`](lifecycle-mcp-app-project-files.md); the
 `mcp-app-counter` example is the canonical reference.
 
