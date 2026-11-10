@@ -67,7 +67,7 @@ Every method must explicitly declare its MCP exposure:
 ## Method Types
 
 The `Reader` / `Writer` / `Transaction` / `Workflow` markers come from
-`reboot.api` and behave exactly as `python`'s `api-methods.md`
+`reboot.api` and behave exactly as [`python/references/api-methods.md`](api-methods.md)
 describes (each fixes the Servicer's context type). The MCP App
 adds one more:
 
