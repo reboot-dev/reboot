@@ -166,7 +166,7 @@ and gives that to `src`. Backend and page side in
 
 ## Declarative, Not Decorator
 
-All MCP surface is defined in the API file. `main.py` is minimal. No
+All MCP interface is defined in the API file. `main.py` is minimal. No
 `@mcp.tool()` decorators.
 
 ## State Is Durable
