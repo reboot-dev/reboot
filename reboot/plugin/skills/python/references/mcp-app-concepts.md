@@ -142,8 +142,8 @@ Consequences for authorizers:
 
 Backend mechanics — predicate composition, custom predicates, the
 function-vs-instance footgun — live in `python/references/auth-*.md`
-and `python/references/servicer-authorizer.md`. The MCP App delta
-is just **which mode you're in**: `oauth=` + real rules from day one.
+and `python/references/servicer-authorizer.md`. What's specific to an
+MCP App: it uses `oauth=`, and it has real authorizer rules from day one.
 
 **Acting on the user's behalf at the provider.** Beyond identity,
 `Google` / `GitHub` / `Auth0` can request extra OAuth `scopes=[...]` and
