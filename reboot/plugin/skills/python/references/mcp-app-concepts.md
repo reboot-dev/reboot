@@ -11,7 +11,7 @@ tags: mcp, user, front-door, tool, ui, oauth, authorizer, example-prompts
 
 Every MCP App has a `User` type and one or more application types:
 
-- **`User`** is the AI's front door for **creating and locating**
+- **`User`** is the AI's entry point for **creating and locating**
   application-type instances. **"Front door" means entry point +
   delegation, not container for all application state.** `User`
   holds identity (e.g. display name) and **IDs of the concern-
