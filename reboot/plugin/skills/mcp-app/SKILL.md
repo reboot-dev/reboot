@@ -138,7 +138,7 @@ exactly one of them — the step that needs it.
   The state-inside-state regression and how to compose state actors
   via string ID + `ref(id)`.
 - [`python/references/patterns-mcp-app-gotchas.md`](../python/references/patterns-mcp-app-gotchas.md)
-  — the numbered MCP App backend trip list: `mcp=Tool()`/`mcp=None` required,
+  — the MCP App's backend gotchas: `mcp=Tool()`/`mcp=None` required,
   `factory=True` on app-type `create`, `MyType.ref()` not
   `cls.ref()`/`self.ref()` in workflows, `.schedule()` from a
   Transaction, Optional+`default=None` for nested Models, `.read()`
