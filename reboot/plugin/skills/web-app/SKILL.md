@@ -66,10 +66,10 @@ scheduling, stdlib actors, errors, auth predicates, testing) are
 
 ## Auth in Web Apps
 
-Sign-in for browser users, the authorizers to write from day one,
-and calling an external API as the user are in
+How users sign-in from a browser, which authorizers to write,
+and how to call an external API on behalf of the user are in
 [`python/references/auth-web-apps.md`](../python/references/auth-web-apps.md).
-The browser side, feeding the user into hooks and the React wiring,
+On the browser side, pass the user information in hooks and the React wiring,
 is in the [`frontend` skill](../frontend/SKILL.md).
 
 ## Which References to Read, and When
