@@ -27,7 +27,7 @@ Every MCP App has a `User` type and one or more application types:
   most of the actual entity state. They typically need a `create`
   Writer with `factory=True` for construction. **Once an entity exists,
   anything specific to that entity — Readers, Writers, UIs —
-  lives on that entity's `Type`**, never on `User`. The actor
+  lives on that entity's `Type`**, never on `User`. The state types
   ID is then implicit in every call: the AI passes the entity
   ID to the tool, and the generated `use<Type>()` React hook
   auto-resolves the same ID with no arguments.
