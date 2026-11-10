@@ -26,15 +26,14 @@ page obtains a short-lived signed URL with the bearer and gives that
 to `src`. Backend and page side are in
 [python/references/auth-http-routes.md](auth-http-routes.md).
 
-> **`token_verifier=` is the escape hatch, not the default.** Use
-> it only when you need to integrate with an IdP that the
-> built-in `oauth=` providers don't cover (e.g. an enterprise
-> SAML/OIDC broker you can't wrap as an `OAuthProvider`
-> subclass), or when you need custom token semantics. For
-> standard Google/GitHub/Auth0/anonymous sign-in, prefer
-> `oauth=...`. The two compose: when both are set, Reboot's own
-> verifier runs first and any token it has no opinion on
-> (anything that is not a Reboot-minted access JWT) falls
+> **When to use `token_verifier=`.** For sign-in with Google,
+> GitHub, Auth0 or anonymous users, use `oauth=...`. Use
+> `token_verifier=` only when you need an identity provider the
+> built-in `oauth=` providers don't cover (for example, an
+> enterprise SAML/OIDC broker you can't wrap as an
+> `OAuthProvider` subclass), or custom token semantics. The two
+> compose: when both are set, Reboot's own verifier runs first,
+> and any token that isn't a Reboot-minted access JWT falls
 > through to yours.
 
 The imports, so you don't have to go looking for them:
