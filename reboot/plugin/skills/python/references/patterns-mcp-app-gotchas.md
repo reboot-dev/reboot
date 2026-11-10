@@ -28,13 +28,13 @@ React side's list is `frontend/references/gotchas-mcp-app.md`.
 3. **Use `--default-config=portless`** in `.rbtrc` (not
    `--default=portless`).
 
-4. **`UI(path="<name>")`** — `path` is the UI's URL path under
-   `/__/frontend/mcp/` (`"clicker"`, or nested, `"shop/cart"`), not
-   a directory: its source is `frontend/mcp/<path>/` (the Vite
-   plugin's `mcpAppPath`) and its build
+4. **`UI(path="<name>")` is a URL path, not a directory.** It's the
+   UI's path under `/__/frontend/mcp/`, like `"clicker"` or the nested
+   `"shop/cart"`. The UI's source is `frontend/mcp/<path>/` (the Vite
+   plugin's `mcpAppPath`). Its build is
    `frontend/dist/mcp/<path>/index.html`
-   (`--mcp-app-dist-path=frontend/dist/mcp`). `path="frontend/mcp/x"`
-   is refused.
+   (`--mcp-app-dist-path=frontend/dist/mcp`). A directory path such as
+   `path="frontend/mcp/x"` is refused.
 
 5. **`UI(request=<ConfigType>)`** passes config as React component
    props. `UI(request=None)` passes no props. `request=<Model>` is
