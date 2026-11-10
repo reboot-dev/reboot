@@ -101,6 +101,7 @@ import reboot.aio.placement as IMPORT_reboot_aio_placement
 import reboot.aio.servicers as IMPORT_reboot_aio_servicers
 import reboot.aio.state_managers as IMPORT_reboot_aio_state_managers
 import reboot.aio.stubs as IMPORT_reboot_aio_stubs
+import reboot.aio.task_handles as IMPORT_reboot_aio_task_handles
 import reboot.aio.tasks as IMPORT_reboot_aio_tasks
 import reboot.aio.types as IMPORT_reboot_aio_types
 import reboot.aio.external as IMPORT_reboot_aio_external
@@ -457,6 +458,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
             tasks_cache=tasks_cache,
             ready=ready,
             complete_task=self._state_manager.complete_task,
+            channel_manager=channel_manager,
         )
 
         # Store the type of each method's request so that stored requests can be
@@ -1129,6 +1131,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 state=state,
                 response=response,
                 tasks=context._tasks,
+                task_ids_to_cancel=context._task_ids_to_cancel,
                 _colocated_upserts=context._colocated_upserts,
             )
             {% else %}
@@ -1458,6 +1461,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                     IMPORT_reboot_aio_state_managers.Effects(
                         state=state,
                         response=response,
+                        task_ids_to_cancel=context._task_ids_to_cancel,
                     )
                 )
                 return response
@@ -3375,11 +3379,12 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             state: {{ state.pb2_name }}.{{ state.proto.name }},
             response: IMPORT_typing.Optional[IMPORT_google_protobuf_message.Message] = None,
             tasks: IMPORT_typing.Optional[list[IMPORT_reboot_aio_tasks.TaskEffect]] = None,
+            task_ids_to_cancel: IMPORT_typing.Optional[list[IMPORT_rbt_v1alpha1.tasks_pb2.TaskId]] = None,
             _colocated_upserts: IMPORT_typing.Optional[list[tuple[str, IMPORT_typing.Optional[bytes]]]] = None,
         ):
             IMPORT_reboot_aio_types.assert_type(state, [{{ state.pb2_name }}.{{ state.proto.name }}])
 
-            super().__init__(state=state, response=response, tasks=tasks, _colocated_upserts=_colocated_upserts)
+            super().__init__(state=state, response=response, tasks=tasks, task_ids_to_cancel=task_ids_to_cancel, _colocated_upserts=_colocated_upserts)
 
     {% for service in state.services %}
     {% for method in service.methods %}
@@ -3394,12 +3399,13 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             state: {{ state.pb2_name }}.{{ state.proto.name }},
             response: {{ method.output_type }},
             tasks: IMPORT_typing.Optional[list[IMPORT_reboot_aio_tasks.TaskEffect]] = None,
+            task_ids_to_cancel: IMPORT_typing.Optional[list[IMPORT_rbt_v1alpha1.tasks_pb2.TaskId]] = None,
             _colocated_upserts: IMPORT_typing.Optional[list[tuple[str, IMPORT_typing.Optional[bytes]]]] = None,
         ):
             IMPORT_reboot_aio_types.assert_type(state, [{{ state.pb2_name }}.{{ state.proto.name }}])
             IMPORT_reboot_aio_types.assert_type(response, [{{ method.output_type }}])
 
-            super().__init__(state=state, response=response, tasks=tasks, _colocated_upserts=_colocated_upserts)
+            super().__init__(state=state, response=response, tasks=tasks, task_ids_to_cancel=task_ids_to_cancel, _colocated_upserts=_colocated_upserts)
 
     {% endif %}
 
@@ -4755,11 +4761,15 @@ class {{ client.proto.state_name }}:
 
     {% for service in client.services %}
     {% for method in service.methods %}
-    class {{ method.proto.name }}Task:
+    class {{ method.proto.name }}Task(IMPORT_reboot_aio_task_handles.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to cancel the task (see
+        `reboot.aio.task_handles.TaskHandle.cancel()`).
         """
 
         {% if options.proto.pydantic %}
@@ -4794,18 +4804,7 @@ class {{ client.proto.state_name }}:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
+            super().__init__(context, task_id=task_id)
 
         {% if options.proto.pydantic %}
         @property

@@ -11,8 +11,11 @@ from rbt.v1alpha1 import errors_pb2, tasks_pb2
 from reboot.aio import tracing
 from reboot.aio.aborted import SystemAborted
 from reboot.aio.backoff import Backoff
+from reboot.aio.caller_id import CallerID
+from reboot.aio.internals.channel_manager import _ChannelManager
 from reboot.aio.internals.contextvars import use_application_id
 from reboot.aio.internals.tasks_cache import TasksCache
+from reboot.aio.task_handles import request_task_cancellation
 from reboot.aio.tasks import TaskEffect
 from reboot.aio.types import ApplicationId
 from reboot.run_environments import is_in_test
@@ -83,12 +86,14 @@ class TasksDispatcher:
         tasks_cache: TasksCache,
         ready: asyncio.Event,
         complete_task: CompleteTaskCallable,
+        channel_manager: _ChannelManager,
     ):
         self._application_id = application_id
         self._dispatch = dispatch
         self._tasks_cache = tasks_cache
         self._ready = ready
         self._complete_task = complete_task
+        self._channel_manager = channel_manager
 
         # Signal that stop has been requested.
         self._stop_requested = asyncio.Event()
@@ -98,6 +103,11 @@ class TasksDispatcher:
         # try and garbage collect them even if they haven't finished.
         self._dispatched_tasks: dict[bytes, Tuple[asyncio.Task,
                                                   IsCancelled]] = {}
+
+        # The `asyncio.Task`s sending the cancellation requests of
+        # `cancel_tasks()`, held so that they are not garbage
+        # collected while in flight.
+        self._cancel_tasks_tasks: set[asyncio.Task] = set()
 
         self._keep_waiting_for_cancelled_tasks_task = None
 
@@ -410,6 +420,55 @@ class TasksDispatcher:
             status=tasks_pb2.CancelTaskResponse.Status.OK
         )
 
+    def cancel_tasks(self, task_ids: list[tasks_pb2.TaskId]) -> None:
+        """Asks for each of the tasks to be cancelled, wherever it runs:
+        a `CancelTask` RPC goes to the server running the task, which
+        may be this one, so the tasks may belong to any state.
+
+        The requests are sent in the background, so that whatever lock
+        the caller holds, e.g., a writer committing its effects, is
+        not held while a request is retried against an unavailable
+        server. A task that is not running (any more) is left as is;
+        a request that fails is logged, as the effects it belongs to
+        have already been committed.
+        """
+        if self._stop_requested.is_set():
+            # The server is stopping, and `stop()` cancels every
+            # background request this dispatcher owns, so a request
+            # sent now would be cancelled moments later: skip it. The
+            # caller's effects are already stored, so returning lets it
+            # complete, where raising would report a failure for a
+            # mutation that happened.
+            return
+
+        async def cancel_task(task_id: tasks_pb2.TaskId) -> None:
+            with use_application_id(self._application_id):
+                try:
+                    await request_task_cancellation(
+                        self._channel_manager,
+                        task_id,
+                        application_id=self._application_id,
+                        caller_id=CallerID(
+                            application_id=self._application_id
+                        ),
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except BaseException as exception:
+                    logger.error(
+                        f"Failed to cancel task '{task_id.state_type}' "
+                        f"(UUID={UUID(bytes=task_id.task_uuid)}): "
+                        f"{type(exception).__name__}: {exception}"
+                    )
+
+        for task_id in task_ids:
+            asyncio_task = asyncio.create_task(
+                cancel_task(task_id),
+                name=f'cancel_task(...) in {__name__}',
+            )
+            self._cancel_tasks_tasks.add(asyncio_task)
+            asyncio_task.add_done_callback(self._cancel_tasks_tasks.discard)
+
     def is_task_cancelled(
         self,
         task_uuid: bytes,
@@ -426,6 +485,12 @@ class TasksDispatcher:
 
         # Signal that stop has been requested to avoid dispatching new tasks.
         self._stop_requested.set()
+
+        # Cancellation requests still in flight are not retried once
+        # stopped (they are not durable); cancel them rather than
+        # leave them retrying against a server that may be gone.
+        for asyncio_task in list(self._cancel_tasks_tasks):
+            asyncio_task.cancel()
 
         # Cancel existing `asyncio.Tasks`.
         # NOTE: we make a copy of the values to dodge errors arising from the
