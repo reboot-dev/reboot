@@ -173,6 +173,48 @@ const response = await Account.WelcomeEmailTask.retrieve(context, { taskId });
   </TabItem>
 </Tabs>
 
+## Cancelling a task
+
+In Python, a `[MethodName]Task` object, whether it came from `spawn()` or from
+`retrieve()`, can be cancelled with `cancel()`. What that does depends on the
+kind of method it is called from.
+
+From a `workflow` method, or from outside Reboot using an `ExternalContext`,
+`cancel()` requests the cancellation right away and returns once the task has
+finished. The method the task is running sees an `asyncio.CancelledError`.
+A task that catches it and returns a response finishes with that response,
+which you can still get by `await`ing the task object; a task that lets it
+propagate finishes as cancelled, and `await`ing it raises an error of type
+`Cancelled`. A task that has already finished is left as is.
+
+```py
+task = Account.WelcomeEmailTask.retrieve(context, task_id=welcome_email_task_id)
+await task.cancel()
+```
+
+From a `writer` or `transaction` method, cancelling a task is an _effect_,
+like scheduling one with `schedule()`: the cancellation is requested only
+after the method completes, so a method that fails after calling `cancel()`
+cancels nothing, and a method that is re-run to validate its effects cancels
+the task only once. Because the request is made after the method completes,
+`cancel()` returns right away rather than waiting for the task to finish.
+
+```py
+await Account.WelcomeEmailTask.retrieve(
+    context,
+    task_id=state.welcome_email_task_id,
+).cancel()
+```
+
+A `reader` method can not cancel a task, as it can not have effects.
+
+:::note
+A cancellation requested by a `writer` or `transaction` is sent once the
+method's effects have been stored; it is not itself stored, so if the
+application stops between storing the effects and sending the request, the
+task keeps running.
+:::
+
 ## Unexpected task errors and hotfixing
 
 If a task encounters an unexpected error, it will be retried until it
